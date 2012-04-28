@@ -395,7 +395,7 @@ int BrowserViewLayout::LayoutInfoBar(int top) {
   return overlapped_top + height;
 }
 
-void BrowserViewLayout::LayoutTabContents(int top, int bottom) {
+void BrowserViewLayout::LayoutTabContents(int top, int bottom, int right) {
   // The ultimate idea is to calculate bounds and reserved areas for all
   // contents views first and then resize them all, so every view
   // (and its contents) is resized and laid out only once.
@@ -495,7 +495,8 @@ int BrowserViewLayout::LayoutFriendsSidebar(int top) {
     if (active_bookmark_bar_) {
       if (active_bookmark_bar_->IsDetached()) {
         gfx::Rect rc = active_bookmark_bar_->bounds();
-        rc.set_width(rc.width() - width);
+        if (rc.width() - width >= 0)
+          rc.set_width(rc.width() - width);
         active_bookmark_bar_->SetBoundsRect(rc);
         top -= rc.height();
         height += rc.height();

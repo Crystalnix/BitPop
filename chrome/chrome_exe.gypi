@@ -414,8 +414,10 @@
         }],
         ['OS != "mac"', {
           'conditions': [
-            # TODO:  add a:
-            #   'product_name': 'chromium'
+            ['1 == 1', {
+              'product_name': 'bitpop',
+            }], 
+            
             # whenever we convert the rest of the infrastructure
             # (buildbots etc.) to understand the branding gyp define.
             # NOTE: chrome/app/theme/chromium/BRANDING and

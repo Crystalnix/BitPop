@@ -85,7 +85,7 @@ class Menu;
 //
 class BrowserView : public BrowserWindow,
                     public BrowserWindowTesting,
-                    public NotificationObserver,
+                    public content::NotificationObserver,
                     public TabStripModelObserver,
                     public ui::SimpleMenuModel::Delegate,
                     public views::WidgetDelegate,
@@ -247,7 +247,7 @@ class BrowserView : public BrowserWindow,
       BookmarkBar::AnimateChangeType change_type) OVERRIDE;
   virtual void UpdateDevTools() OVERRIDE;
   virtual void SetDevToolsDockSide(DevToolsDockSide side) OVERRIDE;
-  virtual void UpdateFriendsSidebarForContents(WebContents *friends_contents) OVERRIDE;
+  virtual void UpdateFriendsSidebarForContents(content::WebContents *friends_contents) OVERRIDE;
   virtual void UpdateLoadingAnimations(bool should_animate) OVERRIDE;
   virtual void SetStarredState(bool is_starred) OVERRIDE;
   virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
@@ -412,6 +412,11 @@ class BrowserView : public BrowserWindow,
   virtual bool SplitHandleMoved(views::SingleSplitView* sender) OVERRIDE;
 
  protected:
+   // content::NotificationObserver override
+   virtual void Observe(int type,
+                const content::NotificationSource& source,
+                const content::NotificationDetails& details) OVERRIDE;
+
   // Appends to |toolbars| a pointer to each AccessiblePaneView that
   // can be traversed using F6, in the order they should be traversed.
   // Abstracted here so that it can be extended for Chrome OS.
@@ -717,7 +722,7 @@ class BrowserView : public BrowserWindow,
 
   UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // Used to measure the loading spinner animation rate.
   base::TimeTicks last_animation_time_;
@@ -734,4 +739,3 @@ class BrowserView : public BrowserWindow,
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_VIEW_H_
-2

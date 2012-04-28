@@ -20,8 +20,8 @@ namespace views {
 }
 
 class ChatNotificationPopup : public BitpopBubbleDelegateView,
-                              public views::ButtonListener,
-                              public views::WidgetFocusChangeListener {
+                              public views::ButtonListener /*,
+                              public views::WidgetFocusChangeListener */ {
 public:
   static ChatNotificationPopup* Show(views::View* anchor_view,
       BitpopBubbleBorder::ArrowLocation arrow_location);
@@ -37,13 +37,13 @@ public:
   virtual void ButtonPressed(views::Button* sender, const views::Event& event) OVERRIDE;
 
   // Overridden from ui::AnimationDelegate:
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
+  //virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
+  //virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
+
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
 
   views::View* container_view() { return container_view_; }
-protected:
-  // OVERRIDE Bubble functionality
-  virtual void OnActivate(UINT action, BOOL minimized, HWND window) OVERRIDE;
+
 private:
 
   ChatNotificationPopup();

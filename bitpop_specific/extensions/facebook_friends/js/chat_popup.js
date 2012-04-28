@@ -22,9 +22,9 @@ bitpop.chat = (function() {
       friendUid = window.location.hash.slice(1);
       lastMessageUid = null;
 
-      $(window).bind('focus', function() {
-        initChat();
-      });
+      //$(window).bind('focus', function() {
+      //  initChat();
+      //});
 
       //setMsgValue($('#msg').val());
 
@@ -62,20 +62,17 @@ bitpop.chat = (function() {
       }
       */
 
-      function initChat() {
-
+      (function initChat() {
         appendFromLocalStorage();
 
         var myUid = chrome.extension.getBackgroundPage().myUid;
         var msgText = localStorage.getItem('msg:' + myUid + ':' + friendUid);
         if (msgText) {
           setMsgValue(msgText);
-        } else {
-          setMsgValue('');
         }
 
         //setInterval(fetchThread, 30000);
-      };
+      })();
 
       chrome.extension.onRequestExternal.addListener(function (request, sender, sendResponse) {
         if (request.type == 'newMessage') {

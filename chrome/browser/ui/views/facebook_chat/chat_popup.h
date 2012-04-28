@@ -63,6 +63,9 @@ class ChatPopup : public BitpopBubbleDelegateView,
   static const int kMaxWidth;
   static const int kMaxHeight;
 
+  // WidgetDelegate overrides:
+  //virtual views::View* GetInitiallyFocusedView() OVERRIDE;
+
  private:
   ChatPopup(Browser* browser,
             ExtensionHost* host,

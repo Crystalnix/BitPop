@@ -7,7 +7,9 @@
 
 #include <string>
 
+#include "base/location.h"
 #include "base/string_util.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -18,10 +20,10 @@
 #include "chrome/common/badge_util.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/gurl.h"
-#include "grit/app_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkTypeface.h"
@@ -141,7 +143,7 @@ ChatItemView::ChatItemView(FacebookChatItem *model, ChatbarView *chatbar)
   //openChatButton_->SetNormalHasBorder(true);
   openChatButton_->set_icon_placement(views::TextButton::ICON_ON_LEFT);
   openChatButton_->set_border(new InfoBarButtonBorder);
-  openChatButton_->SetNormalHasBorder(true);
+  //openChatButton_->SetNormalHasBorder(true);
   openChatButton_->SetAnimationDuration(0);
   openChatButton_->SetEnabledColor(SK_ColorBLACK);
   openChatButton_->SetHighlightColor(SK_ColorBLACK);
@@ -177,7 +179,14 @@ ChatItemView::~ChatItemView() {
   if (openChatButton_)
     delete openChatButton_;
   if (chat_popup_) {
-    chat_popup_->Close();
+    chat_popup_->GetWidget()->RemoveObserver(this);
+    chat_popup_->GetWidget()->Close();
+    delete chat_popup_;
+  }
+  if (notification_popup_) {
+    notification_popup_->GetWidget()->RemoveObserver(this);
+    notification_popup_->GetWidget()->Close();
+    delete notification_popup_;
   }
   if (notification_icon_)
     delete notification_icon_;
@@ -258,7 +267,7 @@ void ChatItemView::StatusChanged() {
 
 void ChatItemView::Close(bool should_animate) {
   if (notification_popup_)
-    notification_popup_->Close();
+    notification_popup_->GetWidget()->Close();
   chatbar_->Remove(this, should_animate);
 }
 
@@ -278,7 +287,7 @@ void ChatItemView::OnPaint(gfx::Canvas* canvas) {
 
 void ChatItemView::ActivateChat() {
   if (notification_popup_)
-      notification_popup_->Close();
+      notification_popup_->GetWidget()->Close();
 
   model_->ClearUnreadMessages();
   StatusChanged();  // restore status icon
@@ -292,24 +301,29 @@ void ChatItemView::ActivateChat() {
 
   chat_popup_ = ChatPopup::ShowPopup(GURL(urlString), chatbar_->browser(),
                                 this, BitpopBubbleBorder::BOTTOM_CENTER);
+  chat_popup_->GetWidget()->AddObserver(this);
 }
 
 const FacebookChatItem* ChatItemView::GetModel() const {
   return model_;
 }
 
-void ChatItemView::ChatPopupIsClosing(ChatPopup* popup) {
-  if (popup == chat_popup_)
-    chat_popup_ = NULL;
-}
-
 void ChatItemView::OnWidgetClosing(views::Widget* bubble) {
-  DCHECK(bubble == notification_popup_->GetWidget());
-  notification_popup_ = NULL;
+  if (chat_popup_ && bubble == chat_popup_->GetWidget()) {
+    bubble->RemoveObserver(this);
+    delete chat_popup_;
+    chat_popup_ = NULL;
+  }
 
-  for (TimerList::iterator it = timers_.begin(); it != timers_.end(); it++) {
-    if (*it && (*it)->IsRunning())
-      (*it)->Stop();
+  if (notification_popup_ && bubble == notification_popup_->GetWidget()) {
+    bubble->RemoveObserver(this);
+    delete notification_popup_;
+    notification_popup_ = NULL;
+
+    for (TimerList::iterator it = timers_.begin(); it != timers_.end(); it++) {
+      if (*it && (*it)->IsRunning())
+        (*it)->Stop();
+    }
   }
 }
 
@@ -333,9 +347,9 @@ void ChatItemView::NotifyUnread() {
       timer = new ChatTimer();
       timers_.push_back(timer);
     }
-    timer->Start(base::TimeDelta::FromSeconds(kNotificationMessageDelaySec), this, &ChatItemView::TimerFired);
+    timer->Start(FROM_HERE, base::TimeDelta::FromSeconds(kNotificationMessageDelaySec), this, &ChatItemView::TimerFired);
 
-    if (!IsVisible())
+    if (!visible())
       chatbar_->PlaceFirstInOrder(this);
 
     UpdateNotificationIcon();
@@ -372,7 +386,7 @@ gfx::Rect ChatItemView::RectForNotificationPopup() {
 void ChatItemView::OnMouseEntered(const views::MouseEvent& event) {
   if (!notification_popup_ && model_->num_notifications() > 0) {
 
-    notification_popup_ = ChatNotificationPopup::Show(this, BubbleBorder::BOTTOM_CENTER);
+    notification_popup_ = ChatNotificationPopup::Show(this, BitpopBubbleBorder::BOTTOM_CENTER);
     notification_popup_->GetWidget()->AddObserver(this);
     notification_popup_->PushMessage(model_->GetMessageAtIndex(model_->num_notifications() - 1));
     isMouseOverNotification_ = true;
@@ -381,8 +395,8 @@ void ChatItemView::OnMouseEntered(const views::MouseEvent& event) {
 
 void ChatItemView::OnMouseExited(const views::MouseEvent& event) {
   if (isMouseOverNotification_ && notification_popup_) {
-    notification_popup_->set_fade_away_on_close(false);
-    notification_popup_->Close();
+    //notification_popup_->set_fade_away_on_close(false);
+    notification_popup_->GetWidget()->Close();
   }
 }
 

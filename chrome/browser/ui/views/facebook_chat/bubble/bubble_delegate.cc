@@ -18,9 +18,9 @@ static const int kDefaultMargin = 6;
 namespace {
 
 // Create a widget to host the bubble.
-Widget* CreateBubbleWidget(BitpopBubbleDelegateView* bubble, views::Widget* parent) {
-  views::Widget* bubble_widget = new Widget();
-  views::Widget::InitParams bubble_params(Widget::InitParams::TYPE_BUBBLE);
+views::Widget* CreateBubbleWidget(BitpopBubbleDelegateView* bubble, views::Widget* parent) {
+  views::Widget* bubble_widget = new views::Widget();
+  views::Widget::InitParams bubble_params(views::Widget::InitParams::TYPE_BUBBLE);
   bubble_params.delegate = bubble;
   bubble_params.transparent = true;
   bubble_params.parent_widget = parent;
@@ -60,7 +60,7 @@ views::NonClientFrameView* BitpopBubbleBorderDelegateView::CreateNonClientFrameV
 }
 
 // Create a widget to host the bubble's border.
-Widget* CreateBorderWidget(BitpopBubbleDelegateView* bubble, views::Widget* parent) {
+views::Widget* CreateBorderWidget(BitpopBubbleDelegateView* bubble, views::Widget* parent) {
   views::Widget* border_widget = new views::Widget();
   views::Widget::InitParams border_params(views::Widget::InitParams::TYPE_BUBBLE);
   border_params.delegate = new BitpopBubbleBorderDelegateView(bubble);
@@ -116,7 +116,7 @@ BitpopBubbleDelegateView::BitpopBubbleDelegateView(
 BitpopBubbleDelegateView::~BitpopBubbleDelegateView() {}
 
 // static
-Widget* BitpopBubbleDelegateView::CreateBubble(BitpopBubbleDelegateView* bubble_delegate) {
+views::Widget* BitpopBubbleDelegateView::CreateBubble(BitpopBubbleDelegateView* bubble_delegate) {
   bubble_delegate->Init();
   views::Widget* parent = bubble_delegate->anchor_view() ?
       bubble_delegate->anchor_view()->GetWidget() : NULL;
@@ -133,15 +133,15 @@ Widget* BitpopBubbleDelegateView::CreateBubble(BitpopBubbleDelegateView* bubble_
   return bubble_widget;
 }
 
-View* BitpopBubbleDelegateView::GetInitiallyFocusedView() {
+views::View* BitpopBubbleDelegateView::GetInitiallyFocusedView() {
   return this;
 }
 
-BitpopBubbleDelegateView* BubbleDelegateView::AsBubbleDelegate() {
-  return this;
+views::BubbleDelegateView* BitpopBubbleDelegateView::AsBubbleDelegate() {
+  return NULL;
 }
 
-View* BitpopBubbleDelegateView::GetContentsView() {
+views::View* BitpopBubbleDelegateView::GetContentsView() {
   return this;
 }
 
@@ -269,11 +269,11 @@ void BitpopBubbleDelegateView::SizeToContents() {
 #else
   GetWidget()->SetBounds(GetBubbleBounds());
 #endif
-BubbleFrameView* BitpopBubbleDelegateView::GetBubbleFrameView() const {
+}
 
 BitpopBubbleFrameView* BitpopBubbleDelegateView::GetBubbleFrameView() const {
   const views::Widget* widget = border_widget_ ? border_widget_ : GetWidget();
-  const NonClientView* view = widget ? widget->non_client_view() : NULL;
+  const views::NonClientView* view = widget ? widget->non_client_view() : NULL;
   return view ? static_cast<BitpopBubbleFrameView*>(view->frame_view()) : NULL;
 }
 
@@ -291,4 +291,3 @@ gfx::Rect BitpopBubbleDelegateView::GetBubbleClientBounds() const {
   return client_bounds;
 }
 #endif
-

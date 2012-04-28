@@ -12,7 +12,6 @@
 
 #include "base/timer.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
-#include "chrome/browser/ui/views/bubble/bubble.h"
 #include "chrome/browser/ui/views/facebook_chat/chat_popup.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/views/controls/button/button.h"
@@ -39,8 +38,8 @@ class ImageButton;
 class ChatItemView : public views::ButtonListener,
                      public views::View,
                      public FacebookChatItem::Observer,
-                     public ChatPopup::Observer,
-                     public views::Widget::Observer {
+                     public views::Widget::Observer,
+                     public ui::AnimationDelegate {
 public:
   ChatItemView(FacebookChatItem *model, ChatbarView *chatbar);
   virtual ~ChatItemView();
@@ -60,14 +59,6 @@ public:
   // ui::AnimationDelegate implementation.
   virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
 
-  // ChatPopup::Observer implementation
-  virtual void ChatPopupIsClosing(ChatPopup* popup) OVERRIDE;
-
-  // BubbleDelegate implementation
-  virtual void BubbleClosing(Bubble* bubble, bool closed_by_escape) OVERRIDE;
-  virtual bool CloseOnEscape() OVERRIDE { return false; }
-  virtual bool FadeInOnShow() OVERRIDE { return true; }
-
   void Close(bool should_animate);
 
   void ActivateChat();
@@ -82,7 +73,7 @@ protected:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
   // views::Widget::Observer
-  virtual void OnWidgetClosing(views::Widget* widget);
+  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
 
   virtual void UpdateNotificationIcon();
 

@@ -17,6 +17,10 @@ class SlideAnimation;
 
 class BitpopBubbleFrameView;
 
+namespace views {
+class BubbleDelegateView;
+}
+
 // BitpopBubbleDelegateView creates frame and client views for bubble Widgets.
 // BitpopBubbleDelegateView itself is the client's contents view.
 //
@@ -38,7 +42,7 @@ class BitpopBubbleDelegateView : public views::WidgetDelegateView,
 
   // WidgetDelegate overrides:
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
-  virtual BitpopBubbleDelegateView* AsBubbleDelegate() OVERRIDE;
+  virtual views::BubbleDelegateView* AsBubbleDelegate() OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
   virtual views::NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
 

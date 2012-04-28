@@ -1289,7 +1289,8 @@ static ExtensionInfo* GetInstalledExtensionInfoImpl(
   // preferences.
   Extension::Location location =
       static_cast<Extension::Location>(location_value);
-  if (location != Extension::INTERNAL &&
+  if (location != Extension::COMPONENT &&
+      location != Extension::INTERNAL &&
       location != Extension::LOAD &&
       !Extension::IsExternalLocation(location)) {
     NOTREACHED();

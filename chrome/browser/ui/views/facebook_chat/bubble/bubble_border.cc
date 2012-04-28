@@ -54,7 +54,7 @@ struct BitpopBubbleBorder::BorderImages* BitpopBubbleBorder::shadow_images_ = NU
 // The height inside the arrow image, in pixels.
 static const int kArrowInteriorHeight = 7;
 
-BubbleBorder::BubbleBorder(ArrowLocation arrow_location, Shadow shadow)
+BitpopBubbleBorder::BitpopBubbleBorder(BitpopBubbleBorder::ArrowLocation arrow_location, Shadow shadow)
     : override_arrow_offset_(0),
       arrow_location_(arrow_location),
       alignment_(ALIGN_ARROW_TO_MID_ANCHOR),
@@ -222,7 +222,7 @@ int BitpopBubbleBorder::SetArrowOffset(int offset, const gfx::Size& contents_siz
 }
 
 // static
-BubbleBorder::BorderImages* BitpopBubbleBorder::GetBorderImages(Shadow shadow) {
+BitpopBubbleBorder::BorderImages* BitpopBubbleBorder::GetBorderImages(Shadow shadow) {
   if (shadow == SHADOW && shadow_images_ == NULL) {
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
     shadow_images_ = new BorderImages();
@@ -259,7 +259,7 @@ BubbleBorder::BorderImages* BitpopBubbleBorder::GetBorderImages(Shadow shadow) {
   return shadow == SHADOW ? shadow_images_ : normal_images_;
 }
 
-BubbleBorder::~BubbleBorder() {}
+BitpopBubbleBorder::~BitpopBubbleBorder() {}
 
 void BitpopBubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) const {
   // Convenience shorthand variables.
@@ -516,12 +516,12 @@ void BitpopBubbleBackground::Paint(gfx::Canvas* canvas, views::View* view) const
   rect.set(SkIntToScalar(bounds.x()), SkIntToScalar(bounds.y()),
            SkIntToScalar(bounds.right()), SkIntToScalar(bounds.bottom()));
   rect.inset(-border_->border_thickness(), -border_->border_thickness());
-  SkScalar radius = SkIntToScalar(BubbleBorder::GetCornerRadius());
+  SkScalar radius = SkIntToScalar(BitpopBubbleBorder::GetCornerRadius());
   path.addRoundRect(rect, radius, radius);
   canvas->GetSkCanvas()->drawPath(path, paint);
 
   // hack to draw a white highlight on chat notification windows
-  if (border_->arrow_location() == BubbleBorder::BOTTOM_LEFT) {
+  if (border_->arrow_location() == BitpopBubbleBorder::BOTTOM_LEFT) {
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setColor(SK_ColorWHITE);
     paint.setStrokeWidth(1);

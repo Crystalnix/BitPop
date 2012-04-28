@@ -120,7 +120,7 @@ function replaceLocalHistory(data) {
     var jid = myUid + ':' + to_ids[0].toString();
     localStorage.removeItem(jid);
 
-    localStorage[jid + '.thread_id'] = data.id;
+    localStorage[jid + '.thread_id'] = data[i].id;
 
     if (!data[i].comments || !data[i].comments.data)
       continue;

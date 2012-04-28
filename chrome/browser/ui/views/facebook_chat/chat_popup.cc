@@ -13,6 +13,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/browser/renderer_host/render_view_host.h"
+#include "content/browser/renderer_host/render_widget_host_view.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
@@ -33,7 +34,7 @@ ChatPopup::ChatPopup(
     ExtensionHost* host,
     views::View* anchor_view,
     BitpopBubbleBorder::ArrowLocation arrow_location)
-    : BubbleDelegateView(anchor_view, arrow_location),
+    : BitpopBubbleDelegateView(anchor_view, arrow_location),
       extension_host_(host) {
   // Adjust the margin so that contents fit better.
   set_margin(BitpopBubbleBorder::GetCornerRadius() / 2);
@@ -100,8 +101,9 @@ void ChatPopup::OnNativeFocusChange(gfx::NativeView focused_before,
   // ChatPopups can create Javascipt dialogs; see crbug.com/106723.
   gfx::NativeView this_window = GetWidget()->GetNativeView();
   if (focused_now == this_window ||
-      ::GetWindow(focused_now, GW_OWNER) == this_window)
+      ::GetWindow(focused_now, GW_OWNER) == this_window) {
     return;
+  }
   gfx::NativeView focused_parent = focused_now;
   while (focused_parent = ::GetParent(focused_parent)) {
     if (this_window == focused_parent)
@@ -116,7 +118,7 @@ ChatPopup* ChatPopup::ShowPopup(
     const GURL& url,
     Browser* browser,
     views::View* anchor_view,
-    views::BubbleBorder::ArrowLocation arrow_location) {
+    BitpopBubbleBorder::ArrowLocation arrow_location) {
   ExtensionProcessManager* manager =
       browser->profile()->GetExtensionProcessManager();
   ExtensionHost* host = manager->CreatePopupHost(url, browser);
@@ -141,4 +143,3 @@ void ChatPopup::ShowBubble() {
   // Listen for widget focus changes after showing (used for non-aura win).
   views::WidgetFocusManager::GetInstance()->AddFocusChangeListener(this);
 }
-

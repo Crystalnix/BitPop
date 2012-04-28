@@ -8,14 +8,14 @@
 #include "base/logging.h"
 
 FacebookBitpopNotification::~FacebookBitpopNotification() {
-  NOTIMPLEMENTED();
+  //NOTIMPLEMENTED();
 }
 
 void FacebookBitpopNotification::ClearNotification() {
-  NOTIMPLEMENTED();
+  //NOTIMPLEMENTED();
 }
 
 void FacebookBitpopNotification::NotifyUnreadMessagesWithLastUser(int num_unread,
                                                 std::string user_id) {
-  NOTIMPLEMENTED();
+  //NOTIMPLEMENTED();
 }

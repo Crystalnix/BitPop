@@ -33,7 +33,7 @@
 #include "chrome/installer/util/util_constants.h"
 //#include "chrome/installer/util/wmi.h"
 //#include "content/common/json_value_serializer.h"
-#include "content/common/result_codes.h"
+#include "content/public/common/result_codes.h"
 
 namespace {
 

@@ -16,6 +16,7 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "grit/ui_resources_standard.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -70,7 +71,7 @@ ChatbarView::ChatbarView(Browser* browser, BrowserView* parent)
     item_to_add_(NULL),
     item_to_remove_(NULL),
     item_to_place_first_(NULL) {
-  SetID(VIEW_ID_FACEBOOK_CHATBAR);
+  set_id(VIEW_ID_FACEBOOK_CHATBAR);
   parent->AddChildView(this);
 
   ResourceBundle &rb = ResourceBundle::GetSharedInstance();
@@ -198,18 +199,18 @@ void ChatbarView::Layout() {
 }
 
 void ChatbarView::OnPaintBorder(gfx::Canvas* canvas) {
-  canvas->FillRectInt(kBorderColor, 0, 0, width(), 1);
+  canvas->DrawLineInt(kBorderColor, 0, 0, width(), 0);
 }
 
 void ChatbarView::AddChatItem(FacebookChatItem *chat_item) {
-  if (!this->IsVisible())
+  if (!this->visible())
     Show();
 
   // do not allow duplicate chat items
   for (std::list<ChatItemView*>::iterator it = chat_items_.begin(); it != chat_items_.end(); it++) {
     if ((*it)->GetModel()->jid() == chat_item->jid()) {
       if (chat_item->needs_activation()) {
-        if (!(*it)->IsVisible())
+        if (!(*it)->visible())
           PlaceFirstInOrder(*it);
         (*it)->ActivateChat();
       }
@@ -361,7 +362,7 @@ void ChatbarView::RemoveItem(ChatItemView* item) {
 
 void ChatbarView::PlaceFirstInOrder(ChatItemView* item) {
   gfx::Rect itemBounds = item->bounds();
-  if (!item->IsVisible()) {  // chat item is invisible - move it to first position
+  if (!item->visible()) {  // chat item is invisible - move it to first position
     StopPendingAnimations();
     item_to_place_first_ = item;
     place_first_animation_->Show();

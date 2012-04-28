@@ -6,14 +6,18 @@
 #include "chrome/browser/ui/views/facebook_chat/chat_notification_popup.h"
 
 #include "base/utf_string_conversions.h"
-#include "grit/app_resources.h"
+#include "base/win/win_util.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "grit/ui_resources_standard.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/button/image_button.h"
-#include "ui/views/window/window.h"
+#include "ui/views/layout/fill_layout.h"
+
+//#include "grit/theme_resources.h"
+//#include "ui/base/resource/resource_bundle.h"
 
 using views::View;
 
@@ -37,11 +41,12 @@ public:
     SetMultiLine(true);
     SetAllowCharacterBreak(true);
     SetHorizontalAlignment(views::Label::ALIGN_LEFT);
-    SkColor labelBgr = SkColorSetA(kNotificationPopupBackgroundColor, 0);
-    set_background(views::Background::CreateSolidBackground(0, 0, 0, 0));
-
+    //SkColor labelBgr = SkColorSetA(kNotificationPopupBackgroundColor, 0);
+    SetAutoColorReadabilityEnabled(false);
+    SetBackgroundColor(kNotificationPopupBackgroundColor);
+    SetEnabledColor(SkColorSetRGB(0,0,0));
   }
-
+  
   virtual gfx::Size GetPreferredSize() {
     int height = GetHeightForWidth(kNotificationLabelWidth);
     if (height > kNotificationLabelMaxHeight) {
@@ -52,7 +57,7 @@ public:
     prefsize.Enlarge(insets.width(), insets.height());
     return prefsize;
   }
-
+  
   void UpdateOwnText() {
     const ChatNotificationPopup::MessageContainer& msgs = owner_->GetMessages();
     std::string concat = "";
@@ -62,10 +67,10 @@ public:
       if (i != (int)msgs.size() - 1)
         concat += "\n\n";
     }
-    SetText(L"");
-    owner_->SizeToContents();  // dirty hack to force the window redraw
+//    SetText(L"");
+//    owner_->SizeToContents();  // dirty hack to force the window redraw
     SetText(UTF8ToWide(concat));
-    owner_->SizeToContents();
+    owner_->SizeToContents();  
   }
 
 private:
@@ -127,7 +132,7 @@ private:
 
 // static
 ChatNotificationPopup* ChatNotificationPopup::Show(views::View* anchor_view,
-                     BubbleBorder::ArrowLocation arrow_location) {
+                     BitpopBubbleBorder::ArrowLocation arrow_location) {
   ChatNotificationPopup* popup = new ChatNotificationPopup();
   popup->set_anchor_view(anchor_view);
   popup->set_arrow_location(arrow_location);
@@ -135,7 +140,24 @@ ChatNotificationPopup* ChatNotificationPopup::Show(views::View* anchor_view,
   popup->set_close_on_deactivate(false);
   popup->set_use_focusless(true);
 
+  popup->SetLayoutManager(new views::FillLayout());
+  //popup->AddChildView(popup->container_view());
+
+  //ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+
+  //views::Label* label = new views::Label(L"Hello, world!");
+  //label->SetFont(bundle.GetFont(ResourceBundle::MediumFont));
+  //label->SetBackgroundColor(SkColorSetRGB(0xff, 0xff, 0xff));
+  //label->SetEnabledColor(SkColorSetRGB(0xe3, 0xed, 0xf6));
+  //label->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+
   popup->AddChildView(popup->container_view());
+
+  BitpopBubbleDelegateView::CreateBubble(popup);
+
+  HWND foreground_window = ::GetForegroundWindow();
+  popup->GetWidget()->Show();
+  ::SetForegroundWindow(foreground_window);
 
   return popup;
 }
@@ -157,7 +179,7 @@ std::string ChatNotificationPopup::PopMessage() {
   std::string res = messages_.front();
   messages_.pop_front();
   if (messages_.size() == 0)
-    Close();
+    GetWidget()->Close();
   else
     static_cast<NotificationContainerView*>(container_view_)->GetLabelView()->UpdateOwnText();
   return res;
@@ -169,6 +191,12 @@ const ChatNotificationPopup::MessageContainer& ChatNotificationPopup::GetMessage
 
 void ChatNotificationPopup::ButtonPressed(views::Button* sender, const views::Event& event) {
   //DCHECK(sender == close_button_);
-  Close();
+  GetWidget()->Close();
 }
 
+gfx::Size ChatNotificationPopup::GetPreferredSize() {
+  if (this->child_count())
+    return this->child_at(0)->GetPreferredSize();
+  
+  return gfx::Size();
+}

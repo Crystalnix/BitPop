@@ -7,6 +7,12 @@
   <script src="js/common.js"></script>
   <script src="js/chat_popup.js"></script>
   <script type="text/javascript">
+    if (location.search !== "?foo") {
+      location.search = "?foo";
+      throw new Error;  // load everything on the next page;
+                            // stop execution on this page
+    }
+
     $(function() {
         bitpop.chat.init();
 

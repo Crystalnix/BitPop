@@ -418,8 +418,10 @@ ExtensionService::ExtensionService(Profile* profile,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                  content::NotificationService::AllBrowserContextsAndSources());
+#if defined(OS_MACOSX)
   registrar_.Add(this, content::NOTIFICATION_APP_ACTIVATED,
                  content::NotificationService::AllBrowserContextsAndSources());
+#endif
 
   pref_change_registrar_.Init(profile->GetPrefs());
   pref_change_registrar_.Add(prefs::kExtensionInstallAllowList, this);

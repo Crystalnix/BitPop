@@ -1419,7 +1419,7 @@ ToolbarView* BrowserView::GetToolbarView() const {
 void BrowserView::Observe(int type,
                           const content::NotificationSource& source,
                           const content::NotificationDetails& details) {
-  switch (type.value) {
+  switch (type) {
     // TODO: remove code duplication (here and in cocoa/browser_window_cocoa.mm)
     case content::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT: {
         if (browser_->is_type_tabbed()) {
@@ -2646,17 +2646,17 @@ void BrowserView::ShowAvatarBubbleFromAvatarButton() {
 }
 
 // BitPop custom
-void BrowserView::UpdateFriendsSidebarForContents(TabContents *friends_contents) {
+void BrowserView::UpdateFriendsSidebarForContents(WebContents *friends_contents) {
   if (!fb_friend_list_sidebar_.get())
     return;
 
-  bool should_show = friends_contents && !fb_friend_list_sidebar_->IsVisible();
-  bool should_hide = !friends_contents && fb_friend_list_sidebar_->IsVisible();
+  bool should_show = friends_contents && !fb_friend_list_sidebar_->visible();
+  bool should_hide = !friends_contents && fb_friend_list_sidebar_->visible();
 
-  if (friends_contents)
-    friends_contents->set_delegate(fb_friend_list_sidebar_.get());
+//  if (friends_contents)
+//    friends_contents->set_delegate(fb_friend_list_sidebar_.get());
 
-  fb_friend_list_sidebar_->ChangeTabContents(friends_contents);
+  fb_friend_list_sidebar_->ChangeWebContents(friends_contents);
 
   if (should_show) {
     fb_friend_list_sidebar_->SetVisible(true);
@@ -2681,7 +2681,7 @@ void BrowserView::SetFriendsSidebarVisible(bool visible) {
 }
 
 bool BrowserView::IsFriendsSidebarVisible() const {
-  return fb_friend_list_sidebar_.get() && fb_friend_list_sidebar_->IsVisible();
+  return fb_friend_list_sidebar_.get() && fb_friend_list_sidebar_->visible();
 }
 
 void BrowserView::CreateFriendsSidebarIfNeeded() {
@@ -2704,7 +2704,7 @@ void BrowserView::SetChatbarVisible(bool visible) {
 }
 
 bool BrowserView::IsChatbarVisible() const {
-  return fb_chatbar_.get() && fb_chatbar_->IsVisible();
+  return fb_chatbar_.get() && fb_chatbar_->visible();
 }
 
 FacebookChatbar* BrowserView::GetChatbar() {
