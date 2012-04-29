@@ -148,7 +148,7 @@ be available for now. -->
         BitPop
       </message>
       <message name="IDS_SHORT_PRODUCT_NAME" desc="The Chrome application short name.">
-        Chromium
+        BitPop
       </message>
       <message name="IDS_SXS_SHORTCUT_NAME" desc="The Chrome short cut name for SxS channel">
         BitPop
@@ -278,7 +278,7 @@ be available for now. -->
         Welcome to BitPop
       </message>
       <message name="IDS_NTP4_INTRO_MESSAGE" desc="Message explaning the navigation bar at the bottom of the new NTP.">
-        Chromium's New Tab page has been remodeled. Switch between sections by clicking these labels. Chromium will remember your preference for next time.
+        BitPop's New Tab page has been remodeled. Switch between sections by clicking these labels. BitPop will remember your preference for next time.
       </message>
       <if expr="not pp_ifdef('chromeos')">
         <message name="IDS_EXTERNAL_PROTOCOL_INFORMATION" desc="General information about what Chrome is trying to do when opening this external protocol">
@@ -309,16 +309,16 @@ be available for now. -->
       </if>
       <if expr="pp_ifdef('use_titlecase')">
         <message name="IDS_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND" desc="In Title Case: The checkbox in the status tray context menu that controls whether chrome keeps running in the background after the last window is closed">
-          Let Chromium Run In The Background
+          Let BitPop Run In The Background
         </message>
       </if>
       <if expr="not pp_ifdef('use_titlecase')">
         <message name="IDS_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND" desc="The checkbox in the status tray context menu that controls whether chrome keeps running in the background after the last window is closed">
-          Let Chromium run in the background
+          Let BitPop run in the background
         </message>
       </if>
       <message name="IDS_OPTIONS_BACKGROUND_ENABLE_BACKGROUND_MODE" desc="The label of the check-box that enables background mode">
-        Continue running background apps when Chromium is closed
+        Continue running background apps when BitPop is closed
       </message>
       <message name="IDS_CANT_WRITE_USER_DIRECTORY_SUMMARY" desc="Summary of problem displayed in dialog when we can't create a directory for this user.">
 BitPop cannot read and write to its data directory:
@@ -405,7 +405,7 @@ BitPop is unable to recover your settings.
         You do not have appropriate rights for system-level install. Try running the installer again as Administrator.
       </message>
       <message name="IDS_INSTALL_NO_PRODUCTS_TO_UPDATE" desc="Error displayed if the installer is not provided one or more products to install/update.">
-        No installation of Chromium or Chromium Frame found to update.
+        No installation of BitPop or BitPop Frame found to update.
       </message>
       <message name="IDS_INSTALL_APP_CONFLICT" desc="Error displayed if installation fails due to another existing application.">
         A conflict with another installed application has been detected.
@@ -493,49 +493,49 @@ BitPop is unable to recover your settings.
       </message>
       <!-- Page Info bubble -->
       <message name="IDS_PAGE_INFO_INTERNAL_PAGE" desc="Message to display in the page info bubble when the page you are on is a chrome:// page or about:something.">
-        You are viewing a secure Chromium page.
+        You are viewing a secure BitPop page.
       </message>
       <!-- Print Preview -->
       <message name="IDS_PRINT_PREVIEW_NO_PLUGIN" desc="Message to display when the PDF viewer is missing.">
-        Chromium does not include the PDF viewer which is required for Print Preview to function.
+        BitPop does not include the PDF viewer which is required for Print Preview to function.
       </message>
 
       <!-- Download Shelf Items -->
       <message name="IDS_DOWNLOAD_STATUS_CRX_INSTALL_RUNNING"
                desc="Message shown when a CRX has been downloaded and is being unpacked.">
-        Adding to Chromium...
+        Adding to BitPop...
       </message>
 
       <!-- Remove in-progress downloads confirmation dialog -->
       <message name="IDS_SINGLE_DOWNLOAD_REMOVE_CONFIRM_WARNING" desc="Title of the dialog asking for user confirmation to close the browser when one download is in-progress.">
-        Do you want to exit Chromium with a download in progress?
+        Do you want to exit BitPop with a download in progress?
       </message>
       <message name="IDS_MULTIPLE_DOWNLOADS_REMOVE_CONFIRM_WARNING" desc="Title of the dialog asking for user confirmation to close the browser when multiple downloads are in-progress.">
-        Do you want to exit Chromium with <ph name="DOWNLOAD_COUNT">$1<ex>3</ex></ph> downloads in progress?
+        Do you want to exit BitPop with <ph name="DOWNLOAD_COUNT">$1<ex>3</ex></ph> downloads in progress?
       </message>
       <message name="IDS_SINGLE_DOWNLOAD_REMOVE_CONFIRM_EXPLANATION" desc="Explanation of the dialog asking for user confirmation to close the browser when one download is in-progress.">
-        If you close Chromium now, this download will be canceled.
+        If you close BitPop now, this download will be canceled.
       </message>
       <message name="IDS_MULTIPLE_DOWNLOADS_REMOVE_CONFIRM_EXPLANATION" desc="Explanation of the dialog asking for user confirmation to close the browser when multiple downloads are in-progress.">
-        If you close Chromium now, these downloads will be canceled.
+        If you close BitPop now, these downloads will be canceled.
       </message>
 
       <!-- "Create application shortcuts" dialog -->
       <if expr="is_posix and not is_macosx">
         <message name="IDS_CREATE_SHORTCUTS_ERROR_LABEL" desc="Contents of the main label in the error dialog box when creating an application shortcut failed.">
-          Chromium cannot create an application shortcut because it cannot determine the current desktop environment.
+          BitPop cannot create an application shortcut because it cannot determine the current desktop environment.
         </message>
       </if>
 
       <!-- Autolaunch infobar -->
       <message name="IDS_AUTO_LAUNCH_INFOBAR_TEXT" desc="The text to show in the infobar when Chromium was automatically launched on startup">
-        Chromium is configured to automatically launch when you start your computer.
+        BitPop is configured to automatically launch when you start your computer.
       </message>
 
       <!-- about:flags -->
       <if expr="not pp_ifdef('chromeos')">
         <message name="IDS_FLAGS_RELAUNCH_NOTICE" desc="Notifies the user that he needs to relaunch Chromium. Shown next to a button that says 'Relaunch Now'.">
-          Your changes will take effect the next time you relaunch Chromium.
+          Your changes will take effect the next time you relaunch BitPop.
         </message>
       </if>
       <if expr="pp_ifdef('chromeos')">
@@ -546,72 +546,72 @@ BitPop is unable to recover your settings.
 
       <!-- Obsolete System info bar -->
       <message name="IDS_SYSTEM_OBSOLETE_MESSAGE" desc="Message shown when your OS is no longer supported. This messages is followed by a 'Learn more' link.">
-         Chromium is no longer updating because your operating system is obsolete.
+         BitPop is no longer updating because your operating system is obsolete.
       </message>
 
       <!-- About Chrome View -->
       <message name="IDS_UPGRADE_AVAILABLE" desc="Status label: A new version of Chromium is available">
-        A new version of Chromium is available
+        A new version of BitPop is available
       </message>
       <message name="IDS_UPGRADE_SUCCESSFUL" desc="Status label: Successfully upgraded">
-        Chromium has been updated to <ph name="VERSION">$1<ex>0.1.131</ex></ph>
+        BitPop has been updated to <ph name="VERSION">$1<ex>0.1.131</ex></ph>
       </message>
       <message name="IDS_UPGRADE_SUCCESSFUL_NOVERSION" desc="Status label: Successfully upgraded">
-        Chromium has been updated
+        BitPop has been updated
       </message>
       <message name="IDS_UPGRADE_SUCCESSFUL_RELAUNCH" desc="Status label: Successfully updated">
-        Relaunch Chromium to finish updating
+        Relaunch BitPop to finish updating
       </message>
       <if expr="pp_ifdef('chromeos')">
         <message name="IDS_UPGRADE_ALREADY_UP_TO_DATE" desc="Status label: Already up to date">
-          Chromium is up to date
+          BitPop is up to date
         </message>
       </if>
       <if expr="not pp_ifdef('chromeos')">
         <message name="IDS_UPGRADE_ALREADY_UP_TO_DATE" desc="Status label: Already up to date">
-          Chromium is up to date (<ph name="VERSION">$1<ex>0.1.131</ex></ph>)
+          BitPop is up to date (<ph name="VERSION">$1<ex>0.1.131</ex></ph>)
         </message>
       </if>
 
       <!-- Extension/App install prompt -->
       <message name="IDS_EXTENSION_INLINE_INSTALL_PROMPT_TITLE" desc="Titlebar of the extension or app inline installation prompt window">
-        Add to Chromium
+        Add to BitPop
       </message>
 
       <!-- Extension alerts. -->
       <message name="IDS_EXTENSION_ALERT_ITEM_EXTERNAL" desc="A statement that an external extension has been newly installed. End users have no idea what an 'external' extension is, so we simply call them extensions.">
-The extension "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>" has been added to Chromium.
+The extension "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>" has been added to BitPop.
 '''
       </message>
 
       <!-- Extension installed bubble -->
       <message name="IDS_EXTENSION_INSTALLED_HEADING" desc="First line in the content area of the extension installed bubble. Instructs that the extension was installed.">
-        <ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph> has been added to Chromium.
+        <ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph> has been added to BitPop.
       </message>
 
       <!-- chrome://settings/extensions page -->
       <message name="IDS_EXTENSIONS_INCOGNITO_WARNING" desc="Warns the user that Chromium cannot prevent extensions from recording history in incognito mode. Displayed in extensions management UI after an extension is selected to be run in incognito mode.">
-        <ph name="BEGIN_BOLD">&lt;b&gt;</ph>Warning:<ph name="END_BOLD">&lt;/b&gt;</ph> Chromium cannot prevent extensions from recording your browsing history. To disable this extension in incognito mode, unselect this option.
+        <ph name="BEGIN_BOLD">&lt;b&gt;</ph>Warning:<ph name="END_BOLD">&lt;/b&gt;</ph> BitPop cannot prevent extensions from recording your browsing history. To disable this extension in incognito mode, unselect this option.
       </message>
       <message name="IDS_EXTENSIONS_UNINSTALL" desc="The link for uninstalling extensions.">
-        Remove from Chromium
+        Remove from BitPop
       </message>
 
       <!-- Wrench menu -->
       <if expr="pp_ifdef('use_titlecase') and not pp_ifdef('chromeos')">
         <message name="IDS_ABOUT" desc="In Title Case: The text label of the About Chrome menu item">
-          About &amp;Chromium
+          About &amp;BitPop
         </message>
         <message name="IDS_UPDATE_NOW" desc="In Title Case: The text label of the Update Chrome Now menu item">
-          Update &amp;Chromium
+          Update &amp;BitPop
         </message>
       </if>
       <if expr="not pp_ifdef('use_titlecase') and not pp_ifdef('chromeos')">
         <message name="IDS_ABOUT" desc="The text label of the About Chrome menu item">
-          About &amp;Chromium
+          About &amp;BitPop
         </message>
         <message name="IDS_UPDATE_NOW" desc="The text label of the Update Chrome Now menu item">
-          Update &amp;Chromium
+          Update &amp;BitPop
         </message>
       </if>
       <if expr="pp_ifdef('chromeos')">
@@ -663,11 +663,11 @@ The extension "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>" has been
 
       <!-- Sync promo page chrome://syncpromo -->
       <message name="IDS_SYNC_PROMO_V_LEARN_MORE" desc="Learn more link at the bottom of the sync promo.">
-        See <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>more benefits<ph name="END_LINK">&lt;/a&gt;</ph> of signing in to Chromium.
+        See <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>more benefits<ph name="END_LINK">&lt;/a&gt;</ph> of signing in to BitPop.
       </message>
 
       <message name="IDS_AUTOFILL_OPTIONS_POPUP" desc="The value of the Autofill options menu entry.">
-        Chromium Autofill settings
+        BitPop Autofill settings
       </message>
     </messages>
   </release>
