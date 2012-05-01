@@ -16,7 +16,7 @@ public:
 
   virtual void ClearNotification();
   virtual void NotifyUnreadMessagesWithLastUser(int num_unread,
-                                                std::string user_id);
+                                                const std::string& user_id);
 };
 
 #endif  // CHROME_BROWSER_FACEBOK_CHAT_FACEBOOK_BITPOP_NOTIFICATION_H_

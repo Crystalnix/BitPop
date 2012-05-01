@@ -7,6 +7,9 @@ bitpop.FriendsSidebar = (function() {
     VIEW_WIDTH: 185,
     UPDATE_LIST_INTERVAL: 1 * 60 * 1000,  // 1 min
 
+    STATUSES_MAP: [ 'active', 'idle', 'offline', 'error' ],
+    STATUS_HEADS: [ 'Online', 'Idle', 'Offline', 'Error' ],
+
     END: null
   };
 
@@ -46,6 +49,37 @@ bitpop.FriendsSidebar = (function() {
     else
       // instant move to login screen, dontAnimate = true
       self.slideToLoginView(true);
+
+    $('.toggle-button').live('click', function(e) {
+      var curClass = $(this).hasClass('toggle-on') ? 'toggle-on' : 'toggle-off';
+      var curStatus = $(this).parent().hasClass('head-active') ? 'active' :
+          ($(this).parent().hasClass('head-idle') ? 'idle' :
+           ($(this).parent().hasClass('head-offline') ? 'offline' : 'error'));
+
+      if (curClass == 'toggle-on') {
+        $(this).removeClass('toggle-on');
+        $(this).addClass('toggle-off');
+        if ($(this).parent().hasClass('head-on'))
+          $(this).parent().removeClass('head-on');
+        $(this).parent().addClass('head-off');
+
+        $(this).html('&#9654');
+        //$(this).parent().next().hide();
+        localStorage[curStatus+'_state'] = 'off';
+      } else {
+        $(this).removeClass('toggle-off');
+        $(this).addClass('toggle-on');
+
+        if ($(this).parent().hasClass('head-off'))
+          $(this).parent().removeClass('head-off');
+        $(this).parent().addClass('head-on');
+
+        $(this).html('&#9660');
+        //$(this).parent().next().show();
+        localStorage[curStatus+'_state'] = 'on';
+      }
+      return false;
+    });
 
     //console.log('onReady 2 END');
   });
@@ -122,7 +156,7 @@ bitpop.FriendsSidebar = (function() {
   };
 
   self.sortFriendList = function() {
-    var statusesMap = [ 'active', 'idle', 'offline', 'error'];
+    var statusesMap = localConst.STATUSES_MAP;
     self.friendList.sort(function (a,b) {
         if (a.online_presence == b.online_presence)
           return alphabetical(a.name, b.name);
@@ -134,8 +168,10 @@ bitpop.FriendsSidebar = (function() {
   };
 
   self.generateFriendsDOM = function() {
-    var wrap = $('<ul></ul>');
-    for (var i = 0; i < self.friendList.length; i++) {
+
+    function createEntry(index) {
+      var i = index;
+
       if (!self.friendList[i].excluded) {
         var li = $('<li><span class="leftSide"><img alt="" />' +
             self.friendList[i].name + '</span></li>');
@@ -149,11 +185,55 @@ bitpop.FriendsSidebar = (function() {
             self.friendList[i].online_presence != 'offline')
           li.append('<img class="status" src="images/' +
               self.friendList[i].online_presence + '.png" alt="" />');
-        wrap.append(li);
+        return li;
       }
+      return null;
     }
 
-    return wrap;
+    var s = $('#search').val();
+    if (s.length === 0) {
+      var statusesMap = localConst.STATUSES_MAP;
+      var i = 0;
+      
+      var content = $('<div class="list-wrap"></div>');
+      for (var statusIndex = 0; statusIndex < statusesMap.length && i < self.friendList.length; statusIndex++) {
+        var status = statusesMap[statusIndex];
+
+        var status_wrap = $('<ul class="list list-' + status + '"></ul>');
+        while (i < self.friendList.length &&
+               self.friendList[i].online_presence === status) {
+          var entry = createEntry(i);
+          if (entry) { status_wrap.append(entry); }
+
+          i++;
+        }
+        if (status_wrap.children().length !== 0) {
+          var toggle_state = localStorage[status+'_state'] || 'on';
+          var status_head = $('<div class="head head-' + status + 
+                                ' head-' + toggle_state + '">' +
+                                '<div class="toggle-button toggle-' + toggle_state +
+                                  '">' +
+                                  ((toggle_state == 'on') ? '&#9660;' : '&#9654') +
+                                '</div>' +
+                              '</div>')
+            .append('<span>' + localConst.STATUS_HEADS[statusIndex] + '</span>');
+
+          content.append(status_head);
+          content.append(status_wrap);
+        }
+      }
+
+      return content;
+    } else {  // s.length !== 0
+      var wrap = $('<ul></ul>');
+      for (var i = 0; i < self.friendList.length; i++) {
+        var e = createEntry(i);
+        if (e)
+          wrap.append(e);
+      }
+      return wrap;
+    }
+    return null;
   };
 
   self.updateDOM = function() {

@@ -60,6 +60,7 @@
 #include "chrome/browser/ui/views/default_search_view.h"
 #include "chrome/browser/ui/views/download/download_in_progress_dialog_view.h"
 #include "chrome/browser/ui/views/facebook_chat/chatbar_view.h"
+#include "chrome/browser/ui/views/facebook_chat/facebook_bitpop_notification_win.h"
 #include "chrome/browser/ui/views/facebook_chat/friends_sidebar_view.h"
 #include "chrome/browser/ui/views/frame/browser_view_layout.h"
 #include "chrome/browser/ui/views/frame/browser_window_move_observer.h"
@@ -1715,6 +1716,8 @@ views::ClientView* BrowserView::CreateClientView(views::Widget* widget) {
 void BrowserView::OnWidgetActivationChanged(views::Widget* widget,
                                             bool active) {
   if (active) {
+    browser_->profile()->GetFacebookBitpopNotification()->ClearNotification();
+
     BrowserList::SetLastActive(browser_.get());
     browser_->OnWindowActivated();
   }

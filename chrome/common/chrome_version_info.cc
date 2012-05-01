@@ -98,7 +98,7 @@ std::string VersionInfo::CreateVersionString() const {
   std::string current_version;
   if (is_valid()) {
     current_version += Version();
-#if !defined(GOOGLE_CHROME_BUILD)
+#if 0
     current_version += " (";
     current_version += l10n_util::GetStringUTF8(IDS_ABOUT_VERSION_UNOFFICIAL);
     current_version += " ";

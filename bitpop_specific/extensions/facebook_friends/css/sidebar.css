@@ -151,3 +151,29 @@ span.leftSide {
   margin-right: 5px;
   text-align: left;
 }
+
+.head {
+  background-color: #ccc;
+  padding: 3px 4px;
+  color: black;
+  border-bottom: solid 1px white;
+}
+
+.head .toggle-button {
+  font-size: small;
+  cursor: pointer;
+  display: inline-block;
+  width: 15px;
+}
+
+.head span {
+  font-weight: bold;
+}
+
+.head-on + ul {
+  display: block;
+}
+
+.head-off + ul {
+  display: none;
+}

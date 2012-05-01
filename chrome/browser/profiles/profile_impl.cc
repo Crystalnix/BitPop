@@ -110,7 +110,7 @@
 #include "webkit/quota/quota_manager.h"
 
 #if defined(OS_WIN)
-#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#include "chrome/browser/ui/views/facebook_chat/facebook_bitpop_notification_win.h"
 #include "chrome/browser/instant/promo_counter.h"
 #include "chrome/browser/password_manager/password_store_win.h"
 #include "chrome/installer/util/install_util.h"
@@ -268,7 +268,8 @@ ProfileImpl::ProfileImpl(const FilePath& path,
       session_restore_enabled_(false),
       should_show_additional_extensions_(false),
 #if defined(OS_WIN)
-      facebook_bitpop_notification_(new FacebookBitpopNotification())
+      ALLOW_THIS_IN_INITIALIZER_LIST(facebook_bitpop_notification_(
+            new FacebookBitpopNotificationWin(this)))
 #elif defined(OS_MACOSX)
       ALLOW_THIS_IN_INITIALIZER_LIST(facebook_bitpop_notification_(
             new FacebookBitpopNotificationMac(this)))

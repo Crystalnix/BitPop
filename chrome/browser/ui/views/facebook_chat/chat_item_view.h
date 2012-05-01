@@ -68,6 +68,9 @@ public:
   gfx::Rect RectForNotificationPopup();
 
   const FacebookChatItem* GetModel() const;
+
+  SkBitmap* notification_icon() const { return notification_icon_; }
+
 protected:
   // Overridden from views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;

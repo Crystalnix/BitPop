@@ -104,7 +104,7 @@ void FacebookBitpopNotificationMac::ClearNotification() {
 }
 
 void FacebookBitpopNotificationMac::NotifyUnreadMessagesWithLastUser(
-    int num_unread, std::string user_id) {
+    int num_unread, const std::string& user_id) {
   if (![NSApp isActive]) {
     delegate_ = new FacebookProfileImageFetcherDelegate(profile_, user_id,
         num_unread);

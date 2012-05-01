@@ -16,6 +16,6 @@ void FacebookBitpopNotification::ClearNotification() {
 }
 
 void FacebookBitpopNotification::NotifyUnreadMessagesWithLastUser(int num_unread,
-                                                std::string user_id) {
+                                                const std::string& user_id) {
   //NOTIMPLEMENTED();
 }

@@ -23,7 +23,7 @@ public:
 
   virtual void ClearNotification() OVERRIDE;
   virtual void NotifyUnreadMessagesWithLastUser(int num_unread,
-                                                std::string user_id) OVERRIDE;
+                                                const std::string& user_id) OVERRIDE;
 
 private:
   Profile* const profile_;
