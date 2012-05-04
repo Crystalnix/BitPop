@@ -311,13 +311,11 @@ const FacebookChatItem* ChatItemView::GetModel() const {
 void ChatItemView::OnWidgetClosing(views::Widget* bubble) {
   if (chat_popup_ && bubble == chat_popup_->GetWidget()) {
     bubble->RemoveObserver(this);
-    delete chat_popup_;
     chat_popup_ = NULL;
   }
 
   if (notification_popup_ && bubble == notification_popup_->GetWidget()) {
     bubble->RemoveObserver(this);
-    delete notification_popup_;
     notification_popup_ = NULL;
 
     for (TimerList::iterator it = timers_.begin(); it != timers_.end(); it++) {

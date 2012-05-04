@@ -65,6 +65,10 @@ bitpop.chat = (function() {
       (function initChat() {
         appendFromLocalStorage();
 
+        setTimeout(function() {
+            $('#msg').focus();
+          }, 200);
+
         var myUid = chrome.extension.getBackgroundPage().myUid;
         var msgText = localStorage.getItem('msg:' + myUid + ':' + friendUid);
         if (msgText) {
