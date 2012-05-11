@@ -37,9 +37,35 @@ ul li {
   /*background-color: white;
   */
   cursor: pointer;
+  position: relative;
 }
 ul li:first-child { border-top: 1px solid #ccc }
 ul li:hover { background-color: #eee; }
+
+ul li.online-fav-divider {
+  background: url(../images/more_online_bgr.png) left center no-repeat;
+  text-align: center;
+  color: #888;
+  font-weight: bold;
+  font-size: 10px;
+}
+ul li.online-fav-divider:hover {
+  background-color: none;
+}
+ul li .fav-img {
+  display: none;
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  top: 8px;
+  right: 20px;
+}
+
+ul li.fav > .fav-img, ul li:hover > .fav-img {
+  display: inline;
+  vertical-align: middle;
+}
+
 ul li img {
   vertical-align:middle;
   width: 25px;

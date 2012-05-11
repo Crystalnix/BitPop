@@ -67,6 +67,8 @@ bitpop.chat = (function() {
 
         setTimeout(function() {
             $('#msg').focus();
+            // scroll the chat div to bottom
+             $('#chat').scrollTop($('#chat')[0].scrollHeight);
           }, 200);
 
         var myUid = chrome.extension.getBackgroundPage().myUid;

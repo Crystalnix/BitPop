@@ -118,7 +118,10 @@ function showNotifications(data) {
       for (var i = 0; i < data.length; i++) {
         if (data[i].uid && data[i].uid.toString() == uid.toString() && data[i].name)
           return data[i].name;
-        if (page_data[i].page_id && page_data[i].page_id.toString() == uid.toString() && page_data[i].name)
+        if (page_data && page_data[i] &&
+            page_data[i].page_id &&
+            page_data[i].page_id.toString() == uid.toString() &&
+            page_data[i].name)
           return page_data[i].name;
       }
       return 'Unknown sender';
@@ -128,8 +131,11 @@ function showNotifications(data) {
       for (var i = 0; i < data.length; i++) {
         if (data[i].uid && data[i].uid.toString() == uid.toString() && data[i].pic_square)
           return data[i].pic_square;
-        if (page_data[i].page_id && page_data[i].page_id.toString() == uid.toString() && page_data[i].pic_square)
-          return page_data[i].pic_square; 
+        if (page_data && page_data[i] &&
+            page_data[i].page_id &&
+            page_data[i].page_id.toString() == uid.toString() &&
+            page_data[i].pic_square)
+          return page_data[i].pic_square;
       }
       return 'https://graph.facebook.com/1/picture?type=square';
     }

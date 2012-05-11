@@ -2,7 +2,7 @@ var friendList = null;
 var myUid = null;
 var statuses = {};
 var inboxData = null;
-
+var inboxFetchInterval = null;
 //chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
 //  { type: 'observe',
 //    extensionId: chrome.i18n.getMessage('@@extension_id')
@@ -27,12 +27,19 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
   if (request.type == 'myUidAvailable') {
       myUid = request.myUid;
       sendInboxRequest();
+      // request inbox again in 30 minutes
+      if (inboxFetchInterval) { clearInterval(inboxFetchInterval); }
+      inboxFetchInterval = setInterval(function() {
+        if (myUid && friendList) { sendInboxRequest(); }
+       }, 1000 * 60 * 30);
   } else if (request.type == 'friendListReceived') {
     friendList = request.data;
   } else if (request.type == 'loggedOut') {
+    if (inboxFetchInterval) { clearInterval(inboxFetchInterval); inboxFetchInterval = null; }
     statuses = {};
     friendList = null;
   } else if (request.type == 'wentOffline') {
+    if (inboxFetchInterval) { clearInterval(inboxFetchInterval); inboxFetchInterval = null; }
     statuses = {};
     friendList = null;
   } else if (request.type == 'userStatusChanged') {
@@ -98,6 +105,7 @@ function sendInboxRequest() {
     function (response) {
       inboxData = response.data;
       replaceLocalHistory(inboxData);
+      chrome.extension.sendRequest({ type: 'inboxDataAvailable' });
     }
   );
 }

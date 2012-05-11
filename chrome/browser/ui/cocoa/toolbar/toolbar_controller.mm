@@ -29,6 +29,7 @@
 #import "chrome/browser/ui/cocoa/extensions/browser_actions_container_view.h"
 #import "chrome/browser/ui/cocoa/extensions/browser_actions_controller.h"
 #import "chrome/browser/ui/cocoa/gradient_button_cell.h"
+#import "chrome/browser/ui/cocoa/hover_image_button.h"
 #import "chrome/browser/ui/cocoa/image_button_cell.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
@@ -56,6 +57,7 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -138,6 +140,13 @@ class NotificationBridge : public content::NotificationObserver {
 };
 
 }  // namespace ToolbarControllerInternal
+
+
+@interface ToolbarController()
+
+- (void)wikiSearch;
+
+@end
 
 @implementation ToolbarController
 
@@ -326,6 +335,35 @@ class NotificationBridge : public content::NotificationObserver {
   view_id_util::SetID(wrenchButton_, VIEW_ID_APP_MENU);
 
   [self addAccessibilityDescriptions];
+
+  // BitPop custom
+  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+
+  mybubWikipediaSearch_.reset([[HoverImageButton alloc] initWithFrame:
+    NSMakeRect(150, 4, 83, 17)]);
+
+  [mybubWikipediaSearch_ setTarget:self];
+  [mybubWikipediaSearch_ setAction:@selector(wikiSearch)];
+
+  NSImage* wikiDefault = rb.GetNativeImageNamed(IDR_MYBUB_WIKIPEDIA);
+  NSImage* wikiHover = rb.GetNativeImageNamed(IDR_MYBUB_WIKIPEDIA_H);
+  NSImage* wikiPressed = rb.GetNativeImageNamed(IDR_MYBUB_WIKIPEDIA_P);
+
+  [mybubWikipediaSearch_ setDefaultImage: wikiDefault];
+  [mybubWikipediaSearch_ setHoverImage: wikiHover];
+  [mybubWikipediaSearch_ setPressedImage: wikiPressed];
+
+  [mybubWikipediaSearch_ setDefaultOpacity:1.0];
+  [mybubWikipediaSearch_ setHoverOpacity:1.0];
+  [mybubWikipediaSearch_ setPressedOpacity:1.0];
+
+  [mybubWikipediaSearch_ setBordered:NO];
+
+  view_id_util::SetID(mybubWikipediaSearch_.get(), VIEW_ID_MYBUB_WIKIPEDIA);
+
+  [locationBar_ setNextKeyView: mybubWikipediaSearch_.get()];
+
+  [[self view] addSubview: mybubWikipediaSearch_.get()];
 }
 
 - (void)addAccessibilityDescriptions {
@@ -794,6 +832,22 @@ class NotificationBridge : public content::NotificationObserver {
 // (URLDropTargetController protocol)
 - (BOOL)isUnsupportedDropData:(id<NSDraggingInfo>)info {
   return drag_util::IsUnsupportedDropData(profile_, info);
+}
+
+- (void)wikiSearch {
+  OmniboxView *omnibox_view = browser_->window()->GetLocationBar()->location_entry();
+
+  if (!omnibox_view->model()->CurrentTextIsURL()) {
+    const string16 userText = omnibox_view->GetText();
+    string16 encodedTerms = net::EscapeQueryParamValueUTF8(userText, true);
+    std::string wikiURL = "http://mybub.com/mod/knowledge/";
+    std::string finalURL = wikiURL + UTF16ToUTF8(encodedTerms);
+
+    GURL url(finalURL);
+    OpenURLParams params(
+        url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false);
+    browser_->GetSelectedWebContents()->OpenURL(params);
+  }
 }
 
 @end

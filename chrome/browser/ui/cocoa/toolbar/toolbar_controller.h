@@ -23,6 +23,7 @@ class Browser;
 @class BrowserActionsContainerView;
 @class BrowserActionsController;
 class CommandUpdater;
+@class HoverImageButton;
 class LocationBarViewMac;
 @class MenuButton;
 class Profile;
@@ -94,6 +95,8 @@ class NotificationBridge;
   // hoveredButton_ is required to have an NSCell that responds to
   // setMouseInside:animate:.
   NSButton* hoveredButton_;
+
+  scoped_nsobject<HoverImageButton> mybubWikipediaSearch_;
 }
 
 // Initialize the toolbar and register for command updates. The profile is

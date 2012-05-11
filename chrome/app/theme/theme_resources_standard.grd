@@ -185,6 +185,10 @@
       <include name="IDR_FACEBOOK_CHAT_ACTION" file="facebook_chat/facebook_chat_action.png" type="BINDATA" />
       <include name="IDR_FACEBOOK_CHAT_ACTION_H" file="facebook_chat/facebook_chat_action_h.png" type="BINDATA" />
       <include name="IDR_FACEBOOK_CHAT_ACTION_P" file="facebook_chat/facebook_chat_action_p.png" type="BINDATA" />
+
+      <include name="IDR_MYBUB_WIKIPEDIA" file="mybub/wiki.png" type="BINDATA" />
+      <include name="IDR_MYBUB_WIKIPEDIA_H" file="mybub/wiki_h.png" type="BINDATA" />
+      <include name="IDR_MYBUB_WIKIPEDIA_P" file="mybub/wiki_p.png" type="BINDATA" />
     </includes>
   </release>
 </grit>

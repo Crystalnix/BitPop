@@ -79,6 +79,8 @@ enum ViewID {
   // The facebook chatbar view
   VIEW_ID_FACEBOOK_CHATBAR,
 
+  VIEW_ID_MYBUB_WIKIPEDIA,
+
   // Used in chrome/browser/ui/gtk/view_id_util_browsertests.cc
   // If you add new ids, make sure the above test passes.
   VIEW_ID_PREDEFINED_COUNT
