@@ -5,6 +5,7 @@
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 
 #include <algorithm>
+#include <math.h>
 
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
@@ -31,6 +32,7 @@
 #import "chrome/browser/ui/cocoa/gradient_button_cell.h"
 #import "chrome/browser/ui/cocoa/hover_image_button.h"
 #import "chrome/browser/ui/cocoa/image_button_cell.h"
+#import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #import "chrome/browser/ui/cocoa/menu_button.h"
@@ -82,6 +84,7 @@ const CGFloat kAnimationDuration = 0.2;
 // The amount of left padding that the wrench menu should have.
 const CGFloat kWrenchMenuLeftPadding = 3.0;
 
+const CGFloat kMybubButtonsSpacing = 3.0;
 }  // namespace
 
 @interface ToolbarController()
@@ -142,9 +145,34 @@ class NotificationBridge : public content::NotificationObserver {
 }  // namespace ToolbarControllerInternal
 
 
+@interface MybubSearchButton : HoverImageButton
+@end
+
+@implementation MybubSearchButton
+
+- (BOOL)canBecomeKeyView {
+  return YES;
+}
+
+- (void) resetCursorRects
+{
+    NSCursor* aCursor = [NSCursor pointingHandCursor];
+
+    [super resetCursorRects];
+    [self addCursorRect: [self bounds]
+          cursor: aCursor];
+    [aCursor setOnMouseEntered:YES];
+}
+@end
+
 @interface ToolbarController()
 
+- (void)createMybubViews;
+- (void)mybubSearch:(NSString*)uriSuffix;
 - (void)wikiSearch;
+- (void)youtubeSearch;
+- (void)reviewsSearch;
+- (void)newsSearch;
 
 @end
 
@@ -336,34 +364,7 @@ class NotificationBridge : public content::NotificationObserver {
 
   [self addAccessibilityDescriptions];
 
-  // BitPop custom
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-
-  mybubWikipediaSearch_.reset([[HoverImageButton alloc] initWithFrame:
-    NSMakeRect(150, 4, 83, 17)]);
-
-  [mybubWikipediaSearch_ setTarget:self];
-  [mybubWikipediaSearch_ setAction:@selector(wikiSearch)];
-
-  NSImage* wikiDefault = rb.GetNativeImageNamed(IDR_MYBUB_WIKIPEDIA);
-  NSImage* wikiHover = rb.GetNativeImageNamed(IDR_MYBUB_WIKIPEDIA_H);
-  NSImage* wikiPressed = rb.GetNativeImageNamed(IDR_MYBUB_WIKIPEDIA_P);
-
-  [mybubWikipediaSearch_ setDefaultImage: wikiDefault];
-  [mybubWikipediaSearch_ setHoverImage: wikiHover];
-  [mybubWikipediaSearch_ setPressedImage: wikiPressed];
-
-  [mybubWikipediaSearch_ setDefaultOpacity:1.0];
-  [mybubWikipediaSearch_ setHoverOpacity:1.0];
-  [mybubWikipediaSearch_ setPressedOpacity:1.0];
-
-  [mybubWikipediaSearch_ setBordered:NO];
-
-  view_id_util::SetID(mybubWikipediaSearch_.get(), VIEW_ID_MYBUB_WIKIPEDIA);
-
-  [locationBar_ setNextKeyView: mybubWikipediaSearch_.get()];
-
-  [[self view] addSubview: mybubWikipediaSearch_.get()];
+  [self createMybubViews];
 }
 
 - (void)addAccessibilityDescriptions {
@@ -834,20 +835,198 @@ class NotificationBridge : public content::NotificationObserver {
   return drag_util::IsUnsupportedDropData(profile_, info);
 }
 
-- (void)wikiSearch {
+- (void)createMybubViews {
+  CGFloat buttonXOrigin = 0;
+
+  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+
+  // wikipedia button
+  NSImage* wikiDefault = rb.GetNativeImageNamed(IDR_MYBUB_WIKIPEDIA);
+  NSImage* wikiHover = rb.GetNativeImageNamed(IDR_MYBUB_WIKIPEDIA_H);
+  NSImageRep* wikiRep = [[wikiDefault representations] objectAtIndex:0];
+  NSSize wikiSize = NSMakeSize([wikiRep pixelsWide], [wikiRep pixelsHigh]);
+
+  mybubWikipediaSearch_.reset([[MybubSearchButton alloc] initWithFrame:
+    NSMakeRect(buttonXOrigin, 0, wikiSize.width, wikiSize.height)]);
+
+  [mybubWikipediaSearch_ setTarget:self];
+  [mybubWikipediaSearch_ setAction:@selector(wikiSearch)];
+
+  [mybubWikipediaSearch_ setDefaultImage: wikiDefault];
+  [mybubWikipediaSearch_ setHoverImage: wikiHover];
+  [mybubWikipediaSearch_ setPressedImage: wikiDefault];
+
+  [mybubWikipediaSearch_ setDefaultOpacity:1.0];
+  [mybubWikipediaSearch_ setHoverOpacity:1.0];
+  [mybubWikipediaSearch_ setPressedOpacity:1.0];
+
+  [mybubWikipediaSearch_ setBordered:NO];
+
+  view_id_util::SetID(mybubWikipediaSearch_.get(), VIEW_ID_MYBUB_WIKIPEDIA);
+
+  buttonXOrigin += wikiSize.width + kMybubButtonsSpacing;
+
+  // youtube button
+  NSImage* ytDefault = rb.GetNativeImageNamed(IDR_MYBUB_YOUTUBE);
+  NSImage* ytHover = rb.GetNativeImageNamed(IDR_MYBUB_YOUTUBE_H);
+  NSImageRep* ytRep = [[ytDefault representations] objectAtIndex:0];
+  NSSize ytSize = NSMakeSize([ytRep pixelsWide], [ytRep pixelsHigh]);
+
+  mybubYoutubeSearch_.reset([[MybubSearchButton alloc] initWithFrame:
+    NSMakeRect(buttonXOrigin, 0, ytSize.width, ytSize.height)]);
+
+  [mybubYoutubeSearch_ setTarget:self];
+  [mybubYoutubeSearch_ setAction:@selector(youtubeSearch)];
+
+  [mybubYoutubeSearch_ setDefaultImage: ytDefault];
+  [mybubYoutubeSearch_ setHoverImage: ytHover];
+  [mybubYoutubeSearch_ setPressedImage: ytDefault];
+
+  [mybubYoutubeSearch_ setDefaultOpacity:1.0];
+  [mybubYoutubeSearch_ setHoverOpacity:1.0];
+  [mybubYoutubeSearch_ setPressedOpacity:1.0];
+
+  [mybubYoutubeSearch_ setBordered:NO];
+
+  view_id_util::SetID(mybubYoutubeSearch_.get(), VIEW_ID_MYBUB_YOUTUBE);
+
+  buttonXOrigin += ytSize.width + kMybubButtonsSpacing;
+
+  // reviews button
+  NSImage* reviewsDefault = rb.GetNativeImageNamed(IDR_MYBUB_REVIEWS);
+  NSImage* reviewsHover = rb.GetNativeImageNamed(IDR_MYBUB_REVIEWS_H);
+  NSImageRep* reviewsRep = [[reviewsDefault representations] objectAtIndex:0];
+  NSSize reviewsSize = NSMakeSize([reviewsRep pixelsWide], [reviewsRep pixelsHigh]);
+
+  mybubReviewsSearch_.reset([[MybubSearchButton alloc] initWithFrame:
+    NSMakeRect(buttonXOrigin, 0, reviewsSize.width, reviewsSize.height)]);
+
+  [mybubReviewsSearch_ setTarget:self];
+  [mybubReviewsSearch_ setAction:@selector(reviewsSearch)];
+
+  [mybubReviewsSearch_ setDefaultImage: reviewsDefault];
+  [mybubReviewsSearch_ setHoverImage: reviewsHover];
+  [mybubReviewsSearch_ setPressedImage: reviewsDefault];
+
+  [mybubReviewsSearch_ setDefaultOpacity:1.0];
+  [mybubReviewsSearch_ setHoverOpacity:1.0];
+  [mybubReviewsSearch_ setPressedOpacity:1.0];
+
+  [mybubReviewsSearch_ setBordered:NO];
+
+  view_id_util::SetID(mybubReviewsSearch_.get(), VIEW_ID_MYBUB_REVIEWS);
+
+  buttonXOrigin += reviewsSize.width + kMybubButtonsSpacing;
+
+  // news button
+  NSImage* newsDefault = rb.GetNativeImageNamed(IDR_MYBUB_NEWS);
+  NSImage* newsHover = rb.GetNativeImageNamed(IDR_MYBUB_NEWS_H);
+  NSImageRep* newsRep = [[newsDefault representations] objectAtIndex:0];
+  NSSize newsSize = NSMakeSize([newsRep pixelsWide], [newsRep pixelsHigh]);
+
+  mybubNewsSearch_.reset([[MybubSearchButton alloc] initWithFrame:
+    NSMakeRect(buttonXOrigin, 0, newsSize.width, newsSize.height)]);
+
+  [mybubNewsSearch_ setTarget:self];
+  [mybubNewsSearch_ setAction:@selector(newsSearch)];
+
+  [mybubNewsSearch_ setDefaultImage: newsDefault];
+  [mybubNewsSearch_ setHoverImage: newsHover];
+  [mybubNewsSearch_ setPressedImage: newsDefault];
+
+  [mybubNewsSearch_ setDefaultOpacity:1.0];
+  [mybubNewsSearch_ setHoverOpacity:1.0];
+  [mybubNewsSearch_ setPressedOpacity:1.0];
+
+  [mybubNewsSearch_ setBordered:NO];
+
+  view_id_util::SetID(mybubNewsSearch_.get(), VIEW_ID_MYBUB_NEWS);
+  // end of buttons init
+
+  //[locationBar_ setNextKeyView: mybubWikipediaSearch_.get()];
+
+  // Note that height should be the same for all button resource images
+  mybubSearchContainer_.reset([[NSView alloc] initWithFrame:
+      NSMakeRect(0, 0, buttonXOrigin + newsSize.width, newsSize.height)]);
+
+  [[mybubWikipediaSearch_ cell] setImageScaling:NSImageScaleAxesIndependently];
+  [[mybubYoutubeSearch_ cell] setImageScaling:NSImageScaleAxesIndependently];
+  [[mybubReviewsSearch_ cell] setImageScaling:NSImageScaleAxesIndependently];
+  [[mybubNewsSearch_ cell] setImageScaling:NSImageScaleAxesIndependently];
+
+  [mybubSearchContainer_ addSubview: mybubWikipediaSearch_.get()];
+  [mybubSearchContainer_ addSubview: mybubYoutubeSearch_.get()];
+  [mybubSearchContainer_ addSubview: mybubReviewsSearch_.get()];
+  [mybubSearchContainer_ addSubview: mybubNewsSearch_.get()];
+
+  [[self view] addSubview: mybubSearchContainer_.get()];
+
+  [mybubSearchContainer_ setHidden: YES];
+
+  locationBarView_->SetMybubDummyWidth([mybubSearchContainer_ bounds].size.width); // =)
+}
+
+- (void)positionMybubSearch {
+  OmniboxView *omnibox_view = browser_->window()->GetLocationBar()->location_entry();
+
+  static BOOL prevVal = omnibox_view->model()->CurrentTextIsURL();
+
+  BOOL curVal = omnibox_view->model()->CurrentTextIsURL();
+  if (curVal != prevVal) {
+    [mybubSearchContainer_ setHidden: curVal];
+    prevVal = curVal;
+  }
+
+  AutocompleteTextFieldCell* actfCell = [locationBar_ cell];
+  LocationBarDecoration* lbd = locationBarView_->GetMybubDummyDecoration();
+  NSRect frameInCell = [actfCell frameForDecoration: lbd
+                                            inFrame: [locationBar_ bounds]];
+  if (!NSEqualRects(frameInCell, NSZeroRect)) {
+    NSRect locFrame = [locationBar_ frame];
+    NSRect mybubBounds = [mybubSearchContainer_ bounds];
+    // pixel aligning
+    NSPoint newOrigin = NSMakePoint(locFrame.origin.x + frameInCell.origin.x,
+        locFrame.origin.y + (locFrame.size.height - mybubBounds.size.height) / 2);
+    NSPoint tempPoint = [[self view] convertPointToBase:newOrigin];
+    tempPoint.x = floor(tempPoint.x);
+    tempPoint.y = ceil(tempPoint.y);
+    newOrigin = [[self view] convertPointFromBase:tempPoint];
+
+    [mybubSearchContainer_ setFrameOrigin: newOrigin];
+  }
+}
+
+- (void)mybubSearch:(NSString*)uriSuffix {
   OmniboxView *omnibox_view = browser_->window()->GetLocationBar()->location_entry();
 
   if (!omnibox_view->model()->CurrentTextIsURL()) {
     const string16 userText = omnibox_view->GetText();
     string16 encodedTerms = net::EscapeQueryParamValueUTF8(userText, true);
-    std::string wikiURL = "http://mybub.com/mod/knowledge/";
-    std::string finalURL = wikiURL + UTF16ToUTF8(encodedTerms);
+    std::string mybubURL = std::string("http://mybub.com/mod/") +
+        base::SysNSStringToUTF8(uriSuffix) + std::string("/");
+    std::string finalURL = mybubURL + UTF16ToUTF8(encodedTerms);
 
     GURL url(finalURL);
     OpenURLParams params(
         url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false);
     browser_->GetSelectedWebContents()->OpenURL(params);
   }
+}
+
+- (void)wikiSearch {
+  [self mybubSearch:@"knowledge"];
+}
+
+- (void)youtubeSearch {
+  [self mybubSearch:@"visual"];
+}
+
+- (void)reviewsSearch {
+  [self mybubSearch:@"reviews"];
+}
+
+- (void)newsSearch {
+  [self mybubSearch:@"news"];
 }
 
 @end

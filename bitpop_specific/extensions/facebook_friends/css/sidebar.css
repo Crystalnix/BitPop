@@ -61,9 +61,14 @@ ul li .fav-img {
   right: 20px;
 }
 
-ul li.fav > .fav-img, ul li:hover > .fav-img {
-  display: inline;
-  vertical-align: middle;
+ul li.fav:hover > .fav-img {
+  display: block;
+  background: url(../images/fav12.png) left top no-repeat;
+}
+
+ul li:hover > .fav-img {
+  display: block;
+  background: url(../images/fav12-unsel.png) left top no-repeat;
 }
 
 ul li img {
@@ -76,6 +81,9 @@ ul li img.status {
   width: 12px;
   height: 12px;
   margin-left: 3px;
+  position: absolute;
+  right: 0;
+  top: 8px;
 }
 span.leftSide {
   display: inline-block;
@@ -84,6 +92,10 @@ span.leftSide {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+ul li:hover span.leftSide {
+  width: 145px;
+}
+
 #unavail { float: left; padding-left: 3px }
 #login { float:right; padding-right: 3px }
 #logout { float:right; clear: right; }

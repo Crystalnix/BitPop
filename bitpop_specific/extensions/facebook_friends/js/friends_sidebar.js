@@ -107,19 +107,19 @@ bitpop.FriendsSidebar = (function() {
 
       if (parent.hasClass('fav')) {
         parent.removeClass('fav');
-        $(this).stop(true, true);
-        this.style.display = 'none';
+        // $(this).stop(true, true);
+        // this.style.display = 'none';
 
-        // hide fav icon until next hovering
-        parent.bind('mouseout', function() {
-          selfImg.style.display = '';
-          parent.unbind('mouseout');  // eq to $(this).unbind
-        });
+        // // hide fav icon until next hovering
+        // parent.bind('mouseout', function() {
+        //   selfImg.style.display = '';
+        //   parent.unbind('mouseout');  // eq to $(this).unbind
+        // });
 
         if (lsKey) { localStorage.removeItem(lsKey); }
       } else {
         parent.addClass('fav');
-        $(this).stop(true,true).fadeOut('fast').fadeIn('fast'); // blink fast
+        // $(this).stop(true,true).fadeOut('fast').fadeIn('fast'); // blink fast
         if (lsKey) { localStorage[lsKey] = 'yes'; }
       }
 
@@ -218,7 +218,7 @@ bitpop.FriendsSidebar = (function() {
 
         $('img', li).attr('src', self.friendList[i].pic_square);
 
-        li.append('<img class="fav-img" src="images/fav16.png" alt="" />');
+        li.append('<div class="fav-img"></div>');
 
         if (myUid && localStorage[myUid + ':' + self.friendList[i].uid + ':fav'])
           li.addClass('fav');

@@ -96,7 +96,11 @@ class NotificationBridge;
   // setMouseInside:animate:.
   NSButton* hoveredButton_;
 
+  scoped_nsobject<NSView> mybubSearchContainer_;
   scoped_nsobject<HoverImageButton> mybubWikipediaSearch_;
+  scoped_nsobject<HoverImageButton> mybubYoutubeSearch_;
+  scoped_nsobject<HoverImageButton> mybubReviewsSearch_;
+  scoped_nsobject<HoverImageButton> mybubNewsSearch_;
 }
 
 // Initialize the toolbar and register for command updates. The profile is
@@ -160,6 +164,8 @@ class NotificationBridge;
 
 // Returns the wrench button.
 - (NSView*)wrenchButton;
+
+- (void)positionMybubSearch;
 
 @end
 

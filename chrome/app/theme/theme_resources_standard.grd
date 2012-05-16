@@ -188,7 +188,12 @@
 
       <include name="IDR_MYBUB_WIKIPEDIA" file="mybub/wiki.png" type="BINDATA" />
       <include name="IDR_MYBUB_WIKIPEDIA_H" file="mybub/wiki_h.png" type="BINDATA" />
-      <include name="IDR_MYBUB_WIKIPEDIA_P" file="mybub/wiki_p.png" type="BINDATA" />
+      <include name="IDR_MYBUB_YOUTUBE" file="mybub/youtube.png" type="BINDATA" />
+      <include name="IDR_MYBUB_YOUTUBE_H" file="mybub/youtube_h.png" type="BINDATA" />
+      <include name="IDR_MYBUB_REVIEWS" file="mybub/reviews.png" type="BINDATA" />
+      <include name="IDR_MYBUB_REVIEWS_H" file="mybub/reviews_h.png" type="BINDATA" />
+      <include name="IDR_MYBUB_NEWS" file="mybub/news.png" type="BINDATA" />
+      <include name="IDR_MYBUB_NEWS_H" file="mybub/news_h.png" type="BINDATA" />
     </includes>
   </release>
 </grit>
