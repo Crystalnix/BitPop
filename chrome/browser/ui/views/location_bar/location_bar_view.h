@@ -40,6 +40,7 @@ class GURL;
 class InstantController;
 class KeywordHintView;
 class LocationIconView;
+class MybubSearchView;
 class PageActionWithBadgeView;
 class SelectedKeywordView;
 class StarView;
@@ -408,6 +409,9 @@ class LocationBarView : public LocationBar,
 
   // The star.
   StarView* star_view_;
+
+  // mybub search
+  MybubSearchView* mybub_search_view_;
 
   // The mode that dictates how the bar shows.
   Mode mode_;

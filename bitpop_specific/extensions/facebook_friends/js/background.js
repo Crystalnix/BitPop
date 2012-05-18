@@ -242,57 +242,14 @@ function addFbFunctionality( )
 
                               sendResponseToContentScript(sendResponse, data,
                                                           "ok", response);
-
-                            // fbfeed.shouldEnableFbJewelsAndChat(
-                            //     data.userId,
-                            //     sender.tab.incognito,
-                            //     function(a) {
-                            //         sendResponseToContentScript(sendResponse, data, "ok", a);
-                            //     });
                             });
                         }
                     }
-                    // else if(data.action === 'getPreference') {
-                    //     rmPreferences.getPreference(data.prefName,
-                    //         function(a) {
-                    //             sendResponseToContentScript(sendResponse, data, "ok", a);
-                    //         }
-                    //     );
-                    // }
                 } catch(e) {
                     sendResponseToContentScript(sendResponse, data, "error", e);
                 }
             }
         });
-
-    // add listener to prefs/quite mode change
-    // rmPreferences.notifications.onChanged.addListener(
-    //     function(a) {
-    //         var checkJewelAndChat = false;
-    //         if('quiteMode' in a) {
-    //             checkJewelAndChat = true;
-    //         } else if('prefName' in a) {
-    //             if(a.prefName == 'rockmelt.always_show_fb_chat' ||
-    //                a.prefName == 'rockmelt.always_show_fb_jewels') {
-    //                checkJewelAndChat = true;
-    //             }
-    //         }
-    //         if(checkJewelAndChat) {
-    //             // send notifications to the content script of all fb.com tabs
-    //             for(var i in fbTabs) {
-    //                 if(fbTabs[i].injected) {
-    //                     var id = parseInt(i);
-    //                     chrome.tabs.sendRequest(
-    //                         id,
-    //                         a,
-    //                         function(responseData) {
-    //                         // ignore nothing to do here.
-    //                         });
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     );
 }
 
 function onSuppressChatChanged() {

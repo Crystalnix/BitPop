@@ -34,6 +34,7 @@
 #include "chrome/browser/ui/views/location_bar/ev_bubble_view.h"
 #include "chrome/browser/ui/views/location_bar/keyword_hint_view.h"
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
+#include "chrome/browser/ui/views/location_bar/mybub_search_view.h"
 #include "chrome/browser/ui/views/location_bar/page_action_image_view.h"
 #include "chrome/browser/ui/views/location_bar/page_action_with_badge_view.h"
 #include "chrome/browser/ui/views/location_bar/selected_keyword_view.h"
@@ -229,6 +230,10 @@ void LocationBarView::Init() {
     AddChildView(star_view_);
     star_view_->SetVisible(true);
   }
+
+  mybub_search_view_ = new MybubSearchView(location_entry_.get(), browser_);
+  AddChildView(mybub_search_view_);
+  mybub_search_view_->SetVisible(false);
 
   // Initialize the location entry. We do this to avoid a black flash which is
   // visible when the location entry has just been initialized.
@@ -524,6 +529,8 @@ void LocationBarView::Layout() {
         kItemEditPadding);
   }
 
+  mybub_search_view_->SetVisible(!location_entry_->model()->CurrentTextIsURL());
+
   if (star_view_ && star_view_->visible())
     entry_width -= star_view_->GetPreferredSize().width() + kItemPadding;
   for (PageActionViews::const_iterator i(page_action_views_.begin());
@@ -531,6 +538,10 @@ void LocationBarView::Layout() {
     if ((*i)->visible())
       entry_width -= ((*i)->GetPreferredSize().width() + kItemPadding);
   }
+
+  if (mybub_search_view_->visible())
+    entry_width -= mybub_search_view_->GetPreferredSize().width() + kItemPadding;
+
   for (ContentSettingViews::const_iterator i(content_setting_views_.begin());
        i != content_setting_views_.end(); ++i) {
     if ((*i)->visible())
@@ -602,6 +613,15 @@ void LocationBarView::Layout() {
       offset -= kItemPadding;
     }
   }
+
+  if (mybub_search_view_->visible()) {
+    int mybub_search_width = mybub_search_view_->GetPreferredSize().width();
+    int mybub_search_height = mybub_search_view_->GetPreferredSize().height();
+    offset -= mybub_search_width;
+    mybub_search_view_->SetPosition(gfx::Point(offset, location_y + (location_height - mybub_search_height) / 2));
+    offset -= kItemPadding;
+  }
+
   // We use a reverse_iterator here because we're laying out the views from
   // right to left but in the vector they're ordered left to right.
   for (ContentSettingViews::const_reverse_iterator
