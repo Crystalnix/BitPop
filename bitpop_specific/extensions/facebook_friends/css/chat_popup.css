@@ -12,11 +12,11 @@ p {
   margin: 5px;
 }
 #head {
-  background-color: #6D84B4;
-  border: 1px solig rgba(0, 39, 121, .76);
-  border-bottom: none;
-  border-top-left-radius: 1px;
-  border-top-right-radius: 1px;
+  background-image: -webkit-gradient( linear, left bottom, left top, color-stop(0.1, #6D83B3), color-stop(0.54, #7798DB) );
+  /*border: 1px solid rgba(0, 39, 121, .76);
+  border-bottom: none;*/
+  border-top-left-radius: 3px;
+  border-top-right-radius: 3px;
   color: white;
   font-weight: bold;
   line-height: 18px;
@@ -25,6 +25,7 @@ p {
   text-overflow: ellipsis;
   white-space: nowrap;
   padding: 3px 7px 4px;
+  cursor: pointer;
 }
 #msgForm {
   position: absolute;
@@ -37,7 +38,7 @@ p {
 }
 #msg {
   border: 1px solid #ccc;
-  width: 160px;
+  width: 168px;
   outline: none;
   float: left;
   clear: left;
@@ -52,13 +53,20 @@ p {
   line-height: 0;
   visibility: hidden;
 }
-
+/*
 #chat {
   margin: 0;
   padding: 0;
   height: 282px;
   overflow-y: auto;
   overflow-x: hidden;
+}
+*/
+.box, .box .antiscroll-inner {
+  width: 203px;
+  height: 282px;
+  margin: 0;
+  padding: 0;
 }
 
 #chat .error-message {
@@ -102,9 +110,12 @@ p {
   border-bottom: solid 1px silver;
 }
 #pastePageLink {
-  width: 25px;
-  height: 30px;
+  width: 16px;
+  height: 16px;
   float: right;
   clear:right;
+  background: url(../images/paste-uri-icon.png) left top no-repeat;
+  border: none;
+  cursor: pointer;
 }
 

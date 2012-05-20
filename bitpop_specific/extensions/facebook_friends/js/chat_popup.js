@@ -84,6 +84,9 @@ bitpop.chat = (function() {
         if (request.type == 'newMessage') {
           if (friendUid == request.from) {
             appendMessage(bitpop.preprocessMessageText(request.body), new Date(), false);
+            if ($('.box-wrap').data('antiscroll')) {
+              $('.box-wrap').data('antiscroll').rebuild();
+            }
           }
         }
       });
@@ -111,6 +114,10 @@ bitpop.chat = (function() {
         appendMessage(escMsg, new Date(), true);
 
         setMsgValue('');
+
+        if ($('.box-wrap').data('antiscroll')) {
+          $('.box-wrap').data('antiscroll').rebuild();
+        }
       }
 
       $('#msgForm').submit(function () {
@@ -140,6 +147,7 @@ bitpop.chat = (function() {
         });
       });
 
+      
       $(window).unload(function () {
         var myUid = chrome.extension.getBackgroundPage().myUid;
         localStorage.setItem('msg:' + myUid + ':' + friendUid, $('#msg').val());

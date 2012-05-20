@@ -2,8 +2,11 @@
 <html>
 <head>
   <link rel="stylesheet" href="css/chat_popup.css" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="css/antiscroll.css" type="text/css" media="screen" charset="utf-8">
   <script src='js/jquery.min.js'></script>
   <script src="js/autolink-min.js"></script>
+  <script src="js/jquery-mousewheel.js"></script>
+  <script src="js/antiscroll.js"></script>
   <script src="js/common.js"></script>
   <script src="js/chat_popup.js"></script>
   <script type="text/javascript">
@@ -16,8 +19,14 @@
     $(function() {
         bitpop.chat.init();
 
+        $('.box-wrap').antiscroll();
+
         function setHeadTextCallback(uname) {
           $('#head').text(uname);
+        }
+
+        function setHeadURL(profile_url) {
+          $('#head').click(function() { chrome.tabs.create({ url: profile_url }); });
         }
 
         chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
@@ -25,6 +34,7 @@
             uid: window.location.hash.substr(1) },
           function (response) {
             setHeadTextCallback(response.uname);
+            setHeadURL(response.profile_url);
           }
         );
     });
@@ -33,11 +43,18 @@
 <body>
   <div id="head">
   </div>
-  <div id="chat">
+  <div class="box-wrap antiscroll-wrap">
+    <div class="box">
+      <div class="antiscroll-inner">
+        <div class="box-inner" id="chat">
+        </div>
+      </div>
+    </div>
   </div>
+
   <form id="msgForm">
     <input type="text" id="msg" autofocus />
-    <input id="pastePageLink" type="button" value="+" />
+    <input id="pastePageLink" type="button" value="" />
     <input type="submit" style="visibility:hidden; height: 0" />
   </form>
 </body>

@@ -394,7 +394,7 @@ bitpop.FacebookController = (function() {
   function getFriendList() {
     if (localStorage.accessToken && localStorage.myUid) {
       var friendListQuery =
-            'SELECT uid, name, pic_square, online_presence' +
+            'SELECT uid, name, pic_square, online_presence, profile_url' +
             ' FROM user WHERE uid IN' +
             ' (SELECT uid2 FROM friend WHERE uid1=me())';
       fqlRequest(friendListQuery, onFriendListReceived);
@@ -672,13 +672,15 @@ bitpop.FacebookController = (function() {
     console.assert(friendListCached);
 
     var uname = "Unknown";
+    var profile_url = "http://facebook.com";
     for (var i = 0; i < friendListCached.length; i++) {
       if (friendListCached[i].uid == request.uid) {
         uname = friendListCached[i].name;
+        profile_url = friendListCached[i].profile_url;
         break;
       }
     }
-    sendResponse({ uname: uname });
+    sendResponse({ uname: uname, profile_url: profile_url });
   }
 
   function sendNotLoggedInResponse(sendResponse) {
