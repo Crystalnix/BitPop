@@ -10,10 +10,14 @@
 
 @class FacebookChatItemController;
 
+@interface FacebookChatItemCell : NSButtonCell
+@end
+
 @interface FacebookChatItemButton : NSButton {
   IBOutlet FacebookChatItemController* controller_;
 }
 
+@property (nonatomic,assign,readonly) FacebookChatItemController* fbController;
 @end
 
 #endif // CHROME_BROWSER_UI_COCOA_FACEBOOK_CHAT_FACEBOOK_CHAT_ITEM_BUTTON_H_

@@ -37,8 +37,8 @@
 #include "ui/gfx/skia_util.h"
 
 namespace {
-  const int kButtonWidth = 163;
-  const int kButtonHeight = 23;
+  const int kButtonWidth = 178;
+  const int kButtonHeight = 36;
 
   const CGFloat kNotificationWindowAnchorPointXOffset = 13.0;
 
@@ -154,6 +154,7 @@ void TileImageInt(SkCanvas& canvas, const SkBitmap& bitmap,
             options: (NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow )
             owner:self userInfo:nil]);
   [button_ addTrackingArea:buttonTrackingArea_];
+  [button_ setFrame:[[self view] bounds]];
 }
 
 - (void)dealloc {

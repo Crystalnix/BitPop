@@ -46,7 +46,7 @@
 					<object class="NSButton" id="425937433">
 						<reference key="NSNextResponder" ref="1005"/>
 						<int key="NSvFlags">268</int>
-						<string key="NSFrame">{{142, 4}, {16, 16}}</string>
+						<string key="NSFrame">{{151, 11}, {16, 16}}</string>
 						<reference key="NSSuperview" ref="1005"/>
 						<bool key="NSEnabled">YES</bool>
 						<object class="NSButtonCell" key="NSCell" id="857770296">
@@ -70,11 +70,11 @@
 					<object class="NSButton" id="496238373">
 						<reference key="NSNextResponder" ref="1005"/>
 						<int key="NSvFlags">256</int>
-						<string key="NSFrame">{{0, -1}, {158, 25}}</string>
+						<string key="NSFrame">{{10, 5}, {158, 25}}</string>
 						<reference key="NSSuperview" ref="1005"/>
 						<bool key="NSEnabled">YES</bool>
 						<object class="NSButtonCell" key="NSCell" id="1051724268">
-							<int key="NSCellFlags">-2080244224</int>
+							<int key="NSCellFlags">67239424</int>
 							<int key="NSCellFlags2">131072</int>
 							<string key="NSContents"/>
 							<reference key="NSSupport" ref="26"/>
@@ -88,7 +88,7 @@
 						</object>
 					</object>
 				</object>
-				<string key="NSFrameSize">{163, 23}</string>
+				<string key="NSFrameSize">{178, 36}</string>
 				<reference key="NSSuperview"/>
 				<string key="NSClassName">NSView</string>
 			</object>
@@ -224,15 +224,21 @@
 					<string>2.CustomClassName</string>
 					<string>2.IBPluginDependency</string>
 					<string>2.IBViewBoundsToFrameTransform</string>
+					<string>2.IBViewIntegration.shadowBlurRadius</string>
+					<string>2.IBViewIntegration.shadowColor</string>
+					<string>2.IBViewIntegration.shadowOffsetHeight</string>
+					<string>2.IBViewIntegration.shadowOffsetWidth</string>
+					<string>3.CustomClassName</string>
 					<string>3.IBPluginDependency</string>
 					<string>4.CustomClassName</string>
 					<string>4.IBPluginDependency</string>
 					<string>4.IBViewBoundsToFrameTransform</string>
+					<string>4.showNotes</string>
 					<string>5.IBPluginDependency</string>
 				</object>
 				<object class="NSMutableArray" key="dict.values">
 					<bool key="EncodedWithXMLCoder">YES</bool>
-					<string>{{643, 645}, {163, 23}}</string>
+					<string>{{643, 632}, {178, 36}}</string>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
 					<object class="NSColor">
 						<int key="NSColorSpace">1</int>
@@ -243,14 +249,23 @@
 					<string>FacebookChatItemButton</string>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
 					<object class="NSAffineTransform">
-						<bytes key="NSTransformStruct">P4AAAL+AAAAAAAAAwnwAAA</bytes>
+						<bytes key="NSTransformStruct">P4AAAL+AAADBcAAAwbgAAA</bytes>
 					</object>
+					<real value="7"/>
+					<object class="NSColor">
+						<int key="NSColorSpace">3</int>
+						<bytes key="NSWhite">MAA</bytes>
+					</object>
+					<real value="0.0"/>
+					<real value="4"/>
+					<string>FacebookChatItemCell</string>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
 					<string>HoverCloseButton</string>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
 					<object class="NSAffineTransform">
-						<bytes key="NSTransformStruct">P4AAAL+AAABDDQAAwYgAAA</bytes>
+						<bytes key="NSTransformStruct">P4AAAL+AAABDFwAAwggAAA</bytes>
 					</object>
+					<boolean value="YES"/>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
 				</object>
 			</object>
@@ -270,7 +285,7 @@
 				</object>
 			</object>
 			<nil key="sourceID"/>
-			<int key="maxID">14</int>
+			<int key="maxID">18</int>
 		</object>
 		<object class="IBClassDescriber" key="IBDocument.Classes">
 			<object class="NSMutableArray" key="referencedPartialClassDescriptionsV3.1+">
@@ -289,10 +304,15 @@
 							<string key="candidateClassName">FacebookChatItemController</string>
 						</object>
 					</object>
-					<object class="IBClassDescriptionSource" key="sourceIdentifier">
+					<object class="IBClassDescriptionSource" key="sourceIdentifier" id="439872573">
 						<string key="majorKey">IBDocumentRelativeSource</string>
 						<string key="minorKey">../../browser/ui/cocoa/facebook_chat/facebook_chat_item_button.h</string>
 					</object>
+				</object>
+				<object class="IBPartialClassDescription">
+					<string key="className">FacebookChatItemCell</string>
+					<string key="superclassName">NSButtonCell</string>
+					<reference key="sourceIdentifier" ref="439872573"/>
 				</object>
 				<object class="IBPartialClassDescription">
 					<string key="className">FacebookChatItemController</string>

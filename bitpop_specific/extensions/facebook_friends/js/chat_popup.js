@@ -68,8 +68,8 @@ bitpop.chat = (function() {
         setTimeout(function() {
             $('#msg').focus();
             // scroll the chat div to bottom
-             $('#chat').scrollTop($('#chat')[0].scrollHeight);
-          }, 200);
+            scrollToBottom();
+        }, 200);
 
         var myUid = chrome.extension.getBackgroundPage().myUid;
         var msgText = localStorage.getItem('msg:' + myUid + ':' + friendUid);
@@ -91,6 +91,10 @@ bitpop.chat = (function() {
         }
       });
 
+      function scrollToBottom() {
+         $('.antiscroll-inner').scrollTop($('.box-inner').height())
+      }
+
       function onMessageSent(response, meMsg, uidTo) {
         if (response.error) {
           $('#chat').append(
@@ -99,7 +103,7 @@ bitpop.chat = (function() {
           lastMessageUid = 0;
 
           // scroll the chat div to bottom
-          $('#chat').scrollTop($('#chat')[0].scrollHeight);
+          scrollToBottom();
 
           return;
         }
@@ -189,7 +193,7 @@ bitpop.chat = (function() {
     lastMessageUid = uid;
 
     // scroll the chat div to bottom
-    $('#chat').scrollTop($('#chat')[0].scrollHeight);
+    scrollToBottom();
 
     lastMessageTime = msgDate;
   }

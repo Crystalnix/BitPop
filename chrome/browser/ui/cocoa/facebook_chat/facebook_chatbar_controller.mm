@@ -20,11 +20,11 @@ const NSSize kHoverCloseButtonDefaultSize = { 16, 16 };
 
 const NSUInteger kMaxChatItemCount = 10;
 
-const NSInteger kChatItemPadding = 10;
+const NSInteger kChatItemPadding = 2;
 
-const NSInteger kChatItemsPaddingRight = 30;
+const NSInteger kChatItemsPaddingRight = 25;
 
-const NSInteger kChatbarHeight = 30;
+const NSInteger kChatbarHeight = 36;
 
 const NSTimeInterval kAddAnimationDuration = 0.6;
 const NSTimeInterval kRemoveAnimationDuration = 0.6;

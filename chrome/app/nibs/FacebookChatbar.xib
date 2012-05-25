@@ -46,7 +46,7 @@
 					<object class="NSButton" id="848575523">
 						<reference key="NSNextResponder" ref="1005"/>
 						<int key="NSvFlags">257</int>
-						<string key="NSFrame">{{457, 7}, {16, 16}}</string>
+						<string key="NSFrame">{{459, 11}, {16, 16}}</string>
 						<reference key="NSSuperview" ref="1005"/>
 						<bool key="NSEnabled">YES</bool>
 						<object class="NSButtonCell" key="NSCell" id="878480746">
@@ -68,7 +68,7 @@
 						</object>
 					</object>
 				</object>
-				<string key="NSFrameSize">{480, 30}</string>
+				<string key="NSFrameSize">{485, 36}</string>
 				<reference key="NSSuperview"/>
 				<string key="NSClassName">FacebookChatbarView</string>
 			</object>
@@ -168,14 +168,14 @@
 				</object>
 				<object class="NSMutableArray" key="dict.values">
 					<bool key="EncodedWithXMLCoder">YES</bool>
-					<string>{{733, 488}, {480, 30}}</string>
+					<string>{{822, 632}, {485, 36}}</string>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
 					<string>{628, 654}</string>
 					<string>{{217, 442}, {480, 272}}</string>
 					<string>HoverCloseButton</string>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
 					<object class="NSAffineTransform">
-						<bytes key="NSTransformStruct">P4AAAL+AAABD5IAAwjQAAA</bytes>
+						<bytes key="NSTransformStruct">P4AAAL+AAABD5YAAweAAAA</bytes>
 					</object>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>
 				</object>

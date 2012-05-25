@@ -15,7 +15,7 @@ namespace fb_bubble {
 
 const CGFloat kBubbleArrowHeight = 8.0;
 const CGFloat kBubbleArrowWidth = 15.0;
-const CGFloat kBubbleCornerRadius = 4.0;
+const CGFloat kBubbleCornerRadius = 6.0;
 const CGFloat kBubbleArrowXOffset = kBubbleArrowWidth + kBubbleCornerRadius;
 
 enum BubbleArrowLocation {
