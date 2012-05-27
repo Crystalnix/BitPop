@@ -15,12 +15,12 @@
 - (void)appendBezierPathWithRoundedRectangle:(NSRect)aRect topLeftRadius:(float)topLeftRadius topRightRadius:(float)topRightRadius bottomLeftRadius:(float)bottomLeftRadius bottomRightRadius:(float)bottomRightRadius arrowLocation:(fb_bubble::BubbleArrowLocation)arrowLocation
 {
 	float maxRadius =  0.5 * MIN(aRect.size.width, aRect.size.height);
-	
-	topLeftRadius = MIN(topLeftRadius, maxRadius);	
-	bottomLeftRadius = MIN(bottomLeftRadius, maxRadius);	
-	topRightRadius = MIN(topRightRadius, maxRadius);	
-	bottomRightRadius = MIN(bottomRightRadius, maxRadius);	
-	
+
+	topLeftRadius = MIN(topLeftRadius, maxRadius);
+	bottomLeftRadius = MIN(bottomLeftRadius, maxRadius);
+	topRightRadius = MIN(topRightRadius, maxRadius);
+	bottomRightRadius = MIN(bottomRightRadius, maxRadius);
+
     NSPoint topMid = NSMakePoint(NSMidX(aRect), NSMaxY(aRect));
     NSPoint leftMid = NSMakePoint(NSMinX(aRect), NSMidY(aRect));
     NSPoint rightMid = NSMakePoint(NSMaxX(aRect), NSMidY(aRect));
@@ -29,12 +29,12 @@
     NSPoint topRight = NSMakePoint(NSMaxX(aRect), NSMaxY(aRect));
     NSPoint bottomRight = NSMakePoint(NSMaxX(aRect), NSMinY(aRect));
 	NSPoint bottomLeft = NSMakePoint(NSMinX(aRect), NSMinY(aRect));
-	
+
     [self moveToPoint:topMid];
-    [self appendBezierPathWithArcFromPoint:topLeft 
+    [self appendBezierPathWithArcFromPoint:topLeft
                                    toPoint:leftMid
                                     radius:topLeftRadius];
-	
+
   CGFloat dX = (arrowLocation == fb_bubble::kBottomLeft) ?
       fb_bubble::kBubbleArrowXOffset :
       NSMidX(aRect) - NSMinX(aRect) - fb_bubble::kBubbleArrowWidth / 2;
@@ -45,7 +45,7 @@
 	[self appendBezierPathWithArcFromPoint:bottomLeft
 								   toPoint:arrowStart
                    radius:bottomLeftRadius];
- 
+
   [self lineToPoint:arrowStart];
   [self lineToPoint:NSMakePoint(arrowStart.x +
       fb_bubble::kBubbleArrowWidth / 2,
@@ -53,12 +53,12 @@
   [self lineToPoint:NSMakePoint(arrowStart.x +
       fb_bubble::kBubbleArrowWidth,
       arrowStart.y)];
-	
+
 	[self appendBezierPathWithArcFromPoint:bottomRight
                                    toPoint:rightMid
                                     radius:bottomRightRadius];
-	
-	[self appendBezierPathWithArcFromPoint:topRight 
+
+	[self appendBezierPathWithArcFromPoint:topRight
 								   toPoint:topMid
                                     radius:topRightRadius];
     [self closePath];
@@ -82,7 +82,7 @@
   gfx::ScopedNSGraphicsContextSaveGState scopedGState;
 
   NSRect bounds = NSInsetRect([self bounds], 0.5, 0.5);
-  
+
   bounds.size.height -= fb_bubble::kBubbleArrowHeight;
   // we will only support bottom left arrow positioning as for now
   bounds.origin.y += fb_bubble::kBubbleArrowHeight;
@@ -118,7 +118,7 @@
   // draw border showing up from bottom layer
   NSColor* borderColor = [NSColor colorWithCalibratedWhite:(100.0/255.0)
                                                      alpha:1.0];
-  
+
   [backgroundColor_ set];
   [bezier fill];
 

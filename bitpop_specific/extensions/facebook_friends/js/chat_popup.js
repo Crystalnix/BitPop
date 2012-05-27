@@ -91,10 +91,6 @@ bitpop.chat = (function() {
         }
       });
 
-      function scrollToBottom() {
-         $('.antiscroll-inner').scrollTop($('.box-inner').height())
-      }
-
       function onMessageSent(response, meMsg, uidTo) {
         if (response.error) {
           $('#chat').append(
@@ -159,6 +155,10 @@ bitpop.chat = (function() {
     }, // end of public function init
     sendInvite: sendInvite
   };
+
+  function scrollToBottom() {
+    $('.antiscroll-inner').scrollTop($('.box-inner').height())
+  }
 
   function appendMessage(msg, msgDate, me) {
     // if (!lastMessageTime || (msgDate - lastOutputTime >= 5 * 60 * 1000)) {

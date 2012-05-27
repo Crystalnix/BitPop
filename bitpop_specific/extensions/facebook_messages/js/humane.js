@@ -29,9 +29,16 @@ function humane_date(date_str){
 		[4730400000, '1 Century'], // 60*60*24*365*100*1.5
 	];
 
-	var time = ('' + date_str).replace(/-/g,"/").replace(/[TZ]/g," "),
-		dt = new Date,
-		seconds = ((dt - new Date(time) + (dt.getTimezoneOffset() * 60000)) / 1000),
+        var dateParam = null;
+        if (date_str instanceof Date) {
+          dateParam = date_str;
+        } else {
+          var time = ('' + date_str).replace(/-/g,"/").replace(/[TZ]/g," ");
+          dateParam = new Date(time);
+        }
+
+	var dt = new Date,
+		seconds = ((dt - dateParam + ((date_str instanceof Date) ? 0 : (dt.getTimezoneOffset() * 60000))) / 1000),
 		token = ' Ago',
 		i = 0,
 		format;

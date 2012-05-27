@@ -319,3 +319,8 @@ body {
 .link {
   color: black;
   cursor: hand; }
+
+.error-message {
+  font-size: 12px;
+  color: red;
+}

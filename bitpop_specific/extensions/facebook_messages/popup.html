@@ -14,7 +14,7 @@
     }
     .loading {
       position: relative;
-      width: 100%;
+      width: 350px;
       height: 200px;
       background-image: url('/images/indicator_white_large.gif');
       background-attachment:fixed;
@@ -65,14 +65,13 @@
       window.chrome.extension.getBackgroundPage().DesktopNotifications;
 
     function showError(errorMsg) {
-      // TODO: make it pretty!!!
       var newDom =
           //"<div class='empty-feed'>" +
-          "<span>" + errorMsg + "</span>";// +
+          "<span class='error-message'>" + errorMsg + "</span>";// +
           //"</div>";
       $('#feed').empty();
       $('#feed').addClass('empty-feed');
-      $('#feed').removeClass('loading');
+      $('.loading').removeClass('loading');
       $('#feed').append(newDom);
 
       appendFooter();
@@ -97,101 +96,103 @@
             "</div>");
     }
 
+    function nameByUid(uid, users) {
+      for (var i = 0; i < users.length; i++) {
+        if (users[i].uid.toString() == uid.toString())
+          return users[i].name;
+      }
+      return "{Unknown user}";
+    }
+
+    function filterMessagesByThreadId(thread_id, messages) {
+      var res = [];
+      for (var i = 0; i < messages.length; ++i) {
+        if (messages[i].thread_id == thread_id)
+          res.push(messages[i]);
+      }
+      return res;
+    }
+
+    function findResultSet(query_name, data) {
+      for (var i = 0; i < data.length; ++i) {
+        if (data[i].name == query_name)
+          return data[i].fql_result_set;
+      }
+      return null;
+    }
+
     function showMessages(data) {
       if (!myUid) {
         showError('Error. User facebook id was not retrieved.');
         return;
       }
 
-      $('#feed').removeClass('loading');
+      $('.loading').removeClass('loading');
       $('#feed').empty();
+
+      var threads = findResultSet('threads', data);
+      var users = findResultSet('users', data);
+      var messages = findResultSet('messages', data);
+
+      var messagesByThread = [];
+      for (var i = 0; i < threads.length; ++i)
+        messagesByThread.push(filterMessagesByThreadId(threads[i].thread_id, messages));
 
       var newDom = '';
 
       var footerGoToOnClick = "onclick='chrome.tabs.create({ url: \"http://www.facebook.com/messages\" })'";
-      if (data.data.length == 0) {
+      if (threads.length == 0) {
         newDom =
           "<div class='empty-feed'>" +
           "  <span>No New Messages.</span>" +
           "</div>";
 
         appendFooter();
-      } else
-        appendFooter(data.summary.unread_count);
+      } else {
+        var total_unread = 0;
+        for (var i = 0; i < threads.length; ++i)
+          total_unread += threads[i].unread;
+        appendFooter(total_unread);
+      }
 
 
-      for (var i = 0; i < Math.min(data.data.length, NUM_MESSAGES_SHOW); i++) {
-        newDom += formatFeedItem(data.data[i]);
+      for (var i = 0; i < Math.min(threads.length, NUM_MESSAGES_SHOW); i++) {
+        newDom += formatFeedItem(threads[i], users);
       }
 
       $('#feed').append(newDom);
 
       $('#feed .message').each(function() {
         $(this).click(function() {
-          var curData = ($(this).index() < data.data.length) ?
-                            data.data[$(this).index()] :
+          var curData = ($(this).index() < threads.length) ?
+                            messagesByThread[$(this).index()] :
                             null;
+
           if (curData) {
             slideToThreadView();
 
             $('#thread .loading').removeClass('loading');
             $('#thread-feed').empty();
-            $('#thread-feed').append(formatThreadItems(curData));
+            $('#thread-feed').append(formatThreadItems(curData, users));
             $('.box-wrap').data('antiscroll').rebuild();
           }
         });
       });
+
+      $('#slide-wrap').scrollLeft(0);
 
       var dn = chrome.extension.getBackgroundPage().DesktopNotifications;
       dn.threads_unseen_before = [];
       dn.start(30000);
     }
 
-    function formatFeedItem(itemData) {
-      var lastUserId = null;
-      var lastMessage = null;
-      var notMeUserId = null;
-      var notMeUserName = null;
-
-      console.assert(myUid !== null);
-
-      function setValuesDefault() {
-        lastUserId = itemData.from.id;
-        lastMessage = itemData.message;
-        if (lastUserId != myUid) {
-          notMeUserId = lastUserId;
-          notMeUserName = itemData.from.name;
-        } else {
-          for (var i = 0; i < itemData.to.data.length; i++) {
-            if (itemData.to.data[i].id != myUid) {
-              notMeUserId = itemData.to.data[i].id;
-              notMeUserName = itemData.to.data[i].name;
-              break;
-            }
-          }
+function formatFeedItem(thread, users) {
+      var otherUserId = 0;
+      for (var i = 0; i < thread.recipients.length; ++i) {
+        if (thread.recipients[i] != thread.viewer_id) {
+          otherUserId = thread.recipients[i];
+          break;
         }
-      }
-
-      if (!itemData.comments || itemData.comments.data.length == 0) {
-        setValuesDefault();
-      } else {
-        var lastIndex = itemData.comments.data.length-1;
-        lastUserId = itemData.comments.data[lastIndex].from.id;
-        lastMessage = itemData.comments.data[lastIndex].message;
-
-        //if (lastUserId == myUid) {
-          for (var i = lastIndex; i >= 0; i--) {
-            if (itemData.comments.data[i].from.id != myUid) {
-              notMeUserId = itemData.comments.data[i].from.id;
-              notMeUserName = itemData.comments.data[i].from.name;
-              break;
-            }
-          }
-
-          if (notMeUserId === null) {
-            setValuesDefault();
-          }
-        //}
       }
 
       var template =
@@ -224,27 +225,27 @@
         "</div>";
 
       template = template.replace('{{hasUnread}}',
-          itemData.unread ? 'true' : 'false');
+          (thread.unread.toString() != "0") ? 'true' : 'false');
       template = template.replace('{{photoUrl}}',
-          'http://graph.facebook.com/' + notMeUserId.toString() + '/picture?type=square');
-      template = template.replace('{{getNameText}}', notMeUserName);
+          'http://graph.facebook.com/' + otherUserId.toString() + '/picture?type=square');
+      template = template.replace('{{getNameText}}', nameByUid(otherUserId, users));
       template = template.replace('{{unreadText}}',
-          (itemData.unread > 1) ? ("(" + itemData.unread.toString() + ")") : '');
+          (thread.unread > 1) ? ("(" + thread.unread.toString() + ")") : '');
       template = template.replace('{{time-since}}',
-        humane_date(itemData.updated_time));
+        humane_date(new Date(thread.updated_time * 1000)));
       template = template.replace('{{from_me}}',
-          (lastUserId == myUid) ? "<img src='/images/arrow-icon.png' />" : '');
+          (thread.snippet_author == thread.viewer_id) ? "<img src='/images/arrow-icon.png' />" : '');
       template = template.replace('{{subject}}', '');
-      template = template.replace('{{snippet}}', lastMessage);
+      template = template.replace('{{snippet}}', thread.snippet);
 
       return template;
     }
 
-    function formatThreadItems(itemData) {
+    function formatThreadItems(messages, users) {
       console.assert(myUid !== null);
 
       var template0 =
-        "<div class='message unread-false'>" +
+        "<div class='message unread-false thread-item'>" +
           "<div class='left'>" +
             "<div class='user-photo'>" +
               "<img src='{{photoUrl}}' />" +
@@ -270,31 +271,31 @@
 
       var res = '';
 
-      if (!itemData.comments || itemData.comments.data.length == 0) {
-        var template = template0.replace('{{photoUrl}}',
-            'http://graph.facebook.com/' + itemData.from.id.toString() + '/picture?type=square');
-        template = template.replace('{{getNameText}}', itemData.from.name);
-        template = template.replace('{{time-since}}',
-          humane_date(itemData.updated_time));
-        template = template.replace('{{subject}}', '');
-        template = template.replace('{{snippet}}', itemData.message);
+      //if (!itemData.comments || itemData.comments.data.length == 0) {
+      //  var template = template0.replace('{{photoUrl}}',
+      //      'http://graph.facebook.com/' + itemData.from.id.toString() + '/picture?type=square');
+      //  template = template.replace('{{getNameText}}', itemData.from.name);
+      //  template = template.replace('{{time-since}}',
+      //    humane_date(itemData.updated_time));
+      //  template = template.replace('{{subject}}', '');
+      //  template = template.replace('{{snippet}}', itemData.message);
 
-        res += template;
-      } else {
-        for (var i = itemData.comments.data.length-1; i >= 0; i--) {
+      //  res += template;
+      //} else {
+      for (var i = messages.length-1; i >= 0; --i) {
           var template = template0.replace('{{photoUrl}}',
-              'http://graph.facebook.com/' + itemData.comments.data[i].from.id.toString() + '/picture?type=square');
+              'http://graph.facebook.com/' + messages[i].author_id.toString() + '/picture?type=square');
           template = template.replace('{{getNameText}}',
-              itemData.comments.data[i].from.name);
+              nameByUid(messages[i].author_id, users));
           template = template.replace('{{time-since}}',
-            humane_date(itemData.comments.data[i].created_time));
+            humane_date(new Date(messages[i].created_time * 1000)));
           template = template.replace('{{subject}}', '');
           template = template.replace('{{snippet}}',
-              itemData.comments.data[i].message);
+              messages[i].body);
 
           res += template;
         }
-      }
+      //}
 
       return res;
     }
@@ -324,8 +325,8 @@
 
   <div id="slide-wrap">
     <div id="inner-wrap">
-      <div class="content-item">
-        <div id="feed" class="feed loading"></div>
+      <div class="content-item loading">
+        <div id="feed" class="feed"></div>
       </div>
       <div id="thread" class="content-item">
         <div class="thread-header">
@@ -349,14 +350,37 @@
   <div id="footer"></div>
   <script type="text/javascript" charset="utf-8">
 
+
     $('.box-wrap').antiscroll();
+
+    $(function(){setTimeout(function(){$('#slide-wrap').scrollLeft(0);},100)});
+
+    $('.thread-item').live('click', function() {
+        chrome.tabs.create({ url: 'http://www.facebook.com/messages' });
+    });
+
+    var queryObj = {
+      threads: "SELECT thread_id, subject, snippet, snippet_author, " +
+               "object_id, unread, viewer_id, message_count, updated_time, " +
+               "subject, recipients FROM thread WHERE folder_id = 0 LIMIT " +
+                 NUM_MESSAGES_SHOW,
+      users: "SELECT uid, name FROM user " +
+             "WHERE uid IN (SELECT recipients FROM thread WHERE " +
+             "folder_id = 0 LIMIT " + NUM_MESSAGES_SHOW + ")",
+      messages: "SELECT thread_id, author_id, body, created_time FROM message WHERE " +
+                  "thread_id IN (SELECT thread_id FROM thread WHERE " +
+                    "folder_id=0 LIMIT 5)"
+    };
+    var query = JSON.stringify(queryObj);
 
     chrome.extension.sendRequest(current.controllerExtensionId,
         {
-          type: 'graphApiCall',
-          path: '/me/inbox',
-          params: { fields: 'id,from,to,updated_time,unread,unseen,comments,message',
-                    limit: NUM_MESSAGES_SHOW }
+          //type: 'graphApiCall',
+          //path: '/me/inbox',
+          //params: { fields: 'id,from,to,updated_time,unread,unseen,comments,message',
+          //limit: NUM_MESSAGES_SHOW }
+          type: 'fqlQuery',
+          query: query
         },
         function (response) {
           if (response.error)
