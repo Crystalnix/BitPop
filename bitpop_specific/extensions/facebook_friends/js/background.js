@@ -20,6 +20,22 @@ var inboxFetchInterval = null;
     setTimeout(arguments.callee, 1000);
 })();
 
+// force myUid fetch if it wasn't retrieved successfully
+// or after bg page crash
+setTimeout(
+  function() {
+    if (!myUid) {
+      chrome.extension.sendRequest(
+        bitpop.CONTROLLER_EXTENSION_ID, 
+        { type: 'getMyUid' },
+        function(response) {
+          myUid = response.id;
+        }
+      );
+    }
+  },
+  15000);
+
 chrome.extension.onRequestExternal.addListener(function (request, sender, sendResponse) {
   if (!request.type)
     return;
@@ -93,6 +109,15 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
         }
       }
     }
+  } else if (request.type == 'typingStateChanged') {
+    if (friendList) {
+      for (var i = 0; i < friendList.length; ++i) {
+        if (friendList[i].uid == request.uid) {
+          friendList[i].isTyping = request.isTyping;
+          break;
+        }
+      }
+    }
   }
 });
 
@@ -123,8 +148,9 @@ function replaceLocalHistory(data) {
         to_ids.pop();
     }
 
-    if (to_ids.length > 1)
+    if (to_ids.length > 1 || to_ids.length == 0)
       continue;
+
     var jid = myUid + ':' + to_ids[0].toString();
     localStorage.removeItem(jid);
 

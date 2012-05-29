@@ -21,8 +21,8 @@
 
         $('.box-wrap').antiscroll();
 
-        function setHeadTextCallback(uname) {
-          $('#head').text(uname);
+        function setUserNameCallback(uname) {
+          $('.content-friend-name').text(uname);
         }
 
         function setHeadURL(profile_url) {
@@ -33,7 +33,7 @@
           { type: 'getFBUserNameByUid',
             uid: window.location.hash.substr(1) },
           function (response) {
-            setHeadTextCallback(response.uname);
+            setUserNameCallback(response.uname);
             setHeadURL(response.profile_url);
           }
         );
@@ -41,12 +41,15 @@
   </script>
 </head>
 <body>
-  <div id="head">
+  <div id="head" class="content-friend-name">
   </div>
   <div class="box-wrap antiscroll-wrap">
     <div class="box">
       <div class="antiscroll-inner">
         <div class="box-inner" id="chat">
+          <div class="composing-notification"><span
+              class="content-friend-name"></span> is typing...
+          </div>
         </div>
       </div>
     </div>

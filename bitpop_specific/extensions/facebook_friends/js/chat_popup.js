@@ -87,9 +87,34 @@ bitpop.chat = (function() {
             if ($('.box-wrap').data('antiscroll')) {
               $('.box-wrap').data('antiscroll').rebuild();
             }
+            onTypingChanged(false);
+          }
+        } else if (request.type == 'typingStateChanged') {
+          if (friendUid = request.uid) {
+            onTypingChanged(request.isTyping);
           }
         }
       });
+
+      function onTypingChanged(isTyping) {
+        if (isTyping) {
+          console.assert($('.composing-notification').is(':visible') === false);
+          var wasAtBottom = atBottom();
+          $('.composing-notification').stop().fadeIn(400);
+          if ($('.box-wrap').data('antiscroll')) {
+            $('.box-wrap').data('antiscroll').rebuild();
+          }
+          if (wasAtBottom)
+            scrollToBottom(true);
+        } else {
+          console.assert($('.composing-notification').is(':visible') === true);
+          $('.composing-notification').stop().fadeOut(200, function() {
+            if ($('.box-wrap').data('antiscroll')) {
+              $('.box-wrap').data('antiscroll').rebuild();
+            }
+          });
+        }
+      }
 
       function onMessageSent(response, meMsg, uidTo) {
         if (response.error) {
@@ -156,8 +181,17 @@ bitpop.chat = (function() {
     sendInvite: sendInvite
   };
 
-  function scrollToBottom() {
-    $('.antiscroll-inner').scrollTop($('.box-inner').height())
+  function scrollToBottom(dontAnimate) {
+    if (dontAnimate)
+      $('.antiscroll-inner').stop().scrollTop($('.box-inner').height());
+    else
+      $('.antiscroll-inner').stop().animate({ scrollTop: $('.box-inner').height() }, 400);
+  }
+
+  // return Boolean
+  function atBottom() {
+    return $('.antiscroll-inner').scrollTop() == ($('.box-inner').height() - $('.antiscroll-inner').height() + 5) ||
+      $('.antiscroll-inner').height() + 5 >= $('.box-inner').height();
   }
 
   function appendMessage(msg, msgDate, me) {
@@ -172,7 +206,7 @@ bitpop.chat = (function() {
 
     if (createMessageGroup) {
       var profileUrl = 'http://www.facebook.com/profile.php?id=' + uid.toString();
-      $('#chat').append(
+      $('.composing-notification').before(
           '<div class="message-group clearfix">' +
             '<a class="profile-link" tabIndex="-1" href="' + profileUrl + '">' +
             '<img class="profile-photo" src="http://graph.facebook.com/' +
@@ -181,13 +215,13 @@ bitpop.chat = (function() {
             '<div class="messages"></div>' +
           '</div>'
         );
-      $('#chat div.message-group:last-child a.profile-link').click(function() {
+      $('#chat div.message-group:nth-last-child(2) a.profile-link').click(function() {
         chrome.tabs.create({ url: profileUrl });
         return false;
       });
     }
 
-    $('#chat div.message-group:last-child .messages').append(
+    $('#chat div.message-group:nth-last-child(2) .messages').append(
         '<div class="chat-message">' + msg + '</div>');
 
     lastMessageUid = uid;

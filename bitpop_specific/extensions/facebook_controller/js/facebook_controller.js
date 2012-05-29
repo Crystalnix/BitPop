@@ -218,17 +218,25 @@ bitpop.FacebookController = (function() {
     var from = msg.getAttribute('from');
     var type = msg.getAttribute('type');
     var elems = msg.getElementsByTagName('body');
+    var composing = msg.getElementsByTagName('composing');
+    var paused = msg.getElementsByTagName('active');
+
+    var fromUid = null;
+    var matches = from.match(/\-?(\d+)@.*/);
+    if (matches.length == 2) {
+      fromUid = matches[1];
+    }
+
+    if (composing.length > 0 || (paused.length > 0 && elems.length == 0)) {
+      notifyFriendsExtension({ type:     'typingStateChanged', 
+                               isTyping: (composing.length > 0),
+                               uid:      fromUid });
+    }
 
     if (type == "chat" && elems.length > 0) {
       var body = elems[0];
       var msgText = Strophe.getText(body);
       var msgDate = new Date();
-
-      var fromUid = null;
-      var matches = from.match(/\-?(\d+)@.*/);
-      if (matches.length == 2) {
-        fromUid = matches[1];
-      }
 
       notifyObservingExtensions({ type: 'newMessage', body: msgText, from: fromUid });
 
@@ -386,7 +394,8 @@ bitpop.FacebookController = (function() {
             // do all hard initialization work
             // when got the user id
             //
-            localStorage.myUid = data.id;
+            if (data.id) 
+              localStorage.myUid = data.id;
             onGotUid();
           });
   }
@@ -613,6 +622,11 @@ bitpop.FacebookController = (function() {
   }
 
   function onGotUid() {
+    if (!localStorage.myUid) {
+      setTimeout(getMyUid, 15000);
+      return;
+    }
+
     notifyObservingExtensions({ type: 'myUidAvailable',
                                         myUid: localStorage.myUid });
 
@@ -683,6 +697,13 @@ bitpop.FacebookController = (function() {
     sendResponse({ uname: uname, profile_url: profile_url });
   }
 
+  function onGetMyUidForExternal(request, sendResponse) {
+    onGraphApiCall({ path: '/me', params: { fields: 'id' } },
+                   function (response) {
+                     sendResponse({ id: response.id });
+                   });
+  }
+
   function sendNotLoggedInResponse(sendResponse) {
     sendResponse({ error: 'Not logged in. Please login before sending requests to Facebook' });
   }
@@ -704,7 +725,8 @@ bitpop.FacebookController = (function() {
     graphApiCall: onGraphApiCall,
     fqlQuery: onFqlQuery,
     restApiCall: onRestApiCall,
-    getFBUserNameByUid: onGetFBUserNameByUid
+    getFBUserNameByUid: onGetFBUserNameByUid,
+    getMyUid: onGetMyUidForExternal
   //  requestFriendList: onRequestFriendList
   };
 

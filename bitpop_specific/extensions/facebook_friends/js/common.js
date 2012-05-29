@@ -57,10 +57,10 @@ Date.prototype.isTodayDate = function() {
     (this.getFullYear() == now.getFullYear());
 };
 
-bitpop.saveToLocalStorage = function(jidSelf, jid, msg, timestamp, me) {
+bitpop.saveToLocalStorage = function(jidSelf, jidOther, msg, timestamp, me) {
   var maxHistorySize = 100;
 
-  var jid = jidSelf + ':' + jid;
+  var jid = jidSelf + ':' + jidOther;
   if (!(jid in localStorage)) {
     var newVal = JSON.stringify([{ msg: msg, time: timestamp, me: me }]);
     localStorage[jid] = newVal;
