@@ -244,7 +244,7 @@ function load() {
   facebookChatEl.className = 'navbar-item';
   facebookChatEl.innerText = 'Facebook Chat';
   facebookChatEl.addEventListener('click', function(e) {
-    chrome.send('extensionSettingsOptions', [ 'engefnlnhcgeegefndkhijjfdfbpbeah' ]);
+    window.location.href = 'chrome-extension://engefnlnhcgeegefndkhijjfdfbpbeah/fancy-settings/source/index.html';
     e.preventDefault();
   });
 
@@ -253,7 +253,7 @@ function load() {
   uncensorDomainsEl.className = 'navbar-item';
   uncensorDomainsEl.innerText = 'Uncensor Filter';
   uncensorDomainsEl.addEventListener('click', function(e) {
-    chrome.send('extensionSettingsOptions', [ 'oadgfoondcimpmclpkphkdnjhaddaehg' ]);
+    window.location.href = 'chrome-extension://oadgfoondcimpmclpkphkdnjhaddaehg/options.html';
     e.preventDefault();
   });
 
@@ -262,11 +262,12 @@ function load() {
   uncensorISPEl.className = 'navbar-item';
   uncensorISPEl.innerText = 'Uncensor ISP';
   uncensorISPEl.addEventListener('click', function(e) {
-    chrome.send('extensionSettingsOptions', [ 'fjfallkmojjifpfkopjoogodecehcjam' ]);
+    window.location.href = 'chrome-extension://fjfallkmojjifpfkopjoogodecehcjam/fancy-settings/source/index.html';
     e.preventDefault();
   });
 
   var navbar = document.getElementById('navbar');
+  navbar.appendChild(document.createElement('hr'));
   navbar.appendChild(facebookChatEl);
   navbar.appendChild(uncensorDomainsEl);
   navbar.appendChild(uncensorISPEl);
