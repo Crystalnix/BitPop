@@ -48,6 +48,7 @@ namespace {
 
   NSImage *availableImage = nil;
   NSImage *idleImage = nil;
+  NSImage *composingImage = nil;
 
   const int kNotifyIconDimX = 16;
   const int kNotifyIconDimY = 11;
@@ -137,10 +138,11 @@ void TileImageInt(SkCanvas& canvas, const SkBitmap& bitmap,
 }
 
 - (void)awakeFromNib {
-  if (!availableImage || !idleImage) {
+  if (!availableImage || !idleImage || !composingImage) {
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
     availableImage = rb.GetNativeImageNamed(IDR_FACEBOOK_ONLINE_ICON_14);
     idleImage = rb.GetNativeImageNamed(IDR_FACEBOOK_IDLE_ICON_14);
+    composingImage = rb.GetNativeImageNamed(IDR_FACEBOOK_COMPOSING_ICON_14);
   }
 
   [button_ setTitle:
@@ -397,13 +399,30 @@ if (!button_)
 }
 
 - (void)statusChanged {
-  if ([self chatItem]->num_notifications() == 0) {
-    if ([self chatItem]->status() == FacebookChatItem::AVAILABLE)
+  int numNotifications = [self chatItem]->num_notifications();
+  FacebookChatItem::Status status = [self chatItem]->status();
+
+  if (numNotifications == 0) {
+    if (status == FacebookChatItem::AVAILABLE)
       [button_ setImage:availableImage];
-    else if ([self chatItem]->status() == FacebookChatItem::IDLE)
+    else if (status == FacebookChatItem::IDLE)
       [button_ setImage:idleImage];
     else
       [button_ setImage:nil];
+
+    [button_ setNeedsDisplay:YES];
+  } else if (status != FacebookChatItem::COMPOSING) {
+    NSImage *img = [FacebookChatItemController
+        imageForNotificationBadgeWithNumber:numNotifications];
+    [button_ setImage:img];
+    [img release];
+
+    [button_ setNeedsDisplay:YES];
+  }
+
+  if (status == FacebookChatItem::COMPOSING) {
+    [button_ setImage:composingImage];
+
     [button_ setNeedsDisplay:YES];
   }
 }
