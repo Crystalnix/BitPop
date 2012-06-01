@@ -185,16 +185,7 @@ bitpop.FacebookController = (function() {
         }, 10000);
     } else if (status == Strophe.Status.DISCONNECTING) {
       console.log('Strophe is disconnecting.');
-      // if (strophe_wait_timer === null) {
-      //   strophe_wait_timer = setTimeout(function() {
-      //     if (localStorage.myUid && localStorage.accessToken)
-      //       connection.connected = false;
-      //       connectToFacebookChat();
-
-      //     strophe_wait_timer = null;
-      //   }, 10000);
-      // }
-    } else if (status == Strophe.Status.DISCONNECTED) {
+       } else if (status == Strophe.Status.DISCONNECTED) {
       console.log('Strophe is disconnected.');
       connection.reset();
       if (localStorage.myUid && localStorage.accessToken)
@@ -243,17 +234,6 @@ bitpop.FacebookController = (function() {
       console.log('I got a message from ' + from + ': ' +
       msgText);
 
-      // if (!seen_message_timeout) {
-      //   seen_message_timeout = setTimeout(function () {
-      //     seen_message_timeout = null;
-      //     $.get('http://www.facebook.com/ajax/messaging/jewel_fetch.php',
-      //       { __a: 1, action: 'jewelPreview', seen: 'true', __user: localStorage.myUid },
-      //       function () {});
-      //   },
-      //   25000);
-      // }
-      //sendMessage("", fromUid);
-      //connection.send($pres().tree());
     }
 
     // we must return true to keep the handler alive.
@@ -308,15 +288,17 @@ bitpop.FacebookController = (function() {
     return true;
   }
 
-  function sendMessage(message, uidTo) {
+  function sendMessage(message, uidTo, state) {
     var to = '-' + uidTo + "@chat.facebook.com";
 
-    if(message && to){
+    if(to && (message || state)){
       var reply = $msg({
         to: to,
         type: 'chat'
       })
-      .cnode(Strophe.xmlElement('body', message));
+      if (message)
+        reply = reply.c('body').t(message).up();
+      reply = reply.c(state, {xmlns: "http://jabber.org/protocol/chatstates"});
       connection.send(reply.tree());
 
       console.log('I sent ' + to + ': ' + message);
@@ -613,8 +595,8 @@ bitpop.FacebookController = (function() {
     if (!connection.connected)
       sendResponse({ error: 'Not connected to facebook chat.' });
 
-    if (request.message && request.uidTo) {
-      sendMessage(request.message, request.uidTo);
+    if ((request.message || request.state) && request.uidTo) {
+      sendMessage(request.message, request.uidTo, request.state);
       sendResponse({});
     }
     else
@@ -654,7 +636,7 @@ bitpop.FacebookController = (function() {
             "http://www.bitpop.com/download.php" +
             "\n\n" +
             "Thank you.";
-          sendMessage(msg, request.uidTo);
+          sendMessage(msg, request.uidTo, 'active');
           sendResponse({msg: msg});
         }
       }

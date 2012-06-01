@@ -179,6 +179,7 @@
       <!-- facebook additions -->
       <include name="IDR_FACEBOOK_ONLINE_ICON_14" file="facebook_chat/online-icon-14.png" type="BINDATA" />
       <include name="IDR_FACEBOOK_IDLE_ICON_14" file="facebook_chat/idle-icon-14.png" type="BINDATA" />
+      <include name="IDR_FACEBOOK_COMPOSING_ICON_14" file="facebook_chat/composing-icon-14.png" type="BINDATA" />
     </includes>
   </release>
 </grit>

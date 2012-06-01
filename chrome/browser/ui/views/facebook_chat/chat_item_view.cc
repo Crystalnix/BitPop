@@ -262,7 +262,11 @@ void ChatItemView::StatusChanged() {
       openChatButton_->SetIcon(*rb.GetBitmapNamed(IDR_FACEBOOK_IDLE_ICON_14));
     else
       openChatButton_->SetIcon(SkBitmap::SkBitmap());
-  }
+  } else if (model_->status() != FacebookChatItem::COMPOSING)
+    UpdateNotificationIcon();
+
+  if (model_->status() == FacebookChatItem::COMPOSING)
+    openChatButton_->SetIcon(*rb.GetBitmapNamed(IDR_FACEBOOK_COMPOSING_ICON_14));
 }
 
 void ChatItemView::Close(bool should_animate) {

@@ -110,6 +110,14 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
       }
     }
   } else if (request.type == 'typingStateChanged') {
+    if (request.isTyping) {
+      chrome.bitpop.facebookChat.newIncomingMessage(request.uid.toString(), "",
+          'composing', "");
+    } else {
+      chrome.bitpop.facebookChat.newIncomingMessage(request.uid.toString(), "",
+          'active', "");
+    }
+      
     if (friendList) {
       for (var i = 0; i < friendList.length; ++i) {
         if (friendList[i].uid == request.uid) {
@@ -140,7 +148,7 @@ function replaceLocalHistory(data) {
   console.assert(data != null);
 
   for (var i = 0; i < data.length; i++) {
-    var from_id = data[i].from.id;
+    //var from_id = data[i].from.id;
     var to_ids = [];
     for (var j = 0; j < data[i].to.data.length; j++) {
       to_ids.push(data[i].to.data[j].id);
@@ -159,13 +167,13 @@ function replaceLocalHistory(data) {
     if (!data[i].comments || !data[i].comments.data)
       continue;
 
-    if (data[i].comments.data.length < 20 && data[i].message) {
-      bitpop.saveToLocalStorage(myUid, to_ids[0],
-          bitpop.preprocessMessageText(data[i].message),
-          0, // leave 0 as a timestamp
-          from_id == myUid
-      );
-    }
+    // if (data[i].comments.data.length < 20 && data[i].message) {
+    //   bitpop.saveToLocalStorage(myUid, to_ids[0],
+    //       bitpop.preprocessMessageText(data[i].message),
+    //       0, // leave 0 as a timestamp
+    //       from_id == myUid
+    //   );
+    // }
 
     for (var j = 0; j < data[i].comments.data.length; j++) {
       bitpop.saveToLocalStorage(myUid, to_ids[0],

@@ -97,6 +97,8 @@ void FacebookChatItem::ChangeStatus(const std::string &status) {
     status_ = IDLE;
   else if (status == "error")
     status_ = ERROR_STATUS;
+  else if (status == "composing")
+    status_ = COMPOSING;
   else
     status_ = OFFLINE;
 

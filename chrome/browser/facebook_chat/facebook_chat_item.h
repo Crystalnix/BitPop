@@ -20,7 +20,8 @@ class FacebookChatItem {
       AVAILABLE,
       IDLE,
       ERROR_STATUS,
-      OFFLINE
+      OFFLINE,
+      COMPOSING
     };
 
     enum State {

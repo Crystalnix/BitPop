@@ -68,7 +68,7 @@ bitpop.chat = (function() {
         setTimeout(function() {
             $('#msg').focus();
             // scroll the chat div to bottom
-            scrollToBottom();
+            scrollToBottom(true); // don't animate
         }, 200);
 
         var myUid = chrome.extension.getBackgroundPage().myUid;
@@ -89,32 +89,37 @@ bitpop.chat = (function() {
             }
             onTypingChanged(false);
           }
-        } else if (request.type == 'typingStateChanged') {
-          if (friendUid = request.uid) {
-            onTypingChanged(request.isTyping);
-          }
-        }
+        }// else if (request.type == 'typingStateChanged') {
+        //  if (friendUid = request.uid) {
+        //    onTypingChanged(request.isTyping);
+        //  }
+        //}
       });
 
-      function onTypingChanged(isTyping) {
-        if (isTyping) {
-          console.assert($('.composing-notification').is(':visible') === false);
-          var wasAtBottom = atBottom();
-          $('.composing-notification').stop().fadeIn(400);
-          if ($('.box-wrap').data('antiscroll')) {
-            $('.box-wrap').data('antiscroll').rebuild();
-          }
-          if (wasAtBottom)
-            scrollToBottom(true);
-        } else {
-          console.assert($('.composing-notification').is(':visible') === true);
-          $('.composing-notification').stop().fadeOut(200, function() {
-            if ($('.box-wrap').data('antiscroll')) {
-              $('.box-wrap').data('antiscroll').rebuild();
-            }
-          });
-        }
-      }
+      //function onTypingChanged(isTyping) {
+      //  if (isTyping) {
+      //    // console.assert($('.composing-notification').is(':visible') === false);
+      //    // var wasAtBottom = atBottom();
+      //    // $('.composing-notification').stop().fadeIn(400);
+      //    // if ($('.box-wrap').data('antiscroll')) {
+      //    //   $('.box-wrap').data('antiscroll').rebuild();
+      //    // }
+      //    // if (wasAtBottom)
+      //    //   scrollToBottom(true);
+      //    chrome.bitpop.facebookChat.newIncomingMessage(friendUid, "",
+      //        'composing', "");
+      //  } else {
+      //    chrome.bitpop.facebookChat.newIncomingMessage(friendUid, "",
+      //        'active', "");
+
+      //    //console.assert($('.composing-notification').is(':visible') === true);
+      //    //$('.composing-notification').stop().fadeOut(200, function() {
+      //    //  if ($('.box-wrap').data('antiscroll')) {
+      //    //    $('.box-wrap').data('antiscroll').rebuild();
+      //    //  }
+      //    //});
+      //  }
+      //}
 
       function onMessageSent(response, meMsg, uidTo) {
         if (response.error) {
@@ -146,16 +151,61 @@ bitpop.chat = (function() {
       }
 
       $('#msgForm').submit(function () {
+        if (typingExpired) {
+          clearTimeout(typingExpired);
+          typingExpired = null;
+        }
+
         var meMsg = $('#msg').val();
         var uidTo = friendUid;
         var request = { message: meMsg,
                         uidTo: uidTo,
+                        state: 'active',
                         type: 'sendChatMessage'};
         chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID, request,
             function(response) {
               onMessageSent(response, meMsg, uidTo);
             });
+        $(this).data('composing', false);
         return false;
+      });
+
+      // send typing notifications to friend's XMPP client
+      $('#msg').keypress(function(ev) {
+        if (ev.which !== 13) {  // not a <Return>
+          var composing = $(this).parent().data('composing');
+          if (!composing) {
+            var uidTo = friendUid;
+            var request = { message: '',
+                            uidTo: uidTo,
+                            state: 'composing',
+                            type: 'sendChatMessage'};
+
+            chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID, request,
+              function(response) {});
+            $(this).parent().data('composing', true);
+            if (typingExpired) {
+              clearTimeout(typingExpired);
+              typingExpired = null;
+            }
+            var that = this;
+            typingExpired = setTimeout(function() {
+              if ($(that).parent().data('composing')) {
+                chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+                  {
+                    message: '',
+                    uidTo: uidTo,
+                    state: 'active',
+                    type: 'sendChatMessage'
+                  },
+                  function (response) {}
+                );
+                $(that).parent().data('composing', false);
+              }
+              typingExpired = null;
+            }, 5000);
+          }
+        }
       });
 
       $('#pastePageLink').click(function() {
@@ -227,7 +277,7 @@ bitpop.chat = (function() {
     lastMessageUid = uid;
 
     // scroll the chat div to bottom
-    scrollToBottom();
+    scrollToBottom(true);
 
     lastMessageTime = msgDate;
   }
@@ -256,6 +306,7 @@ bitpop.chat = (function() {
   var lastMessageTime = null;
   var lastOutputTime = null;
   var friendUid = null;
+  var typingExpired = null;
 
   return public;
 })();
