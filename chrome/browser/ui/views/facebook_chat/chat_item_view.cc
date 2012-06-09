@@ -10,6 +10,8 @@
 #include "base/location.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -301,7 +303,8 @@ void ChatItemView::ActivateChat() {
   std::string urlString(chrome::kFacebookChatExtensionPrefixURL);
   urlString += chrome::kFacebookChatExtensionChatPage;
   urlString += "#";
-  urlString += model_->jid();
+  urlString += model_->jid() + "&" +
+    chatbar_->browser()->profile()->GetFacebookChatManager()->global_my_uid();
 
   chat_popup_ = ChatPopup::ShowPopup(GURL(urlString), chatbar_->browser(),
                                 this, BitpopBubbleBorder::BOTTOM_CENTER);

@@ -31,7 +31,7 @@
 
         chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
           { type: 'getFBUserNameByUid',
-            uid: window.location.hash.substr(1) },
+            uid: window.location.hash.substr(1).split('&')[0] },
           function (response) {
             setUserNameCallback(response.uname);
             setHeadURL(response.profile_url);

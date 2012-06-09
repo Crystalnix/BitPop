@@ -49,7 +49,17 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
         if (myUid && friendList) { sendInboxRequest(); }
        }, 1000 * 60 * 30);
   } else if (request.type == 'friendListReceived') {
+    if (!friendList) {
+      // send status notifications so that every visible chat button
+      // has correct statuses
+      for (var i = 0; i < request.data.length; ++i) {
+        chrome.bitpop.facebookChat.newIncomingMessage(request.data[i].uid, "",
+          request.data[i].online_presence || 'offline', "");
+      }
+    }
+
     friendList = request.data;
+
   } else if (request.type == 'loggedOut') {
     if (inboxFetchInterval) { clearInterval(inboxFetchInterval); inboxFetchInterval = null; }
     statuses = {};
@@ -80,7 +90,7 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
     var found = false;
     var vs = chrome.extension.getViews();
     for (var i = 0; i < vs.length; ++i) {
-      if (vs[i].location.hash.slice(1) == request.from) {
+      if (vs[i].location.hash.length > 1 && vs[i].location.hash.slice(1).split('&')[0] == request.from) {
         found = true;
         break;
       }
@@ -160,12 +170,13 @@ function replaceLocalHistory(data) {
       continue;
 
     var jid = myUid + ':' + to_ids[0].toString();
-    localStorage.removeItem(jid);
-
+    
     localStorage[jid + '.thread_id'] = data[i].id;
 
     if (!data[i].comments || !data[i].comments.data)
       continue;
+
+    localStorage.removeItem(jid);
 
     // if (data[i].comments.data.length < 20 && data[i].message) {
     //   bitpop.saveToLocalStorage(myUid, to_ids[0],
@@ -267,7 +278,7 @@ function addFbFunctionality( )
                               if (is_visible) {
                                 response = {
                                   enableChat:   ffSettings.get('show_chat'),
-                                  enableJewels: ffSettings.get('show_jewels')
+                                  enableJewels: true//ffSettings.get('show_jewels')
                                 };
                               }
                               else {

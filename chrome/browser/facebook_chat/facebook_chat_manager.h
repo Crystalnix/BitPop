@@ -60,16 +60,19 @@ class FacebookChatManager : public base::RefCountedThreadSafe<FacebookChatManage
     bool Init(Profile *profile);
 
     int total_unread() const;
+    std::string global_my_uid() const { return global_my_uid_; }
+    void set_global_my_uid(const std::string& uid) { global_my_uid_ = uid; }
+
   private:
     void NotifyModelChanged();
 
     typedef std::set<FacebookChatItem*> ChatSet;
     typedef base::hash_map<std::string, FacebookChatItem*> ChatMap;
 
+    std::string global_my_uid_;
     ChatSet chats_;
     ChatMap jid_chats_map_;
 
-    Browser *browser_;
     Profile *profile_;
 
     bool shutdown_needed_;

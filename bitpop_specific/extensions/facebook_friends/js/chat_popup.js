@@ -19,7 +19,8 @@ bitpop.chat = (function() {
 
   var public = {
     init: function() {
-      friendUid = window.location.hash.slice(1);
+      friendUid = window.location.hash.slice(1).split('&')[0];
+      myUid = window.location.hash.slice(1).split('&')[1];
       lastMessageUid = null;
 
       //$(window).bind('focus', function() {
@@ -29,7 +30,7 @@ bitpop.chat = (function() {
       //setMsgValue($('#msg').val());
 
       function appendFromLocalStorage() {
-        var lsKey = chrome.extension.getBackgroundPage().myUid + ':' + friendUid;
+        var lsKey = myUid + ':' + friendUid;
         if (lsKey in localStorage) {
           var msgs = JSON.parse(localStorage[lsKey]);
           for (var i = 0; i < msgs.length; ++i) {
@@ -71,7 +72,6 @@ bitpop.chat = (function() {
             scrollToBottom(true); // don't animate
         }, 200);
 
-        var myUid = chrome.extension.getBackgroundPage().myUid;
         var msgText = localStorage.getItem('msg:' + myUid + ':' + friendUid);
         if (msgText) {
           setMsgValue(msgText);
@@ -137,7 +137,7 @@ bitpop.chat = (function() {
           $('#chat .error-message').hide();
 
         var escMsg = bitpop.preprocessMessageText(meMsg);
-        bitpop.saveToLocalStorage(chrome.extension.getBackgroundPage().myUid,
+        bitpop.saveToLocalStorage(myUid,
           uidTo, escMsg, new Date(), true);
         //escMsg = (new Date()).bitpopFormat() + '<br />' + escMsg;
         //$('#chat').append('<li class="me">' + escMsg + '</li>');
@@ -224,7 +224,6 @@ bitpop.chat = (function() {
 
       
       $(window).unload(function () {
-        var myUid = chrome.extension.getBackgroundPage().myUid;
         localStorage.setItem('msg:' + myUid + ':' + friendUid, $('#msg').val());
       });
     }, // end of public function init
@@ -251,7 +250,7 @@ bitpop.chat = (function() {
     //   lastOutputTime = msgDate;
     // }
 
-    var uid = me ? chrome.extension.getBackgroundPage().myUid : friendUid;
+    var uid = me ? myUid : friendUid;
     var createMessageGroup = (lastMessageUid != uid);
 
     if (createMessageGroup) {
@@ -297,7 +296,7 @@ bitpop.chat = (function() {
 
   function inviteCallback(msg) {
     var escMsg = bitpop.preprocessMessageText(msg);
-    bitpop.saveToLocalStorage(chrome.extension.getBackgroundPage().myUid,
+    bitpop.saveToLocalStorage(myUid,
       friendUid, escMsg, new Date(), true);
     appendMessage(escMsg, new Date(), true);
   }
@@ -306,6 +305,7 @@ bitpop.chat = (function() {
   var lastMessageTime = null;
   var lastOutputTime = null;
   var friendUid = null;
+  var myUid = null;
   var typingExpired = null;
 
   return public;

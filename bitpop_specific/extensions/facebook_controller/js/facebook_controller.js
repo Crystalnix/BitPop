@@ -622,6 +622,7 @@ bitpop.FacebookController = (function() {
     connectToFacebookChat();
 
     chrome.bitpop.facebookChat.loggedInFacebookSession();
+    chrome.bitpop.facebookChat.setGlobalMyUidForProfile(localStorage.myUid);
   }
 
   function onSendInvite(request, sendResponse) {

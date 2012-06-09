@@ -197,3 +197,27 @@ bool LoggedInFacebookSessionFunction::RunImpl() {
   return true;
 }
 
+bool SetGlobalMyUidForProfileFunction::RunImpl() {
+  if (!args_.get())
+    return false;
+
+  std::string uid("");
+
+  if (IsArgumentListEmpty(args_.get()) || args_->GetSize() != 1) {
+    error_ = kInvalidArguments;
+    return false;
+  } else {
+    EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &uid));
+  }
+
+  Browser* browser = GetCurrentBrowser();
+  if (!browser) {
+    error_ = kNoCurrentWindowError;
+    return false;
+  }
+
+  FacebookChatManager *mgr = browser->profile()->GetFacebookChatManager();
+  mgr->set_global_my_uid(uid);
+
+  return true;
+}

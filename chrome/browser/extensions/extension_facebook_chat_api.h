@@ -63,5 +63,12 @@ class LoggedInFacebookSessionFunction: public SyncExtensionFunction {
     DECLARE_EXTENSION_FUNCTION_NAME("bitpop.facebookChat.loggedInFacebookSession");
 };
 
+class SetGlobalMyUidForProfileFunction : public SyncExtensionFunction {
+  public:
+    virtual bool RunImpl() OVERRIDE;
+  private:
+    DECLARE_EXTENSION_FUNCTION_NAME("bitpop.facebookChat.setGlobalMyUidForProfile");
+};
+
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_FACEBOOK_CHAT_API_H_
 

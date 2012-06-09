@@ -95,6 +95,18 @@
         "description": "Notifies BitPop user logged in to chat session",
         "type": "function",
         "parameters": []
+      },
+      {
+        "name": "setGlobalMyUidForProfile",
+        "description": "Sets _me_ user id for facebook globally",
+        "parameters": [
+          {
+            "name": "uid",
+            "type": "string",
+            "optional": false,
+            "description": "Actual uid"
+          }
+        ]
       }
     ]
   }

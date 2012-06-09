@@ -510,6 +510,7 @@ void FactoryRegistry::ResetFunctions() {
   RegisterFunction<NewIncomingMessageFunction>();
   RegisterFunction<LoggedOutFacebookSessionFunction>();
   RegisterFunction<LoggedInFacebookSessionFunction>();
+  RegisterFunction<SetGlobalMyUidForProfileFunction>();
 }
 
 void FactoryRegistry::GetAllNames(std::vector<std::string>* names) {
