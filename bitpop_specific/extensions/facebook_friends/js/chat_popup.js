@@ -87,7 +87,8 @@ bitpop.chat = (function() {
             if ($('.box-wrap').data('antiscroll')) {
               $('.box-wrap').data('antiscroll').rebuild();
             }
-            onTypingChanged(false);
+            chrome.bitpop.facebookChat.newIncomingMessage(request.from.toString(), "",
+              'active', "");
           }
         }// else if (request.type == 'typingStateChanged') {
         //  if (friendUid = request.uid) {

@@ -241,6 +241,9 @@ if (!button_)
   urlString += chrome::kFacebookChatExtensionChatPage;
   urlString += "#";
   urlString += bridge_->chat()->jid();
+  urlString += "&";
+  urlString += [chatbarController_ bridge]->browser()->profile()->
+    GetFacebookChatManager()->global_my_uid();
   return GURL(urlString);
 }
 

@@ -53,7 +53,7 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
       // send status notifications so that every visible chat button
       // has correct statuses
       for (var i = 0; i < request.data.length; ++i) {
-        chrome.bitpop.facebookChat.newIncomingMessage(request.data[i].uid, "",
+        chrome.bitpop.facebookChat.newIncomingMessage(request.data[i].uid.toString(), "",
           request.data[i].online_presence || 'offline', "");
       }
     }
@@ -71,7 +71,7 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
   } else if (request.type == 'userStatusChanged') {
     // send change status message: empty message body signals to only check
     // for status change
-    chrome.bitpop.facebookChat.newIncomingMessage(request.uid, "",
+    chrome.bitpop.facebookChat.newIncomingMessage(request.uid.toString(), "",
         request.status, "");
 
     // set global variable storing each user status, reported by XMPP
