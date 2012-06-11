@@ -109,6 +109,8 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
             status = statuses[friendList[i].uid.toString()];
           else
             status = 'offline';
+          if (status == 'composing')
+            status = 'active';
 
           chrome.bitpop.facebookChat.newIncomingMessage(
                              friendList[i].uid.toString(),
