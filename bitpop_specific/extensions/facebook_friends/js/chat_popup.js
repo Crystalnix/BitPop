@@ -5,12 +5,9 @@
  */
 
 var bitpop;
-//if (!bitpop)
-//  throw new Error('Chat dependencies not loaded.');
 
 bitpop.chat = (function() {
   function setMsgValue(val) {
-    //$('#msg').focus();
     $('#msg').val('');
     setTimeout(function() {
       $('#msg').val(val);
@@ -23,12 +20,6 @@ bitpop.chat = (function() {
       myUid = window.location.hash.slice(1).split('&')[1];
       lastMessageUid = null;
 
-      //$(window).bind('focus', function() {
-      //  initChat();
-      //});
-
-      //setMsgValue($('#msg').val());
-
       function appendFromLocalStorage() {
         var lsKey = myUid + ':' + friendUid;
         if (lsKey in localStorage) {
@@ -39,29 +30,6 @@ bitpop.chat = (function() {
           }
         }
       }
-
-      /*
-      function fetchThread() {
-        var thread_id = null;
-
-        if (localStorage[myUid + ':' + friendUid + '.thread_id']) {
-          thread_id = localStorage[myUid + ':' + friendUid + '.thread_id'];
-        }
-
-        if (thread_id) {
-          chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
-            { type: 'graphApiCall',
-              path: '/' + thread_id,
-              params: {}
-            },
-            function (response) {
-              //inboxData = response.data;
-              //replaceLocalHistory(inboxData);
-            }
-          );
-        }
-      }
-      */
 
       (function initChat() {
         appendFromLocalStorage();
@@ -76,8 +44,6 @@ bitpop.chat = (function() {
         if (msgText) {
           setMsgValue(msgText);
         }
-
-        //setInterval(fetchThread, 30000);
       })();
 
       chrome.extension.onRequestExternal.addListener(function (request, sender, sendResponse) {
@@ -87,40 +53,9 @@ bitpop.chat = (function() {
             if ($('.box-wrap').data('antiscroll')) {
               $('.box-wrap').data('antiscroll').rebuild();
             }
-            chrome.bitpop.facebookChat.newIncomingMessage(request.from.toString(), "",
-              'active', "");
           }
-        }// else if (request.type == 'typingStateChanged') {
-        //  if (friendUid = request.uid) {
-        //    onTypingChanged(request.isTyping);
-        //  }
-        //}
+        }
       });
-
-      //function onTypingChanged(isTyping) {
-      //  if (isTyping) {
-      //    // console.assert($('.composing-notification').is(':visible') === false);
-      //    // var wasAtBottom = atBottom();
-      //    // $('.composing-notification').stop().fadeIn(400);
-      //    // if ($('.box-wrap').data('antiscroll')) {
-      //    //   $('.box-wrap').data('antiscroll').rebuild();
-      //    // }
-      //    // if (wasAtBottom)
-      //    //   scrollToBottom(true);
-      //    chrome.bitpop.facebookChat.newIncomingMessage(friendUid, "",
-      //        'composing', "");
-      //  } else {
-      //    chrome.bitpop.facebookChat.newIncomingMessage(friendUid, "",
-      //        'active', "");
-
-      //    //console.assert($('.composing-notification').is(':visible') === true);
-      //    //$('.composing-notification').stop().fadeOut(200, function() {
-      //    //  if ($('.box-wrap').data('antiscroll')) {
-      //    //    $('.box-wrap').data('antiscroll').rebuild();
-      //    //  }
-      //    //});
-      //  }
-      //}
 
       function onMessageSent(response, meMsg, uidTo) {
         if (response.error) {
@@ -171,6 +106,14 @@ bitpop.chat = (function() {
         return false;
       });
 
+      $('#msg').keydown(function(ev) {
+        if (ev.which === 13) {
+          $('#msgForm').submit();
+          ev.preventDefault();
+          return false;
+        }
+      });
+
       // send typing notifications to friend's XMPP client
       $('#msg').keypress(function(ev) {
         if (ev.which !== 13) {  // not a <Return>
@@ -187,7 +130,7 @@ bitpop.chat = (function() {
             $(this).parent().data('composing', true);
             if (typingExpired) {
               clearTimeout(typingExpired);
-              typingExpired = null;
+              delete typingExpired;
             }
             var that = this;
             typingExpired = setTimeout(function() {
@@ -203,7 +146,7 @@ bitpop.chat = (function() {
                 );
                 $(that).parent().data('composing', false);
               }
-              typingExpired = null;
+              delete typingExpired;
             }, 5000);
           }
         }
@@ -223,12 +166,19 @@ bitpop.chat = (function() {
         });
       });
 
+      //$('#msg').scrollable({ horizontal: false });
+      $("#msg").bind("mousewheel", function(ev) {
+        var scrollTop = $(this).scrollTop();
+        $(this).scrollTop(scrollTop-Math.round(ev.originalEvent.wheelDelta/40));
+      });
       
       $(window).unload(function () {
         localStorage.setItem('msg:' + myUid + ':' + friendUid, $('#msg').val());
       });
     }, // end of public function init
-    sendInvite: sendInvite
+    sendInvite: sendInvite,
+    scrollToBottom: scrollToBottom,
+    atBottom: atBottom
   };
 
   function scrollToBottom(dontAnimate) {
@@ -245,12 +195,6 @@ bitpop.chat = (function() {
   }
 
   function appendMessage(msg, msgDate, me) {
-    // if (!lastMessageTime || (msgDate - lastOutputTime >= 5 * 60 * 1000)) {
-    //   $('#chat').append('<li class="time">' +
-    //     msgDate.bitpopFormat(msgDate.isTodayDate()) + '</li>');
-    //   lastOutputTime = msgDate;
-    // }
-
     var uid = me ? myUid : friendUid;
     var createMessageGroup = (lastMessageUid != uid);
 

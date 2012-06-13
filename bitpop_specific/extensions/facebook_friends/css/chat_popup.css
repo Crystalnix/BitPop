@@ -34,14 +34,17 @@ p {
   width: 193px;
   margin: 0;
   padding: 0;
-  height: 30px;
+  min-height: 30px;
 }
-#msg {
+textarea#msg {
   border: 1px solid #ccc;
   width: 168px;
   outline: none;
   float: left;
   clear: left;
+  resize: none;
+  font-size: 11px;
+  margin-bottom: 3px;
 }
 
 .clearfix::after {

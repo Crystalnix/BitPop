@@ -445,7 +445,7 @@ bitpop.FriendsSidebar = (function() {
     if (request.type && request.type == 'inboxDataAvailable') {
       self.updateDOM();
     }
-    if (sendResponse) sendResponse();
+    if (request.type && sendResponse) sendResponse();
   });
 
   return self;

@@ -109,8 +109,6 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
             status = statuses[friendList[i].uid.toString()];
           else
             status = 'offline';
-          if (status == 'composing')
-            status = 'active';
 
           chrome.bitpop.facebookChat.newIncomingMessage(
                              friendList[i].uid.toString(),
@@ -233,7 +231,7 @@ function sendResponseToContentScript(sender, data, status, response)
     }
     myLog("Sending response ", data.action, data.id, status, response);
     sender({
-        'action': data.action,
+        action: data.action,
         id: data.id,
         status: status,
         response: response
@@ -252,6 +250,8 @@ function addFbFunctionality( )
     // add a listener to events coming from contentscript
     chrome.extension.onRequest.addListener(
         function(request, sender, sendResponse) {
+            if (typeof request != 'string')
+              return;
             myLog("Received request ", request);
             if(request) {
                 var data = JSON.parse(request);
@@ -280,7 +280,7 @@ function addFbFunctionality( )
                               if (is_visible) {
                                 response = {
                                   enableChat:   ffSettings.get('show_chat'),
-                                  enableJewels: true//ffSettings.get('show_jewels')
+                                  enableJewels: ffSettings.get('show_jewels')
                                 };
                               }
                               else {

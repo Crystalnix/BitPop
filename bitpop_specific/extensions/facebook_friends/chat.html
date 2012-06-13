@@ -7,6 +7,7 @@
   <script src="js/autolink-min.js"></script>
   <script src="js/jquery-mousewheel.js"></script>
   <script src="js/antiscroll.js"></script>
+  <script src="js/jquery.textarea-expander.js"></script>
   <script src="js/common.js"></script>
   <script src="js/chat_popup.js"></script>
   <script type="text/javascript">
@@ -56,9 +57,8 @@
   </div>
 
   <form id="msgForm">
-    <input type="text" id="msg" autofocus />
-    <input id="pastePageLink" type="button" value="" />
-    <input type="submit" style="visibility:hidden; height: 0" />
+    <textarea id="msg" class="expand11-52" rows="1" wrap="soft" autofocus></textarea>
+    <input id="pastePageLink" type="button" value="" class="clearfix" />
   </form>
 </body>
 </html>

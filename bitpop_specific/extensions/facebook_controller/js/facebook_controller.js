@@ -92,6 +92,7 @@ bitpop.FacebookController = (function() {
     $.ajaxSetup({
       error:function(x,e){
         var errorMsg = null;
+        var shouldSetDoingPermissionsRequest = true;
 
         if (x.status==0){
           errorMsg = 'You are offline!!\n Please Check Your Network.';
@@ -111,12 +112,18 @@ bitpop.FacebookController = (function() {
               if (auth_wait_timer === null) {
                 auth_wait_timer = setTimeout(function() {
                   checkForPermissions();
-                  auth_wait_timer = null;
+                  //auth_wait_timer = null;
                 }, 15000);
+              } else {
+                need_more_permissions = true;
+                login(FB_PERMISSIONS);
               }
+              doing_permissions_request = false;
             }
             else
               checkForPermissions();
+
+            shouldSetDoingPermissionsRequest = false;
           }
           errorMsg = 'Not authorized.';
         } else if (x.status==404){
@@ -145,7 +152,7 @@ bitpop.FacebookController = (function() {
           );
         }
 
-        if (doing_permissions_request)
+        if (doing_permissions_request && shouldSetDoingPermissionsRequest)
           doing_permissions_request = false;
       }
     });
@@ -218,8 +225,8 @@ bitpop.FacebookController = (function() {
       fromUid = matches[1];
     }
 
-    if (composing.length > 0 || (paused.length > 0 && elems.length == 0)) {
-      notifyFriendsExtension({ type:     'typingStateChanged', 
+    if (composing.length > 0 || paused.length > 0) {
+      notifyFriendsExtension({ type:     'typingStateChanged',
                                isTyping: (composing.length > 0),
                                uid:      fromUid });
     }
@@ -376,7 +383,7 @@ bitpop.FacebookController = (function() {
             // do all hard initialization work
             // when got the user id
             //
-            if (data.id) 
+            if (data.id)
               localStorage.myUid = data.id;
             onGotUid();
           });
