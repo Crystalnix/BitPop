@@ -48,6 +48,10 @@
 			var vlen = e.value.length, ewidth = e.offsetWidth;
 			if (vlen != e.valLength || ewidth != e.boxWidth) {
                                 var prevHeight = e.style.height;
+                                var wasAtBottom = false;
+                                if (bitpop && bitpop.chat)
+                                  wasAtBottom = bitpop.chat.atBottom();
+
 				if (hCheck && (vlen < e.valLength || ewidth != e.boxWidth)) e.style.height = "0px";
 				var h = Math.max(e.expandMin, Math.min(e.scrollHeight, e.expandMax));
 
@@ -63,6 +67,8 @@
                                   if ($('.box-wrap').data('antiscroll')) {
                                     $('.box-wrap').data('antiscroll').rebuild();
                                   }
+                                  if (bitpop && bitpop.chat && wasAtBottom)
+                                    bitpop.chat.scrollToBottom();
                                 }
 			}
 

@@ -178,7 +178,8 @@ def _AddBreakpadKeys(plist, branding):
   plist['BreakpadURL'] = 'http://crash-reports/submit'
   #plist['BreakpadReportInterval'] = '3600'  # Deliberately a string.
   plist['BreakpadReportInterval'] = '0'
-  plist['BreakpadProduct'] = '%s_Mac' % branding
+  #plist['BreakpadProduct'] = '%s_Mac' % branding
+  plist['BreakpadProduct'] = branding
   plist['BreakpadProductDisplay'] = branding
   plist['BreakpadVersion'] = plist['CFBundleShortVersionString']
   # These are both deliberately strings and not boolean.

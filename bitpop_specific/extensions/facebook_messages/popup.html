@@ -369,7 +369,7 @@ function formatFeedItem(thread, users) {
              "folder_id = 0 LIMIT " + NUM_MESSAGES_SHOW + ")",
       messages: "SELECT thread_id, author_id, body, created_time FROM message WHERE " +
                   "thread_id IN (SELECT thread_id FROM thread WHERE " +
-                    "folder_id=0 LIMIT 5)"
+                    "folder_id=0 LIMIT " + NUM_MESSAGES_SHOW + ")"
     };
     var query = JSON.stringify(queryObj);
 
