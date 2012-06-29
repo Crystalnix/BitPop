@@ -67,7 +67,7 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
                               bundle:base::mac::FrameworkBundle()])) {
     resizeDelegate_ = resizeDelegate;
     maxBarHeight_ = NSHeight([[self view] bounds]);
-    //currentShelfHeight_ = maxShelfHeight_;
+
     if (browser && browser->window())
       isFullscreen_ = browser->window()->IsFullscreen();
     else
@@ -222,12 +222,11 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
   lastAddedItem_ = controller;
 
   [self layoutItems:YES];
-  //[controller layedOutAfterAddingToChatbar];
 }
 
 - (void)activateItem:(FacebookChatItemController*)chatItem {
   for (FacebookChatItemController *controller in chatItemControllers_.get()) {
-    if (controller == chatItem) {
+    if (controller == chatItem && ![controller active]) {
       [controller setActive:YES];
     }
     else
@@ -277,13 +276,6 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
       [[chatItem view] isHidden] == NO) // if chat item is visible - no need to reorder items
     return;
 
-  // NSUInteger prevActiveIndex = NSNotFound;
-  // for (FacebookChatItemController *controller in container) {
-  //   if ([controller active]) {
-  //     prevActiveIndex = [container indexOfObject:controller];
-  //     break;
-  //   }
-  // }
   if (placeFirstAnimation_.get())
     [placeFirstAnimation_ stopAnimation];
 
@@ -360,12 +352,10 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
     }
 
     frame.size.width = [itemController preferredSize].width;
-    //if (!skipFirst)
     [[[itemController view] animator] setFrame:frame];
     [itemController layoutChildWindows];
 
     currentX += frame.size.width + kChatItemPadding;
-    //skipFirst = NO;
     ++index;
   }
 

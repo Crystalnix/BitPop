@@ -3,6 +3,8 @@ var myUid = null;
 var statuses = {};
 var inboxData = null;
 var inboxFetchInterval = null;
+var newMessageAudio = new Audio("mouth_pop.wav");
+
 //chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
 //  { type: 'observe',
 //    extensionId: chrome.i18n.getMessage('@@extension_id')
@@ -119,6 +121,8 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
         }
       }
     }
+
+    newMessageAudio.play();
   } else if (request.type == 'typingStateChanged') {
     if (request.isTyping) {
       chrome.bitpop.facebookChat.newIncomingMessage(request.uid.toString(), "",
