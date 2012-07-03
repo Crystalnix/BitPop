@@ -83,7 +83,7 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
 
 // Called when the extension's hosted NSView has been resized.
 - (void)extensionViewFrameChanged;
-- (void)parentWindowDidBecomeKey:(NSNotification*)notification;
+//- (void)parentWindowDidBecomeKey:(NSNotification*)notification;
 @end
 
 @implementation FacebookPopupController
@@ -119,12 +119,11 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
              selector:@selector(parentWindowWillClose:)
                  name:NSWindowWillCloseNotification
                object:parentWindow_];
-  
+
   [center addObserver:self
              selector:@selector(parentWindowDidBecomeKey:)
                  name:NSWindowDidBecomeKeyNotification
                object:parentWindow_];
-
 
   [view addSubview:extensionView_];
   scoped_nsobject<InfoBubbleWindow> window(
@@ -168,6 +167,7 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
 
 - (void)parentWindowDidBecomeKey:(NSNotification*)notification {
   NSWindow* window = [self window];
+  DCHECK_EQ([notification object], [window parentWindow]);
   if ([window isVisible] && !beingInspected_)
     [self close];
 }
@@ -178,15 +178,14 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
   gPopup = nil;
 }
 
-- (void)windowDidResignKey:(NSNotification *)notification {
-  NSWindow* window = [self window];
-  DCHECK_EQ([notification object], window);
-  // If the window isn't visible, it is already closed, and this notification
-  // has been sent as part of the closing operation, so no need to close.
-  // if ([window isVisible] && !beingInspected_) {
-  //   [self close];
-  // }
-}
+// - (void)windowDidResignKey:(NSNotification *)notification {
+//   NSWindow* window = [self window];
+//   DCHECK_EQ([notification object], window);
+//   // If the window isn't visible, it is already closed, and this notification
+//   // has been sent as part of the closing operation, so no need to close.
+//   if ([window isVisible] && !beingInspected_) {
+//   }
+// }
 
 - (void)close {
   [[[self window] parentWindow] removeChildWindow:[self window]];
