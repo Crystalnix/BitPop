@@ -43,8 +43,22 @@ bitpop.chat = (function() {
         var msgText = localStorage.getItem('msg:' + myUid + ':' + friendUid);
         if (msgText) {
           setMsgValue(msgText);
-          $('#msg').prop('scrollTop', $('#msg').prop('scrollHeight'));
-          $('#msg').focus();
+          setTimeout(function() {
+            moveCaretToEnd(document.getElementById('msg'));
+            $('#msg').focus();
+            $('#msg').prop('scrollTop', $('#msg').prop('scrollHeight'));
+          }, 100);
+        }
+
+        function moveCaretToEnd(el) {
+          if (typeof el.selectionStart == "number") {
+            el.selectionStart = el.selectionEnd = el.value.length;
+          } else if (typeof el.createTextRange != "undefined") {
+            el.focus();
+            var range = el.createTextRange();
+            range.collapse(false);
+            range.select();
+          }
         }
       })();
 
