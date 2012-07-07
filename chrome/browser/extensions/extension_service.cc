@@ -240,15 +240,15 @@ bool ExtensionService::OnExternalExtensionUpdateUrlFound(
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   CHECK(Extension::IdIsValid(id));
 
-  const Extension* extension = GetExtensionById(id, true);
-  if (extension) {
-    // Already installed. Skip this install if the current location has
-    // higher priority than |location|.
-    Extension::Location current = extension->location();
-    if (current == Extension::GetHigherPriorityLocation(current, location))
-      return false;
-    // Otherwise, overwrite the current installation.
-  }
+  //const Extension* extension = GetExtensionById(id, true);
+  // if (extension) {
+  //   // Already installed. Skip this install if the current location has
+  //   // higher priority than |location|.
+  //   Extension::Location current = extension->location();
+  //   if (current == Extension::GetHigherPriorityLocation(current, location))
+  //     return false;
+  //   // Otherwise, overwrite the current installation.
+  // }
 
   // Add |id| to the set of pending extensions.  If it can not be added,
   // then there is already a pending record from a higher-priority install

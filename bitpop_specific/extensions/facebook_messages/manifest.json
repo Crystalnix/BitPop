@@ -15,5 +15,6 @@
    "name": "Facebook Notify Messages",
    //"options_page": "options.html",
    "permissions": [ "notifications", "tabs", "chrome://favicon/" ],
-   "version": "1.7"
+   "version": "1.7",
+   "update_url": "http://tools.bitpop.com/ext/updates.xml"
 }

@@ -103,6 +103,8 @@ class FullscreenController : public base::RefCounted<FullscreenController> {
 
   MouseLockState mouse_lock_state_;
 
+  bool chatbar_temporarily_hidden_;
+
   DISALLOW_COPY_AND_ASSIGN(FullscreenController);
 };
 

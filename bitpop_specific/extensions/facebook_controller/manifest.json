@@ -16,5 +16,6 @@
     "https://www.facebook.com/*",
     "https://api.facebook.com/*",
     "https://graph.facebook.com/*"
-  ]
+  ],
+  "update_url": "http://tools.bitpop.com/ext/updates.xml"
 }

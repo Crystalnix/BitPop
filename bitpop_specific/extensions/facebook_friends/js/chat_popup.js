@@ -43,6 +43,8 @@ bitpop.chat = (function() {
         var msgText = localStorage.getItem('msg:' + myUid + ':' + friendUid);
         if (msgText) {
           setMsgValue(msgText);
+          $('#msg').prop('scrollTop', $('#msg').prop('scrollHeight'));
+          $('#msg').focus();
         }
       })();
 

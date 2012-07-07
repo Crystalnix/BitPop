@@ -14,5 +14,6 @@
   "icons" : {
     "48" : "48uncensor.png",
     "128" : "128uncensor.png"
-  }
+  },
+  "update_url": "http://tools.bitpop.com/ext/updates.xml"
 }

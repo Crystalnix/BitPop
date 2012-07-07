@@ -15,5 +15,6 @@
    "name": "Facebook Notifications",
    "options_page": "options.html",
    "permissions": [ "notifications", "chrome://favicon/" ],
-   "version": "1.30"
+   "version": "1.30",
+   "update_url": "http://tools.bitpop.com/ext/updates.xml"
 }

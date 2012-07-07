@@ -278,7 +278,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   static inline bool IsAutoUpdateableLocation(Location location) {
     // Only internal and external extensions can be autoupdated.
     return location == Extension::INTERNAL ||
-           IsExternalLocation(location);
+           IsExternalLocation(location) || location == Extension::COMPONENT;
   }
 
   // Whether extensions with |location| can be uninstalled or not. Policy
