@@ -205,7 +205,8 @@ void ChatItemView::ButtonPressed(views::Button* sender, const views::Event& even
   if (sender == close_button_) {
     Close(true);
   } else if (sender == openChatButton_) {
-    ActivateChat();
+    if (!chat_popup_)
+      ActivateChat();
   }
 }
 

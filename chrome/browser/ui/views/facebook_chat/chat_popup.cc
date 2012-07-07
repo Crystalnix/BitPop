@@ -100,6 +100,7 @@ void ChatPopup::OnNativeFocusChange(gfx::NativeView focused_before,
   // Don't close if a child of this window is activated (only needed on Win).
   // ChatPopups can create Javascipt dialogs; see crbug.com/106723.
   gfx::NativeView this_window = GetWidget()->GetNativeView();
+  gfx::NativeView parent_window = anchor_view()->GetWidget()->GetNativeView();
   if (focused_now == this_window ||
       ::GetWindow(focused_now, GW_OWNER) == this_window) {
     return;
@@ -108,8 +109,10 @@ void ChatPopup::OnNativeFocusChange(gfx::NativeView focused_before,
   while (focused_parent = ::GetParent(focused_parent)) {
     if (this_window == focused_parent)
       return;
+    if (parent_window == focused_parent)
+      GetWidget()->Close();
   }
-  GetWidget()->Close();
+  //GetWidget()->Close();
 #endif
 }
 
