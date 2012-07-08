@@ -148,6 +148,7 @@ ChatItemView::ChatItemView(FacebookChatItem *model, ChatbarView *chatbar)
   //openChatButton_->SetNormalHasBorder(true);
   openChatButton_->SetAnimationDuration(0);
   openChatButton_->SetEnabledColor(SK_ColorBLACK);
+  openChatButton_->SetDisabledColor(SK_ColorBLACK);
   openChatButton_->SetHighlightColor(SK_ColorBLACK);
   openChatButton_->SetHoverColor(SK_ColorBLACK);
   openChatButton_->SetFont(rb.GetFont(ResourceBundle::BaseFont));
@@ -310,6 +311,7 @@ void ChatItemView::ActivateChat() {
   chat_popup_ = ChatPopup::ShowPopup(GURL(urlString), chatbar_->browser(),
                                 this, BitpopBubbleBorder::BOTTOM_CENTER);
   chat_popup_->GetWidget()->AddObserver(this);
+  openChatButton_->SetEnabled(false);
 }
 
 const FacebookChatItem* ChatItemView::GetModel() const {
@@ -320,6 +322,7 @@ void ChatItemView::OnWidgetClosing(views::Widget* bubble) {
   if (chat_popup_ && bubble == chat_popup_->GetWidget()) {
     bubble->RemoveObserver(this);
     chat_popup_ = NULL;
+    openChatButton_->SetEnabled(true);
   }
 
   if (notification_popup_ && bubble == notification_popup_->GetWidget()) {
