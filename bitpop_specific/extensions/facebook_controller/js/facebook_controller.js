@@ -22,7 +22,8 @@ bitpop.FacebookController = (function() {
   var FQL_API_URL = 'https://graph.facebook.com/fql';
   var REST_API_URL = 'https://api.facebook.com/method/';
 
-  var FRIEND_LIST_UPDATE_INTERVAL = 1000 * 60;
+  var FRIEND_LIST_UPDATE_INTERVAL = 1000 * 60; // in milliseconds
+  var MACHINE_IDLE_INTERVAL = 60 * 10;  // in seconds
 
   var FB_PERMISSIONS = ['xmpp_login', 'offline_access',
           'user_online_presence', 'friends_online_presence',
@@ -45,7 +46,9 @@ bitpop.FacebookController = (function() {
   var offline_wait_timer = null;
   var auth_wait_timer = null;
   var strophe_wait_timer = null;
+  var query_idle_timer = null;
   var manual_disconnect = false;
+  var prevIdleState = "active";
 
   // -------------------------------------------------------------------------------
   // Public methods
@@ -192,10 +195,13 @@ bitpop.FacebookController = (function() {
         }, 10000);
     } else if (status == Strophe.Status.DISCONNECTING) {
       console.log('Strophe is disconnecting.');
-       } else if (status == Strophe.Status.DISCONNECTED) {
+      if (!(prevIdleState == 'idle' || prevIdleState == 'locked'))
+        clearInterval(query_idle_timer);
+    } else if (status == Strophe.Status.DISCONNECTED) {
       console.log('Strophe is disconnected.');
       connection.reset();
-      if (localStorage.myUid && localStorage.accessToken)
+      if (localStorage.myUid && localStorage.accessToken && 
+          !(prevIdleState == 'idle' || prevIdleState == 'locked'))
         connectToFacebookChat();
     } else if (status == Strophe.Status.CONNECTED) {
       console.log('Strophe is connected.');
@@ -207,6 +213,10 @@ bitpop.FacebookController = (function() {
       connection.send($pres().tree());
 
       notifyFriendsExtension({ type: 'chatAvailable' });
+
+      query_idle_timer = setInterval(function() {
+        chrome.idle.queryState(MACHINE_IDLE_INTERVAL, idleStateUpdate);
+      }, 30 * 1000);  // every 30 seconds
     }
   }
 
@@ -302,13 +312,43 @@ bitpop.FacebookController = (function() {
       var reply = $msg({
         to: to,
         type: 'chat'
-      })
+      });
       if (message)
         reply = reply.c('body').t(message).up();
       reply = reply.c(state, {xmlns: "http://jabber.org/protocol/chatstates"});
       connection.send(reply.tree());
 
       console.log('I sent ' + to + ': ' + message);
+    }
+  }
+
+  function idleStateUpdate(newState) {
+    if ((prevIdleState == "idle" || prevIdleState == "locked") && 
+        newState == "active") {
+      clearInterval(query_idle_timer);
+      //if (connection.connected) {
+        query_idle_timer = setInterval(function() {
+          chrome.idle.queryState(MACHINE_IDLE_INTERVAL, idleStateUpdate);
+        }, 30 * 1000);  // every 30 seconds
+      //}
+      prevIdleState = newState;
+      connection.reset();
+      if (localStorage.myUid && localStorage.accessToken)
+        connectToFacebookChat();
+      notifyObservingExtensions({ type: 'chatIsAvailable' });
+
+    } else if (prevIdleState == "active" &&
+               (newState == "idle" || newState == "locked")) {
+      clearInterval(query_idle_timer);
+      if (connection.connected) {
+        query_idle_timer = setInterval(function() {
+          chrome.idle.queryState(MACHINE_IDLE_INTERVAL, idleStateUpdate);
+        }, 1 * 1000);  // every second
+
+        prevIdleState = newState;
+        connection.disconnect();
+        notifyObservingExtensions({ type: 'chatIsIdle' });
+      }
     }
   }
 
