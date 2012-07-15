@@ -322,34 +322,39 @@ bitpop.FacebookController = (function() {
     }
   }
 
+  function startChatAgain() {
+    query_idle_timer = setInterval(function() {
+        chrome.idle.queryState(MACHINE_IDLE_INTERVAL, idleStateUpdate);
+      }, 30 * 1000);  // every 30 seconds
+    prevIdleState = 'active';
+    connection.reset();
+    if (localStorage.myUid && localStorage.accessToken)
+      connectToFacebookChat();
+    notifyObservingExtensions({ type: 'chatIsAvailable' });
+  }
+
+  function enableIdleChatState(newState, shouldLaunchTimer) {
+     clearInterval(query_idle_timer);
+     if (connection.connected) {
+       if (shouldLaunchTimer)
+         query_idle_timer = setInterval(function() {
+           chrome.idle.queryState(MACHINE_IDLE_INTERVAL, idleStateUpdate);
+         }, 1 * 1000);  // every second
+
+       prevIdleState = newState;
+       connection.disconnect();
+       notifyObservingExtensions({ type: 'chatIsIdle' });
+     }
+  }
+
   function idleStateUpdate(newState) {
     if ((prevIdleState == "idle" || prevIdleState == "locked") && 
         newState == "active") {
       clearInterval(query_idle_timer);
-      //if (connection.connected) {
-        query_idle_timer = setInterval(function() {
-          chrome.idle.queryState(MACHINE_IDLE_INTERVAL, idleStateUpdate);
-        }, 30 * 1000);  // every 30 seconds
-      //}
-      prevIdleState = newState;
-      connection.reset();
-      if (localStorage.myUid && localStorage.accessToken)
-        connectToFacebookChat();
-      notifyObservingExtensions({ type: 'chatIsAvailable' });
-
+      startChatAgain();
     } else if (prevIdleState == "active" &&
-               (newState == "idle" || newState == "locked")) {
-      clearInterval(query_idle_timer);
-      if (connection.connected) {
-        query_idle_timer = setInterval(function() {
-          chrome.idle.queryState(MACHINE_IDLE_INTERVAL, idleStateUpdate);
-        }, 1 * 1000);  // every second
-
-        prevIdleState = newState;
-        connection.disconnect();
-        notifyObservingExtensions({ type: 'chatIsIdle' });
-      }
-    }
+               (newState == "idle" || newState == "locked"))
+      enableIdleChatState(newState, true);
   }
 
   function accessTokenFromSuccessURL(url) {
@@ -734,6 +739,14 @@ bitpop.FacebookController = (function() {
                    });
   }
 
+  function onChangeOwnStatus(request) {
+    if (request.status == 'unavailable') {
+      enableIdleChatState('idle', false);
+    } else if (request.status == 'available') {
+      startChatAgain();
+    }
+  }
+
   function sendNotLoggedInResponse(sendResponse) {
     sendResponse({ error: 'Not logged in. Please login before sending requests to Facebook' });
   }
@@ -756,7 +769,8 @@ bitpop.FacebookController = (function() {
     fqlQuery: onFqlQuery,
     restApiCall: onRestApiCall,
     getFBUserNameByUid: onGetFBUserNameByUid,
-    getMyUid: onGetMyUidForExternal
+    getMyUid: onGetMyUidForExternal,
+    changeOwnStatus: onChangeOwnStatus
   //  requestFriendList: onRequestFriendList
   };
 

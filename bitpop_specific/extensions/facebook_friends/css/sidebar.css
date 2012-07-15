@@ -98,7 +98,6 @@ ul li:hover span.leftSide {
 
 #unavail { float: left; padding-left: 3px }
 #login { float:right; padding-right: 3px }
-#logout { float:right; clear: right; }
 .disabled { opacity: 0.4; }
 .clr { clear: both; overflow: hidden; height: 1px }
 
@@ -166,21 +165,16 @@ ul li:hover span.leftSide {
 .box, .box .antiscroll-inner {
   width: 100%;
 }
-#search-wrap {
-  width: 70%;
-  padding-left:3px;
-  margin-bottom: 1em;
-  margin-top: 1em;
-}
 #search {
   width: 100%;
 }
 #logout {
-  line-height: 2em;
+  line-height: 0.8em;
+  margin: 0;
+  padding-top: 2px;
 }
 #logout a {
   color: #360000;
-  padding-right: 3px;
 }
 .error {
   color: red;
@@ -214,4 +208,49 @@ ul li:hover span.leftSide {
 
 .head-off + ul {
   display: none;
+}
+
+#sidebar-head {
+  width: 177px;
+  display: -webkit-box;
+  -webkit-box-orient: horizontal;
+  padding: 3px;
+}
+
+#sidebar-head #head-col1 {
+  padding-right: 6px;
+}
+
+#sidebar-head #head-col1 img {
+  width: 45px;
+  height: 45px;
+  border: none;
+  padding: 0;
+}
+
+#sidebar-head #head-col2 {
+  -webkit-box-flex: 1;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+}
+
+#sidebar-head #head-col2-row1 {
+  margin-bottom: 3px;
+}
+
+#sidebar-head #head-col2-row2 {
+  display: -webkit-box;
+  -webkit-box-orient: horizontal;
+}
+
+#sidebar-head #head-col2-row2 #status-select {
+  -webkit-box-flex: 1;
+  color: #888;
+  cursor: pointer;
+  padding-right: 3px;
+}
+
+#status-control {
+  width: 100%;
+  font-size: small;
 }

@@ -107,14 +107,6 @@ bitpop.FriendsSidebar = (function() {
 
       if (parent.hasClass('fav')) {
         parent.removeClass('fav');
-        // $(this).stop(true, true);
-        // this.style.display = 'none';
-
-        // // hide fav icon until next hovering
-        // parent.bind('mouseout', function() {
-        //   selfImg.style.display = '';
-        //   parent.unbind('mouseout');  // eq to $(this).unbind
-        // });
 
         if (lsKey) { localStorage.removeItem(lsKey); }
       } else {
@@ -128,6 +120,17 @@ bitpop.FriendsSidebar = (function() {
 
       e.preventDefault();
       return false;
+    });
+
+    $('#status-control').change(function () {
+      chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+        { type: "changeOwnStatus", status: $(this).val() });
+
+      var bgPage = chrome.extension.getBackgroundPage();
+      var myUid = bgPage ? bgPage.myUid : null;
+      if (myUid) {
+        localStorage[myUid.toString() + ':status'] = $(this).val();
+      }
     });
   });
 
@@ -171,6 +174,14 @@ bitpop.FriendsSidebar = (function() {
   };
 
   self.slideToFriendsView = function(dontAnimate) {
+    var bgPage = chrome.extension.getBackgroundPage();
+    var myUid = bgPage ? bgPage.myUid : undefined;
+    if (myUid) {
+      document.getElementById('head-profile-img').src =
+        'http://graph.facebook.com/' + myUid.toString() + '/picture?type=square';
+      $('#status-control').val(localStorage[myUid.toString() + ':status'] || 'available');
+    }
+
     if ($('p.error').is(':visible'))
       $('p.error').fadeOut();
 
