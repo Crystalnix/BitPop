@@ -27,7 +27,8 @@ bitpop.FacebookController = (function() {
 
   var FB_PERMISSIONS = ['xmpp_login', 'offline_access',
           'user_online_presence', 'friends_online_presence',
-          'manage_notifications', 'read_mailbox'];
+          'manage_notifications', 'read_mailbox', 'user_status',
+          'publish_stream' ];
 
   // Facebook error codes
   var FQL_ERROR = {
@@ -750,6 +751,55 @@ bitpop.FacebookController = (function() {
   function sendNotLoggedInResponse(sendResponse) {
     sendResponse({ error: 'Not logged in. Please login before sending requests to Facebook' });
   }
+
+  function setFacebookStatus(request, sendResponse) {
+    if (!localStorage.accessToken || !request.msg)
+      return;
+
+    var params = {};
+    params.access_token = localStorage.accessToken;
+    params.message = request.msg;
+
+    var path = '/me/feed';
+
+    var xhr = $.post(GRAPH_API_URL + path,
+          params,
+          function(pdata) {
+            if (pdata.error) {
+              var errorMsg = 'Unable to POST data to Facebook feed, url:' +
+                  path + '\nError: ' + pdata.error.type +
+                  ': ' + pdata.error.message;
+
+              console.error(errorMsg);
+
+              errorMsg += '\nTry to logout and login once again.';
+
+              callOnError({ error: errorMsg });
+
+              notifyObservingExtensions(
+                {
+                  type: 'operationFailed',
+                  message: errorMsg
+                }
+              );
+              return;
+            }
+            callOnSuccess(pdata);
+          },
+          'json');
+
+    if (callOnError)
+      xhr.callOnError = callOnError;
+
+    function callOnSuccess() {
+      sendResponse({ error: 'no' });
+    }
+
+    function callOnError() {
+      sendResponse({ error: 'yes' });
+    }
+  }
+
   // function onRequestFriendList(request, sendResponse) {
   //   if (friendListCached) {
   //     sendResponse({ data: friendListCached });
@@ -770,7 +820,8 @@ bitpop.FacebookController = (function() {
     restApiCall: onRestApiCall,
     getFBUserNameByUid: onGetFBUserNameByUid,
     getMyUid: onGetMyUidForExternal,
-    changeOwnStatus: onChangeOwnStatus
+    changeOwnStatus: onChangeOwnStatus,
+    setFacebookStatusMessage: setFacebookStatus
   //  requestFriendList: onRequestFriendList
   };
 

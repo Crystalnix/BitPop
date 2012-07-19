@@ -1,13 +1,4 @@
-/*
-html {
-  border-left: solid 1px #ccc;
-}
-*/
 html, body {
-  /*
-  overflow: hidden;
-  width: 186px;
-  */
   height: 100%;
   margin: 0;
   padding: 0;
@@ -22,13 +13,13 @@ html {
 body {
   overflow: hidden;
 }
-ul {
+ul.list {
   list-style-type: none;
   margin: 0;
   padding: 0;
   width: 100%;
 }
-ul li {
+ul.list li {
   border-bottom: 1px solid #ccc;
   display: block;
   margin: 0;
@@ -39,20 +30,20 @@ ul li {
   cursor: pointer;
   position: relative;
 }
-ul li:first-child { border-top: 1px solid #ccc }
-ul li:hover { background-color: #eee; }
+ul.list li:first-child { border-top: 1px solid #ccc }
+ul.list li:hover { background-color: #eee; }
 
-ul li.online-fav-divider {
+ul.list li.online-fav-divider {
   background: url(../images/more_online_bgr.png) left center no-repeat;
   text-align: center;
   color: #888;
   font-weight: bold;
   font-size: 10px;
 }
-ul li.online-fav-divider:hover {
+ul.list li.online-fav-divider:hover {
   background-color: none;
 }
-ul li .fav-img {
+ul.list li .fav-img {
   display: none;
   position: absolute;
   width: 12px;
@@ -61,23 +52,23 @@ ul li .fav-img {
   right: 20px;
 }
 
-ul li.fav:hover > .fav-img {
+ul.list li.fav:hover > .fav-img {
   display: block;
   background: url(../images/fav12.png) left top no-repeat;
 }
 
-ul li:hover > .fav-img {
+ul.list li:hover > .fav-img {
   display: block;
   background: url(../images/fav12-unsel.png) left top no-repeat;
 }
 
-ul li img {
+ul.list li img {
   vertical-align:middle;
   width: 25px;
   height: 25px;
   padding-right: 5px;
 }
-ul li img.status {
+ul.list li img.status {
   width: 12px;
   height: 12px;
   margin-left: 3px;
@@ -92,7 +83,7 @@ span.leftSide {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-ul li:hover span.leftSide {
+ul.list li:hover span.leftSide {
   width: 145px;
 }
 
@@ -202,19 +193,24 @@ ul li:hover span.leftSide {
   font-weight: bold;
 }
 
-.head-on + ul {
+.head-on + ul.list {
   display: block;
 }
 
-.head-off + ul {
+.head-off + ul.list {
   display: none;
 }
 
 #sidebar-head {
   width: 177px;
   display: -webkit-box;
-  -webkit-box-orient: horizontal;
+  -webkit-box-orient: vertical;
   padding: 3px;
+}
+
+#head-row1 {
+  display: -webkit-box;
+  -webkit-box-orient: horizontal;
 }
 
 #sidebar-head #head-col1 {
@@ -235,7 +231,17 @@ ul li:hover span.leftSide {
 }
 
 #sidebar-head #head-col2-row1 {
+  font-size: 11px;
+  color: #444;
+  border: solid 1px #ccc;
+  border-radius: 3px;
+  padding: 0 2px;
+  cursor: pointer;
   margin-bottom: 3px;
+  -webkit-box-flex: 1;
+  max-height: 26px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #sidebar-head #head-col2-row2 {
@@ -253,4 +259,13 @@ ul li:hover span.leftSide {
 #status-control {
   width: 100%;
   font-size: small;
+}
+
+#status-input-area {
+  outline: none;
+  border: 1px solid #ccc;
+  width: 98%;
+  resize: none;
+  font-size: 11px;
+  font-family: "lucida grande",tahoma,verdana,arial,sans-serif;
 }

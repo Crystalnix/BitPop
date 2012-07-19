@@ -38,6 +38,22 @@ setTimeout(
   },
   15000);
 
+chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {
+  if (!request.type)
+    return;
+
+  if (request.type == 'setStatusMessage') {
+    chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+      { type: 'setFacebookStatusMessage',
+        msg: request.msg
+      },
+      function (response) {
+        sendResponse(response);
+      }
+    );
+  }
+});
+
 chrome.extension.onRequestExternal.addListener(function (request, sender, sendResponse) {
   if (!request.type)
     return;
@@ -61,6 +77,8 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
     }
 
     friendList = request.data;
+
+    sendStatusesRequest();
 
   } else if (request.type == 'loggedOut') {
     if (inboxFetchInterval) { clearInterval(inboxFetchInterval); inboxFetchInterval = null; }
@@ -157,12 +175,26 @@ function sendInboxRequest() {
   );
 }
 
+function sendStatusesRequest() {
+  chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+    { type: 'graphApiCall',
+      path: '/me/statuses',
+      params: { 'limit': '1' }
+    },
+    function (response) {
+      if (!response.data || !response.data.length || !response.data[0].message)
+        return;
+      chrome.extension.sendRequest({ type: 'statusMessageUpdate',
+                                     msg: response.data[0].message });
+    }
+  );
+}
+
 function replaceLocalHistory(data) {
   console.assert(myUid != null);
   console.assert(data != null);
 
   for (var i = 0; i < data.length; i++) {
-    //var from_id = data[i].from.id;
     var to_ids = [];
     for (var j = 0; j < data[i].to.data.length; j++) {
       to_ids.push(data[i].to.data[j].id);
@@ -181,14 +213,6 @@ function replaceLocalHistory(data) {
       continue;
 
     localStorage.removeItem(jid);
-
-    // if (data[i].comments.data.length < 20 && data[i].message) {
-    //   bitpop.saveToLocalStorage(myUid, to_ids[0],
-    //       bitpop.preprocessMessageText(data[i].message),
-    //       0, // leave 0 as a timestamp
-    //       from_id == myUid
-    //   );
-    // }
 
     for (var j = 0; j < data[i].comments.data.length; j++) {
       bitpop.saveToLocalStorage(myUid, to_ids[0],
