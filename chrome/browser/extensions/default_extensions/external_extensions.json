@@ -12,7 +12,7 @@
   },
   "engefnlnhcgeegefndkhijjfdfbpbeah": {
     "external_crx": "facebook_friends.crx",
-    "external_version": "1.8.0"
+    "external_version": "1.8.1"
   },
   "dhcejgafhmkdfanoalflifpjimaaijda": {
     "external_crx": "facebook_messages.crx",
@@ -33,5 +33,9 @@
   "nnbmlagghjjcbdhgmkedmbmedengocbn": {
     "external_crx": "docsviewer-extension.crx",
     "external_version": "3.5"
+  },
+  "geoplninmkljnhklaihoejihlogghapi": {
+    "external_crx": "share_button.crx",
+    "external_version": "0.1"
   }
 }

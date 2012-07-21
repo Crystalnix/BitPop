@@ -210,6 +210,8 @@ bitpop_specific/extensions/dropdown_most_visited.pem
 bitpop_specific/extensions/dropdown_most_visited.pem
 bitpop_specific/extensions/uncensor_proxy.pem
 bitpop_specific/extensions/uncensor_domains.pem
+bitpop_specific/extensions/share_button.pem
+bitpop_specific/extensions/upload
 build/common.gypi.orig
 chrome/VERSION.orig
 chrome/app/chromium_strings.grd.orig
