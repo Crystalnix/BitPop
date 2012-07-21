@@ -21,7 +21,7 @@
   -webkit-box-sizing: border-box;
 }
 
-.tile-page-content {
+.tile-page-content, .news-iframe {
   overflow-y: scroll;
   /* This value is mirrored in TilePage.updateTopMargin_ */
   padding-top: 60px;

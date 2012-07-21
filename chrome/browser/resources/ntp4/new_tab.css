@@ -95,10 +95,11 @@ body {
 #card-slider-frame {
   /* Must match #footer height. */
   bottom: 50px;
-  overflow: hidden;
+  /*overflow: hidden;
+   */
   /* We want this to fill the window except for the region used
      by footer */
-  position: fixed;
+  position: absolute;
   top: 0;
   width: 100%;
 }

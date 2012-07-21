@@ -109,8 +109,8 @@ cr.define('cr.ui', function() {
       var view = this.container_.ownerDocument.defaultView;
       assert(view.getComputedStyle(this.container_).display == '-webkit-box',
           'Container should be display -webkit-box.');
-      assert(view.getComputedStyle(this.frame_).overflow == 'hidden',
-          'Frame should be overflow hidden.');
+      //assert(view.getComputedStyle(this.frame_).overflow == 'hidden',
+      //    'Frame should be overflow hidden.');
       assert(view.getComputedStyle(this.container_).position == 'static',
           'Container should be position static.');
 

@@ -113,6 +113,10 @@ cr.define('ntp4', function() {
                               false);
     chrome.send('getMostVisited');
 
+    newTabView.appendTilePage(new ntp4.NewsPage('http://www.boxbub.com'),
+                              'BoxBub',
+                              false);
+
     if (templateData.isWebStoreExperimentEnabled) {
       var webstoreLink = localStrings.getString('webStoreLink');
       var url = appendParam(webstoreLink, 'utm_source', 'chrome-ntp-launcher');
