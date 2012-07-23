@@ -26,8 +26,8 @@ using content::WebContents;
 // The maximum is an arbitrary number that should be smaller than most screens.
 const int ChatPopup::kMinWidth = 25;
 const int ChatPopup::kMinHeight = 25;
-const int ChatPopup::kMaxWidth = 800;
-const int ChatPopup::kMaxHeight = 600;
+const int ChatPopup::kMaxWidth = 203 + 4;
+const int ChatPopup::kMaxHeight = 350 + 4 + 7;
 
 ChatPopup::ChatPopup(
     Browser* browser,
@@ -69,7 +69,7 @@ void ChatPopup::Observe(int type,
     case content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME:
       DCHECK(content::Source<WebContents>(host()->host_contents()) == source);
       // Show when the content finishes loading and its width is computed.
-      ShowBubble();
+      host()->host_contents()->Focus();
       break;
     case chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE:
       // If we aren't the host of the popup, then disregard the notification.
@@ -131,8 +131,8 @@ ChatPopup* ChatPopup::ShowPopup(
 
   // If the host had somehow finished loading, then we'd miss the notification
   // and not show.  This seems to happen in single-process mode.
-  if (host->did_stop_loading())
-    popup->ShowBubble();
+  //if (host->did_stop_loading())
+  popup->ShowBubble();
 
   return popup;
 }
@@ -141,8 +141,7 @@ void ChatPopup::ShowBubble() {
   Show();
 
   // Focus on the host contents when the bubble is first shown.
-  host()->host_contents()->Focus();
-
+  
   // Listen for widget focus changes after showing (used for non-aura win).
   views::WidgetFocusManager::GetInstance()->AddFocusChangeListener(this);
 }
