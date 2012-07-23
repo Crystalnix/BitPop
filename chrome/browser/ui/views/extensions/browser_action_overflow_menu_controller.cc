@@ -11,6 +11,7 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/views/browser_actions_container.h"
 #include "chrome/browser/ui/views/extensions/browser_action_drag_data.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "ui/gfx/canvas_skia.h"
@@ -51,6 +52,11 @@ BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
             owner_->GetCurrentTabId()));
     menu_->SetTooltip(tooltip, command_id);
 
+    if (view->button()->extension()->id() == chrome::kFacebookMessagesExtensionId)
+      facebook_messages_item_id_ = command_id;
+    if (view->button()->extension()->id() == chrome::kFacebookNotificationsExtensionId)
+      facebook_notifications_item_id_ = command_id;
+
     ++command_id;
   }
 }
@@ -62,6 +68,11 @@ BrowserActionOverflowMenuController::~BrowserActionOverflowMenuController() {
 
 bool BrowserActionOverflowMenuController::RunMenu(views::Widget* window,
                                                   bool for_drop) {
+  if (!owner_->profile()->should_show_additional_extensions()) {
+    menu_->GetMenuItemByID(facebook_messages_item_id_)->SetVisible(false);
+    menu_->GetMenuItemByID(facebook_notifications_item_id_)->SetVisible(false);
+  }
+  
   for_drop_ = for_drop;
 
   gfx::Rect bounds = menu_button_->bounds();
