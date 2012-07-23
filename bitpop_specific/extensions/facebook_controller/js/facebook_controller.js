@@ -800,11 +800,9 @@ bitpop.FacebookController = (function() {
     }
   }
 
-  // function onRequestFriendList(request, sendResponse) {
-  //   if (friendListCached) {
-  //     sendResponse({ data: friendListCached });
-  //   }
-  // }
+  function onRequestFriendList(request) {
+    getFriendList();
+  }
 
   // -------------------------------------------------------------------------------
   // Private data
@@ -821,8 +819,8 @@ bitpop.FacebookController = (function() {
     getFBUserNameByUid: onGetFBUserNameByUid,
     getMyUid: onGetMyUidForExternal,
     changeOwnStatus: onChangeOwnStatus,
-    setFacebookStatusMessage: setFacebookStatus
-  //  requestFriendList: onRequestFriendList
+    setFacebookStatusMessage: setFacebookStatus,
+    forceFriendListSend: onRequestFriendList
   };
 
   var friendListCached = null;

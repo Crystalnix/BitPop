@@ -319,6 +319,9 @@ function formatFeedItem(thread, users) {
     var onNewMessageClick = function () {
       chrome.tabs.getSelected(null,function(tab) {
           var tablink = tab.url;
+          if (tablink.indexOf('chrome://') != -1)
+            tablink = 'http://www.bitpop.com';
+
           chrome.windows.create({ url: "http://www.facebook.com/dialog/send?app_id=190635611002798&display=popup&link=" + encodeURIComponent(tablink) + "&redirect_uri=https://www.facebook.com/connect/login_success.html", type: "popup", width: 998, height: 421 })
       });
     };

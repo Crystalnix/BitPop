@@ -32,11 +32,15 @@ setTimeout(
         { type: 'getMyUid' },
         function(response) {
           myUid = response.id;
+          chrome.extension.sendRequest(
+            bitpop.CONTROLLER_EXTENSION_ID,
+            { type: 'forceFriendListSend' }
+          );
         }
       );
     }
   },
-  15000);
+  5000);
 
 chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {
   if (!request.type)

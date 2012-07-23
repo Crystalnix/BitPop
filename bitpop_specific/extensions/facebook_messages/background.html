@@ -7,6 +7,25 @@
     var current = window.options.current;
 
     var myUid = null;
+
+    setTimeout(
+      function() {
+        if (!myUid) {
+          chrome.extension.sendRequest(
+            bitpop.CONTROLLER_EXTENSION_ID, 
+            { type: 'getMyUid' },
+            function(response) {
+              myUid = response.id;
+
+              DesktopNotifications.threads_unseen_before = [];
+              DesktopNotifications.just_connected = true;
+
+              DesktopNotifications.start(current.refreshTime); 
+            }
+          );
+        }
+      },
+      5000); 
   </script>
 </head>
 <body>
