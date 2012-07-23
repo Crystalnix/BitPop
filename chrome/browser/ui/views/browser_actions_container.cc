@@ -505,16 +505,6 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
     if (service) {
       const Extension* extension = service->GetExtensionById(chrome::kFacebookChatExtensionId, false);
       model_->MoveBrowserAction(extension, 0);
-
-      if (!profile_->should_show_additional_extensions()) {
-        extension = service->GetExtensionById(chrome::kFacebookMessagesExtensionId, false);
-        if (extension)
-          service->SetBrowserActionVisibility(extension, false);
-
-        extension = service->GetExtensionById(chrome::kFacebookNotificationsExtensionId, false);
-        if (extension)
-          service->SetBrowserActionVisibility(extension, false);
-      }
     }
   }
 
@@ -526,6 +516,10 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
     BrowserActionView* view = new BrowserActionView(*iter, this);
     browser_action_views_.push_back(view);
     AddChildView(view);
+
+    if (!profile_->should_show_additional_extensions() && 
+        ((*iter)->id() == chrome::kFacebookMessagesExtensionId || (*iter)->id() == chrome::kFacebookNotificationsExtensionId))
+      view->SetVisible(false);
   }
 }
 
@@ -628,9 +622,18 @@ void BrowserActionsContainer::Layout() {
 
   // Now draw the icons for the browser actions in the available space.
   int icon_width = IconWidth(false);
+  int sub = 0;
   for (size_t i = 0; i < browser_action_views_.size(); ++i) {
     BrowserActionView* view = browser_action_views_[i];
-    int x = ToolbarView::kStandardSpacing + (i * IconWidth(true));
+    int x = ToolbarView::kStandardSpacing + ((i - sub) * IconWidth(true));
+    if (!profile_->should_show_additional_extensions() && 
+            (view->button()->extension()->id() == chrome::kFacebookMessagesExtensionId ||
+             view->button()->extension()->id() == chrome::kFacebookNotificationsExtensionId)) {
+      sub++;
+      view->SetVisible(false);
+      continue;
+    }
+
     if (x + icon_width <= max_x) {
       view->SetBounds(x, 0, icon_width, height());
       view->SetVisible(true);
@@ -901,7 +904,7 @@ void BrowserActionsContainer::TestExecuteBrowserAction(int index) {
 
 void BrowserActionsContainer::TestSetIconVisibilityCount(size_t icons) {
   model_->SetVisibleIconCount(icons);
-  chevron_->SetVisible(icons < browser_action_views_.size());
+  chevron_->SetVisible(icons < browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true)));
   container_width_ = IconCountToWidth(icons, chevron_->visible());
   Layout();
   SchedulePaint();
@@ -1008,10 +1011,8 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
   if (!profile_->should_show_additional_extensions() &&
       (extension->id() == chrome::kFacebookMessagesExtensionId ||
        extension->id() == chrome::kFacebookNotificationsExtensionId)) {
-
-    ExtensionService* service = profile_->GetExtensionService();
-    if (service)
-      service->SetBrowserActionVisibility(extension, false);
+    view->SetVisible(false);
+    OnBrowserActionVisibilityChanged();
   }
 }
 
@@ -1033,7 +1034,7 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
       if (profile_->GetExtensionService()->IsBeingUpgraded(extension))
         return;
 
-      if (browser_action_views_.size() > visible_actions) {
+      if (browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true)) > visible_actions) {
         // If we have more icons than we can show, then we must not be changing
         // the container size (since we either removed an icon from the main
         // area and one from the overflow list will have shifted in, or we
@@ -1044,7 +1045,7 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
         // overflow container by 1.  Either way the size changed, so animate.
         chevron_->SetVisible(false);
         SaveDesiredSizeAndAnimate(ui::Tween::EASE_OUT,
-                                  browser_action_views_.size());
+                                  browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true)));
       }
       return;
     }
@@ -1081,8 +1082,8 @@ void BrowserActionsContainer::LoadImages() {
 void BrowserActionsContainer::SetContainerWidth() {
   int visible_actions = model_->GetVisibleIconCount();
   if (visible_actions < 0)  // All icons should be visible.
-    visible_actions = model_->size();
-  chevron_->SetVisible(static_cast<size_t>(visible_actions) < model_->size());
+    visible_actions = model_->size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true));
+  chevron_->SetVisible(static_cast<size_t>(visible_actions) < model_->size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true)));
   container_width_ = IconCountToWidth(visible_actions, chevron_->visible());
 }
 
@@ -1123,7 +1124,7 @@ void BrowserActionsContainer::SetDropIndicator(int x_pos) {
 int BrowserActionsContainer::IconCountToWidth(int icons,
                                               bool display_chevron) const {
   if (icons < 0)
-    icons = browser_action_views_.size();
+    icons = browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2);
   if ((icons == 0) && !display_chevron)
     return ToolbarView::kStandardSpacing;
   int icons_size =
@@ -1137,7 +1138,7 @@ int BrowserActionsContainer::IconCountToWidth(int icons,
 size_t BrowserActionsContainer::WidthToIconCount(int pixels) const {
   // Check for widths large enough to show the entire icon set.
   if (pixels >= IconCountToWidth(-1, false))
-    return browser_action_views_.size();
+    return browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true));
 
   // We need to reserve space for the resize area, chevron, and the spacing on
   // either side of the chevron.
@@ -1168,7 +1169,7 @@ void BrowserActionsContainer::SaveDesiredSizeAndAnimate(
     model_->SetVisibleIconCount(num_visible_icons);
 
   int target_size = IconCountToWidth(num_visible_icons,
-      num_visible_icons < browser_action_views_.size());
+      num_visible_icons < browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true)));
   if (!disable_animations_during_testing_) {
     // Animate! We have to set the animation_target_size_ after calling Reset(),
     // because that could end up calling AnimationEnded which clears the value.
@@ -1204,12 +1205,22 @@ void BrowserActionsContainer::SetFacebookExtensionsVisibility(bool visible) {
   ExtensionService* service = profile_->GetExtensionService();
 
   const Extension* extension = service->GetExtensionById(chrome::kFacebookMessagesExtensionId, false);
-  if (extension)
-    service->SetBrowserActionVisibility(extension, visible);
+  if (extension) {
+    for (BrowserActionViews::iterator it = browser_action_views_.begin(); it != browser_action_views_.end(); it++) {
+      if ((*it)->button()->extension()->id() == extension->id())
+        (*it)->SetVisible(visible);
+    }
+  }
 
   extension = service->GetExtensionById(chrome::kFacebookNotificationsExtensionId, false);
-  if (extension)
-    service->SetBrowserActionVisibility(extension, visible);
+  if (extension) {
+    for (BrowserActionViews::iterator it = browser_action_views_.begin(); it != browser_action_views_.end(); it++) {
+      if ((*it)->button()->extension()->id() == extension->id())
+        (*it)->SetVisible(visible);
+    }
+  }  
+
+  OnBrowserActionVisibilityChanged();
 
   if (visible) {
     MoveBrowserAction(chrome::kFacebookMessagesExtensionId, 1);

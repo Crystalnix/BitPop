@@ -315,12 +315,19 @@ function formatFeedItem(thread, users) {
       else
         $('#slide-wrap').stop().scrollLeft(0);
     };
+
+    var onNewMessageClick = function () {
+      chrome.tabs.getSelected(null,function(tab) {
+          var tablink = tab.url;
+          chrome.windows.create({ url: "http://www.facebook.com/dialog/send?app_id=190635611002798&display=popup&link=" + encodeURIComponent(tablink) + "&redirect_uri=https://www.facebook.com/connect/login_success.html", type: "popup", width: 998, height: 421 })
+      });
+    };
   </script>
 </head>
 <body>
   <div id="header">
     <div class='title'>Messages</div>
-    <div class='action' onclick='chrome.windows.create({ url: "http://www.facebook.com/dialog/send?app_id=190635611002798&redirect_uri=https://www.facebook.com/connect/login_success.html", type: "popup", width: 998, height: 421 })'>Send a New Message</div>
+    <div class='action' onclick='onNewMessageClick()'>Send a New Message</div>
   </div>
 
   <div id="slide-wrap">

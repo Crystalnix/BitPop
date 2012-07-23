@@ -16,7 +16,7 @@
   },
   "dhcejgafhmkdfanoalflifpjimaaijda": {
     "external_crx": "facebook_messages.crx",
-    "external_version": "1.8"
+    "external_version": "1.9"
   },
   "omkphklbdjafhafacohmepaahbofnkcp": {
     "external_crx": "facebook_notifications.crx",
@@ -36,6 +36,6 @@
   },
   "geoplninmkljnhklaihoejihlogghapi": {
     "external_crx": "share_button.crx",
-    "external_version": "0.1"
+    "external_version": "0.2"
   }
 }
