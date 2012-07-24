@@ -108,11 +108,15 @@ textarea#msg {
       margin-bottom: 3px;
       white-space: pre-wrap;
     }
-#chat li.time {
+
+#chat .chat-timestamp {
   text-align: center;
   color: silver;
-  border-bottom: solid 1px silver;
+  font-size: 10px;
+  font-weight: bold;
+  padding: 0 0 4px;
 }
+
 #pastePageLink {
   width: 16px;
   height: 16px;

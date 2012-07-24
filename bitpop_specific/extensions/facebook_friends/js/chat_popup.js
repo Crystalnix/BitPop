@@ -24,8 +24,9 @@ bitpop.chat = (function() {
         var lsKey = myUid + ':' + friendUid;
         if (lsKey in localStorage) {
           var msgs = JSON.parse(localStorage[lsKey]);
+          var refDate = new Date(msgs[msgs.length-1].time);
           for (var i = 0; i < msgs.length; ++i) {
-            var msgDate = new Date(Date.parse(msgs[i].time));
+            var msgDate = new Date(msgs[i].time);
             appendMessage(msgs[i].msg, msgDate, msgs[i].me);
           }
         }
@@ -210,14 +211,62 @@ bitpop.chat = (function() {
       $('.antiscroll-inner').height() + 5 >= $('.box-inner').height();
   }
 
+  function isSameMinute(date1, date2) {
+    if (!date1 || !date2)
+      return false;
+
+    return (date1.getFullYear() == date2.getFullYear() &&
+            date1.getMonth() == date2.getMonth() &&
+            date1.getDate() == date2.getDate() &&
+            date1.getHours() == date2.getHours() &&
+            date1.getMinutes() == date2.getMinutes());
+  }
+
+  function isSameDay(date1, date2) {
+    if (!date1 || !date2)
+      return false;
+
+    return (date1.getFullYear() == date2.getFullYear() &&
+            date1.getMonth() == date2.getMonth() &&
+            date1.getDate() == date2.getDate());
+  }
+
+  function dateToString(date, isShortDate) {
+    var hrs = date.getHours();
+    var mins = date.getMinutes();
+
+    mins = (mins < 10) ? '0' + mins.toString() : mins.toString();
+
+    var res = '';
+
+    if (hrs == 12)
+      res = hrs.toString() + ':' + mins + 'PM';
+    else if (hrs == 0)
+      res = '12:' + mins + 'AM';
+    else if (hrs > 12)
+      res = (hrs - 12).toString() + ':' + mins + ' PM';
+    else
+      res = hrs.toString() + ':' + mins + ' AM';
+
+    if (!isShortDate) {
+      var monthsToStr = [ 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec' ];
+      res = monthsToStr[date.getMonth()] + ' ' + date.getDate().toString() + ', ' + date.getFullYear().toString() + ' at ' + res;
+    }
+
+    return res;
+  }
+
   function appendMessage(msg, msgDate, me) {
+    var refDate = new Date();
     var uid = me ? myUid : friendUid;
-    var createMessageGroup = (lastMessageUid != uid);
+    var dateDiffersForMoreThan1Min = lastMessageTime ? !isSameMinute(lastMessageTime, msgDate) : true;
+    var createMessageGroup = (lastMessageUid != uid) || dateDiffersForMoreThan1Min;
 
     if (createMessageGroup) {
       var profileUrl = 'http://www.facebook.com/profile.php?id=' + uid.toString();
       $('.composing-notification').before(
           '<div class="message-group clearfix">' +
+            (dateDiffersForMoreThan1Min ? '<div class="chat-timestamp">' + dateToString(msgDate, !refDate || isSameDay(msgDate, refDate)) + '</div>' : '') +
             '<a class="profile-link" tabIndex="-1" href="' + profileUrl + '">' +
             '<img class="profile-photo" src="http://graph.facebook.com/' +
               uid.toString() + '/picture" alt="">' +
