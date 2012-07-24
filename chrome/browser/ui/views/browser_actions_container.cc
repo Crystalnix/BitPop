@@ -743,6 +743,8 @@ int BrowserActionsContainer::OnPerformDrop(
   size_t i = 0;
   for (; i < browser_action_views_.size(); ++i) {
     int view_x = browser_action_views_[i]->GetMirroredBounds().x();
+    if (!browser_action_views_[i]->visible() && !profile_->should_show_additional_extensions() && (i == 1 || i == 2))
+      continue;
     if (!browser_action_views_[i]->visible() ||
         (base::i18n::IsRTL() ? (view_x < drop_indicator_position_) :
             (view_x >= drop_indicator_position_))) {
@@ -762,6 +764,13 @@ int BrowserActionsContainer::OnPerformDrop(
 
   if (profile_->IsOffTheRecord())
     i = model_->IncognitoIndexToOriginal(i);
+
+  std::string extension_id = browser_action_views_[data.index()]->button()->extension()->id();
+  if (i < 3 &&
+        extension_id != chrome::kFacebookChatExtensionId &&
+        extension_id != chrome::kFacebookMessagesExtensionId && 
+        extension_id != chrome::kFacebookNotificationsExtensionId)
+      i = 3;
 
   model_->MoveBrowserAction(
       browser_action_views_[data.index()]->button()->extension(), i);
@@ -884,6 +893,11 @@ void BrowserActionsContainer::MoveBrowserAction(const std::string& extension_id,
   ExtensionService* service = profile_->GetExtensionService();
   if (service) {
     const Extension* extension = service->GetExtensionById(extension_id, false);
+    if (new_index < 3 &&
+        extension_id != chrome::kFacebookChatExtensionId &&
+        extension_id != chrome::kFacebookMessagesExtensionId && 
+        extension_id != chrome::kFacebookNotificationsExtensionId)
+      new_index = 3;
     model_->MoveBrowserAction(extension, new_index);
     SchedulePaint();
   }
@@ -904,7 +918,7 @@ void BrowserActionsContainer::TestExecuteBrowserAction(int index) {
 
 void BrowserActionsContainer::TestSetIconVisibilityCount(size_t icons) {
   model_->SetVisibleIconCount(icons);
-  chevron_->SetVisible(icons < browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true)));
+  chevron_->SetVisible(icons < browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2));
   container_width_ = IconCountToWidth(icons, chevron_->visible());
   Layout();
   SchedulePaint();
@@ -1034,7 +1048,7 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
       if (profile_->GetExtensionService()->IsBeingUpgraded(extension))
         return;
 
-      if (browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true)) > visible_actions) {
+      if (browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2) > visible_actions) {
         // If we have more icons than we can show, then we must not be changing
         // the container size (since we either removed an icon from the main
         // area and one from the overflow list will have shifted in, or we
@@ -1045,7 +1059,7 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
         // overflow container by 1.  Either way the size changed, so animate.
         chevron_->SetVisible(false);
         SaveDesiredSizeAndAnimate(ui::Tween::EASE_OUT,
-                                  browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true)));
+                                  browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2));
       }
       return;
     }
@@ -1081,9 +1095,15 @@ void BrowserActionsContainer::LoadImages() {
 
 void BrowserActionsContainer::SetContainerWidth() {
   int visible_actions = model_->GetVisibleIconCount();
-  if (visible_actions < 0)  // All icons should be visible.
-    visible_actions = model_->size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true));
-  chevron_->SetVisible(static_cast<size_t>(visible_actions) < model_->size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true)));
+  if (visible_actions >= 0) {
+    if (model_->size() == 3 || model_->size() == 4)
+      visible_actions = static_cast<int>(std::min(static_cast<size_t>(visible_actions), model_->size() - (profile_->should_show_additional_extensions() ? 0 : 2)));
+    else
+      visible_actions -= (profile_->should_show_additional_extensions() ? 0 : 2);
+  } else // All icons should be visible.
+    visible_actions = model_->size() - (profile_->should_show_additional_extensions() ? 0 : 2);
+  
+  chevron_->SetVisible(static_cast<size_t>(visible_actions) < model_->size() - (profile_->should_show_additional_extensions() ? 0 : 2));
   container_width_ = IconCountToWidth(visible_actions, chevron_->visible());
 }
 
@@ -1138,7 +1158,7 @@ int BrowserActionsContainer::IconCountToWidth(int icons,
 size_t BrowserActionsContainer::WidthToIconCount(int pixels) const {
   // Check for widths large enough to show the entire icon set.
   if (pixels >= IconCountToWidth(-1, false))
-    return browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true));
+    return browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2);
 
   // We need to reserve space for the resize area, chevron, and the spacing on
   // either side of the chevron.
@@ -1169,7 +1189,7 @@ void BrowserActionsContainer::SaveDesiredSizeAndAnimate(
     model_->SetVisibleIconCount(num_visible_icons);
 
   int target_size = IconCountToWidth(num_visible_icons,
-      num_visible_icons < browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2 * IconWidth(true)));
+      num_visible_icons < browser_action_views_.size() - (profile_->should_show_additional_extensions() ? 0 : 2));
   if (!disable_animations_during_testing_) {
     // Animate! We have to set the animation_target_size_ after calling Reset(),
     // because that could end up calling AnimationEnded which clears the value.
