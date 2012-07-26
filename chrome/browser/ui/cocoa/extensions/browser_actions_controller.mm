@@ -537,7 +537,9 @@ class ExtensionServiceObserverBridge : public content::NotificationObserver,
     return;
 
   if (profile_->IsOffTheRecord())
-    index = toolbarModel_->OriginalIndexToIncognito(index);
+    index = toolbarModel_->OriginalIndexToIncognito(index) - 3;
+  else if (!profile_->should_show_additional_extensions())
+    index -= 2;
 
   // Show the container if it's the first button. Otherwise it will be shown
   // already.
@@ -772,9 +774,10 @@ class ExtensionServiceObserverBridge : public content::NotificationObserver,
         NSWidth(NSIntersectionRect(draggedButtonFrame, [button frame]));
 
     if (intersectionWidth > dragThreshold && button != draggedButton &&
-        ![button isAnimating] && index < [self visibleButtonCount] &&
-        ((!profile_->should_show_additional_extensions() && index != 0) ||
-         (profile_->should_show_additional_extensions() && index > 2))) {
+        ![button isAnimating] && index < ([self visibleButtonCount] +
+        (profile_->IsOffTheRecord() ? 3 :
+          (!profile_->should_show_additional_extensions() ? 2 : 0))) &&
+        index > 2) {
       toolbarModel_->MoveBrowserAction([draggedButton extension], index);
       [self positionActionButtonsAndAnimate:YES];
       return;
@@ -842,9 +845,11 @@ class ExtensionServiceObserverBridge : public content::NotificationObserver,
   BOOL res =
       (!profile_->IsOffTheRecord() ||
        profile_->GetExtensionService()->IsIncognitoEnabled(extension->id()));
-  if (((extension->id() == chrome::kFacebookMessagesExtensionId) ||
+  if ((((extension->id() == chrome::kFacebookMessagesExtensionId) ||
        (extension->id() == chrome::kFacebookNotificationsExtensionId)) &&
-      !profile_->should_show_additional_extensions())
+      !profile_->should_show_additional_extensions()) ||
+      (profile_->IsOffTheRecord() &&
+        extension->id() == chrome::kFacebookChatExtensionId))
     res = false;
   return res;
 }

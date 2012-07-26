@@ -25,6 +25,9 @@ namespace {
 // The duration for any animations that might be invoked by this controller.
 const NSTimeInterval kAnimationDuration = 0.2;
 
+const CGFloat kPopupWidth = 203;
+const CGFloat kPopupHeight = 350;
+
 // There should only be one extension popup showing at one time. Keep a
 // reference to it here.
 static FacebookPopupController* gPopup;
@@ -109,10 +112,10 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
 
   extensionView_ = host->view()->native_view();
   NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
-  [center addObserver:self
-             selector:@selector(extensionViewFrameChanged)
-                 name:NSViewFrameDidChangeNotification
-               object:extensionView_];
+  //[center addObserver:self
+  //           selector:@selector(extensionViewFrameChanged)
+  //               name:NSViewFrameDidChangeNotification
+  //             object:extensionView_];
 
   // Watch to see if the parent window closes, and if so, close this one.
   [center addObserver:self
@@ -240,6 +243,13 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
         anchoredAt:anchoredAt
      arrowLocation:arrowLocation
            devMode:devMode];
+
+  NSRect extFrame = gPopup->extensionView_.frame;
+  extFrame.size = NSMakeSize(kPopupWidth, kPopupHeight);
+  gPopup->extensionView_.frame = extFrame;
+
+  [gPopup extensionViewFrameChanged];
+
   return gPopup;
 }
 
