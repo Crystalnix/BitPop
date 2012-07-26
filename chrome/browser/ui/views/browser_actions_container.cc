@@ -768,7 +768,7 @@ int BrowserActionsContainer::OnPerformDrop(
   std::string extension_id = browser_action_views_[data.index()]->button()->extension()->id();
   if (i < 3 &&
         extension_id != chrome::kFacebookChatExtensionId &&
-        extension_id != chrome::kFacebookMessagesExtensionId && 
+        extension_id != chrome::kFacebookMessagesExtensionId &&
         extension_id != chrome::kFacebookNotificationsExtensionId)
       i = 3;
 
@@ -1096,7 +1096,7 @@ void BrowserActionsContainer::LoadImages() {
 void BrowserActionsContainer::SetContainerWidth() {
   int visible_actions = model_->GetVisibleIconCount();
   if (visible_actions >= 0) {
-    if (model_->size() == 3 || model_->size() == 4)
+    if (model_->size() >= 3 && model_->size() <= 5)
       visible_actions = static_cast<int>(std::min(static_cast<size_t>(visible_actions), model_->size() - 
           (profile_->should_show_additional_extensions() ? 0 : 2) -
           (profile_->IsOffTheRecord() ? 1 : 0)));
@@ -1256,5 +1256,17 @@ void BrowserActionsContainer::SetFacebookExtensionsVisibility(bool visible) {
   if (visible) {
     MoveBrowserAction(chrome::kFacebookMessagesExtensionId, 1);
     MoveBrowserAction(chrome::kFacebookNotificationsExtensionId, 2);
+
+    if (model_ &&
+        !profile_->GetPrefs()->HasPrefPath(prefs::kExtensionToolbarSize)) {
+      // Migration code to the new VisibleIconCount pref.
+      // TODO(mpcomplete): remove this after users are upgraded to 5.0.
+      int predefined_width =
+          profile_->GetPrefs()->GetInteger(prefs::kBrowserActionContainerWidth);
+      if (predefined_width != 0)
+        model_->SetVisibleIconCount(WidthToIconCount(predefined_width));
+    }
+    if (model_ && model_->extensions_initialized())
+      SetContainerWidth();
   }
 }
