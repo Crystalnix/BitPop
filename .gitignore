@@ -293,3 +293,5 @@ chrome/installer/util/shell_util.cc.orig
 chrome/tools/build/generate_policy_source.py.orig
 chrome/tools/build/mac/tweak_info_plist.orig
 chrome_frame/renderer_glue.cc.orig
+chrome/browser/sync/engine/cscope.out
+bitpop_specific/extensions/share_button/images/_share-icon-16x16.gif
