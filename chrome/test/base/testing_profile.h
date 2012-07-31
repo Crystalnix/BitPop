@@ -294,6 +294,10 @@ class TestingProfile : public Profile {
   // it in the content module.
   quota::SpecialStoragePolicy* GetSpecialStoragePolicy();
 
+  virtual FacebookChatManager* GetFacebookChatManager() OVERRIDE;
+  virtual bool HasCreatedFacebookChatManager() const OVERRIDE;
+  virtual FacebookBitpopNotification* GetFacebookBitpopNotification() const OVERRIDE;
+
  protected:
   base::Time start_time_;
   scoped_ptr<PrefService> prefs_;

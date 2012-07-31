@@ -851,3 +851,15 @@ void TestingProfile::DestroyWebDataService() {
 
   web_data_service_->Shutdown();
 }
+
+FacebookChatManager* TestingProfile::GetFacebookChatManager() {
+  return NULL;
+}
+
+bool TestingProfile::HasCreatedFacebookChatManager() const {
+  return false;
+}
+
+FacebookBitpopNotification* TestingProfile::GetFacebookBitpopNotification() const {
+  return NULL;
+}
