@@ -45,7 +45,7 @@ bitpop.FriendsSidebar = (function() {
         { type: 'logout' });
     });
 
-    $('#search').bind('keyup change', function () {
+    $('#search').bind('search', function () {
       self.updateDOM();
     });
 
@@ -534,11 +534,11 @@ bitpop.FriendsSidebar = (function() {
 
   self.applySearchFilter = function() {
     var s = $('#search').val();
-    if (!s)
-      return;
+    //if (!s)
+    //  return;
 
     for (var i = 0; i < self.friendList.length; i++) {
-      if (self.friendList[i].name.toLowerCase().indexOf(s.toLowerCase()) == -1) {
+      if (s && self.friendList[i].name.toLowerCase().indexOf(s.toLowerCase()) == -1) {
         self.friendList[i].excluded = true;
       } else {
         self.friendList[i].excluded = false;
