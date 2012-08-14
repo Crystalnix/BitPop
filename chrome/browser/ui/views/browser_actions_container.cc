@@ -1257,15 +1257,12 @@ void BrowserActionsContainer::SetFacebookExtensionsVisibility(bool visible) {
     MoveBrowserAction(chrome::kFacebookMessagesExtensionId, 1);
     MoveBrowserAction(chrome::kFacebookNotificationsExtensionId, 2);
 
-    if (model_ &&
-        !profile_->GetPrefs()->HasPrefPath(prefs::kExtensionToolbarSize)) {
-      // Migration code to the new VisibleIconCount pref.
-      // TODO(mpcomplete): remove this after users are upgraded to 5.0.
-      int predefined_width =
-          profile_->GetPrefs()->GetInteger(prefs::kBrowserActionContainerWidth);
-      if (predefined_width != 0)
-        model_->SetVisibleIconCount(WidthToIconCount(predefined_width));
+    if (model_ && profile_->GetPrefs()->HasPrefPath(prefs::kExtensionToolbarSize)) {
+      int savedIconCount = profile_->GetPrefs()->GetInteger(prefs::kExtensionToolbarSize);
+      if ((size_t)savedIconCount + 2 == model_->size())
+        model_->SetVisibleIconCount(-1);
     }
+
     if (model_ && model_->extensions_initialized())
       SetContainerWidth();
   }

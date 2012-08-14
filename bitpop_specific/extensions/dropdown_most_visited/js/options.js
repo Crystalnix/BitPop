@@ -43,33 +43,10 @@ $(document).ready(function(){
           });
   });
 
-  $("#should_sync").click(function(event) {
-    prevSync = localStorage['bitpop_dropdown_sync'];
-  });
-
-  prevSync = localStorage['bitpop_dropdown_sync'];
 });
 
-function setSyncUI() {
-  if (localStorage['bitpop_dropdown_sync'] == 1)
-    $('#should_sync').attr('checked', true);
-  else
-    $('#should_sync').attr('checked', false);
-}
 
 function applySyncing() {
-  if (prevSync == ($('#should_sync').is(':checked') ? 1 : 0))
-    return;
-
-  if (localStorage['bitpop_dropdown_sync'] == 1) {
-    bg_window.disableSync();
-  }
-  else {
-    bg_window.enableSync(true);
-    // TODO: save options to cache and data store
-    // TODO: save data in bookmark
-  }
-  setSyncUI();
 }
 
 function saveOptions() {
@@ -238,8 +215,6 @@ function loadOptions() {
 
   	//colors
 	resetColors();
-
-        setSyncUI();
 }
 
 function resetOptions() {

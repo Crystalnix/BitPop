@@ -7,7 +7,6 @@ var cache = {
 function init() {
   initDefaultOptions();
   loadOptionsIntoCache();
-  initSync();
 
   //first start
   chrome.tabs.getAllInWindow(null, function(tabs) {
