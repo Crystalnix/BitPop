@@ -1,6 +1,6 @@
 {
   "name": "Facebook Controller",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Make calls to Facebook Graph API, FQL queries, XMPP chat service.",
   "icons": {
     "128": "icon128.png",

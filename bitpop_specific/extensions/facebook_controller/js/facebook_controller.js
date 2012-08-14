@@ -196,8 +196,10 @@ bitpop.FacebookController = (function() {
         }, 10000);
     } else if (status == Strophe.Status.DISCONNECTING) {
       console.log('Strophe is disconnecting.');
-      if (!(prevIdleState == 'idle' || prevIdleState == 'locked'))
+      if (!(prevIdleState == 'idle' || prevIdleState == 'locked')) {
         clearInterval(query_idle_timer);
+        query_idle_timer = null;
+      }
     } else if (status == Strophe.Status.DISCONNECTED) {
       console.log('Strophe is disconnected.');
       connection.reset();
@@ -215,9 +217,10 @@ bitpop.FacebookController = (function() {
 
       notifyFriendsExtension({ type: 'chatAvailable' });
 
-      query_idle_timer = setInterval(function() {
-        chrome.idle.queryState(MACHINE_IDLE_INTERVAL, idleStateUpdate);
-      }, 30 * 1000);  // every 30 seconds
+      if (query_idle_timer === null)
+        query_idle_timer = setInterval(function() {
+          chrome.idle.queryState(MACHINE_IDLE_INTERVAL, idleStateUpdate);
+        }, 30 * 1000);  // every 30 seconds
     }
   }
 
@@ -324,9 +327,10 @@ bitpop.FacebookController = (function() {
   }
 
   function startChatAgain() {
-    query_idle_timer = setInterval(function() {
-        chrome.idle.queryState(MACHINE_IDLE_INTERVAL, idleStateUpdate);
-      }, 30 * 1000);  // every 30 seconds
+    if (query_idle_timer === null)
+      query_idle_timer = setInterval(function() {
+          chrome.idle.queryState(MACHINE_IDLE_INTERVAL, idleStateUpdate);
+        }, 30 * 1000);  // every 30 seconds
     prevIdleState = 'active';
     connection.reset();
     if (localStorage.myUid && localStorage.accessToken)
@@ -336,6 +340,7 @@ bitpop.FacebookController = (function() {
 
   function enableIdleChatState(newState, shouldLaunchTimer) {
      clearInterval(query_idle_timer);
+     query_idle_timer = null;
      if (connection.connected) {
        if (shouldLaunchTimer)
          query_idle_timer = setInterval(function() {
@@ -352,6 +357,7 @@ bitpop.FacebookController = (function() {
     if ((prevIdleState == "idle" || prevIdleState == "locked") && 
         newState == "active") {
       clearInterval(query_idle_timer);
+      query_idle_timer = null;
       startChatAgain();
     } else if (prevIdleState == "active" &&
                (newState == "idle" || newState == "locked"))
