@@ -1,5 +1,7 @@
 {
-   "background_page": "background.html",
+   "background": {
+     "scripts": ["background.js"]
+   },
    "page_action": {
       "default_icon": "images/share-icon-16x16.png",
       "default_title": "Facebook Share Button"
@@ -13,5 +15,6 @@
    },
    "name": "Facebook Share Button (by Shareaholic) (modified)",
    "permissions": [ "tabs", "http://*/*", "https://*/*" ],
-   "version": "0.2"
+   "version": "0.3",
+   "manifest_version": 2
 }

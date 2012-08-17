@@ -92,6 +92,8 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
     if (inboxFetchInterval) { clearInterval(inboxFetchInterval); inboxFetchInterval = null; }
     statuses = {};
     friendList = null;
+  } else if (request.type == 'chatIsIdle') {
+    statuses = {};
   } else if (request.type == 'userStatusChanged') {
     // send change status message: empty message body signals to only check
     // for status change

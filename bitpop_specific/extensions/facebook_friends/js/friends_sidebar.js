@@ -123,15 +123,8 @@ bitpop.FriendsSidebar = (function() {
       return false;
     });
 
-    $('#status-control').change(function () {
-      chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
-        { type: "changeOwnStatus", status: $(this).val() });
-
-      var bgPage = chrome.extension.getBackgroundPage();
-      var myUid = bgPage ? bgPage.myUid : null;
-      if (myUid) {
-        localStorage[myUid.toString() + ':status'] = $(this).val();
-      }
+    $('#status-control').change(function() {
+      onStatusControlChange($(this).val());
     });
 
     $('#head-col2-row1').click(setStatusAreaClicked);
@@ -166,6 +159,17 @@ bitpop.FriendsSidebar = (function() {
 
     self.updateDOM();
   };
+
+  function onStatusControlChange(value) {
+    chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+      { type: "changeOwnStatus", status: value });
+
+    var bgPage = chrome.extension.getBackgroundPage();
+    var myUid = bgPage ? bgPage.myUid : null;
+    if (myUid) {
+      localStorage[myUid.toString() + ':status'] = value;
+    }
+  }
 
   var setStatusAreaClicked = function(ev) {
     console.assert(this == document.getElementById('head-col2-row1'));
@@ -299,7 +303,13 @@ bitpop.FriendsSidebar = (function() {
     if (myUid) {
       document.getElementById('head-profile-img').src =
         'http://graph.facebook.com/' + myUid.toString() + '/picture?type=square';
-      $('#status-control').val(localStorage[myUid.toString() + ':status'] || 'available');
+      var oHandler = $('#status-control').data('dd');
+      if (oHandler) {
+        var value = localStorage[myUid.toString() + ':status'] || 'available';
+        oHandler.set('selectedIndex', (value == 'available') ? 0 : 1);
+        if (value == 'unavailable')
+          onStatusControlChange(value);
+      }
     }
 
     if ($('p.error').is(':visible'))

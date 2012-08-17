@@ -76,9 +76,6 @@ function initDefaultOptions() {
   if(!localStorage["ignore"]) {
     localStorage["ignore"] = JSON.stringify(new Array());
   }
-
-  if (!('bitpop_dropdown_sync' in localStorage))
-    localStorage['bitpop_dropdown_sync'] = 0;
 }
 
 function saveOptionsToCache(options) {
@@ -160,7 +157,6 @@ function readHistoryAndMergeIn() {
       processHistoryItems(items, 0, history, ignoreList, function () {
         mergeHistory(history);
         saveOptionsToDataStore();
-        saveSyncData(cache.options);
       });
     }
   );

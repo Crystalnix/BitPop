@@ -1,5 +1,7 @@
 {
-   "background_page": "background.html",
+   "background": {
+     "scripts": ["js/background.js"]
+   },
    "description": "Displays a list of sites you visited the most in a dropdown list",
    "icons": {
       "32": "icon32.png",
@@ -10,9 +12,11 @@
    "options_page": "options.html",
    "page_action": {
       "default_icon": "icon16.png",
-      "default_popup": "popup.html"
+      "default_popup": "popup.html",
+      "default_title": "Shows most visited sites."
    },
    "permissions": [ "tabs", "history", "bookmarks", "chrome://favicon/" ],
-   "version": "0.14",
-   "update_url": "http://tools.bitpop.com/ext/updates.xml"
+   "version": "0.15",
+   "update_url": "http://tools.bitpop.com/ext/updates.xml",
+   "manifest_version": 2
 }

@@ -172,9 +172,6 @@ function loadOptions() {
 		localStorage["ignore"] = JSON.stringify(new Array());
 	}
 
-        if (!('bitpop_dropdown_sync' in localStorage))
-          localStorage['bitpop_dropdown_sync'] = 0;
-
 	//load
 	$("#list_style_"+localStorage["list_style"]).attr("checked", true);
 

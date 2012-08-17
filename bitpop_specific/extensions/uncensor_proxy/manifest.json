@@ -1,8 +1,10 @@
 {
   "name": "Uncensor ISP",
-  "version": "1.4",
+  "version": "1.5",
   "description": "Your internet provider might try to block your access to some sites without proper proceedure. We give you access automatically through a proxy.",
-  "background_page": "background.html",
+  "background": {
+    "scripts": ["parseuri.js", "fancy-settings/source/lib/store.js", "background.js"]
+  },
   "options_page": "fancy-settings/source/index.html",
   "permissions" : [
     "webRequest",
@@ -17,5 +19,7 @@
     "48" : "48uncensorp.png",
     "128" : "128uncensorp.png"
   },
-  "update_url": "http://tools.bitpop.com/ext/updates.xml"
+  "update_url": "http://tools.bitpop.com/ext/updates.xml",
+  "web_accessible_resources": ["32uncensorp.png", "48uncensorp.png", "close_bar_h.png"],
+  "manifest_version": 2
 }

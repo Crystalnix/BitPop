@@ -7,6 +7,20 @@
  *   jQuery
  * ======================================================*/
 
+var friendListCached = null;
+var friendListLastUpdateTime = null;
+var connection = null;
+var friendListRequestInterval = null;
+var need_more_permissions = false;
+var seen_message_timeout = null;
+var doing_permissions_request = false;
+var offline_wait_timer = null;
+var auth_wait_timer = null;
+var strophe_wait_timer = null;
+var query_idle_timer = null;
+var manual_disconnect = false;
+var prevIdleState = "active";
+
 var bitpop;
 if (!bitpop)
   bitpop = {};
@@ -40,16 +54,6 @@ bitpop.FacebookController = (function() {
     messages: "dhcejgafhmkdfanoalflifpjimaaijda",
     notifications: "omkphklbdjafhafacohmepaahbofnkcp"
   };
-
-  var need_more_permissions = false;
-  var seen_message_timeout = null;
-  var doing_permissions_request = false;
-  var offline_wait_timer = null;
-  var auth_wait_timer = null;
-  var strophe_wait_timer = null;
-  var query_idle_timer = null;
-  var manual_disconnect = false;
-  var prevIdleState = "active";
 
   // -------------------------------------------------------------------------------
   // Public methods
@@ -828,11 +832,6 @@ bitpop.FacebookController = (function() {
     setFacebookStatusMessage: setFacebookStatus,
     forceFriendListSend: onRequestFriendList
   };
-
-  var friendListCached = null;
-  var friendListLastUpdateTime = null;
-  var connection = null;
-  var friendListRequestInterval = null;
 
   return public;
 })();
