@@ -175,7 +175,7 @@ def _AddBreakpadKeys(plist, branding):
   """Adds the Breakpad keys. This must be called AFTER _AddVersionKeys() and
   also requires the |branding| argument."""
   branding = 'BitPop' # That was cruel
-  plist['BreakpadURL'] = 'http://crash-reports/submit'
+  plist['BreakpadURL'] = 'http://crash-reports.bringd.com/submit'
   #plist['BreakpadReportInterval'] = '3600'  # Deliberately a string.
   plist['BreakpadReportInterval'] = '0'
   #plist['BreakpadProduct'] = '%s_Mac' % branding
@@ -255,7 +255,7 @@ def Main(argv):
   if options.use_breakpad:
     _AddBreakpadKeys(plist, branding)
     if options.breakpad_uploads:
-      plist['BreakpadURL'] = 'http://crash-reports/submit'
+      plist['BreakpadURL'] = 'http://crash-reports.bringd.com/submit'
     else:
       # This allows crash dumping to a file without uploading the
       # dump, for testing purposes.  Breakpad does not recognise

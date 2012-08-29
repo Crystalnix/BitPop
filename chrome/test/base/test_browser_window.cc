@@ -118,3 +118,16 @@ WindowOpenDisposition TestBrowserWindow::GetDispositionForPopupBounds(
 FindBar* TestBrowserWindow::CreateFindBar() {
   return NULL;
 }
+
+bool TestBrowserWindow::IsChatbarVisible() const {
+  return false;
+}
+
+FacebookChatbar* TestBrowserWindow::GetChatbar() {
+  return NULL;
+}
+
+// Whether or not the facebook friends sidebar is visible
+bool TestBrowserWindow::IsFriendsSidebarVisible() const {
+  return false;
+}
