@@ -1,6 +1,5 @@
-// This file is packaged with the extension then re-fetched from the
-// server for updates. Bitter experience has taught us that we can't depend on
-// the server resource loading correctly.
+// Copyright (C) 2012 House of Life Property Ltd.
+// Copyright (C) 2012 Crystalnix <vgachkaylo@crystalnix.com>
 
 Array.prototype.contains = function(obj) {
   var i = this.length;
@@ -12,33 +11,14 @@ Array.prototype.contains = function(obj) {
   return false;
 };
 
-/**
- * Copyright 2004-present Facebook. All Rights Reserved.
- *
- * Provides functions to get and display notifications in a desktop window.
- * Currently only Chrome supports the "web notifications" spec. Its
- * implementation is called webkitNotifications.
- *
- * Typically webkitNotifications is accessed from two distinct contexts:
- * 1) from a document on the host site
- * 2) from a Chrome extension that has permission to request data from the
- *    host site.
- *
- * This module supports both use cases. Some functions are Chrome-extension
- * only. A future refactoring may resolve to put them in a subclass, but
- * chances are higher we will eliminate support for 1) entirely.
- *
- * This module intentionally has no @requires dependencies so that it can
- * work in the extension context with a single <script> tag. The extension
- * may also load it as a haste resource via rscrx.php. Contact gdingle for
- * details.
- *
- * Web Notifications:
- *   http://dev.w3.org/2006/webapi/WebNotifications/publish/
- *   Chrome implementation: http://www.fburl.com/?key=1717695
- *
- * @provides desktop-notifications
- */
+Object.size = function(obj) {
+    var size = 0, key;
+    for (key in obj) {
+        if (obj.hasOwnProperty(key)) size++;
+    }
+    return size;
+};
+
 DesktopNotifications = {
 
   DEFAULT_FADEOUT_DELAY: 20000,
@@ -82,6 +62,9 @@ DesktopNotifications = {
 
   threads_unseen_before: [],
   just_connected: false,
+
+  //FIXME: should be merged with popup.js constant
+  MAX_NOTIFICATIONS_TO_SHOW: 5,
 
   /**
    * Start polling for notifications. New notifications are displayed
@@ -159,36 +142,11 @@ DesktopNotifications = {
     callback = callback || function(d) { console.log(d); };
     errback = errback || function(u, e) { console.error(u, e); };
     var self = DesktopNotifications;
-    // var uri = self.protocol + self.domain + self.countsEndpoint +
-    //   '?latest=' + self._latest_notif +
-    //   '&latest_read=' + self._latest_read_notif;
-    // if (no_cache) {
-    //   uri += '&no_cache=1';
-    // }
-    // self._fetch(
-    //   uri,
-    //   function(json) {
-    //     callback(JSON.parse(json));
-    //   },
-    //   errback
-    // );
 
-    // var query1 = "SELECT unseen_count FROM unified_thread_count WHERE folder='inbox'";
-    // var query2 = "SELECT author_id, body, created_time, unread " +
-    //              "FROM unified_message " +
-    //              "WHERE thread_id IN " +
-    //              "(SELECT thread_id FROM unified_thread WHERE folder='inbox')" +
-    //              "ORDER BY created_time DESC, unread" +
-    //              "LIMIT 5";
-    // var query3 = "SELECT uid, name, pic_square FROM user WHERE uid IN " +
-    //              "(SELECT author_id FROM #query2)";
-
-
-    var query = "SELECT thread_id, unread, unseen FROM thread WHERE folder_id=0";
+    var query = "SELECT thread_id, unread, unseen, updated_time FROM thread WHERE folder_id=0 AND unseen > 0";
     chrome.extension.sendRequest(self.controllerExtensionId,
         { type: 'fqlQuery',
           query: query
-          //params: { fields: 'id,unseen,unread,from,message,updated_time' }
         },
         function (response) {
           if (response.error)
@@ -235,39 +193,63 @@ DesktopNotifications = {
       serverInfo.summary.unread_count += serverInfo0[i].unread;
     }
 
+    var thread_ids_received = [];
+    for (var i = 0; i < serverInfo.data.length; i++)
+      thread_ids_received.push(serverInfo.data[i].thread_id);
+
     //self._handleNotifInfo(serverInfo);
     if (serverInfo.summary.unseen_count != 0) {
-      var first_unseen_thread_index = null;
+      var first_unseen_thread_index = -1;  // not set equivalent
       var local_unseen_count = 0;
       for (var i = 0; i < serverInfo.data.length; i++) {
-        if (serverInfo.data[i].unseen > 0) {
+        //if (serverInfo.data[i].unseen > 0) {
           if (self.just_connected ||
               self.threads_unseen_before.contains(serverInfo.data[i].thread_id)) {
+
+            var d = localStorage.getCacheItem('xx_' + serverInfo.data[i].thread_id);
+            if (d) {
+              var date = new Date(d);
+              if (date.getTime() >
+                  (new Date(serverInfo.data[i].updated_time * 1000)).getTime())
+                    continue;
+            }
+
             local_unseen_count++;
 
-            if (first_unseen_thread_index === null)
+            if (first_unseen_thread_index === -1)
               first_unseen_thread_index = i;
+
           }
           if (self.just_connected) {
             self.threads_unseen_before.push(serverInfo.data[i].thread_id);
           }
-        }
+        //}
       }
 
       self.just_connected = false;
       serverInfo.summary.unseen_count = local_unseen_count;
 
       // get message for last unseen thread
-      if (first_unseen_thread_index !== null) {
+      if (first_unseen_thread_index !== -1) {
 
         var query_obj = {
           users: "SELECT uid, name FROM user " +
-             "WHERE uid IN (SELECT recipients FROM thread WHERE " +
-             "folder_id = 0 AND thread_id='" + serverInfo.data[first_unseen_thread_index].thread_id + "')",
-          messages: "SELECT thread_id, author_id, body, created_time FROM message WHERE " +
-             "thread_id='" + serverInfo.data[first_unseen_thread_index].thread_id + "'" +
-             " ORDER BY created_time DESC"
+                 "WHERE uid IN (SELECT recipients FROM thread WHERE " +
+                 "folder_id = 0 AND thread_id IN ('" +
+                 thread_ids_received
+                   .slice(0, self.MAX_NOTIFICATIONS_TO_SHOW).join("','") +
+                 "'))"
         };
+
+        var message_query_tmpl =
+             "SELECT message_id, thread_id, author_id, body, created_time FROM message WHERE" +
+             " thread_id='{{thread_id}}'" +
+             " ORDER BY created_time DESC LIMIT 1";
+        for (var i = 0; i < thread_ids_received.length &&
+                        i < self.MAX_NOTIFICATIONS_TO_SHOW; i++) {
+          query_obj['message_'+thread_ids_received[i]] =
+            message_query_tmpl.replace('{{thread_id}}', thread_ids_received[i]);
+        }
 
         var query = JSON.stringify(query_obj);
 
@@ -279,8 +261,9 @@ DesktopNotifications = {
           function (response) {
             if (response.error)
               self.showInactiveIcon();
-            else
-              self._handleInboxInfo(serverInfo, i, response);
+            else {
+              self._handleInboxInfo(serverInfo, response);
+            }
           }
         );
       }
@@ -295,19 +278,9 @@ DesktopNotifications = {
       self.updateUnreadCounter();
     }
 
-    for (var i = 0; i < serverInfo.data.length; i++) {
-      if (serverInfo.data[i].unseen == 0 &&
-          self.threads_unseen_before.contains(serverInfo.data[i].thread_id)) {
-        // if a previously marked as unseen thread became seen,
-        // remove this from threads_unseen_before
-        var index = -1;
-        for (var j = 0; j < self.threads_unseen_before.length; j++) {
-          if (self.threads_unseen_before[j] == serverInfo.data[i].thread_id) {
-            index = j;
-            break;
-          }
-        }
-
+    for (var j = 0; j < self.threads_unseen_before.length; j++) {
+      if (thread_ids_received.indexOf(self.threads_unseen_before[j]) == -1) {
+        var index = j;
         // remove element from array logic
         if (index == 0)
           self.threads_unseen_before.shift();
@@ -322,23 +295,6 @@ DesktopNotifications = {
     }
   },
 
-  // _handleNotifInfo: function(notifInfo) {
-  //   var self = DesktopNotifications;
-
-  //   if (self._num_unread_notif !== notifInfo.length) {
-  //     if (notifInfo.length &&
-  //         (self._latest_notif < notifInfo[0].created_time)) {
-  //       self._latest_notif = notifInfo[0].created_time;
-  //       self._latest_data = notifInfo[0];
-  //       // self._latest_read_notif = notifInfo.latest_read;
-  //       // see WebDesktopNotificationsBaseController::TYPE_NOTIFICATIONS
-  //       self.addNotificationByType('notifications');
-  //     }
-  //     self._num_unread_notif = notifInfo.length;
-  //     self.updateUnreadCounter();
-  //   }
-  // },
-
   _findResultSet: function(query_name, data) {
     for (var i = 0; i < data.length; ++i) {
       if (data[i].name == query_name)
@@ -347,20 +303,23 @@ DesktopNotifications = {
     return null;
   },
 
-  _handleInboxInfo: function(threads, lastUnseenThreadIndex, data) {
+  _handleInboxInfo: function(threads, data) {
     var self = DesktopNotifications;
 
     var users = self._findResultSet('users', data);
-    var messages = self._findResultSet('messages', data);
+    var messages = {};
+    for (var i = 0; i < threads.data.length &&
+                    i < self.MAX_NOTIFICATIONS_TO_SHOW; i++) {
+      var rs = self._findResultSet('message_' + threads.data[i].thread_id, data);
+      var msg = (rs && rs[0]) ? rs[0] : null;
+      messages[threads.data[i].thread_id] = msg;
+    }
 
-    //if (!inboxInfo) {
-    //  return;
-    //}
     if (threads.summary.unseen_count !== self._num_unseen_inbox) {
       if (threads.summary.unseen_count > self._num_unseen_inbox) {
         // see WebDesktopNotificationsBaseController::TYPE_INBOX
         self._latest_data = {
-          thread: threads.data[lastUnseenThreadIndex],
+          threads: threads.data.slice(0, self.MAX_NOTIFICATIONS_TO_SHOW),
           users: users,
           messages: messages
         };
@@ -411,30 +370,36 @@ DesktopNotifications = {
     if (self._latest_data) {
       var fromUid, body, name;
 
-      if (self._latest_data.messages.length > 0) {
-        var lastComment = self._latest_data.messages[0];
+      if (Object.size(self._latest_data.messages) <= 0)
+        return;
+
+      for (var i = 0; i < self._latest_data.threads.length; i++) {
+        var thread_id = self._latest_data.threads[i].thread_id;
+        var lastComment = self._latest_data.messages[thread_id];
+
+        if (localStorage.getCacheItem(lastComment.message_id) == 1)
+          continue;
+
         fromUid = lastComment.author_id;
         name = self._nameByUid(lastComment.author_id, self._latest_data.users);
         body = lastComment.body;
-      } else {
-        fromUid = 0;
-        name = '<Unknown>';
-        body = '<No messages found.>';
+
+        localStorage.setCacheItem(lastComment.message_id, 1, { days: 21 });
+
+        // var uri = self.protocol + self.domain + self.getEndpoint +
+        //   '?type=' + (type || '');
+        var notification =
+          window.webkitNotifications.createNotification(
+              'http://graph.facebook.com/' + fromUid + '/picture?type=square',
+              'New message from ' + name + '.', body);
+        notification.clickHref =
+          "https://www.facebook.com/messages";
+        // In case the user has multiple windows or tabs open, replace
+        // any existing windows for this alert with this one.
+        notification.replaceId = 'com.facebook.alert.' + thread_id;
+
+        self.showNotification(notification, self.DEFAULT_FADEOUT_DELAY);
       }
-
-      // var uri = self.protocol + self.domain + self.getEndpoint +
-      //   '?type=' + (type || '');
-      var notification =
-        window.webkitNotifications.createNotification(
-            'http://graph.facebook.com/'+ fromUid + '/picture?type=square',
-            name + ' sent you a new message.', body);
-      notification.clickHref =
-        "https://www.facebook.com/messages";
-      // In case the user has multiple windows or tabs open, replace
-      // any existing windows for this alert with this one.
-      notification.replaceId = 'com.facebook.alert.' + type;
-
-      self.showNotification(notification, self.DEFAULT_FADEOUT_DELAY);
     }
   },
 
