@@ -1150,6 +1150,9 @@ int BrowserActionsContainer::IconCountToWidth(int icons,
                                               bool display_chevron) const {
   if (icons < 0)
     icons = browser_action_views_.size() - (profile_->IsOffTheRecord() || profile_->should_show_additional_extensions() ? 0 : 2);
+  if (icons < 0)  // need to recheck again
+    icons = 0;
+
   if ((icons == 0) && !display_chevron)
     return ToolbarView::kStandardSpacing;
   int icons_size =
@@ -1265,5 +1268,7 @@ void BrowserActionsContainer::SetFacebookExtensionsVisibility(bool visible) {
 
     if (model_ && model_->extensions_initialized())
       SetContainerWidth();
+
+    OnBrowserActionVisibilityChanged();
   }
 }
