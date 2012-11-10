@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/skia_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkUnPreMultiply.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
@@ -54,34 +55,6 @@ void ConvertRGBAtoRGB(const unsigned char* rgba, int pixel_width,
   }
 }
 
-void ConvertRGBtoSkia(const unsigned char* rgb, int pixel_width,
-                      unsigned char* rgba, bool* is_opaque) {
-  for (int x = 0; x < pixel_width; x++) {
-    const unsigned char* pixel_in = &rgb[x * 3];
-    uint32_t* pixel_out = reinterpret_cast<uint32_t*>(&rgba[x * 4]);
-    *pixel_out = SkPackARGB32(0xFF, pixel_in[0], pixel_in[1], pixel_in[2]);
-  }
-}
-
-void ConvertRGBAtoSkia(const unsigned char* rgb, int pixel_width,
-                       unsigned char* rgba, bool* is_opaque) {
-  int total_length = pixel_width * 4;
-  for (int x = 0; x < total_length; x += 4) {
-    const unsigned char* pixel_in = &rgb[x];
-    uint32_t* pixel_out = reinterpret_cast<uint32_t*>(&rgba[x]);
-
-    unsigned char alpha = pixel_in[3];
-    if (alpha != 255) {
-      *is_opaque = false;
-      *pixel_out = SkPreMultiplyARGB(alpha,
-           pixel_in[0], pixel_in[1], pixel_in[2]);
-    } else {
-      *pixel_out = SkPackARGB32(alpha,
-           pixel_in[0], pixel_in[1], pixel_in[2]);
-    }
-  }
-}
-
 void ConvertSkiatoRGB(const unsigned char* skia, int pixel_width,
                       unsigned char* rgb, bool* is_opaque) {
   for (int x = 0; x < pixel_width; x++) {
@@ -104,25 +77,7 @@ void ConvertSkiatoRGB(const unsigned char* skia, int pixel_width,
 
 void ConvertSkiatoRGBA(const unsigned char* skia, int pixel_width,
                        unsigned char* rgba, bool* is_opaque) {
-  int total_length = pixel_width * 4;
-  for (int i = 0; i < total_length; i += 4) {
-    const uint32_t pixel_in = *reinterpret_cast<const uint32_t*>(&skia[i]);
-
-    // Pack the components here.
-    int alpha = SkGetPackedA32(pixel_in);
-    if (alpha != 0 && alpha != 255) {
-      SkColor unmultiplied = SkUnPreMultiply::PMColorToColor(pixel_in);
-      rgba[i + 0] = SkColorGetR(unmultiplied);
-      rgba[i + 1] = SkColorGetG(unmultiplied);
-      rgba[i + 2] = SkColorGetB(unmultiplied);
-      rgba[i + 3] = alpha;
-    } else {
-      rgba[i + 0] = SkGetPackedR32(pixel_in);
-      rgba[i + 1] = SkGetPackedG32(pixel_in);
-      rgba[i + 2] = SkGetPackedB32(pixel_in);
-      rgba[i + 3] = alpha;
-    }
-  }
+  gfx::ConvertSkiaToRGBA(skia, pixel_width, rgba);
 }
 
 }  // namespace
@@ -148,7 +103,6 @@ class PngDecoderState {
         bitmap(NULL),
         is_opaque(true),
         output(o),
-        row_converter(NULL),
         width(0),
         height(0),
         done(false) {
@@ -161,7 +115,6 @@ class PngDecoderState {
         bitmap(skbitmap),
         is_opaque(true),
         output(NULL),
-        row_converter(NULL),
         width(0),
         height(0),
         done(false) {
@@ -181,11 +134,6 @@ class PngDecoderState {
   // instead of directly to an SkBitmap.
   std::vector<unsigned char>* output;
 
-  // Called to convert a row from the library to the correct output format.
-  // When NULL, no conversion is necessary.
-  void (*row_converter)(const unsigned char* in, int w, unsigned char* out,
-                        bool* is_opaque);
-
   // Size of the image, set in the info callback.
   int width;
   int height;
@@ -197,27 +145,29 @@ class PngDecoderState {
   DISALLOW_COPY_AND_ASSIGN(PngDecoderState);
 };
 
-void ConvertRGBtoRGBA(const unsigned char* rgb, int pixel_width,
-                      unsigned char* rgba, bool* is_opaque) {
-  for (int x = 0; x < pixel_width; x++) {
-    const unsigned char* pixel_in = &rgb[x * 3];
-    unsigned char* pixel_out = &rgba[x * 4];
-    pixel_out[0] = pixel_in[0];
-    pixel_out[1] = pixel_in[1];
-    pixel_out[2] = pixel_in[2];
-    pixel_out[3] = 0xff;
-  }
-}
+// User transform (passed to libpng) which converts a row decoded by libpng to
+// Skia format. Expects the row to have 4 channels, otherwise there won't be
+// enough room in |data|.
+void ConvertRGBARowToSkia(png_structp png_ptr,
+                          png_row_infop row_info,
+                          png_bytep data) {
+  const int channels = row_info->channels;
+  DCHECK_EQ(channels, 4);
 
-void ConvertRGBtoBGRA(const unsigned char* rgb, int pixel_width,
-                      unsigned char* bgra, bool* is_opaque) {
-  for (int x = 0; x < pixel_width; x++) {
-    const unsigned char* pixel_in = &rgb[x * 3];
-    unsigned char* pixel_out = &bgra[x * 4];
-    pixel_out[0] = pixel_in[2];
-    pixel_out[1] = pixel_in[1];
-    pixel_out[2] = pixel_in[0];
-    pixel_out[3] = 0xff;
+  PngDecoderState* state =
+      static_cast<PngDecoderState*>(png_get_user_transform_ptr(png_ptr));
+  DCHECK(state) << "LibPNG user transform pointer is NULL";
+
+  unsigned char* const end = data + row_info->rowbytes;
+  for (unsigned char* p = data; p < end; p += channels) {
+    uint32_t* sk_pixel = reinterpret_cast<uint32_t*>(p);
+    const unsigned char alpha = p[channels - 1];
+    if (alpha != 255) {
+      state->is_opaque = false;
+      *sk_pixel = SkPreMultiplyARGB(alpha, p[0], p[1], p[2]);
+    } else {
+      *sk_pixel = SkPackARGB32(alpha, p[0], p[1], p[2]);
+    }
   }
 }
 
@@ -228,7 +178,7 @@ void DecodeInfoCallback(png_struct* png_ptr, png_info* info_ptr) {
       png_get_progressive_ptr(png_ptr));
 
   int bit_depth, color_type, interlace_type, compression_type;
-  int filter_type, channels;
+  int filter_type;
   png_uint_32 w, h;
   png_get_IHDR(png_ptr, info_ptr, &w, &h, &bit_depth, &color_type,
                &interlace_type, &compression_type, &filter_type);
@@ -245,18 +195,67 @@ void DecodeInfoCallback(png_struct* png_ptr, png_info* info_ptr) {
   state->width = static_cast<int>(w);
   state->height = static_cast<int>(h);
 
+  // The following png_set_* calls have to be done in the order dictated by
+  // the libpng docs. Please take care if you have to move any of them. This
+  // is also why certain things are done outside of the switch, even though
+  // they look like they belong there.
+
   // Expand to ensure we use 24-bit for RGB and 32-bit for RGBA.
   if (color_type == PNG_COLOR_TYPE_PALETTE ||
       (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8))
     png_set_expand(png_ptr);
 
+  // The '!= 0' is for silencing a Windows compiler warning.
+  bool input_has_alpha = ((color_type & PNG_COLOR_MASK_ALPHA) != 0);
+
   // Transparency for paletted images.
-  if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
+  if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
     png_set_expand(png_ptr);
+    input_has_alpha = true;
+  }
 
   // Convert 16-bit to 8-bit.
   if (bit_depth == 16)
     png_set_strip_16(png_ptr);
+
+  // Pick our row format converter necessary for this data.
+  if (!input_has_alpha) {
+    switch (state->output_format) {
+      case PNGCodec::FORMAT_RGB:
+        state->output_channels = 3;
+        break;
+      case PNGCodec::FORMAT_RGBA:
+        state->output_channels = 4;
+        png_set_add_alpha(png_ptr, 0xFF, PNG_FILLER_AFTER);
+        break;
+      case PNGCodec::FORMAT_BGRA:
+        state->output_channels = 4;
+        png_set_bgr(png_ptr);
+        png_set_add_alpha(png_ptr, 0xFF, PNG_FILLER_AFTER);
+        break;
+      case PNGCodec::FORMAT_SkBitmap:
+        state->output_channels = 4;
+        png_set_add_alpha(png_ptr, 0xFF, PNG_FILLER_AFTER);
+        break;
+    }
+  } else {
+    switch (state->output_format) {
+      case PNGCodec::FORMAT_RGB:
+        state->output_channels = 3;
+        png_set_strip_alpha(png_ptr);
+        break;
+      case PNGCodec::FORMAT_RGBA:
+        state->output_channels = 4;
+        break;
+      case PNGCodec::FORMAT_BGRA:
+        state->output_channels = 4;
+        png_set_bgr(png_ptr);
+        break;
+      case PNGCodec::FORMAT_SkBitmap:
+        state->output_channels = 4;
+        break;
+    }
+  }
 
   // Expand grayscale to RGB.
   if (color_type == PNG_COLOR_TYPE_GRAY ||
@@ -275,63 +274,19 @@ void DecodeInfoCallback(png_struct* png_ptr, png_info* info_ptr) {
     png_set_gamma(png_ptr, kDefaultGamma, kInverseGamma);
   }
 
+  // Setting the user transforms here (as opposed to inside the switch above)
+  // because all png_set_* calls need to be done in the specific order
+  // mandated by libpng.
+  if (state->output_format == PNGCodec::FORMAT_SkBitmap) {
+    png_set_read_user_transform_fn(png_ptr, ConvertRGBARowToSkia);
+    png_set_user_transform_info(png_ptr, state, 0, 0);
+  }
+
   // Tell libpng to send us rows for interlaced pngs.
   if (interlace_type == PNG_INTERLACE_ADAM7)
     png_set_interlace_handling(png_ptr);
 
-  // Update our info now
   png_read_update_info(png_ptr, info_ptr);
-  channels = png_get_channels(png_ptr, info_ptr);
-
-  // Pick our row format converter necessary for this data.
-  if (channels == 3) {
-    switch (state->output_format) {
-      case PNGCodec::FORMAT_RGB:
-        state->row_converter = NULL;  // no conversion necessary
-        state->output_channels = 3;
-        break;
-      case PNGCodec::FORMAT_RGBA:
-        state->row_converter = &ConvertRGBtoRGBA;
-        state->output_channels = 4;
-        break;
-      case PNGCodec::FORMAT_BGRA:
-        state->row_converter = &ConvertRGBtoBGRA;
-        state->output_channels = 4;
-        break;
-      case PNGCodec::FORMAT_SkBitmap:
-        state->row_converter = &ConvertRGBtoSkia;
-        state->output_channels = 4;
-        break;
-      default:
-        NOTREACHED() << "Unknown output format";
-        break;
-    }
-  } else if (channels == 4) {
-    switch (state->output_format) {
-      case PNGCodec::FORMAT_RGB:
-        state->row_converter = &ConvertRGBAtoRGB;
-        state->output_channels = 3;
-        break;
-      case PNGCodec::FORMAT_RGBA:
-        state->row_converter = NULL;  // no conversion necessary
-        state->output_channels = 4;
-        break;
-      case PNGCodec::FORMAT_BGRA:
-        state->row_converter = &ConvertBetweenBGRAandRGBA;
-        state->output_channels = 4;
-        break;
-      case PNGCodec::FORMAT_SkBitmap:
-        state->row_converter = &ConvertRGBAtoSkia;
-        state->output_channels = 4;
-        break;
-      default:
-        NOTREACHED() << "Unknown output format";
-        break;
-    }
-  } else {
-    NOTREACHED() << "Unknown input channels";
-    longjmp(png_jmpbuf(png_ptr), 1);
-  }
 
   if (state->bitmap) {
     state->bitmap->setConfig(SkBitmap::kARGB_8888_Config,
@@ -345,11 +300,12 @@ void DecodeInfoCallback(png_struct* png_ptr, png_info* info_ptr) {
 
 void DecodeRowCallback(png_struct* png_ptr, png_byte* new_row,
                        png_uint_32 row_num, int pass) {
+  if (!new_row)
+    return;  // Interlaced image; row didn't change this pass.
+
   PngDecoderState* state = static_cast<PngDecoderState*>(
       png_get_progressive_ptr(png_ptr));
 
-  DCHECK(pass == 0) << "We didn't turn on interlace handling, but libpng is "
-                       "giving us interlaced data.";
   if (static_cast<int>(row_num) > state->height) {
     NOTREACHED() << "Invalid row";
     return;
@@ -362,10 +318,7 @@ void DecodeRowCallback(png_struct* png_ptr, png_byte* new_row,
     base = &state->output->front();
 
   unsigned char* dest = &base[state->width * state->output_channels * row_num];
-  if (state->row_converter)
-    state->row_converter(new_row, state->width, dest, &state->is_opaque);
-  else
-    memcpy(dest, new_row, state->width * state->output_channels);
+  png_progressive_combine_row(png_ptr, dest, new_row);
 }
 
 void DecodeEndCallback(png_struct* png_ptr, png_info* info) {
@@ -389,6 +342,25 @@ class PngReadStructDestroyer {
  private:
   png_struct** ps_;
   png_info** pi_;
+  DISALLOW_COPY_AND_ASSIGN(PngReadStructDestroyer);
+};
+
+// Automatically destroys the given write structs on destruction to make
+// cleanup and error handling code cleaner.
+class PngWriteStructDestroyer {
+ public:
+  explicit PngWriteStructDestroyer(png_struct** ps) : ps_(ps), pi_(0) {
+  }
+  ~PngWriteStructDestroyer() {
+    png_destroy_write_struct(ps_, pi_);
+  }
+  void SetInfoStruct(png_info** pi) {
+    pi_ = pi;
+  }
+ private:
+  png_struct** ps_;
+  png_info** pi_;
+  DISALLOW_COPY_AND_ASSIGN(PngWriteStructDestroyer);
 };
 
 bool BuildPNGStruct(const unsigned char* input, size_t input_size,
@@ -413,6 +385,27 @@ bool BuildPNGStruct(const unsigned char* input, size_t input_size,
   return true;
 }
 
+// Libpng user error and warning functions which allows us to print libpng
+// errors and warnings using Chrome's logging facilities instead of stderr.
+
+void LogLibPNGDecodeError(png_structp png_ptr, png_const_charp error_msg) {
+  DLOG(ERROR) << "libpng decode error: " << error_msg;
+  longjmp(png_jmpbuf(png_ptr), 1);
+}
+
+void LogLibPNGDecodeWarning(png_structp png_ptr, png_const_charp warning_msg) {
+  DLOG(ERROR) << "libpng decode warning: " << warning_msg;
+}
+
+void LogLibPNGEncodeError(png_structp png_ptr, png_const_charp error_msg) {
+  DLOG(ERROR) << "libpng encode error: " << error_msg;
+  longjmp(png_jmpbuf(png_ptr), 1);
+}
+
+void LogLibPNGEncodeWarning(png_structp png_ptr, png_const_charp warning_msg) {
+  DLOG(ERROR) << "libpng encode warning: " << warning_msg;
+}
+
 }  // namespace
 
 // static
@@ -434,6 +427,7 @@ bool PNGCodec::Decode(const unsigned char* input, size_t input_size,
 
   PngDecoderState state(format, output);
 
+  png_set_error_fn(png_ptr, NULL, LogLibPNGDecodeError, LogLibPNGDecodeWarning);
   png_set_progressive_read_fn(png_ptr, &state, &DecodeInfoCallback,
                               &DecodeRowCallback, &DecodeEndCallback);
   png_process_data(png_ptr,
@@ -631,6 +625,7 @@ bool DoLibpngWrite(png_struct* png_ptr, png_info* info_ptr,
 
   // Set our callback for libpng to give us the data.
   png_set_write_fn(png_ptr, state, EncoderWriteCallback, FakeFlushCallback);
+  png_set_error_fn(png_ptr, NULL, LogLibPNGEncodeError, LogLibPNGEncodeWarning);
 
   png_set_IHDR(png_ptr, info_ptr, width, height, 8, png_output_color_type,
                PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
@@ -753,18 +748,19 @@ bool PNGCodec::EncodeWithCompressionLevel(const unsigned char* input,
                                                 NULL, NULL, NULL);
   if (!png_ptr)
     return false;
+  PngWriteStructDestroyer destroyer(&png_ptr);
   png_info* info_ptr = png_create_info_struct(png_ptr);
-  if (!info_ptr) {
-    png_destroy_write_struct(&png_ptr, NULL);
+  if (!info_ptr)
     return false;
-  }
+  destroyer.SetInfoStruct(&info_ptr);
+
+  output->clear();
 
   PngEncoderState state(output);
   bool success = DoLibpngWrite(png_ptr, info_ptr, &state,
                                size.width(), size.height(), row_byte_width,
                                input, compression_level, png_output_color_type,
                                output_color_components, converter, comments);
-  png_destroy_write_struct(&png_ptr, &info_ptr);
 
   return success;
 }
@@ -776,7 +772,9 @@ bool PNGCodec::EncodeBGRASkBitmap(const SkBitmap& input,
   static const int bbp = 4;
 
   SkAutoLockPixels lock_input(input);
-  DCHECK(input.empty() || input.bytesPerPixel() == bbp);
+  if (input.empty())
+    return false;
+  DCHECK(input.bytesPerPixel() == bbp);
 
   return Encode(reinterpret_cast<unsigned char*>(input.getAddr32(0, 0)),
                 FORMAT_SkBitmap, Size(input.width(), input.height()),

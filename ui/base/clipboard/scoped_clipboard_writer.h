@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@
 
 #ifndef UI_BASE_CLIPBOARD_SCOPED_CLIPBOARD_WRITER_H_
 #define UI_BASE_CLIPBOARD_SCOPED_CLIPBOARD_WRITER_H_
-#pragma once
 
 #include <string>
 
@@ -29,7 +28,7 @@ namespace ui {
 class UI_EXPORT ScopedClipboardWriter {
  public:
   // Create an instance that is a simple wrapper around clipboard.
-  explicit ScopedClipboardWriter(Clipboard* clipboard);
+  ScopedClipboardWriter(Clipboard* clipboard, Clipboard::Buffer buffer);
 
   ~ScopedClipboardWriter();
 
@@ -43,6 +42,9 @@ class UI_EXPORT ScopedClipboardWriter {
   // Adds HTML to the clipboard.  The url parameter is optional, but especially
   // useful if the HTML fragment contains relative links.
   void WriteHTML(const string16& markup, const std::string& source_url);
+
+  // Adds RTF to the clipboard.
+  void WriteRTF(const std::string& rtf_data);
 
   // Adds a bookmark to the clipboard.
   void WriteBookmark(const string16& bookmark_title,
@@ -63,6 +65,9 @@ class UI_EXPORT ScopedClipboardWriter {
   void WritePickledData(const Pickle& pickle,
                         const Clipboard::FormatType& format);
 
+  // Removes all objects that would be written to the clipboard.
+  void Reset();
+
  protected:
   // Converts |text| to UTF-8 and adds it to the clipboard.  If it's a URL, we
   // also notify the clipboard of that fact.
@@ -72,6 +77,7 @@ class UI_EXPORT ScopedClipboardWriter {
   // vector, and pass it to Clipboard::WriteObjects() during object destruction.
   Clipboard::ObjectMap objects_;
   Clipboard* clipboard_;
+  Clipboard::Buffer buffer_;
 
   // We keep around the UTF-8 text of the URL in order to pass it to
   // Clipboard::DidWriteURL().

@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/guid.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop_proxy.h"
@@ -16,7 +17,6 @@
 #include "chrome/browser/policy/device_management_service.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/guid.h"
 #include "chrome/common/pref_names.h"
 #include "crypto/sha2.h"
 
@@ -77,9 +77,10 @@ AutoEnrollmentClient::AutoEnrollmentClient(const base::Closure& callback,
                                            int power_limit)
     : completion_callback_(callback),
       should_auto_enroll_(false),
-      device_id_(guid::GenerateGUID()),
+      device_id_(base::GenerateGUID()),
       power_initial_(power_initial),
       power_limit_(power_limit),
+      requests_sent_(0),
       device_management_service_(service),
       local_state_(local_state) {
   DCHECK_LE(power_initial_, power_limit_);
@@ -141,6 +142,13 @@ AutoEnrollmentClient* AutoEnrollmentClient::Create(
                                   BrowserPolicyConnector::GetSerialNumber(),
                                   power_initial,
                                   power_limit);
+}
+
+// static
+void AutoEnrollmentClient::CancelAutoEnrollment() {
+  PrefService* local_state = g_browser_process->local_state();
+  local_state->SetBoolean(prefs::kShouldAutoEnroll, false);
+  local_state->CommitPendingWrite();
 }
 
 void AutoEnrollmentClient::Start() {
@@ -210,7 +218,7 @@ void AutoEnrollmentClient::SendRequest(int power) {
     return;
   }
 
-  last_power_used_ = power;
+  requests_sent_++;
 
   // Only power-of-2 moduli are supported for now. These are computed by taking
   // the lower |power| bits of the hash.
@@ -247,28 +255,27 @@ void AutoEnrollmentClient::OnRequestCompletion(
   if (enrollment_response.has_expected_modulus()) {
     // Server is asking us to retry with a different modulus.
     int64 modulus = enrollment_response.expected_modulus();
-    int64 last_modulus_used = GG_INT64_C(1) << last_power_used_;
     int power = NextPowerOf2(modulus);
     if ((GG_INT64_C(1) << power) != modulus) {
       LOG(WARNING) << "Auto enrollment: the server didn't ask for a power-of-2 "
                    << "modulus. Using the closest power-of-2 instead "
                    << "(" << modulus << " vs 2^" << power << ")";
     }
-    if (modulus < last_modulus_used) {
-      LOG(ERROR) << "Auto enrollment error: the server asked for a smaller "
-                 << "modulus than we used.";
-    } else if (modulus == last_modulus_used) {
-      LOG(ERROR) << "Auto enrollment error: the server asked for the same "
-                 << "modulus that was already used.";
-    } else if (last_power_used_ != power_initial_) {
+    if (requests_sent_ >= 2) {
       LOG(ERROR) << "Auto enrollment error: already retried with an updated "
-                 << "modulus but the server asked for a new one.";
+                 << "modulus but the server asked for a new one again: "
+                 << power;
     } else if (power > power_limit_) {
       LOG(ERROR) << "Auto enrollment error: the server asked for a larger "
                  << "modulus than the client accepts (" << power << " vs "
                  << power_limit_ << ").";
     } else {
-      // Retry with a larger modulus.
+      // Retry at most once with the modulus that the server requested.
+      if (power <= power_initial_) {
+        LOG(WARNING) << "Auto enrollment: the server asked to use a modulus ("
+                     << power << ") that isn't larger than the first used ("
+                     << power_initial_ << "). Retrying anyway.";
+      }
       SendRequest(power);
       // Don't invoke the callback yet.
       return;

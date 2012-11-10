@@ -8,18 +8,50 @@
 #include "base/message_loop.h"
 #include "chrome/browser/debugger/devtools_window.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
+#include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/views/window.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "content/browser/renderer_host/render_view_host.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "ui/gfx/insets.h"
 #include "ui/views/layout/fill_layout.h"
+#include "ui/views/widget/widget.h"
 
+#if defined(USE_AURA)
+#include "ui/aura/window.h"
+#endif
+
+#if defined(USE_ASH)
+#include "ash/wm/window_animations.h"
+#endif
+
+using content::RenderViewHost;
 using content::WebContents;
+
+namespace {
+
+// Returns true if |possible_parent| is a parent window of |child|.
+bool IsParent(gfx::NativeView child, gfx::NativeView possible_parent) {
+  if (!child)
+    return false;
+#if !defined(USE_AURA) && defined(OS_WIN)
+  if (::GetWindow(child, GW_OWNER) == possible_parent)
+    return true;
+#endif
+  gfx::NativeView parent = child;
+  while ((parent = platform_util::GetParent(parent))) {
+    if (possible_parent == parent)
+      return true;
+  }
+
+  return false;
+}
+
+}  // namespace
 
 // The minimum/maximum dimensions of the popup.
 // The minimum is just a little larger than the size of the button itself.
@@ -31,24 +63,23 @@ const int ExtensionPopup::kMaxHeight = 600;
 
 ExtensionPopup::ExtensionPopup(
     Browser* browser,
-    ExtensionHost* host,
+    extensions::ExtensionHost* host,
     views::View* anchor_view,
-    views::BubbleBorder::ArrowLocation arrow_location,
-    bool inspect_with_devtools)
+    views::BubbleBorder::ArrowLocation arrow_location)
     : BubbleDelegateView(anchor_view, arrow_location),
       extension_host_(host),
-      inspect_with_devtools_(inspect_with_devtools) {
+      inspect_with_devtools_(false),
+      close_bubble_factory_(this) {
   // Adjust the margin so that contents fit better.
-  set_margin(views::BubbleBorder::GetCornerRadius() / 2);
+  const int margin = views::BubbleBorder::GetCornerRadius() / 2;
+  set_margins(gfx::Insets(margin, margin, margin, margin));
   SetLayoutManager(new views::FillLayout());
   AddChildView(host->view());
   host->view()->SetContainer(this);
-#if defined(OS_WIN) && !defined(USE_AURA)
   // Use OnNativeFocusChange to check for child window activation on deactivate.
   set_close_on_deactivate(false);
-#else
-  set_close_on_deactivate(!inspect_with_devtools);
-#endif
+  // Make the bubble move with its anchor (during inspection, etc.).
+  set_move_with_anchor(true);
 
   // Wait to show the popup until the contained host finishes loading.
   registrar_.Add(this, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
@@ -57,6 +88,16 @@ ExtensionPopup::ExtensionPopup(
   // Listen for the containing view calling window.close();
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE,
                  content::Source<Profile>(host->profile()));
+
+  // Listen for the dev tools opening on this popup, so we can stop it going
+  // away when the dev tools get focus.
+  registrar_.Add(this, content::NOTIFICATION_DEVTOOLS_WINDOW_OPENING,
+                 content::Source<Profile>(host->profile()));
+
+  // Listen for the dev tools closing, so we can close this window if it is
+  // being inspected and the inspector is closed.
+  registrar_.Add(this, content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING,
+      content::Source<content::BrowserContext>(host->profile()));
 }
 
 ExtensionPopup::~ExtensionPopup() {
@@ -74,23 +115,33 @@ void ExtensionPopup::Observe(int type,
       break;
     case chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE:
       // If we aren't the host of the popup, then disregard the notification.
-      if (content::Details<ExtensionHost>(host()) == details)
+      if (content::Details<extensions::ExtensionHost>(host()) == details)
         GetWidget()->Close();
       break;
     case content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING:
-      // Make sure its the devtools window that inspecting our popup.
+      // Make sure it's the devtools window that inspecting our popup.
       // Widget::Close posts a task, which should give the devtools window a
       // chance to finish detaching from the inspected RenderViewHost.
-      if (content::Details<RenderViewHost>(
-              host()->render_view_host()) == details)
+      if (content::Details<RenderViewHost>(host()->render_view_host()) ==
+          details) {
         GetWidget()->Close();
+      }
+      break;
+    case content::NOTIFICATION_DEVTOOLS_WINDOW_OPENING:
+      // First check that the devtools are being opened on this popup.
+      if (content::Details<RenderViewHost>(host()->render_view_host()) ==
+          details) {
+        // Set inspect_with_devtools_ so the popup will be kept open while
+        // the devtools are open.
+        inspect_with_devtools_ = true;
+      }
       break;
     default:
       NOTREACHED() << L"Received unexpected notification";
   }
 }
 
-void ExtensionPopup::OnExtensionPreferredSizeChanged(ExtensionView* view) {
+void ExtensionPopup::OnExtensionSizeChanged(ExtensionView* view) {
   SizeToContents();
 }
 
@@ -104,21 +155,20 @@ gfx::Size ExtensionPopup::GetPreferredSize() {
 
 void ExtensionPopup::OnNativeFocusChange(gfx::NativeView focused_before,
                                          gfx::NativeView focused_now) {
-  // TODO(msw): Implement something equivalent for Aura. See crbug.com/106958
-#if defined(OS_WIN) && !defined(USE_AURA)
   // Don't close if a child of this window is activated (only needed on Win).
   // ExtensionPopups can create Javascipt dialogs; see crbug.com/106723.
   gfx::NativeView this_window = GetWidget()->GetNativeView();
   if (inspect_with_devtools_ || focused_now == this_window ||
-      ::GetWindow(focused_now, GW_OWNER) == this_window)
+      IsParent(focused_now, this_window))
     return;
-  gfx::NativeView focused_parent = focused_now;
-  while (focused_parent = ::GetParent(focused_parent)) {
-    if (this_window == focused_parent)
-      return;
+  // Delay closing the widget because on Aura, closing right away makes the
+  // activation controller trigger another focus change before the current focus
+  // change is complete.
+  if (!close_bubble_factory_.HasWeakPtrs()) {
+    MessageLoop::current()->PostTask(FROM_HERE,
+        base::Bind(&ExtensionPopup::CloseBubble,
+                   close_bubble_factory_.GetWeakPtr()));
   }
-  GetWidget()->Close();
-#endif
 }
 
 // static
@@ -126,14 +176,23 @@ ExtensionPopup* ExtensionPopup::ShowPopup(
     const GURL& url,
     Browser* browser,
     views::View* anchor_view,
-    views::BubbleBorder::ArrowLocation arrow_location,
-    bool inspect_with_devtools) {
+    views::BubbleBorder::ArrowLocation arrow_location) {
   ExtensionProcessManager* manager =
       browser->profile()->GetExtensionProcessManager();
-  ExtensionHost* host = manager->CreatePopupHost(url, browser);
+  extensions::ExtensionHost* host = manager->CreatePopupHost(url, browser);
   ExtensionPopup* popup = new ExtensionPopup(browser, host, anchor_view,
-      arrow_location, inspect_with_devtools);
-  browser::CreateViewsBubble(popup);
+      arrow_location);
+  views::BubbleDelegateView::CreateBubble(popup);
+
+#if defined(USE_ASH)
+  gfx::NativeView native_view = popup->GetWidget()->GetNativeView();
+  ash::SetWindowVisibilityAnimationType(
+      native_view,
+      ash::WINDOW_VISIBILITY_ANIMATION_TYPE_VERTICAL);
+  ash::SetWindowVisibilityAnimationVerticalPosition(
+      native_view,
+      -3.0f);
+#endif
 
   // If the host had somehow finished loading, then we'd miss the notification
   // and not show.  This seems to happen in single-process mode.
@@ -153,10 +212,11 @@ void ExtensionPopup::ShowBubble() {
   views::WidgetFocusManager::GetInstance()->AddFocusChangeListener(this);
 
   if (inspect_with_devtools_) {
-    // Listen for the the devtools window closing.
-    registrar_.Add(this, content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING,
-        content::Source<content::BrowserContext>(host()->profile()));
     DevToolsWindow::ToggleDevToolsWindow(host()->render_view_host(),
         DEVTOOLS_TOGGLE_ACTION_SHOW_CONSOLE);
   }
+}
+
+void ExtensionPopup::CloseBubble() {
+  GetWidget()->Close();
 }

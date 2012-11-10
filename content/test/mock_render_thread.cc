@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "content/test/mock_render_thread.h"
+#include "content/public/test/mock_render_thread.h"
 
 #include "base/process_util.h"
+#include "base/message_loop_proxy.h"
 #include "content/common/view_messages.h"
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_sync_message.h"
@@ -13,7 +14,7 @@
 namespace content {
 
 MockRenderThread::MockRenderThread()
-    : routing_id_(0), surface_id_(0), opener_id_(0) {
+    : routing_id_(0), surface_id_(0), opener_id_(0), new_window_routing_id_(0) {
 }
 
 MockRenderThread::~MockRenderThread() {
@@ -24,7 +25,7 @@ void MockRenderThread::VerifyRunJavaScriptMessageSend(
   const IPC::Message* alert_msg =
       sink_.GetUniqueMessageMatching(ViewHostMsg_RunJavaScriptMessage::ID);
   ASSERT_TRUE(alert_msg);
-  void* iter = IPC::SyncMessage::GetDataIterator(alert_msg);
+  PickleIterator iter = IPC::SyncMessage::GetDataIterator(alert_msg);
   ViewHostMsg_RunJavaScriptMessage::SendParam alert_param;
   ASSERT_TRUE(IPC::ReadParam(alert_msg, &iter, &alert_param));
   EXPECT_EQ(expected_alert_message, alert_param.a);
@@ -71,15 +72,23 @@ IPC::SyncMessageFilter* MockRenderThread::GetSyncMessageFilter() {
   return NULL;
 }
 
-void MockRenderThread::AddRoute(int32 routing_id,
-                                IPC::Channel::Listener* listener) {
-  EXPECT_EQ(routing_id_, routing_id);
-  widget_ = listener;
+scoped_refptr<base::MessageLoopProxy>
+    MockRenderThread::GetIOMessageLoopProxy() {
+  return scoped_refptr<base::MessageLoopProxy>();
+}
+
+void MockRenderThread::AddRoute(int32 routing_id, IPC::Listener* listener) {
+  // We may hear this for views created from OnMsgCreateWindow as well,
+  // in which case we don't want to track the new widget.
+  if (routing_id_ == routing_id)
+    widget_ = listener;
 }
 
 void MockRenderThread::RemoveRoute(int32 routing_id) {
-  EXPECT_EQ(routing_id_, routing_id);
-  widget_ = NULL;
+  // We may hear this for views created from OnMsgCreateWindow as well,
+  // in which case we don't want to track the new widget.
+  if (routing_id_ == routing_id)
+    widget_ = NULL;
 }
 
 int MockRenderThread::GenerateRoutingID() {
@@ -156,6 +165,12 @@ void MockRenderThread::SetIdleNotificationDelayInMs(
     int64 idle_notification_delay_in_ms) {
 }
 
+void MockRenderThread::ToggleWebKitSharedTimer(bool suspend) {
+}
+
+void MockRenderThread::UpdateHistograms(int sequence_number) {
+}
+
 #if defined(OS_WIN)
 void MockRenderThread::PreCacheFont(const LOGFONT& log_font) {
 }
@@ -180,6 +195,17 @@ void MockRenderThread::OnMsgCreateWidget(int opener_id,
   *surface_id = surface_id_;
 }
 
+// The View expects to be returned a valid route_id different from its own.
+void MockRenderThread::OnMsgCreateWindow(
+    const ViewHostMsg_CreateWindow_Params& params,
+    int* route_id,
+    int* surface_id,
+    int64* cloned_session_storage_namespace_id) {
+  *route_id = new_window_routing_id_;
+  *surface_id = surface_id_;
+  *cloned_session_storage_namespace_id = 0;
+}
+
 bool MockRenderThread::OnMessageReceived(const IPC::Message& msg) {
   // Save the message in the sink.
   sink_.OnMessageReceived(msg);
@@ -188,6 +214,7 @@ bool MockRenderThread::OnMessageReceived(const IPC::Message& msg) {
   bool msg_is_ok = true;
   IPC_BEGIN_MESSAGE_MAP_EX(MockRenderThread, msg, msg_is_ok)
     IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWidget, OnMsgCreateWidget)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWindow, OnMsgCreateWindow)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
   return handled;

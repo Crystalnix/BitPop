@@ -4,13 +4,16 @@
 
 /**
  * Dictionary of constants (Initialized soon after loading by data from browser,
- * updated on load log).
+ * updated on load log).  The *Types dictionaries map strings to numeric IDs,
+ * while the *TypeNames are the other way around.
  */
-var LogEventType = null;
-var LogEventPhase = null;
-var ClientInfo = null;
-var LogSourceType = null;
+var EventType = null;
+var EventTypeNames = null;
+var EventPhase = null;
+var EventSourceType = null;
+var EventSourceTypeNames = null;
 var LogLevelType = null;
+var ClientInfo = null;
 var NetError = null;
 var LoadFlag = null;
 var AddressFamily = null;
@@ -34,8 +37,8 @@ var g_browser = null;
 var MainView = (function() {
   'use strict';
 
-  // We inherit from ResizableVerticalSplitView.
-  var superClass = ResizableVerticalSplitView;
+  // We inherit from HorizontalSplitView
+  var superClass = HorizontalSplitView;
 
   /**
    * Main entry point. Called once the page has loaded.
@@ -53,7 +56,7 @@ var MainView = (function() {
     // the constants themselves.
     g_browser.addConstantsObserver(new ConstantsObserver());
 
-    // This view is a left (resizable) navigation bar.
+    // This view is a left navigation bar.
     this.categoryTabSwitcher_ = new TabSwitcherView();
     var tabs = this.categoryTabSwitcher_;
 
@@ -61,14 +64,7 @@ var MainView = (function() {
     // between the different sub-views.
     superClass.call(this,
                     new DivView(MainView.CATEGORY_TAB_HANDLES_ID),
-                    tabs,
-                    new DivView(MainView.SPLITTER_BOX_FOR_MAIN_TABS_ID));
-
-    // By default the split for the left navbar will be at 50% of the entire
-    // width. This is not aesthetically pleasing, so we will shrink it.
-    // TODO(eroman): Should set this dynamically based on the largest tab
-    //               name rather than using a fixed width.
-    this.setLeftSplit(150);
+                    tabs);
 
     // Populate the main tabs.  Even tabs that don't contain information for the
     // running OS should be created, so they can load log dumps from other
@@ -94,8 +90,6 @@ var MainView = (function() {
                 false, true);
     tabs.addTab(HttpCacheView.TAB_HANDLE_ID, HttpCacheView.getInstance(),
                 false, true);
-    tabs.addTab(HttpThrottlingView.TAB_HANDLE_ID,
-                HttpThrottlingView.getInstance(), false, true);
     tabs.addTab(ServiceProvidersView.TAB_HANDLE_ID,
                 ServiceProvidersView.getInstance(), false, cr.isWindows);
     tabs.addTab(TestView.TAB_HANDLE_ID, TestView.getInstance(), false, true);
@@ -126,6 +120,7 @@ var MainView = (function() {
     // area.
     this.statusView_ = StatusView.getInstance(this);
     var verticalSplitView = new VerticalSplitView(this.statusView_, this);
+    this.statusView_.setLayoutParent(verticalSplitView);
     var windowView = new WindowView(verticalSplitView);
 
     // Trigger initial layout.
@@ -140,7 +135,6 @@ var MainView = (function() {
 
   // IDs for special HTML elements in index.html
   MainView.CATEGORY_TAB_HANDLES_ID = 'category-tab-handles';
-  MainView.SPLITTER_BOX_FOR_MAIN_TABS_ID = 'splitter-box-for-main-tabs';
 
   cr.addSingletonGetter(MainView);
 
@@ -175,15 +169,18 @@ var MainView = (function() {
     onLoadLog: function(opt_fileName) {
       isViewingLoadedLog = true;
 
-      g_browser.sourceTracker.setSecurityStripping(false);
       this.stopCapturing();
       if (opt_fileName != undefined) {
         // If there's a file name, a log file was loaded, so swap out the status
-        // bar to indicate we're no longer capturing events.
-        this.statusView_.onSwitchMode(StatusView.FOR_FILE_ID, opt_fileName);
+        // bar to indicate we're no longer capturing events.  Also disable
+        // hiding cookies, so if the log dump has them, they'll be displayed.
+        this.statusView_.switchToSubView('loaded').setFileName(opt_fileName);
+        SourceTracker.getInstance().setSecurityStripping(false);
       } else {
         // Otherwise, the "Stop Capturing" button was presumably pressed.
-        this.statusView_.onSwitchMode(StatusView.FOR_VIEW_ID, '');
+        // Don't disable hiding cookies, so created log dumps won't have them,
+        // unless the user toggles the option.
+        this.statusView_.switchToSubView('halted');
       }
     },
 
@@ -195,7 +192,8 @@ var MainView = (function() {
 
     stopCapturing: function() {
       g_browser.disable();
-      document.styleSheets[0].insertRule('.hideOnLoadLog { display: none; }');
+      document.styleSheets[0].insertRule(
+          '.hide-when-not-capturing { display: none; }');
     }
   };
 
@@ -236,22 +234,23 @@ var MainView = (function() {
 function ConstantsObserver() {}
 
 /**
- * Attempts to load all constants from |constants|.  Returns false if one or
- * more entries are missing.  On failure, global dictionaries are not
- * modified.
+ * Loads all constants from |constants|.  On failure, global dictionaries are
+ * not modifed.
+ * @param {Object} receivedConstants The map of received constants.
  */
-ConstantsObserver.prototype.onReceivedConstants =
-    function(receivedConstants) {
+ConstantsObserver.prototype.onReceivedConstants = function(receivedConstants) {
   if (!areValidConstants(receivedConstants))
-    return false;
+    return;
 
   Constants = receivedConstants;
 
-  LogEventType = Constants.logEventTypes;
-  ClientInfo = Constants.clientInfo;
-  LogEventPhase = Constants.logEventPhase;
-  LogSourceType = Constants.logSourceType;
+  EventType = Constants.logEventTypes;
+  EventTypeNames = makeInverseMap(EventType);
+  EventPhase = Constants.logEventPhase;
+  EventSourceType = Constants.logSourceType;
+  EventSourceTypeNames = makeInverseMap(EventSourceType);
   LogLevelType = Constants.logLevelType;
+  ClientInfo = Constants.clientInfo;
   LoadFlag = Constants.loadFlag;
   NetError = Constants.netError;
   AddressFamily = Constants.addressFamily;
@@ -261,6 +260,8 @@ ConstantsObserver.prototype.onReceivedConstants =
 
 /**
  * Returns true if it's given a valid-looking constants object.
+ * @param {Object} receivedConstants The received map of constants.
+ * @return {boolean} True if the |receivedConstants| object appears valid.
  */
 function areValidConstants(receivedConstants) {
   return typeof(receivedConstants) == 'object' &&
@@ -274,4 +275,31 @@ function areValidConstants(receivedConstants) {
          typeof(receivedConstants.addressFamily) == 'object' &&
          typeof(receivedConstants.timeTickOffset) == 'string' &&
          typeof(receivedConstants.logFormatVersion) == 'number';
+}
+
+/**
+ * Returns the name for netError.
+ *
+ * Example: netErrorToString(-105) would return
+ * "ERR_NAME_NOT_RESOLVED".
+ * @param {number} netError The net error code.
+ * @return {string} The name of the given error.
+ */
+function netErrorToString(netError) {
+  var str = getKeyWithValue(NetError, netError);
+  if (str == '?')
+    return str;
+  return 'ERR_' + str;
+}
+
+/**
+ * Returns a string representation of |family|.
+ * @param {number} family An AddressFamily
+ * @return {string} A representation of the given family.
+ */
+function addressFamilyToString(family) {
+  var str = getKeyWithValue(AddressFamily, family);
+  // All the address family start with ADDRESS_FAMILY_*.
+  // Strip that prefix since it is redundant and only clutters the output.
+  return str.replace(/^ADDRESS_FAMILY_/, '');
 }

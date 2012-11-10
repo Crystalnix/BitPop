@@ -1,9 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/at_exit.h"
 #include "base/command_line.h"
+#include "base/hi_res_timer_manager.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/process_util.h"
@@ -16,11 +17,10 @@
 #include "chrome/nacl/nacl_broker_listener.h"
 #include "chrome/nacl/nacl_listener.h"
 #include "chrome/nacl/nacl_main_platform_delegate.h"
-#include "content/common/hi_res_timer_manager.h"
 #include "content/public/app/startup_helper_win.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/sandbox_init.h"
-#include "sandbox/src/sandbox_types.h"
+#include "sandbox/win/src/sandbox_types.h"
 
 extern int NaClMain(const content::MainFunctionParams&);
 
@@ -48,9 +48,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int) {
   base::AtExitManager exit_manager;
   CommandLine::Init(0, NULL);
 
-  wchar_t path[MAX_PATH];
-  ::GetModuleFileNameW(NULL, path, MAX_PATH);
-  InitCrashReporterWithDllPath(std::wstring(path));
+  InitCrashReporter();
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   std::string process_type =

@@ -1,12 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /**
  * The global object.
  * @type {!Object}
+ * @const
  */
-const global = this;
+var global = this;
 
 /**
  * Alias for document.getElementById.
@@ -22,7 +23,7 @@ function $(id) {
  * @param {string} name The name of the message to send.
  * @param {!Array} params The parameters to send.
  * @param {string} callbackName The name of the function that the backend calls.
- * @param {!Function} The function to call.
+ * @param {!Function} callback The function to call.
  */
 function chromeSend(name, params, callbackName, callback) {
   var old = global[callbackName];
@@ -57,15 +58,15 @@ function url(s) {
 
 /**
  * Parses query parameters from Location.
- * @param {string} s The URL to generate the CSS url for.
+ * @param {string} location The URL to generate the CSS url for.
  * @return {object} Dictionary containing name value pairs for URL
  */
 function parseQueryParams(location) {
   var params = {};
   var query = unescape(location.search.substring(1));
-  var vars = query.split("&");
-  for (var i=0; i < vars.length; i++) {
-    var pair = vars[i].split("=");
+  var vars = query.split('&');
+  for (var i = 0; i < vars.length; i++) {
+    var pair = vars[i].split('=');
     params[pair[0]] = pair[1];
   }
   return params;
@@ -106,18 +107,25 @@ function swapDomNodes(a, b) {
 }
 
 /**
- * Disables text selection and dragging.
+ * Disables text selection and dragging, with optional whitelist callbacks.
+ * @param {function(Event):boolean=} opt_allowSelectStart Unless this function
+ *    is defined and returns true, the onselectionstart event will be
+ *    surpressed.
+ * @param {function(Event):boolean=} opt_allowDragStart Unless this function
+ *    is defined and returns true, the ondragstart event will be surpressed.
  */
-function disableTextSelectAndDrag() {
+function disableTextSelectAndDrag(opt_allowSelectStart, opt_allowDragStart) {
   // Disable text selection.
   document.onselectstart = function(e) {
-    e.preventDefault();
-  }
+    if (!(opt_allowSelectStart && opt_allowSelectStart.call(this, e)))
+      e.preventDefault();
+  };
 
   // Disable dragging.
   document.ondragstart = function(e) {
-    e.preventDefault();
-  }
+    if (!(opt_allowDragStart && opt_allowDragStart.call(this, e)))
+      e.preventDefault();
+  };
 }
 
 /**
@@ -194,7 +202,7 @@ document.addEventListener('click', function(e) {
  *     it must be passed in a proper format.
  * @param {string} key The key of the param.
  * @param {string} value The value of the param.
- * @return {string}
+ * @return {string} The new URL.
  */
 function appendParam(url, key, value) {
   var param = encodeURIComponent(key) + '=' + encodeURIComponent(value);

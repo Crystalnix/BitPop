@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/net_util.h"
+#include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 
 namespace ui {
@@ -14,21 +15,6 @@ namespace ui {
 OSExchangeDataProviderAura::OSExchangeDataProviderAura() : formats_(0) {}
 
 OSExchangeDataProviderAura::~OSExchangeDataProviderAura() {}
-
-void OSExchangeDataProviderAura::WriteDataToClipboard(
-    Clipboard* clipboard) const {
-  ScopedClipboardWriter scw(clipboard);
-  if (HasString())
-    scw.WriteText(string_);
-  if (HasURL())
-    scw.WriteHyperlink(title_, url_.spec());
-  if (HasFile()) {
-    Pickle filename_pickle;
-    filename_pickle.WriteString(net::FilePathToFileURL(filename_).spec());
-    scw.WritePickledData(filename_pickle, Clipboard::GetFilenameFormatType());
-  }
-  // TODO(varunjain): support pickle format.
-}
 
 void OSExchangeDataProviderAura::SetString(const string16& data) {
   string_ = data;
@@ -43,7 +29,14 @@ void OSExchangeDataProviderAura::SetURL(const GURL& url,
 }
 
 void OSExchangeDataProviderAura::SetFilename(const FilePath& path) {
-  filename_ = path;
+  filenames_.clear();
+  filenames_.push_back(OSExchangeData::FileInfo(path, FilePath()));
+  formats_ |= OSExchangeData::FILE_NAME;
+}
+
+void OSExchangeDataProviderAura::SetFilenames(
+    const std::vector<OSExchangeData::FileInfo>& filenames) {
+  filenames_ = filenames;
   formats_ |= OSExchangeData::FILE_NAME;
 }
 
@@ -79,7 +72,16 @@ bool OSExchangeDataProviderAura::GetURLAndTitle(GURL* url,
 bool OSExchangeDataProviderAura::GetFilename(FilePath* path) const {
   if ((formats_ & OSExchangeData::FILE_NAME) == 0)
     return false;
-  *path = filename_;
+  DCHECK(!filenames_.empty());
+  *path = filenames_[0].path;
+  return true;
+}
+
+bool OSExchangeDataProviderAura::GetFilenames(
+    std::vector<OSExchangeData::FileInfo>* filenames) const {
+  if ((formats_ & OSExchangeData::FILE_NAME) == 0)
+    return false;
+  *filenames = filenames_;
   return true;
 }
 
@@ -122,20 +124,9 @@ bool OSExchangeDataProviderAura::HasCustomFormat(
     NOTIMPLEMENTED();
   }
 
-  void OSExchangeDataProviderAura::SetHtml(const string16& html,
-                                           const GURL& base_url) {
-    NOTIMPLEMENTED();
-  }
-
   bool OSExchangeDataProviderAura::GetFileContents(
       FilePath* filename,
       std::string* file_contents) const {
-    NOTIMPLEMENTED();
-    return false;
-  }
-
-  bool OSExchangeDataProviderAura::GetHtml(string16* html,
-                                           GURL* base_url) const {
     NOTIMPLEMENTED();
     return false;
   }
@@ -145,16 +136,31 @@ bool OSExchangeDataProviderAura::HasCustomFormat(
     return false;
   }
 
-  bool OSExchangeDataProviderAura::HasHtml() const {
-    NOTIMPLEMENTED();
-    return false;
-  }
-
   void OSExchangeDataProviderAura::SetDownloadFileInfo(
       const OSExchangeData::DownloadFileInfo& download) {
     NOTIMPLEMENTED();
   }
 #endif
+
+void OSExchangeDataProviderAura::SetHtml(const string16& html,
+                                         const GURL& base_url) {
+  formats_ |= OSExchangeData::HTML;
+  html_ = html;
+  base_url_ = base_url;
+}
+
+bool OSExchangeDataProviderAura::GetHtml(string16* html,
+                                         GURL* base_url) const {
+  if ((formats_ & OSExchangeData::HTML) == 0)
+    return false;
+  *html = html_;
+  *base_url = base_url_;
+  return true;
+}
+
+bool OSExchangeDataProviderAura::HasHtml() const {
+  return ((formats_ & OSExchangeData::HTML) != 0);
+}
 
 bool OSExchangeDataProviderAura::GetPlainTextURL(GURL* url) const {
   if ((formats_ & OSExchangeData::STRING) == 0)
@@ -180,8 +186,11 @@ OSExchangeData::Provider* OSExchangeData::CreateProvider() {
 // static
 OSExchangeData::CustomFormat
 OSExchangeData::RegisterCustomFormat(const std::string& type) {
-  // TODO(davemoore) Implement this for aura.
-  return NULL;
+  // On Aura you probably want to just use the Clipboard::Get*FormatType APIs
+  // instead.  But we can also dynamically generate new CustomFormat objects
+  // here too if really necessary.
+  return Clipboard::FormatType::Deserialize(type);
 }
+
 
 }  // namespace ui

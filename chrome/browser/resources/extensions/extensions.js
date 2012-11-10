@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+<include src="../shared/js/cr/ui/drag_wrapper.js"></include>
 <include src="../uber/uber_utils.js"></include>
+<include src="extension_commands_overlay.js"></include>
+<include src="extension_focus_manager.js"></include>
 <include src="extension_list.js"></include>
 <include src="pack_extension_overlay.js"></include>
 
@@ -10,10 +13,47 @@
 // tests.
 var webui_responded_ = false;
 
-var localStrings = new LocalStrings();
-
 cr.define('extensions', function() {
   var ExtensionsList = options.ExtensionsList;
+
+  // Implements the DragWrapper handler interface.
+  var dragWrapperHandler = {
+    // @inheritdoc
+    shouldAcceptDrag: function(e) {
+      // We can't access filenames during the 'dragenter' event, so we have to
+      // wait until 'drop' to decide whether to do something with the file or
+      // not.
+      // See: http://www.w3.org/TR/2011/WD-html5-20110113/dnd.html#concept-dnd-p
+      return e.dataTransfer.types.indexOf('Files') > -1;
+    },
+    // @inheritdoc
+    doDragEnter: function() {
+      chrome.send('startDrag');
+      ExtensionSettings.showOverlay(null);
+      ExtensionSettings.showOverlay($('dropTargetOverlay'));
+    },
+    // @inheritdoc
+    doDragLeave: function() {
+      ExtensionSettings.showOverlay(null);
+      chrome.send('stopDrag');
+    },
+    // @inheritdoc
+    doDragOver: function(e) {
+    },
+    // @inheritdoc
+    doDrop: function(e) {
+      // Only process files that look like extensions. Other files should
+      // navigate the browser normally.
+      if (!e.dataTransfer.files.length ||
+          !/\.(crx|user\.js)$/.test(e.dataTransfer.files[0].name)) {
+        return;
+      }
+
+      chrome.send('installDroppedFile');
+      ExtensionSettings.showOverlay(null);
+      e.preventDefault();
+    }
+  };
 
   /**
    * ExtensionSettings class
@@ -30,26 +70,22 @@ cr.define('extensions', function() {
      * Perform initial setup.
      */
     initialize: function() {
-      cr.enablePlatformSpecificCSSRules();
+      uber.onContentFrameLoaded();
+
+      measureCheckboxStrings();
 
       // Set the title.
-      var title = localStrings.getString('extensionSettings');
+      var title = loadTimeData.getString('extensionSettings');
       uber.invokeMethodOnParent('setTitle', {title: title});
 
       // This will request the data to show on the page and will get a response
       // back in returnExtensionsData.
       chrome.send('extensionSettingsRequestExtensionsData');
 
-      // Set up the developer mode button.
-      var toggleDevMode = $('toggle-dev-on');
-      toggleDevMode.addEventListener('click',
+      $('toggle-dev-on').addEventListener('change',
           this.handleToggleDevMode_.bind(this));
-
-      // Setup the gallery related links and text.
-      $('suggest-gallery').innerHTML =
-          localStrings.getString('extensionSettingsSuggestGallery');
-      $('get-more-extensions').innerHTML =
-          localStrings.getString('extensionSettingsGetMoreExtensions');
+      $('dev-controls').addEventListener('webkitTransitionEnd',
+          this.handleDevControlsTransitionEnd_.bind(this));
 
       // Set up the three dev mode buttons (load unpacked, pack and update).
       $('load-unpacked').addEventListener('click',
@@ -59,34 +95,27 @@ cr.define('extensions', function() {
       $('update-extensions-now').addEventListener('click',
           this.handleUpdateExtensionNow_.bind(this));
 
-      this.pageHeader_ = $('page-header');
-
-      document.addEventListener('scroll', this.handleScroll_.bind(this));
-      window.addEventListener('message', this.handleWindowMessage_.bind(this));
+      if (!loadTimeData.getBoolean('offStoreInstallEnabled')) {
+        this.dragWrapper_ = new cr.ui.DragWrapper(document.documentElement,
+                                                  dragWrapperHandler);
+      }
 
       var packExtensionOverlay = extensions.PackExtensionOverlay.getInstance();
       packExtensionOverlay.initializePage();
 
-      // Trigger the scroll handler to tell the navigation if our page started
-      // with some scroll (happens when you use tab restore).
-      this.handleScroll_();
-    },
+      // Hook up the configure commands link to the overlay.
+      var link = document.querySelector('.extension-commands-config');
+      link.addEventListener('click',
+          this.handleExtensionCommandsConfig_.bind(this));
 
-    /**
-     * Utility function which asks the C++ to show a platform-specific file
-     * select dialog, and fire |callback| with the |filePath| that resulted.
-     * |selectType| can be either 'file' or 'folder'. |operation| can be 'load',
-     * 'packRoot', or 'pem' which are signals to the C++ to do some
-     * operation-specific configuration.
-     * @private
-     */
-    showFileDialog_: function(selectType, operation, callback) {
-      handleFilePathSelected = function(filePath) {
-        callback(filePath);
-        handleFilePathSelected = function() {};
-      };
+      // Initialize the Commands overlay.
+      var extensionCommandsOverlay =
+          extensions.ExtensionCommandsOverlay.getInstance();
+      extensionCommandsOverlay.initializePage();
 
-      chrome.send('extensionSettingsSelectFilePath', [selectType, operation]);
+      cr.ui.overlay.setupOverlay($('dropTargetOverlay'));
+
+      extensions.ExtensionFocusManager.getInstance().initialize();
     },
 
     /**
@@ -95,10 +124,10 @@ cr.define('extensions', function() {
      * @private
      */
     handleLoadUnpackedExtension_: function(e) {
-      this.showFileDialog_('folder', 'pem', function(filePath) {
-        chrome.send('extensionSettingsLoad', [String(filePath)]);
-      });
+      chrome.send('extensionSettingsLoadUnpackedExtension');
 
+      // TODO(jhawkins): Refactor metrics support out of options and use it
+      // in extensions.html.
       chrome.send('coreOptionsUserMetricsAction',
                   ['Options_LoadUnpackedExtension']);
     },
@@ -114,12 +143,24 @@ cr.define('extensions', function() {
     },
 
     /**
+     * Handles the Configure (Extension) Commands link.
+     * @param {Event} e Change event.
+     * @private
+     */
+    handleExtensionCommandsConfig_: function(e) {
+      ExtensionSettings.showOverlay($('extensionCommandsOverlay'));
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_ExtensionCommands']);
+      e.preventDefault();
+    },
+
+    /**
      * Handles the Update Extension Now button.
      * @param {Event} e Change event.
      * @private
      */
     handleUpdateExtensionNow_: function(e) {
-      chrome.send('extensionSettingsAutoupdate', []);
+      chrome.send('extensionSettingsAutoupdate');
     },
 
     /**
@@ -128,63 +169,28 @@ cr.define('extensions', function() {
      * @private
      */
     handleToggleDevMode_: function(e) {
-      var dev = $('dev');
-      if (!dev.classList.contains('dev-open')) {
-        // Make the Dev section visible.
-        dev.classList.add('dev-open');
-        dev.classList.remove('dev-closed');
-
-        $('load-unpacked').classList.add('dev-button-visible');
-        $('load-unpacked').classList.remove('dev-button-hidden');
-        $('pack-extension').classList.add('dev-button-visible');
-        $('pack-extension').classList.remove('dev-button-hidden');
-        $('update-extensions-now').classList.add('dev-button-visible');
-        $('update-extensions-now').classList.remove('dev-button-hidden');
+      if ($('toggle-dev-on').checked) {
+        $('dev-controls').hidden = false;
+        window.setTimeout(function() {
+          $('extension-settings').classList.add('dev-mode');
+        }, 0);
       } else {
-        // Hide the Dev section.
-        dev.classList.add('dev-closed');
-        dev.classList.remove('dev-open');
-
-        $('load-unpacked').classList.add('dev-button-hidden');
-        $('load-unpacked').classList.remove('dev-button-visible');
-        $('pack-extension').classList.add('dev-button-hidden');
-        $('pack-extension').classList.remove('dev-button-visible');
-        $('update-extensions-now').classList.add('dev-button-hidden');
-        $('update-extensions-now').classList.remove('dev-button-visible');
+        $('extension-settings').classList.remove('dev-mode');
       }
 
-      chrome.send('extensionSettingsToggleDeveloperMode', []);
+      chrome.send('extensionSettingsToggleDeveloperMode');
     },
 
     /**
-     * Called when the page is scrolled; moves elements that are position:fixed
-     * but should only behave as if they are fixed for vertical scrolling.
+     * Called when a transition has ended for #dev-controls.
+     * @param {Event} e webkitTransitionEnd event.
      * @private
      */
-    handleScroll_: function() {
-      var offset = document.body.scrollLeft * -1;
-      this.pageHeader_.style.webkitTransform = 'translateX(' + offset + 'px)';
-      uber.invokeMethodOnParent('adjustToScroll', document.body.scrollLeft);
-    },
-
-    /**
-     * Handles postMessage from chrome://chrome.
-     * @param {Event} e The post data.
-     */
-    handleWindowMessage_: function(e) {
-      if (e.data.method === 'frameSelected')
-        this.handleFrameSelected_();
-      else
-        console.error('Received unexpected message', e.data);
-    },
-
-    /**
-     * This is called when a user selects this frame via the navigation bar
-     * frame (and is triggered via postMessage() from the uber page).
-     * @private
-     */
-    handleFrameSelected_: function() {
-      document.body.scrollLeft = 0;
+    handleDevControlsTransitionEnd_: function(e) {
+      if (e.propertyName == 'height' &&
+          !$('extension-settings').classList.contains('dev-mode')) {
+        $('dev-controls').hidden = true;
+      }
     },
   };
 
@@ -193,11 +199,16 @@ cr.define('extensions', function() {
    * the current state of installed extensions.
    */
   ExtensionSettings.returnExtensionsData = function(extensionsData) {
-    webui_responded_ = true;
+    // We can get called many times in short order, thus we need to
+    // be careful to remove the 'finished loading' timeout.
+    if (this.loadingTimeout_)
+      window.clearTimeout(this.loadingTimeout_);
+    document.documentElement.classList.add('loading');
+    this.loadingTimeout_ = window.setTimeout(function() {
+      document.documentElement.classList.remove('loading');
+    }, 0);
 
-    $('no-extensions').hidden = true;
-    $('suggest-gallery').hidden = true;
-    $('get-more-extensions-container').hidden = true;
+    webui_responded_ = true;
 
     if (extensionsData.extensions.length > 0) {
       // Enforce order specified in the data or (if equal) then sort by
@@ -211,15 +222,31 @@ cr.define('extensions', function() {
           return a.order < b.order ? -1 : 1;
         }
       });
-
-      $('get-more-extensions-container').hidden = false;
-    } else {
-      $('no-extensions').hidden = false;
-      $('suggest-gallery').hidden = false;
     }
 
-    ExtensionsList.prototype.data_ = extensionsData;
+    var pageDiv = $('extension-settings');
+    if (extensionsData.managedMode) {
+      pageDiv.classList.add('showing-banner');
+      pageDiv.classList.add('managed-mode');
+      $('toggle-dev-on').disabled = true;
+    } else {
+      pageDiv.classList.remove('showing-banner');
+      pageDiv.classList.remove('managed-mode');
+      $('toggle-dev-on').disabled = false;
+    }
 
+    if (extensionsData.developerMode && !extensionsData.managedMode) {
+      pageDiv.classList.add('dev-mode');
+      $('toggle-dev-on').checked = true;
+      $('dev-controls').hidden = false;
+    } else {
+      pageDiv.classList.remove('dev-mode');
+      $('toggle-dev-on').checked = false;
+    }
+
+    $('load-unpacked').disabled = extensionsData.loadUnpackedDisabled;
+
+    ExtensionsList.prototype.data_ = extensionsData;
     var extensionList = $('extension-settings-list');
     ExtensionsList.decorate(extensionList);
   }
@@ -234,10 +261,10 @@ cr.define('extensions', function() {
     };
 
     alertOverlay.setValues(
-        localStrings.getString('packExtensionWarningTitle'),
+        loadTimeData.getString('packExtensionWarningTitle'),
         message,
-        localStrings.getString('packExtensionProceedAnyway'),
-        localStrings.getString('cancel'),
+        loadTimeData.getString('packExtensionProceedAnyway'),
+        loadTimeData.getString('cancel'),
         function() {
           chrome.send('pack', [crx_path, pem_path, overrideFlags]);
           closeAlert();
@@ -247,20 +274,59 @@ cr.define('extensions', function() {
   }
 
   /**
+   * Returns the current overlay or null if one does not exist.
+   * @return {Element} The overlay element.
+   */
+  ExtensionSettings.getCurrentOverlay = function() {
+    return document.querySelector('#overlay .page.showing');
+  }
+
+  /**
    * Sets the given overlay to show. This hides whatever overlay is currently
    * showing, if any.
    * @param {HTMLElement} node The overlay page to show. If falsey, all overlays
    *     are hidden.
    */
   ExtensionSettings.showOverlay = function(node) {
-    var currentlyShowingOverlay =
-        document.querySelector('#overlay .page.showing');
+    var currentlyShowingOverlay = ExtensionSettings.getCurrentOverlay();
     if (currentlyShowingOverlay)
       currentlyShowingOverlay.classList.remove('showing');
 
     if (node)
       node.classList.add('showing');
     overlay.hidden = !node;
+    uber.invokeMethodOnParent(node ? 'beginInterceptingEvents' :
+                                     'stopInterceptingEvents');
+  }
+
+  /**
+   * Utility function to find the width of various UI strings and synchronize
+   * the width of relevant spans. This is crucial for making sure the
+   * Enable/Enabled checkboxes align, as well as the Developer Mode checkbox.
+   */
+  function measureCheckboxStrings() {
+    var trashWidth = 30;
+    var measuringDiv = $('font-measuring-div');
+    measuringDiv.textContent =
+        loadTimeData.getString('extensionSettingsEnabled');
+    var pxWidth = measuringDiv.clientWidth + trashWidth;
+    measuringDiv.textContent =
+        loadTimeData.getString('extensionSettingsEnable');
+    pxWidth = Math.max(measuringDiv.clientWidth + trashWidth, pxWidth);
+    measuringDiv.textContent =
+        loadTimeData.getString('extensionSettingsDeveloperMode');
+    pxWidth = Math.max(measuringDiv.clientWidth, pxWidth);
+
+    var style = document.createElement('style');
+    style.type = 'text/css';
+    style.textContent =
+        '.enable-checkbox-text {' +
+        '  min-width: ' + (pxWidth - trashWidth) + 'px;' +
+        '}' +
+        '#dev-toggle span {' +
+        '  min-width: ' + pxWidth + 'px;' +
+        '}';
+    document.querySelector('head').appendChild(style);
   }
 
   // Export
@@ -271,7 +337,6 @@ cr.define('extensions', function() {
 
 var ExtensionSettings = extensions.ExtensionSettings;
 
-// 'load' seems to have a bad interaction with open_sans.woff.
-window.addEventListener('DOMContentLoaded', function(e) {
+window.addEventListener('load', function(e) {
   ExtensionSettings.getInstance().initialize();
 });

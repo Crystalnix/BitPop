@@ -5,6 +5,11 @@
 #include "media/base/filter_collection.h"
 
 #include "base/logging.h"
+#include "media/base/audio_decoder.h"
+#include "media/base/audio_renderer.h"
+#include "media/base/demuxer.h"
+#include "media/base/video_decoder.h"
+#include "media/base/video_renderer.h"
 
 namespace media {
 
@@ -12,86 +17,78 @@ FilterCollection::FilterCollection() {}
 
 FilterCollection::~FilterCollection() {}
 
-void FilterCollection::SetDemuxerFactory(scoped_ptr<DemuxerFactory> factory) {
-  DCHECK(factory.get());
-  demuxer_factory_ = factory.Pass();
+void FilterCollection::SetDemuxer(const scoped_refptr<Demuxer>& demuxer) {
+  demuxer_ = demuxer;
 }
 
-DemuxerFactory* FilterCollection::GetDemuxerFactory() {
-  return demuxer_factory_.get();
+const scoped_refptr<Demuxer>& FilterCollection::GetDemuxer() {
+  return demuxer_;
 }
 
-void FilterCollection::AddVideoDecoder(VideoDecoder* filter) {
-  AddFilter(VIDEO_DECODER, filter);
+void FilterCollection::AddAudioDecoder(AudioDecoder* audio_decoder) {
+  audio_decoders_.push_back(audio_decoder);
 }
 
-void FilterCollection::AddAudioDecoder(AudioDecoder* filter) {
-  AddFilter(AUDIO_DECODER, filter);
+void FilterCollection::AddVideoDecoder(VideoDecoder* video_decoder) {
+  video_decoders_.push_back(video_decoder);
 }
 
-void FilterCollection::AddVideoRenderer(VideoRenderer* filter) {
-  AddFilter(VIDEO_RENDERER, filter);
+void FilterCollection::AddAudioRenderer(AudioRenderer* audio_renderer) {
+  audio_renderers_.push_back(audio_renderer);
 }
 
-void FilterCollection::AddAudioRenderer(AudioRenderer* filter) {
-  AddFilter(AUDIO_RENDERER, filter);
+void FilterCollection::AddVideoRenderer(VideoRenderer* video_renderer) {
+  video_renderers_.push_back(video_renderer);
 }
 
 bool FilterCollection::IsEmpty() const {
-  return filters_.empty();
+  return audio_decoders_.empty() &&
+      video_decoders_.empty() &&
+      audio_renderers_.empty() &&
+      video_renderers_.empty();
 }
 
 void FilterCollection::Clear() {
-  filters_.clear();
+  audio_decoders_.clear();
+  video_decoders_.clear();
+  audio_renderers_.clear();
+  video_renderers_.clear();
 }
 
-void FilterCollection::SelectVideoDecoder(
-    scoped_refptr<VideoDecoder>* filter_out) {
-  SelectFilter<VIDEO_DECODER>(filter_out);
-}
-
-void FilterCollection::SelectAudioDecoder(
-    scoped_refptr<AudioDecoder>* filter_out) {
-  SelectFilter<AUDIO_DECODER>(filter_out);
-}
-
-void FilterCollection::SelectVideoRenderer(
-    scoped_refptr<VideoRenderer>* filter_out) {
-  SelectFilter<VIDEO_RENDERER>(filter_out);
-}
-
-void FilterCollection::SelectAudioRenderer(
-    scoped_refptr<AudioRenderer>* filter_out) {
-  SelectFilter<AUDIO_RENDERER>(filter_out);
-}
-
-void FilterCollection::AddFilter(FilterType filter_type,
-                                 Filter* filter) {
-  filters_.push_back(FilterListElement(filter_type, filter));
-}
-
-template<FilterCollection::FilterType filter_type, typename F>
-void FilterCollection::SelectFilter(scoped_refptr<F>* filter_out) {
-  scoped_refptr<Filter> filter;
-  SelectFilter(filter_type, &filter);
-  *filter_out = reinterpret_cast<F*>(filter.get());
-}
-
-void FilterCollection::SelectFilter(
-    FilterType filter_type,
-    scoped_refptr<Filter>* filter_out)  {
-
-  FilterList::iterator it = filters_.begin();
-  while (it != filters_.end()) {
-    if (it->first == filter_type)
-      break;
-    ++it;
+void FilterCollection::SelectAudioDecoder(scoped_refptr<AudioDecoder>* out) {
+  if (audio_decoders_.empty()) {
+    *out = NULL;
+    return;
   }
+  *out = audio_decoders_.front();
+  audio_decoders_.pop_front();
+}
 
-  if (it != filters_.end()) {
-    *filter_out = it->second.get();
-    filters_.erase(it);
+void FilterCollection::SelectVideoDecoder(scoped_refptr<VideoDecoder>* out) {
+  if (video_decoders_.empty()) {
+    *out = NULL;
+    return;
   }
+  *out = video_decoders_.front();
+  video_decoders_.pop_front();
+}
+
+void FilterCollection::SelectAudioRenderer(scoped_refptr<AudioRenderer>* out) {
+  if (audio_renderers_.empty()) {
+    *out = NULL;
+    return;
+  }
+  *out = audio_renderers_.front();
+  audio_renderers_.pop_front();
+}
+
+void FilterCollection::SelectVideoRenderer(scoped_refptr<VideoRenderer>* out) {
+  if (video_renderers_.empty()) {
+    *out = NULL;
+    return;
+  }
+  *out = video_renderers_.front();
+  video_renderers_.pop_front();
 }
 
 }  // namespace media

@@ -1,25 +1,32 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/favicon/favicon_tab_helper.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "chrome/browser/ui/tab_contents/test_tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tab_contents/test_tab_contents.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/browser/tab_contents/test_tab_contents.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/site_instance.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/common/referrer.h"
+#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_renderer_host.h"
+#include "content/public/test/web_contents_tester.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
 using content::NavigationController;
+using content::RenderViewHost;
+using content::RenderViewHostTester;
 using content::SiteInstance;
 using content::WebContents;
+using content::WebContentsTester;
 
-class WebUITest : public TabContentsWrapperTestHarness {
+class WebUITest : public TabContentsTestHarness {
  public:
   WebUITest() : ui_thread_(BrowserThread::UI, MessageLoop::current()) {}
 
@@ -27,8 +34,8 @@ class WebUITest : public TabContentsWrapperTestHarness {
   // state, through pending, committed, then another navigation. The first page
   // ID that we should use is passed as a parameter. We'll use the next two
   // values. This must be increasing for the life of the tests.
-  static void DoNavigationTest(TabContentsWrapper* wrapper, int page_id) {
-    WebContents* contents = wrapper->web_contents();
+  static void DoNavigationTest(TabContents* tab_contents, int page_id) {
+    WebContents* contents = tab_contents->web_contents();
     NavigationController* controller = &contents->GetController();
 
     // Start a pending load.
@@ -42,15 +49,15 @@ class WebUITest : public TabContentsWrapperTestHarness {
     ASSERT_FALSE(controller->GetLastCommittedEntry());
 
     // Check the things the pending Web UI should have set.
-    EXPECT_FALSE(wrapper->favicon_tab_helper()->ShouldDisplayFavicon());
+    EXPECT_FALSE(tab_contents->favicon_tab_helper()->ShouldDisplayFavicon());
     EXPECT_TRUE(contents->FocusLocationBarByDefault());
 
     // Now commit the load.
-    static_cast<TestRenderViewHost*>(
+    RenderViewHostTester::For(
         contents->GetRenderViewHost())->SendNavigate(page_id, new_tab_url);
 
     // The same flags should be set as before now that the load has committed.
-    EXPECT_FALSE(wrapper->favicon_tab_helper()->ShouldDisplayFavicon());
+    EXPECT_FALSE(tab_contents->favicon_tab_helper()->ShouldDisplayFavicon());
     EXPECT_TRUE(contents->FocusLocationBarByDefault());
 
     // Start a pending navigation to a regular page.
@@ -61,7 +68,7 @@ class WebUITest : public TabContentsWrapperTestHarness {
 
     // Check the flags. Some should reflect the new page (URL, title), some
     // should reflect the old one (bookmark bar) until it has committed.
-    EXPECT_TRUE(wrapper->favicon_tab_helper()->ShouldDisplayFavicon());
+    EXPECT_TRUE(tab_contents->favicon_tab_helper()->ShouldDisplayFavicon());
     EXPECT_FALSE(contents->FocusLocationBarByDefault());
 
     // Commit the regular page load. Note that we must send it to the "pending"
@@ -69,17 +76,18 @@ class WebUITest : public TabContentsWrapperTestHarness {
     // process transition, and our RVH pointer will be the "committed" one.
     // In the second call to this function from WebUIToStandard, it won't
     // actually be pending, which is the point of this test.
-    TestRenderViewHost* pending_rvh =
-        TestRenderViewHost::GetPendingForController(controller);
+    RenderViewHost* pending_rvh =
+        RenderViewHostTester::GetPendingForController(controller);
     if (pending_rvh) {
-      pending_rvh->SendNavigate(page_id + 1, next_url);
+      RenderViewHostTester::For(
+          pending_rvh)->SendNavigate(page_id + 1, next_url);
     } else {
-      static_cast<TestRenderViewHost*>(
+      RenderViewHostTester::For(
           contents->GetRenderViewHost())->SendNavigate(page_id + 1, next_url);
     }
 
     // The state should now reflect a regular page.
-    EXPECT_TRUE(wrapper->favicon_tab_helper()->ShouldDisplayFavicon());
+    EXPECT_TRUE(tab_contents->favicon_tab_helper()->ShouldDisplayFavicon());
     EXPECT_FALSE(contents->FocusLocationBarByDefault());
   }
 
@@ -90,19 +98,20 @@ class WebUITest : public TabContentsWrapperTestHarness {
 };
 
 // Tests that the New Tab Page flags are correctly set and propogated by
-// TabContents when we first navigate to a Web UI page, then to a standard
+// WebContents when we first navigate to a Web UI page, then to a standard
 // non-DOM-UI page.
 TEST_F(WebUITest, WebUIToStandard) {
-  DoNavigationTest(contents_wrapper(), 1);
+  DoNavigationTest(tab_contents(), 1);
 
   // Test the case where we're not doing the initial navigation. This is
   // slightly different than the very-first-navigation case since the
-  // SiteInstance will be the same (the original TabContents must still be
+  // SiteInstance will be the same (the original WebContents must still be
   // alive), which will trigger different behavior in RenderViewHostManager.
-  TestTabContents* contents2 = new TestTabContents(profile(), NULL);
-  TabContentsWrapper wrapper2(contents2);
+  WebContents* contents2 =
+      WebContentsTester::CreateTestWebContents(profile(), NULL);
+  TabContents tab_contents2(contents2);
 
-  DoNavigationTest(&wrapper2, 101);
+  DoNavigationTest(&tab_contents2, 101);
 }
 
 TEST_F(WebUITest, WebUIToWebUI) {
@@ -111,17 +120,16 @@ TEST_F(WebUITest, WebUIToWebUI) {
   controller().LoadURL(new_tab_url, content::Referrer(),
                        content::PAGE_TRANSITION_LINK,
                        std::string());
-  rvh()->SendNavigate(1, new_tab_url);
+  rvh_tester()->SendNavigate(1, new_tab_url);
 
   // Start another pending load of the new tab page.
   controller().LoadURL(new_tab_url, content::Referrer(),
                        content::PAGE_TRANSITION_LINK,
                        std::string());
-  rvh()->SendNavigate(2, new_tab_url);
+  rvh_tester()->SendNavigate(2, new_tab_url);
 
   // The flags should be the same as the non-pending state.
-  EXPECT_FALSE(
-      contents_wrapper()->favicon_tab_helper()->ShouldDisplayFavicon());
+  EXPECT_FALSE(tab_contents()->favicon_tab_helper()->ShouldDisplayFavicon());
   EXPECT_TRUE(contents()->FocusLocationBarByDefault());
 }
 
@@ -134,12 +142,12 @@ TEST_F(WebUITest, StandardToWebUI) {
                        std::string());
 
   // The state should now reflect the default.
-  EXPECT_TRUE(contents_wrapper()->favicon_tab_helper()->ShouldDisplayFavicon());
+  EXPECT_TRUE(tab_contents()->favicon_tab_helper()->ShouldDisplayFavicon());
   EXPECT_FALSE(contents()->FocusLocationBarByDefault());
 
   // Commit the load, the state should be the same.
-  rvh()->SendNavigate(1, std_url);
-  EXPECT_TRUE(contents_wrapper()->favicon_tab_helper()->ShouldDisplayFavicon());
+  rvh_tester()->SendNavigate(1, std_url);
+  EXPECT_TRUE(tab_contents()->favicon_tab_helper()->ShouldDisplayFavicon());
   EXPECT_FALSE(contents()->FocusLocationBarByDefault());
 
   // Start a pending load for a WebUI.
@@ -147,33 +155,21 @@ TEST_F(WebUITest, StandardToWebUI) {
   controller().LoadURL(new_tab_url, content::Referrer(),
                        content::PAGE_TRANSITION_LINK,
                        std::string());
-  EXPECT_TRUE(contents_wrapper()->favicon_tab_helper()->ShouldDisplayFavicon());
+  EXPECT_TRUE(tab_contents()->favicon_tab_helper()->ShouldDisplayFavicon());
   EXPECT_TRUE(contents()->FocusLocationBarByDefault());
 
   // Committing Web UI is tested above.
 }
 
-class TabContentsForFocusTest : public TestTabContents {
- public:
-  TabContentsForFocusTest(content::BrowserContext* browser_context,
-                          SiteInstance* instance)
-      : TestTabContents(browser_context, instance), focus_called_(0) {
-  }
-
-  virtual void SetFocusToLocationBar(bool select_all) { ++focus_called_; }
-  int focus_called() const { return focus_called_; }
-
- private:
-  int focus_called_;
-};
-
 TEST_F(WebUITest, FocusOnNavigate) {
-  // Setup.  |tc| will be used to track when we try to focus the location bar.
-  TabContentsForFocusTest* tc = new TabContentsForFocusTest(
-      contents()->GetBrowserContext(),
-      SiteInstance::Create(contents()->GetBrowserContext()));
-  tc->GetController().CopyStateFrom(controller());
-  SetContents(tc);
+  // Setup.  |wc| will be used to track when we try to focus the location bar.
+  WebContents* wc =
+      WebContentsTester::CreateTestWebContentsCountSetFocusToLocationBar(
+          contents()->GetBrowserContext(),
+          SiteInstance::Create(contents()->GetBrowserContext()));
+  WebContentsTester* wct = WebContentsTester::For(wc);
+  wc->GetController().CopyStateFrom(controller());
+  SetContents(wc);
   int page_id = 200;
 
   // Load the NTP.
@@ -181,7 +177,7 @@ TEST_F(WebUITest, FocusOnNavigate) {
   controller().LoadURL(new_tab_url, content::Referrer(),
                        content::PAGE_TRANSITION_LINK,
                        std::string());
-  rvh()->SendNavigate(page_id, new_tab_url);
+  rvh_tester()->SendNavigate(page_id, new_tab_url);
 
   // Navigate to another page.
   GURL next_url("http://google.com/");
@@ -189,28 +185,30 @@ TEST_F(WebUITest, FocusOnNavigate) {
   controller().LoadURL(next_url, content::Referrer(),
                        content::PAGE_TRANSITION_LINK,
                        std::string());
-  TestRenderViewHost* old_rvh = rvh();
-  old_rvh->SendShouldCloseACK(true);
-  pending_rvh()->SendNavigate(next_page_id, next_url);
-  old_rvh->OnSwapOutACK();
+  RenderViewHost* old_rvh = rvh();
+  RenderViewHostTester::For(old_rvh)->SendShouldCloseACK(true);
+  RenderViewHostTester::For(
+      pending_rvh())->SendNavigate(next_page_id, next_url);
+  RenderViewHostTester::For(old_rvh)->SimulateSwapOutACK();
 
   // Navigate back.  Should focus the location bar.
-  int focus_called = tc->focus_called();
+  int focus_called = wct->GetNumberOfFocusCalls();
   ASSERT_TRUE(controller().CanGoBack());
   controller().GoBack();
   old_rvh = rvh();
-  old_rvh->SendShouldCloseACK(true);
-  pending_rvh()->SendNavigate(page_id, new_tab_url);
-  old_rvh->OnSwapOutACK();
-  EXPECT_LT(focus_called, tc->focus_called());
+  RenderViewHostTester::For(old_rvh)->SendShouldCloseACK(true);
+  RenderViewHostTester::For(pending_rvh())->SendNavigate(page_id, new_tab_url);
+  RenderViewHostTester::For(old_rvh)->SimulateSwapOutACK();
+  EXPECT_LT(focus_called, wct->GetNumberOfFocusCalls());
 
   // Navigate forward.  Shouldn't focus the location bar.
-  focus_called = tc->focus_called();
+  focus_called = wct->GetNumberOfFocusCalls();
   ASSERT_TRUE(controller().CanGoForward());
   controller().GoForward();
   old_rvh = rvh();
-  old_rvh->SendShouldCloseACK(true);
-  pending_rvh()->SendNavigate(next_page_id, next_url);
-  old_rvh->OnSwapOutACK();
-  EXPECT_EQ(focus_called, tc->focus_called());
+  RenderViewHostTester::For(old_rvh)->SendShouldCloseACK(true);
+  RenderViewHostTester::For(
+      pending_rvh())->SendNavigate(next_page_id, next_url);
+  RenderViewHostTester::For(old_rvh)->SimulateSwapOutACK();
+  EXPECT_EQ(focus_called, wct->GetNumberOfFocusCalls());
 }

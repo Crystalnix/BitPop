@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_IMPORTER_EXTERNAL_PROCESS_IMPORTER_BRIDGE_H_
 #define CHROME_BROWSER_IMPORTER_EXTERNAL_PROCESS_IMPORTER_BRIDGE_H_
-#pragma once
 
 #include <vector>
 
@@ -19,6 +18,7 @@ class GURL;
 
 namespace base {
 class DictionaryValue;
+class TaskRunner;
 }
 
 // When the importer is run in an external process, the bridge is effectively
@@ -30,7 +30,8 @@ class ExternalProcessImporterBridge : public ImporterBridge {
  public:
   ExternalProcessImporterBridge(
       const base::DictionaryValue& localized_strings,
-      IPC::Message::Sender* sender);
+      IPC::Sender* sender,
+      base::TaskRunner* task_runner);
 
   // Begin ImporterBridge implementation:
   virtual void AddBookmarks(
@@ -47,11 +48,10 @@ class ExternalProcessImporterBridge : public ImporterBridge {
   virtual void SetFavicons(
       const std::vector<history::ImportedFaviconUsage>& favicons) OVERRIDE;
 
-  virtual void SetHistoryItems(const std::vector<history::URLRow>& rows,
+  virtual void SetHistoryItems(const history::URLRows& rows,
                                history::VisitSource visit_source) OVERRIDE;
 
   virtual void SetKeywords(const std::vector<TemplateURL*>& template_urls,
-                           int default_keyword_index,
                            bool unique_on_host_and_path) OVERRIDE;
 
   virtual void SetPasswordForm(
@@ -68,13 +68,15 @@ class ExternalProcessImporterBridge : public ImporterBridge {
  private:
   virtual ~ExternalProcessImporterBridge();
 
-  bool Send(IPC::Message* message);
+  void Send(IPC::Message* message);
+  void SendInternal(IPC::Message* message);
 
   // Holds strings needed by the external importer because the resource
   // bundle isn't available to the external process.
   scoped_ptr<base::DictionaryValue> localized_strings_;
 
-  IPC::Message::Sender* sender_;
+  IPC::Sender* sender_;
+  scoped_refptr<base::TaskRunner> task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(ExternalProcessImporterBridge);
 };

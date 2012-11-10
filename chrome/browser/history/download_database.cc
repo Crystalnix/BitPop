@@ -10,24 +10,17 @@
 
 #include "base/debug/alias.h"
 #include "base/file_path.h"
+#include "base/metrics/histogram.h"
+#include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "build/build_config.h"
-#include "content/browser/download/download_persistent_store_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item.h"
+#include "content/public/browser/download_persistent_store_info.h"
 #include "sql/statement.h"
 
-// TODO(benjhayden): Change this to DCHECK when we have more debugging
-// information from the next dev cycle, before the next stable/beta branch is
-// cut, in order to prevent unnecessary crashes on those channels. If we still
-// don't have root cause before the dev cycle after the next stable/beta
-// releases, uncomment it out to re-enable debugging checks. Whenever this macro
-// is toggled, the corresponding macro in download_manager_impl.cc should also
-// be toggled. When 96627 is fixed, this macro and all its usages and
-// returned_ids_ can be deleted or permanently changed to DCHECK as appropriate.
-#define CHECK_96627 CHECK
-
 using content::DownloadItem;
+using content::DownloadPersistentStoreInfo;
 
 namespace history {
 
@@ -59,10 +52,10 @@ FilePath ColumnFilePath(sql::Statement& statement, int col) {
 
 // See above.
 void BindFilePath(sql::Statement& statement, const FilePath& path, int col) {
-  statement.BindString(col, UTF16ToUTF8(path.value()));
+  statement.BindString16(col, path.value());
 }
 FilePath ColumnFilePath(sql::Statement& statement, int col) {
-  return FilePath(UTF8ToUTF16(statement.ColumnString(col)));
+  return FilePath(statement.ColumnString16(col));
 }
 
 #endif
@@ -85,7 +78,7 @@ DownloadDatabase::~DownloadDatabase() {
 
 void DownloadDatabase::CheckThread() {
   if (owning_thread_set_) {
-    CHECK_96627(owning_thread_ == base::PlatformThread::CurrentId());
+    DCHECK(owning_thread_ == base::PlatformThread::CurrentId());
   } else {
     owning_thread_ = base::PlatformThread::CurrentId();
     owning_thread_set_ = true;
@@ -101,9 +94,7 @@ bool DownloadDatabase::EnsureColumnExists(
 
 bool DownloadDatabase::InitDownloadTable() {
   CheckThread();
-  bool success = meta_table_.Init(&GetDB(), 0, 0);
-  DCHECK(success);
-  meta_table_.GetValue(kNextDownloadId, &next_id_);
+  GetMetaTable().GetValue(kNextDownloadId, &next_id_);
   if (GetDB().DoesTableExist("downloads")) {
     return EnsureColumnExists("end_time", "INTEGER NOT NULL DEFAULT 0") &&
            EnsureColumnExists("opened", "INTEGER NOT NULL DEFAULT 0");
@@ -123,6 +114,7 @@ void DownloadDatabase::QueryDownloads(
   results->clear();
   if (next_db_handle_ < 1)
     next_db_handle_ = 1;
+  std::set<DownloadID> db_handles;
 
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "SELECT id, full_path, url, start_time, received_bytes, "
@@ -144,6 +136,11 @@ void DownloadDatabase::QueryDownloads(
     results->push_back(info);
     if (info.db_handle >= next_db_handle_)
       next_db_handle_ = info.db_handle + 1;
+    if (!db_handles.insert(info.db_handle).second) {
+      // info.db_handle was already in db_handles. The database is corrupt.
+      base::debug::Alias(&info.db_handle);
+      DCHECK(false);
+    }
   }
 }
 
@@ -216,7 +213,7 @@ int64 DownloadDatabase::CreateDownload(
 
   if (statement.Run()) {
     // TODO(benjhayden) if(info.id>next_id_){setvalue;next_id_=info.id;}
-    meta_table_.SetValue(kNextDownloadId, ++next_id_);
+    GetMetaTable().SetValue(kNextDownloadId, ++next_id_);
 
     return db_handle;
   }
@@ -225,9 +222,11 @@ int64 DownloadDatabase::CreateDownload(
 
 void DownloadDatabase::RemoveDownload(DownloadID db_handle) {
   CheckThread();
+
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "DELETE FROM downloads WHERE id=?"));
   statement.BindInt64(0, db_handle);
+
   statement.Run();
 }
 
@@ -237,20 +236,56 @@ bool DownloadDatabase::RemoveDownloadsBetween(base::Time delete_begin,
   time_t start_time = delete_begin.ToTimeT();
   time_t end_time = delete_end.ToTimeT();
 
-  // This does not use an index. We currently aren't likely to have enough
-  // downloads where an index by time will give us a lot of benefit.
-  sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
-      "DELETE FROM downloads WHERE start_time >= ? AND start_time < ? "
-      "AND (State = ? OR State = ? OR State = ?)"));
-  statement.BindInt64(0, start_time);
-  statement.BindInt64(
-      1,
-      end_time ? end_time : std::numeric_limits<int64>::max());
-  statement.BindInt(2, DownloadItem::COMPLETE);
-  statement.BindInt(3, DownloadItem::CANCELLED);
-  statement.BindInt(4, DownloadItem::INTERRUPTED);
+  int num_downloads_deleted = -1;
+  {
+    sql::Statement count(GetDB().GetCachedStatement(SQL_FROM_HERE,
+        "SELECT count(*) FROM downloads WHERE start_time >= ? "
+        "AND start_time < ? AND (State = ? OR State = ? OR State = ?)"));
+    count.BindInt64(0, start_time);
+    count.BindInt64(
+        1,
+        end_time ? end_time : std::numeric_limits<int64>::max());
+    count.BindInt(2, DownloadItem::COMPLETE);
+    count.BindInt(3, DownloadItem::CANCELLED);
+    count.BindInt(4, DownloadItem::INTERRUPTED);
+    if (count.Step())
+      num_downloads_deleted = count.ColumnInt(0);
+  }
 
-  return statement.Run();
+
+  bool success = false;
+  base::TimeTicks started_removing = base::TimeTicks::Now();
+  {
+    // This does not use an index. We currently aren't likely to have enough
+    // downloads where an index by time will give us a lot of benefit.
+    sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
+        "DELETE FROM downloads WHERE start_time >= ? AND start_time < ? "
+        "AND (State = ? OR State = ? OR State = ?)"));
+    statement.BindInt64(0, start_time);
+    statement.BindInt64(
+        1,
+        end_time ? end_time : std::numeric_limits<int64>::max());
+    statement.BindInt(2, DownloadItem::COMPLETE);
+    statement.BindInt(3, DownloadItem::CANCELLED);
+    statement.BindInt(4, DownloadItem::INTERRUPTED);
+
+    success = statement.Run();
+  }
+
+  base::TimeTicks finished_removing = base::TimeTicks::Now();
+
+  if (num_downloads_deleted >= 0) {
+    UMA_HISTOGRAM_COUNTS("Download.DatabaseRemoveDownloadsCount",
+                         num_downloads_deleted);
+    base::TimeDelta micros = (1000 * (finished_removing - started_removing));
+    UMA_HISTOGRAM_TIMES("Download.DatabaseRemoveDownloadsTime", micros);
+    if (num_downloads_deleted > 0) {
+      UMA_HISTOGRAM_TIMES("Download.DatabaseRemoveDownloadsTimePerRecord",
+                          (1000 * micros) / num_downloads_deleted);
+    }
+  }
+
+  return success;
 }
 
 }  // namespace history

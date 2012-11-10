@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,8 +12,8 @@ namespace pp {
 
 namespace {
 
-template <> const char* interface_name<PPB_URLResponseInfo>() {
-  return PPB_URLRESPONSEINFO_INTERFACE;
+template <> const char* interface_name<PPB_URLResponseInfo_1_0>() {
+  return PPB_URLRESPONSEINFO_INTERFACE_1_0;
 }
 
 }  // namespace
@@ -22,24 +22,24 @@ URLResponseInfo::URLResponseInfo(const URLResponseInfo& other)
     : Resource(other) {
 }
 
-URLResponseInfo::URLResponseInfo(PassRef, PP_Resource resource) {
-  PassRefFromConstructor(resource);
+URLResponseInfo::URLResponseInfo(PassRef, PP_Resource resource)
+    : Resource(PASS_REF, resource) {
 }
 
 Var URLResponseInfo::GetProperty(PP_URLResponseProperty property) const {
-  if (!has_interface<PPB_URLResponseInfo>())
+  if (!has_interface<PPB_URLResponseInfo_1_0>())
     return Var();
-  return Var(Var::PassRef(),
-             get_interface<PPB_URLResponseInfo>()->GetProperty(pp_resource(),
-                                                               property));
+  return Var(PASS_REF,
+      get_interface<PPB_URLResponseInfo_1_0>()->GetProperty(pp_resource(),
+                                                            property));
 }
 
 FileRef URLResponseInfo::GetBodyAsFileRef() const {
-  if (!has_interface<PPB_URLResponseInfo>())
+  if (!has_interface<PPB_URLResponseInfo_1_0>())
     return FileRef();
-  return FileRef(FileRef::PassRef(),
-                 get_interface<PPB_URLResponseInfo>()->GetBodyAsFileRef(
-                     pp_resource()));
+  return FileRef(PASS_REF,
+      get_interface<PPB_URLResponseInfo_1_0>()->GetBodyAsFileRef(
+          pp_resource()));
 }
 
 }  // namespace pp

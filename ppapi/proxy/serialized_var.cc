@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,8 @@
 #include "ppapi/proxy/dispatcher.h"
 #include "ppapi/proxy/interface_proxy.h"
 #include "ppapi/proxy/ppapi_param_traits.h"
-#include "ppapi/proxy/var_serialization_rules.h"
+#include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/var.h"
 
 namespace ppapi {
 namespace proxy {
@@ -19,8 +20,7 @@ namespace proxy {
 SerializedVar::Inner::Inner()
     : serialization_rules_(NULL),
       var_(PP_MakeUndefined()),
-      cleanup_mode_(CLEANUP_NONE),
-      dispatcher_for_end_send_pass_ref_(NULL) {
+      cleanup_mode_(CLEANUP_NONE) {
 #ifndef NDEBUG
   has_been_serialized_ = false;
   has_been_deserialized_ = false;
@@ -30,20 +30,7 @@ SerializedVar::Inner::Inner()
 SerializedVar::Inner::Inner(VarSerializationRules* serialization_rules)
     : serialization_rules_(serialization_rules),
       var_(PP_MakeUndefined()),
-      cleanup_mode_(CLEANUP_NONE),
-      dispatcher_for_end_send_pass_ref_(NULL) {
-#ifndef NDEBUG
-  has_been_serialized_ = false;
-  has_been_deserialized_ = false;
-#endif
-}
-
-SerializedVar::Inner::Inner(VarSerializationRules* serialization_rules,
-                            const PP_Var& var)
-    : serialization_rules_(serialization_rules),
-      var_(var),
-      cleanup_mode_(CLEANUP_NONE),
-      dispatcher_for_end_send_pass_ref_(NULL) {
+      cleanup_mode_(CLEANUP_NONE) {
 #ifndef NDEBUG
   has_been_serialized_ = false;
   has_been_deserialized_ = false;
@@ -53,9 +40,7 @@ SerializedVar::Inner::Inner(VarSerializationRules* serialization_rules,
 SerializedVar::Inner::~Inner() {
   switch (cleanup_mode_) {
     case END_SEND_PASS_REF:
-      DCHECK(dispatcher_for_end_send_pass_ref_);
-      serialization_rules_->EndSendPassRef(var_,
-                                           dispatcher_for_end_send_pass_ref_);
+      serialization_rules_->EndSendPassRef(var_);
       break;
     case END_RECEIVE_CALLER_OWNED:
       serialization_rules_->EndReceiveCallerOwned(var_);
@@ -65,17 +50,10 @@ SerializedVar::Inner::~Inner() {
   }
 }
 
-PP_Var SerializedVar::Inner::GetVar() const {
+PP_Var SerializedVar::Inner::GetVar() {
   DCHECK(serialization_rules_);
 
-  // If we're a string var, we should have already converted the string value
-  // to a var ID.
-  DCHECK(var_.type != PP_VARTYPE_STRING || var_.value.as_id != 0);
-  return var_;
-}
-
-PP_Var SerializedVar::Inner::GetIncompleteVar() const {
-  DCHECK(serialization_rules_);
+  ConvertRawVarData();
   return var_;
 }
 
@@ -84,28 +62,16 @@ void SerializedVar::Inner::SetVar(PP_Var var) {
   // serialization rules pointer already.
   DCHECK(serialization_rules_);
   var_ = var;
-}
-
-const std::string& SerializedVar::Inner::GetString() const {
-  DCHECK(serialization_rules_);
-  return string_value_;
-}
-
-std::string* SerializedVar::Inner::GetStringPtr() {
-  DCHECK(serialization_rules_);
-  return &string_value_;
+  raw_var_data_.reset(NULL);
 }
 
 void SerializedVar::Inner::ForceSetVarValueForTest(PP_Var value) {
   var_ = value;
-}
-
-void SerializedVar::Inner::ForceSetStringValueForTest(const std::string& str) {
-  string_value_ = str;
+  raw_var_data_.reset(NULL);
 }
 
 void SerializedVar::Inner::WriteToMessage(IPC::Message* m) const {
-  // When writing to the IPC messages, a serization rules handler should
+  // When writing to the IPC messages, a serialization rules handler should
   // always have been set.
   //
   // When sending a message, it should be difficult to trigger this if you're
@@ -124,10 +90,7 @@ void SerializedVar::Inner::WriteToMessage(IPC::Message* m) const {
   has_been_serialized_ = true;
 #endif
 
-  // If the var is not a string type, we should not have ended up with any
-  // string data.
-  DCHECK(var_.type == PP_VARTYPE_STRING || string_value_.empty());
-
+  DCHECK(!raw_var_data_.get());
   m->WriteInt(static_cast<int>(var_.type));
   switch (var_.type) {
     case PP_VARTYPE_UNDEFINED:
@@ -144,18 +107,34 @@ void SerializedVar::Inner::WriteToMessage(IPC::Message* m) const {
     case PP_VARTYPE_DOUBLE:
       IPC::ParamTraits<double>::Write(m, var_.value.as_double);
       break;
-    case PP_VARTYPE_STRING:
+    case PP_VARTYPE_STRING: {
       // TODO(brettw) in the case of an invalid string ID, it would be nice
       // to send something to the other side such that a 0 ID would be
       // generated there. Then the function implementing the interface can
       // handle the invalid string as if it was in process rather than seeing
       // what looks like a valid empty string.
-      m->WriteString(string_value_);
+      StringVar* string_var = StringVar::FromPPVar(var_);
+      m->WriteString(string_var ? *string_var->ptr() : std::string());
       break;
-    case PP_VARTYPE_ARRAY_BUFFER:
-      // TODO(dmichael): Proxy ArrayBuffer.
-      NOTIMPLEMENTED();
+    }
+    case PP_VARTYPE_ARRAY_BUFFER: {
+      // TODO(dmichael) in the case of an invalid var ID, it would be nice
+      // to send something to the other side such that a 0 ID would be
+      // generated there. Then the function implementing the interface can
+      // handle the invalid string as if it was in process rather than seeing
+      // what looks like a valid empty ArraryBuffer.
+      ArrayBufferVar* buffer_var = ArrayBufferVar::FromPPVar(var_);
+      if (buffer_var) {
+        // TODO(dmichael): If it wasn't already Mapped, Unmap it. (Though once
+        //                 we use shared memory, this will probably be
+        //                 completely different anyway).
+        m->WriteData(static_cast<const char*>(buffer_var->Map()),
+                     buffer_var->ByteLength());
+      } else {
+        m->WriteData(NULL, 0);
+      }
       break;
+    }
     case PP_VARTYPE_OBJECT:
       m->WriteInt64(var_.value.as_id);
       break;
@@ -167,7 +146,8 @@ void SerializedVar::Inner::WriteToMessage(IPC::Message* m) const {
   }
 }
 
-bool SerializedVar::Inner::ReadFromMessage(const IPC::Message* m, void** iter) {
+bool SerializedVar::Inner::ReadFromMessage(const IPC::Message* m,
+                                           PickleIterator* iter) {
 #ifndef NDEBUG
   // We should only deserialize something once or will end up with leaked
   // references.
@@ -206,10 +186,25 @@ bool SerializedVar::Inner::ReadFromMessage(const IPC::Message* m, void** iter) {
     case PP_VARTYPE_DOUBLE:
       success = IPC::ParamTraits<double>::Read(m, iter, &var_.value.as_double);
       break;
-    case PP_VARTYPE_STRING:
-      success = m->ReadString(iter, &string_value_);
-      var_.value.as_id = 0;
+    case PP_VARTYPE_STRING: {
+      raw_var_data_.reset(new RawVarData);
+      raw_var_data_->type = PP_VARTYPE_STRING;
+      success = m->ReadString(iter, &raw_var_data_->data);
+      if (!success)
+        raw_var_data_.reset(NULL);
       break;
+    }
+    case PP_VARTYPE_ARRAY_BUFFER: {
+      int length = 0;
+      const char* message_bytes = NULL;
+      success = m->ReadData(iter, &message_bytes, &length);
+      if (success) {
+        raw_var_data_.reset(new RawVarData);
+        raw_var_data_->type = PP_VARTYPE_ARRAY_BUFFER;
+        raw_var_data_->data.assign(message_bytes, length);
+      }
+      break;
+    }
     case PP_VARTYPE_OBJECT:
       success = m->ReadInt64(iter, &var_.value.as_id);
       break;
@@ -226,21 +221,41 @@ bool SerializedVar::Inner::ReadFromMessage(const IPC::Message* m, void** iter) {
   // All success cases get here. We avoid writing the type above so that the
   // output param is untouched (defaults to VARTYPE_UNDEFINED) even in the
   // failure case.
-  if (success)
+  // We also don't write the type if |raw_var_data_| is set. |var_| will be
+  // updated lazily when GetVar() is called.
+  if (success && !raw_var_data_.get())
     var_.type = static_cast<PP_VarType>(type);
   return success;
 }
 
-void SerializedVar::Inner::SetCleanupModeToEndSendPassRef(
-    Dispatcher* dispatcher) {
-  DCHECK(dispatcher);
-  DCHECK(!dispatcher_for_end_send_pass_ref_);
-  dispatcher_for_end_send_pass_ref_ = dispatcher;
+void SerializedVar::Inner::SetCleanupModeToEndSendPassRef() {
   cleanup_mode_ = END_SEND_PASS_REF;
 }
 
 void SerializedVar::Inner::SetCleanupModeToEndReceiveCallerOwned() {
   cleanup_mode_ = END_RECEIVE_CALLER_OWNED;
+}
+
+void SerializedVar::Inner::ConvertRawVarData() {
+  if (!raw_var_data_.get())
+    return;
+
+  DCHECK_EQ(PP_VARTYPE_UNDEFINED, var_.type);
+  switch (raw_var_data_->type) {
+    case PP_VARTYPE_STRING: {
+      var_ = StringVar::SwapValidatedUTF8StringIntoPPVar(
+          &raw_var_data_->data);
+      break;
+    }
+    case PP_VARTYPE_ARRAY_BUFFER: {
+      var_ = PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(
+          raw_var_data_->data.size(), raw_var_data_->data.data());
+      break;
+    }
+    default:
+      NOTREACHED();
+  }
+  raw_var_data_.reset(NULL);
 }
 
 // SerializedVar ---------------------------------------------------------------
@@ -252,11 +267,6 @@ SerializedVar::SerializedVar(VarSerializationRules* serialization_rules)
     : inner_(new Inner(serialization_rules)) {
 }
 
-SerializedVar::SerializedVar(VarSerializationRules* serialization_rules,
-                             const PP_Var& var)
-    : inner_(new Inner(serialization_rules, var)) {
-}
-
 SerializedVar::~SerializedVar() {
 }
 
@@ -265,8 +275,7 @@ SerializedVar::~SerializedVar() {
 SerializedVarSendInput::SerializedVarSendInput(Dispatcher* dispatcher,
                                                const PP_Var& var)
     : SerializedVar(dispatcher->serialization_rules()) {
-  inner_->SetVar(dispatcher->serialization_rules()->SendCallerOwned(
-      var, inner_->GetStringPtr()));
+  inner_->SetVar(dispatcher->serialization_rules()->SendCallerOwned(var));
 }
 
 // static
@@ -274,13 +283,9 @@ void SerializedVarSendInput::ConvertVector(Dispatcher* dispatcher,
                                            const PP_Var* input,
                                            size_t input_count,
                                            std::vector<SerializedVar>* output) {
-  output->resize(input_count);
-  for (size_t i = 0; i < input_count; i++) {
-    SerializedVar& cur = (*output)[i];
-    cur = SerializedVar(dispatcher->serialization_rules());
-    cur.inner_->SetVar(dispatcher->serialization_rules()->SendCallerOwned(
-        input[i], cur.inner_->GetStringPtr()));
-  }
+  output->reserve(input_count);
+  for (size_t i = 0; i < input_count; i++)
+    output->push_back(SerializedVarSendInput(dispatcher, input[i]));
 }
 
 // ReceiveSerializedVarReturnValue ---------------------------------------------
@@ -296,7 +301,7 @@ ReceiveSerializedVarReturnValue::ReceiveSerializedVarReturnValue(
 PP_Var ReceiveSerializedVarReturnValue::Return(Dispatcher* dispatcher) {
   inner_->set_serialization_rules(dispatcher->serialization_rules());
   inner_->SetVar(inner_->serialization_rules()->ReceivePassRef(
-      inner_->GetIncompleteVar(), inner_->GetString(), dispatcher));
+      inner_->GetVar()));
   return inner_->GetVar();
 }
 
@@ -305,7 +310,6 @@ PP_Var ReceiveSerializedVarReturnValue::Return(Dispatcher* dispatcher) {
 ReceiveSerializedException::ReceiveSerializedException(Dispatcher* dispatcher,
                                                        PP_Var* exception)
     : SerializedVar(dispatcher->serialization_rules()),
-      dispatcher_(dispatcher),
       exception_(exception) {
 }
 
@@ -313,8 +317,8 @@ ReceiveSerializedException::~ReceiveSerializedException() {
   if (exception_) {
     // When an output exception is specified, it will take ownership of the
     // reference.
-    inner_->SetVar(inner_->serialization_rules()->ReceivePassRef(
-        inner_->GetIncompleteVar(), inner_->GetString(), dispatcher_));
+    inner_->SetVar(
+        inner_->serialization_rules()->ReceivePassRef(inner_->GetVar()));
     *exception_ = inner_->GetVar();
   } else {
     // When no output exception is specified, the browser thinks we have a ref
@@ -369,9 +373,7 @@ std::vector<SerializedVar>* ReceiveSerializedVarVectorOutParam::OutParam() {
 
 SerializedVarReceiveInput::SerializedVarReceiveInput(
     const SerializedVar& serialized)
-    : serialized_(serialized),
-      dispatcher_(NULL),
-      var_(PP_MakeUndefined()) {
+    : serialized_(serialized) {
 }
 
 SerializedVarReceiveInput::~SerializedVarReceiveInput() {
@@ -387,9 +389,7 @@ PP_Var SerializedVarReceiveInput::Get(Dispatcher* dispatcher) {
 
   serialized_.inner_->SetVar(
       serialized_.inner_->serialization_rules()->BeginReceiveCallerOwned(
-          serialized_.inner_->GetIncompleteVar(),
-          serialized_.inner_->GetStringPtr(),
-          dispatcher));
+          serialized_.inner_->GetVar()));
   return serialized_.inner_->GetVar();
 }
 
@@ -418,9 +418,7 @@ PP_Var* SerializedVarVectorReceiveInput::Get(Dispatcher* dispatcher,
 
     serialized_[i].inner_->SetVar(
         serialized_[i].inner_->serialization_rules()->BeginReceiveCallerOwned(
-            serialized_[i].inner_->GetIncompleteVar(),
-            serialized_[i].inner_->GetStringPtr(),
-            dispatcher));
+            serialized_[i].inner_->GetVar()));
     deserialized_[i] = serialized_[i].inner_->GetVar();
   }
 
@@ -440,12 +438,10 @@ void SerializedVarReturnValue::Return(Dispatcher* dispatcher,
       dispatcher->serialization_rules());
 
   // Var must clean up after our BeginSendPassRef call.
-  serialized_->inner_->SetCleanupModeToEndSendPassRef(dispatcher);
+  serialized_->inner_->SetCleanupModeToEndSendPassRef();
 
   serialized_->inner_->SetVar(
-      dispatcher->serialization_rules()->BeginSendPassRef(
-          var,
-          serialized_->inner_->GetStringPtr()));
+      dispatcher->serialization_rules()->BeginSendPassRef(var));
 }
 
 // static
@@ -472,12 +468,12 @@ SerializedVarOutParam::~SerializedVarOutParam() {
     // in that case.
     serialized_->inner_->SetVar(
         serialized_->inner_->serialization_rules()->BeginSendPassRef(
-            writable_var_, serialized_->inner_->GetStringPtr()));
+            writable_var_));
 
     // Normally the current object will be created on the stack to wrap a
     // SerializedVar and won't have a scope around the actual IPC send. So we
     // need to tell the SerializedVar to do the begin/end send pass ref calls.
-    serialized_->inner_->SetCleanupModeToEndSendPassRef(dispatcher_);
+    serialized_->inner_->SetCleanupModeToEndSendPassRef();
   }
 }
 
@@ -532,11 +528,7 @@ SerializedVarTestConstructor::SerializedVarTestConstructor(
 
 SerializedVarTestConstructor::SerializedVarTestConstructor(
     const std::string& str) {
-  PP_Var string_var = {};
-  string_var.type = PP_VARTYPE_STRING;
-  string_var.value.as_id = 0;
-  inner_->ForceSetVarValueForTest(string_var);
-  inner_->ForceSetStringValueForTest(str);
+  inner_->ForceSetVarValueForTest(StringVar::StringToPPVar(str));
 }
 
 SerializedVarTestReader::SerializedVarTestReader(const SerializedVar& var)
@@ -545,4 +537,3 @@ SerializedVarTestReader::SerializedVarTestReader(const SerializedVar& var)
 
 }  // namespace proxy
 }  // namespace ppapi
-

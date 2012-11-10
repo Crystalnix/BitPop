@@ -1,19 +1,19 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/chromeos/disks/disk_mount_manager.h"
 
+#include <sys/statvfs.h>
+
 #include <map>
 #include <set>
-
-#include <sys/statvfs.h>
 
 #include "base/bind.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/string_util.h"
-#include "chrome/browser/chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -58,6 +58,8 @@ class DiskMountManagerImpl : public DiskMountManager {
 
   // DiskMountManager override.
   virtual void MountPath(const std::string& source_path,
+                         const std::string& source_format,
+                         const std::string& mount_label,
                          MountType type) OVERRIDE {
     // Hidden and non-existent devices should not be mounted.
     if (type == MOUNT_TYPE_DEVICE) {
@@ -70,6 +72,8 @@ class DiskMountManagerImpl : public DiskMountManager {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     cros_disks_client_->Mount(
         source_path,
+        source_format,
+        mount_label,
         type,
         // When succeeds, OnMountCompleted will be called by
         // "MountCompleted" signal instead.
@@ -226,6 +230,12 @@ class DiskMountManagerImpl : public DiskMountManager {
   // DiskMountManager override.
   const DiskMap& disks() const OVERRIDE { return disks_; }
 
+  // DiskMountManager override.
+  virtual const Disk* FindDiskBySourcePath(const std::string& source_path)
+      const OVERRIDE {
+    DiskMap::const_iterator disk_it = disks_.find(source_path);
+    return disk_it == disks_.end() ? NULL : disk_it->second;
+  }
 
   // DiskMountManager override.
   const MountPointMap& mount_points() const OVERRIDE { return mount_points_; }
@@ -271,10 +281,12 @@ class DiskMountManagerImpl : public DiskMountManager {
                         const std::string& mount_path) {
     MountCondition mount_condition = MOUNT_CONDITION_NONE;
     if (mount_type == MOUNT_TYPE_DEVICE) {
-      if (error_code == MOUNT_ERROR_UNKNOWN_FILESYSTEM)
+      if (error_code == MOUNT_ERROR_UNKNOWN_FILESYSTEM) {
         mount_condition = MOUNT_CONDITION_UNKNOWN_FILESYSTEM;
-      if (error_code == MOUNT_ERROR_UNSUPORTED_FILESYSTEM)
+      }
+      if (error_code == MOUNT_ERROR_UNSUPPORTED_FILESYSTEM) {
         mount_condition = MOUNT_CONDITION_UNSUPPORTED_FILESYSTEM;
+      }
     }
     const MountPointInfo mount_info(source_path, mount_path, mount_type,
                                     mount_condition);
@@ -310,13 +322,12 @@ class DiskMountManagerImpl : public DiskMountManager {
     if (mount_points_it == mount_points_.end())
       return;
     // TODO(tbarzic): Add separate, PathUnmounted event to Observer.
-    NotifyMountCompleted(UNMOUNTING,
-                         MOUNT_ERROR_NONE,
-                         MountPointInfo(mount_points_it->second.source_path,
-                                        mount_points_it->second.mount_path,
-                                        mount_points_it->second.mount_type,
-                                        mount_points_it->second.mount_condition)
-                         );
+    NotifyMountCompleted(
+        UNMOUNTING, MOUNT_ERROR_NONE,
+        MountPointInfo(mount_points_it->second.source_path,
+                       mount_points_it->second.mount_path,
+                       mount_points_it->second.mount_type,
+                       mount_points_it->second.mount_condition));
     std::string path(mount_points_it->second.source_path);
     mount_points_.erase(mount_points_it);
     DiskMap::iterator iter = disks_.find(path);
@@ -371,6 +382,7 @@ class DiskMountManagerImpl : public DiskMountManager {
                           disk_info.file_path(),
                           disk_info.label(),
                           disk_info.drive_label(),
+                          disk_info.uuid(),
                           FindSystemPathPrefix(disk_info.system_path()),
                           disk_info.device_type(),
                           disk_info.total_size_in_bytes(),
@@ -553,7 +565,7 @@ class DiskMountManagerImpl : public DiskMountManager {
   DISALLOW_COPY_AND_ASSIGN(DiskMountManagerImpl);
 };
 
-} // namespace
+}  // namespace
 
 DiskMountManager::Disk::Disk(const std::string& device_path,
                              const std::string& mount_path,
@@ -561,6 +573,7 @@ DiskMountManager::Disk::Disk(const std::string& device_path,
                              const std::string& file_path,
                              const std::string& device_label,
                              const std::string& drive_label,
+                             const std::string& fs_uuid,
                              const std::string& system_path_prefix,
                              DeviceType device_type,
                              uint64 total_size_in_bytes,
@@ -575,6 +588,7 @@ DiskMountManager::Disk::Disk(const std::string& device_path,
       file_path_(file_path),
       device_label_(device_label),
       drive_label_(drive_label),
+      fs_uuid_(fs_uuid),
       system_path_prefix_(system_path_prefix),
       device_type_(device_type),
       total_size_in_bytes_(total_size_in_bytes),
@@ -596,6 +610,8 @@ std::string DiskMountManager::MountTypeToString(MountType type) {
       return "file";
     case MOUNT_TYPE_NETWORK_STORAGE:
       return "network";
+    case MOUNT_TYPE_GDATA:
+      return "gdata";
     case MOUNT_TYPE_INVALID:
       return "invalid";
     default:
@@ -627,8 +643,26 @@ MountType DiskMountManager::MountTypeFromString(const std::string& type_str) {
     return MOUNT_TYPE_NETWORK_STORAGE;
   else if (type_str == "file")
     return MOUNT_TYPE_ARCHIVE;
+  else if (type_str == "gdata")
+    return MOUNT_TYPE_GDATA;
   else
     return MOUNT_TYPE_INVALID;
+}
+
+// static
+std::string DiskMountManager::DeviceTypeToString(DeviceType type) {
+  switch (type) {
+    case DEVICE_TYPE_USB:
+      return "usb";
+    case DEVICE_TYPE_SD:
+      return "sd";
+    case DEVICE_TYPE_OPTICAL_DISC:
+      return "optical";
+    case DEVICE_TYPE_MOBILE:
+      return "mobile";
+    default:
+      return "unknown";
+  }
 }
 
 // static

@@ -1,18 +1,17 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_VIEWS_WINDOW_FRAME_BACKGROUND_H_
 #define UI_VIEWS_WINDOW_FRAME_BACKGROUND_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/views/views_export.h"
 
-class SkBitmap;
 namespace gfx {
 class Canvas;
+class ImageSkia;
 }
 
 namespace views {
@@ -27,18 +26,18 @@ class VIEWS_EXPORT FrameBackground {
   FrameBackground();
   ~FrameBackground();
 
-  // Sets the color to draw under the frame bitmaps.
+  // Sets the color to draw under the frame images.
   void set_frame_color(SkColor color) { frame_color_ = color; }
 
-  // Sets the theme bitmap for the top of the window.  May be NULL.
+  // Sets the theme image for the top of the window.  May be NULL.
   // Memory is owned by the caller.
-  void set_theme_bitmap(SkBitmap* bitmap) { theme_bitmap_ = bitmap; }
+  void set_theme_image(const gfx::ImageSkia* image) { theme_image_ = image; }
 
-  // Sets an image that overlays the top window bitmap.  Usually used to add
+  // Sets an image that overlays the top window image.  Usually used to add
   // edge highlighting to provide the illusion of depth.  May be NULL.
   // Memory is owned by the caller.
-  void set_theme_overlay_bitmap(SkBitmap* bitmap) {
-    theme_overlay_bitmap_ = bitmap;
+  void set_theme_overlay_image(gfx::ImageSkia* image) {
+    theme_overlay_image_ = image;
   }
 
   // Sets the height of the top area to fill with the default frame color,
@@ -53,25 +52,17 @@ class VIEWS_EXPORT FrameBackground {
 
   // Sets images used when drawing the sides of the frame.
   // Caller owns the memory.
-  void SetSideImages(SkBitmap* left,
-                     SkBitmap* top,
-                     SkBitmap* right,
-                     SkBitmap* bottom);
+  void SetSideImages(const gfx::ImageSkia* left,
+                     const gfx::ImageSkia* top,
+                     const gfx::ImageSkia* right,
+                     const gfx::ImageSkia* bottom);
 
   // Sets images used when drawing the corners of the frame.
   // Caller owns the memory.
-  void SetCornerImages(SkBitmap* top_left,
-                       SkBitmap* top_right,
-                       SkBitmap* bottom_left,
-                       SkBitmap* bottom_right);
-
-  // Sets attributes to paint top-left and top-right corners for maximized
-  // windows.  Use 0 and NULL if you don't want special corners.
-  // TODO(jamescook): This is the remnant of a ChromeOS window hack, and should
-  // be removed.
-  void SetMaximizedCorners(SkBitmap* top_left,
-                           SkBitmap* top_right,
-                           int top_offset);
+  void SetCornerImages(const gfx::ImageSkia* top_left,
+                       const gfx::ImageSkia* top_right,
+                       const gfx::ImageSkia* bottom_left,
+                       const gfx::ImageSkia* bottom_right);
 
   // Paints the border for a standard, non-maximized window.  Also paints the
   // background of the title bar area, since the top frame border and the
@@ -87,26 +78,26 @@ class VIEWS_EXPORT FrameBackground {
   void PaintFrameColor(gfx::Canvas* canvas, View* view) const;
 
   SkColor frame_color_;
-  SkBitmap* theme_bitmap_;
-  SkBitmap* theme_overlay_bitmap_;
+  const gfx::ImageSkia* theme_image_;
+  gfx::ImageSkia* theme_overlay_image_;
   int top_area_height_;
 
   // Images for the sides of the frame.
-  SkBitmap* left_edge_;
-  SkBitmap* top_edge_;
-  SkBitmap* right_edge_;
-  SkBitmap* bottom_edge_;
+  const gfx::ImageSkia* left_edge_;
+  const gfx::ImageSkia* top_edge_;
+  const gfx::ImageSkia* right_edge_;
+  const gfx::ImageSkia* bottom_edge_;
 
   // Images for the corners of the frame.
-  SkBitmap* top_left_corner_;
-  SkBitmap* top_right_corner_;
-  SkBitmap* bottom_left_corner_;
-  SkBitmap* bottom_right_corner_;
+  const gfx::ImageSkia* top_left_corner_;
+  const gfx::ImageSkia* top_right_corner_;
+  const gfx::ImageSkia* bottom_left_corner_;
+  const gfx::ImageSkia* bottom_right_corner_;
 
   // Attributes for maximized window painting.
   // TODO(jamescook): Remove all these.
-  SkBitmap* maximized_top_left_;
-  SkBitmap* maximized_top_right_;
+  gfx::ImageSkia* maximized_top_left_;
+  gfx::ImageSkia* maximized_top_right_;
   int maximized_top_offset_;
   int theme_background_y_;
 

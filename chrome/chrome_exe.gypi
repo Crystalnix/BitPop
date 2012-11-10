@@ -13,6 +13,8 @@
         'enable_wexit_time_destructors': 1,
       },
       'sources': [
+        'app/breakpad_field_trial_win.cc',
+        'app/breakpad_field_trial_win.h',
         'app/breakpad_win.cc',
         'app/breakpad_win.h',
         'app/chrome_exe_main_aura.cc',
@@ -24,9 +26,9 @@
         'app/client_util.h',
         'app/hard_error_handler_win.cc',
         'app/hard_error_handler_win.h',
-        'app/scoped_ole_initializer.h',
+        'app/metro_driver_win.cc',
+        'app/metro_driver_win.h',
         '../content/app/startup_helper_win.cc',
-        '../content/public/common/content_switches.cc',
       ],
       'mac_bundle_resources': [
         'app/app-Info.plist',
@@ -42,6 +44,18 @@
         'INFOPLIST_FILE': 'app/app-Info.plist',
       },
       'conditions': [
+        ['component == "shared_library"', {
+          'msvs_settings': {
+            'VCManifestTool': {
+              'EmbedManifest': 'false',
+            },
+          },
+        }],
+        ['order_profiling!=0 and (chromeos==1 or OS=="linux")', {
+          'dependencies' : [
+            '../tools/cygprofile/cygprofile.gyp:cygprofile',
+          ],
+        }],
         ['order_text_section!=""', {
           'target_conditions' : [
             ['_toolset=="target"', {
@@ -54,7 +68,7 @@
           # Don't put the 'chrome' target in 'all' on android
           'suppress_wildcard': 1,
         }],
-        ['os_posix == 1 and OS != "mac"', {
+        ['os_posix == 1 and OS != "mac" and OS != "android"', {
           'actions': [
             {
               'action_name': 'manpage',
@@ -98,16 +112,9 @@
                 ],
               },
             ],
-            # TODO(rkc): Remove once crosbug.com/15266 is fixed.
-            ['profiling==1', {
-              'ldflags': ['-nopie'],
-            }, {
-              # Building with -pie needs investigating on ARM.
-              # For now, at least use it on Linux Intel.
-              'conditions': [
-                ['(target_arch=="x64" or target_arch=="ia32") and linux_disable_pie!=1', {
-                  'ldflags': ['-pie'],
-                }],
+            ['profiling==0 and linux_disable_pie==0', {
+              'ldflags': [
+                '-pie',
               ],
             }],
             ['use_system_xdg_utils==0', {
@@ -240,11 +247,24 @@
             'CHROMIUM_CREATOR': '<(mac_creator)',
             'CHROMIUM_SHORT_NAME': '<(branding)',
           },
+          # Turn off -dead_strip in Release mode for the main app. There's
+          # little here to strip, and doing so preserves symbols from
+          # crt1.10.6.o, which get removed incorrectly. http://crbug.com/139902
+          'configurations': {
+            'Release': {
+              'xcode_settings': {
+                'DEAD_CODE_STRIPPING': 'NO',
+              },
+            },
+          },
           'dependencies': [
             'helper_app',
             'infoplist_strings_tool',
             'interpose_dependency_shim',
             'chrome_manifest_bundle',
+            # On Mac, make sure we've built chrome_dll, which contains all of
+            # the library code with Chromium functionality.
+            'chrome_dll',
           ],
           'mac_bundle_resources': [
             '<(PRODUCT_DIR)/<(mac_bundle_id).manifest',
@@ -306,7 +326,7 @@
             {
               'postbuild_name': 'Copy <(mac_product_name) Framework.framework',
               'action': [
-                'tools/build/mac/copy_framework_unversioned',
+                '../build/mac/copy_framework_unversioned.sh',
                 '${BUILT_PRODUCTS_DIR}/<(mac_product_name) Framework.framework',
                 '${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Versions/<(version_full)',
               ],
@@ -319,18 +339,17 @@
               # Keystone information is included if Keystone is enabled.  The
               # application reads Keystone keys from this plist and not the
               # framework's, and the ticket will reference this Info.plist to
-              # determine the tag of the installed product.  Use -s1 to
-              # include Subversion information.  The -p flag controls whether
+              # determine the tag of the installed product.  Use --svn=1 to
+              # include Subversion information.  The --pdf flag controls whether
               # to insert PDF as a supported type identifier that can be
               # opened.
               'postbuild_name': 'Tweak Info.plist',
               'action': ['<(tweak_info_plist_path)',
                          '--breakpad=0',
-                         '-k<(mac_keystone)',
-                         '-s1',
-                         '-p<(internal_pdf)',
-                         '<(branding)',
-                         '<(mac_bundle_id)'],
+                         '--keystone=<(mac_keystone)',
+                         '--svn=1',
+                         '--pdf=<(internal_pdf)',
+                         '--bundle_id=<(mac_bundle_id)'],
             },
             {
               'postbuild_name': 'Clean up old versions',
@@ -367,8 +386,8 @@
               # prepare their Breakpad symbol files.
               'postbuild_name': 'Make More Helpers',
               'action': [
-                'tools/build/mac/make_more_helpers.sh',
-                '<(version_full)',
+                '../build/mac/make_more_helpers.sh',
+                'Versions/<(version_full)',
                 '<(mac_product_name)',
               ],
             },
@@ -377,26 +396,11 @@
               # executable.
               'postbuild_name': 'Verify No Objective-C',
               'action': [
-                'tools/build/mac/verify_no_objc.sh',
+                '../build/mac/verify_no_objc.sh',
               ],
             },
           ],  # postbuilds
-        }],
-        ['OS=="linux"', {
-          'conditions': [
-            ['branding=="Chrome"', {
-              'dependencies': [
-                'linux_installer_configs',
-              ],
-            }],
-            ['selinux==0', {
-              'dependencies': [
-                '../sandbox/sandbox.gyp:sandbox',
-              ],
-            }],
-          ],
-        }],
-        ['OS != "mac"', {
+        }, {  # OS != "mac"
           'conditions': [
             # TODO:  add a:
             #   'product_name': 'chromium'
@@ -411,7 +415,15 @@
               'dependencies': [
                 '../pdf/pdf.gyp:pdf',
               ],
-            }],
+              'conditions': [
+                # CrOS does this in a separate build step.
+                ['OS=="linux" and chromeos==0 and linux_dump_symbols==1', {
+                  'dependencies': [
+                    '../pdf/pdf.gyp:pdf_linux_symbols',
+                  ],
+                }], # OS=="linux" and chromeos==0 and linux_dump_symbols==1
+              ],
+            }], # internal_pdf
           ],
           'dependencies': [
             'chrome_resources.gyp:packed_extra_resources',
@@ -420,26 +432,7 @@
             # file decide what to do on a per-OS basis; on Mac, internal plugins
             # go inside the framework, so this dependency is in chrome_dll.gypi.
             '../third_party/adobe/flash/flash_player.gyp:flash_player',
-          ],
-        }],
-        ['OS=="linux"', {
-          'conditions': [
-            # For now, do not build nacl_helper when disable_nacl=1
-            # or when arm is enabled
-            # http://code.google.com/p/gyp/issues/detail?id=239
-            ['disable_nacl==0 and target_arch!="arm"', {
-              'dependencies': [
-                '../native_client/src/trusted/service_runtime/linux/nacl_bootstrap.gyp:nacl_helper_bootstrap',
-                'nacl_helper',
-                ],
-            }],
-          ],
-        }],
-        ['OS=="mac"', {
-          'dependencies': [
-            # On Mac, make sure we've built chrome_dll, which contains all of
-            # the library code with Chromium functionality.
-            'chrome_dll',
+            '../third_party/adobe/flash/flash_player.gyp:flapper_binaries',
           ],
         }],
         ['OS=="mac" and asan==1', {
@@ -448,12 +441,35 @@
             'CHROMIUM_STRIP_SAVE_FILE': 'app/app_asan.saves',
           },
         }],
+        ['OS=="linux"', {
+          'conditions': [
+            ['branding=="Chrome"', {
+              'dependencies': [
+                'linux_installer_configs',
+              ],
+            }],
+            ['selinux==0', {
+              'dependencies': [
+                '../sandbox/sandbox.gyp:sandbox',
+              ],
+            }],
+            # For now, do not build nacl_helper when disable_nacl=1
+            # or when arm is enabled
+            # http://code.google.com/p/gyp/issues/detail?id=239
+            ['disable_nacl==0 and target_arch!="arm" and coverage==0', {
+              'dependencies': [
+                '../native_client/src/trusted/service_runtime/linux/nacl_bootstrap.gyp:nacl_helper_bootstrap',
+                'nacl_helper',
+                ],
+            }],
+          ],
+        }],
         ['OS=="win"', {
           'dependencies': [
             'chrome_dll',
             'chrome_version_resources',
             'installer_util',
-            'installer_util_strings',
+            'image_pre_reader',
             '../base/base.gyp:base',
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../breakpad/breakpad.gyp:breakpad_sender',
@@ -510,56 +526,81 @@
     ['OS=="win"', {
       'targets': [
         {
-          'target_name': 'chrome_nacl_win64',
-          'type': 'executable',
-          'product_name': 'nacl64',
+          'target_name': 'image_pre_reader',
+          'type': 'static_library',
           'sources': [
-            'app/breakpad_win.cc',
-            'app/hard_error_handler_win.cc',
-            'nacl/nacl_exe_win_64.cc',
-            '../content/app/startup_helper_win.cc',
-            '../content/common/debug_flags.cc',  # Needed for sandbox_policy.cc
-            '../content/common/hi_res_timer_manager_win.cc',
-            '../content/common/sandbox_init_win.cc',
-            '../content/common/sandbox_policy.cc',
-            '../content/public/common/content_switches.cc',
-            '<(SHARED_INTERMEDIATE_DIR)/chrome_version/nacl64_exe_version.rc',
+            'app/image_pre_reader_win.cc',
+            'app/image_pre_reader_win.h',
           ],
           'dependencies': [
-            'app/policy/cloud_policy_codegen.gyp:policy_win64',
-            'chrome_version_resources',
-            'common_constants_win64',
-            'installer_util_nacl_win64',
-            'nacl_win64',
-            '../breakpad/breakpad.gyp:breakpad_handler_win64',
-            '../breakpad/breakpad.gyp:breakpad_sender_win64',
-            '../base/base.gyp:base_i18n_nacl_win64',
-            '../base/base.gyp:base_nacl_win64',
-            '../base/base.gyp:base_static_win64',
-            '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
-            '../ipc/ipc.gyp:ipc_win64',
-            '../sandbox/sandbox.gyp:sandbox_win64',
+             '../base/base.gyp:base',
           ],
-          'defines': [
-            '<@(nacl_win64_defines)',
-            'COMPILE_CONTENT_STATICALLY',
-          ],
-          'include_dirs': [
-            '<(SHARED_INTERMEDIATE_DIR)/chrome',
-          ],
-          'msvs_settings': {
-            'VCLinkerTool': {
-              'ImportLibrary': '$(OutDir)\\lib\\nacl64_exe.lib',
-              'ProgramDatabaseFile': '$(OutDir)\\nacl64_exe.pdb',
-              'SubSystem': '2',         # Set /SUBSYSTEM:WINDOWS
-            },
-          },
-          'configurations': {
-            'Common_Base': {
-              'msvs_target_platform': 'x64',
-            },
-          },
         },
+      ],
+      'conditions': [
+        ['disable_nacl!=1', {
+          'targets': [
+            {
+              'target_name': 'chrome_nacl_win64',
+              'type': 'executable',
+              'product_name': 'nacl64',
+              'sources': [
+                'app/breakpad_win.cc',
+                'app/hard_error_handler_win.cc',
+                'nacl/nacl_exe_win_64.cc',
+                '../content/app/startup_helper_win.cc',
+                '../content/common/debug_flags.cc',  # Needed for sandbox_policy.cc
+                '../content/common/sandbox_init_win.cc',
+                '../content/common/sandbox_policy.cc',
+                '../content/public/common/content_switches.cc',
+                '<(SHARED_INTERMEDIATE_DIR)/chrome_version/nacl64_exe_version.rc',
+              ],
+              'dependencies': [
+                'app/policy/cloud_policy_codegen.gyp:policy_win64',
+                'chrome_version_resources',
+                'common_constants_win64',
+                'installer_util_nacl_win64',
+                'nacl_win64',
+                '../breakpad/breakpad.gyp:breakpad_handler_win64',
+                '../breakpad/breakpad.gyp:breakpad_sender_win64',
+                '../base/base.gyp:base_i18n_nacl_win64',
+                '../base/base.gyp:base_nacl_win64',
+                '../base/base.gyp:base_static_win64',
+                '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
+                '../crypto/crypto.gyp:crypto_nacl_win64',
+                '../ipc/ipc.gyp:ipc_win64',
+                '../sandbox/sandbox.gyp:sandbox_win64',
+              ],
+              'defines': [
+                '<@(nacl_win64_defines)',
+                'COMPILE_CONTENT_STATICALLY',
+              ],
+              'include_dirs': [
+                '<(SHARED_INTERMEDIATE_DIR)/chrome',
+              ],
+              'msvs_settings': {
+                'VCLinkerTool': {
+                  'ImportLibrary': '$(OutDir)\\lib\\nacl64_exe.lib',
+                  'ProgramDatabaseFile': '$(OutDir)\\nacl64_exe.pdb',
+                  'SubSystem': '2',         # Set /SUBSYSTEM:WINDOWS
+                },
+              },
+              'configurations': {
+                'Common_Base': {
+                  'msvs_target_platform': 'x64',
+                },
+              },
+            },
+          ],
+        }, {  # else (disable_nacl==1)
+          'targets': [
+            {
+              'target_name': 'chrome_nacl_win64',
+              'type': 'none',
+              'sources': [],
+            },
+          ],
+        }],
       ],
     }],
   ],

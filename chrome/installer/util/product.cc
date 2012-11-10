@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,8 @@
 #include "base/logging.h"
 #include "base/process_util.h"
 #include "base/win/registry.h"
+#include "chrome/installer/util/chrome_app_host_operations.h"
+#include "chrome/installer/util/chrome_binaries_operations.h"
 #include "chrome/installer/util/chrome_browser_operations.h"
 #include "chrome/installer/util/chrome_browser_sxs_operations.h"
 #include "chrome/installer/util/chrome_frame_operations.h"
@@ -36,6 +38,12 @@ Product::Product(BrowserDistribution* distribution)
     case BrowserDistribution::CHROME_FRAME:
       operations_.reset(new ChromeFrameOperations());
       break;
+    case BrowserDistribution::CHROME_APP_HOST:
+      operations_.reset(new ChromeAppHostOperations());
+      break;
+    case BrowserDistribution::CHROME_BINARIES:
+      operations_.reset(new ChromeBinariesOperations());
+      break;
     default:
       NOTREACHED() << "Unsupported BrowserDistribution::Type: "
                    << distribution->GetType();
@@ -54,8 +62,8 @@ void Product::InitializeFromUninstallCommand(
   operations_->ReadOptions(uninstall_command, &options_);
 }
 
-FilePath Product::GetUserDataPath() const {
-  return GetChromeUserDataPath(distribution_);
+void Product::GetUserDataPaths(std::vector<FilePath>* paths) const {
+  GetChromeUserDataPaths(distribution_, paths);
 }
 
 bool Product::LaunchChrome(const FilePath& application_path) const {
@@ -136,8 +144,8 @@ void Product::AddComDllList(std::vector<FilePath>* com_dll_list) const {
   operations_->AddComDllList(options_, com_dll_list);
 }
 
-void Product::AppendUninstallFlags(CommandLine* command_line) const {
-  operations_->AppendUninstallFlags(options_, command_line);
+void Product::AppendProductFlags(CommandLine* command_line) const {
+  operations_->AppendProductFlags(options_, command_line);
 }
 
 void Product::AppendRenameFlags(CommandLine* command_line) const {

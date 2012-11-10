@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_INSTALLER_MINI_INSTALLER_CONFIGURATION_H_
 #define CHROME_INSTALLER_MINI_INSTALLER_CONFIGURATION_H_
-#pragma once
 
 namespace mini_installer {
 
@@ -47,6 +46,9 @@ class Configuration {
   // Returns true if --chrome-frame is on the command line.
   bool has_chrome_frame() const { return has_chrome_frame_; }
 
+  // Returns true if --app-host is on the command line.
+  bool has_app_host() const { return has_app_host_; }
+
   // Returns true if --multi-install is on the command line.
   bool is_multi_install() const { return is_multi_install_; }
 
@@ -64,6 +66,7 @@ class Configuration {
   Operation operation_;
   bool has_chrome_;
   bool has_chrome_frame_;
+  bool has_app_host_;
   bool is_multi_install_;
   bool is_system_level_;
 

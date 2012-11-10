@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -10,9 +10,11 @@
     {
       'target_name': 'sdch',
       'type': 'static_library',
+      'dependencies': [
+        '../third_party/zlib/zlib.gyp:zlib',
+      ],
       'sources': [
         'open-vcdiff/src/addrcache.cc',
-        'open-vcdiff/src/adler32.c',
         'open-vcdiff/src/blockhash.cc',
         'open-vcdiff/src/blockhash.h',
         'open-vcdiff/src/checksum.h',
@@ -39,8 +41,6 @@
         'open-vcdiff/src/vcdiff_defs.h',
         'open-vcdiff/src/vcdiffengine.cc',
         'open-vcdiff/src/vcdiffengine.h',
-        'open-vcdiff/src/zconf.h',
-        'open-vcdiff/src/zlib.h',
         'open-vcdiff/vsprojects/config.h',
         'open-vcdiff/vsprojects/stdint.h',
       ],
@@ -55,6 +55,7 @@
       'conditions': [
         [ 'OS == "linux" or OS == "android"', { 'include_dirs': [ 'linux' ] } ],
         [ 'os_bsd==1 or OS=="solaris"', { 'include_dirs': [ 'bsd' ] } ],
+        [ 'OS == "ios"', { 'include_dirs': [ 'ios' ] } ],
         [ 'OS == "mac"', { 'include_dirs': [ 'mac' ] } ],
         [ 'OS == "win"', { 'include_dirs': [ 'open-vcdiff/vsprojects' ] } ],
       ],

@@ -1,27 +1,32 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 
 #include "chrome/browser/favicon/favicon_handler.h"
+#include "chrome/browser/favicon/favicon_util.h"
+#include "chrome/browser/favicon/select_favicon_frames.h"
 #include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/icon_messages.h"
-#include "content/browser/renderer_host/render_view_host.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_ui.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_rep.h"
 
 using content::FaviconStatus;
 using content::NavigationController;
@@ -47,18 +52,18 @@ void FaviconTabHelper::FetchFavicon(const GURL& url) {
     touch_icon_handler_->FetchFavicon(url);
 }
 
-SkBitmap FaviconTabHelper::GetFavicon() const {
+gfx::Image FaviconTabHelper::GetFavicon() const {
   // Like GetTitle(), we also want to use the favicon for the last committed
   // entry rather than a pending navigation entry.
   const NavigationController& controller = web_contents()->GetController();
   NavigationEntry* entry = controller.GetTransientEntry();
   if (entry)
-    return entry->GetFavicon().bitmap;
+    return entry->GetFavicon().image;
 
   entry = controller.GetLastCommittedEntry();
   if (entry)
-    return entry->GetFavicon().bitmap;
-  return SkBitmap();
+    return entry->GetFavicon().image;
+  return gfx::Image();
 }
 
 bool FaviconTabHelper::FaviconIsValid() const {
@@ -93,11 +98,11 @@ void FaviconTabHelper::SaveFavicon() {
 
   // Make sure the page is in history, otherwise adding the favicon does
   // nothing.
-  HistoryService* history = profile_->
-      GetOriginalProfile()->GetHistoryService(Profile::IMPLICIT_ACCESS);
+  HistoryService* history = HistoryServiceFactory::GetForProfile(
+      profile_->GetOriginalProfile(), Profile::IMPLICIT_ACCESS);
   if (!history)
     return;
-  history->AddPageNoVisitForBookmark(entry->GetURL());
+  history->AddPageNoVisitForBookmark(entry->GetURL(), entry->GetTitle());
 
   FaviconService* service = profile_->
       GetOriginalProfile()->GetFaviconService(Profile::IMPLICIT_ACCESS);
@@ -105,11 +110,13 @@ void FaviconTabHelper::SaveFavicon() {
     return;
   const FaviconStatus& favicon(entry->GetFavicon());
   if (!favicon.valid || favicon.url.is_empty() ||
-      favicon.bitmap.empty()) {
+      favicon.image.IsEmpty()) {
     return;
   }
   std::vector<unsigned char> image_data;
-  gfx::PNGCodec::EncodeBGRASkBitmap(favicon.bitmap, false, &image_data);
+  // TODO: Save all representations.
+  gfx::PNGCodec::EncodeBGRASkBitmap(
+      favicon.image.AsBitmap(), false, &image_data);
   service->SetFavicon(
       entry->GetURL(), favicon.url, image_data, history::FAVICON);
 }
@@ -139,10 +146,10 @@ NavigationEntry* FaviconTabHelper::GetActiveEntry() {
   return web_contents()->GetController().GetActiveEntry();
 }
 
-void FaviconTabHelper::StartDownload(int id, const GURL& url, int image_size) {
-  RenderViewHost* host = web_contents()->GetRenderViewHost();
-  host->Send(new IconMsg_DownloadFavicon(
-                 host->routing_id(), id, url, image_size));
+int FaviconTabHelper::StartDownload(const GURL& url, int image_size) {
+  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
+  int id = FaviconUtil::DownloadFavicon(host, url, image_size);
+  return id;
 }
 
 void FaviconTabHelper::NotifyFaviconUpdated() {
@@ -173,7 +180,7 @@ void FaviconTabHelper::DidNavigateMainFrame(
 }
 
 bool FaviconTabHelper::OnMessageReceived(const IPC::Message& message) {
-  bool message_handled = true;
+  bool message_handled = false;   // Allow other handlers to receive these.
   IPC_BEGIN_MESSAGE_MAP(FaviconTabHelper, message)
     IPC_MESSAGE_HANDLER(IconHostMsg_DidDownloadFavicon, OnDidDownloadFavicon)
     IPC_MESSAGE_HANDLER(IconHostMsg_UpdateFaviconURL, OnUpdateFaviconURL)
@@ -182,12 +189,27 @@ bool FaviconTabHelper::OnMessageReceived(const IPC::Message& message) {
   return message_handled;
 }
 
-void FaviconTabHelper::OnDidDownloadFavicon(int id,
-                                            const GURL& image_url,
-                                            bool errored,
-                                            const SkBitmap& image) {
-  gfx::Image favicon(new SkBitmap(image));
-  favicon_handler_->OnDidDownloadFavicon(id, image_url, errored, favicon);
-  if (touch_icon_handler_.get())
-    touch_icon_handler_->OnDidDownloadFavicon(id, image_url, errored, favicon);
+void FaviconTabHelper::OnDidDownloadFavicon(
+    int id,
+    const GURL& image_url,
+    bool errored,
+    int requested_size,
+    const std::vector<SkBitmap>& bitmaps) {
+  float score = 0;
+  // TODO: Possibly do bitmap selection in FaviconHandler, so that it can score
+  // favicons better.
+  std::vector<ui::ScaleFactor> scale_factors;
+#if defined(OS_MACOSX)
+  scale_factors = ui::GetSupportedScaleFactors();
+#else
+  scale_factors.push_back(ui::SCALE_FACTOR_100P);  // TODO: Aura?
+#endif
+  gfx::Image favicon(SelectFaviconFrames(
+      bitmaps, scale_factors, requested_size, &score));
+  favicon_handler_->OnDidDownloadFavicon(
+      id, image_url, errored, favicon, score);
+  if (touch_icon_handler_.get()) {
+    touch_icon_handler_->OnDidDownloadFavicon(
+        id, image_url, errored, favicon, score);
+  }
 }

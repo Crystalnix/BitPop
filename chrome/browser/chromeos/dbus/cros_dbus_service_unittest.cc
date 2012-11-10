@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "dbus/mock_bus.h"
 #include "dbus/mock_exported_object.h"
 #include "dbus/mock_object_proxy.h"
+#include "dbus/object_path.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -47,13 +48,12 @@ class CrosDBusServiceTest : public testing::Test {
     // org.chromium.CrosDBusService.
     mock_exported_object_ =
         new dbus::MockExportedObject(mock_bus_.get(),
-                                     kLibCrosServiceName,
-                                     kLibCrosServicePath);
+                                     dbus::ObjectPath(kLibCrosServicePath));
 
     // |mock_bus_|'s GetExportedObject() will return mock_exported_object_|
     // for the given service name and the object path.
     EXPECT_CALL(*mock_bus_, GetExportedObject(
-        kLibCrosServiceName, kLibCrosServicePath))
+        dbus::ObjectPath(kLibCrosServicePath)))
         .WillOnce(Return(mock_exported_object_.get()));
 
     // Create a mock proxy resolution service.
@@ -63,15 +63,15 @@ class CrosDBusServiceTest : public testing::Test {
     // Start() will be called with |mock_exported_object_|.
     EXPECT_CALL(*mock_proxy_resolution_service_provider,
                 Start(Eq(mock_exported_object_))).WillOnce(Return());
-
-    // Create the cros service with the mocks injected.
-    cros_dbus_service_.reset(
-        CrosDBusService::CreateForTesting(
-            mock_bus_,
-            mock_proxy_resolution_service_provider));
+    // Initialize the cros service with the mocks injected.
+    CrosDBusService::InitializeForTesting(
+        mock_bus_, mock_proxy_resolution_service_provider);
   }
 
   virtual void TearDown() {
+    // Shutdown the cros service.
+    CrosDBusService::Shutdown();
+
     // Shutdown the bus.
     mock_bus_->ShutdownAndBlock();
   }
@@ -79,14 +79,12 @@ class CrosDBusServiceTest : public testing::Test {
  protected:
   scoped_refptr<dbus::MockBus> mock_bus_;
   scoped_refptr<dbus::MockExportedObject> mock_exported_object_;
-  scoped_ptr<CrosDBusService> cros_dbus_service_;
 };
 
 TEST_F(CrosDBusServiceTest, Start) {
   // Simply start the service and see if mock expectations are met:
   // - The service object is exported by GetExportedObject()
   // - The proxy resolution service is started.
-  cros_dbus_service_->Start();
 }
 
 }  // namespace chromeos

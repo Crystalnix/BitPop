@@ -1,10 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('options.internet', function() {
-  const InlineEditableItem = options.InlineEditableItem;
-  const InlineEditableItemList = options.InlineEditableItemList;
+  /** @const */ var InlineEditableItem = options.InlineEditableItem;
+  /** @const */ var InlineEditableItemList = options.InlineEditableItemList;
 
   /**
    * Creates a new ip config list item.
@@ -55,7 +55,7 @@ cr.define('options.internet', function() {
       valueEl.className = 'value';
       this.contentElement.appendChild(valueEl);
 
-      var valueField = valueEl.querySelector('input')
+      var valueField = valueEl.querySelector('input');
       valueField.required = true;
       this.valueField_ = valueField;
 
@@ -92,6 +92,13 @@ cr.define('options.internet', function() {
       return new IPConfigListItem(fieldInfo);
     },
   };
+
+  /**
+   * Whether the IP configuration list is disabled. Only used for display
+   * purpose.
+   * @type {boolean}
+   */
+  cr.defineProperty(IPConfigList, 'disabled', cr.PropertyKind.BOOL_ATTR);
 
   return {
     IPConfigList: IPConfigList

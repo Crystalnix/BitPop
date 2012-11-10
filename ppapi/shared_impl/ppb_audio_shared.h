@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,10 @@
 #include "ppapi/shared_impl/resource.h"
 #include "ppapi/thunk/ppb_audio_api.h"
 
+#if defined(OS_NACL)
+#include "native_client/src/untrusted/irt/irt_ppapi.h"
+#endif
+
 namespace ppapi {
 
 // Implements the logic to map shared memory and run the audio thread signaled
@@ -24,6 +28,9 @@ class PPAPI_SHARED_EXPORT PPB_Audio_Shared
  public:
   PPB_Audio_Shared();
   virtual ~PPB_Audio_Shared();
+
+  // Keep in sync with media::AudioOutputController::kPauseMark.
+  static const int kPauseMark;
 
   bool playing() const { return playing_; }
 
@@ -46,13 +53,22 @@ class PPAPI_SHARED_EXPORT PPB_Audio_Shared
 
   // Sets the shared memory and socket handles. This will automatically start
   // playback if we're currently set to play.
-  void SetStreamInfo(base::SharedMemoryHandle shared_memory_handle,
+  void SetStreamInfo(PP_Instance instance,
+                     base::SharedMemoryHandle shared_memory_handle,
                      size_t shared_memory_size,
                      base::SyncSocket::Handle socket_handle);
 
+#if defined(OS_NACL)
+  // NaCl has a special API for IRT code to create threads that can call back
+  // into user code.
+  static void SetThreadFunctions(const struct PP_ThreadFunctions* functions);
+#endif
  private:
   // Starts execution of the audio thread.
   void StartThread();
+
+  // Stop execution of the audio thread.
+  void StopThread();
 
   // DelegateSimpleThread::Delegate implementation. Run on the audio thread.
   virtual void Run();
@@ -62,7 +78,7 @@ class PPAPI_SHARED_EXPORT PPB_Audio_Shared
 
   // Socket used to notify us when audio is ready to accept new samples. This
   // pointer is created in StreamCreated().
-  scoped_ptr<base::SyncSocket> socket_;
+  scoped_ptr<base::CancelableSyncSocket> socket_;
 
   // Sample buffer in shared memory. This pointer is created in
   // StreamCreated(). The memory is only mapped when the audio thread is
@@ -72,8 +88,15 @@ class PPAPI_SHARED_EXPORT PPB_Audio_Shared
   // The size of the sample buffer in bytes.
   size_t shared_memory_size_;
 
+#if !defined(OS_NACL)
   // When the callback is set, this thread is spawned for calling it.
   scoped_ptr<base::DelegateSimpleThread> audio_thread_;
+#else
+  uintptr_t thread_id_;
+  bool thread_active_;
+
+  static void CallRun(void* self);
+#endif
 
   // Callback to call when audio is ready to accept new samples.
   PPB_Audio_Callback callback_;

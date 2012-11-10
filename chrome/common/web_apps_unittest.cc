@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 
 #include "base/file_path.h"
 #include "base/file_util.h"
-#include "base/json/json_value_serializer.h"
+#include "base/json/json_file_value_serializer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/utf_string_conversions.h"
@@ -134,6 +134,7 @@ TEST(WebAppInfo, Full) {
   EXPECT_EQ("geolocation", web_app->permissions[0]);
   EXPECT_EQ("notifications", web_app->permissions[1]);
   EXPECT_EQ("panel", web_app->launch_container);
+  EXPECT_EQ(true, web_app->is_offline_enabled);
 }
 
 // Tests ParseIconSizes with various input.

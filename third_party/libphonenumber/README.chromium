@@ -2,7 +2,9 @@ Name: International Phone Number Library
 Short Name: libphonenumber
 URL: http://libphonenumber.googlecode.com/svn/trunk/
 Version: unknown
-Revision: 407
+Revision: 456
+License: Apache 2.0
+License File: src/LICENSE
 Security Critical: yes
 
 This directory contains the source code of International Phone Number Library

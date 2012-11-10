@@ -1,15 +1,17 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/bind.h"
+#include "base/debug/trace_event.h"
 #include "base/location.h"
+#include "base/message_loop_proxy.h"
 #include "content/common/view_messages.h"
 #include "content/renderer/gpu/input_event_filter.h"
 
 using WebKit::WebInputEvent;
 
-InputEventFilter::InputEventFilter(IPC::Channel::Listener* main_listener,
+InputEventFilter::InputEventFilter(IPC::Listener* main_listener,
                                    base::MessageLoopProxy* target_loop,
                                    const Handler& handler)
     : main_loop_(base::MessageLoopProxy::current()),
@@ -44,11 +46,14 @@ void InputEventFilter::DidNotHandleInputEvent(bool send_to_widget) {
 
   if (send_to_widget) {
     // Forward to the renderer thread, and dispatch the message there.
+    TRACE_EVENT0("InputEventFilter::DidNotHandleInputEvent",
+                 "ForwardToRenderThread");
     main_loop_->PostTask(
         FROM_HERE,
         base::Bind(&InputEventFilter::ForwardToMainListener,
                    this, messages_.front()));
   } else {
+    TRACE_EVENT0("InputEventFilter::DidNotHandleInputEvent", "LeaveUnhandled");
     bool processed = false;
     SendACK(messages_.front(), processed);
   }
@@ -93,7 +98,7 @@ const WebInputEvent* InputEventFilter::CrackMessage(
     const IPC::Message& message) {
   DCHECK(message.type() == ViewMsg_HandleInputEvent::ID);
 
-  void* iter = NULL;
+  PickleIterator iter(message);
   const char* data;
   int data_length;
   if (!message.ReadData(&iter, &data, &data_length))

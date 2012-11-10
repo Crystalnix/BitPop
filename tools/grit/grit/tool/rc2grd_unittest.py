@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,16 +8,15 @@
 import os
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../..'))
 
 import re
 import StringIO
 import unittest
 
+from grit import grd_reader
 from grit.node import base
 from grit.tool import rc2grd
-from grit.gather import rc
-from grit import grd_reader
 
 
 class Rc2GrdUnittest(unittest.TestCase):

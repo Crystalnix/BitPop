@@ -13,15 +13,16 @@
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/download/download_item_view.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
+#include "content/public/browser/page_navigator.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/theme_resources_standard.h"
-#include "grit/ui_resources_standard.h"
+#include "grit/ui_resources.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -30,6 +31,7 @@
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/link.h"
+#include "ui/views/mouse_watcher_view_host.h"
 
 // Max number of download views we'll contain. Any time a view is added and
 // we already have this many download views, one is removed.
@@ -93,8 +95,10 @@ DownloadShelfView::DownloadShelfView(Browser* browser, BrowserView* parent)
       parent_(parent),
       auto_closed_(true),
       ALLOW_THIS_IN_INITIALIZER_LIST(
-          mouse_watcher_(this, this, gfx::Insets())) {
-  mouse_watcher_.set_notify_on_exit_time_ms(kNotifyOnExitTimeMS);
+          mouse_watcher_(new views::MouseWatcherViewHost(this, gfx::Insets()),
+                         this)) {
+  mouse_watcher_.set_notify_on_exit_time(
+      base::TimeDelta::FromMilliseconds(kNotifyOnExitTimeMS));
   set_id(VIEW_ID_DOWNLOAD_SHELF);
   parent->AddChildView(this);
 }
@@ -122,7 +126,7 @@ void DownloadShelfView::DoAddDownload(BaseDownloadItemModel* download_model) {
   AddDownloadView(view);
 }
 
-void DownloadShelfView::MouseMovedOutOfView() {
+void DownloadShelfView::MouseMovedOutOfHost() {
   Close();
 }
 
@@ -174,12 +178,16 @@ void DownloadShelfView::OnPaint(gfx::Canvas* canvas) {
 }
 
 void DownloadShelfView::OnPaintBorder(gfx::Canvas* canvas) {
-  canvas->FillRect(kBorderColor, gfx::Rect(0, 0, width(), 1));
+  canvas->FillRect(gfx::Rect(0, 0, width(), 1), kBorderColor);
 }
 
 void DownloadShelfView::OpenedDownload(DownloadItemView* view) {
   if (CanAutoClose())
     mouse_watcher_.Start();
+}
+
+content::PageNavigator* DownloadShelfView::GetNavigator() {
+  return browser_;
 }
 
 gfx::Size DownloadShelfView::GetPreferredSize() {
@@ -303,9 +311,9 @@ void DownloadShelfView::ViewHierarchyChanged(bool is_add,
     set_background(views::Background::CreateSolidBackground(
         GetThemeProvider()->GetColor(ThemeService::COLOR_TOOLBAR)));
 
-    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     arrow_image_ = new views::ImageView();
-    arrow_image_->SetImage(rb.GetBitmapNamed(IDR_DOWNLOADS_FAVICON));
+    arrow_image_->SetImage(rb.GetImageSkiaNamed(IDR_DOWNLOADS_FAVICON));
     AddChildView(arrow_image_);
 
     show_all_view_ = new views::Link(
@@ -318,11 +326,11 @@ void DownloadShelfView::ViewHierarchyChanged(bool is_add,
 
     close_button_ = new views::ImageButton(this);
     close_button_->SetImage(views::CustomButton::BS_NORMAL,
-                            rb.GetBitmapNamed(IDR_CLOSE_BAR));
+                            rb.GetImageSkiaNamed(IDR_CLOSE_BAR));
     close_button_->SetImage(views::CustomButton::BS_HOT,
-                            rb.GetBitmapNamed(IDR_CLOSE_BAR_H));
+                            rb.GetImageSkiaNamed(IDR_CLOSE_BAR_H));
     close_button_->SetImage(views::CustomButton::BS_PUSHED,
-                            rb.GetBitmapNamed(IDR_CLOSE_BAR_P));
+                            rb.GetImageSkiaNamed(IDR_CLOSE_BAR_P));
     close_button_->SetAccessibleName(
         l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
     UpdateButtonColors();
@@ -358,12 +366,12 @@ bool DownloadShelfView::CanFitFirstDownloadItem() {
 }
 
 void DownloadShelfView::UpdateButtonColors() {
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   if (GetThemeProvider()) {
     close_button_->SetBackground(
         GetThemeProvider()->GetColor(ThemeService::COLOR_TAB_TEXT),
-        rb.GetBitmapNamed(IDR_CLOSE_BAR),
-        rb.GetBitmapNamed(IDR_CLOSE_BAR_MASK));
+        rb.GetImageSkiaNamed(IDR_CLOSE_BAR),
+        rb.GetImageSkiaNamed(IDR_CLOSE_BAR_MASK));
   }
 }
 
@@ -372,7 +380,7 @@ void DownloadShelfView::OnThemeChanged() {
 }
 
 void DownloadShelfView::LinkClicked(views::Link* source, int event_flags) {
-  browser_->ShowDownloadsTab();
+  chrome::ShowDownloads(browser_);
 }
 
 void DownloadShelfView::ButtonPressed(

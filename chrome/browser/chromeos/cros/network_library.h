@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_CHROMEOS_CROS_NETWORK_LIBRARY_H_
 #define CHROME_BROWSER_CHROMEOS_CROS_NETWORK_LIBRARY_H_
-#pragma once
 
 #include <map>
 #include <string>
@@ -13,24 +12,25 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_vector.h"
 #include "base/memory/singleton.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/string16.h"
 #include "base/timer.h"
+#include "chrome/browser/chromeos/cros/cros_network_functions.h"
+#include "chrome/browser/chromeos/cros/network_constants.h"
 #include "chrome/browser/chromeos/cros/network_ui_data.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/cros/chromeos_network.h"
 
 namespace base {
 class DictionaryValue;
 class Value;
-}
+}  // namespace base
 
 namespace chromeos {
 
 class NetworkDeviceParser;
 class NetworkParser;
+class CertificatePattern;
 
 // This is the list of all implementation classes that are allowed
 // access to the internals of the network library classes.
@@ -39,355 +39,6 @@ class NetworkParser;
   friend class NetworkLibraryImplCros;          \
   friend class NetworkLibraryImplStub;
 
-// This enumerates the various property indices that can be found in a
-// dictionary being parsed.
-enum PropertyIndex {
-  PROPERTY_INDEX_ACTIVATION_STATE,
-  PROPERTY_INDEX_ACTIVE_PROFILE,
-  PROPERTY_INDEX_ARP_GATEWAY,
-  PROPERTY_INDEX_AUTHENTICATION,
-  PROPERTY_INDEX_AUTO_CONNECT,
-  PROPERTY_INDEX_AVAILABLE_TECHNOLOGIES,
-  PROPERTY_INDEX_CARRIER,
-  PROPERTY_INDEX_CELLULAR_ALLOW_ROAMING,
-  PROPERTY_INDEX_CELLULAR_APN,
-  PROPERTY_INDEX_CELLULAR_APN_LIST,
-  PROPERTY_INDEX_CELLULAR_LAST_GOOD_APN,
-  PROPERTY_INDEX_CHECK_PORTAL_LIST,
-  PROPERTY_INDEX_CONNECTABLE,
-  PROPERTY_INDEX_CONNECTED_TECHNOLOGIES,
-  PROPERTY_INDEX_CONNECTIVITY_STATE,
-  PROPERTY_INDEX_DEFAULT_TECHNOLOGY,
-  PROPERTY_INDEX_DEVICE,
-  PROPERTY_INDEX_DEVICES,
-  PROPERTY_INDEX_EAP,
-  PROPERTY_INDEX_EAP_ANONYMOUS_IDENTITY,
-  PROPERTY_INDEX_EAP_CA_CERT,
-  PROPERTY_INDEX_EAP_CA_CERT_ID,
-  PROPERTY_INDEX_EAP_CA_CERT_NSS,
-  PROPERTY_INDEX_EAP_CERT_ID,
-  PROPERTY_INDEX_EAP_CLIENT_CERT,
-  PROPERTY_INDEX_EAP_CLIENT_CERT_NSS,
-  PROPERTY_INDEX_EAP_CLIENT_CERT_PATTERN,
-  PROPERTY_INDEX_EAP_IDENTITY,
-  PROPERTY_INDEX_EAP_KEY_ID,
-  PROPERTY_INDEX_EAP_KEY_MGMT,
-  PROPERTY_INDEX_EAP_METHOD,
-  PROPERTY_INDEX_EAP_PASSWORD,
-  PROPERTY_INDEX_EAP_PHASE_2_AUTH,
-  PROPERTY_INDEX_EAP_PIN,
-  PROPERTY_INDEX_EAP_PRIVATE_KEY,
-  PROPERTY_INDEX_EAP_PRIVATE_KEY_PASSWORD,
-  PROPERTY_INDEX_EAP_USE_SYSTEM_CAS,
-  PROPERTY_INDEX_ENABLED_TECHNOLOGIES,
-  PROPERTY_INDEX_ERROR,
-  PROPERTY_INDEX_ESN,
-  PROPERTY_INDEX_FAVORITE,
-  PROPERTY_INDEX_FIRMWARE_REVISION,
-  PROPERTY_INDEX_FOUND_NETWORKS,
-  PROPERTY_INDEX_GUID,
-  PROPERTY_INDEX_HARDWARE_REVISION,
-  PROPERTY_INDEX_HIDDEN_SSID,
-  PROPERTY_INDEX_HOME_PROVIDER,
-  PROPERTY_INDEX_HOST,
-  PROPERTY_INDEX_IDENTITY,
-  PROPERTY_INDEX_IMEI,
-  PROPERTY_INDEX_IMSI,
-  PROPERTY_INDEX_IPSEC_AUTHENTICATIONTYPE,
-  PROPERTY_INDEX_IPSEC_IKEVERSION,
-  PROPERTY_INDEX_IS_ACTIVE,
-  PROPERTY_INDEX_L2TPIPSEC_CA_CERT_NSS,
-  PROPERTY_INDEX_L2TPIPSEC_CLIENT_CERT_ID,
-  PROPERTY_INDEX_L2TPIPSEC_CLIENT_CERT_SLOT,
-  PROPERTY_INDEX_L2TPIPSEC_PASSWORD,
-  PROPERTY_INDEX_L2TPIPSEC_PIN,
-  PROPERTY_INDEX_L2TPIPSEC_PSK,
-  PROPERTY_INDEX_L2TPIPSEC_USER,
-  PROPERTY_INDEX_L2TPIPSEC_GROUP_NAME,
-  PROPERTY_INDEX_MANUFACTURER,
-  PROPERTY_INDEX_MDN,
-  PROPERTY_INDEX_MEID,
-  PROPERTY_INDEX_MIN,
-  PROPERTY_INDEX_MODE,
-  PROPERTY_INDEX_MODEL_ID,
-  PROPERTY_INDEX_NAME,
-  PROPERTY_INDEX_NETWORKS,
-  PROPERTY_INDEX_NETWORK_TECHNOLOGY,
-  PROPERTY_INDEX_OFFLINE_MODE,
-  PROPERTY_INDEX_OLP,
-  PROPERTY_INDEX_ONC_CLIENT_CERT_PATTERN,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_CLIENT_CERT_REF,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_CLIENT_CERT_TYPE,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_ETHERNET,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_IPSEC,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_L2TP,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_OPENVPN,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_PROXY_EXCLUDE_DOMAINS,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_PROXY_FTP,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_PROXY_HOST,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_PROXY_HTTP,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_PROXY_HTTPS,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_PROXY_MANUAL,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_PROXY_PAC,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_PROXY_PORT,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_PROXY_SETTINGS,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_PROXY_SOCKS,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_PROXY_TYPE,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_REMOVE,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_WIFI,  // Used internally for ONC parsing
-  PROPERTY_INDEX_ONC_VPN,  // Used internally for ONC parsing
-  PROPERTY_INDEX_OPEN_VPN_AUTH,
-  PROPERTY_INDEX_OPEN_VPN_AUTHRETRY,
-  PROPERTY_INDEX_OPEN_VPN_AUTHNOCACHE,
-  PROPERTY_INDEX_OPEN_VPN_AUTHUSERPASS,
-  PROPERTY_INDEX_OPEN_VPN_CACERT,
-  PROPERTY_INDEX_OPEN_VPN_CERT,
-  PROPERTY_INDEX_OPEN_VPN_CIPHER,
-  PROPERTY_INDEX_OPEN_VPN_CLIENT_CERT_ID,
-  PROPERTY_INDEX_OPEN_VPN_CLIENT_CERT_SLOT,
-  PROPERTY_INDEX_OPEN_VPN_COMPLZO,
-  PROPERTY_INDEX_OPEN_VPN_COMPNOADAPT,
-  PROPERTY_INDEX_OPEN_VPN_KEYDIRECTION,
-  PROPERTY_INDEX_OPEN_VPN_MGMT_ENABLE,
-  PROPERTY_INDEX_OPEN_VPN_NSCERTTYPE,
-  PROPERTY_INDEX_OPEN_VPN_OTP,
-  PROPERTY_INDEX_OPEN_VPN_PASSWORD,
-  PROPERTY_INDEX_OPEN_VPN_PIN,
-  PROPERTY_INDEX_OPEN_VPN_PORT,
-  PROPERTY_INDEX_OPEN_VPN_PROTO,
-  PROPERTY_INDEX_OPEN_VPN_PKCS11_PROVIDER,
-  PROPERTY_INDEX_OPEN_VPN_PUSHPEERINFO,
-  PROPERTY_INDEX_OPEN_VPN_REMOTECERTEKU,
-  PROPERTY_INDEX_OPEN_VPN_REMOTECERTKU,
-  PROPERTY_INDEX_OPEN_VPN_REMOTECERTTLS,
-  PROPERTY_INDEX_OPEN_VPN_RENEGSEC,
-  PROPERTY_INDEX_OPEN_VPN_SERVERPOLLTIMEOUT,
-  PROPERTY_INDEX_OPEN_VPN_SHAPER,
-  PROPERTY_INDEX_OPEN_VPN_STATICCHALLENGE,
-  PROPERTY_INDEX_OPEN_VPN_TLSAUTHCONTENTS,
-  PROPERTY_INDEX_OPEN_VPN_TLSREMOTE,
-  PROPERTY_INDEX_OPEN_VPN_USER,
-  PROPERTY_INDEX_OPERATOR_CODE,
-  PROPERTY_INDEX_OPERATOR_NAME,
-  PROPERTY_INDEX_PASSPHRASE,
-  PROPERTY_INDEX_PASSPHRASE_REQUIRED,
-  PROPERTY_INDEX_PORTAL_URL,
-  PROPERTY_INDEX_POWERED,
-  PROPERTY_INDEX_PRIORITY,
-  PROPERTY_INDEX_PROVIDER_HOST,
-  PROPERTY_INDEX_PROVIDER_TYPE,
-  PROPERTY_INDEX_PRL_VERSION,
-  PROPERTY_INDEX_PROFILE,
-  PROPERTY_INDEX_PROFILES,
-  PROPERTY_INDEX_PROVIDER,
-  PROPERTY_INDEX_PROXY_CONFIG,
-  PROPERTY_INDEX_ROAMING_STATE,
-  PROPERTY_INDEX_SAVE_CREDENTIALS,
-  PROPERTY_INDEX_SCANNING,
-  PROPERTY_INDEX_SECURITY,
-  PROPERTY_INDEX_SELECTED_NETWORK,
-  PROPERTY_INDEX_SERVICES,
-  PROPERTY_INDEX_SERVICE_WATCH_LIST,
-  PROPERTY_INDEX_SERVING_OPERATOR,
-  PROPERTY_INDEX_SIGNAL_STRENGTH,
-  PROPERTY_INDEX_SIM_LOCK,
-  PROPERTY_INDEX_SSID,
-  PROPERTY_INDEX_STATE,
-  PROPERTY_INDEX_SUPPORT_NETWORK_SCAN,
-  PROPERTY_INDEX_TECHNOLOGY_FAMILY,
-  PROPERTY_INDEX_TYPE,
-  PROPERTY_INDEX_UI_DATA,
-  PROPERTY_INDEX_UNKNOWN,
-  PROPERTY_INDEX_USAGE_URL,
-  PROPERTY_INDEX_VPN_DOMAIN,
-  PROPERTY_INDEX_WIFI_AUTH_MODE,
-  PROPERTY_INDEX_WIFI_FREQUENCY,
-  PROPERTY_INDEX_WIFI_HEX_SSID,
-  PROPERTY_INDEX_WIFI_HIDDEN_SSID,
-  PROPERTY_INDEX_WIFI_PHY_MODE
-};
-
-// Connection enums (see flimflam/include/service.h)
-enum ConnectionType {
-  TYPE_UNKNOWN   = 0,
-  TYPE_ETHERNET  = 1,
-  TYPE_WIFI      = 2,
-  TYPE_WIMAX     = 3,
-  TYPE_BLUETOOTH = 4,
-  TYPE_CELLULAR  = 5,
-  TYPE_VPN       = 6,
-};
-
-enum ConnectionMode {
-  MODE_UNKNOWN = 0,
-  MODE_MANAGED = 1,
-  MODE_ADHOC   = 2,
-};
-
-enum ConnectionSecurity {
-  SECURITY_UNKNOWN = 0,
-  SECURITY_NONE    = 1,
-  SECURITY_WEP     = 2,
-  SECURITY_WPA     = 3,
-  SECURITY_RSN     = 4,
-  SECURITY_8021X   = 5,
-  SECURITY_PSK     = 6,
-};
-
-enum ConnectionState {
-  STATE_UNKNOWN            = 0,
-  STATE_IDLE               = 1,
-  STATE_CARRIER            = 2,
-  STATE_ASSOCIATION        = 3,
-  STATE_CONFIGURATION      = 4,
-  STATE_READY              = 5,
-  STATE_DISCONNECT         = 6,
-  STATE_FAILURE            = 7,
-  STATE_ACTIVATION_FAILURE = 8,
-  STATE_PORTAL             = 9,
-  STATE_ONLINE             = 10
-};
-
-// Network enums (see flimflam/include/network.h)
-enum NetworkTechnology {
-  NETWORK_TECHNOLOGY_UNKNOWN      = 0,
-  NETWORK_TECHNOLOGY_1XRTT        = 1,
-  NETWORK_TECHNOLOGY_EVDO         = 2,
-  NETWORK_TECHNOLOGY_GPRS         = 3,
-  NETWORK_TECHNOLOGY_EDGE         = 4,
-  NETWORK_TECHNOLOGY_UMTS         = 5,
-  NETWORK_TECHNOLOGY_HSPA         = 6,
-  NETWORK_TECHNOLOGY_HSPA_PLUS    = 7,
-  NETWORK_TECHNOLOGY_LTE          = 8,
-  NETWORK_TECHNOLOGY_LTE_ADVANCED = 9,
-  NETWORK_TECHNOLOGY_GSM          = 10,
-};
-
-enum ActivationState {
-  ACTIVATION_STATE_UNKNOWN             = 0,
-  ACTIVATION_STATE_ACTIVATED           = 1,
-  ACTIVATION_STATE_ACTIVATING          = 2,
-  ACTIVATION_STATE_NOT_ACTIVATED       = 3,
-  ACTIVATION_STATE_PARTIALLY_ACTIVATED = 4,
-};
-
-enum NetworkRoamingState {
-  ROAMING_STATE_UNKNOWN = 0,
-  ROAMING_STATE_HOME    = 1,
-  ROAMING_STATE_ROAMING = 2,
-};
-
-// Device enums (see flimflam/include/device.h)
-enum TechnologyFamily {
-  TECHNOLOGY_FAMILY_UNKNOWN = 0,
-  TECHNOLOGY_FAMILY_CDMA    = 1,
-  TECHNOLOGY_FAMILY_GSM     = 2
-};
-
-// Type of a pending SIM operation.
-enum SimOperationType {
-  SIM_OPERATION_NONE               = 0,
-  SIM_OPERATION_CHANGE_PIN         = 1,
-  SIM_OPERATION_CHANGE_REQUIRE_PIN = 2,
-  SIM_OPERATION_ENTER_PIN          = 3,
-  SIM_OPERATION_UNBLOCK_PIN        = 4,
-};
-
-// SIMLock states (see gobi-cromo-plugin/gobi_gsm_modem.cc)
-enum SimLockState {
-  SIM_UNKNOWN    = 0,
-  SIM_UNLOCKED   = 1,
-  SIM_LOCKED_PIN = 2,
-  SIM_LOCKED_PUK = 3,  // also when SIM is blocked, then retries = 0.
-};
-
-// SIM PinRequire states.
-// SIM_PIN_REQUIRE_UNKNOWN - SIM card is absent or SimLockState initial value
-//                           hasn't been received yet.
-// SIM_PIN_REQUIRED - SIM card is locked when booted/wake from sleep and
-//                    requires user to enter PIN.
-// SIM_PIN_NOT_REQUIRED - SIM card is unlocked all the time and requires PIN
-// only on certain operations, such as ChangeRequirePin, ChangePin, EnterPin.
-enum SimPinRequire {
-  SIM_PIN_REQUIRE_UNKNOWN = 0,
-  SIM_PIN_NOT_REQUIRED    = 1,
-  SIM_PIN_REQUIRED        = 2,
-};
-
-// Any PIN operation result (EnterPin, UnblockPin etc.).
-enum PinOperationError {
-  PIN_ERROR_NONE           = 0,
-  PIN_ERROR_UNKNOWN        = 1,
-  PIN_ERROR_INCORRECT_CODE = 2,  // Either PIN/PUK specified is incorrect.
-  PIN_ERROR_BLOCKED        = 3,  // No more PIN retries left, SIM is blocked.
-};
-
-// connection errors (see flimflam/include/service.h)
-enum ConnectionError {
-  ERROR_NO_ERROR               = 0,
-  ERROR_OUT_OF_RANGE           = 1,
-  ERROR_PIN_MISSING            = 2,
-  ERROR_DHCP_FAILED            = 3,
-  ERROR_CONNECT_FAILED         = 4,
-  ERROR_BAD_PASSPHRASE         = 5,
-  ERROR_BAD_WEPKEY             = 6,
-  ERROR_ACTIVATION_FAILED      = 7,
-  ERROR_NEED_EVDO              = 8,
-  ERROR_NEED_HOME_NETWORK      = 9,
-  ERROR_OTASP_FAILED           = 10,
-  ERROR_AAA_FAILED             = 11,
-  ERROR_INTERNAL               = 12,
-  ERROR_DNS_LOOKUP_FAILED      = 13,
-  ERROR_HTTP_GET_FAILED        = 14,
-  ERROR_IPSEC_PSK_AUTH_FAILED  = 15,
-  ERROR_IPSEC_CERT_AUTH_FAILED = 16,
-  ERROR_PPP_AUTH_FAILED        = 17,
-  ERROR_UNKNOWN                = 255
-};
-
-// We are currently only supporting setting a single EAP Method.
-enum EAPMethod {
-  EAP_METHOD_UNKNOWN = 0,
-  EAP_METHOD_PEAP    = 1,
-  EAP_METHOD_TLS     = 2,
-  EAP_METHOD_TTLS    = 3,
-  EAP_METHOD_LEAP    = 4
-};
-
-// We are currently only supporting setting a single EAP phase 2 authentication.
-enum EAPPhase2Auth {
-  EAP_PHASE_2_AUTH_AUTO     = 0,
-  EAP_PHASE_2_AUTH_MD5      = 1,
-  EAP_PHASE_2_AUTH_MSCHAPV2 = 2,
-  EAP_PHASE_2_AUTH_MSCHAP   = 3,
-  EAP_PHASE_2_AUTH_PAP      = 4,
-  EAP_PHASE_2_AUTH_CHAP     = 5
-};
-
-// Misc enums
-enum NetworkProfileType {
-  PROFILE_NONE,    // Not in any profile (not remembered).
-  PROFILE_SHARED,  // In the local profile, shared by all users on device.
-  PROFILE_USER     // In the user provile, not visible to other users.
-};
-
-// Virtual Network provider type.
-enum ProviderType {
-  PROVIDER_TYPE_L2TP_IPSEC_PSK,
-  PROVIDER_TYPE_L2TP_IPSEC_USER_CERT,
-  PROVIDER_TYPE_OPEN_VPN,
-  // Add new provider types before PROVIDER_TYPE_MAX.
-  PROVIDER_TYPE_MAX,
-};
-
-// Proxy type specified in ONC.
-enum ProxyOncType {
-  PROXY_ONC_DIRECT,
-  PROXY_ONC_WPAD,
-  PROXY_ONC_PAC,
-  PROXY_ONC_MANUAL,
-  PROXY_ONC_MAX,
-};
 
 // Simple wrapper for property Cellular.FoundNetworks.
 struct FoundCellularNetwork {
@@ -418,18 +69,6 @@ struct CellularApn {
   void Set(const base::DictionaryValue& dict);
 };
 typedef std::vector<CellularApn> CellularApnList;
-
-// Cellular network is considered low data when less than 60 minues.
-static const int kCellularDataLowSecs = 60 * 60;
-
-// Cellular network is considered low data when less than 30 minues.
-static const int kCellularDataVeryLowSecs = 30 * 60;
-
-// Cellular network is considered low data when less than 100MB.
-static const int kCellularDataLowBytes = 100 * 1024 * 1024;
-
-// Cellular network is considered very low data when less than 50MB.
-static const int kCellularDataVeryLowBytes = 50 * 1024 * 1024;
 
 // The value of priority if it is not set.
 const int kPriorityNotSet = 0;
@@ -465,6 +104,12 @@ class NetworkDevice {
   bool is_sim_locked() const {
     return sim_lock_state_ == SIM_LOCKED_PIN ||
         sim_lock_state_ == SIM_LOCKED_PUK;
+  }
+  // Returns true if GSM modem and SIM as absent, otherwise
+  // returns false: GSM modem and SIM card is present or CDMA modem.
+  bool is_sim_absent() const {
+    return technology_family() == TECHNOLOGY_FAMILY_GSM &&
+           !is_sim_locked() && imsi().empty();
   }
   const int sim_retries_left() const { return sim_retries_left_; }
   SimPinRequire sim_pin_required() const { return sim_pin_required_; }
@@ -625,6 +270,25 @@ class NetworkDevice {
   DISALLOW_COPY_AND_ASSIGN(NetworkDevice);
 };
 
+// A virtual class that can be used to handle certificate enrollment URIs when
+// encountered.  Also used by unit tests to avoid opening browser windows
+// when testing.
+class EnrollmentDelegate {
+ public:
+  EnrollmentDelegate() {}
+  virtual ~EnrollmentDelegate() {}
+
+  // Implemented to handle a given certificate enrollment URI.  Returns false
+  // if the enrollment URI doesn't use a scheme that we can handle, and in
+  // that case, this will be called for any remaining enrollment URIs.
+  // If enrollment succeeds, then the enrollment handler must run
+  // |post_action| to finish connecting.
+  virtual void Enroll(const std::vector<std::string>& uri_list,
+                      const base::Closure& post_action) = 0;
+ private:
+  DISALLOW_COPY_AND_ASSIGN(EnrollmentDelegate);
+};
+
 // Contains data common to all network service types.
 class Network {
  public:
@@ -634,11 +298,14 @@ class Network {
   class TestApi {
    public:
     explicit TestApi(Network* network) : network_(network) {}
-    void SetConnected(bool connected) {
-      network_->set_connected(connected);
+    void SetConnected() {
+      network_->set_connected();
     }
-    void SetConnecting(bool connecting) {
-      network_->set_connecting(connecting);
+    void SetConnecting() {
+      network_->set_connecting();
+    }
+    void SetDisconnected() {
+      network_->set_disconnected();
     }
    private:
     Network* network_;
@@ -699,8 +366,7 @@ class Network {
 
   const std::string& proxy_config() const { return proxy_config_; }
 
-  const DictionaryValue* ui_data() const { return &ui_data_; }
-  DictionaryValue* ui_data() { return &ui_data_; }
+  const NetworkUIData& ui_data() const { return ui_data_; }
 
   ProxyOncConfig& proxy_onc_config() { return proxy_onc_config_; }
 
@@ -715,6 +381,12 @@ class Network {
   void SetSaveCredentials(bool save_credentials);
 
   void ClearUIData();
+
+  // This will resolve any automatic configuration that has to occur
+  // (provisioning certificates, etc.) before attempting to connect to the
+  // network.  When configuration is complete, calls the closure to finish the
+  // connection or show the config dialog to collect user-supplied info.
+  virtual void AttemptConnection(const base::Closure& connect);
 
   // Return a string representation of the state code.
   std::string GetStateString() const;
@@ -737,7 +409,8 @@ class Network {
             state == STATE_PORTAL);
   }
   static bool IsConnectingState(ConnectionState state) {
-    return (state == STATE_ASSOCIATION ||
+    return (state == STATE_CONNECT_REQUESTED ||
+            state == STATE_ASSOCIATION ||
             state == STATE_CONFIGURATION ||
             state == STATE_CARRIER);
   }
@@ -749,6 +422,12 @@ class Network {
             state == STATE_ACTIVATION_FAILURE);
   }
 
+  // Adopts the given enrollment handler to handle any certificate enrollment
+  // URIs encountered during network connection.
+  void SetEnrollmentDelegate(EnrollmentDelegate* delegate) {
+    enrollment_delegate_.reset(delegate);
+  }
+
   virtual bool UpdateStatus(const std::string& key,
                             const base::Value& value,
                             PropertyIndex* index);
@@ -757,6 +436,9 @@ class Network {
   // just returns whether or not the given property was found.
   bool GetProperty(PropertyIndex index, const base::Value** value) const;
 
+  // Creates a Network object for the given type for testing.
+  static Network* CreateForTesting(ConnectionType type);
+
  protected:
   Network(const std::string& service_path,
           ConnectionType type);
@@ -764,11 +446,15 @@ class Network {
   NetworkParser* network_parser() { return network_parser_.get(); }
   void SetNetworkParser(NetworkParser* parser);
 
-  // Updates property_map_ for the corresponding property index.
-  void UpdatePropertyMap(PropertyIndex index, const base::Value& value);
+  // Updates |property_map_| for the corresponding property |index|. If |value|
+  // is non-NULL, it's put into the map. Otherwise, the entry is removed.
+  void UpdatePropertyMap(PropertyIndex index, const base::Value* value);
 
   // Set the state and update flags if necessary.
   void SetState(ConnectionState state);
+
+  // Set the error state and update notify_failure_
+  void SetError(ConnectionError error);
 
   // Parse name/value pairs from libcros.
   virtual void ParseInfo(const base::DictionaryValue& info);
@@ -793,6 +479,17 @@ class Network {
                                         std::string* dest);
 
   void set_unique_id(const std::string& unique_id) { unique_id_ = unique_id; }
+  const CertificatePattern& client_cert_pattern() const {
+    return ui_data_.certificate_pattern();
+  }
+
+  ClientCertType client_cert_type() const {
+    return ui_data_.certificate_type();
+  }
+
+  EnrollmentDelegate* enrollment_delegate() const {
+    return enrollment_delegate_.get();
+  }
 
  private:
   typedef std::map<PropertyIndex, base::Value*> PropertyMap;
@@ -813,6 +510,12 @@ class Network {
   NETWORK_LIBRARY_IMPL_FRIENDS;
 
   FRIEND_TEST_ALL_PREFIXES(NetworkLibraryTest, GetUserExpandedValue);
+  FRIEND_TEST_ALL_PREFIXES(OncNetworkParserTest,
+                           TestLoadWifiCertificatePattern);
+  FRIEND_TEST_ALL_PREFIXES(OncNetworkParserTest,
+                           TestLoadVPNCertificatePattern);
+  FRIEND_TEST_ALL_PREFIXES(NetworkLibraryStubTest, NetworkConnectOncWifi);
+  FRIEND_TEST_ALL_PREFIXES(NetworkLibraryStubTest, NetworkConnectOncVPN);
 
   // Use these functions at your peril.  They are used by the various
   // parsers to set state, and really shouldn't be used by anything else
@@ -823,16 +526,18 @@ class Network {
   }
   void set_name(const std::string& name) { name_ = name; }
   void set_mode(ConnectionMode mode) { mode_ = mode; }
-  void set_connecting(bool connecting) {
-    state_ = (connecting ? STATE_ASSOCIATION : STATE_IDLE);
+  void set_connecting() {
+    state_ = STATE_CONNECT_REQUESTED;
   }
-  void set_connected(bool connected) {
-    state_ = (connected ? STATE_ONLINE : STATE_IDLE);
+  void set_connected() {
+    state_ = STATE_ONLINE;
+  }
+  void set_disconnected() {
+    state_ = STATE_IDLE;
   }
   void set_connectable(bool connectable) { connectable_ = connectable; }
   void set_connection_started(bool started) { connection_started_ = started; }
   void set_is_active(bool is_active) { is_active_ = is_active; }
-  void set_error(ConnectionError error) { error_ = error; }
   void set_added(bool added) { added_ = added; }
   void set_auto_connect(bool auto_connect) { auto_connect_ = auto_connect; }
   void set_save_credentials(bool save_credentials) {
@@ -841,6 +546,15 @@ class Network {
   void set_profile_path(const std::string& path) { profile_path_ = path; }
   void set_profile_type(NetworkProfileType type) { profile_type_ = type; }
   void set_proxy_config(const std::string& proxy) { proxy_config_ = proxy; }
+  void set_ui_data(const NetworkUIData& ui_data) {
+    ui_data_ = ui_data;
+  }
+  void set_client_cert_pattern(const CertificatePattern& pattern) {
+    ui_data_.set_certificate_pattern(pattern);
+  }
+  void set_client_cert_type(ClientCertType type) {
+    ui_data_.set_certificate_type(type);
+  }
 
   std::string device_path_;
   std::string name_;
@@ -856,6 +570,7 @@ class Network {
   bool save_credentials_;  // save passphrase and EAP credentials to disk.
   std::string proxy_config_;  // ProxyConfig property in flimflam.
   ProxyOncConfig proxy_onc_config_;  // Only used for parsing ONC proxy value.
+  scoped_ptr<EnrollmentDelegate> enrollment_delegate_;
 
   // Unique identifier, set the first time the network is parsed.
   std::string unique_id_;
@@ -886,10 +601,9 @@ class Network {
   std::string service_path_;
   ConnectionType type_;
 
-  // UI-level state that is opaque to the connection manager. It's kept in a
-  // DictionaryValue to allow for simple addition of new settings. The value is
+  // UI-level state that is opaque to the connection manager. The value is
   // stored in JSON-serialized from in the connection manager.
-  DictionaryValue ui_data_;
+  NetworkUIData ui_data_;
 
   // This is the parser we use to parse messages from the native
   // network layer.
@@ -923,9 +637,11 @@ class VirtualNetwork : public Network {
   ProviderType provider_type() const { return provider_type_; }
   const std::string& ca_cert_nss() const { return ca_cert_nss_; }
   const std::string& psk_passphrase() const { return psk_passphrase_; }
+  bool psk_passphrase_required() const { return psk_passphrase_required_; }
   const std::string& client_cert_id() const { return client_cert_id_; }
   const std::string& username() const { return username_; }
   const std::string& user_passphrase() const { return user_passphrase_; }
+  bool user_passphrase_required() const { return user_passphrase_required_; }
   const std::string& group_name() const { return group_name_; }
 
   // Sets the well-known PKCS#11 slot and PIN for accessing certificates.
@@ -935,10 +651,15 @@ class VirtualNetwork : public Network {
   // Network overrides.
   virtual bool RequiresUserProfile() const OVERRIDE;
   virtual void CopyCredentialsFromRemembered(Network* remembered) OVERRIDE;
+  virtual void AttemptConnection(const base::Closure& connect) OVERRIDE;
 
   // Public getters.
   bool NeedMoreInfoToConnect() const;
   std::string GetProviderTypeString() const;
+  // Returns true if a PSK passphrase is required to connect.
+  bool IsPSKPassphraseRequired() const;
+  // Returns true if a user passphrase is required to connect.
+  bool IsUserPassphraseRequired() const;
 
   // Public setters.
   void SetCACertNSS(const std::string& ca_cert_nss);
@@ -969,6 +690,8 @@ class VirtualNetwork : public Network {
   // This allows the implementation classes access to privates.
   NETWORK_LIBRARY_IMPL_FRIENDS;
 
+  FRIEND_TEST_ALL_PREFIXES(OncNetworkParserTest, TestLoadVPNCertificatePattern);
+
   // Use these functions at your peril.  They are used by the various
   // parsers to set state, and really shouldn't be used by anything else
   // because they don't do the error checking and sending to the
@@ -985,6 +708,9 @@ class VirtualNetwork : public Network {
   void set_psk_passphrase(const std::string& psk_passphrase) {
     psk_passphrase_ = psk_passphrase;
   }
+  void set_psk_passphrase_required(bool psk_passphrase_required) {
+    psk_passphrase_required_ = psk_passphrase_required;
+  }
   void set_client_cert_id(const std::string& client_cert_id) {
     client_cert_id_ = client_cert_id;
   }
@@ -992,11 +718,23 @@ class VirtualNetwork : public Network {
   void set_user_passphrase(const std::string& user_passphrase) {
     user_passphrase_ = user_passphrase;
   }
+  void set_user_passphrase_required(bool user_passphrase_required) {
+    user_passphrase_required_ = user_passphrase_required;
+  }
   void set_group_name(const std::string& group_name) {
     group_name_ = group_name;
   }
 
-  // Network overrides.
+  // Matches the client certificate pattern by checking to see if a certificate
+  // exists that meets the pattern criteria. If it finds one, it sets the
+  // appropriate network property. If not, it passes |connect| to the
+  // EnrollmentDelegate to do something with the enrollment URI (e.g. launch a
+  // dialog) to install the certificate, and then invoke |connect|. If
+  // |allow_enroll| is false, then the enrollment handler will not be invoked in
+  // the case of a missing certificate.
+  void MatchCertificatePattern(bool allow_enroll, const base::Closure& connect);
+
+ // Network overrides.
   virtual void EraseCredentials() OVERRIDE;
   virtual void CalculateUniqueId() OVERRIDE;
 
@@ -1008,11 +746,17 @@ class VirtualNetwork : public Network {
   // NSS nickname for server CA certificate.
   std::string ca_cert_nss_;
   std::string psk_passphrase_;
+  bool psk_passphrase_required_;
   // PKCS#11 ID for client certificate.
   std::string client_cert_id_;
   std::string username_;
   std::string user_passphrase_;
+  bool user_passphrase_required_;
   std::string group_name_;
+
+  // Weak pointer factory for wrapping pointers to this network in callbacks.
+  base::WeakPtrFactory<VirtualNetwork> weak_pointer_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(VirtualNetwork);
 };
 typedef std::vector<VirtualNetwork*> VirtualNetworkVector;
@@ -1057,8 +801,6 @@ class WirelessNetwork : public Network {
 };
 
 // Class for networks of TYPE_CELLULAR.
-class CellularDataPlan;
-
 class CellularNetwork : public WirelessNetwork {
  public:
   enum DataLeft {
@@ -1124,6 +866,9 @@ class CellularNetwork : public WirelessNetwork {
   // Returns true if network supports activation.
   // Current implementation returns same as SupportsDataPlan().
   bool SupportsActivation() const;
+
+  // Returns whether the network needs to be activated.
+  bool NeedsActivation() const;
 
   // Returns true if one of the usage_url_ / payment_url_ (or both) is defined.
   bool SupportsDataPlan() const;
@@ -1219,6 +964,12 @@ class WifiNetwork : public WirelessNetwork {
     void SetEncryption(ConnectionSecurity encryption) {
       network_->set_encryption(encryption);
     }
+    void SetSsid(const std::string& ssid) {
+      network_->SetSsid(ssid);
+    }
+    void SetHexSsid(const std::string& ssid_hex) {
+      network_->SetHexSsid(ssid_hex);
+    }
    private:
     WifiNetwork* network_;
   };
@@ -1232,6 +983,9 @@ class WifiNetwork : public WirelessNetwork {
   const std::string& passphrase() const { return passphrase_; }
   const std::string& identity() const { return identity_; }
   bool passphrase_required() const { return passphrase_required_; }
+  bool hidden_ssid() const { return hidden_ssid_; }
+  const std::string& bssid() const { return bssid_; }
+  int frequency() const { return frequency_; }
 
   EAPMethod eap_method() const { return eap_method_; }
   EAPPhase2Auth eap_phase_2_auth() const { return eap_phase_2_auth_; }
@@ -1245,13 +999,15 @@ class WifiNetwork : public WirelessNetwork {
     return eap_anonymous_identity_;
   }
   const std::string& eap_passphrase() const { return eap_passphrase_; }
+  const bool eap_save_credentials() const { return eap_save_credentials_; }
 
   const std::string& GetPassphrase() const;
 
-  bool SetSsid(const std::string& ssid);
-  bool SetHexSsid(const std::string& ssid_hex);
+  // Set property and call SetNetworkServiceProperty:
+
   void SetPassphrase(const std::string& passphrase);
   void SetIdentity(const std::string& identity);
+  void SetHiddenSSID(bool hidden_ssid);
 
   // 802.1x properties
   void SetEAPMethod(EAPMethod method);
@@ -1268,6 +1024,7 @@ class WifiNetwork : public WirelessNetwork {
 
   // Network overrides.
   virtual bool RequiresUserProfile() const OVERRIDE;
+  virtual void AttemptConnection(const base::Closure& connect) OVERRIDE;
 
   // Return a string representation of the encryption code.
   // This not translated and should be only used for debugging purposes.
@@ -1276,8 +1033,8 @@ class WifiNetwork : public WirelessNetwork {
   // Return true if a passphrase or other input is required to connect.
   bool IsPassphraseRequired() const;
 
- private:
-  // This allows NativeWifiNetworkParser access to device privates so
+ protected:
+   // This allows NativeWifiNetworkParser access to device privates so
   // that they can be reconstituted during parsing.  The parsers only
   // access things through the private set_ functions so that this
   // class can evolve without having to change all the parsers.
@@ -1291,6 +1048,10 @@ class WifiNetwork : public WirelessNetwork {
   // parsers to set state, and really shouldn't be used by anything else
   // because they don't do the error checking and sending to the
   // network layer that the other setters do.
+
+  bool SetSsid(const std::string& ssid);
+  bool SetHexSsid(const std::string& ssid_hex);
+
   void set_encryption(ConnectionSecurity encryption) {
     encryption_ = encryption;
   }
@@ -1304,6 +1065,11 @@ class WifiNetwork : public WirelessNetwork {
   void set_identity(const std::string& identity) {
     identity_ = identity;
   }
+  void set_hidden_ssid(bool hidden_ssid) {
+    hidden_ssid_ = hidden_ssid;
+  }
+  void set_bssid(const std::string& bssid) { bssid_ = bssid; }
+  void set_frequency(int frequency) { frequency_ = frequency; }
   void set_eap_method(EAPMethod eap_method) { eap_method_ = eap_method; }
   void set_eap_phase_2_auth(EAPPhase2Auth eap_phase_2_auth) {
     eap_phase_2_auth_ = eap_phase_2_auth;
@@ -1328,6 +1094,18 @@ class WifiNetwork : public WirelessNetwork {
   void set_eap_passphrase(const std::string& eap_passphrase) {
     eap_passphrase_ = eap_passphrase;
   }
+  void set_eap_save_credentials(bool save_credentials) {
+    eap_save_credentials_ = save_credentials;
+  }
+
+  // Matches the client certificate pattern by checking to see if a certificate
+  // exists that meets the pattern criteria. If it finds one, it sets the
+  // appropriate network property. If not, it passes |connect| to the
+  // EnrollmentDelegate to do something with the enrollment URI (e.g. launch a
+  // dialog) to install the certificate, and then invoke |connect|. If
+  // |allow_enroll| is false, then the enrollment handler will not be invoked in
+  // the case of a missing certificate.
+  void MatchCertificatePattern(bool allow_enroll, const base::Closure& connect);
 
   // Network overrides.
   virtual void EraseCredentials() OVERRIDE;
@@ -1337,6 +1115,9 @@ class WifiNetwork : public WirelessNetwork {
   std::string passphrase_;
   bool passphrase_required_;
   std::string identity_;
+  bool hidden_ssid_;
+  std::string bssid_;
+  int frequency_;
 
   EAPMethod eap_method_;
   EAPPhase2Auth eap_phase_2_auth_;
@@ -1346,49 +1127,69 @@ class WifiNetwork : public WirelessNetwork {
   std::string eap_identity_;
   std::string eap_anonymous_identity_;
   std::string eap_passphrase_;
+  bool eap_save_credentials_;
 
   // Internal state (not stored in flimflam).
   // Passphrase set by user (stored for UI).
   std::string user_passphrase_;
 
+  // Weak pointer factory for wrapping pointers to this network in callbacks.
+  base::WeakPtrFactory<WifiNetwork> weak_pointer_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(WifiNetwork);
 };
+
 typedef std::vector<WifiNetwork*> WifiNetworkVector;
 
-// Cellular Data Plan management.
-class CellularDataPlan {
- public:
-  CellularDataPlan();
-  explicit CellularDataPlan(const CellularDataPlanInfo &plan);
-  ~CellularDataPlan();
 
-  // Formats cellular plan description.
-  string16 GetPlanDesciption() const;
-  // Evaluates cellular plans status and returns warning string if it is near
-  // expiration.
-  string16 GetRemainingWarning() const;
-  // Formats remaining plan data description.
-  string16 GetDataRemainingDesciption() const;
-  // Formats plan expiration description.
-  string16 GetPlanExpiration() const;
-  // Formats plan usage info.
-  string16 GetUsageInfo() const;
-  // Returns a unique string for this plan that can be used for comparisons.
-  std::string GetUniqueIdentifier() const;
-  base::TimeDelta remaining_time() const;
-  int64 remaining_minutes() const;
-  // Returns plan data remaining in bytes.
-  int64 remaining_data() const;
-  // TODO(stevenjb): Make these private with accessors and properly named.
-  std::string plan_name;
-  CellularDataPlanType plan_type;
-  base::Time update_time;
-  base::Time plan_start_time;
-  base::Time plan_end_time;
-  int64 plan_data_bytes;
-  int64 data_bytes_used;
+// Class for networks of TYPE_WIMAX.
+class WimaxNetwork : public WirelessNetwork {
+ public:
+  explicit WimaxNetwork(const std::string& service_path);
+  virtual ~WimaxNetwork();
+
+  bool passphrase_required() const { return passphrase_required_; }
+  const std::string& eap_identity() const { return eap_identity_; }
+  const std::string& eap_passphrase() const { return eap_passphrase_; }
+
+  void SetEAPIdentity(const std::string& identity);
+  void SetEAPPassphrase(const std::string& passphrase);
+
+ protected:
+  // This allows NativeWimaxNetworkParser access to device privates so
+  // that they can be reconstituted during parsing.  The parsers only
+  // access things through the private set_ functions so that this
+  // class can evolve without having to change all the parsers.
+  friend class NativeWimaxNetworkParser;
+
+  // This allows the implementation classes access to privates.
+  NETWORK_LIBRARY_IMPL_FRIENDS;
+
+  void set_eap_identity(const std::string& identity) {
+    eap_identity_ = identity;
+  }
+  void set_eap_passphrase(const std::string& passphrase) {
+    eap_passphrase_ = passphrase;
+  }
+  void set_passphrase_required(bool passphrase_required) {
+    passphrase_required_ = passphrase_required;
+  }
+
+  // Network overrides.
+  virtual void EraseCredentials() OVERRIDE;
+  virtual void CalculateUniqueId() OVERRIDE;
+
+  bool passphrase_required_;
+  std::string eap_identity_;
+  std::string eap_passphrase_;
+
+  // Weak pointer factory for wrapping pointers to this network in callbacks.
+  base::WeakPtrFactory<WimaxNetwork> weak_pointer_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(WimaxNetwork);
 };
-typedef ScopedVector<CellularDataPlan> CellularDataPlanVector;
+
+typedef std::vector<WimaxNetwork*> WimaxNetworkVector;
 
 // Geolocation data.
 struct CellTower {
@@ -1409,40 +1210,7 @@ struct CellTower {
                          // Each unit is roughly 550 meters.
 };
 
-struct WifiAccessPoint {
-  WifiAccessPoint();
-
-  std::string mac_address;  // The mac address of the WiFi node.
-  std::string name;         // The SSID of the WiFi node.
-  base::Time timestamp;     // Timestamp when this AP was detected.
-  int signal_strength;      // Radio signal strength measured in dBm.
-  int signal_to_noise;      // Current signal to noise ratio measured in dB.
-  int channel;              // Wifi channel number.
-};
-
 typedef std::vector<CellTower> CellTowerVector;
-typedef std::vector<WifiAccessPoint> WifiAccessPointVector;
-
-// IP Configuration.
-struct NetworkIPConfig {
-  NetworkIPConfig(const std::string& device_path, IPConfigType type,
-                  const std::string& address, const std::string& netmask,
-                  const std::string& gateway, const std::string& name_servers);
-  ~NetworkIPConfig();
-
-  // Gets the PrefixLength for an IPv4 netmask.
-  // For example, "255.255.255.0" => 24
-  // If the netmask is invalid, this will return -1;
-  // TODO(chocobo): Add support for IPv6.
-  int32 GetPrefixLength() const;
-  std::string device_path;  // This looks like "/device/0011aa22bb33"
-  IPConfigType type;
-  std::string address;
-  std::string netmask;
-  std::string gateway;
-  std::string name_servers;
-};
-typedef std::vector<NetworkIPConfig> NetworkIPConfigVector;
 
 // This class handles the interaction with the ChromeOS network library APIs.
 // Classes can add themselves as observers. Users can get an instance of the
@@ -1581,6 +1349,17 @@ class NetworkLibrary {
   virtual bool cellular_connecting() const = 0;
   virtual bool cellular_connected() const = 0;
 
+  // Return the active Wimax network (or NULL if none active).
+  virtual const WimaxNetwork* wimax_network() const = 0;
+  virtual bool wimax_connecting() const = 0;
+  virtual bool wimax_connected() const = 0;
+
+  // Return the active mobile (cellular or WiMax) network
+  // (or NULL if none active).
+  virtual const Network* mobile_network() const = 0;
+  virtual bool mobile_connecting() const = 0;
+  virtual bool mobile_connected() const = 0;
+
   // Return the active virtual network (or NULL if none active).
   virtual const VirtualNetwork* virtual_network() const = 0;
   virtual bool virtual_network_connecting() const = 0;
@@ -1601,6 +1380,9 @@ class NetworkLibrary {
   // Returns the current list of cellular networks.
   virtual const CellularNetworkVector& cellular_networks() const = 0;
 
+  // Returns the current list of Wimax networks.
+  virtual const WimaxNetworkVector& wimax_networks() const = 0;
+
   // Returns the current list of virtual networks.
   virtual const VirtualNetworkVector& virtual_networks() const = 0;
 
@@ -1613,19 +1395,38 @@ class NetworkLibrary {
 
   virtual bool ethernet_available() const = 0;
   virtual bool wifi_available() const = 0;
+  virtual bool wimax_available() const = 0;
   virtual bool cellular_available() const = 0;
+  virtual bool mobile_available() const = 0;
 
   virtual bool ethernet_enabled() const = 0;
   virtual bool wifi_enabled() const = 0;
+  virtual bool wimax_enabled() const = 0;
   virtual bool cellular_enabled() const = 0;
+  virtual bool mobile_enabled() const = 0;
 
   virtual bool ethernet_busy() const = 0;
   virtual bool wifi_busy() const = 0;
+  virtual bool wimax_busy() const = 0;
   virtual bool cellular_busy() const = 0;
+  virtual bool mobile_busy() const = 0;
 
   virtual bool wifi_scanning() const = 0;
 
   virtual bool offline_mode() const = 0;
+
+  // Returns list of technologies for which captive portal checking is enabled.
+  // This is a comma-separated string; e.g. "ethernet,wifi,cellular".
+  // See kDefaultCheckPortalList in portal_detector.cc.
+  virtual std::string GetCheckPortalList() const = 0;
+
+  // Sets comma-separated list of interfaces that have portal check enabled.
+  // Setting to empty string would disable portal check.
+  virtual void SetCheckPortalList(const std::string& check_portal_list) = 0;
+
+  // Enables portal checking on a default set of interfaces:
+  // "ethernet,wifi,cellular".
+  virtual void SetDefaultCheckPortalList() = 0;
 
   // Returns the current IP address if connected. If not, returns empty string.
   virtual const std::string& IPAddress() const = 0;
@@ -1633,6 +1434,13 @@ class NetworkLibrary {
   // Return a pointer to the device, if it exists, or NULL.
   virtual const NetworkDevice* FindNetworkDeviceByPath(
       const std::string& path) const = 0;
+
+  // Returns device with TYPE_CELLULAR or TYPE_WIMAX.
+  // Returns NULL if none exists.
+  virtual const NetworkDevice* FindMobileDevice() const = 0;
+
+  // Returns device with TYPE_WIMAX. Returns NULL if none exists.
+  virtual const NetworkDevice* FindWimaxDevice() const = 0;
 
   // Returns device with TYPE_CELLULAR. Returns NULL if none exists.
   virtual const NetworkDevice* FindCellularDevice() const = 0;
@@ -1656,6 +1464,8 @@ class NetworkLibrary {
       const std::string& unique_id) const = 0;
   virtual WifiNetwork* FindWifiNetworkByPath(const std::string& path) const = 0;
   virtual CellularNetwork* FindCellularNetworkByPath(
+      const std::string& path) const = 0;
+  virtual WimaxNetwork* FindWimaxNetworkByPath(
       const std::string& path) const = 0;
   virtual VirtualNetwork* FindVirtualNetworkByPath(
       const std::string& path) const = 0;
@@ -1758,6 +1568,13 @@ class NetworkLibrary {
   // Connect to the specified cellular network.
   virtual void ConnectToCellularNetwork(CellularNetwork* network) = 0;
 
+  // Connect to the specified WiMAX network.
+  virtual void ConnectToWimaxNetwork(WimaxNetwork* network) = 0;
+
+  // Connect to the specified WiMAX network and set its profile
+  // to SHARED if |shared| is true, otherwise to USER.
+  virtual void ConnectToWimaxNetwork(WimaxNetwork* network, bool shared) = 0;
+
   // Connect to the specified virtual network.
   virtual void ConnectToVirtualNetwork(VirtualNetwork* network) = 0;
 
@@ -1816,6 +1633,12 @@ class NetworkLibrary {
 
   // Enables/disables the wifi network device.
   virtual void EnableWifiNetworkDevice(bool enable) = 0;
+
+  // Enables/disables mobile (cellular, wimax) network device.
+  virtual void EnableMobileNetworkDevice(bool enable) = 0;
+
+  // Enables/disables the wimax network device.
+  virtual void EnableWimaxNetworkDevice(bool enable) = 0;
 
   // Enables/disables the cellular network device.
   virtual void EnableCellularNetworkDevice(bool enable) = 0;

@@ -1,11 +1,11 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 
-import re
-
 from xml.dom import minidom
+from grit import lazy_re
 from grit.format.policy_templates.writers import xml_formatted_writer
 
 
@@ -203,7 +203,6 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
       linux_text.append('"%s"' % item)
     self.AddText(linux, '[%s]' % ', '.join(linux_text))
 
-
   def _AddListExample(self, parent, policy):
     '''Adds the example value of a 'list' policy to a DOM node. Example output:
     <dl>
@@ -227,11 +226,119 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
       parent: The DOM node for which the example will be added.
       policy: The data structure of a policy.
     '''
-    example_value = policy['example_value']
     examples = self._AddStyledElement(parent, 'dl', ['dd dl'])
     self._AddListExampleWindows(examples, policy)
     self._AddListExampleLinux(examples, policy)
     self._AddListExampleMac(examples, policy)
+
+  def _PythonDictionaryToMacDictionary(self, dictionary, indent=''):
+    '''Converts a python dictionary to an equivalent XML plist.
+
+    Returns a list of lines, with one dictionary entry per line.'''
+    result = [indent + '<dict>']
+    indent += '  '
+    for k in sorted(dictionary.keys()):
+      v = dictionary[k]
+      result.append('%s<key>%s</key>' % (indent, k))
+      value_type = type(v)
+      if value_type == bool:
+        result.append('%s<%s/>' % (indent, 'true' if v else 'false'))
+      elif value_type == int:
+        result.append('%s<integer>%s</integer>' % (indent, v))
+      elif value_type == str:
+        result.append('%s<string>%s</string>' % (indent, v))
+      elif value_type == dict:
+        result += self._PythonDictionaryToMacDictionary(v, indent)
+      elif value_type == list:
+        array = []
+        if len(v) != 0:
+          if type(v[0]) == str:
+            array = ['%s  <string>%s</string>' % (indent, x) for x in v]
+          elif type(v[0]) == dict:
+            for x in v:
+              array += self._PythonDictionaryToMacDictionary(x, indent + '  ')
+          else:
+            raise Exception('Must be list of string or dict.')
+        result.append('%s<array>' % indent)
+        result += array
+        result.append('%s</array>' % indent)
+      else:
+        raise Exception('Invalid example value type %s' % value_type)
+    result.append(indent[2:] + '</dict>')
+    return result
+
+  def _AddDictionaryExampleMac(self, parent, policy):
+    '''Adds an example value for Mac of a 'dict' policy to a DOM node.
+
+    Args:
+      parent: The DOM node for which the example will be added.
+      policy: A policy of type 'dict', for which the Mac example value
+        is generated.
+    '''
+    example_value = policy['example_value']
+    self.AddElement(parent, 'dt', {}, 'Mac:')
+    mac = self._AddStyledElement(parent, 'dd', ['.monospace', '.pre'])
+    mac_text = ['<key>%s</key>' % (policy['name'])]
+    mac_text += self._PythonDictionaryToMacDictionary(example_value)
+    self.AddText(mac, '\n'.join(mac_text))
+
+  def _AddDictionaryExampleWindows(self, parent, policy):
+    '''Adds an example value for Windows of a 'dict' policy to a DOM node.
+
+    Args:
+      parent: The DOM node for which the example will be added.
+      policy: A policy of type 'dict', for which the Windows example value
+        is generated.
+    '''
+    self.AddElement(parent, 'dt', {}, 'Windows:')
+    win = self._AddStyledElement(parent, 'dd', ['.monospace', '.pre'])
+    key_name = self.config['win_reg_mandatory_key_name']
+    example = str(policy['example_value'])
+    self.AddText(win, '%s\\%s = "%s"' % (key_name, policy['name'], example))
+
+  def _AddDictionaryExampleLinux(self, parent, policy):
+    '''Adds an example value for Linux of a 'dict' policy to a DOM node.
+
+    Args:
+      parent: The DOM node for which the example will be added.
+      policy: A policy of type 'dict', for which the Linux example value
+        is generated.
+    '''
+    self.AddElement(parent, 'dt', {}, 'Linux:')
+    linux = self._AddStyledElement(parent, 'dd', ['.monospace'])
+    example = str(policy['example_value'])
+    self.AddText(linux, '%s: %s' % (policy['name'], example))
+
+  def _AddDictionaryExample(self, parent, policy):
+    '''Adds the example value of a 'dict' policy to a DOM node. Example output:
+    <dl>
+      <dt>Windows:</dt>
+      <dd>
+        Software\Policies\Chromium\ProxySettings = "{ 'ProxyMode': 'direct' }"
+      </dd>
+      <dt>Linux:</dt>
+      <dd>"ProxySettings": {
+        "ProxyMode": "direct"
+      }
+      </dd>
+      <dt>Mac:</dt>
+      <dd>
+        <key>ProxySettings</key>
+        <dict>
+          <key>ProxyMode</key>
+          <string>direct</string>
+        </dict>
+      </dd>
+    </dl>
+
+    Args:
+      parent: The DOM node for which the example will be added.
+      policy: The data structure of a policy.
+    '''
+    examples = self._AddStyledElement(parent, 'dl', ['dd dl'])
+    self._AddDictionaryExampleWindows(examples, policy)
+    self._AddDictionaryExampleLinux(examples, policy)
+    self._AddDictionaryExampleMac(examples, policy)
 
   def _AddExample(self, parent, policy):
     '''Adds the HTML DOM representation of the example value of a policy to
@@ -269,6 +376,8 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
       self.AddText(parent, '"%s"' % (example_value))
     elif policy_type == 'list':
       self._AddListExample(parent, policy)
+    elif policy_type == 'dict':
+      self._AddDictionaryExample(parent, policy)
     else:
       raise Exception('Unknown policy type: ' + policy_type)
 
@@ -512,6 +621,7 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
       'int-enum': 'Integer (REG_DWORD)',
       'string-enum': 'String (REG_SZ)',
       'list': 'List of strings',
+      'dict': 'Dictionary (REG_SZ, encoded as a JSON string)',
     }
     # The CSS style-sheet used for the document. It will be used in Google
     # Sites, which strips class attributes from HTML tags. To work around this,
@@ -535,7 +645,7 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     }
 
     # A simple regexp to search for URLs. It is enough for now.
-    self._url_matcher = re.compile('(http://[^\\s]*[^\\s\\.])')
+    self._url_matcher = lazy_re.compile('(http://[^\\s]*[^\\s\\.])')
 
   def GetTemplateText(self):
     # Return the text representation of the main <div> tag.

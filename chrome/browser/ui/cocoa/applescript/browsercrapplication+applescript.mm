@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,9 @@
 #import "base/memory/scoped_nsobject.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #import "chrome/browser/ui/cocoa/applescript/bookmark_folder_applescript.h"
 #import "chrome/browser/ui/cocoa/applescript/constants_applescript.h"
@@ -75,7 +77,7 @@
     return nil;
   }
 
-  BookmarkModel* model = lastProfile->GetBookmarkModel();
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(lastProfile);
   if (!model->IsLoaded()) {
     AppleScript::SetError(AppleScript::errBookmarkModelLoad);
     return nil;
@@ -98,7 +100,7 @@
     return nil;
   }
 
-  BookmarkModel* model = lastProfile->GetBookmarkModel();
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(lastProfile);
   if (!model->IsLoaded()) {
     AppleScript::SetError(AppleScript::errBookmarkModelLoad);
     return NULL;

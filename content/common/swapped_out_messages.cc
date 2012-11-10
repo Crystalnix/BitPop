@@ -4,6 +4,7 @@
 
 #include "content/common/swapped_out_messages.h"
 
+#include "content/common/accessibility_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_client.h"
 
@@ -18,19 +19,24 @@ bool SwappedOutMessages::CanSendWhileSwappedOut(const IPC::Message* msg) {
     case ViewHostMsg_HandleInputEvent_ACK::ID:
     case ViewHostMsg_PaintAtSize_ACK::ID:
     case ViewHostMsg_UpdateRect::ID:
+    // Allow targeted navigations while swapped out.
+    case ViewHostMsg_OpenURL::ID:
+    case ViewHostMsg_Focus::ID:
     // Handled by RenderView.
     case ViewHostMsg_RenderViewGone::ID:
     case ViewHostMsg_ShouldClose_ACK::ID:
     case ViewHostMsg_SwapOut_ACK::ID:
     case ViewHostMsg_ClosePage_ACK::ID:
+    case ViewHostMsg_DomOperationResponse::ID:
+    // Allow cross-process JavaScript calls.
+    case ViewHostMsg_RouteCloseEvent::ID:
+    case ViewHostMsg_RouteMessageEvent::ID:
       return true;
     default:
       break;
   }
 
-  // Check with the embedder as well.
-  ContentClient* client = GetContentClient();
-  return client->CanSendWhileSwappedOut(msg);
+  return false;
 }
 
 bool SwappedOutMessages::CanHandleWhileSwappedOut(
@@ -63,7 +69,7 @@ bool SwappedOutMessages::CanHandleWhileSwappedOut(
     // Sends an ACK.
     case ViewHostMsg_RequestMove::ID:
     // Sends an ACK.
-    case ViewHostMsg_AccessibilityNotifications::ID:
+    case AccessibilityHostMsg_Notifications::ID:
 #if defined(USE_X11)
     // Synchronous message when leaving a page with plugin.  In this case,
     // we want to destroy the plugin rather than return an error message.

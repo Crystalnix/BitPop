@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,6 +30,56 @@ namespace gles2 {
 class GLES2DecoderTest2 : public GLES2DecoderTestBase {
  public:
   GLES2DecoderTest2() { }
+};
+
+template <>
+void GLES2DecoderTestBase::SpecializedSetup<GenQueriesEXT, 0>(
+    bool valid) {
+  if (!valid) {
+    // Make the client_query_id_ so that trying to make it again
+    // will fail.
+    GetSharedMemoryAs<GLuint*>()[0] = client_query_id_;
+    GenQueriesEXT cmd;
+    cmd.Init(1, shared_memory_id_, shared_memory_offset_);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  }
+};
+
+template <>
+void GLES2DecoderTestBase::SpecializedSetup<GenQueriesEXTImmediate, 0>(
+    bool valid) {
+  if (!valid) {
+    // Make the client_query_id_ so that trying to make it again
+    // will fail.
+    GetSharedMemoryAs<GLuint*>()[0] = client_query_id_;
+    GenQueriesEXT cmd;
+    cmd.Init(1, shared_memory_id_, shared_memory_offset_);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  }
+};
+
+template <>
+void GLES2DecoderTestBase::SpecializedSetup<DeleteQueriesEXT, 0>(
+    bool valid) {
+  if (valid) {
+    // Make the client_query_id_ so that trying to delete it will succeed.
+    GetSharedMemoryAs<GLuint*>()[0] = client_query_id_;
+    GenQueriesEXT cmd;
+    cmd.Init(1, shared_memory_id_, shared_memory_offset_);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  }
+};
+
+template <>
+void GLES2DecoderTestBase::SpecializedSetup<DeleteQueriesEXTImmediate, 0>(
+    bool valid) {
+  if (valid) {
+    // Make the client_query_id_ so that trying to delete it will succeed.
+    GetSharedMemoryAs<GLuint*>()[0] = client_query_id_;
+    GenQueriesEXT cmd;
+    cmd.Init(1, shared_memory_id_, shared_memory_offset_);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  }
 };
 
 template <>
@@ -135,6 +185,11 @@ void GLES2DecoderTestBase::SpecializedSetup<Uniform2f, 0>(bool /* valid */) {
 };
 
 template <>
+void GLES2DecoderTestBase::SpecializedSetup<Uniform2i, 0>(bool /* valid */) {
+  SetupShaderForUniform();
+};
+
+template <>
 void GLES2DecoderTestBase::SpecializedSetup<Uniform2fv, 0>(bool /* valid */) {
   SetupShaderForUniform();
 };
@@ -162,6 +217,11 @@ void GLES2DecoderTestBase::SpecializedSetup<Uniform3f, 0>(bool /* valid */) {
 };
 
 template <>
+void GLES2DecoderTestBase::SpecializedSetup<Uniform3i, 0>(bool /* valid */) {
+  SetupShaderForUniform();
+};
+
+template <>
 void GLES2DecoderTestBase::SpecializedSetup<Uniform3fv, 0>(bool /* valid */) {
   SetupShaderForUniform();
 };
@@ -185,6 +245,11 @@ void GLES2DecoderTestBase::SpecializedSetup<Uniform3ivImmediate, 0>(
 
 template <>
 void GLES2DecoderTestBase::SpecializedSetup<Uniform4f, 0>(bool /* valid */) {
+  SetupShaderForUniform();
+};
+
+template <>
+void GLES2DecoderTestBase::SpecializedSetup<Uniform4i, 0>(bool /* valid */) {
   SetupShaderForUniform();
 };
 

@@ -4,34 +4,44 @@
 
 #include "ui/views/controls/textfield/textfield.h"
 
-#if defined(TOOLKIT_USES_GTK)
-#include <gdk/gdkkeysyms.h>
-#endif
-
 #include <string>
 
+#include "base/command_line.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/range/range.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/selection_model.h"
 #include "ui/views/controls/native/native_view_host.h"
+#include "ui/views/controls/textfield/native_textfield_views.h"
 #include "ui/views/controls/textfield/native_textfield_wrapper.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 #include "ui/views/widget/widget.h"
 
-#if defined(OS_LINUX)
-#include "ui/base/keycodes/keyboard_code_conversion_gtk.h"
-#elif defined(OS_WIN)
+#if defined(OS_WIN)
 #include "base/win/win_util.h"
 // TODO(beng): this should be removed when the OS_WIN hack from
 // ViewHierarchyChanged is removed.
-#include "ui/views/controls/textfield/native_textfield_views.h"
 #include "ui/views/controls/textfield/native_textfield_win.h"
 #endif
+
+namespace {
+
+// Default placeholder text color.
+const SkColor kDefaultPlaceholderTextColor = SK_ColorLTGRAY;
+
+#if defined(OS_WIN) && !defined(USE_AURA)
+bool UseNativeTextfieldViews() {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  return command_line->HasSwitch(switches::kEnableViewsTextfield);
+}
+#endif
+
+}  // namespace
 
 namespace views {
 
@@ -52,9 +62,12 @@ Textfield::Textfield()
       use_default_text_color_(true),
       background_color_(SK_ColorWHITE),
       use_default_background_color_(true),
+      cursor_color_(SK_ColorBLACK),
+      use_default_cursor_color_(true),
       initialized_(false),
       horizontal_margins_were_set_(false),
       vertical_margins_were_set_(false),
+      placeholder_text_color_(kDefaultPlaceholderTextColor),
       text_input_type_(ui::TEXT_INPUT_TYPE_TEXT) {
   set_focusable(true);
 }
@@ -70,9 +83,12 @@ Textfield::Textfield(StyleFlags style)
       use_default_text_color_(true),
       background_color_(SK_ColorWHITE),
       use_default_background_color_(true),
+      cursor_color_(SK_ColorBLACK),
+      use_default_cursor_color_(true),
       initialized_(false),
       horizontal_margins_were_set_(false),
       vertical_margins_were_set_(false),
+      placeholder_text_color_(kDefaultPlaceholderTextColor),
       text_input_type_(ui::TEXT_INPUT_TYPE_TEXT) {
   set_focusable(true);
   if (IsObscured())
@@ -97,6 +113,7 @@ void Textfield::SetReadOnly(bool read_only) {
     native_wrapper_->UpdateReadOnly();
     native_wrapper_->UpdateTextColor();
     native_wrapper_->UpdateBackgroundColor();
+    native_wrapper_->UpdateCursorColor();
   }
 }
 
@@ -142,9 +159,9 @@ void Textfield::AppendText(const string16& text) {
     native_wrapper_->AppendText(text);
 }
 
-void Textfield::SelectAll() {
+void Textfield::SelectAll(bool reversed) {
   if (native_wrapper_)
-    native_wrapper_->SelectAll();
+    native_wrapper_->SelectAll(reversed);
 }
 
 string16 Textfield::GetSelectedText() const {
@@ -189,6 +206,19 @@ void Textfield::UseDefaultBackgroundColor() {
   use_default_background_color_ = true;
   if (native_wrapper_)
     native_wrapper_->UpdateBackgroundColor();
+}
+
+void Textfield::SetCursorColor(SkColor color) {
+  cursor_color_ = color;
+  use_default_cursor_color_ = false;
+  if (native_wrapper_)
+    native_wrapper_->UpdateCursorColor();
+}
+
+void Textfield::UseDefaultCursorColor() {
+  use_default_cursor_color_ = true;
+  if (native_wrapper_)
+    native_wrapper_->UpdateCursorColor();
 }
 
 void Textfield::SetFont(const gfx::Font& font) {
@@ -244,6 +274,7 @@ void Textfield::UpdateAllProperties() {
     native_wrapper_->UpdateText();
     native_wrapper_->UpdateTextColor();
     native_wrapper_->UpdateBackgroundColor();
+    native_wrapper_->UpdateCursorColor();
     native_wrapper_->UpdateReadOnly();
     native_wrapper_->UpdateFont();
     native_wrapper_->UpdateEnabled();
@@ -339,7 +370,7 @@ gfx::Size Textfield::GetPreferredSize() {
 }
 
 void Textfield::AboutToRequestFocusFromTabTraversal(bool reverse) {
-  SelectAll();
+  SelectAll(false);
 }
 
 bool Textfield::SkipDefaultKeyEventProcessing(const KeyEvent& e) {
@@ -360,11 +391,6 @@ bool Textfield::SkipDefaultKeyEventProcessing(const KeyEvent& e) {
     return true;
 #endif
   return false;
-}
-
-void Textfield::OnPaintBackground(gfx::Canvas* canvas) {
-  // Overridden to be public - gtk_views_entry.cc wants to call it.
-  View::OnPaintBackground(canvas);
 }
 
 void Textfield::OnPaintFocusBorder(gfx::Canvas* canvas) {
@@ -437,21 +463,32 @@ void Textfield::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
     UpdateAllProperties();
 
 #if defined(OS_WIN) && !defined(USE_AURA)
-    if (!views::Widget::IsPureViews()) {
-      // TODO(beng): remove this once NativeTextfieldWin subclasses
-      // NativeControlWin. This is currently called to perform post-AddChildView
-      // initialization for the wrapper. The GTK version subclasses things
-      // correctly and doesn't need this.
-      //
-      // Remove the include for native_textfield_win.h above when you fix this.
+    // TODO(beng): Remove this once NativeTextfieldWin subclasses
+    // NativeControlWin. This is currently called to perform post-AddChildView
+    // initialization for the wrapper.
+    //
+    // Remove the include for native_textfield_win.h above when you fix this.
+    if (!UseNativeTextfieldViews())
       static_cast<NativeTextfieldWin*>(native_wrapper_)->AttachHack();
-    }
 #endif
   }
 }
 
 std::string Textfield::GetClassName() const {
   return kViewClassName;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// NativeTextfieldWrapper, public:
+
+// static
+NativeTextfieldWrapper* NativeTextfieldWrapper::CreateWrapper(
+    Textfield* field) {
+#if defined(OS_WIN) && !defined(USE_AURA)
+  if (!UseNativeTextfieldViews())
+    return new NativeTextfieldWin(field);
+#endif
+  return new NativeTextfieldViews(field);
 }
 
 }  // namespace views

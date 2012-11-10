@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,9 +15,9 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/service/service_process.h"
 #include "net/base/cert_verifier.h"
-#include "net/base/cookie_monster.h"
 #include "net/base/host_resolver.h"
 #include "net/base/ssl_config_service_defaults.h"
+#include "net/cookies/cookie_monster.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
@@ -25,6 +25,7 @@
 #include "net/http/http_server_properties_impl.h"
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_service.h"
+#include "net/url_request/url_request_throttler_manager.h"
 
 namespace {
 // Copied from webkit/glue/user_agent.cc. We don't want to pull in a dependency
@@ -115,13 +116,14 @@ ServiceURLRequestContext::ServiceURLRequestContext(
                                     NULL));
   storage_.set_proxy_service(net::ProxyService::CreateUsingSystemProxyResolver(
       net_proxy_config_service, 0u, NULL));
-  storage_.set_cert_verifier(new net::CertVerifier);
+  storage_.set_cert_verifier(net::CertVerifier::CreateDefault());
   storage_.set_ftp_transaction_factory(
       new net::FtpNetworkLayer(host_resolver()));
   storage_.set_ssl_config_service(new net::SSLConfigServiceDefaults);
   storage_.set_http_auth_handler_factory(
       net::HttpAuthHandlerFactory::CreateDefault(host_resolver()));
   storage_.set_http_server_properties(new net::HttpServerPropertiesImpl);
+  storage_.set_throttler_manager(new net::URLRequestThrottlerManager);
 
   net::HttpNetworkSession::Params session_params;
   session_params.host_resolver = host_resolver();
@@ -154,7 +156,7 @@ ServiceURLRequestContext::~ServiceURLRequestContext() {
 }
 
 ServiceURLRequestContextGetter::ServiceURLRequestContextGetter()
-    : io_message_loop_proxy_(
+    : network_task_runner_(
           g_service_process->io_thread()->message_loop_proxy()) {
   // Build the default user agent.
   user_agent_ = MakeUserAgentForServiceProcess();
@@ -164,22 +166,22 @@ ServiceURLRequestContextGetter::ServiceURLRequestContextGetter()
   DCHECK(g_service_process);
   proxy_config_service_.reset(
       net::ProxyService::CreateSystemProxyConfigService(
-          g_service_process->io_thread()->message_loop(),
+          g_service_process->io_thread()->message_loop_proxy(),
           g_service_process->file_thread()->message_loop()));
 }
 
 net::URLRequestContext*
 ServiceURLRequestContextGetter::GetURLRequestContext() {
-  if (!url_request_context_)
-    url_request_context_ =
+  if (!url_request_context_.get())
+    url_request_context_.reset(
         new ServiceURLRequestContext(user_agent_,
-                                     proxy_config_service_.release());
-  return url_request_context_;
+                                     proxy_config_service_.release()));
+  return url_request_context_.get();
 }
 
-scoped_refptr<base::MessageLoopProxy>
-ServiceURLRequestContextGetter::GetIOMessageLoopProxy() const {
-  return io_message_loop_proxy_;
+scoped_refptr<base::SingleThreadTaskRunner>
+ServiceURLRequestContextGetter::GetNetworkTaskRunner() const {
+  return network_task_runner_;
 }
 
 ServiceURLRequestContextGetter::~ServiceURLRequestContextGetter() {}

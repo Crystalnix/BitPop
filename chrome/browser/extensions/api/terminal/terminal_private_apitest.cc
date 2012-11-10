@@ -2,16 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/command_line.h"
 #include "chrome/browser/extensions/extension_apitest.h"
+#include "chrome/common/chrome_switches.h"
 
 class ExtensionTerminalPrivateApiTest : public ExtensionApiTest {
+  virtual void SetUpCommandLine(CommandLine* command_line) {
+    ExtensionApiTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitchASCII(
+        switches::kWhitelistedExtensionID, "kidcpjlbjdmcnmccjhjdckhbngnhnepk");
+  }
 };
 
 IN_PROC_BROWSER_TEST_F(ExtensionTerminalPrivateApiTest, TerminalTest) {
-  EXPECT_TRUE(RunComponentExtensionTest("terminal/component_extension"))
+  EXPECT_TRUE(RunExtensionSubtest("terminal/component_extension", "test.html"))
       << message_;
-};
-
-IN_PROC_BROWSER_TEST_F(ExtensionTerminalPrivateApiTest, NoPermission) {
-  EXPECT_TRUE(RunExtensionTest("terminal/no_permission")) << message_;
 };

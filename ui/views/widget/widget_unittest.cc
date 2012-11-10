@@ -8,6 +8,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
+#include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/test/test_views_delegate.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/views_delegate.h"
@@ -18,8 +19,6 @@
 #include "ui/views/widget/native_widget_aura.h"
 #elif defined(OS_WIN)
 #include "ui/views/widget/native_widget_win.h"
-#elif defined(TOOLKIT_USES_GTK)
-#include "ui/views/widget/native_widget_gtk.h"
 #endif
 
 namespace views {
@@ -30,29 +29,27 @@ namespace {
 typedef NativeWidgetAura NativeWidgetPlatform;
 #elif defined(OS_WIN)
 typedef NativeWidgetWin NativeWidgetPlatform;
-#elif defined(TOOLKIT_USES_GTK)
-typedef NativeWidgetGtk NativeWidgetPlatform;
 #endif
 
-// A widget that assumes mouse capture always works. It won't on Gtk/Aura in
+// A widget that assumes mouse capture always works. It won't on Aura in
 // testing, so we mock it.
-#if defined(TOOLKIT_USES_GTK) || defined(USE_AURA)
+#if defined(USE_AURA)
 class NativeWidgetCapture : public NativeWidgetPlatform {
  public:
-  NativeWidgetCapture(internal::NativeWidgetDelegate* delegate)
+  explicit NativeWidgetCapture(internal::NativeWidgetDelegate* delegate)
       : NativeWidgetPlatform(delegate),
         mouse_capture_(false) {}
   virtual ~NativeWidgetCapture() {}
 
-  virtual void SetMouseCapture() OVERRIDE {
+  virtual void SetCapture() OVERRIDE {
     mouse_capture_ = true;
   }
-  virtual void ReleaseMouseCapture() OVERRIDE {
+  virtual void ReleaseCapture() OVERRIDE {
     if (mouse_capture_)
       delegate()->OnMouseCaptureLost();
     mouse_capture_ = false;
   }
-  virtual bool HasMouseCapture() const OVERRIDE {
+  virtual bool HasCapture() const OVERRIDE {
     return mouse_capture_;
   }
 
@@ -69,8 +66,6 @@ class NativeWidgetCapture : public NativeWidgetPlatform {
 typedef NativeWidgetCapture NativeWidgetPlatformForTest;
 #elif defined(OS_WIN)
 typedef NativeWidgetWin NativeWidgetPlatformForTest;
-#elif defined(TOOLKIT_USES_GTK)
-typedef NativeWidgetCapture NativeWidgetPlatformForTest;
 #endif
 
 // A view that always processes all mouse events.
@@ -147,7 +142,7 @@ Widget* CreateChildNativeWidget() {
 
 bool WidgetHasMouseCapture(const Widget* widget) {
   return static_cast<const internal::NativeWidgetPrivate*>(widget->
-      native_widget())->HasMouseCapture();
+      native_widget())->HasCapture();
 }
 
 ui::WindowShowState GetWidgetShowState(const Widget* widget) {
@@ -159,19 +154,34 @@ ui::WindowShowState GetWidgetShowState(const Widget* widget) {
                               ui::SHOW_STATE_NORMAL;
 }
 
+TEST_F(WidgetTest, WidgetInitParams) {
+  ASSERT_FALSE(views_delegate().UseTransparentWindows());
+
+  // Widgets are not transparent by default.
+  Widget::InitParams init1;
+  EXPECT_FALSE(init1.transparent);
+
+  // Non-window widgets are not transparent either.
+  Widget::InitParams init2(Widget::InitParams::TYPE_MENU);
+  EXPECT_FALSE(init2.transparent);
+
+  // A ViewsDelegate can set windows transparent by default.
+  views_delegate().SetUseTransparentWindows(true);
+  Widget::InitParams init3;
+  EXPECT_TRUE(init3.transparent);
+
+  // Non-window widgets stay opaque.
+  Widget::InitParams init4(Widget::InitParams::TYPE_MENU);
+  EXPECT_FALSE(init4.transparent);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Widget::GetTopLevelWidget tests.
 
 TEST_F(WidgetTest, GetTopLevelWidget_Native) {
   // Create a hierarchy of native widgets.
   Widget* toplevel = CreateTopLevelPlatformWidget();
-#if defined(TOOLKIT_USES_GTK)
-  NativeWidgetGtk* native_widget =
-      static_cast<NativeWidgetGtk*>(toplevel->native_widget());
-  gfx::NativeView parent = native_widget->window_contents();
-#else
   gfx::NativeView parent = toplevel->GetNativeView();
-#endif
   Widget* child = CreateChildPlatformWidget(parent);
 
   EXPECT_EQ(toplevel, toplevel->GetTopLevelWidget());
@@ -267,13 +277,7 @@ TEST_F(WidgetTest, ChangeActivation) {
 // Tests visibility of child widgets.
 TEST_F(WidgetTest, Visibility) {
   Widget* toplevel = CreateTopLevelPlatformWidget();
-#if defined(TOOLKIT_USES_GTK)
-  NativeWidgetGtk* native_widget =
-      static_cast<NativeWidgetGtk*>(toplevel->native_widget());
-  gfx::NativeView parent = native_widget->window_contents();
-#else
   gfx::NativeView parent = toplevel->GetNativeView();
-#endif
   Widget* child = CreateChildPlatformWidget(parent);
 
   EXPECT_FALSE(toplevel->IsVisible());
@@ -396,7 +400,7 @@ class OwnershipTestNativeWidgetPlatform : public NativeWidgetPlatformForTest {
 // A Widget subclass that updates a bag of state when it is destroyed.
 class OwnershipTestWidget : public Widget {
  public:
-  OwnershipTestWidget(OwnershipTestState* state) : state_(state) {}
+  explicit OwnershipTestWidget(OwnershipTestState* state) : state_(state) {}
   virtual ~OwnershipTestWidget() {
     state_->widget_deleted = true;
   }
@@ -502,12 +506,7 @@ TEST_F(WidgetOwnershipTest, Ownership_PlatformNativeWidgetOwnsWidget) {
 }
 
 // NativeWidget owns its Widget, part 2: NativeWidget is a NativeWidget.
-#if defined(TOOLKIT_USES_GTK)
-// Temporarily disable the test (http://crbug.com/104945).
-TEST_F(WidgetOwnershipTest, DISABLED_Ownership_ViewsNativeWidgetOwnsWidget) {
-#else
 TEST_F(WidgetOwnershipTest, Ownership_ViewsNativeWidgetOwnsWidget) {
-#endif
   OwnershipTestState state;
 
   Widget* toplevel = CreateTopLevelPlatformWidget();
@@ -547,8 +546,6 @@ TEST_F(WidgetOwnershipTest,
   delete widget->GetNativeView();
 #elif defined(OS_WIN)
   DestroyWindow(widget->GetNativeView());
-#elif defined(TOOLKIT_USES_GTK)
-  gtk_widget_destroy(widget->GetNativeView());
 #endif
 
   EXPECT_TRUE(state.widget_deleted);
@@ -557,14 +554,8 @@ TEST_F(WidgetOwnershipTest,
 
 // NativeWidget owns its Widget, part 4: NativeWidget is a NativeWidget,
 // destroyed by the view hierarchy that contains it.
-#if defined(TOOLKIT_USES_GTK)
-// Temporarily disable the test (http://crbug.com/104945).
-TEST_F(WidgetOwnershipTest,
-       DISABLED_Ownership_ViewsNativeWidgetOwnsWidget_NativeDestroy) {
-#else
 TEST_F(WidgetOwnershipTest,
        Ownership_ViewsNativeWidgetOwnsWidget_NativeDestroy) {
-#endif
   OwnershipTestState state;
 
   Widget* toplevel = CreateTopLevelPlatformWidget();
@@ -619,7 +610,7 @@ TEST_F(WidgetOwnershipTest,
 //
 
 class WidgetObserverTest : public WidgetTest,
-                                  Widget::Observer {
+                           public WidgetObserver {
  public:
   WidgetObserverTest()
       : active_(NULL),
@@ -631,6 +622,7 @@ class WidgetObserverTest : public WidgetTest,
 
   virtual ~WidgetObserverTest() {}
 
+  // Overridden from WidgetObserver:
   virtual void OnWidgetClosing(Widget* widget) OVERRIDE {
     if (active_ == widget)
       active_ = NULL;
@@ -744,29 +736,45 @@ TEST_F(WidgetObserverTest, DISABLED_VisibilityChange) {
   toplevel->CloseNow();
 }
 
+TEST_F(WidgetObserverTest, DestroyBubble) {
+  Widget* anchor = CreateTopLevelPlatformWidget();
+  View* view = new View;
+  anchor->SetContentsView(view);
+  anchor->Show();
+
+  BubbleDelegateView* bubble_delegate =
+      new BubbleDelegateView(view, BubbleBorder::NONE);
+  Widget* bubble_widget(BubbleDelegateView::CreateBubble(bubble_delegate));
+  bubble_widget->Show();
+  bubble_widget->CloseNow();
+
+  anchor->Hide();
+  anchor->CloseNow();
+}
+
 #if !defined(USE_AURA) && defined(OS_WIN)
 // Aura needs shell to maximize/fullscreen window.
 // NativeWidgetGtk doesn't implement GetRestoredBounds.
 TEST_F(WidgetTest, GetRestoredBounds) {
   Widget* toplevel = CreateTopLevelPlatformWidget();
-  EXPECT_EQ(toplevel->GetWindowScreenBounds().ToString(),
+  EXPECT_EQ(toplevel->GetWindowBoundsInScreen().ToString(),
             toplevel->GetRestoredBounds().ToString());
   toplevel->Show();
   toplevel->Maximize();
   RunPendingMessages();
-  EXPECT_NE(toplevel->GetWindowScreenBounds().ToString(),
+  EXPECT_NE(toplevel->GetWindowBoundsInScreen().ToString(),
             toplevel->GetRestoredBounds().ToString());
   EXPECT_GT(toplevel->GetRestoredBounds().width(), 0);
   EXPECT_GT(toplevel->GetRestoredBounds().height(), 0);
 
   toplevel->Restore();
   RunPendingMessages();
-  EXPECT_EQ(toplevel->GetWindowScreenBounds().ToString(),
+  EXPECT_EQ(toplevel->GetWindowBoundsInScreen().ToString(),
             toplevel->GetRestoredBounds().ToString());
 
   toplevel->SetFullscreen(true);
   RunPendingMessages();
-  EXPECT_NE(toplevel->GetWindowScreenBounds().ToString(),
+  EXPECT_NE(toplevel->GetWindowBoundsInScreen().ToString(),
             toplevel->GetRestoredBounds().ToString());
   EXPECT_GT(toplevel->GetRestoredBounds().width(), 0);
   EXPECT_GT(toplevel->GetRestoredBounds().height(), 0);

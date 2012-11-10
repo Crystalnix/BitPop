@@ -4,7 +4,6 @@
 
 #ifndef UI_GFX_PLATFORM_FONT_MAC_H_
 #define UI_GFX_PLATFORM_FONT_MAC_H_
-#pragma once
 
 #include "base/compiler_specific.h"
 #include "ui/gfx/platform_font.h"
@@ -14,7 +13,6 @@ namespace gfx {
 class PlatformFontMac : public PlatformFont {
  public:
   PlatformFontMac();
-  explicit PlatformFontMac(const Font& other);
   explicit PlatformFontMac(NativeFont native_font);
   PlatformFontMac(const std::string& font_name,
                   int font_size);
@@ -24,6 +22,7 @@ class PlatformFontMac : public PlatformFont {
   virtual int GetHeight() const OVERRIDE;
   virtual int GetBaseline() const OVERRIDE;
   virtual int GetAverageCharacterWidth() const OVERRIDE;
+  virtual int GetStringWidth(const string16& text) const OVERRIDE;
   virtual int GetExpectedTextWidth(int length) const OVERRIDE;
   virtual int GetStyle() const OVERRIDE;
   virtual std::string GetFontName() const OVERRIDE;

@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_SYNC_GLUE_BOOKMARK_DATA_TYPE_CONTROLLER_H__
 #define CHROME_BROWSER_SYNC_GLUE_BOOKMARK_DATA_TYPE_CONTROLLER_H__
-#pragma once
 
 #include <string>
 
@@ -23,10 +22,9 @@ class BookmarkDataTypeController : public FrontendDataTypeController,
       ProfileSyncComponentsFactory* profile_sync_factory,
       Profile* profile,
       ProfileSyncService* sync_service);
-  virtual ~BookmarkDataTypeController();
 
   // FrontendDataTypeController interface.
-  virtual syncable::ModelType type() const OVERRIDE;
+  virtual syncer::ModelType type() const OVERRIDE;
 
   // content::NotificationObserver interface.
   virtual void Observe(int type,
@@ -34,15 +32,16 @@ class BookmarkDataTypeController : public FrontendDataTypeController,
                        const content::NotificationDetails& details) OVERRIDE;
 
  private:
+  virtual ~BookmarkDataTypeController();
+
   // FrontendDataTypeController interface.
   virtual bool StartModels() OVERRIDE;
   virtual void CleanUpState() OVERRIDE;
   virtual void CreateSyncComponents() OVERRIDE;
-  virtual void RecordUnrecoverableError(
-      const tracked_objects::Location& from_here,
-      const std::string& message) OVERRIDE;
-  virtual void RecordAssociationTime(base::TimeDelta time) OVERRIDE;
-  virtual void RecordStartFailure(StartResult result) OVERRIDE;
+
+  // Helper that returns true iff both the bookmark model and the history
+  // service have finished loading.
+  bool DependentsLoaded();
 
   content::NotificationRegistrar registrar_;
 

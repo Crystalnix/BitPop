@@ -21,22 +21,9 @@ namespace webkit_media {
 //
 // TODO(hclam): The fast paint method should support flipping and mirroring.
 // Disable the flipping and mirroring checks once we have it.
-static bool CanFastPaint(SkCanvas* canvas, const gfx::Rect& dest_rect) {
-  // Fast paint does not handle opacity value other than 1.0. Hence use slow
-  // paint if opacity is not 1.0. Since alpha = opacity * 0xFF, we check that
-  // alpha != 0xFF.
-  //
-  // Additonal notes: If opacity = 0.0, the chrome display engine does not try
-  // to render the video. So, this method is never called. However, if the
-  // opacity = 0.0001, alpha is again 0, but the display engine tries to render
-  // the video. If we use Fast paint, the video shows up with opacity = 1.0.
-  // Hence we use slow paint also in the case where alpha = 0. It would be ideal
-  // if rendering was never called even for cases where alpha is 0. Created
-  // bug 48090 for this.
-  SkCanvas::LayerIter layer_iter(canvas, false);
-  SkColor sk_color = layer_iter.paint().getColor();
-  SkAlpha sk_alpha = SkColorGetA(sk_color);
-  if (sk_alpha != 0xFF) {
+static bool CanFastPaint(SkCanvas* canvas, const gfx::Rect& dest_rect,
+                         uint8_t alpha) {
+  if (alpha != 0xFF) {
     return false;
   }
 
@@ -60,24 +47,8 @@ static bool CanFastPaint(SkCanvas* canvas, const gfx::Rect& dest_rect) {
   return false;
 }
 
-// Slow paint does a scaled blit from an RGB source.
-static void SlowPaint(
-    const SkBitmap& bitmap,
-    SkCanvas* canvas,
-    const gfx::Rect& dest_rect) {
-  SkMatrix matrix;
-  matrix.setTranslate(static_cast<SkScalar>(dest_rect.x()),
-                      static_cast<SkScalar>(dest_rect.y()));
-  if (dest_rect.width() != bitmap.width() ||
-      dest_rect.height() != bitmap.height()) {
-    matrix.preScale(SkIntToScalar(dest_rect.width()) /
-                    SkIntToScalar(bitmap.width()),
-                    SkIntToScalar(dest_rect.height()) /
-                    SkIntToScalar(bitmap.height()));
-  }
-  SkPaint paint;
-  paint.setFlags(SkPaint::kFilterBitmap_Flag);
-  canvas->drawBitmapMatrix(bitmap, matrix, &paint);
+static bool IsEitherYV12OrYV16(media::VideoFrame::Format format) {
+  return format == media::VideoFrame::YV12 || format == media::VideoFrame::YV16;
 }
 
 // Fast paint does YUV => RGB, scaling, blitting all in one step into the
@@ -87,8 +58,7 @@ static void FastPaint(
     const scoped_refptr<media::VideoFrame>& video_frame,
     SkCanvas* canvas,
     const gfx::Rect& dest_rect) {
-  DCHECK(video_frame->format() == media::VideoFrame::YV12 ||
-         video_frame->format() == media::VideoFrame::YV16);
+  DCHECK(IsEitherYV12OrYV16(video_frame->format())) << video_frame->format();
   DCHECK_EQ(video_frame->stride(media::VideoFrame::kUPlane),
             video_frame->stride(media::VideoFrame::kVPlane));
 
@@ -139,19 +109,19 @@ static void FastPaint(
   DCHECK_NE(0, dest_rect.width());
   DCHECK_NE(0, dest_rect.height());
   size_t frame_clip_width = local_dest_irect.width() *
-      video_frame->width() / local_dest_irect_saved.width();
+      video_frame->data_size().width() / local_dest_irect_saved.width();
   size_t frame_clip_height = local_dest_irect.height() *
-      video_frame->height() / local_dest_irect_saved.height();
+      video_frame->data_size().height() / local_dest_irect_saved.height();
 
   // Project the "left" and "top" of the final destination rect to local
   // coordinates of the video frame, use these values to find the offsets
   // in the video frame to start reading.
   size_t frame_clip_left =
       (local_dest_irect.fLeft - local_dest_irect_saved.fLeft) *
-      video_frame->width() / local_dest_irect_saved.width();
+      video_frame->data_size().width() / local_dest_irect_saved.width();
   size_t frame_clip_top =
       (local_dest_irect.fTop - local_dest_irect_saved.fTop) *
-      video_frame->height() / local_dest_irect_saved.height();
+      video_frame->data_size().height() / local_dest_irect_saved.height();
 
   // Use the "left" and "top" of the destination rect to locate the offset
   // in Y, U and V planes.
@@ -195,18 +165,17 @@ static void FastPaint(
 static void ConvertVideoFrameToBitmap(
     const scoped_refptr<media::VideoFrame>& video_frame,
     SkBitmap* bitmap) {
-  DCHECK(video_frame->format() == media::VideoFrame::YV12 ||
-         video_frame->format() == media::VideoFrame::YV16);
+  DCHECK(IsEitherYV12OrYV16(video_frame->format())) << video_frame->format();
   DCHECK(video_frame->stride(media::VideoFrame::kUPlane) ==
          video_frame->stride(media::VideoFrame::kVPlane));
 
   // Check if |bitmap| needs to be (re)allocated.
   if (bitmap->isNull() ||
-      bitmap->width() != static_cast<int>(video_frame->width()) ||
-      bitmap->height() != static_cast<int>(video_frame->height())) {
+      bitmap->width() != video_frame->data_size().width() ||
+      bitmap->height() != video_frame->data_size().height()) {
     bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                      video_frame->width(),
-                      video_frame->height());
+                      video_frame->data_size().width(),
+                      video_frame->data_size().height());
     bitmap->allocPixels();
     bitmap->setIsVolatile(true);
   }
@@ -219,8 +188,8 @@ static void ConvertVideoFrameToBitmap(
                            video_frame->data(media::VideoFrame::kUPlane),
                            video_frame->data(media::VideoFrame::kVPlane),
                            static_cast<uint8*>(bitmap->getPixels()),
-                           video_frame->width(),
-                           video_frame->height(),
+                           video_frame->data_size().width(),
+                           video_frame->data_size().height(),
                            video_frame->stride(media::VideoFrame::kYPlane),
                            video_frame->stride(media::VideoFrame::kUPlane),
                            bitmap->rowBytes(),
@@ -237,22 +206,29 @@ SkCanvasVideoRenderer::~SkCanvasVideoRenderer() {}
 
 void SkCanvasVideoRenderer::Paint(media::VideoFrame* video_frame,
                                   SkCanvas* canvas,
-                                  const gfx::Rect& dest_rect) {
-  // Paint black rectangle if there isn't a frame available.
-  if (!video_frame) {
-    SkPaint paint;
-    paint.setColor(SK_ColorBLACK);
-    canvas->drawRectCoords(
-        static_cast<float>(dest_rect.x()),
-        static_cast<float>(dest_rect.y()),
-        static_cast<float>(dest_rect.right()),
-        static_cast<float>(dest_rect.bottom()),
-        paint);
+                                  const gfx::Rect& dest_rect,
+                                  uint8_t alpha) {
+  if (alpha == 0) {
+    return;
+  }
+
+  SkRect dest;
+  dest.set(SkIntToScalar(dest_rect.x()), SkIntToScalar(dest_rect.y()),
+           SkIntToScalar(dest_rect.right()), SkIntToScalar(dest_rect.bottom()));
+
+  SkPaint paint;
+  paint.setAlpha(alpha);
+
+  // Paint black rectangle if there isn't a frame available or if the format is
+  // unexpected (can happen e.g. when normally painting to HW textures but
+  // during shutdown path).
+  if (!video_frame || !IsEitherYV12OrYV16(video_frame->format())) {
+    canvas->drawRect(dest, paint);
     return;
   }
 
   // Scale and convert to RGB in one step if we can.
-  if (CanFastPaint(canvas, dest_rect)) {
+  if (CanFastPaint(canvas, dest_rect, alpha)) {
     FastPaint(video_frame, canvas, dest_rect);
     return;
   }
@@ -265,7 +241,8 @@ void SkCanvasVideoRenderer::Paint(media::VideoFrame* video_frame,
   }
 
   // Do a slower paint using |last_frame_|.
-  SlowPaint(last_frame_, canvas, dest_rect);
+  paint.setFilterBitmap(true);
+  canvas->drawBitmapRect(last_frame_, NULL, dest, &paint);
 }
 
 }  // namespace webkit_media

@@ -1,10 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  const OptionsPage = options.OptionsPage;
-  const ArrayDataModel = cr.ui.ArrayDataModel;
+  var OptionsPage = options.OptionsPage;
+  var ArrayDataModel = cr.ui.ArrayDataModel;
 
   /////////////////////////////////////////////////////////////////////////////
   // AutofillOptions class:
@@ -16,7 +16,7 @@ cr.define('options', function() {
   function AutofillOptions() {
     OptionsPage.call(this,
                      'autofill',
-                     templateData.autofillOptionsPageTabTitle,
+                     loadTimeData.getString('autofillOptionsPageTabTitle'),
                      'autofill-options');
   }
 
@@ -52,6 +52,9 @@ cr.define('options', function() {
       $('autofill-add-creditcard').onclick = function(event) {
         self.showAddCreditCardOverlay_();
       };
+      $('autofill-options-confirm').onclick = function(event) {
+        OptionsPage.closeOverlay();
+      };
 
       // TODO(jhawkins): What happens when Autofill is disabled whilst on the
       // Autofill options page?
@@ -85,7 +88,7 @@ cr.define('options', function() {
      * @private
      */
     showAddAddressOverlay_: function() {
-      var title = localStrings.getString('addAddressTitle');
+      var title = loadTimeData.getString('addAddressTitle');
       AutofillEditAddressOverlay.setTitle(title);
       AutofillEditAddressOverlay.clearInputFields();
       OptionsPage.navigateToPage('autofillEditAddress');
@@ -98,7 +101,7 @@ cr.define('options', function() {
      * @private
      */
     showAddCreditCardOverlay_: function() {
-      var title = localStrings.getString('addCreditCardTitle');
+      var title = loadTimeData.getString('addCreditCardTitle');
       AutofillEditCreditCardOverlay.setTitle(title);
       AutofillEditCreditCardOverlay.clearInputFields();
       OptionsPage.navigateToPage('autofillEditCreditCard');
@@ -169,7 +172,7 @@ cr.define('options', function() {
      * @private
      */
     showEditAddressOverlay_: function(address) {
-      var title = localStrings.getString('editAddressTitle');
+      var title = loadTimeData.getString('editAddressTitle');
       AutofillEditAddressOverlay.setTitle(title);
       AutofillEditAddressOverlay.loadAddress(address);
       OptionsPage.navigateToPage('autofillEditAddress');
@@ -182,7 +185,7 @@ cr.define('options', function() {
      * @private
      */
     showEditCreditCardOverlay_: function(creditCard) {
-      var title = localStrings.getString('editCreditCardTitle');
+      var title = loadTimeData.getString('editCreditCardTitle');
       AutofillEditCreditCardOverlay.setTitle(title);
       AutofillEditCreditCardOverlay.loadCreditCard(creditCard);
       OptionsPage.navigateToPage('autofillEditCreditCard');

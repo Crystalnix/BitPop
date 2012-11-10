@@ -7,19 +7,30 @@
 #include "base/bind.h"
 #include "base/message_loop.h"
 #include "base/threading/thread.h"
-#include "content/browser/renderer_host/mock_render_process_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
-#include "content/browser/renderer_host/render_widget_host.h"
+#include "content/browser/renderer_host/render_widget_host_delegate.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/text_input_client_message_filter.h"
 #include "content/common/text_input_client_messages.h"
-#include "content/test//test_browser_context.h"
+#include "content/public/test/mock_render_process_host.h"
+#include "content/public/test/test_browser_context.h"
 #include "ipc/ipc_test_sink.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gtest_mac.h"
 
+using content::MockRenderProcessHost;
+using content::MockRenderProcessHostFactory;
+using content::RenderWidgetHostImpl;
+
 namespace {
 
 const int64 kTaskDelayMs = 200;
+
+class MockRenderWidgetHostDelegate : public content::RenderWidgetHostDelegate {
+ public:
+  MockRenderWidgetHostDelegate() {}
+  virtual ~MockRenderWidgetHostDelegate() {}
+};
 
 // This test does not test the WebKit side of the dictionary system (which
 // performs the actual data fetching), but rather this just tests that the
@@ -30,7 +41,9 @@ class TextInputClientMacTest : public testing::Test {
       : message_loop_(MessageLoop::TYPE_UI),
         browser_context_(),
         process_factory_(),
-        widget_(process_factory_.CreateRenderProcessHost(&browser_context_),
+        delegate_(),
+        widget_(&delegate_,
+                process_factory_.CreateRenderProcessHost(&browser_context_),
                 MSG_ROUTING_NONE),
         thread_("TextInputClientMacTestThread") {}
 
@@ -42,27 +55,34 @@ class TextInputClientMacTest : public testing::Test {
   // Helper method to post a task on the testing thread's MessageLoop after
   // a short delay.
   void PostTask(const tracked_objects::Location& from_here,
-                const base::Closure& task, const int64 delay = kTaskDelayMs) {
+                const base::Closure& task) {
+    PostTask(from_here, task, base::TimeDelta::FromMilliseconds(kTaskDelayMs));
+  }
+
+  void PostTask(const tracked_objects::Location& from_here,
+                const base::Closure& task,
+                const base::TimeDelta delay) {
     thread_.message_loop()->PostDelayedTask(from_here, task, delay);
   }
 
-  RenderWidgetHost* widget() {
+  RenderWidgetHostImpl* widget() {
     return &widget_;
   }
 
   IPC::TestSink& ipc_sink() {
-    return static_cast<MockRenderProcessHost*>(widget()->process())->sink();
+    return static_cast<MockRenderProcessHost*>(widget()->GetProcess())->sink();
   }
 
  private:
   friend class ScopedTestingThread;
 
   MessageLoop message_loop_;
-  TestBrowserContext browser_context_;
+  content::TestBrowserContext browser_context_;
 
   // Gets deleted when the last RWH in the "process" gets destroyed.
   MockRenderProcessHostFactory process_factory_;
-  RenderWidgetHost widget_;
+  MockRenderWidgetHostDelegate delegate_;
+  RenderWidgetHostImpl widget_;
 
   base::Thread thread_;
 };
@@ -130,16 +150,16 @@ TEST_F(TextInputClientMacTest, NotFoundCharacterIndex) {
                       base::Unretained(service()), kPreviousValue));
 
   scoped_refptr<TextInputClientMessageFilter> filter(
-      new TextInputClientMessageFilter(widget()->process()->GetID()));
+      new TextInputClientMessageFilter(widget()->GetProcess()->GetID()));
   scoped_ptr<IPC::Message> message(
       new TextInputClientReplyMsg_GotCharacterIndexForPoint(
-          widget()->routing_id(), kNotFoundValue));
+          widget()->GetRoutingID(), kNotFoundValue));
   bool message_ok = true;
   // Set |WTF::notFound| to the index |kTaskDelayMs| after the previous
   // setting.
   PostTask(FROM_HERE,
            base::Bind(&CallOnMessageReceived, filter, *message, &message_ok),
-           kTaskDelayMs * 2);
+           base::TimeDelta::FromMilliseconds(kTaskDelayMs) * 2);
 
   NSUInteger index = service()->GetCharacterIndexAtPoint(
       widget(), gfx::Point(2, 2));

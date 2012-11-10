@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,17 +10,31 @@
 #include <stack>
 
 #include "base/atomic_sequence_num.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/synchronization/waitable_event.h"
 #include "ipc/ipc_sync_message.h"
 
+namespace {
+
+struct WaitableEventLazyInstanceTraits
+    : public base::DefaultLazyInstanceTraits<base::WaitableEvent> {
+  static base::WaitableEvent* New(void* instance) {
+    // Use placement new to initialize our instance in our preallocated space.
+    return new (instance) base::WaitableEvent(true, true);
+  }
+};
+
+base::LazyInstance<base::WaitableEvent, WaitableEventLazyInstanceTraits>
+    dummy_event = LAZY_INSTANCE_INITIALIZER;
+
+base::StaticAtomicSequenceNumber g_next_id;
+
+}  // namespace
+
 namespace IPC {
 
 #define kSyncMessageHeaderSize 4
-
-static base::AtomicSequenceNumber g_next_id(base::LINKER_INITIALIZED);
-
-static base::WaitableEvent* dummy_event = new base::WaitableEvent(true, true);
 
 SyncMessage::SyncMessage(
     int32 routing_id,
@@ -50,7 +64,7 @@ MessageReplyDeserializer* SyncMessage::GetReplyDeserializer() {
 
 void SyncMessage::EnableMessagePumping() {
   DCHECK(!pump_messages_event_);
-  set_pump_messages_event(dummy_event);
+  set_pump_messages_event(dummy_event.Pointer());
 }
 
 bool SyncMessage::IsMessageReplyTo(const Message& msg, int request_id) {
@@ -60,10 +74,12 @@ bool SyncMessage::IsMessageReplyTo(const Message& msg, int request_id) {
   return GetMessageId(msg) == request_id;
 }
 
-void* SyncMessage::GetDataIterator(const Message* msg) {
-  void* iter = const_cast<char*>(msg->payload());
-  UpdateIter(&iter, kSyncMessageHeaderSize);
-  return iter;
+PickleIterator SyncMessage::GetDataIterator(const Message* msg) {
+  PickleIterator iter(*msg);
+  if (!iter.SkipBytes(kSyncMessageHeaderSize))
+    return PickleIterator();
+  else
+    return iter;
 }
 
 int SyncMessage::GetMessageId(const Message& msg) {
@@ -96,7 +112,7 @@ Message* SyncMessage::GenerateReply(const Message* msg) {
 bool SyncMessage::ReadSyncHeader(const Message& msg, SyncHeader* header) {
   DCHECK(msg.is_sync() || msg.is_reply());
 
-  void* iter = NULL;
+  PickleIterator iter(msg);
   bool result = msg.ReadInt(&iter, &header->message_id);
   if (!result) {
     NOTREACHED();

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "base/file_util.h"
 #include "base/memory/scoped_vector.h"
 #include "base/metrics/histogram.h"
+#include "base/threading/thread_restrictions.h"
 #include "net/base/file_stream.h"
 #include "net/base/net_errors.h"
 
@@ -45,9 +46,10 @@ class SessionFileReader {
         buffer_(SessionBackend::kFileReadBufferSize, 0),
         buffer_position_(0),
         available_count_(0) {
-    file_.reset(new net::FileStream());
+    file_.reset(new net::FileStream(NULL));
     if (file_util::PathExists(path))
-      file_->Open(path, base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ);
+      file_->OpenSync(path,
+                      base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ);
   }
   // Reads the contents of the file specified in the constructor, returning
   // true on success. It is up to the caller to free all SessionCommands
@@ -102,9 +104,9 @@ bool SessionFileReader::Read(BaseSessionService::SessionType type,
   ScopedVector<SessionCommand> read_commands;
   SessionCommand* command;
   while ((command = ReadCommand()) && !errored_)
-    read_commands->push_back(command);
+    read_commands.push_back(command);
   if (!errored_)
-    read_commands->swap(*commands);
+    read_commands.swap(*commands);
   if (type == BaseSessionService::TAB_RESTORE) {
     UMA_HISTOGRAM_TIMES("TabRestore.read_session_file_time",
                         TimeTicks::Now() - start_time);
@@ -121,6 +123,7 @@ SessionCommand* SessionFileReader::ReadCommand() {
     if (!FillBuffer())
       return NULL;
     if (available_count_ < sizeof(size_type)) {
+      VLOG(1) << "SessionFileReader::ReadCommand, file incomplete";
       // Still couldn't read a valid size for the command, assume write was
       // incomplete and return NULL.
       return NULL;
@@ -133,6 +136,7 @@ SessionCommand* SessionFileReader::ReadCommand() {
   available_count_ -= sizeof(command_size);
 
   if (command_size == 0) {
+    VLOG(1) << "SessionFileReader::ReadCommand, empty command";
     // Empty command. Shouldn't happen if write was successful, fail.
     return NULL;
   }
@@ -143,6 +147,7 @@ SessionCommand* SessionFileReader::ReadCommand() {
       buffer_.resize((command_size / 1024 + 1) * 1024, 0);
     if (!FillBuffer() || command_size > available_count_) {
       // Again, assume the file was ok, and just the last chunk was lost.
+      VLOG(1) << "SessionFileReader::ReadCommand, last chunk lost";
       return NULL;
     }
   }
@@ -316,22 +321,22 @@ bool SessionBackend::AppendCommandsToFile(net::FileStream* file,
       UMA_HISTOGRAM_COUNTS("TabRestore.command_size", total_size);
     else
       UMA_HISTOGRAM_COUNTS("SessionRestore.command_size", total_size);
-    wrote = file->Write(reinterpret_cast<const char*>(&total_size),
-                        sizeof(total_size), net::CompletionCallback());
+    wrote = file->WriteSync(reinterpret_cast<const char*>(&total_size),
+                            sizeof(total_size));
     if (wrote != sizeof(total_size)) {
       NOTREACHED() << "error writing";
       return false;
     }
     id_type command_id = (*i)->id();
-    wrote = file->Write(reinterpret_cast<char*>(&command_id),
-                        sizeof(command_id), net::CompletionCallback());
+    wrote = file->WriteSync(reinterpret_cast<char*>(&command_id),
+                            sizeof(command_id));
     if (wrote != sizeof(command_id)) {
       NOTREACHED() << "error writing";
       return false;
     }
     if (content_size > 0) {
-      wrote = file->Write(reinterpret_cast<char*>((*i)->contents()),
-                          content_size, net::CompletionCallback());
+      wrote = file->WriteSync(reinterpret_cast<char*>((*i)->contents()),
+                              content_size);
       if (wrote != content_size) {
         NOTREACHED() << "error writing";
         return false;
@@ -343,6 +348,11 @@ bool SessionBackend::AppendCommandsToFile(net::FileStream* file,
 }
 
 SessionBackend::~SessionBackend() {
+  if (current_session_file_.get()) {
+    // Close() performs file IO. crbug.com/112512.
+    base::ThreadRestrictions::ScopedAllowIO allow_io;
+    current_session_file_->CloseSync();
+  }
 }
 
 void SessionBackend::ResetFile() {
@@ -363,16 +373,16 @@ void SessionBackend::ResetFile() {
 
 net::FileStream* SessionBackend::OpenAndWriteHeader(const FilePath& path) {
   DCHECK(!path.empty());
-  scoped_ptr<net::FileStream> file(new net::FileStream());
-  if (file->Open(path, base::PLATFORM_FILE_CREATE_ALWAYS |
+  scoped_ptr<net::FileStream> file(new net::FileStream(NULL));
+  if (file->OpenSync(path, base::PLATFORM_FILE_CREATE_ALWAYS |
       base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_EXCLUSIVE_WRITE |
       base::PLATFORM_FILE_EXCLUSIVE_READ) != net::OK)
     return NULL;
   FileHeader header;
   header.signature = kFileSignature;
   header.version = kFileCurrentVersion;
-  int wrote = file->Write(reinterpret_cast<char*>(&header),
-                          sizeof(header), net::CompletionCallback());
+  int wrote = file->WriteSync(reinterpret_cast<char*>(&header),
+                              sizeof(header));
   if (wrote != sizeof(header))
     return NULL;
   return file.release();

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 #include "base/callback.h"
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/platform_file.h"
@@ -18,6 +19,7 @@
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_codec.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -93,7 +95,8 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
       : bookmarks_(bookmarks),
         path_(path),
         favicons_map_(favicons_map),
-        observer_(observer) {
+        observer_(observer),
+        file_stream_(NULL) {
   }
 
   // Writing bookmarks and favicons data to file.
@@ -144,12 +147,14 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
     Write(kFolderChildrenEnd);
     Write(kNewline);
     // File stream close is forced so that unit test could read it.
-    file_stream_.Close();
+    file_stream_.CloseSync();
 
     NotifyOnFinish();
   }
 
  private:
+  friend class base::RefCountedThreadSafe<Writer>;
+
   // Types of text being written out. The type dictates how the text is
   // escaped.
   enum TextType {
@@ -161,10 +166,12 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
     CONTENT
   };
 
+  ~Writer() {}
+
   // Opens the file, returning true on success.
   bool OpenFile() {
     int flags = base::PLATFORM_FILE_CREATE_ALWAYS | base::PLATFORM_FILE_WRITE;
-    return (file_stream_.Open(path_, flags) == net::OK);
+    return (file_stream_.OpenSync(path_, flags) == net::OK);
   }
 
   // Increments the indent.
@@ -188,8 +195,7 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
   // Writes raw text out returning true on success. This does not escape
   // the text in anyway.
   bool Write(const std::string& text) {
-    size_t wrote = file_stream_.Write(text.c_str(), text.length(),
-                                      net::CompletionCallback());
+    size_t wrote = file_stream_.WriteSync(text.c_str(), text.length());
     bool result = (wrote == text.length());
     DCHECK(result);
     return result;
@@ -257,7 +263,7 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
       BookmarkFaviconFetcher::URLFaviconMap::iterator itr =
           favicons_map_->find(url_string);
       if (itr != favicons_map_->end()) {
-        scoped_refptr<RefCountedMemory> data(itr->second.get());
+        scoped_refptr<base::RefCountedMemory> data(itr->second.get());
         std::string favicon_data;
         favicon_data.assign(reinterpret_cast<const char*>(data->front()),
                             data->size());
@@ -287,7 +293,7 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
 
     // Folder.
     std::string last_modified_date;
-    Value* child_values;
+    const Value* child_values;
     if (!value.GetString(BookmarkCodec::kDateModifiedKey,
                          &last_modified_date) ||
         !value.Get(BookmarkCodec::kChildrenKey, &child_values) ||
@@ -326,15 +332,15 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
     }
 
     // Write the children.
-    ListValue* children = static_cast<ListValue*>(child_values);
+    const ListValue* children = static_cast<const ListValue*>(child_values);
     for (size_t i = 0; i < children->GetSize(); ++i) {
-      Value* child_value;
+      const Value* child_value;
       if (!children->Get(i, &child_value) ||
           child_value->GetType() != Value::TYPE_DICTIONARY) {
         NOTREACHED();
         return false;
       }
-      if (!WriteNode(*static_cast<DictionaryValue*>(child_value),
+      if (!WriteNode(*static_cast<const DictionaryValue*>(child_value),
                      BookmarkNode::FOLDER)) {
         return false;
       }
@@ -394,9 +400,10 @@ BookmarkFaviconFetcher::~BookmarkFaviconFetcher() {
 }
 
 void BookmarkFaviconFetcher::ExportBookmarks() {
-  ExtractUrls(profile_->GetBookmarkModel()->bookmark_bar_node());
-  ExtractUrls(profile_->GetBookmarkModel()->other_node());
-  ExtractUrls(profile_->GetBookmarkModel()->mobile_node());
+  ExtractUrls(BookmarkModelFactory::GetForProfile(
+      profile_)->bookmark_bar_node());
+  ExtractUrls(BookmarkModelFactory::GetForProfile(profile_)->other_node());
+  ExtractUrls(BookmarkModelFactory::GetForProfile(profile_)->mobile_node());
   if (!bookmark_urls_.empty())
     FetchNextFavicon();
   else
@@ -432,7 +439,8 @@ void BookmarkFaviconFetcher::ExecuteWriter() {
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
       base::Bind(&Writer::DoWrite,
-                 new Writer(codec.Encode(profile_->GetBookmarkModel()),
+                 new Writer(codec.Encode(BookmarkModelFactory::GetForProfile(
+                                profile_)),
                             path_, favicons_map_.release(), observer_)));
   if (fetcher != NULL) {
     MessageLoop::current()->DeleteSoon(FROM_HERE, fetcher);

@@ -27,10 +27,6 @@
 
 namespace {
 
-std::string GetDisplayURL(const TemplateURL& turl) {
-  return turl.url() ? UTF16ToUTF8(turl.url()->DisplayURL()) : std::string();
-}
-
 // Forces text to lowercase when connected to an editable's "insert-text"
 // signal.  (Like views Textfield::STYLE_LOWERCASE.)
 void LowercaseInsertTextHandler(GtkEditable *editable, const gchar *text,
@@ -71,7 +67,7 @@ void SetWidgetStyle(GtkWidget* entry, GtkStyle* label_style,
 
 EditSearchEngineDialog::EditSearchEngineDialog(
     GtkWindow* parent_window,
-    const TemplateURL* template_url,
+    TemplateURL* template_url,
     EditSearchEngineControllerDelegate* delegate,
     Profile* profile)
     : controller_(new EditSearchEngineController(template_url, delegate,
@@ -153,7 +149,8 @@ void EditSearchEngineDialog::Init(GtkWindow* parent_window, Profile* profile) {
         UTF16ToUTF8(controller_->template_url()->keyword()).c_str());
     gtk_entry_set_text(
         GTK_ENTRY(url_entry_),
-        GetDisplayURL(*controller_->template_url()).c_str());
+        UTF16ToUTF8(controller_->template_url()->url_ref().DisplayURL()).
+            c_str());
     // We don't allow users to edit prepopulated URLs.
     gtk_editable_set_editable(
         GTK_EDITABLE(url_entry_),
@@ -246,17 +243,16 @@ void EditSearchEngineDialog::EnableControls() {
 void EditSearchEngineDialog::UpdateImage(GtkWidget* image,
                                          bool is_valid,
                                          int invalid_message_id) {
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   if (is_valid) {
     gtk_widget_set_has_tooltip(image, FALSE);
     gtk_image_set_from_pixbuf(GTK_IMAGE(image),
-        ui::ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-            IDR_INPUT_GOOD));
+        rb.GetNativeImageNamed(IDR_INPUT_GOOD).ToGdkPixbuf());
   } else {
     gtk_widget_set_tooltip_text(
         image, l10n_util::GetStringUTF8(invalid_message_id).c_str());
     gtk_image_set_from_pixbuf(GTK_IMAGE(image),
-        ui::ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-            IDR_INPUT_ALERT));
+        rb.GetNativeImageNamed(IDR_INPUT_ALERT).ToGdkPixbuf());
   }
 }
 

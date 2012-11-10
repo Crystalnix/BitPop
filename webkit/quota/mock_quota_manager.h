@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef WEBKIT_QUOTA_MOCK_QUOTA_MANAGER_H_
 #define WEBKIT_QUOTA_MOCK_QUOTA_MANAGER_H_
-#pragma once
 
 #include <vector>
 #include <string>
@@ -31,30 +30,37 @@ class MockQuotaManager : public QuotaManager {
   struct OriginInfo {
     OriginInfo(const GURL& origin,
                StorageType type,
+               int quota_client_mask,
                base::Time modified);
     ~OriginInfo();
 
     GURL origin;
     StorageType type;
+    int quota_client_mask;
     base::Time modified;
   };
 
   MockQuotaManager(bool is_incognito,
                    const FilePath& profile_path,
-                   base::MessageLoopProxy* io_thread,
-                   base::MessageLoopProxy* db_thread,
+                   base::SingleThreadTaskRunner* io_thread,
+                   base::SequencedTaskRunner* db_thread,
                    SpecialStoragePolicy* special_storage_policy);
 
-  virtual ~MockQuotaManager();
-
   // Adds an origin to the canned list that will be searched through via
-  // GetOriginsModifiedSince.
-  bool AddOrigin(const GURL& origin, StorageType type, base::Time modified);
+  // GetOriginsModifiedSince. The caller must provide |quota_client_mask|
+  // which specifies the types of QuotaClients this canned origin contains
+  // as a bitmask built from QuotaClient::IDs.
+  bool AddOrigin(const GURL& origin,
+                 StorageType type,
+                 int quota_client_mask,
+                 base::Time modified);
 
   // Checks an origin and type against the origins that have been added via
   // AddOrigin and removed via DeleteOriginData. If the origin exists in the
-  // canned list with the proper StorageType, returns true.
-  bool OriginHasData(const GURL& origin, StorageType type) const;
+  // canned list with the proper StorageType and client, returns true.
+  bool OriginHasData(const GURL& origin,
+                     StorageType type,
+                     QuotaClient::ID quota_client) const;
 
   // Overrides QuotaManager's implementation with a canned implementation that
   // allows clients to set up the origin database that should be queried. This
@@ -65,10 +71,18 @@ class MockQuotaManager : public QuotaManager {
       const GetOriginsCallback& callback) OVERRIDE;
 
   // Removes an origin from the canned list of origins, but doesn't touch
-  // anything on disk.
+  // anything on disk. The caller must provide |quota_client_mask| which
+  // specifies the types of QuotaClients which should be removed from this
+  // origin as a bitmask built from QuotaClient::IDs. Setting the mask to
+  // QuotaClient::kAllClientsMask will remove all clients from the origin,
+  // regardless of type.
   virtual void DeleteOriginData(const GURL& origin,
                                 StorageType type,
+                                int quota_client_mask,
                                 const StatusCallback& callback) OVERRIDE;
+
+ protected:
+  virtual ~MockQuotaManager();
 
  private:
   class GetModifiedSinceTask;

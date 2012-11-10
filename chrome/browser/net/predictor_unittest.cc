@@ -16,7 +16,7 @@
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/net/url_info.h"
 #include "chrome/common/net/predictor_common.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "net/base/address_list.h"
 #include "net/base/mock_host_resolver.h"
 #include "net/base/winsock_init.h"
@@ -44,7 +44,7 @@ class WaitForResolutionHelper {
   void Run() {
     for (UrlList::const_iterator i = hosts_.begin(); i != hosts_.end(); ++i)
       if (predictor_->GetResolutionDuration(*i) ==
-          UrlInfo::kNullDuration)
+          UrlInfo::NullDuration())
         return;  // We don't have resolution for that host.
 
     // When all hostnames have been resolved, exit the loop.
@@ -247,21 +247,28 @@ TEST_F(PredictorTest, MassiveConcurrentLookupTest) {
 
 // Return a motivation_list if we can find one for the given motivating_host (or
 // NULL if a match is not found).
-static ListValue* FindSerializationMotivation(const GURL& motivation,
-                                              const ListValue& referral_list) {
-  CHECK_LT(0u, referral_list.GetSize());  // Room for version.
+static const ListValue* FindSerializationMotivation(
+    const GURL& motivation,
+    const ListValue* referral_list) {
+  CHECK_LT(0u, referral_list->GetSize());  // Room for version.
   int format_version = -1;
-  CHECK(referral_list.GetInteger(0, &format_version));
+  CHECK(referral_list->GetInteger(0, &format_version));
   CHECK_EQ(Predictor::kPredictorReferrerVersion, format_version);
-  ListValue* motivation_list(NULL);
-  for (size_t i = 1; i < referral_list.GetSize(); ++i) {
-    referral_list.GetList(i, &motivation_list);
+  const ListValue* motivation_list(NULL);
+  for (size_t i = 1; i < referral_list->GetSize(); ++i) {
+    referral_list->GetList(i, &motivation_list);
     std::string existing_spec;
     EXPECT_TRUE(motivation_list->GetString(0, &existing_spec));
     if (motivation == GURL(existing_spec))
       return motivation_list;
   }
   return NULL;
+}
+
+static ListValue* FindSerializationMotivation(const GURL& motivation,
+                                              ListValue* referral_list) {
+  return const_cast<ListValue*>(FindSerializationMotivation(
+      motivation, static_cast<const ListValue*>(referral_list)));
 }
 
 // Create a new empty serialization list.
@@ -281,7 +288,7 @@ static void AddToSerializedList(const GURL& motivation,
                                 ListValue* referral_list ) {
   // Find the motivation if it is already used.
   ListValue* motivation_list = FindSerializationMotivation(motivation,
-                                                           *referral_list);
+                                                           referral_list);
   if (!motivation_list) {
     // This is the first mention of this motivation, so build a list.
     motivation_list = new ListValue;
@@ -315,11 +322,11 @@ static bool GetDataFromSerialization(const GURL& motivation,
                                      const GURL& subresource,
                                      const ListValue& referral_list,
                                      double* use_rate) {
-  ListValue* motivation_list = FindSerializationMotivation(motivation,
-                                                           referral_list);
+  const ListValue* motivation_list =
+      FindSerializationMotivation(motivation, &referral_list);
   if (!motivation_list)
     return false;
-  ListValue* subresource_list;
+  const ListValue* subresource_list;
   EXPECT_TRUE(motivation_list->GetList(1, &subresource_list));
   for (size_t i = 0; i < subresource_list->GetSize();) {
     std::string url_spec;
@@ -372,6 +379,83 @@ TEST_F(PredictorTest, ReferrerSerializationSingleReferrerTest) {
   EXPECT_TRUE(GetDataFromSerialization(
       motivation_url, subresource_url, recovered_referral_list, &rate));
   EXPECT_EQ(rate, kUseRate);
+
+  predictor.Shutdown();
+}
+
+// Check that GetHtmlReferrerLists() doesn't crash when given duplicated
+// domains for referring URL, and that it sorts the results in the
+// correct order.
+TEST_F(PredictorTest, GetHtmlReferrerLists) {
+  Predictor predictor(true);
+  predictor.SetHostResolver(host_resolver_.get());
+  const double kUseRate = 23.4;
+  scoped_ptr<ListValue> referral_list(NewEmptySerializationList());
+
+  AddToSerializedList(
+      GURL("http://d.google.com/x1"),
+      GURL("http://foo.com/"),
+      kUseRate, referral_list.get());
+
+  // Duplicated hostname (d.google.com). This should not cause any crashes
+  // (i.e. crbug.com/116345)
+  AddToSerializedList(
+      GURL("http://d.google.com/x2"),
+      GURL("http://foo.com/"),
+      kUseRate, referral_list.get());
+
+  AddToSerializedList(
+      GURL("http://a.yahoo.com/y"),
+      GURL("http://foo1.com/"),
+      kUseRate, referral_list.get());
+
+  AddToSerializedList(
+      GURL("http://b.google.com/x3"),
+      GURL("http://foo2.com/"),
+      kUseRate, referral_list.get());
+
+  AddToSerializedList(
+      GURL("http://d.yahoo.com/x5"),
+      GURL("http://i.like.turtles/"),
+      kUseRate, referral_list.get());
+
+  AddToSerializedList(
+      GURL("http://c.yahoo.com/x4"),
+      GURL("http://foo3.com/"),
+      kUseRate, referral_list.get());
+
+  predictor.DeserializeReferrers(*referral_list.get());
+
+  std::string html;
+  predictor.GetHtmlReferrerLists(&html);
+
+  // The lexicographic sorting of hostnames would be:
+  //   a.yahoo.com
+  //   b.google.com
+  //   c.yahoo.com
+  //   d.google.com
+  //   d.yahoo.com
+  //
+  // However we expect to sort them by domain in the output:
+  //   b.google.com
+  //   d.google.com
+  //   a.yahoo.com
+  //   c.yahoo.com
+  //   d.yahoo.com
+
+  size_t pos[] = {
+      html.find("<td rowspan=1>http://b.google.com/x3"),
+      html.find("<td rowspan=1>http://d.google.com/x1"),
+      html.find("<td rowspan=1>http://d.google.com/x2"),
+      html.find("<td rowspan=1>http://a.yahoo.com/y"),
+      html.find("<td rowspan=1>http://c.yahoo.com/x4"),
+      html.find("<td rowspan=1>http://d.yahoo.com/x5"),
+  };
+
+  // Make sure things appeared in the expected order.
+  for (size_t i = 1; i < arraysize(pos); ++i) {
+    EXPECT_LT(pos[i - 1], pos[i]) << "Mismatch for pos[" << i << "]";
+  }
 
   predictor.Shutdown();
 }

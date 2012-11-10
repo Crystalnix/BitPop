@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -76,7 +76,7 @@
 // of inclusions of other headers (which are self-guarding) and IPC
 // macros (which are multiply evaluating).
 //
-// Note that there is no #pragma once either; doing so would mark the whole
+// Note that #pragma once cannot be used here; doing so would mark the whole
 // file as being singly-included.  Since your XXX_messages.h file is only
 // partially-guarded, care must be taken to ensure that it is only included
 // by other .cc files (and the YYY_message_generator.h file).  Including an
@@ -173,6 +173,14 @@
 //     ViewHostMsg_SyncMessageName::WriteReplyParams(reply_msg, out1, out2);
 //     Send(reply_msg);
 
+// Files that want to export their ipc messages should do
+//   #undef IPC_MESSAGE_EXPORT
+//   #define IPC_MESSAGE_EXPORT VISIBILITY_MACRO
+// after including this header, but before using any of the macros below.
+// (This needs to be before the include guard.)
+#undef IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT
+
 #ifndef IPC_IPC_MESSAGE_MACROS_H_
 #define IPC_IPC_MESSAGE_MACROS_H_
 
@@ -182,11 +190,6 @@
 
 #if defined(IPC_MESSAGE_IMPL)
 #include "ipc/ipc_message_utils_impl.h"
-#endif
-
-// Override this to force message classes to be exported.
-#ifndef IPC_MESSAGE_EXPORT
-#define IPC_MESSAGE_EXPORT
 #endif
 
 // Macros for defining structs.  May be subsequently redefined.
@@ -199,7 +202,9 @@
   struct IPC_MESSAGE_EXPORT struct_name : parent { \
     struct_name(); \
     ~struct_name();
-#define IPC_STRUCT_MEMBER(type, name) type name;
+// Optional variadic parameters specify the default value for this struct
+// member. They are passed through to the constructor for |type|.
+#define IPC_STRUCT_MEMBER(type, name, ...) type name;
 #define IPC_STRUCT_END() };
 
 // Message macros collect specific numbers of arguments and funnel them into
@@ -327,9 +332,6 @@
 #define IPC_SYNC_MESSAGE_CONTROL5_3(msg_class, type1_in, type2_in, type3_in, type4_in, type5_in, type1_out, type2_out, type3_out) \
   IPC_MESSAGE_DECL(SYNC, CONTROL, msg_class, 5, 3, (type1_in, type2_in, type3_in, type4_in, type5_in), (type1_out, type2_out, type3_out))
 
-#define IPC_SYNC_MESSAGE_CONTROL5_4(msg_class, type1_in, type2_in, type3_in, type4_in, type5_in, type1_out, type2_out, type3_out, type4_out) \
-  IPC_MESSAGE_DECL(SYNC, CONTROL, msg_class, 5, 4, (type1_in, type2_in, type3_in, type4_in, type5_in), (type1_out, type2_out, type3_out, type4_out))
-
 #define IPC_SYNC_MESSAGE_ROUTED0_0(msg_class) \
   IPC_MESSAGE_DECL(SYNC, ROUTED, msg_class, 0, 0, (), ())
 
@@ -391,7 +393,7 @@
   IPC_MESSAGE_DECL(SYNC, ROUTED, msg_class, 3, 4, (type1_in, type2_in, type3_in), (type1_out, type2_out, type3_out, type4_out))
 
 #define IPC_SYNC_MESSAGE_ROUTED4_0(msg_class, type1_in, type2_in, type3_in, type4_in) \
-  IPC_MESSAGE_DECL(SYNC, ROUTED, msg_class, 4, 1, (type1_in, type2_in, type3_in, type4_in), ())
+  IPC_MESSAGE_DECL(SYNC, ROUTED, msg_class, 4, 0, (type1_in, type2_in, type3_in, type4_in), ())
 
 #define IPC_SYNC_MESSAGE_ROUTED4_1(msg_class, type1_in, type2_in, type3_in, type4_in, type1_out) \
   IPC_MESSAGE_DECL(SYNC, ROUTED, msg_class, 4, 1, (type1_in, type2_in, type3_in, type4_in), (type1_out))
@@ -406,7 +408,7 @@
   IPC_MESSAGE_DECL(SYNC, ROUTED, msg_class, 4, 4, (type1_in, type2_in, type3_in, type4_in), (type1_out, type2_out, type3_out, type4_out))
 
 #define IPC_SYNC_MESSAGE_ROUTED5_0(msg_class, type1_in, type2_in, type3_in, type4_in, type5_in) \
-  IPC_MESSAGE_DECL(SYNC, ROUTED, msg_class, 5, 1, (type1_in, type2_in, type3_in, type4_in, type5_in), ())
+  IPC_MESSAGE_DECL(SYNC, ROUTED, msg_class, 5, 0, (type1_in, type2_in, type3_in, type4_in, type5_in), ())
 
 #define IPC_SYNC_MESSAGE_ROUTED5_1(msg_class, type1_in, type2_in, type3_in, type4_in, type5_in, type1_out) \
   IPC_MESSAGE_DECL(SYNC, ROUTED, msg_class, 5, 1, (type1_in, type2_in, type3_in, type4_in, type5_in), (type1_out))
@@ -416,9 +418,6 @@
 
 #define IPC_SYNC_MESSAGE_ROUTED5_3(msg_class, type1_in, type2_in, type3_in, type4_in, type5_in, type1_out, type2_out, type3_out) \
   IPC_MESSAGE_DECL(SYNC, ROUTED, msg_class, 5, 3, (type1_in, type2_in, type3_in, type4_in, type5_in), (type1_out, type2_out, type3_out))
-
-#define IPC_SYNC_MESSAGE_ROUTED5_4(msg_class, type1_in, type2_in, type3_in, type4_in, type5_in, type1_out, type2_out, type3_out, type4_out) \
-  IPC_MESSAGE_DECL(SYNC, ROUTED, msg_class, 5, 4, (type1_in, type2_in, type3_in, type4_in, type5_in), (type1_out, type2_out, type3_out, type4_out))
 
 // The following macros define the common set of methods provided by ASYNC
 // message classes.

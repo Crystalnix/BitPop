@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -9,60 +9,35 @@
 
 #ifndef CONTENT_RENDERER_MEDIA_AUDIO_MESSAGE_FILTER_H_
 #define CONTENT_RENDERER_MEDIA_AUDIO_MESSAGE_FILTER_H_
-#pragma once
 
 #include "base/gtest_prod_util.h"
 #include "base/id_map.h"
 #include "base/shared_memory.h"
 #include "base/sync_socket.h"
-#include "content/common/media/audio_stream_state.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "media/audio/audio_buffers_state.h"
+#include "media/audio/audio_output_ipc.h"
 
 class CONTENT_EXPORT AudioMessageFilter
-    : public IPC::ChannelProxy::MessageFilter {
+    : public IPC::ChannelProxy::MessageFilter,
+      public NON_EXPORTED_BASE(media::AudioOutputIPC) {
  public:
-  class CONTENT_EXPORT Delegate {
-   public:
-    // Called when an audio packet is requested from the browser process.
-    virtual void OnRequestPacket(AudioBuffersState buffers_state) = 0;
-
-    // Called when state of an audio stream has changed in the browser process.
-    virtual void OnStateChanged(AudioStreamState state) = 0;
-
-    // Called when an audio stream has been created in the browser process.
-    virtual void OnCreated(base::SharedMemoryHandle handle, uint32 length) = 0;
-
-    // Called when a low-latency audio stream has been created in the browser
-    // process.
-    virtual void OnLowLatencyCreated(base::SharedMemoryHandle handle,
-                                     base::SyncSocket::Handle socket_handle,
-                                     uint32 length) = 0;
-
-    // Called when notification of stream volume is received from the browser
-    // process.
-    virtual void OnVolume(double volume) = 0;
-
-   protected:
-    virtual ~Delegate() {}
-  };
-
   AudioMessageFilter();
-  virtual ~AudioMessageFilter();
 
-  // Add a delegate to the map and return id of the entry.
-  int32 AddDelegate(Delegate* delegate);
+  // Getter for the one AudioMessageFilter object.
+  static AudioMessageFilter* Get();
 
-  // Remove a delegate referenced by |id| from the map.
-  void RemoveDelegate(int32 id);
-
-  // Sends an IPC message using |channel_|.
-  bool Send(IPC::Message* message);
-
- private:
-  FRIEND_TEST_ALL_PREFIXES(AudioMessageFilterTest, Basic);
-  FRIEND_TEST_ALL_PREFIXES(AudioMessageFilterTest, Delegates);
+  // media::AudioOutputIPCDelegate implementation.
+  virtual int AddDelegate(media::AudioOutputIPCDelegate* delegate) OVERRIDE;
+  virtual void RemoveDelegate(int id) OVERRIDE;
+  virtual void CreateStream(int stream_id,
+      const media::AudioParameters& params) OVERRIDE;
+  virtual void PlayStream(int stream_id) OVERRIDE;
+  virtual void PauseStream(int stream_id) OVERRIDE;
+  virtual void FlushStream(int stream_id) OVERRIDE;
+  virtual void CloseStream(int stream_id) OVERRIDE;
+  virtual void SetVolume(int stream_id, double volume) OVERRIDE;
 
   // IPC::ChannelProxy::MessageFilter override. Called on IO thread.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -70,33 +45,35 @@ class CONTENT_EXPORT AudioMessageFilter
   virtual void OnFilterRemoved() OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
 
-  // Received when browser process wants more audio packet.
-  void OnRequestPacket(int stream_id, AudioBuffersState buffers_state);
+ protected:
+  virtual ~AudioMessageFilter();
+
+ private:
+  FRIEND_TEST_ALL_PREFIXES(AudioMessageFilterTest, Basic);
+  FRIEND_TEST_ALL_PREFIXES(AudioMessageFilterTest, Delegates);
+
+  // Sends an IPC message using |channel_|.
+  bool Send(IPC::Message* message);
 
   // Received when browser process has created an audio output stream.
   void OnStreamCreated(int stream_id, base::SharedMemoryHandle handle,
-                       uint32 length);
-
-  // Received when browser process has created an audio output stream of low
-  // latency.
-  void OnLowLatencyStreamCreated(int stream_id, base::SharedMemoryHandle handle,
 #if defined(OS_WIN)
-                                 base::SyncSocket::Handle socket_handle,
+                       base::SyncSocket::Handle socket_handle,
 #else
-                                 base::FileDescriptor socket_descriptor,
+                       base::FileDescriptor socket_descriptor,
 #endif
-                                 uint32 length);
-
+                       uint32 length);
 
   // Received when internal state of browser process' audio output device has
   // changed.
-  void OnStreamStateChanged(int stream_id, AudioStreamState state);
+  void OnStreamStateChanged(int stream_id,
+                            media::AudioOutputIPCDelegate::State state);
 
-  // Notification of volume property of an audio output stream.
-  void OnStreamVolume(int stream_id, double volume);
+  // The singleton instance for this filter.
+  static AudioMessageFilter* filter_;
 
   // A map of stream ids to delegates.
-  IDMap<Delegate> delegates_;
+  IDMap<media::AudioOutputIPCDelegate> delegates_;
 
   IPC::Channel* channel_;
 

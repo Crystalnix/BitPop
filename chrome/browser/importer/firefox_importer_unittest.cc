@@ -4,6 +4,7 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 
+#include "base/bind.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
@@ -162,7 +163,7 @@ class FirefoxObserver : public ProfileWriter,
     ++password_count_;
   }
 
-  virtual void AddHistoryPage(const std::vector<history::URLRow>& page,
+  virtual void AddHistoryPage(const history::URLRows& page,
                               history::VisitSource visit_source) {
     ASSERT_EQ(1U, page.size());
     EXPECT_EQ("http://en-us.www.mozilla.com/", page[0].url().spec());
@@ -180,8 +181,7 @@ class FirefoxObserver : public ProfileWriter,
     }
   }
 
-  virtual void AddKeywords(const std::vector<TemplateURL*>& template_urls,
-                           int default_keyword_index,
+  virtual void AddKeywords(ScopedVector<TemplateURL> template_urls,
                            bool unique_on_host_and_path) {
     for (size_t i = 0; i < template_urls.size(); ++i) {
       // The order might not be deterministic, look in the expected list for
@@ -191,7 +191,7 @@ class FirefoxObserver : public ProfileWriter,
       for (size_t j = 0; j < arraysize(kFirefox2Keywords); ++j) {
         if (template_urls[i]->keyword() ==
             WideToUTF16Hack(kFirefox2Keywords[j].keyword)) {
-          EXPECT_EQ(kFirefox2Keywords[j].url, template_urls[i]->url()->url());
+          EXPECT_EQ(kFirefox2Keywords[j].url, template_urls[i]->url());
           found = true;
           break;
         }
@@ -199,9 +199,6 @@ class FirefoxObserver : public ProfileWriter,
       EXPECT_TRUE(found);
       ++keyword_count_;
     }
-
-    EXPECT_EQ(-1, default_keyword_index);
-    STLDeleteContainerPointers(template_urls.begin(), template_urls.end());
   }
 
   void AddFavicons(const std::vector<history::ImportedFaviconUsage>& favicons) {
@@ -311,7 +308,7 @@ class Firefox3Observer : public ProfileWriter,
     ++password_count_;
   }
 
-  virtual void AddHistoryPage(const std::vector<history::URLRow>& page,
+  virtual void AddHistoryPage(const history::URLRows& page,
                               history::VisitSource visit_source) {
     ASSERT_EQ(3U, page.size());
     EXPECT_EQ("http://www.google.com/", page[0].url().spec());
@@ -334,8 +331,7 @@ class Firefox3Observer : public ProfileWriter,
     }
   }
 
-  void AddKeywords(const std::vector<TemplateURL*>& template_urls,
-                   int default_keyword_index,
+  void AddKeywords(ScopedVector<TemplateURL> template_urls,
                    bool unique_on_host_and_path) {
     for (size_t i = 0; i < template_urls.size(); ++i) {
       // The order might not be deterministic, look in the expected list for
@@ -345,7 +341,7 @@ class Firefox3Observer : public ProfileWriter,
       for (size_t j = 0; j < arraysize(kFirefox3Keywords); ++j) {
         if (template_urls[i]->keyword() ==
             WideToUTF16Hack(kFirefox3Keywords[j].keyword)) {
-          EXPECT_EQ(kFirefox3Keywords[j].url, template_urls[i]->url()->url());
+          EXPECT_EQ(kFirefox3Keywords[j].url, template_urls[i]->url());
           found = true;
           break;
         }
@@ -353,9 +349,6 @@ class Firefox3Observer : public ProfileWriter,
       EXPECT_TRUE(found);
       ++keyword_count_;
     }
-
-    EXPECT_EQ(-1, default_keyword_index);
-    STLDeleteContainerPointers(template_urls.begin(), template_urls.end());
   }
 
   void AddFavicons(const std::vector<history::ImportedFaviconUsage>& favicons) {
@@ -507,7 +500,7 @@ TEST(FirefoxImporterTest, Firefox2NSS3Decryptor) {
   FFUnitTestDecryptorProxy decryptor_proxy;
   ASSERT_TRUE(decryptor_proxy.Setup(nss_path));
 
-  EXPECT_TRUE(decryptor_proxy.DecryptorInit(nss_path, db_path));
+  ASSERT_TRUE(decryptor_proxy.DecryptorInit(nss_path, db_path));
   EXPECT_EQ(ASCIIToUTF16("hello"),
       decryptor_proxy.Decrypt("MDIEEPgAAAAAAAAAAAAAAAAAAAEwFAYIKoZIhvcNAwcECBJ"
                               "M63MpT9rtBAjMCm7qo/EhlA=="));
@@ -532,7 +525,7 @@ TEST(FirefoxImporterTest, Firefox3NSS3Decryptor) {
   FFUnitTestDecryptorProxy decryptor_proxy;
   ASSERT_TRUE(decryptor_proxy.Setup(nss_path));
 
-  EXPECT_TRUE(decryptor_proxy.DecryptorInit(nss_path, db_path));
+  ASSERT_TRUE(decryptor_proxy.DecryptorInit(nss_path, db_path));
   EXPECT_EQ(ASCIIToUTF16("hello"),
       decryptor_proxy.Decrypt("MDIEEPgAAAAAAAAAAAAAAAAAAAEwFAYIKoZIhvcNAwcECKa"
                               "jtRg4qFSHBAhv9luFkXgDJA=="));

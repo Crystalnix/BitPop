@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,29 @@
 #include "webkit/fileapi/file_system_operation_context.h"
 
 namespace fileapi {
+
+namespace {
+
+// Sets permissions on directory at |dir_path| based on the target platform.
+// Returns true on success, or false otherwise.
+//
+// TODO(benchan): Find a better place outside webkit to host this function.
+bool SetPlatformSpecificDirectoryPermissions(const FilePath& dir_path) {
+#if defined(OS_CHROMEOS)
+    // System daemons on Chrome OS may run as a user different than the Chrome
+    // process but need to access files under the directories created here.
+    // Because of that, grant the execute permission on the created directory
+    // to group and other users.
+    if (HANDLE_EINTR(chmod(dir_path.value().c_str(),
+                           S_IRWXU | S_IXGRP | S_IXOTH)) != 0) {
+      return false;
+    }
+#endif
+    // Keep the directory permissions unchanged on non-Chrome OS platforms.
+    return true;
+}
+
+}  // namespace
 
 class NativeFileEnumerator : public FileSystemFileUtil::AbstractFileEnumerator {
  public:
@@ -27,6 +50,7 @@ class NativeFileEnumerator : public FileSystemFileUtil::AbstractFileEnumerator {
 
   virtual FilePath Next() OVERRIDE;
   virtual int64 Size() OVERRIDE;
+  virtual base::Time LastModifiedTime() OVERRIDE;
   virtual bool IsDirectory() OVERRIDE;
 
  private:
@@ -45,44 +69,44 @@ int64 NativeFileEnumerator::Size() {
   return file_util::FileEnumerator::GetFilesize(file_util_info_);
 }
 
+base::Time NativeFileEnumerator::LastModifiedTime() {
+  return file_util::FileEnumerator::GetLastModifiedTime(file_util_info_);
+}
+
 bool NativeFileEnumerator::IsDirectory() {
   return file_util::FileEnumerator::IsDirectory(file_util_info_);
 }
 
 PlatformFileError NativeFileUtil::CreateOrOpen(
-    FileSystemOperationContext* unused,
-    const FilePath& file_path, int file_flags,
+    const FilePath& path, int file_flags,
     PlatformFile* file_handle, bool* created) {
-  if (!file_util::DirectoryExists(file_path.DirName())) {
+  if (!file_util::DirectoryExists(path.DirName())) {
     // If its parent does not exist, should return NOT_FOUND error.
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
   }
   PlatformFileError error_code = base::PLATFORM_FILE_OK;
-  *file_handle = base::CreatePlatformFile(file_path, file_flags,
+  *file_handle = base::CreatePlatformFile(path, file_flags,
                                           created, &error_code);
   return error_code;
 }
 
-PlatformFileError NativeFileUtil::Close(
-    FileSystemOperationContext* unused,
-    PlatformFile file_handle) {
+PlatformFileError NativeFileUtil::Close(PlatformFile file_handle) {
   if (!base::ClosePlatformFile(file_handle))
     return base::PLATFORM_FILE_ERROR_FAILED;
   return base::PLATFORM_FILE_OK;
 }
 
 PlatformFileError NativeFileUtil::EnsureFileExists(
-    FileSystemOperationContext* unused,
-    const FilePath& file_path,
+    const FilePath& path,
     bool* created) {
-  if (!file_util::DirectoryExists(file_path.DirName()))
+  if (!file_util::DirectoryExists(path.DirName()))
     // If its parent does not exist, should return NOT_FOUND error.
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
   PlatformFileError error_code = base::PLATFORM_FILE_OK;
-  // Tries to create the |file_path| exclusively.  This should fail
+  // Tries to create the |path| exclusively.  This should fail
   // with base::PLATFORM_FILE_ERROR_EXISTS if the path already exists.
   PlatformFile handle = base::CreatePlatformFile(
-      file_path,
+      path,
       base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_READ,
       created, &error_code);
   if (error_code == base::PLATFORM_FILE_ERROR_EXISTS) {
@@ -97,116 +121,65 @@ PlatformFileError NativeFileUtil::EnsureFileExists(
 }
 
 PlatformFileError NativeFileUtil::CreateDirectory(
-    FileSystemOperationContext* context,
-    const FilePath& file_path,
+    const FilePath& path,
     bool exclusive,
     bool recursive) {
   // If parent dir of file doesn't exist.
-  if (!recursive && !file_util::PathExists(file_path.DirName()))
+  if (!recursive && !file_util::PathExists(path.DirName()))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
 
-  bool path_exists = file_util::PathExists(file_path);
+  bool path_exists = file_util::PathExists(path);
   if (exclusive && path_exists)
     return base::PLATFORM_FILE_ERROR_EXISTS;
 
   // If file exists at the path.
-  if (path_exists && !file_util::DirectoryExists(file_path))
+  if (path_exists && !file_util::DirectoryExists(path))
     return base::PLATFORM_FILE_ERROR_EXISTS;
 
-  if (!file_util::CreateDirectory(file_path))
+  if (!file_util::CreateDirectory(path))
     return base::PLATFORM_FILE_ERROR_FAILED;
+
+  if (!SetPlatformSpecificDirectoryPermissions(path))
+    return base::PLATFORM_FILE_ERROR_FAILED;
+
   return base::PLATFORM_FILE_OK;
 }
 
 PlatformFileError NativeFileUtil::GetFileInfo(
-    FileSystemOperationContext* unused,
-    const FilePath& file_path,
-    base::PlatformFileInfo* file_info,
-    FilePath* platform_file_path) {
-  if (!file_util::PathExists(file_path))
+    const FilePath& path,
+    base::PlatformFileInfo* file_info) {
+  if (!file_util::PathExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
-  // TODO(rkc): Fix this hack once we have refactored file_util to handle
-  // symlinks correctly.
-  // http://code.google.com/p/chromium-os/issues/detail?id=15948
-  if (file_util::IsLink(file_path))
-    return base::PLATFORM_FILE_ERROR_NOT_FOUND;
-  if (!file_util::GetFileInfo(file_path, file_info))
+  if (!file_util::GetFileInfo(path, file_info))
     return base::PLATFORM_FILE_ERROR_FAILED;
-  *platform_file_path = file_path;
-  return base::PLATFORM_FILE_OK;
-}
-
-PlatformFileError NativeFileUtil::ReadDirectory(
-    FileSystemOperationContext* unused,
-    const FilePath& file_path,
-    std::vector<base::FileUtilProxy::Entry>* entries) {
-  // TODO(kkanetkar): Implement directory read in multiple chunks.
-  if (!file_util::DirectoryExists(file_path))
-    return base::PLATFORM_FILE_ERROR_NOT_FOUND;
-
-  file_util::FileEnumerator file_enum(
-      file_path, false, static_cast<file_util::FileEnumerator::FileType>(
-      file_util::FileEnumerator::FILES |
-      file_util::FileEnumerator::DIRECTORIES));
-  FilePath current;
-  while (!(current = file_enum.Next()).empty()) {
-    base::FileUtilProxy::Entry entry;
-    file_util::FileEnumerator::FindInfo info;
-    file_enum.GetFindInfo(&info);
-    entry.is_directory = file_enum.IsDirectory(info);
-    // This will just give the entry's name instead of entire path
-    // if we use current.value().
-    entry.name = file_util::FileEnumerator::GetFilename(info).value();
-    entry.size = file_util::FileEnumerator::GetFilesize(info);
-    entry.last_modified_time =
-        file_util::FileEnumerator::GetLastModifiedTime(info);
-    // TODO(rkc): Fix this also once we've refactored file_util
-    // http://code.google.com/p/chromium-os/issues/detail?id=15948
-    // This currently just prevents a file from showing up at all
-    // if it's a link, hence preventing arbitary 'read' exploits.
-    if (!file_util::IsLink(file_path.Append(entry.name)))
-      entries->push_back(entry);
-  }
   return base::PLATFORM_FILE_OK;
 }
 
 FileSystemFileUtil::AbstractFileEnumerator*
-NativeFileUtil::CreateFileEnumerator(
-    FileSystemOperationContext* unused,
-    const FilePath& root_path) {
+NativeFileUtil::CreateFileEnumerator(const FilePath& root_path,
+                                     bool recursive) {
   return new NativeFileEnumerator(
-      root_path, true, static_cast<file_util::FileEnumerator::FileType>(
-      file_util::FileEnumerator::FILES |
-      file_util::FileEnumerator::DIRECTORIES));
-}
-
-PlatformFileError NativeFileUtil::GetLocalFilePath(
-    FileSystemOperationContext* unused,
-    const FilePath& virtual_path,
-    FilePath* local_path) {
-  *local_path = virtual_path;
-  return base::PLATFORM_FILE_OK;
+      root_path, recursive,
+      static_cast<file_util::FileEnumerator::FileType>(
+          file_util::FileEnumerator::FILES |
+          file_util::FileEnumerator::DIRECTORIES));
 }
 
 PlatformFileError NativeFileUtil::Touch(
-    FileSystemOperationContext* unused,
-    const FilePath& file_path,
+    const FilePath& path,
     const base::Time& last_access_time,
     const base::Time& last_modified_time) {
   if (!file_util::TouchFile(
-          file_path, last_access_time, last_modified_time))
+          path, last_access_time, last_modified_time))
     return base::PLATFORM_FILE_ERROR_FAILED;
   return base::PLATFORM_FILE_OK;
 }
 
-PlatformFileError NativeFileUtil::Truncate(
-    FileSystemOperationContext* unused,
-    const FilePath& file_path,
-    int64 length) {
+PlatformFileError NativeFileUtil::Truncate(const FilePath& path, int64 length) {
   PlatformFileError error_code(base::PLATFORM_FILE_ERROR_FAILED);
   PlatformFile file =
       base::CreatePlatformFile(
-          file_path,
+          path,
           base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_WRITE,
           NULL,
           &error_code);
@@ -220,73 +193,56 @@ PlatformFileError NativeFileUtil::Truncate(
   return error_code;
 }
 
-bool NativeFileUtil::PathExists(
-    FileSystemOperationContext* unused,
-    const FilePath& file_path) {
-  return file_util::PathExists(file_path);
+bool NativeFileUtil::PathExists(const FilePath& path) {
+  return file_util::PathExists(path);
 }
 
-bool NativeFileUtil::DirectoryExists(
-    FileSystemOperationContext* unused,
-    const FilePath& file_path) {
-  return file_util::DirectoryExists(file_path);
+bool NativeFileUtil::DirectoryExists(const FilePath& path) {
+  return file_util::DirectoryExists(path);
 }
 
-bool NativeFileUtil::IsDirectoryEmpty(
-    FileSystemOperationContext* unused,
-    const FilePath& file_path) {
-  return file_util::IsDirectoryEmpty(file_path);
+bool NativeFileUtil::IsDirectoryEmpty(const FilePath& path) {
+  return file_util::IsDirectoryEmpty(path);
 }
 
 PlatformFileError NativeFileUtil::CopyOrMoveFile(
-      FileSystemOperationContext* unused,
-      const FilePath& src_file_path,
-      const FilePath& dest_file_path,
+      const FilePath& src_path,
+      const FilePath& dest_path,
       bool copy) {
   if (copy) {
-    if (file_util::CopyFile(src_file_path, dest_file_path))
+    if (file_util::CopyFile(src_path,
+                            dest_path))
       return base::PLATFORM_FILE_OK;
   } else {
-    DCHECK(!file_util::DirectoryExists(src_file_path));
-    if (file_util::Move(src_file_path, dest_file_path))
+    DCHECK(!file_util::DirectoryExists(src_path));
+    if (file_util::Move(src_path, dest_path))
       return base::PLATFORM_FILE_OK;
   }
   return base::PLATFORM_FILE_ERROR_FAILED;
 }
 
-PlatformFileError NativeFileUtil::CopyInForeignFile(
-      FileSystemOperationContext* context,
-      const FilePath& src_file_path,
-      const FilePath& dest_file_path) {
-  return CopyOrMoveFile(context, src_file_path, dest_file_path, true);
-}
-
-PlatformFileError NativeFileUtil::DeleteFile(
-    FileSystemOperationContext* unused,
-    const FilePath& file_path) {
-  if (!file_util::PathExists(file_path))
+PlatformFileError NativeFileUtil::DeleteFile(const FilePath& path) {
+  if (!file_util::PathExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
-  if (file_util::DirectoryExists(file_path))
+  if (file_util::DirectoryExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_A_FILE;
-  if (!file_util::Delete(file_path, false))
+  if (!file_util::Delete(path, false))
     return base::PLATFORM_FILE_ERROR_FAILED;
   return base::PLATFORM_FILE_OK;
 }
 
-PlatformFileError NativeFileUtil::DeleteSingleDirectory(
-    FileSystemOperationContext* unused,
-    const FilePath& file_path) {
-  if (!file_util::PathExists(file_path))
+PlatformFileError NativeFileUtil::DeleteSingleDirectory(const FilePath& path) {
+  if (!file_util::PathExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
-  if (!file_util::DirectoryExists(file_path)) {
+  if (!file_util::DirectoryExists(path)) {
     // TODO(dmikurube): Check if this error code is appropriate.
     return base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY;
   }
-  if (!file_util::IsDirectoryEmpty(file_path)) {
+  if (!file_util::IsDirectoryEmpty(path)) {
     // TODO(dmikurube): Check if this error code is appropriate.
     return base::PLATFORM_FILE_ERROR_NOT_EMPTY;
   }
-  if (!file_util::Delete(file_path, false))
+  if (!file_util::Delete(path, false))
     return base::PLATFORM_FILE_ERROR_FAILED;
   return base::PLATFORM_FILE_OK;
 }

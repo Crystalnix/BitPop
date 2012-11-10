@@ -6,13 +6,9 @@
 
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/views/html_dialog_view.h"
-#include "chrome/browser/ui/views/window.h"
+#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/common/url_constants.h"
-#include "ui/views/view.h"
-#include "ui/views/widget/widget.h"
+#include "ui/gfx/size.h"
 
 using content::WebContents;
 using content::WebUIMessageHandler;
@@ -29,20 +25,9 @@ namespace chromeos {
 
 // static
 void ChooseMobileNetworkDialog::ShowDialog(gfx::NativeWindow owning_window) {
-  Profile* profile;
-  Browser* browser = NULL;
-  if (UserManager::Get()->user_is_logged_in()) {
-    browser = BrowserList::GetLastActive();
-    DCHECK(browser);
-    profile = browser->profile();
-  } else {
-    profile = ProfileManager::GetDefaultProfile();
-  }
-  HtmlDialogView* html_view =
-      new HtmlDialogView(profile, browser, new ChooseMobileNetworkDialog);
-  html_view->InitDialog();
-  browser::CreateViewsWindow(owning_window, html_view, STYLE_FLUSH);
-  html_view->GetWidget()->Show();
+  chrome::ShowWebDialog(owning_window,
+                        ProfileManager::GetDefaultProfileOrOffTheRecord(),
+                        new ChooseMobileNetworkDialog);
 }
 
 ChooseMobileNetworkDialog::ChooseMobileNetworkDialog() {
@@ -87,7 +72,7 @@ bool ChooseMobileNetworkDialog::ShouldShowDialogTitle() const {
 }
 
 bool ChooseMobileNetworkDialog::HandleContextMenu(
-    const ContextMenuParams& params) {
+    const content::ContextMenuParams& params) {
   // Disable context menu.
   return true;
 }

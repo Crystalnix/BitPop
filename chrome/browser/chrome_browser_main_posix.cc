@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <pthread.h>
 #include <signal.h>
 #include <sys/resource.h>
 #include <unistd.h>
@@ -17,11 +18,16 @@
 #include "base/eintr_wrapper.h"
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 
-#if defined(TOOLKIT_USES_GTK) && !defined(OS_CHROMEOS)
+#if defined(OS_ANDROID)
+#include <asm/page.h>  // for PAGE_SIZE needed by PTHREAD_STACK_MIN
+#endif
+
+#if defined(TOOLKIT_GTK)
+#include "chrome/browser/ui/gtk/chrome_browser_main_extra_parts_gtk.h"
 #include "chrome/browser/printing/print_dialog_gtk.h"
 #endif
 
@@ -138,9 +144,9 @@ void ShutdownDetector::ThreadMain() {
   VLOG(1) << "Handling shutdown for signal " << signal << ".";
 #if defined(OS_CHROMEOS)
   // On ChromeOS, exiting on signal should be always clean.
-  base::Closure task = base::Bind(&BrowserList::ExitCleanly);
+  base::Closure task = base::Bind(&browser::ExitCleanly);
 #else
-  base::Closure task = base::Bind(&BrowserList::AttemptExit);
+  base::Closure task = base::Bind(&browser::AttemptExit);
 #endif
 
   if (!BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, task)) {
@@ -231,7 +237,13 @@ void ChromeBrowserMainPartsPosix::PostMainMessageLoopStart() {
   } else {
     g_shutdown_pipe_read_fd = pipefd[0];
     g_shutdown_pipe_write_fd = pipefd[1];
-    const size_t kShutdownDetectorThreadStackSize = 4096;
+#if !defined(ADDRESS_SANITIZER)
+    const size_t kShutdownDetectorThreadStackSize = PTHREAD_STACK_MIN;
+#else
+    // ASan instrumentation bloats the stack, so we need to increase the stack
+    // size to avoid hitting the guard page.
+    const size_t kShutdownDetectorThreadStackSize = PTHREAD_STACK_MIN * 4;
+#endif
     // TODO(viettrungluu,willchan): crbug.com/29675 - This currently leaks, so
     // if you change this, you'll probably need to change the suppression.
     if (!base::PlatformThread::CreateNonJoinable(
@@ -262,8 +274,31 @@ void ChromeBrowserMainPartsPosix::PostMainMessageLoopStart() {
   action.sa_handler = SIGHUPHandler;
   CHECK(sigaction(SIGHUP, &action, NULL) == 0);
 
-#if defined(TOOLKIT_USES_GTK) && !defined(OS_CHROMEOS)
+#if defined(TOOLKIT_GTK)
   printing::PrintingContextGtk::SetCreatePrintDialogFunction(
       &PrintDialogGtk::CreatePrintDialog);
+#endif
+}
+
+void ChromeBrowserMainPartsPosix::ShowMissingLocaleMessageBox() {
+#if defined(OS_CHROMEOS)
+  NOTREACHED();  // Should not ever happen on ChromeOS.
+#elif defined(OS_ANDROID)
+  // TODO(port) Update this as needed.
+  // Probably should not ever happen on Android, but at the time of this
+  // writing, Android isn't even using ChromeBrowserMainPartsPosix yet.
+  NOTREACHED();
+#elif defined(OS_MACOSX)
+  // Not called on Mac because we load the locale files differently.
+  NOTREACHED();
+#elif defined(TOOLKIT_GTK)
+  ChromeBrowserMainExtraPartsGtk::ShowMessageBox(
+      chrome_browser::kMissingLocaleDataMessage);
+#elif defined(USE_AURA)
+  // TODO(port): We may want a views based message dialog here eventually, but
+  // for now, crash.
+  NOTREACHED();
+#else
+#error "Need MessageBox implementation."
 #endif
 }

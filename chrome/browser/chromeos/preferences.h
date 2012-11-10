@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_CHROMEOS_PREFERENCES_H_
 #define CHROME_BROWSER_CHROMEOS_PREFERENCES_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -17,6 +16,9 @@
 class PrefService;
 
 namespace chromeos {
+namespace input_method {
+class InputMethodManager;
+}  // namespace input_method
 
 // The Preferences class handles Chrome OS preferences. When the class
 // is first initialized, it will initialize the OS settings to what's stored in
@@ -25,14 +27,12 @@ namespace chromeos {
 class Preferences : public content::NotificationObserver {
  public:
   Preferences();
+  explicit Preferences(
+      input_method::InputMethodManager* input_method_manager);  // for testing
   virtual ~Preferences();
 
   // This method will register the prefs associated with Chrome OS settings.
   static void RegisterUserPrefs(PrefService* prefs);
-
-  // This method is called when kLanguagePreferredVirtualKeyboard is updated to
-  // change the virtual keyboard settings to reflect the new value.
-  static void UpdateVirturalKeyboardPreference(PrefService* prefs);
 
   // This method will initialize Chrome OS settings to values in user prefs.
   void Init(PrefService* prefs);
@@ -42,7 +42,13 @@ class Preferences : public content::NotificationObserver {
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  void InitUserPrefsForTesting(PrefService* prefs);
+  void SetInputMethodListForTesting();
+
  private:
+  // Initializes all member prefs.
+  void InitUserPrefs(PrefService* prefs);
+
   // This will set the OS settings when the preference changes.
   // If this method is called with NULL, it will set all OS settings to what's
   // stored in the preferences.
@@ -79,56 +85,68 @@ class Preferences : public content::NotificationObserver {
                                         const char* name,
                                         const std::string& value);
 
-  // Updates the mapping of modifier keys following current prefs values.
-  void UpdateModifierKeyMapping();
+  // Restores the user's preferred input method / keyboard layout on signing in.
+  void SetInputMethodList();
 
   // Updates the initial key repeat delay and key repeat interval following
   // current prefs values. We set the delay and interval at once since an
   // underlying XKB API requires it.
   void UpdateAutoRepeatRate();
 
+  PrefService* prefs_;
+
+  input_method::InputMethodManager* input_method_manager_;
+
   BooleanPrefMember tap_to_click_enabled_;
+  BooleanPrefMember three_finger_click_enabled_;
+  BooleanPrefMember natural_scroll_;
   BooleanPrefMember vert_edge_scroll_enabled_;
   BooleanPrefMember accessibility_enabled_;
   IntegerPrefMember speed_factor_;
-  IntegerPrefMember sensitivity_;
-  BooleanPrefMember use_24hour_clock_;
+  IntegerPrefMember mouse_sensitivity_;
+  IntegerPrefMember touchpad_sensitivity_;
   BooleanPrefMember primary_mouse_button_right_;
+  BooleanPrefMember use_24hour_clock_;
+  BooleanPrefMember disable_gdata_;
+  BooleanPrefMember disable_gdata_over_cellular_;
+  BooleanPrefMember disable_gdata_hosted_files_;
 
   // Input method preferences.
-  StringPrefMember language_hotkey_next_engine_in_menu_;
-  StringPrefMember language_hotkey_previous_engine_;
-  StringPrefMember language_preferred_languages_;
-  StringPrefMember language_preload_engines_;
-  BooleanPrefMember language_chewing_boolean_prefs_[
+  StringPrefMember preferred_languages_;
+  StringPrefMember preload_engines_;
+  StringPrefMember current_input_method_;
+  StringPrefMember previous_input_method_;
+
+  BooleanPrefMember chewing_boolean_prefs_[
       language_prefs::kNumChewingBooleanPrefs];
-  StringPrefMember language_chewing_multiple_choice_prefs_[
+  StringPrefMember chewing_multiple_choice_prefs_[
       language_prefs::kNumChewingMultipleChoicePrefs];
-  IntegerPrefMember language_chewing_hsu_sel_key_type_;
-  IntegerPrefMember language_chewing_integer_prefs_[
+  IntegerPrefMember chewing_hsu_sel_key_type_;
+  IntegerPrefMember chewing_integer_prefs_[
       language_prefs::kNumChewingIntegerPrefs];
-  StringPrefMember language_hangul_keyboard_;
-  StringPrefMember language_hangul_hanja_binding_keys_;
-  StringPrefMember language_hangul_hanja_keys_;
-  BooleanPrefMember language_pinyin_boolean_prefs_[
+  StringPrefMember hangul_keyboard_;
+  StringPrefMember hangul_hanja_binding_keys_;
+  StringPrefMember hangul_hanja_keys_;
+  BooleanPrefMember pinyin_boolean_prefs_[
       language_prefs::kNumPinyinBooleanPrefs];
-  IntegerPrefMember language_pinyin_int_prefs_[
+  IntegerPrefMember pinyin_int_prefs_[
       language_prefs::kNumPinyinIntegerPrefs];
-  IntegerPrefMember language_pinyin_double_pinyin_schema_;
-  BooleanPrefMember language_mozc_boolean_prefs_[
+  IntegerPrefMember pinyin_double_pinyin_schema_;
+  BooleanPrefMember mozc_boolean_prefs_[
       language_prefs::kNumMozcBooleanPrefs];
-  StringPrefMember language_mozc_multiple_choice_prefs_[
+  StringPrefMember mozc_multiple_choice_prefs_[
       language_prefs::kNumMozcMultipleChoicePrefs];
-  IntegerPrefMember language_mozc_integer_prefs_[
+  IntegerPrefMember mozc_integer_prefs_[
       language_prefs::kNumMozcIntegerPrefs];
-  IntegerPrefMember language_xkb_remap_search_key_to_;
-  IntegerPrefMember language_xkb_remap_control_key_to_;
-  IntegerPrefMember language_xkb_remap_alt_key_to_;
-  BooleanPrefMember language_xkb_auto_repeat_enabled_;
-  IntegerPrefMember language_xkb_auto_repeat_delay_pref_;
-  IntegerPrefMember language_xkb_auto_repeat_interval_pref_;
+  BooleanPrefMember xkb_auto_repeat_enabled_;
+  IntegerPrefMember xkb_auto_repeat_delay_pref_;
+  IntegerPrefMember xkb_auto_repeat_interval_pref_;
 
   BooleanPrefMember enable_screen_lock_;
+
+  IntegerPrefMember secondary_display_layout_;
+
+  BooleanPrefMember enable_drm_;
 
   DISALLOW_COPY_AND_ASSIGN(Preferences);
 };

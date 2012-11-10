@@ -2,10 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/base_paths.h"
-#include "base/file_util.h"
 #include "base/logging.h"
-#include "base/path_service.h"
 #include "content/test/gpu/gpu_test_expectations_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -92,8 +89,9 @@ TEST_F(GPUTestExpectationsParserTest, ValidUnrelatedTestEntry) {
 
 TEST_F(GPUTestExpectationsParserTest, AllModifiers) {
   const std::string text =
-      "BUG12345 XP VISTA WIN7 LEOPARD SNOWLEOPARD LION LINUX CHROMEOS "
-      "NVIDIA INTEL AMD RELEASE DEBUG : MyTest = PASS FAIL FLAKY TIMEOUT";
+      "BUG12345 XP VISTA WIN7 LEOPARD SNOWLEOPARD LION LINUX CHROMEOS ANDROID "
+      "NVIDIA INTEL AMD VMWARE RELEASE DEBUG : MyTest = "
+      "PASS FAIL FLAKY TIMEOUT SKIP";
 
   GPUTestExpectationsParser parser;
   EXPECT_TRUE(parser.LoadTestExpectations(text));
@@ -101,7 +99,8 @@ TEST_F(GPUTestExpectationsParserTest, AllModifiers) {
   EXPECT_EQ(GPUTestExpectationsParser::kGpuTestPass |
             GPUTestExpectationsParser::kGpuTestFail |
             GPUTestExpectationsParser::kGpuTestFlaky |
-            GPUTestExpectationsParser::kGpuTestTimeout,
+            GPUTestExpectationsParser::kGpuTestTimeout |
+            GPUTestExpectationsParser::kGpuTestSkip,
             parser.GetTestExpectation("MyTest", bot_config()));
 }
 
@@ -116,8 +115,9 @@ TEST_F(GPUTestExpectationsParserTest, DuplicateModifiers) {
 
 TEST_F(GPUTestExpectationsParserTest, AllModifiersLowerCase) {
   const std::string text =
-      "BUG12345 xp vista win7 leopard snowleopard lion linux chromeos "
-      "nvidia intel amd release debug : MyTest = pass fail flaky timeout";
+      "BUG12345 xp vista win7 leopard snowleopard lion linux chromeos android "
+      "nvidia intel amd vmware release debug : MyTest = "
+      "pass fail flaky timeout skip";
 
   GPUTestExpectationsParser parser;
   EXPECT_TRUE(parser.LoadTestExpectations(text));
@@ -125,7 +125,8 @@ TEST_F(GPUTestExpectationsParserTest, AllModifiersLowerCase) {
   EXPECT_EQ(GPUTestExpectationsParser::kGpuTestPass |
             GPUTestExpectationsParser::kGpuTestFail |
             GPUTestExpectationsParser::kGpuTestFlaky |
-            GPUTestExpectationsParser::kGpuTestTimeout,
+            GPUTestExpectationsParser::kGpuTestTimeout |
+            GPUTestExpectationsParser::kGpuTestSkip,
             parser.GetTestExpectation("MyTest", bot_config()));
 }
 
@@ -224,18 +225,23 @@ TEST_F(GPUTestExpectationsParserTest, ValidMultipleEntries) {
             parser.GetTestExpectation("MyTest", bot_config()));
 }
 
-TEST_F(GPUTestExpectationsParserTest, WebGLTestExpectationsValidation) {
-  FilePath path;
-  ASSERT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &path));
-  path = path.Append(FILE_PATH_LITERAL("chrome"))
-             .Append(FILE_PATH_LITERAL("test"))
-             .Append(FILE_PATH_LITERAL("gpu"))
-             .Append(FILE_PATH_LITERAL(
-                 "webgl_conformance_test_expectations.txt"));
-  ASSERT_TRUE(file_util::PathExists(path));
+TEST_F(GPUTestExpectationsParserTest, StarMatching) {
+  const std::string text =
+      "BUG12345 WIN7 RELEASE NVIDIA 0x0640 : MyTest* = FAIL";
 
   GPUTestExpectationsParser parser;
-  EXPECT_TRUE(parser.LoadTestExpectations(path));
+  EXPECT_TRUE(parser.LoadTestExpectations(text));
+  EXPECT_EQ(0u, parser.GetErrorMessages().size());
+  EXPECT_EQ(GPUTestExpectationsParser::kGpuTestFail,
+            parser.GetTestExpectation("MyTest0", bot_config()));
+  EXPECT_EQ(GPUTestExpectationsParser::kGpuTestPass,
+            parser.GetTestExpectation("OtherTest", bot_config()));
+}
+
+TEST_F(GPUTestExpectationsParserTest, WebGLTestExpectationsValidation) {
+  GPUTestExpectationsParser parser;
+  EXPECT_TRUE(parser.LoadTestExpectations(
+      GPUTestExpectationsParser::kWebGLConformanceTest));
   EXPECT_EQ(0u, parser.GetErrorMessages().size());
   for (size_t i = 0; i < parser.GetErrorMessages().size(); ++i)
     LOG(ERROR) << parser.GetErrorMessages()[i];

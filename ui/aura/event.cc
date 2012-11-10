@@ -13,6 +13,7 @@
 #include "ui/aura/window.h"
 #include "ui/base/keycodes/keyboard_code_conversion.h"
 #include "ui/gfx/point3.h"
+#include "ui/gfx/interpolated_transform.h"
 #include "ui/gfx/transform.h"
 
 #if defined(OS_MACOSX)
@@ -91,6 +92,9 @@ void Event::InitWithNativeEvent(const base::NativeEvent& native_event) {
   native_event_ = native_event;
 }
 
+LocatedEvent::~LocatedEvent() {
+}
+
 LocatedEvent::LocatedEvent(const base::NativeEvent& native_event)
     : Event(native_event,
             ui::EventTypeFromNative(native_event),
@@ -115,7 +119,7 @@ LocatedEvent::LocatedEvent(ui::EventType type,
                            int flags)
     : Event(type, flags),
       location_(location),
-      root_location_(location) {
+      root_location_(root_location) {
 }
 
 void LocatedEvent::UpdateForRootTransform(const ui::Transform& root_transform) {
@@ -263,24 +267,64 @@ TouchEvent::TouchEvent(const TouchEvent& model,
 
 TouchEvent::TouchEvent(ui::EventType type,
                        const gfx::Point& location,
-                       int touch_id)
+                       int touch_id,
+                       base::TimeDelta time_stamp)
     : LocatedEvent(type, location, location, 0),
       touch_id_(touch_id),
-      radius_x_(1.0f),
-      radius_y_(1.0f),
+      radius_x_(0.0f),
+      radius_y_(0.0f),
       rotation_angle_(0.0f),
       force_(0.0f) {
+  set_time_stamp(time_stamp);
 }
 
-TouchEvent* TouchEvent::Copy() const {
-#if defined(OS_WIN)
-  if (native_event().message)
-    return new TouchEvent(::CopyNativeEvent(native_event()));
-#else
-  if (native_event())
-    return new TouchEvent(::CopyNativeEvent(native_event()));
-#endif
-  return new TouchEvent(*this, NULL, NULL);
+TouchEvent::~TouchEvent() {
+}
+
+void TouchEvent::UpdateForRootTransform(const ui::Transform& root_transform) {
+  LocatedEvent::UpdateForRootTransform(root_transform);
+  gfx::Point3f scale;
+  ui::InterpolatedTransform::FactorTRS(root_transform, NULL, NULL, &scale);
+  if (scale.x())
+    radius_x_ /= scale.x();
+  if (scale.y())
+    radius_y_ /= scale.y();
+}
+
+ui::EventType TouchEvent::GetEventType() const {
+  return type();
+}
+
+gfx::Point TouchEvent::GetLocation() const {
+  return location();
+}
+
+int TouchEvent::GetTouchId() const {
+  return touch_id_;
+}
+
+int TouchEvent::GetEventFlags() const {
+  return flags();
+}
+
+base::TimeDelta TouchEvent::GetTimestamp() const {
+  return time_stamp();
+}
+
+float TouchEvent::RadiusX() const {
+  return radius_x_;
+}
+
+float TouchEvent::RadiusY() const {
+  return radius_y_;
+}
+
+float TouchEvent::RotationAngle() const {
+  return rotation_angle_;
+}
+
+float TouchEvent::Force() const {
+  return force_;
 }
 
 KeyEvent::KeyEvent(const base::NativeEvent& native_event, bool is_char)
@@ -366,9 +410,37 @@ KeyEvent* KeyEvent::Copy() {
   return copy;
 }
 
+TranslatedKeyEvent::TranslatedKeyEvent(const base::NativeEvent& native_event,
+                                       bool is_char)
+    : KeyEvent(native_event, is_char) {
+  set_type(type() == ui::ET_KEY_PRESSED ?
+           ui::ET_TRANSLATED_KEY_PRESS : ui::ET_TRANSLATED_KEY_RELEASE);
+}
+
+TranslatedKeyEvent::TranslatedKeyEvent(bool is_press,
+                                       ui::KeyboardCode key_code,
+                                       int flags)
+    : KeyEvent((is_press ?
+                ui::ET_TRANSLATED_KEY_PRESS : ui::ET_TRANSLATED_KEY_RELEASE),
+               key_code,
+               flags) {
+}
+
+void TranslatedKeyEvent::ConvertToKeyEvent() {
+  set_type(type() == ui::ET_TRANSLATED_KEY_PRESS ?
+           ui::ET_KEY_PRESSED : ui::ET_KEY_RELEASED);
+}
+
 ScrollEvent::ScrollEvent(const base::NativeEvent& native_event)
     : MouseEvent(native_event) {
-  ui::GetScrollOffsets(native_event, &x_offset_, &y_offset_);
+  if (type() == ui::ET_SCROLL) {
+    ui::GetScrollOffsets(native_event, &x_offset_, &y_offset_);
+    double start, end;
+    ui::GetGestureTimes(native_event, &start, &end);
+  } else if (type() == ui::ET_SCROLL_FLING_START) {
+    bool is_cancel;
+    ui::GetFlingData(native_event, &x_offset_, &y_offset_, &is_cancel);
+  }
 }
 
 GestureEvent::GestureEvent(ui::EventType type,
@@ -376,12 +448,11 @@ GestureEvent::GestureEvent(ui::EventType type,
                            int y,
                            int flags,
                            base::Time time_stamp,
-                           float delta_x,
-                           float delta_y)
+                           const ui::GestureEventDetails& details,
+                           unsigned int touch_ids_bitfield)
     : LocatedEvent(type, gfx::Point(x, y), gfx::Point(x, y), flags),
-      delta_x_(delta_x),
-      delta_y_(delta_y) {
-  // XXX: Why is aura::Event::time_stamp_ a TimeDelta instead of a Time?
+      details_(details),
+      touch_ids_bitfield_(touch_ids_bitfield) {
   set_time_stamp(base::TimeDelta::FromSeconds(time_stamp.ToDoubleT()));
 }
 
@@ -389,8 +460,20 @@ GestureEvent::GestureEvent(const GestureEvent& model,
                            Window* source,
                            Window* target)
     : LocatedEvent(model, source, target),
-      delta_x_(model.delta_x_),
-      delta_y_(model.delta_y_) {
+      details_(model.details_),
+      touch_ids_bitfield_(model.touch_ids_bitfield_) {
+}
+
+GestureEvent::~GestureEvent() {
+}
+
+int GestureEvent::GetLowestTouchId() const {
+  if (touch_ids_bitfield_ == 0)
+    return -1;
+  int i = -1;
+  // Find the index of the least significant 1 bit
+  while (!(1 << ++i & touch_ids_bitfield_));
+  return i;
 }
 
 }  // namespace aura

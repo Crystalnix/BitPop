@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,12 +8,14 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_editor.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
@@ -26,17 +28,19 @@ using content::UserMetricsAction;
 BookmarkContextMenuController::BookmarkContextMenuController(
     gfx::NativeWindow parent_window,
     BookmarkContextMenuControllerDelegate* delegate,
+    Browser* browser,
     Profile* profile,
     PageNavigator* navigator,
     const BookmarkNode* parent,
     const std::vector<const BookmarkNode*>& selection)
     : parent_window_(parent_window),
       delegate_(delegate),
+      browser_(browser),
       profile_(profile),
       navigator_(navigator),
       parent_(parent),
       selection_(selection),
-      model_(profile->GetBookmarkModel()) {
+      model_(BookmarkModelFactory::GetForProfile(profile)) {
   DCHECK(profile_);
   DCHECK(model_->IsLoaded());
   menu_model_.reset(new ui::SimpleMenuModel(this));
@@ -61,9 +65,9 @@ void BookmarkContextMenuController::BuildMenu() {
   } else {
     AddItem(IDC_BOOKMARK_BAR_OPEN_ALL, IDS_BOOKMARK_BAR_OPEN_ALL);
     AddItem(IDC_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW,
-        IDS_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW);
+            IDS_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW);
     AddItem(IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO,
-        IDS_BOOKMARK_BAR_OPEN_ALL_INCOGNITO);
+            IDS_BOOKMARK_BAR_OPEN_ALL_INCOGNITO);
   }
 
   AddSeparator();
@@ -113,7 +117,7 @@ void BookmarkContextMenuController::ExecuteCommand(int id) {
     case IDC_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW: {
       WindowOpenDisposition initial_disposition;
       if (id == IDC_BOOKMARK_BAR_OPEN_ALL) {
-        initial_disposition = NEW_FOREGROUND_TAB;
+        initial_disposition = NEW_BACKGROUND_TAB;
         content::RecordAction(
             UserMetricsAction("BookmarkBar_ContextMenu_OpenAll"));
       } else if (id == IDC_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW) {
@@ -125,7 +129,7 @@ void BookmarkContextMenuController::ExecuteCommand(int id) {
         content::RecordAction(
             UserMetricsAction("BookmarkBar_ContextMenu_OpenAllIncognito"));
       }
-      bookmark_utils::OpenAll(parent_window_, profile_, navigator_, selection_,
+      bookmark_utils::OpenAll(parent_window_, navigator_, selection_,
                               initial_disposition);
       break;
     }
@@ -144,7 +148,8 @@ void BookmarkContextMenuController::ExecuteCommand(int id) {
           parent_window_,
           profile_,
           BookmarkEditor::EditDetails::EditNode(selection_[0]),
-          BookmarkEditor::SHOW_TREE);
+          selection_[0]->is_url() ? BookmarkEditor::SHOW_TREE :
+                                    BookmarkEditor::NO_TREE);
       break;
 
     case IDC_BOOKMARK_BAR_REMOVE: {
@@ -167,10 +172,15 @@ void BookmarkContextMenuController::ExecuteCommand(int id) {
       int index;
       const BookmarkNode* parent =
           bookmark_utils::GetParentForNewNodes(parent_, selection_, &index);
+      GURL url;
+      string16 title;
+      bookmark_utils::GetURLAndTitleToBookmark(
+          chrome::GetActiveWebContents(browser_), &url, &title);
       BookmarkEditor::Show(
           parent_window_,
           profile_,
-          BookmarkEditor::EditDetails::AddNodeInFolder(parent, index),
+          BookmarkEditor::EditDetails::AddNodeInFolder(
+              parent, index, url, title),
           BookmarkEditor::SHOW_TREE);
       break;
     }
@@ -196,17 +206,14 @@ void BookmarkContextMenuController::ExecuteCommand(int id) {
 
     case IDC_BOOKMARK_MANAGER: {
       content::RecordAction(UserMetricsAction("ShowBookmarkManager"));
-      Browser* browser = BrowserList::GetLastActiveWithProfile(profile_);
-      if (!browser) NOTREACHED();
-
       if (selection_.size() != 1)
-        browser->OpenBookmarkManager();
+        chrome::ShowBookmarkManager(browser_);
       else if (selection_[0]->is_folder())
-        browser->OpenBookmarkManagerForNode(selection_[0]->id());
+        chrome::ShowBookmarkManagerForNode(browser_, selection_[0]->id());
       else if (parent_)
-        browser->OpenBookmarkManagerForNode(parent_->id());
+        chrome::ShowBookmarkManagerForNode(browser_, parent_->id());
       else
-        browser->OpenBookmarkManager();
+        chrome::ShowBookmarkManager(browser_);
       break;
     }
 
@@ -244,9 +251,8 @@ bool BookmarkContextMenuController::IsCommandIdChecked(int command_id) const {
 }
 
 bool BookmarkContextMenuController::IsCommandIdEnabled(int command_id) const {
-  bool is_root_node =
-      (selection_.size() == 1 &&
-       selection_[0]->parent() == model_->root_node());
+  bool is_root_node = selection_.size() == 1 &&
+                      selection_[0]->parent() == model_->root_node();
   bool can_edit =
       profile_->GetPrefs()->GetBoolean(prefs::kEditBookmarksEnabled);
   IncognitoModePrefs::Availability incognito_avail =

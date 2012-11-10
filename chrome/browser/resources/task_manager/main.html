@@ -10,22 +10,20 @@
     <title i18n-content="title"></title>
     <script src="measure_time.js"></script>
 
+    <script src="commands.js"></script>
+    <script src="defines.js"></script>
+    <script src="preload.js"></script>
     <script src="includes.js"></script>
     <script src="main.js"></script>
     <script src="chrome://tasks/strings.js"></script>
 
     <!-- For accurate load performance tracking
          place all scripts above this line -->
-    <script>
-      measureTime.recordInterval('Load.Script');
-    </script>
+    <script src="measure_time_end.js"></script>
 
     <link rel="stylesheet" href="task_manager.css">
   </head>
   <body>
-    <if expr="pp_ifdef('chromeos')">
-      <div class="dialog-title" id="dialog-title" i18n-content="title"></div>
-    </if>
     <div class="dialog-body">
       <div class="list-container">
         <div class="detail-table"></div>

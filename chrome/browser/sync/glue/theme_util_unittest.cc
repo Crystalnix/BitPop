@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,14 +7,16 @@
 #include "base/file_path.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/protocol/theme_specifics.pb.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/test/base/testing_profile.h"
+#include "sync/protocol/theme_specifics.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using extensions::Extension;
 
 namespace browser_sync {
 
@@ -34,7 +36,7 @@ ProfileKeyedService* BuildMockThemeService(Profile* profile) {
   return new MockThemeService;
 }
 
-class ThemeUtilTest : public testing::Test {
+class SyncThemeUtilTest : public testing::Test {
  protected:
   MockThemeService* BuildForProfile(Profile* profile) {
     return static_cast<MockThemeService*>(
@@ -53,14 +55,13 @@ scoped_refptr<Extension> MakeThemeExtension(const FilePath& extension_path,
   source.SetString(extension_manifest_keys::kVersion, "0.0.0.0");
   std::string error;
   scoped_refptr<Extension> extension = Extension::Create(
-      extension_path, Extension::INTERNAL, source,
-      Extension::STRICT_ERROR_CHECKS, &error);
+      extension_path, Extension::INTERNAL, source, Extension::NO_FLAGS, &error);
   EXPECT_TRUE(extension);
   EXPECT_EQ("", error);
   return extension;
 }
 
-TEST_F(ThemeUtilTest, AreThemeSpecificsEqualHelper) {
+TEST_F(SyncThemeUtilTest, AreThemeSpecificsEqualHelper) {
   sync_pb::ThemeSpecifics a, b;
   EXPECT_TRUE(AreThemeSpecificsEqualHelper(a, b, false));
   EXPECT_TRUE(AreThemeSpecificsEqualHelper(a, b, true));
@@ -109,7 +110,7 @@ TEST_F(ThemeUtilTest, AreThemeSpecificsEqualHelper) {
   EXPECT_TRUE(AreThemeSpecificsEqualHelper(a, b, true));
 }
 
-TEST_F(ThemeUtilTest, SetCurrentThemeDefaultTheme) {
+TEST_F(SyncThemeUtilTest, SetCurrentThemeDefaultTheme) {
   sync_pb::ThemeSpecifics theme_specifics;
   TestingProfile profile;
   MockThemeService* mock_theme_service = BuildForProfile(&profile);
@@ -119,7 +120,7 @@ TEST_F(ThemeUtilTest, SetCurrentThemeDefaultTheme) {
   SetCurrentThemeFromThemeSpecifics(theme_specifics, &profile);
 }
 
-TEST_F(ThemeUtilTest, SetCurrentThemeSystemTheme) {
+TEST_F(SyncThemeUtilTest, SetCurrentThemeSystemTheme) {
   sync_pb::ThemeSpecifics theme_specifics;
   theme_specifics.set_use_system_theme_by_default(true);
 
@@ -135,7 +136,7 @@ TEST_F(ThemeUtilTest, SetCurrentThemeSystemTheme) {
 // enough to be able to write a unittest for SetCurrentTheme for a
 // custom theme.
 
-TEST_F(ThemeUtilTest, GetThemeSpecificsHelperNoCustomTheme) {
+TEST_F(SyncThemeUtilTest, GetThemeSpecificsHelperNoCustomTheme) {
   sync_pb::ThemeSpecifics theme_specifics;
   theme_specifics.set_use_custom_theme(true);
   theme_specifics.set_use_system_theme_by_default(true);
@@ -155,7 +156,7 @@ TEST_F(ThemeUtilTest, GetThemeSpecificsHelperNoCustomTheme) {
   EXPECT_FALSE(theme_specifics.has_custom_theme_update_url());
 }
 
-TEST_F(ThemeUtilTest, GetThemeSpecificsHelperNoCustomThemeDistinct) {
+TEST_F(SyncThemeUtilTest, GetThemeSpecificsHelperNoCustomThemeDistinct) {
   sync_pb::ThemeSpecifics theme_specifics;
   theme_specifics.set_use_custom_theme(true);
   theme_specifics.set_custom_theme_name("name");
@@ -183,7 +184,7 @@ const FilePath::CharType kExtensionFilePath[] = FILE_PATH_LITERAL("/oo");
 #endif
 }  // namespace
 
-TEST_F(ThemeUtilTest, GetThemeSpecificsHelperCustomTheme) {
+TEST_F(SyncThemeUtilTest, GetThemeSpecificsHelperCustomTheme) {
   sync_pb::ThemeSpecifics theme_specifics;
   theme_specifics.set_use_custom_theme(false);
   theme_specifics.set_use_system_theme_by_default(true);
@@ -202,7 +203,7 @@ TEST_F(ThemeUtilTest, GetThemeSpecificsHelperCustomTheme) {
   EXPECT_EQ(kThemeUpdateUrl, theme_specifics.custom_theme_update_url());
 }
 
-TEST_F(ThemeUtilTest, GetThemeSpecificsHelperCustomThemeDistinct) {
+TEST_F(SyncThemeUtilTest, GetThemeSpecificsHelperCustomThemeDistinct) {
   sync_pb::ThemeSpecifics theme_specifics;
   theme_specifics.set_use_custom_theme(false);
   FilePath file_path(kExtensionFilePath);
@@ -221,7 +222,7 @@ TEST_F(ThemeUtilTest, GetThemeSpecificsHelperCustomThemeDistinct) {
   EXPECT_EQ(kThemeUpdateUrl, theme_specifics.custom_theme_update_url());
 }
 
-TEST_F(ThemeUtilTest, SetCurrentThemeIfNecessaryDefaultThemeNotNecessary) {
+TEST_F(SyncThemeUtilTest, SetCurrentThemeIfNecessaryDefaultThemeNotNecessary) {
   TestingProfile profile;
   MockThemeService* mock_theme_service = BuildForProfile(&profile);
 
@@ -229,7 +230,7 @@ TEST_F(ThemeUtilTest, SetCurrentThemeIfNecessaryDefaultThemeNotNecessary) {
       ThemeService::kDefaultThemeID));
   EXPECT_CALL(*mock_theme_service, UseDefaultTheme()).Times(AnyNumber());
 
-  // TODO(akalin): Mock out call to GetPrefs() under TOOLKIT_USES_GTK.
+  // TODO(akalin): Mock out call to GetPrefs() under TOOLKIT_GTK.
 
   sync_pb::ThemeSpecifics theme_specifics;
   SetCurrentThemeFromThemeSpecificsIfNecessary(theme_specifics,

@@ -1,3 +1,7 @@
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 [
   {
     "namespace":"management",
@@ -94,6 +98,10 @@
             "items" : {
               "type": "string"
             }
+          },
+          "installType": {
+            "description": "How the extension was installed (\"admin\", \"development\", \"normal\", \"sideload\", \"other\"). \"admin\" means the extension was installed because of an administrative policy. \"development\" means the extension was loaded unpacked in developer mode. \"normal\" means the extension was installed normally via a .crx file. \"sideload\" means the extension was installed by other software on the machine. \"other\" means the extension was installed by other means.",
+            "type": "string"
           }
         }
       }
@@ -216,6 +224,18 @@
             "name": "id",
             "type": "string",
             "description": "This should be the id from an item of $ref:ExtensionInfo."
+          },
+          {
+            "type": "object",
+            "name": "options",
+            "optional": "true",
+            "properties": {
+              "showConfirmDialog": {
+                "type": "boolean",
+                "optional": true,
+                "description": "Whether or not a confirm-uninstall dialog should prompt the user. Defaults to false."
+              }
+            }
           },
           {
             "name": "callback",

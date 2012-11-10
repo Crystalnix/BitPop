@@ -1,14 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_GTK_AVATAR_MENU_ITEM_GTK_H_
 #define CHROME_BROWSER_UI_GTK_AVATAR_MENU_ITEM_GTK_H_
-#pragma once
 
 #include <gtk/gtk.h>
 
-#include "base/memory/weak_ptr.h"
 #include "chrome/browser/profiles/avatar_menu_model.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -38,9 +36,6 @@ class AvatarMenuItemGtk : public content::NotificationObserver {
                     size_t item_index,
                     GtkThemeService* theme_service);
   virtual ~AvatarMenuItemGtk();
-
-  void OpenProfile();
-  void EditProfile();
 
   // Returns the root widget for this menu item.
   GtkWidget* widget() { return widget_.get(); }
@@ -110,8 +105,6 @@ class AvatarMenuItemGtk : public content::NotificationObserver {
   // The unhighlighted color. Depending on the theme, this is either NULL or a
   // pointer to static data.
   const GdkColor* unhighlighted_color_;
-
-  base::WeakPtrFactory<AvatarMenuItemGtk> weak_factory_;
 
   content::NotificationRegistrar registrar_;
 

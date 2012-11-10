@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_SSL_SSL_ERROR_INFO_H_
 #define CHROME_BROWSER_SSL_SSL_ERROR_INFO_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -31,7 +30,6 @@ class SSLErrorInfo {
     CERT_REVOKED,
     CERT_INVALID,
     CERT_WEAK_SIGNATURE_ALGORITHM,
-    CERT_NOT_IN_DNS,
     CERT_WEAK_KEY,
     UNKNOWN
   };

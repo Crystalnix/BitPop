@@ -17,21 +17,18 @@
 #include "base/string_util.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/autocomplete/autocomplete_input.h"
+#include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
+#include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/history/history_notifications.h"
-#include "chrome/browser/net/url_fixer_upper.h"
+#include "chrome/browser/history/history_service_factory.h"
+#include "chrome/browser/history/shortcuts_backend_factory.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/guid.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/url_parse.h"
-#include "googleurl/src/url_util.h"
-#include "net/base/escape.h"
-#include "net/base/net_util.h"
-
-using shortcuts_provider::Shortcut;
-using shortcuts_provider::ShortcutMap;
 
 namespace {
 
@@ -40,7 +37,7 @@ class RemoveMatchPredicate {
   explicit RemoveMatchPredicate(const std::set<GURL>& urls)
       : urls_(urls) {
   }
-  bool operator()(AutocompleteMatch match) {
+  bool operator()(const AutocompleteMatch& match) {
     return urls_.find(match.destination_url) != urls_.end();
   }
  private:
@@ -51,29 +48,30 @@ class RemoveMatchPredicate {
 
 }  // namespace
 
-ShortcutsProvider::ShortcutsProvider(ACProviderListener* listener,
+ShortcutsProvider::ShortcutsProvider(AutocompleteProviderListener* listener,
                                      Profile* profile)
-    : AutocompleteProvider(listener, profile, "ShortcutsProvider"),
+    : AutocompleteProvider(listener, profile, "Shortcuts"),
       languages_(profile_->GetPrefs()->GetString(prefs::kAcceptLanguages)),
-      initialized_(false),
-      shortcuts_backend_(profile->GetShortcutsBackend()) {
-  if (shortcuts_backend_.get()) {
-    shortcuts_backend_->AddObserver(this);
-    if (shortcuts_backend_->initialized())
+      initialized_(false) {
+  scoped_refptr<history::ShortcutsBackend> backend =
+      ShortcutsBackendFactory::GetForProfile(profile_);
+  if (backend) {
+    backend->AddObserver(this);
+    if (backend->initialized())
       initialized_ = true;
   }
-}
-
-ShortcutsProvider::~ShortcutsProvider() {
-  if (shortcuts_backend_.get())
-    shortcuts_backend_->RemoveObserver(this);
 }
 
 void ShortcutsProvider::Start(const AutocompleteInput& input,
                               bool minimal_changes) {
   matches_.clear();
 
-  if (input.type() == AutocompleteInput::INVALID)
+  if ((input.type() == AutocompleteInput::INVALID) ||
+      (input.type() == AutocompleteInput::FORCED_QUERY))
+    return;
+
+  // None of our results are applicable for best match.
+  if (input.matches_requested() == AutocompleteInput::BEST_MATCH)
     return;
 
   if (input.text().empty())
@@ -96,22 +94,32 @@ void ShortcutsProvider::Start(const AutocompleteInput& input,
 }
 
 void ShortcutsProvider::DeleteMatch(const AutocompleteMatch& match) {
+  // Copy the URL since DeleteMatchesWithURLs() will invalidate |match|.
+  GURL url(match.destination_url);
+
   // When a user deletes a match, he probably means for the URL to disappear out
   // of history entirely. So nuke all shortcuts that map to this URL.
-  std::set<GURL> url;
-  url.insert(match.destination_url);
+  std::set<GURL> urls;
+  urls.insert(url);
   // Immediately delete matches and shortcuts with the URL, so we can update the
   // controller synchronously.
-  DeleteShortcutsWithURLs(url);
-  DeleteMatchesWithURLs(url);
+  DeleteShortcutsWithURLs(urls);
+  DeleteMatchesWithURLs(urls);  // NOTE: |match| is now dead!
 
   // Delete the match from the history DB. This will eventually result in a
   // second call to DeleteShortcutsWithURLs(), which is harmless.
   HistoryService* const history_service =
-      profile_->GetHistoryService(Profile::EXPLICIT_ACCESS);
+      HistoryServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
 
-  DCHECK(history_service && match.destination_url.is_valid());
-  history_service->DeleteURL(match.destination_url);
+  DCHECK(history_service && url.is_valid());
+  history_service->DeleteURL(url);
+}
+
+ShortcutsProvider::~ShortcutsProvider() {
+  scoped_refptr<history::ShortcutsBackend> backend =
+      ShortcutsBackendFactory::GetForProfileIfExists(profile_);
+  if (backend)
+    backend->RemoveObserver(this);
 }
 
 void ShortcutsProvider::OnShortcutsLoaded() {
@@ -124,23 +132,34 @@ void ShortcutsProvider::DeleteMatchesWithURLs(const std::set<GURL>& urls) {
 }
 
 void ShortcutsProvider::DeleteShortcutsWithURLs(const std::set<GURL>& urls) {
-  if (!shortcuts_backend_.get())
+  scoped_refptr<history::ShortcutsBackend> backend =
+      ShortcutsBackendFactory::GetForProfileIfExists(profile_);
+  if (!backend)
     return;  // We are off the record.
   for (std::set<GURL>::const_iterator url = urls.begin(); url != urls.end();
        ++url)
-    shortcuts_backend_->DeleteShortcutsWithUrl(*url);
+    backend->DeleteShortcutsWithUrl(*url);
 }
 
 void ShortcutsProvider::GetMatches(const AutocompleteInput& input) {
+  scoped_refptr<history::ShortcutsBackend> backend =
+      ShortcutsBackendFactory::GetForProfileIfExists(profile_);
+  if (!backend)
+    return;
   // Get the URLs from the shortcuts database with keys that partially or
   // completely match the search term.
   string16 term_string(base::i18n::ToLower(input.text()));
   DCHECK(!term_string.empty());
 
-  for (ShortcutMap::const_iterator it = FindFirstMatch(term_string);
-       it != shortcuts_backend_->shortcuts_map().end() &&
-            StartsWith(it->first, term_string, true); ++it)
-    matches_.push_back(ShortcutToACMatch(input, term_string, it));
+  for (history::ShortcutsBackend::ShortcutMap::const_iterator it =
+           FindFirstMatch(term_string, backend.get());
+       it != backend->shortcuts_map().end() &&
+           StartsWith(it->first, term_string, true); ++it) {
+    // Don't return shortcuts with zero relevance.
+    int relevance = CalculateScore(term_string, it->second);
+    if (relevance)
+      matches_.push_back(ShortcutToACMatch(relevance, term_string, it->second));
+  }
   std::partial_sort(matches_.begin(),
       matches_.begin() +
           std::min(AutocompleteProvider::kMaxMatches, matches_.size()),
@@ -152,120 +171,167 @@ void ShortcutsProvider::GetMatches(const AutocompleteInput& input) {
 }
 
 AutocompleteMatch ShortcutsProvider::ShortcutToACMatch(
-    const AutocompleteInput& input,
+    int relevance,
     const string16& term_string,
-    ShortcutMap::const_iterator it) {
-  AutocompleteMatch match(this, CalculateScore(term_string, it->second),
-                          true, AutocompleteMatch::HISTORY_TITLE);
-  match.destination_url = it->second.url;
+    const history::ShortcutsBackend::Shortcut& shortcut) {
+  DCHECK(!term_string.empty());
+  AutocompleteMatch match(this, relevance, true,
+                          AutocompleteMatch::HISTORY_TITLE);
+  match.destination_url = shortcut.url;
   DCHECK(match.destination_url.is_valid());
-  match.fill_into_edit = UTF8ToUTF16(it->second.url.spec());
+  match.fill_into_edit = UTF8ToUTF16(shortcut.url.spec());
+  match.contents = shortcut.contents;
+  match.contents_class = shortcut.contents_class;
+  match.description = shortcut.description;
+  match.description_class = shortcut.description_class;
 
-  match.contents = it->second.contents;
-  match.contents_class = ClassifyAllMatchesInString(term_string,
-                                                    match.contents,
-                                                    it->second.contents_class);
-
-  match.description = it->second.description;
-  match.description_class = ClassifyAllMatchesInString(
-      term_string, match.description, it->second.description_class);
-
+  // Try to mark pieces of the contents and description as matches if they
+  // appear in |term_string|.
+  WordMap terms_map(CreateWordMapForString(term_string));
+  if (!terms_map.empty()) {
+    match.contents_class = ClassifyAllMatchesInString(term_string, terms_map,
+        match.contents, match.contents_class);
+    match.description_class = ClassifyAllMatchesInString(term_string, terms_map,
+        match.description, match.description_class);
+  }
   return match;
+}
+
+// static
+ShortcutsProvider::WordMap ShortcutsProvider::CreateWordMapForString(
+    const string16& text) {
+  // First, convert |text| to a vector of the unique words in it.
+  WordMap word_map;
+  base::i18n::BreakIterator word_iter(text,
+                                      base::i18n::BreakIterator::BREAK_WORD);
+  if (!word_iter.Init())
+    return word_map;
+  std::vector<string16> words;
+  while (word_iter.Advance()) {
+    if (word_iter.IsWord())
+      words.push_back(word_iter.GetString());
+  }
+  if (words.empty())
+    return word_map;
+  std::sort(words.begin(), words.end());
+  words.erase(std::unique(words.begin(), words.end()), words.end());
+
+  // Now create a map from (first character) to (words beginning with that
+  // character).  We insert in reverse lexicographical order and rely on the
+  // multimap preserving insertion order for values with the same key.  (This
+  // is mandated in C++11, and part of that decision was based on a survey of
+  // existing implementations that found that it was already true everywhere.)
+  std::reverse(words.begin(), words.end());
+  for (std::vector<string16>::const_iterator i(words.begin()); i != words.end();
+       ++i)
+    word_map.insert(std::make_pair((*i)[0], *i));
+  return word_map;
 }
 
 // static
 ACMatchClassifications ShortcutsProvider::ClassifyAllMatchesInString(
     const string16& find_text,
+    const WordMap& find_words,
     const string16& text,
-    const ACMatchClassifications& original_matches) {
+    const ACMatchClassifications& original_class) {
   DCHECK(!find_text.empty());
+  DCHECK(!find_words.empty());
 
-  base::i18n::BreakIterator term_iter(find_text,
-                                      base::i18n::BreakIterator::BREAK_WORD);
-  if (!term_iter.Init())
-    return original_matches;
-
-  std::vector<string16> terms;
-  while (term_iter.Advance()) {
-    if (term_iter.IsWord())
-      terms.push_back(term_iter.GetString());
-  }
-  // Sort the strings so that longer strings appear after their prefixes, if
-  // any.
-  std::sort(terms.begin(), terms.end());
-
-  // Find the earliest match of any word in |find_text| in the |text|. Add to
-  // |matches|. Move pointer after match. Repeat until all matches are found.
+  // First check whether |text| begins with |find_text| and mark that whole
+  // section as a match if so.
   string16 text_lowercase(base::i18n::ToLower(text));
-  ACMatchClassifications matches;
-  // |matches| should start at the position 0, if the matched text start from
-  // the position 0, this will be poped from the vector further down.
-  matches.push_back(ACMatchClassification(0, ACMatchClassification::NONE));
-  for (size_t last_position = 0; last_position < text_lowercase.length();) {
-    size_t match_start = text_lowercase.length();
-    size_t match_end = last_position;
+  ACMatchClassifications match_class;
+  size_t last_position = 0;
+  if (StartsWith(text_lowercase, find_text, true)) {
+    match_class.push_back(
+        ACMatchClassification(0, ACMatchClassification::MATCH));
+    last_position = find_text.length();
+    // If |text_lowercase| is actually equal to |find_text|, we don't need to
+    // (and in fact shouldn't) put a trailing NONE classification after the end
+    // of the string.
+    if (last_position < text_lowercase.length()) {
+      match_class.push_back(
+          ACMatchClassification(last_position, ACMatchClassification::NONE));
+    }
+  } else {
+    // |match_class| should start at position 0.  If the first matching word is
+    // found at position 0, this will be popped from the vector further down.
+    match_class.push_back(
+        ACMatchClassification(0, ACMatchClassification::NONE));
+  }
 
-    for (size_t i = 0; i < terms.size(); ++i) {
-      size_t match = text_lowercase.find(terms[i], last_position);
-      // Use <= in conjunction with the sort() call above so that longer strings
-      // are matched in preference to their prefixes.
-      if (match != string16::npos && match <= match_start) {
-        match_start = match;
-        match_end = match + terms[i].length();
+  // Now, starting with |last_position|, check each character in
+  // |text_lowercase| to see if we have words starting with that character in
+  // |find_words|.  If so, check each of them to see if they match the portion
+  // of |text_lowercase| beginning with |last_position|.  Accept the first
+  // matching word found (which should be the longest possible match at this
+  // location, given the construction of |find_words|) and add a MATCH region to
+  // |match_class|, moving |last_position| to be after the matching word.  If we
+  // found no matching words, move to the next character and repeat.
+  while (last_position < text_lowercase.length()) {
+    std::pair<WordMap::const_iterator, WordMap::const_iterator> range(
+        find_words.equal_range(text_lowercase[last_position]));
+    size_t next_character = last_position + 1;
+    for (WordMap::const_iterator i(range.first); i != range.second; ++i) {
+      const string16& word = i->second;
+      size_t word_end = last_position + word.length();
+      if ((word_end <= text_lowercase.length()) &&
+          !text_lowercase.compare(last_position, word.length(), word)) {
+        // Collapse adjacent ranges into one.
+        if (match_class.back().offset == last_position)
+          match_class.pop_back();
+
+        AutocompleteMatch::AddLastClassificationIfNecessary(&match_class,
+            last_position, ACMatchClassification::MATCH);
+        if (word_end < text_lowercase.length()) {
+          match_class.push_back(
+              ACMatchClassification(word_end, ACMatchClassification::NONE));
+        }
+        last_position = word_end;
+        break;
       }
     }
-
-    if (match_start >= match_end)
-      break;
-
-    // Collapse adjacent ranges into one.
-    if (!matches.empty() && matches.back().offset == match_start)
-      matches.pop_back();
-
-    shortcuts_provider::AddLastMatchIfNeeded(&matches, match_start,
-                                             ACMatchClassification::MATCH);
-    if (match_end < text_lowercase.length()) {
-      shortcuts_provider::AddLastMatchIfNeeded(&matches, match_end,
-                                               ACMatchClassification::NONE);
-    }
-
-    last_position = match_end;
+    last_position = std::max(last_position, next_character);
   }
 
-  // Merge matches with highlight data.
-  if (matches.empty())
-    return original_matches;
-
+  // Merge match-marking data with original classifications.
+  if ((match_class.size() == 1) &&
+      (match_class.back().style == ACMatchClassification::NONE))
+    return original_class;
   ACMatchClassifications output;
-  for (ACMatchClassifications::const_iterator i = original_matches.begin(),
-       j = matches.begin(); i != original_matches.end();) {
-    shortcuts_provider::AddLastMatchIfNeeded(&output,
-                                             std::max(i->offset, j->offset),
-                                             i->style | j->style);
-    if ((j + 1) == matches.end() || (((i + 1) != original_matches.end()) &&
-        ((j + 1)->offset > (i + 1)->offset)))
-      ++i;
-    else
+  for (ACMatchClassifications::const_iterator i = original_class.begin(),
+       j = match_class.begin(); i != original_class.end();) {
+    AutocompleteMatch::AddLastClassificationIfNecessary(&output,
+        std::max(i->offset, j->offset), i->style | j->style);
+    const size_t next_i_offset = (i + 1) == original_class.end() ?
+        static_cast<size_t>(-1) : (i + 1)->offset;
+    const size_t next_j_offset = (j + 1) == match_class.end() ?
+        static_cast<size_t>(-1) : (j + 1)->offset;
+    if (next_i_offset >= next_j_offset)
       ++j;
+    if (next_j_offset >= next_i_offset)
+      ++i;
   }
-
   return output;
 }
 
-ShortcutMap::const_iterator ShortcutsProvider::FindFirstMatch(
-    const string16& keyword) {
-  ShortcutMap::const_iterator it =
-      shortcuts_backend_->shortcuts_map().lower_bound(keyword);
+history::ShortcutsBackend::ShortcutMap::const_iterator
+    ShortcutsProvider::FindFirstMatch(const string16& keyword,
+                                      history::ShortcutsBackend* backend) {
+  DCHECK(backend);
+  history::ShortcutsBackend::ShortcutMap::const_iterator it =
+      backend->shortcuts_map().lower_bound(keyword);
   // Lower bound not necessarily matches the keyword, check for item pointed by
   // the lower bound iterator to at least start with keyword.
-  return ((it == shortcuts_backend_->shortcuts_map().end()) ||
+  return ((it == backend->shortcuts_map().end()) ||
     StartsWith(it->first, keyword, true)) ? it :
-    shortcuts_backend_->shortcuts_map().end();
+    backend->shortcuts_map().end();
 }
 
 // static
-int ShortcutsProvider::CalculateScore(const string16& terms,
-                                      const Shortcut& shortcut) {
+int ShortcutsProvider::CalculateScore(
+    const string16& terms,
+    const history::ShortcutsBackend::Shortcut& shortcut) {
   DCHECK(!terms.empty());
   DCHECK_LE(terms.length(), shortcut.text.length());
 
@@ -297,13 +363,4 @@ int ShortcutsProvider::CalculateScore(const string16& terms,
 
   return static_cast<int>((base_score / exp(decay_exponent / decay_divisor)) +
       0.5);
-}
-
-void ShortcutsProvider::set_shortcuts_backend(
-    history::ShortcutsBackend* shortcuts_backend) {
-  DCHECK(shortcuts_backend);
-  shortcuts_backend_ = shortcuts_backend;
-  shortcuts_backend_->AddObserver(this);
-  if (shortcuts_backend_->initialized())
-    initialized_ = true;
 }

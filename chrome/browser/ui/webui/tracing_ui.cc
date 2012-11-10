@@ -9,28 +9,43 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/gpu_blacklist.h"
+#include "chrome/browser/gpu_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/select_file_dialog.h"
+#include "chrome/browser/ui/chrome_select_file_policy.h"
+#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/gpu/gpu_data_manager.h"
-#include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/trace_controller.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/gpu_data_manager.h"
+#include "content/public/browser/gpu_data_manager_observer.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/trace_controller.h"
+#include "content/public/browser/trace_subscriber.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
+#include "ipc/ipc_channel.h"
+#include "ui/base/dialogs/select_file_dialog.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if defined(OS_CHROMEOS)
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/debug_daemon_client.h"
+#endif
+
 using content::BrowserThread;
+using content::GpuDataManager;
+using content::TraceController;
 using content::WebContents;
 using content::WebUIMessageHandler;
 
@@ -41,8 +56,8 @@ ChromeWebUIDataSource* CreateTracingHTMLSource() {
       new ChromeWebUIDataSource(chrome::kChromeUITracingHost);
 
   source->set_json_path("strings.js");
-  source->add_resource_path("tracing.js", IDR_TRACING_JS);
   source->set_default_resource(IDR_TRACING_HTML);
+  source->add_resource_path("tracing.js", IDR_TRACING_JS);
   source->AddLocalizedString("tracingTitle", IDS_TRACING_TITLE);
   return source;
 }
@@ -52,10 +67,10 @@ ChromeWebUIDataSource* CreateTracingHTMLSource() {
 // this class's methods are expected to run on the UI thread.
 class TracingMessageHandler
     : public WebUIMessageHandler,
-      public SelectFileDialog::Listener,
+      public ui::SelectFileDialog::Listener,
       public base::SupportsWeakPtr<TracingMessageHandler>,
-      public TraceSubscriber,
-      public GpuDataManager::Observer {
+      public content::TraceSubscriber,
+      public content::GpuDataManagerObserver {
  public:
   TracingMessageHandler();
   virtual ~TracingMessageHandler();
@@ -69,10 +84,11 @@ class TracingMessageHandler
 
   // TraceSubscriber implementation.
   virtual void OnEndTracingComplete();
-  virtual void OnTraceDataCollected(const std::string& trace_fragment);
+  virtual void OnTraceDataCollected(
+      const scoped_refptr<base::RefCountedString>& trace_fragment);
   virtual void OnTraceBufferPercentFullReply(float percent_full);
 
-  // GpuDataManager::Observer implementation.
+  // GpuDataManagerObserver implementation.
   virtual void OnGpuInfoUpdate() OVERRIDE;
 
   // Messages.
@@ -84,16 +100,16 @@ class TracingMessageHandler
   void OnSaveTraceFile(const ListValue* list);
 
   // Callbacks.
-  void LoadTraceFileComplete(std::string* file_contents);
+  void LoadTraceFileComplete(string16* file_contents);
   void SaveTraceFileComplete();
 
  private:
   // The file dialog to select a file for loading or saving traces.
-  scoped_refptr<SelectFileDialog> select_trace_file_dialog_;
+  scoped_refptr<ui::SelectFileDialog> select_trace_file_dialog_;
 
   // The type of the file dialog as the same one is used for loading or saving
   // traces.
-  SelectFileDialog::Type select_trace_file_dialog_type_;
+  ui::SelectFileDialog::Type select_trace_file_dialog_type_;
 
   // The trace data that is to be written to the file on saving.
   scoped_ptr<std::string> trace_data_to_save_;
@@ -101,8 +117,15 @@ class TracingMessageHandler
   // True while tracing is active.
   bool trace_enabled_;
 
-  // Cache the Singleton for efficiency.
-  GpuDataManager* gpu_data_manager_;
+  // True while system tracing is active.
+  bool system_trace_in_progress_;
+
+  // True if observing the GpuDataManager (re-attaching as observer would
+  // DCHECK).
+  bool observing_;
+
+  void OnEndSystemTracingAck(
+      const scoped_refptr<base::RefCountedString>& events_str_ptr);
 
   DISALLOW_COPY_AND_ASSIGN(TracingMessageHandler);
 };
@@ -113,7 +136,7 @@ class TaskProxy : public base::RefCountedThreadSafe<TaskProxy> {
  public:
   explicit TaskProxy(const base::WeakPtr<TracingMessageHandler>& handler)
       : handler_(handler) {}
-  void LoadTraceFileCompleteProxy(std::string* file_contents) {
+  void LoadTraceFileCompleteProxy(string16* file_contents) {
     if (handler_)
       handler_->LoadTraceFileComplete(file_contents);
     delete file_contents;
@@ -126,6 +149,7 @@ class TaskProxy : public base::RefCountedThreadSafe<TaskProxy> {
 
  private:
   friend class base::RefCountedThreadSafe<TaskProxy>;
+  ~TaskProxy() {}
 
   // The message handler to call callbacks on.
   base::WeakPtr<TracingMessageHandler> handler_;
@@ -140,20 +164,29 @@ class TaskProxy : public base::RefCountedThreadSafe<TaskProxy> {
 ////////////////////////////////////////////////////////////////////////////////
 
 TracingMessageHandler::TracingMessageHandler()
-  : select_trace_file_dialog_type_(SelectFileDialog::SELECT_NONE),
-    trace_enabled_(false) {
-  gpu_data_manager_ = GpuDataManager::GetInstance();
-  DCHECK(gpu_data_manager_);
+    : select_trace_file_dialog_type_(ui::SelectFileDialog::SELECT_NONE),
+      trace_enabled_(false),
+      system_trace_in_progress_(false),
+      observing_(false) {
 }
 
 TracingMessageHandler::~TracingMessageHandler() {
-  gpu_data_manager_->RemoveObserver(this);
+  GpuDataManager::GetInstance()->RemoveObserver(this);
 
   if (select_trace_file_dialog_)
     select_trace_file_dialog_->ListenerDestroyed();
 
   // If we are the current subscriber, this will result in ending tracing.
   TraceController::GetInstance()->CancelSubscriber(this);
+
+  // Shutdown any system tracing too.
+    if (system_trace_in_progress_) {
+#if defined(OS_CHROMEOS)
+      chromeos::DBusThreadManager::Get()->GetDebugDaemonClient()->
+          RequestStopSystemTracing(
+              chromeos::DebugDaemonClient::EmptyStopSystemTracingCallback());
+#endif
+    }
 }
 
 void TracingMessageHandler::RegisterMessages() {
@@ -184,11 +217,13 @@ void TracingMessageHandler::OnTracingControllerInitialized(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // Watch for changes in GPUInfo
-  gpu_data_manager_->AddObserver(this);
+  if (!observing_)
+    GpuDataManager::GetInstance()->AddObserver(this);
+  observing_ = true;
 
   // Tell GpuDataManager it should have full GpuInfo. If the
   // Gpu process has not run yet, this will trigger its launch.
-  gpu_data_manager_->RequestCompleteGpuInfoIfNeeded();
+  GpuDataManager::GetInstance()->RequestCompleteGpuInfoIfNeeded();
 
   // Run callback immediately in case the info is ready and no update in the
   // future.
@@ -218,7 +253,7 @@ void TracingMessageHandler::OnTracingControllerInitialized(
     }
 
     dict->SetString("blacklist_version",
-        GpuDataManager::GetInstance()->GetBlacklistVersion());
+        GpuBlacklist::GetInstance()->GetVersion());
     web_ui()->CallJavascriptFunction("tracingController.onClientInfoUpdate",
                                      *dict);
   }
@@ -232,10 +267,10 @@ void TracingMessageHandler::OnBeginRequestBufferPercentFull(
 void TracingMessageHandler::OnGpuInfoUpdate() {
   // Get GPU Info.
   scoped_ptr<base::DictionaryValue> gpu_info_val(
-      gpu_data_manager_->GpuInfoAsDictionaryValue());
+      gpu_util::GpuInfoAsDictionaryValue());
 
   // Add in blacklisting features
-  Value* feature_status = gpu_data_manager_->GetFeatureStatus();
+  Value* feature_status = gpu_util::GetFeatureStatus();
   if (feature_status)
     gpu_info_val->Set("featureStatus", feature_status);
 
@@ -247,14 +282,38 @@ void TracingMessageHandler::OnGpuInfoUpdate() {
 // A callback used for asynchronously reading a file to a string. Calls the
 // TaskProxy callback when reading is complete.
 void ReadTraceFileCallback(TaskProxy* proxy, const FilePath& path) {
-  scoped_ptr<std::string> file_contents(new std::string());
-  if (!file_util::ReadFileToString(path, file_contents.get()))
+  std::string file_contents;
+  if (!file_util::ReadFileToString(path, &file_contents))
     return;
+
+  // We need to escape the file contents, because it will go into a javascript
+  // quoted string in TracingMessageHandler::LoadTraceFileComplete. We need to
+  // escape \ and ' (the only special characters in a ''-quoted string).
+  // Do the escaping on this thread, it may take a little while for big files
+  // and we don't want to block the UI during that time. Also do the UTF-16
+  // conversion here.
+  // Note: we're using UTF-16 because we'll need to cut the string into slices
+  // to give to Javascript, and it's easier to cut than UTF-8 (since JS strings
+  // are arrays of 16-bit values, UCS-2 really, whereas we can't cut inside of a
+  // multibyte UTF-8 codepoint).
+  size_t size = file_contents.size();
+  std::string escaped_contents;
+  escaped_contents.reserve(size);
+  for (size_t i = 0; i < size; ++i) {
+    char c = file_contents[i];
+    if (c == '\\' || c == '\'')
+      escaped_contents.push_back('\\');
+    escaped_contents.push_back(c);
+  }
+  file_contents.clear();
+
+  scoped_ptr<string16> contents16(new string16);
+  UTF8ToUTF16(escaped_contents).swap(*contents16);
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&TaskProxy::LoadTraceFileCompleteProxy, proxy,
-                 file_contents.release()));
+                 contents16.release()));
 }
 
 // A callback used for asynchronously writing a file from a string. Calls the
@@ -272,7 +331,8 @@ void WriteTraceFileCallback(TaskProxy* proxy,
 
 void TracingMessageHandler::FileSelected(
     const FilePath& path, int index, void* params) {
-  if (select_trace_file_dialog_type_ == SelectFileDialog::SELECT_OPEN_FILE) {
+  if (select_trace_file_dialog_type_ ==
+      ui::SelectFileDialog::SELECT_OPEN_FILE) {
     BrowserThread::PostTask(
         BrowserThread::FILE, FROM_HERE,
         base::Bind(&ReadTraceFileCallback,
@@ -290,7 +350,8 @@ void TracingMessageHandler::FileSelected(
 
 void TracingMessageHandler::FileSelectionCanceled(void* params) {
   select_trace_file_dialog_.release();
-  if (select_trace_file_dialog_type_ == SelectFileDialog::SELECT_OPEN_FILE) {
+  if (select_trace_file_dialog_type_ ==
+      ui::SelectFileDialog::SELECT_OPEN_FILE) {
     web_ui()->CallJavascriptFunction(
         "tracingController.onLoadTraceFileCanceled");
   } else {
@@ -303,23 +364,41 @@ void TracingMessageHandler::OnLoadTraceFile(const ListValue* list) {
   // Only allow a single dialog at a time.
   if (select_trace_file_dialog_.get())
     return;
-  select_trace_file_dialog_type_ = SelectFileDialog::SELECT_OPEN_FILE;
-  select_trace_file_dialog_ = SelectFileDialog::Create(this);
+  select_trace_file_dialog_type_ = ui::SelectFileDialog::SELECT_OPEN_FILE;
+  select_trace_file_dialog_ = ui::SelectFileDialog::Create(
+      this, new ChromeSelectFilePolicy(web_ui()->GetWebContents()));
   select_trace_file_dialog_->SelectFile(
-      SelectFileDialog::SELECT_OPEN_FILE,
+      ui::SelectFileDialog::SELECT_OPEN_FILE,
       string16(),
       FilePath(),
-      NULL, 0, FILE_PATH_LITERAL(""), web_ui()->GetWebContents(),
+      NULL, 0, FILE_PATH_LITERAL(""),
       web_ui()->GetWebContents()->GetView()->GetTopLevelNativeWindow(), NULL);
 }
 
-void TracingMessageHandler::LoadTraceFileComplete(std::string* file_contents) {
+void TracingMessageHandler::LoadTraceFileComplete(string16* contents) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  std::string javascript = "tracingController.onLoadTraceFileComplete("
-      + *file_contents + ");";
 
-  web_ui()->GetWebContents()->GetRenderViewHost()->
-      ExecuteJavascriptInWebFrame(string16(), UTF8ToUTF16(javascript));
+  // We need to pass contents to tracingController.onLoadTraceFileComplete, but
+  // that may be arbitrarily big, and IPCs messages are limited in size. So we
+  // need to cut it into pieces and rebuild the string in Javascript.
+  // |contents| has already been escaped in ReadTraceFileCallback.
+  // IPC::Channel::kMaximumMessageSize is in bytes, and we need to account for
+  // overhead.
+  const size_t kMaxSize = IPC::Channel::kMaximumMessageSize / 2 - 128;
+  string16 first_prefix = UTF8ToUTF16("window.traceData = '");
+  string16 prefix = UTF8ToUTF16("window.traceData += '");
+  string16 suffix = UTF8ToUTF16("';");
+
+  content::RenderViewHost* rvh =
+      web_ui()->GetWebContents()->GetRenderViewHost();
+  for (size_t i = 0; i < contents->size(); i += kMaxSize) {
+    string16 javascript = i == 0 ? first_prefix : prefix;
+    javascript += contents->substr(i, kMaxSize) + suffix;
+    rvh->ExecuteJavascriptInWebFrame(string16(), javascript);
+  }
+  rvh->ExecuteJavascriptInWebFrame(string16(), UTF8ToUTF16(
+      "tracingController.onLoadTraceFileComplete(JSON.parse(window.traceData));"
+      "delete window.traceData;"));
 }
 
 void TracingMessageHandler::OnSaveTraceFile(const ListValue* list) {
@@ -334,13 +413,14 @@ void TracingMessageHandler::OnSaveTraceFile(const ListValue* list) {
   DCHECK(ok);
   trace_data_to_save_.reset(trace_data);
 
-  select_trace_file_dialog_type_ = SelectFileDialog::SELECT_SAVEAS_FILE;
-  select_trace_file_dialog_ = SelectFileDialog::Create(this);
+  select_trace_file_dialog_type_ = ui::SelectFileDialog::SELECT_SAVEAS_FILE;
+  select_trace_file_dialog_ = ui::SelectFileDialog::Create(
+      this, new ChromeSelectFilePolicy(web_ui()->GetWebContents()));
   select_trace_file_dialog_->SelectFile(
-      SelectFileDialog::SELECT_SAVEAS_FILE,
+      ui::SelectFileDialog::SELECT_SAVEAS_FILE,
       string16(),
       FilePath(),
-      NULL, 0, FILE_PATH_LITERAL(""), web_ui()->GetWebContents(),
+      NULL, 0, FILE_PATH_LITERAL(""),
       web_ui()->GetWebContents()->GetView()->GetTopLevelNativeWindow(), NULL);
 }
 
@@ -351,12 +431,28 @@ void TracingMessageHandler::SaveTraceFileComplete() {
 
 void TracingMessageHandler::OnBeginTracing(const ListValue* args) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(args->GetSize() == 1);
+
+  bool system_tracing_requested = false;
+  bool ok = args->GetBoolean(0, &system_tracing_requested);
+  DCHECK(ok);
+
   trace_enabled_ = true;
   // TODO(jbates) This may fail, but that's OK for current use cases.
   //              Ex: Multiple about:gpu traces can not trace simultaneously.
   // TODO(nduca) send feedback to javascript about whether or not BeginTracing
   //             was successful.
   TraceController::GetInstance()->BeginTracing(this);
+
+  if (system_tracing_requested) {
+#if defined(OS_CHROMEOS)
+    DCHECK(!system_trace_in_progress_);
+    chromeos::DBusThreadManager::Get()->GetDebugDaemonClient()->
+        StartSystemTracing();
+    // TODO(sleffler) async, could wait for completion
+    system_trace_in_progress_ = true;
+#endif
+  }
 }
 
 void TracingMessageHandler::OnEndTracingAsync(const ListValue* list) {
@@ -376,11 +472,39 @@ void TracingMessageHandler::OnEndTracingAsync(const ListValue* list) {
 void TracingMessageHandler::OnEndTracingComplete() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   trace_enabled_ = false;
+  if (system_trace_in_progress_) {
+    // Disable system tracing now that the local trace has shutdown.
+    // This must be done last because we potentially need to push event
+    // records into the system event log for synchronizing system event
+    // timestamps with chrome event timestamps--and since the system event
+    // log is a ring-buffer (on linux) adding them at the end is the only
+    // way we're confident we'll have them in the final result.
+    system_trace_in_progress_ = false;
+#if defined(OS_CHROMEOS)
+    chromeos::DBusThreadManager::Get()->GetDebugDaemonClient()->
+        RequestStopSystemTracing(
+            base::Bind(&TracingMessageHandler::OnEndSystemTracingAck,
+            base::Unretained(this)));
+    return;
+#endif
+  }
   web_ui()->CallJavascriptFunction("tracingController.onEndTracingComplete");
 }
 
+void TracingMessageHandler::OnEndSystemTracingAck(
+    const scoped_refptr<base::RefCountedString>& events_str_ptr) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  web_ui()->CallJavascriptFunction(
+      "tracingController.onSystemTraceDataCollected",
+      *scoped_ptr<Value>(Value::CreateStringValue(events_str_ptr->data())));
+  DCHECK(!system_trace_in_progress_);
+
+  OnEndTracingComplete();
+}
+
 void TracingMessageHandler::OnTraceDataCollected(
-    const std::string& trace_fragment) {
+    const scoped_refptr<base::RefCountedString>& trace_fragment) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   base::debug::TraceResultBuffer::SimpleOutput output;
@@ -388,7 +512,7 @@ void TracingMessageHandler::OnTraceDataCollected(
   trace_buffer.SetOutputCallback(output.GetCallback());
   output.Append("tracingController.onTraceDataCollected(");
   trace_buffer.Start();
-  trace_buffer.AddFragment(trace_fragment);
+  trace_buffer.AddFragment(trace_fragment->data());
   trace_buffer.Finish();
   output.Append(");");
 
@@ -416,6 +540,6 @@ TracingUI::TracingUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   web_ui->AddMessageHandler(new TracingMessageHandler());
 
   // Set up the chrome://tracing/ source.
-  Profile::FromWebUI(web_ui)->
-      GetChromeURLDataManager()->AddDataSource(CreateTracingHTMLSource());
+  Profile* profile = Profile::FromWebUI(web_ui);
+  ChromeURLDataManager::AddDataSource(profile, CreateTracingHTMLSource());
 }

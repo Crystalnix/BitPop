@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,12 @@
 #include "base/process_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/system_monitor/system_monitor.h"
+#include "content/browser/gamepad/data_fetcher.h"
 #include "content/browser/gamepad/gamepad_provider.h"
+#include "content/common/gamepad_hardware_buffer.h"
 #include "content/common/gamepad_messages.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGamepads.h"
 
 namespace content {
 
@@ -18,8 +21,9 @@ using WebKit::WebGamepads;
 
 class MockDataFetcher : public GamepadDataFetcher {
  public:
-  MockDataFetcher(WebGamepads& test_data) : read_data_(false, false) {
-    test_data_ = test_data;
+  explicit MockDataFetcher(const WebGamepads& test_data)
+      : test_data_(test_data),
+        read_data_(false, false) {
   }
   virtual void GetGamepadData(WebGamepads* pads,
                               bool devices_changed_hint) OVERRIDE {
@@ -36,13 +40,14 @@ class MockDataFetcher : public GamepadDataFetcher {
 // Main test fixture
 class GamepadProviderTest : public testing::Test {
  public:
-  GamepadProvider* CreateProvider(WebGamepads& test_data) {
+  GamepadProvider* CreateProvider(const WebGamepads& test_data) {
 #if defined(OS_MACOSX)
     base::SystemMonitor::AllocateSystemIOPorts();
 #endif
     system_monitor_.reset(new base::SystemMonitor);
     mock_data_fetcher_ = new MockDataFetcher(test_data);
-    provider_ = new GamepadProvider(mock_data_fetcher_);
+    provider_.reset(new GamepadProvider);
+    provider_->SetDataFetcher(mock_data_fetcher_);
     return provider_.get();
   }
 
@@ -53,7 +58,7 @@ class GamepadProviderTest : public testing::Test {
   MessageLoop main_message_loop_;
   scoped_ptr<base::SystemMonitor> system_monitor_;
   MockDataFetcher* mock_data_fetcher_;
-  scoped_refptr<GamepadProvider> provider_;
+  scoped_ptr<GamepadProvider> provider_;
 };
 
 // Crashes. http://crbug.com/106163
@@ -102,4 +107,4 @@ TEST_F(GamepadProviderTest, DISABLED_PollingAccess) {
 
 }  // namespace
 
-} // namespace content
+}  // namespace content

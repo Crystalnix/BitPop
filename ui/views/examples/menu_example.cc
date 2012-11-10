@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,11 +9,12 @@
 #include "base/utf_string_conversions.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/views/controls/button/menu_button.h"
-#include "ui/views/controls/button/text_button.h"
-#include "ui/views/controls/menu/menu_2.h"
-#include "ui/views/controls/menu/view_menu_delegate.h"
+#include "ui/views/controls/button/menu_button_listener.h"
+#include "ui/views/controls/menu/menu_model_adapter.h"
+#include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/view.h"
+#include "ui/views/widget/widget.h"
 
 namespace views {
 namespace examples {
@@ -25,8 +26,6 @@ class ExampleMenuModel : public ui::SimpleMenuModel,
  public:
   ExampleMenuModel();
 
-  void RunMenuAt(const gfx::Point& point);
-
   // Overridden from ui::SimpleMenuModel::Delegate:
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
@@ -36,22 +35,21 @@ class ExampleMenuModel : public ui::SimpleMenuModel,
   virtual void ExecuteCommand(int command_id) OVERRIDE;
 
  private:
-  enum {
-    kGroupMakeDecision,
+  enum GroupID {
+    GROUP_MAKE_DECISION,
   };
 
-  enum {
-    kCommandDoSomething,
-    kCommandSelectAscii,
-    kCommandSelectUtf8,
-    kCommandSelectUtf16,
-    kCommandCheckApple,
-    kCommandCheckOrange,
-    kCommandCheckKiwi,
-    kCommandGoHome,
+  enum CommandID {
+    COMMAND_DO_SOMETHING,
+    COMMAND_SELECT_ASCII,
+    COMMAND_SELECT_UTF8,
+    COMMAND_SELECT_UTF16,
+    COMMAND_CHECK_APPLE,
+    COMMAND_CHECK_ORANGE,
+    COMMAND_CHECK_KIWI,
+    COMMAND_GO_HOME,
   };
 
-  scoped_ptr<Menu2> menu_;
   scoped_ptr<ui::SimpleMenuModel> submenu_;
   std::set<int> checked_fruits_;
   int current_encoding_command_id_;
@@ -59,16 +57,21 @@ class ExampleMenuModel : public ui::SimpleMenuModel,
   DISALLOW_COPY_AND_ASSIGN(ExampleMenuModel);
 };
 
-class ExampleMenuButton : public MenuButton, public ViewMenuDelegate {
+class ExampleMenuButton : public MenuButton, public MenuButtonListener {
  public:
-  ExampleMenuButton(const string16& test, bool show_menu_marker);
+  explicit ExampleMenuButton(const string16& test);
   virtual ~ExampleMenuButton();
 
  private:
-  // Overridden from ViewMenuDelegate:
-  virtual void RunMenu(View* source, const gfx::Point& point) OVERRIDE;
+  // Overridden from MenuButtonListener:
+  virtual void OnMenuButtonClicked(View* source,
+                                   const gfx::Point& point) OVERRIDE;
+
+  ui::SimpleMenuModel* GetMenuModel();
 
   scoped_ptr<ExampleMenuModel> menu_model_;
+  scoped_ptr<MenuRunner> menu_runner_;
+
   DISALLOW_COPY_AND_ASSIGN(ExampleMenuButton);
 };
 
@@ -76,30 +79,25 @@ class ExampleMenuButton : public MenuButton, public ViewMenuDelegate {
 
 ExampleMenuModel::ExampleMenuModel()
     : ALLOW_THIS_IN_INITIALIZER_LIST(ui::SimpleMenuModel(this)),
-      current_encoding_command_id_(kCommandSelectAscii) {
-  AddItem(kCommandDoSomething, WideToUTF16(L"Do Something"));
+      current_encoding_command_id_(COMMAND_SELECT_ASCII) {
+  AddItem(COMMAND_DO_SOMETHING, ASCIIToUTF16("Do Something"));
   AddSeparator();
-  AddRadioItem(kCommandSelectAscii,
-               WideToUTF16(L"ASCII"), kGroupMakeDecision);
-  AddRadioItem(kCommandSelectUtf8,
-               WideToUTF16(L"UTF-8"), kGroupMakeDecision);
-  AddRadioItem(kCommandSelectUtf16,
-               WideToUTF16(L"UTF-16"), kGroupMakeDecision);
+  AddRadioItem(COMMAND_SELECT_ASCII, ASCIIToUTF16("ASCII"),
+               GROUP_MAKE_DECISION);
+  AddRadioItem(COMMAND_SELECT_UTF8, ASCIIToUTF16("UTF-8"),
+               GROUP_MAKE_DECISION);
+  AddRadioItem(COMMAND_SELECT_UTF16, ASCIIToUTF16("UTF-16"),
+               GROUP_MAKE_DECISION);
   AddSeparator();
-  AddCheckItem(kCommandCheckApple, WideToUTF16(L"Apple"));
-  AddCheckItem(kCommandCheckOrange, WideToUTF16(L"Orange"));
-  AddCheckItem(kCommandCheckKiwi, WideToUTF16(L"Kiwi"));
+  AddCheckItem(COMMAND_CHECK_APPLE, ASCIIToUTF16("Apple"));
+  AddCheckItem(COMMAND_CHECK_ORANGE, ASCIIToUTF16("Orange"));
+  AddCheckItem(COMMAND_CHECK_KIWI, ASCIIToUTF16("Kiwi"));
   AddSeparator();
-  AddItem(kCommandGoHome, WideToUTF16(L"Go Home"));
+  AddItem(COMMAND_GO_HOME, ASCIIToUTF16("Go Home"));
 
   submenu_.reset(new ui::SimpleMenuModel(this));
-  submenu_->AddItem(kCommandDoSomething, WideToUTF16(L"Do Something 2"));
+  submenu_->AddItem(COMMAND_DO_SOMETHING, ASCIIToUTF16("Do Something 2"));
   AddSubMenu(0, ASCIIToUTF16("Submenu"), submenu_.get());
-  menu_.reset(new Menu2(this));
-}
-
-void ExampleMenuModel::RunMenuAt(const gfx::Point& point) {
-  menu_->RunMenuAt(point, Menu2::ALIGN_TOPRIGHT);
 }
 
 bool ExampleMenuModel::IsCommandIdChecked(int command_id) const {
@@ -115,8 +113,8 @@ bool ExampleMenuModel::IsCommandIdChecked(int command_id) const {
 }
 
 bool ExampleMenuModel::IsCommandIdEnabled(int command_id) const {
-  // All commands are enabled except for kCommandGoHome.
-  return command_id != kCommandGoHome;
+  // All commands are enabled except for COMMAND_GO_HOME.
+  return command_id != COMMAND_GO_HOME;
 }
 
 bool ExampleMenuModel::GetAcceleratorForCommandId(
@@ -128,49 +126,50 @@ bool ExampleMenuModel::GetAcceleratorForCommandId(
 
 void ExampleMenuModel::ExecuteCommand(int command_id) {
   switch (command_id) {
-    case kCommandDoSomething: {
+    case COMMAND_DO_SOMETHING: {
       LOG(INFO) << "Done something";
       break;
     }
 
     // Radio items.
-    case kCommandSelectAscii: {
-      current_encoding_command_id_ = kCommandSelectAscii;
+    case COMMAND_SELECT_ASCII: {
+      current_encoding_command_id_ = COMMAND_SELECT_ASCII;
       LOG(INFO) << "Selected ASCII";
       break;
     }
-    case kCommandSelectUtf8: {
-      current_encoding_command_id_ = kCommandSelectUtf8;
+    case COMMAND_SELECT_UTF8: {
+      current_encoding_command_id_ = COMMAND_SELECT_UTF8;
       LOG(INFO) << "Selected UTF-8";
       break;
     }
-    case kCommandSelectUtf16: {
-      current_encoding_command_id_ = kCommandSelectUtf16;
+    case COMMAND_SELECT_UTF16: {
+      current_encoding_command_id_ = COMMAND_SELECT_UTF16;
       LOG(INFO) << "Selected UTF-16";
       break;
     }
 
     // Check items.
-    case kCommandCheckApple:
-    case kCommandCheckOrange:
-    case kCommandCheckKiwi: {
+    case COMMAND_CHECK_APPLE:
+    case COMMAND_CHECK_ORANGE:
+    case COMMAND_CHECK_KIWI: {
       // Print what fruit is checked.
       const char* checked_fruit = "";
-      if (command_id == kCommandCheckApple) {
+      if (command_id == COMMAND_CHECK_APPLE)
         checked_fruit = "Apple";
-      } else if (command_id == kCommandCheckOrange) {
+      else if (command_id == COMMAND_CHECK_ORANGE)
         checked_fruit = "Orange";
-      } else if (command_id == kCommandCheckKiwi) {
+      else if (command_id == COMMAND_CHECK_KIWI)
         checked_fruit = "Kiwi";
-      }
-      LOG(INFO) << "Checked " << checked_fruit;
 
       // Update the check status.
       std::set<int>::iterator iter = checked_fruits_.find(command_id);
-      if (iter == checked_fruits_.end())
+      if (iter == checked_fruits_.end()) {
+        DVLOG(1) << "Checked " << checked_fruit;
         checked_fruits_.insert(command_id);
-      else
+      } else {
+        DVLOG(1) << "Unchecked " << checked_fruit;
         checked_fruits_.erase(iter);
+      }
       break;
     }
   }
@@ -178,20 +177,28 @@ void ExampleMenuModel::ExecuteCommand(int command_id) {
 
 // ExampleMenuButton -----------------------------------------------------------
 
-ExampleMenuButton::ExampleMenuButton(const string16& test,
-                                     bool show_menu_marker)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(
-          MenuButton(NULL, test, this, show_menu_marker)) {
+ExampleMenuButton::ExampleMenuButton(const string16& test)
+    : ALLOW_THIS_IN_INITIALIZER_LIST(MenuButton(NULL, test, this, true)) {
 }
 
 ExampleMenuButton::~ExampleMenuButton() {
 }
 
-void ExampleMenuButton::RunMenu(View* source, const gfx::Point& point) {
+void ExampleMenuButton::OnMenuButtonClicked(View* source,
+                                            const gfx::Point& point) {
+  MenuModelAdapter menu_model_adapter(GetMenuModel());
+  menu_runner_.reset(new MenuRunner(menu_model_adapter.CreateMenu()));
+
+  if (menu_runner_->RunMenuAt(source->GetWidget()->GetTopLevelWidget(), this,
+        gfx::Rect(point, gfx::Size()), MenuItemView::TOPRIGHT,
+        MenuRunner::HAS_MNEMONICS) == MenuRunner::MENU_DELETED)
+    return;
+}
+
+ui::SimpleMenuModel* ExampleMenuButton::GetMenuModel() {
   if (!menu_model_.get())
     menu_model_.reset(new ExampleMenuModel);
-
-  menu_model_->RunMenuAt(point);
+  return menu_model_.get();
 }
 
 }  // namespace
@@ -203,11 +210,9 @@ MenuExample::~MenuExample() {
 }
 
 void MenuExample::CreateExampleView(View* container) {
-  // Menu2 is not a sub class of View, hence we cannot directly
-  // add to the container. Instead, we add a button to open a menu.
-  const bool show_menu_marker = true;
+  // We add a button to open a menu.
   ExampleMenuButton* menu_button = new ExampleMenuButton(
-      ASCIIToUTF16("Open a menu"), show_menu_marker);
+      ASCIIToUTF16("Open a menu"));
   container->SetLayoutManager(new FillLayout);
   container->AddChildView(menu_button);
 }

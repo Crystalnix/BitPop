@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -6,23 +6,41 @@
   'variables': {
     'chromium_code': 1,  # Use higher warning level.
     'directxsdk_exists': '<!(python <(DEPTH)/build/dir_exists.py ../third_party/directxsdk)',
+    'conditions': [
+      ['inside_chromium_build==0', {
+        'webkit_src_dir': '../../../..',
+      },{
+        'webkit_src_dir': '../third_party/WebKit',
+      }],
+    ],
   },
   'includes': [
     '../build/win_precompile.gypi',
     'content_shell.gypi',
-    'content_tests.gypi',
   ],
   'target_defaults': {
     'defines': ['CONTENT_IMPLEMENTATION'],
+    'conditions': [
+      ['inside_chromium_build==0', {
+        'dependencies': [
+          '../webkit/support/setup_third_party.gyp:third_party_headers',
+        ],
+      }],
+    ],
   },
   'conditions': [
+    ['inside_chromium_build==1', {
+      'includes': [
+        'content_tests.gypi',
+      ]
+    }],
    # In component mode, we build all of content as a single DLL.
    # However, in the static mode, we need to build content as multiple
    # targets in order to prevent dependencies from getting introduced
    # upstream unnecessarily (e.g., content_renderer depends on allocator
    # and chrome_exe depends on content_common but we don't want
    # chrome_exe to have to depend on allocator).
-   ['component=="static_library" or incremental_chrome_dll==1', {
+   ['component=="static_library"', {
      'target_defines': [
        'COMPILE_CONTENT_STATICALLY',
      ],
@@ -106,6 +124,7 @@
         ],
        'dependencies': [
           'content_common',
+          'content_resources.gyp:content_resources',
         ],
       },
       {'target_name': 'content_utility',
@@ -129,75 +148,22 @@
         ],
       },
      ],
-     'conditions': [
-       ['OS=="mac"', {
-         'targets': [
-           {
-             'target_name': 'closure_blocks_leopard_compat',
-             'defines!': ['CONTENT_IMPLEMENTATION'],
-             'conditions': [
-               ['mac_sdk == "10.5"', {
-                 'type': 'shared_library',
-                 'product_name': 'closure_blocks_leopard_compat_stub',
-                 'variables': {
-                   # This target controls stripping directly. See below.
-                   'mac_strip': 0,
-                 },
-                 'sources': [
-                   'browser/mac/closure_blocks_leopard_compat.S',
-                 ],
-                 'xcode_settings': {
-                   # These values are taken from libSystem.dylib in the 10.5
-                   # SDK. Setting LD_DYLIB_INSTALL_NAME causes anything linked
-                   # against this stub library to look for the symbols it
-                   # provides in the real libSystem at runtime. When using ld
-                   # from Xcode 4 or later (ld64-123.2 and up), giving two
-                   # libraries with the same "install name" to the linker will
-                   # cause it to print "ld: warning: dylibs with same install
-                   # name". This is harmless, and ld will behave as intended
-                   # here.
-                   #
-                   # The real library's compatibility version is used, and the
-                   # value of the current version from the SDK is used to make
-                   # it appear as though anything linked against this stub was
-                   # linked against the real thing.
-                   'LD_DYLIB_INSTALL_NAME': '/usr/lib/libSystem.B.dylib',
-                   'DYLIB_COMPATIBILITY_VERSION': '1.0.0',
-                   'DYLIB_CURRENT_VERSION': '111.1.4',
-
-                   # Turn on stripping (yes, even in debug mode), and add the -c
-                   # flag. This is what produces a stub library (MH_DYLIB_STUB)
-                   # as opposed to a dylib (MH_DYLIB). MH_DYLIB_STUB files
-                   # contain symbol tables and everything else needed for
-                   # linking, but are stripped of section contents. This is the
-                   # same way that the stub libraries in Mac OS X SDKs are
-                   # created. dyld will refuse to load a stub library, so this
-                   # provides some insurance in case anyone tries to load the
-                   # stub at runtime.
-                   'DEPLOYMENT_POSTPROCESSING': 'YES',
-                   'STRIP_STYLE': 'non-global',
-                   'STRIPFLAGS': '-c',
-                 },
-               }, {  # else: mac_sdk != "10.5"
-                 # When using the 10.6 SDK or newer, the necessary definitions
-                 # are already present in libSystem.dylib. There is no need to
-                 # build a stub dylib to provide these symbols at link time.
-                 # This target is still useful to cause those symbols to be
-                 # treated as weak imports in dependents, who still must
-                 # #include closure_blocks_leopard_compat.h to get weak imports.
-                 'type': 'none',
-               }],
-             ],
-           },
-         ],
-       }],
-      ],
     },
     { # component != static_library
      'targets': [
       {'target_name': 'content',
        'type': 'shared_library',
        'variables': { 'enable_wexit_time_destructors': 1, },
+       'dependencies': [
+         'content_resources.gyp:content_resources',
+       ],
+       'conditions': [
+         ['OS=="mac"', {
+           'dependencies': [
+             '<(DEPTH)/third_party/mach_override/mach_override.gyp:mach_override',
+           ],
+         }],
+       ],
        'includes': [
         'content_app.gypi',
         'content_browser.gypi',
@@ -209,6 +175,15 @@
         'content_utility.gypi',
         'content_worker.gypi',
        ],
+       'msvs_settings': {
+         'VCLinkerTool': {
+           'conditions': [
+             ['incremental_chrome_dll==1', {
+               'UseLibraryDependencyInputs': "true",
+             }],
+           ],
+         },
+       },
       },
       {'target_name': 'content_app',
        'type': 'none',
@@ -249,5 +224,40 @@
      ],
     },
    ],
+   ['OS == "android"', {
+     'targets': [
+       {
+         'target_name': 'common_aidl',
+         'type': 'none',
+         'variables': {
+           'aidl_interface_file': 'public/android/java/src/org/chromium/content/common/common.aidl',
+         },
+         'sources': [
+           'public/android/java/src/org/chromium/content/common/ISandboxedProcessCallback.aidl',
+           'public/android/java/src/org/chromium/content/common/ISandboxedProcessService.aidl',
+         ],
+         'includes': [ '../build/java_aidl.gypi' ],
+       },
+       {
+         'target_name': 'content_java',
+         'type': 'none',
+         'dependencies': [
+           '../base/base.gyp:base_java',
+           '../net/net.gyp:net_java',
+           'content_common',
+         ],
+         'variables': {
+           'package_name': 'content',
+           'java_in_dir': '../content/public/android/java',
+         },
+         'includes': [ '../build/java.gypi' ],
+       },
+       {
+         'target_name': 'content_jni_headers',
+         'type': 'none',
+         'includes': [ 'content_jni.gypi' ],
+       },
+     ],
+   }],  # OS == "android"
   ],
 }

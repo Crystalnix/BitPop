@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,7 @@ namespace ppapi {
 // PPB_Broker_Impl ------------------------------------------------------
 
 PPB_Broker_Impl::PPB_Broker_Impl(PP_Instance instance)
-    : Resource(instance),
+    : Resource(::ppapi::OBJECT_IS_IMPL, instance),
       broker_(NULL),
       connect_callback_(),
       pipe_handle_(PlatformFileToInt(base::kInvalidPlatformFileValue)) {
@@ -40,12 +40,8 @@ PPB_Broker_API* PPB_Broker_Impl::AsPPB_Broker_API() {
   return this;
 }
 
-int32_t PPB_Broker_Impl::Connect(PP_CompletionCallback connect_callback) {
-  if (!connect_callback.func) {
-    // Synchronous calls are not supported.
-    return PP_ERROR_BLOCKS_MAIN_THREAD;
-  }
-
+int32_t PPB_Broker_Impl::Connect(
+    scoped_refptr<TrackedCallback> connect_callback) {
   // TODO(ddorwin): Return PP_ERROR_FAILED if plugin is in-process.
 
   if (broker_) {
@@ -58,12 +54,12 @@ int32_t PPB_Broker_Impl::Connect(PP_CompletionCallback connect_callback) {
     return PP_ERROR_FAILED;
 
   // The callback must be populated now in case we are connected to the broker
-  // and BrokerConnected is called before ConnectToPpapiBroker returns.
+  // and BrokerConnected is called before ConnectToBroker returns.
   // Because it must be created now, it must be aborted and cleared if
-  // ConnectToPpapiBroker fails.
-  connect_callback_ = new TrackedCallback(this, connect_callback);
+  // ConnectToBroker fails.
+  connect_callback_ = connect_callback;
 
-  broker_ = plugin_instance->delegate()->ConnectToPpapiBroker(this);
+  broker_ = plugin_instance->delegate()->ConnectToBroker(this);
   if (!broker_) {
     TrackedCallback::ClearAndAbort(&connect_callback_);
     return PP_ERROR_FAILED;

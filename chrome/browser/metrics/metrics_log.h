@@ -7,13 +7,15 @@
 
 #ifndef CHROME_BROWSER_METRICS_METRICS_LOG_H_
 #define CHROME_BROWSER_METRICS_METRICS_LOG_H_
-#pragma once
 
 #include <string>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "chrome/common/metrics/metrics_log_base.h"
+#include "chrome/installer/util/google_update_settings.h"
+#include "content/public/common/process_type.h"
+#include "ui/gfx/size.h"
 
 struct AutocompleteLog;
 class PrefService;
@@ -22,9 +24,36 @@ namespace base {
 class DictionaryValue;
 }
 
+namespace tracked_objects {
+struct ProcessDataSnapshot;
+}
+
+namespace experiments_helper {
+struct SelectedGroupId;
+}
+
 namespace webkit {
 struct WebPluginInfo;
 }
+
+// This is a small helper struct to pass Google Update metrics in a single
+// reference argument to MetricsLog::RecordEnvironment().
+struct GoogleUpdateMetrics {
+    GoogleUpdateMetrics();
+    ~GoogleUpdateMetrics();
+
+    // Defines whether this is a user-level or system-level install.
+    bool is_system_install;
+    // The time at which Google Update last started an automatic update check.
+    base::Time last_started_au;
+    // The time at which Google Update last successfully recieved update
+    // information from Google servers.
+    base::Time last_checked;
+    // Details about Google Update's attempts to update itself.
+    GoogleUpdateSettings::ProductData google_update_data;
+    // Details about Google Update's attempts to update this product.
+    GoogleUpdateSettings::ProductData product_data;
+};
 
 class MetricsLog : public MetricsLogBase {
  public:
@@ -49,34 +78,75 @@ class MetricsLog : public MetricsLogBase {
   static const std::string& version_extension();
 
   // Records the current operating environment.  Takes the list of installed
-  // plugins as a parameter because that can't be obtained synchronously
-  // from the UI thread.
+  // plugins and Google Update statistics as parameters because those can't be
+  // obtained synchronously from the UI thread.
   // profile_metrics, if non-null, gives a dictionary of all profile metrics
   // that are to be recorded. Each value in profile_metrics should be a
   // dictionary giving the metrics for the profile.
   void RecordEnvironment(
       const std::vector<webkit::WebPluginInfo>& plugin_list,
+      const GoogleUpdateMetrics& google_update_metrics,
       const base::DictionaryValue* profile_metrics);
+
+  // Records the current operating environment.  Takes the list of installed
+  // plugins and Google Update statistics as parameters because those can't be
+  // obtained synchronously from the UI thread.  This is exposed as a separate
+  // method from the |RecordEnvironment()| method above because we record the
+  // environment with *each* protobuf upload, but only with the initial XML
+  // upload.
+  void RecordEnvironmentProto(
+      const std::vector<webkit::WebPluginInfo>& plugin_list,
+      const GoogleUpdateMetrics& google_update_metrics);
 
   // Records the input text, available choices, and selected entry when the
   // user uses the Omnibox to open a URL.
   void RecordOmniboxOpenedURL(const AutocompleteLog& log);
 
+  // Records the passed profiled data, which should be a snapshot of the
+  // browser's profiled performance during startup for a single process.
+  void RecordProfilerData(
+      const tracked_objects::ProcessDataSnapshot& process_data,
+      content::ProcessType process_type);
+
   // Record recent delta for critical stability metrics.  We can't wait for a
   // restart to gather these, as that delay biases our observation away from
   // users that run happily for a looooong time.  We send increments with each
-  // uma log upload, just as we send histogram data.
-  void RecordIncrementalStabilityElements();
+  // uma log upload, just as we send histogram data.  Takes the list of
+  // installed plugins as a parameter because that can't be obtained
+  // synchronously from the UI thread.
+  void RecordIncrementalStabilityElements(
+      const std::vector<webkit::WebPluginInfo>& plugin_list);
+
+ protected:
+  // Exposed for the sake of mocking in test code.
+
+  // Returns the PrefService from which to log metrics data.
+  virtual PrefService* GetPrefService();
+
+  // Returns the screen size for the primary monitor.
+  virtual gfx::Size GetScreenSize() const;
+
+  // Returns the number of monitors the user is using.
+  virtual int GetScreenCount() const;
+
+  // Fills |field_trial_ids| with the list of initialized field trials name and
+  // group ids.
+  virtual void GetFieldTrialIds(
+    std::vector<experiments_helper::SelectedGroupId>* field_trial_ids) const;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(MetricsLogTest, ChromeOSStabilityData);
 
   // Writes application stability metrics (as part of the profile log).
   // NOTE: Has the side-effect of clearing those counts.
-  void WriteStabilityElement(PrefService* pref);
+  void WriteStabilityElement(
+      const std::vector<webkit::WebPluginInfo>& plugin_list,
+      PrefService* pref);
 
   // Within stability group, write plugin crash stats.
-  void WritePluginStabilityElements(PrefService* pref);
+  void WritePluginStabilityElements(
+      const std::vector<webkit::WebPluginInfo>& plugin_list,
+      PrefService* pref);
 
   // Within the stability group, write required attributes.
   void WriteRequiredStabilityAttributes(PrefService* pref);
@@ -87,9 +157,11 @@ class MetricsLog : public MetricsLogBase {
   // chromium processes (ones that don't crash, and keep on running).
   void WriteRealtimeStabilityAttributes(PrefService* pref);
 
-  // Writes the list of installed plugins.
+  // Writes the list of installed plugins.  If |write_as_xml| is true, writes
+  // the XML version.  Otherwise, writes the protobuf version.
   void WritePluginList(
-      const std::vector<webkit::WebPluginInfo>& plugin_list);
+      const std::vector<webkit::WebPluginInfo>& plugin_list,
+      bool write_as_xml);
 
   // Within the profile group, write basic install info including appversion.
   void WriteInstallElement();
@@ -103,6 +175,10 @@ class MetricsLog : public MetricsLogBase {
   // key/value pairs in profile_metrics.
   void WriteProfileMetrics(const std::string& key,
                            const base::DictionaryValue& profile_metrics);
+
+  // Writes info about the Google Update install that is managing this client.
+  // This is a no-op if called on a non-Windows platform.
+  void WriteGoogleUpdateProto(const GoogleUpdateMetrics& google_update_metrics);
 
   DISALLOW_COPY_AND_ASSIGN(MetricsLog);
 };

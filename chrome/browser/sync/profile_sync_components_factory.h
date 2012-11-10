@@ -4,17 +4,16 @@
 
 #ifndef CHROME_BROWSER_SYNC_PROFILE_SYNC_COMPONENTS_FACTORY_H__
 #define CHROME_BROWSER_SYNC_PROFILE_SYNC_COMPONENTS_FACTORY_H__
-#pragma once
 
 #include <string>
 
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/sync/glue/data_type_controller.h"
-#include "chrome/browser/sync/internal_api/includes/unrecoverable_error_handler.h"
+#include "chrome/browser/sync/glue/data_type_error_handler.h"
+#include "sync/internal_api/public/util/unrecoverable_error_handler.h"
 
 class PasswordStore;
 class ProfileSyncService;
-class SyncableService;
 class WebDataService;
 
 namespace browser_sync {
@@ -24,12 +23,16 @@ class DataTypeManager;
 class GenericChangeProcessor;
 class SharedChangeProcessor;
 class SyncBackendHost;
-class UnrecoverableErrorHandler;
+class DataTypeErrorHandler;
+}
+
+namespace syncer {
+class SyncableService;
 }
 
 namespace history {
 class HistoryBackend;
-};
+}
 
 // Factory class for all profile sync related classes.
 class ProfileSyncComponentsFactory {
@@ -41,7 +44,7 @@ class ProfileSyncComponentsFactory {
   //
   // Note: This interface is deprecated in favor of the SyncableService API.
   // New datatypes that do not live on the UI thread should directly return a
-  // weak pointer to a SyncableService. All others continue to return
+  // weak pointer to a syncer::SyncableService. All others continue to return
   // SyncComponents. It is safe to assume that the factory methods below are
   // called on the same thread in which the datatype resides.
   //
@@ -71,105 +74,38 @@ class ProfileSyncComponentsFactory {
   // Creating this in the factory helps us mock it out in testing.
   virtual browser_sync::GenericChangeProcessor* CreateGenericChangeProcessor(
       ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler,
-      const base::WeakPtr<SyncableService>& local_service) = 0;
+      browser_sync::DataTypeErrorHandler* error_handler,
+      const base::WeakPtr<syncer::SyncableService>& local_service) = 0;
 
   virtual browser_sync::SharedChangeProcessor*
       CreateSharedChangeProcessor() = 0;
 
-  // Instantiates both a model associator and change processor for the
-  // app data type.  The pointers in the return struct are
-  // owned by the caller.
-  virtual SyncComponents CreateAppSyncComponents(
-      ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) = 0;
+  // Returns a weak pointer to the syncable service specified by |type|.
+  // Weak pointer may be unset if service is already destroyed.
+  // Note: Should only be called on the same thread on which a datatype resides.
+  virtual base::WeakPtr<syncer::SyncableService> GetSyncableServiceForType(
+      syncer::ModelType type) = 0;
 
-  // Returns a weak pointer to the SyncableService associated with the datatype.
-  // The SyncableService is not owned by Sync, but by the backend service
-  // itself.
-  virtual base::WeakPtr<SyncableService> GetAutofillProfileSyncableService(
-      WebDataService* web_data_service) const = 0;
-
-  // Returns a weak pointer to the SyncableService associated with the datatype.
-  // The SyncableService is not owned by Sync, but by the backend service
-  // itself.
-  virtual base::WeakPtr<SyncableService> GetAutocompleteSyncableService(
-      WebDataService* web_data_service) const = 0;
-
-  // Instantiates both a model associator and change processor for the
-  // bookmark data type.  The pointers in the return struct are owned
-  // by the caller.
+  // Legacy datatypes that need to be converted to the SyncableService API.
   virtual SyncComponents CreateBookmarkSyncComponents(
       ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) = 0;
-
-  // Instantiates both a model associator and change processor for the
-  // extension or app setting data type.  The pointers in the return struct are
-  // owned by the caller.
-  virtual SyncComponents CreateExtensionOrAppSettingSyncComponents(
-      // Either EXTENSION_SETTINGS or APP_SETTINGS.
-      syncable::ModelType type,
-      SyncableService* settings_service,
-      ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) = 0;
-
-  // Instantiates both a model associator and change processor for the
-  // extension data type.  The pointers in the return struct are
-  // owned by the caller.
-  virtual SyncComponents CreateExtensionSyncComponents(
-      ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) = 0;
-
-  // Instantiates both a model associator and change processor for the
-  // password data type.  The pointers in the return struct are
-  // owned by the caller.
+      browser_sync::DataTypeErrorHandler* error_handler) = 0;
   virtual SyncComponents CreatePasswordSyncComponents(
       ProfileSyncService* profile_sync_service,
       PasswordStore* password_store,
-      browser_sync::UnrecoverableErrorHandler* error_handler) = 0;
-
-  // Instantiates both a model associator and change processor for the
-  // preference data type.  The pointers in the return struct are
-  // owned by the caller.
-  virtual SyncComponents CreatePreferenceSyncComponents(
-      ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) = 0;
-
-  // Instantiates both a model associator and change processor for the
-  // theme data type.  The pointers in the return struct are
-  // owned by the caller.
+      browser_sync::DataTypeErrorHandler* error_handler) = 0;
+#if defined(ENABLE_THEMES)
   virtual SyncComponents CreateThemeSyncComponents(
       ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) = 0;
-
-  // Instantiates both a model associator and change processor for the
-  // typed_url data type.  The pointers in the return struct are owned
-  // by the caller.
+      browser_sync::DataTypeErrorHandler* error_handler) = 0;
+#endif
   virtual SyncComponents CreateTypedUrlSyncComponents(
       ProfileSyncService* profile_sync_service,
       history::HistoryBackend* history_backend,
-      browser_sync::UnrecoverableErrorHandler* error_handler) = 0;
-
-  // Instantiates both a model associator and change processor for the
-  // session data type.  The pointers in the return struct are
-  // owned by the caller.
+      browser_sync::DataTypeErrorHandler* error_handler) = 0;
   virtual SyncComponents CreateSessionSyncComponents(
       ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) = 0;
-
-  // Instantiates both a model associator and change processor for the search
-  // engine data type.  The pointers in the return struct are owned by the
-  // caller.
-  virtual SyncComponents CreateSearchEngineSyncComponents(
-      ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) = 0;
-
-  // Instantiates both a model associator and change processor for the app
-  // notification data type.  The pointers in the return struct are owned by the
-  // caller.
-  virtual SyncComponents CreateAppNotificationSyncComponents(
-      ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) = 0;
+      browser_sync::DataTypeErrorHandler* error_handler) = 0;
 };
 
 #endif  // CHROME_BROWSER_SYNC_PROFILE_SYNC_COMPONENTS_FACTORY_H__

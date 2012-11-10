@@ -5,9 +5,18 @@
 #include "content/common/gpu/gpu_channel_manager.h"
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "content/common/child_thread.h"
 #include "content/common/gpu/gpu_channel.h"
+#include "content/common/gpu/gpu_memory_manager.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/gpu/sync_point_manager.h"
+#include "gpu/command_buffer/service/feature_info.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
+#include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/memory_program_cache.h"
+#include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_share_group.h"
 
 GpuChannelManager::GpuChannelManager(ChildThread* gpu_child_thread,
                                      GpuWatchdog* watchdog,
@@ -17,7 +26,11 @@ GpuChannelManager::GpuChannelManager(ChildThread* gpu_child_thread,
       io_message_loop_(io_message_loop),
       shutdown_event_(shutdown_event),
       gpu_child_thread_(gpu_child_thread),
-      watchdog_(watchdog) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(gpu_memory_manager_(this,
+          GpuMemoryManager::kDefaultMaxSurfacesWithFrontbufferSoftLimit)),
+      watchdog_(watchdog),
+      sync_point_manager_(new SyncPointManager),
+      program_cache_(NULL) {
   DCHECK(gpu_child_thread);
   DCHECK(io_message_loop);
   DCHECK(shutdown_event);
@@ -25,6 +38,16 @@ GpuChannelManager::GpuChannelManager(ChildThread* gpu_child_thread,
 
 GpuChannelManager::~GpuChannelManager() {
   gpu_channels_.clear();
+}
+
+gpu::gles2::ProgramCache* GpuChannelManager::program_cache() {
+  if (!program_cache_.get() &&
+      (gfx::g_ARB_get_program_binary || gfx::g_OES_get_program_binary) &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableGpuProgramCache)) {
+    program_cache_.reset(new gpu::gles2::MemoryProgramCache());
+  }
+  return program_cache_.get();
 }
 
 void GpuChannelManager::RemoveChannel(int client_id) {
@@ -36,8 +59,7 @@ int GpuChannelManager::GenerateRouteID() {
   return ++last_id;
 }
 
-void GpuChannelManager::AddRoute(int32 routing_id,
-                                 IPC::Channel::Listener* listener) {
+void GpuChannelManager::AddRoute(int32 routing_id, IPC::Listener* listener) {
   gpu_child_thread_->AddRoute(routing_id, listener);
 }
 
@@ -51,6 +73,14 @@ GpuChannel* GpuChannelManager::LookupChannel(int32 client_id) {
     return NULL;
   else
     return iter->second;
+}
+
+void GpuChannelManager::AppendAllCommandBufferStubs(
+    std::vector<GpuCommandBufferStubBase*>& stubs) {
+  for (GpuChannelMap::const_iterator it = gpu_channels_.begin();
+      it != gpu_channels_.end(); ++it ) {
+    it->second->AppendAllCommandBufferStubs(stubs);
+  }
 }
 
 bool GpuChannelManager::OnMessageReceived(const IPC::Message& msg) {
@@ -70,19 +100,25 @@ bool GpuChannelManager::Send(IPC::Message* msg) {
   return gpu_child_thread_->Send(msg);
 }
 
-void GpuChannelManager::OnEstablishChannel(int client_id, int share_client_id) {
+void GpuChannelManager::OnEstablishChannel(int client_id, bool share_context) {
   IPC::ChannelHandle channel_handle;
 
   gfx::GLShareGroup* share_group = NULL;
-  if (share_client_id) {
-    GpuChannel* share_channel = gpu_channels_[share_client_id];
-    DCHECK(share_channel);
-    share_group = share_channel->share_group();
+  gpu::gles2::MailboxManager* mailbox_manager = NULL;
+  if (share_context) {
+    if (!share_group_) {
+      share_group_ = new gfx::GLShareGroup;
+      DCHECK(!mailbox_manager_);
+      mailbox_manager_ = new gpu::gles2::MailboxManager;
+    }
+    share_group = share_group_;
+    mailbox_manager = mailbox_manager_;
   }
 
   scoped_refptr<GpuChannel> channel = new GpuChannel(this,
                                                      watchdog_,
                                                      share_group,
+                                                     mailbox_manager,
                                                      client_id,
                                                      false);
   if (channel->Init(io_message_loop_, shutdown_event_)) {
@@ -93,9 +129,7 @@ void GpuChannelManager::OnEstablishChannel(int client_id, int share_client_id) {
     // On POSIX, pass the renderer-side FD. Also mark it as auto-close so
     // that it gets closed after it has been sent.
     int renderer_fd = channel->TakeRendererFileDescriptor();
-    // Check the validity of |renderer_fd| for bug investigation.  Replace with
-    // normal error handling after bug fixed. See for details: crbug.com/95732.
-    CHECK_NE(-1, renderer_fd);
+    DCHECK_NE(-1, renderer_fd);
     channel_handle.socket = base::FileDescriptor(renderer_fd, true);
 #endif
   }
@@ -115,7 +149,7 @@ void GpuChannelManager::OnCloseChannel(
 }
 
 void GpuChannelManager::OnCreateViewCommandBuffer(
-    gfx::PluginWindowHandle window,
+    const gfx::GLSurfaceHandle& window,
     int32 surface_id,
     int32 client_id,
     const GPUCreateCommandBufferConfig& init_params) {

@@ -22,8 +22,9 @@ public:
   TaskObserverAdapter(WebThread::TaskObserver* observer)
       : observer_(observer) { }
 
-  // WebThread::TaskObserver does not have a willProcessTask method.
-  virtual void WillProcessTask(base::TimeTicks) OVERRIDE { }
+  virtual void WillProcessTask(base::TimeTicks) OVERRIDE {
+    observer_->willProcessTask();
+  }
 
   virtual void DidProcessTask(base::TimeTicks) OVERRIDE {
     observer_->didProcessTask();
@@ -105,7 +106,7 @@ void WebThreadImplForMessageLoop::postDelayedTask(
   message_loop_->PostDelayedTask(
       FROM_HERE,
       base::Bind(&WebKit::WebThread::Task::run, base::Owned(task)),
-      delay_ms);
+      base::TimeDelta::FromMilliseconds(delay_ms));
 }
 
 void WebThreadImplForMessageLoop::enterRunLoop() {

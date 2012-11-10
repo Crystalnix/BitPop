@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,21 +9,25 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
+#include "chrome/test/base/test_browser_window.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/browser/tab_contents/test_tab_contents.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/web_contents_tester.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 
 using content::BrowserThread;
+using content::WebContentsTester;
 
 namespace {
 
@@ -83,23 +87,23 @@ class BackFwdMenuModelTest : public ChromeRenderViewHostTestHarness {
   // will be pending after we ask to navigate there).
   void NavigateToOffset(int offset) {
     controller().GoToOffset(offset);
-    contents()->CommitPendingNavigation();
+    WebContentsTester::For(contents())->CommitPendingNavigation();
   }
 
   // Same as NavigateToOffset but goes to an absolute index.
   void NavigateToIndex(int index) {
     controller().GoToIndex(index);
-    contents()->CommitPendingNavigation();
+    WebContentsTester::For(contents())->CommitPendingNavigation();
   }
 
   // Goes back/forward and commits the load.
   void GoBack() {
     controller().GoBack();
-    contents()->CommitPendingNavigation();
+    WebContentsTester::For(contents())->CommitPendingNavigation();
   }
   void GoForward() {
     controller().GoForward();
-    contents()->CommitPendingNavigation();
+    WebContentsTester::For(contents())->CommitPendingNavigation();
   }
 
   content::TestBrowserThread ui_thread_;
@@ -500,17 +504,18 @@ TEST_F(BackFwdMenuModelTest, EscapeLabel) {
 TEST_F(BackFwdMenuModelTest, FaviconLoadTest) {
   profile()->CreateHistoryService(true, false);
   profile()->CreateFaviconService();
-  Browser browser(Browser::TYPE_TABBED, profile());
+  scoped_ptr<Browser> browser(
+      chrome::CreateBrowserWithTestWindowForProfile(profile()));
   FaviconDelegate favicon_delegate;
 
   BackForwardMenuModel back_model(
-      &browser, BackForwardMenuModel::BACKWARD_MENU);
+      browser.get(), BackForwardMenuModel::BACKWARD_MENU);
   back_model.set_test_web_contents(controller().GetWebContents());
   back_model.SetMenuModelDelegate(&favicon_delegate);
 
-  SkBitmap new_icon(CreateBitmap(SK_ColorRED));
+  SkBitmap new_icon_bitmap(CreateBitmap(SK_ColorRED));
   std::vector<unsigned char> icon_data;
-  gfx::PNGCodec::EncodeBGRASkBitmap(new_icon, false, &icon_data);
+  gfx::PNGCodec::EncodeBGRASkBitmap(new_icon_bitmap, false, &icon_data);
 
   GURL url1 = GURL("http://www.a.com/1");
   GURL url2 = GURL("http://www.a.com/2");
@@ -521,14 +526,15 @@ TEST_F(BackFwdMenuModelTest, FaviconLoadTest) {
   NavigateAndCommit(url2);
 
   // Set the desired favicon for url1.
-  profile()->GetHistoryService(Profile::EXPLICIT_ACCESS)->AddPage(url1,
-      history::SOURCE_BROWSED);
+  HistoryServiceFactory::GetForProfile(
+      profile(), Profile::EXPLICIT_ACCESS)->AddPage(
+          url1, history::SOURCE_BROWSED);
   profile()->GetFaviconService(Profile::EXPLICIT_ACCESS)->SetFavicon(url1,
       url1_favicon, icon_data, history::FAVICON);
 
   // Will return the current icon (default) but start an anync call
   // to retrieve the favicon from the favicon service.
-  SkBitmap default_icon;
+  gfx::ImageSkia default_icon;
   back_model.GetIconAt(0, &default_icon);
 
   // Make the favicon service run GetFavIconForURL,
@@ -539,22 +545,27 @@ TEST_F(BackFwdMenuModelTest, FaviconLoadTest) {
   EXPECT_TRUE(favicon_delegate.was_called());
 
   // Verify the bitmaps match.
-  SkBitmap valid_icon;
+  gfx::ImageSkia valid_icon;
   // This time we will get the new favicon returned.
   back_model.GetIconAt(0, &valid_icon);
-  SkAutoLockPixels a(new_icon);
-  SkAutoLockPixels b(valid_icon);
-  SkAutoLockPixels c(default_icon);
+
+  SkBitmap default_icon_bitmap = *default_icon.bitmap();
+  SkBitmap valid_icon_bitmap = *valid_icon.bitmap();
+
+  SkAutoLockPixels a(new_icon_bitmap);
+  SkAutoLockPixels b(valid_icon_bitmap);
+  SkAutoLockPixels c(default_icon_bitmap);
   // Verify we did not get the default favicon.
-  EXPECT_NE(0, memcmp(default_icon.getPixels(), valid_icon.getPixels(),
-               default_icon.getSize()));
+  EXPECT_NE(0, memcmp(default_icon_bitmap.getPixels(),
+                      valid_icon_bitmap.getPixels(),
+                      default_icon_bitmap.getSize()));
   // Verify we did get the expected favicon.
-  EXPECT_EQ(0, memcmp(new_icon.getPixels(), valid_icon.getPixels(),
-              new_icon.getSize()));
+  EXPECT_EQ(0, memcmp(new_icon_bitmap.getPixels(),
+                      valid_icon_bitmap.getPixels(),
+                      new_icon_bitmap.getSize()));
 
   // Make sure the browser deconstructor doesn't have problems.
-  browser.CloseAllTabs();
+  chrome::CloseAllTabs(browser.get());
   // This is required to prevent the message loop from hanging.
   profile()->DestroyHistoryService();
 }
-

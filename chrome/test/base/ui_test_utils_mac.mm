@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,17 +7,18 @@
 #include <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "chrome/browser/automation/ui_controls.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "ui/ui_controls/ui_controls.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 
 namespace ui_test_utils {
 
 bool IsViewFocused(const Browser* browser, ViewID vid) {
-  NSWindow* window = browser->window()->GetNativeHandle();
+  NSWindow* window = browser->window()->GetNativeWindow();
   DCHECK(window);
   NSView* view = view_id_util::GetView(window, vid);
   if (!view)
@@ -39,16 +40,16 @@ bool IsViewFocused(const Browser* browser, ViewID vid) {
 }
 
 void ClickOnView(const Browser* browser, ViewID vid) {
-  NSWindow* window = browser->window()->GetNativeHandle();
+  NSWindow* window = browser->window()->GetNativeWindow();
   DCHECK(window);
   NSView* view = view_id_util::GetView(window, vid);
   DCHECK(view);
-  ui_controls::MoveMouseToCenterAndPress(
+  MoveMouseToCenterAndPress(
       view,
       ui_controls::LEFT,
       ui_controls::DOWN | ui_controls::UP,
       MessageLoop::QuitClosure());
-  RunMessageLoop();
+  content::RunMessageLoop();
 }
 
 void HideNativeWindow(gfx::NativeWindow window) {
@@ -63,6 +64,30 @@ bool ShowAndFocusNativeWindow(gfx::NativeWindow window) {
 
   [window makeKeyAndOrderFront:nil];
   return true;
+}
+
+void MoveMouseToCenterAndPress(
+    NSView* view,
+    ui_controls::MouseButton button,
+    int state,
+    const base::Closure& task) {
+  DCHECK(view);
+  NSWindow* window = [view window];
+  DCHECK(window);
+  NSScreen* screen = [window screen];
+  DCHECK(screen);
+
+  // Converts the center position of the view into the coordinates accepted
+  // by SendMouseMoveNotifyWhenDone() method.
+  NSRect bounds = [view bounds];
+  NSPoint center = NSMakePoint(NSMidX(bounds), NSMidY(bounds));
+  center = [view convertPoint:center toView:nil];
+  center = [window convertBaseToScreen:center];
+  center = NSMakePoint(center.x, [screen frame].size.height - center.y);
+
+  ui_controls::SendMouseMoveNotifyWhenDone(
+      center.x, center.y,
+      base::Bind(&internal::ClickTask, button, state, task));
 }
 
 }  // namespace ui_test_utils

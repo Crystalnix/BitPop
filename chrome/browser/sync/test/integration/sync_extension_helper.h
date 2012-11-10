@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_SYNC_TEST_INTEGRATION_SYNC_EXTENSION_HELPER_H_
 #define CHROME_BROWSER_SYNC_TEST_INTEGRATION_SYNC_EXTENSION_HELPER_H_
-#pragma once
 
 #include <map>
 #include <string>
@@ -16,9 +15,12 @@
 #include "base/memory/singleton.h"
 #include "chrome/common/extensions/extension.h"
 
-class Extension;
 class Profile;
 class SyncTest;
+
+namespace extensions {
+class Extension;
+}
 
 class SyncExtensionHelper {
  public:
@@ -32,9 +34,11 @@ class SyncExtensionHelper {
   // internal data structures.
   void SetupIfNecessary(SyncTest* test);
 
-  // Installs the extension with the given name to |profile|.
-  void InstallExtension(
-      Profile* profile, const std::string& name, Extension::Type type);
+  // Installs the extension with the given name to |profile|, and returns the
+  // extension ID of the new extension.
+  std::string InstallExtension(Profile* profile,
+                               const std::string& name,
+                               extensions::Extension::Type type);
 
   // Uninstalls the extension with the given name from |profile|.
   void UninstallExtension(Profile* profile, const std::string& name);
@@ -68,7 +72,8 @@ class SyncExtensionHelper {
 
   // Installs all extensions pending sync in |profile| of the given
   // type.
-  void InstallExtensionsPendingForSync(Profile* profile, Extension::Type type);
+  void InstallExtensionsPendingForSync(Profile* profile,
+                                       extensions::Extension::Type type);
 
   // Returns true iff |profile1| and |profile2| have the same extensions and
   // they are all in the same state.
@@ -87,7 +92,8 @@ class SyncExtensionHelper {
   };
 
   typedef std::map<std::string, ExtensionState> ExtensionStateMap;
-  typedef std::map<std::string, scoped_refptr<Extension> > ExtensionNameMap;
+  typedef std::map<std::string, scoped_refptr<extensions::Extension> >
+      ExtensionNameMap;
   typedef std::map<Profile*, ExtensionNameMap> ProfileExtensionNameMap;
   typedef std::map<std::string, std::string> StringMap;
 
@@ -106,9 +112,9 @@ class SyncExtensionHelper {
   // Returns an extension for the given name in |profile|.  type and
   // index.  Two extensions with the name but different profiles will
   // have the same id.
-  scoped_refptr<Extension> GetExtension(
+  scoped_refptr<extensions::Extension> GetExtension(
       Profile* profile, const std::string& name,
-      Extension::Type type) WARN_UNUSED_RESULT;
+      extensions::Extension::Type type) WARN_UNUSED_RESULT;
 
   ProfileExtensionNameMap profile_extensions_;
   StringMap id_to_name_;

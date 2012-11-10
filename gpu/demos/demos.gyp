@@ -44,6 +44,7 @@
         '../gpu.gyp:gles2_implementation',
         '../../base/base.gyp:base',
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../../ui/gl/gl.gyp:gl',
         '../../ui/ui.gyp:ui',
       ],
       'sources': [
@@ -215,6 +216,20 @@
       ],
       'sources': [
         'compressed_textures/compressed_textures.cc',
+      ],
+    },
+    {
+      'target_name': 'occlusion_query_exe',
+      'type': 'executable',
+      'dependencies': [
+        'gpu_demo_framework_exe',
+        '../../third_party/gles2_book/gles2_book.gyp:es_util',
+      ],
+      'defines': [
+        'GL_GLEXT_PROTOTYPES',
+      ],
+      'sources': [
+        'occlusion_query/occlusion_query.cc',
       ],
     },
   ],

@@ -8,12 +8,12 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/message_loop.h"
+#include "base/run_loop.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/render_messages.h"
-#include "chrome/test/base/ui_test_utils.h"
-#include "content/browser/plugin_service_filter.h"
 #include "content/public/browser/plugin_service.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/browser/plugin_service_filter.h"
+#include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/plugins/npapi/mock_plugin_list.h"
@@ -91,7 +91,8 @@ class PluginInfoMessageFilterTest : public ::testing::Test {
     PluginService::GetInstance()->GetPlugins(
         base::Bind(&PluginInfoMessageFilterTest::PluginsLoaded,
                    base::Unretained(this)));
-    ui_test_utils::RunMessageLoop();
+    base::RunLoop run_loop;
+    run_loop.Run();
   }
 
  protected:
@@ -120,7 +121,7 @@ TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
     ChromeViewHostMsg_GetPluginInfo_Status status;
     webkit::WebPluginInfo plugin;
     std::string actual_mime_type;
-    EXPECT_FALSE(context_.FindEnabledPlugin(
+    EXPECT_TRUE(context_.FindEnabledPlugin(
         0, GURL(), GURL(), "foo/bar", &status, &plugin, &actual_mime_type));
     EXPECT_EQ(ChromeViewHostMsg_GetPluginInfo_Status::kAllowed, status.value);
     EXPECT_EQ(foo_plugin_path_.value(), plugin.path.value());
@@ -131,7 +132,7 @@ TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
     ChromeViewHostMsg_GetPluginInfo_Status status;
     webkit::WebPluginInfo plugin;
     std::string actual_mime_type;
-    EXPECT_FALSE(context_.FindEnabledPlugin(
+    EXPECT_TRUE(context_.FindEnabledPlugin(
         0, GURL(), GURL(), "foo/bar", &status, &plugin, &actual_mime_type));
     EXPECT_EQ(ChromeViewHostMsg_GetPluginInfo_Status::kAllowed, status.value);
     EXPECT_EQ(bar_plugin_path_.value(), plugin.path.value());
@@ -142,7 +143,7 @@ TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
     ChromeViewHostMsg_GetPluginInfo_Status status;
     webkit::WebPluginInfo plugin;
     std::string actual_mime_type;
-    EXPECT_TRUE(context_.FindEnabledPlugin(
+    EXPECT_FALSE(context_.FindEnabledPlugin(
         0, GURL(), GURL(), "foo/bar", &status, &plugin, &actual_mime_type));
     EXPECT_EQ(ChromeViewHostMsg_GetPluginInfo_Status::kDisabled, status.value);
     EXPECT_EQ(foo_plugin_path_.value(), plugin.path.value());
@@ -151,7 +152,7 @@ TEST_F(PluginInfoMessageFilterTest, FindEnabledPlugin) {
     ChromeViewHostMsg_GetPluginInfo_Status status;
     webkit::WebPluginInfo plugin;
     std::string actual_mime_type;
-    EXPECT_TRUE(context_.FindEnabledPlugin(
+    EXPECT_FALSE(context_.FindEnabledPlugin(
         0, GURL(), GURL(), "baz/blurp", &status, &plugin, &actual_mime_type));
     EXPECT_EQ(ChromeViewHostMsg_GetPluginInfo_Status::kNotFound, status.value);
     EXPECT_EQ(FILE_PATH_LITERAL(""), plugin.path.value());

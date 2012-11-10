@@ -1,14 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_RLZ_RLZ_H_
 #define CHROME_BROWSER_RLZ_RLZ_H_
-#pragma once
 
 #include "build/build_config.h"
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 
 #include <map>
 #include <string>
@@ -16,9 +15,10 @@
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
 #include "base/string16.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "rlz/win/lib/rlz_lib.h"
+#include "rlz/lib/rlz_lib.h"
 
 // RLZ is a library which is used to measure distribution scenarios.
 // Its job is to record certain lifetime events in the registry and to send
@@ -48,6 +48,10 @@ class RLZTracker : public content::NotificationObserver {
                                  rlz_lib::AccessPoint point,
                                  rlz_lib::Event event_id);
 
+  // For the point parameter of RecordProductEvent.
+  static const rlz_lib::AccessPoint CHROME_OMNIBOX;
+  static const rlz_lib::AccessPoint CHROME_HOME_PAGE;
+
   // Get the RLZ value of the access point.
   // Returns false if the rlz string could not be obtained. In some cases
   // an empty string can be returned which is not an error.
@@ -63,11 +67,7 @@ class RLZTracker : public content::NotificationObserver {
   // testing purposes. Production code should never need to call these.
  protected:
   RLZTracker();
-  ~RLZTracker();
-
-  // Thread function entry point, see ScheduleFinancialPing(). Assumes argument
-  // is a pointer to an RLZTracker.
-  static void _cdecl PingNow(void* tracker);
+  virtual ~RLZTracker();
 
   // Performs initialization of RLZ tracker that is purposefully delayed so
   // that it does not interfere with chrome startup time.
@@ -83,6 +83,11 @@ class RLZTracker : public content::NotificationObserver {
   void set_tracker(RLZTracker* tracker) {
     tracker_ = tracker;
   }
+
+  // Sends the financial ping to the RLZ servers and invalidates the RLZ string
+  // cache since the response from the RLZ server may have changed then.
+  // Protected so that its accessible from tests.
+  void PingNowImpl();
 
  private:
   friend struct DefaultSingletonTraits<RLZTracker>;
@@ -109,10 +114,6 @@ class RLZTracker : public content::NotificationObserver {
   // virtual to allow tests to override how the scheduling is done.
   virtual bool ScheduleGetAccessPointRlz(rlz_lib::AccessPoint point);
 
-  // Sends the financial ping to the RLZ servers and invalidates the RLZ string
-  // cache since the response from the RLZ server may have changed then.
-  void PingNowImpl();
-
   // Sends the financial ping to the RLZ servers. This method is virtual to
   // allow tests to override.
   virtual bool SendFinancialPing(const std::string& brand,
@@ -128,6 +129,10 @@ class RLZTracker : public content::NotificationObserver {
   bool send_ping_immediately_;
   bool google_default_search_;
   bool google_default_homepage_;
+
+  // Unique sequence token so that tasks posted by RLZTracker are executed
+  // sequentially in the blocking pool.
+  base::SequencedWorkerPool::SequenceToken worker_pool_token_;
 
   // Keeps track if the RLZ tracker has already performed its delayed
   // initialization.
@@ -148,6 +153,6 @@ class RLZTracker : public content::NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(RLZTracker);
 };
 
-#endif  // defined(OS_WIN)
+#endif  // defined(OS_WIN) || defined(OS_MACOSX)
 
 #endif  // CHROME_BROWSER_RLZ_RLZ_H_

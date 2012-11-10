@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,7 +11,7 @@ import os
 import sys
 import unittest
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../../../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../../../..'))
 
 
 from grit.format.policy_templates.writers import admx_writer
@@ -366,6 +366,30 @@ class AdmxWriterTest(xml_writer_base_unittest.XmlWriterBaseTest):
         '  </elements>\n'
         '</policy>')
 
+    self.AssertXMLEquals(output, expected_output)
+
+  def testDictionaryPolicy(self):
+    dict_policy = {
+      'name': 'SampleDictionaryPolicy',
+      'type': 'dict',
+    }
+    self._initWriterForPolicy(self.writer, dict_policy)
+
+    self.writer.WritePolicy(dict_policy)
+    output = self.GetXMLOfChildren(self._GetPoliciesElement(self.writer._doc))
+    expected_output = (
+        '<policy class="TestClass" displayName="$(string.'
+            'SampleDictionaryPolicy)"'
+        ' explainText="$(string.SampleDictionaryPolicy_Explain)"'
+        ' key="Software\\Policies\\Test" name="SampleDictionaryPolicy"'
+        ' presentation="$(presentation.SampleDictionaryPolicy)">\n'
+        '  <parentCategory ref="PolicyGroup"/>\n'
+        '  <supportedOn ref="SUPPORTED_TESTOS"/>\n'
+        '  <elements>\n'
+        '    <text id="SampleDictionaryPolicy" '
+            'valueName="SampleDictionaryPolicy"/>\n'
+        '  </elements>\n'
+        '</policy>')
     self.AssertXMLEquals(output, expected_output)
 
   def testPlatform(self):

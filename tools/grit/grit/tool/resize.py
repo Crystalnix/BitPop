@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,19 +8,13 @@
 
 import getopt
 import os
-import types
 
-from grit.tool import interface
-from grit.tool import build
 from grit import grd_reader
 from grit import pseudo
 from grit import util
-
-from grit.node import include
-from grit.node import structure
-from grit.node import message
-
 from grit.format import rc_header
+from grit.node import include
+from grit.tool import interface
 
 
 # Template for the .vcproj file, with a couple of [[REPLACEABLE]] parts.
@@ -213,7 +207,7 @@ near the top of the file, before you open it in Visual Studio.
         self.codepage_number = int(val)
         self.codepage_number_specified_explicitly = True
       if key == '-D':
-        name, val = build.ParseDefine(val)
+        name, val = util.ParseDefine(val)
         self.defines[name] = val
 
     res_tree = grd_reader.Parse(opts.input, debug=opts.extra_verbose)
@@ -239,7 +233,8 @@ near the top of the file, before you open it in Visual Studio.
       grd: grd = grd_reader.Parse(...); grd.RunGatherers()
       dialog_ids: ['IDD_MYDIALOG', 'IDD_OTHERDIALOG']
     '''
-    grd.SetOutputContext(self.lang, self.defines)
+    grd.SetOutputLanguage(self.lang)
+    grd.SetDefines(self.defines)
 
     project_name = dialog_ids[0]
 
@@ -298,6 +293,6 @@ near the top of the file, before you open it in Visual Studio.
     print "Wrote %s" % fname
 
   def WriteFile(self, filename, contents, encoding='cp1252'):
-    f = util.WrapOutputStream(file(filename, 'wb'), encoding)
-    f.write(contents)
-    f.close()
+    with open(filename, 'wb') as f:
+      writer = util.WrapOutputStream(f, encoding)
+      writer.write(contents)

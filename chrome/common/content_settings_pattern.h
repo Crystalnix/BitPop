@@ -6,7 +6,6 @@
 
 #ifndef CHROME_COMMON_CONTENT_SETTINGS_PATTERN_H_
 #define CHROME_COMMON_CONTENT_SETTINGS_PATTERN_H_
-#pragma once
 
 #include <ostream>
 #include <string>
@@ -16,6 +15,8 @@
 #include "base/gtest_prod_util.h"
 
 class GURL;
+class Pickle;
+class PickleIterator;
 
 namespace content_settings {
 class PatternParser;
@@ -167,13 +168,16 @@ class ContentSettingsPattern {
 
   // Serializes the pattern to an IPC message or deserializes it.
   void WriteToMessage(IPC::Message* m) const;
-  bool ReadFromMessage(const IPC::Message* m, void** iter);
+  bool ReadFromMessage(const IPC::Message* m, PickleIterator* iter);
 
   // True if this is a valid pattern.
   bool IsValid() const { return is_valid_; }
 
   // True if |url| matches this pattern.
   bool Matches(const GURL& url) const;
+
+  // True if this pattern matches all hosts (i.e. it has a host wildcard).
+  bool MatchesAllHosts() const;
 
   // Returns a std::string representation of this pattern.
   const std::string ToString() const;

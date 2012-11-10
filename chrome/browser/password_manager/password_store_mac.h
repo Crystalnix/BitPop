@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_PASSWORD_MANAGER_PASSWORD_STORE_MAC_H_
 #define CHROME_BROWSER_PASSWORD_MANAGER_PASSWORD_STORE_MAC_H_
-#pragma once
 
 #include <vector>
 
@@ -14,10 +13,12 @@
 #include "chrome/browser/password_manager/login_database.h"
 #include "chrome/browser/password_manager/password_store.h"
 
-class MacKeychain;
-
 namespace content {
 class NotificationService;
+}
+
+namespace crypto {
+class MacKeychain;
 }
 
 // Implements PasswordStore on top of the OS X Keychain, with an internal
@@ -29,15 +30,17 @@ class PasswordStoreMac : public PasswordStore {
  public:
   // Takes ownership of |keychain| and |login_db|, both of which must be
   // non-NULL.
-  PasswordStoreMac(MacKeychain* keychain, LoginDatabase* login_db);
+  PasswordStoreMac(crypto::MacKeychain* keychain, LoginDatabase* login_db);
 
   // Initializes |thread_| and |notification_service_|.
   virtual bool Init() OVERRIDE;
 
+  virtual void ShutdownOnUIThread() OVERRIDE;
+
  protected:
   virtual ~PasswordStoreMac();
 
-  virtual void ScheduleTask(const base::Closure& task) OVERRIDE;
+  virtual bool ScheduleTask(const base::Closure& task) OVERRIDE;
 
  private:
   virtual void ReportMetricsImpl() OVERRIDE;
@@ -84,7 +87,7 @@ class PasswordStoreMac : public PasswordStore {
   // thread.
   void CreateNotificationService();
 
-  scoped_ptr<MacKeychain> keychain_;
+  scoped_ptr<crypto::MacKeychain> keychain_;
   scoped_ptr<LoginDatabase> login_metadata_db_;
 
   // Thread that the synchronous methods are run on.

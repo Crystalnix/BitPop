@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_INTENTS_WEB_INTENTS_REGISTRY_H_
 #define CHROME_BROWSER_INTENTS_WEB_INTENTS_REGISTRY_H_
-#pragma once
 
 #include "base/callback_forward.h"
 #include "base/hash_tables.h"
@@ -14,58 +13,95 @@
 #include "chrome/browser/webdata/web_data_service.h"
 #include "webkit/glue/web_intent_service_data.h"
 
-// Handles storing and retrieving of web intents in the web database.
-// The registry provides filtering logic to retrieve specific types of intents.
-class WebIntentsRegistry
-    : public WebDataServiceConsumer,
-      public ProfileKeyedService {
+struct DefaultWebIntentService;
+
+namespace extensions {
+class Extension;
+}
+
+// Handles storing and retrieving of web intents services in the web database.
+// The registry provides filtering logic to retrieve specific types of services.
+class WebIntentsRegistry : public ProfileKeyedService {
  public:
-  // Unique identifier for intent queries.
-  typedef int QueryID;
-
   typedef std::vector<webkit_glue::WebIntentServiceData> IntentServiceList;
+  typedef std::vector<DefaultWebIntentService> DefaultIntentServiceList;
 
-  // An interface the WebIntentsRegistry uses to notify its clients when
-  // it has finished loading intents data from the web database.
-  class Consumer {
-   public:
-    // Notifies the observer that the intents request has been completed.
-    virtual void OnIntentsQueryDone(
-        QueryID query_id,
-        const IntentServiceList& intents) = 0;
+  // Callback used by callers to accept results of a query for
+  // a list of |WebIntentServiceData|.
+  typedef base::Callback<void(const IntentServiceList&)>
+      QueryCallback;
 
-   protected:
-    virtual ~Consumer() {}
-  };
+  // Callback used by callers to accept results of a query for
+  // a list of |DefaultWebIntentService|.
+  typedef base::Callback<void(const DefaultIntentServiceList&)>
+      DefaultIntentServicesCallback;
+
+  // Callback used by callers to accept results of a query for
+  // a |DefaultWebIntentService|.
+  typedef base::Callback<void(const DefaultWebIntentService&)>
+      DefaultQueryCallback;
 
   // Initializes, binds to a valid WebDataService.
   void Initialize(scoped_refptr<WebDataService> wds,
                   ExtensionServiceInterface* extension_service);
 
-  // Registers a web intent provider.
-  virtual void RegisterIntentProvider(
-      const webkit_glue::WebIntentServiceData& intent);
+  // Registers a service.
+  virtual void RegisterIntentService(
+      const webkit_glue::WebIntentServiceData& service);
 
-  // Removes a web intent provider from the registry.
-  void UnregisterIntentProvider(
-      const webkit_glue::WebIntentServiceData& intent);
+  // Removes a service from the registry.
+  void UnregisterIntentService(
+      const webkit_glue::WebIntentServiceData& service);
 
-  // Requests all intent providers matching |action| and |mimetype|.
-  // |mimetype| can contain wildcards, i.e. "image/*" or "*".
-  // |consumer| must not be NULL.
-  QueryID GetIntentProviders(const string16& action,
-                             const string16& mimetype,
-                             Consumer* consumer);
+  // Requests all services matching |action| and |type|.
+  // |type| can contain wildcards, i.e. "image/*" or "*".
+  // |callback| must not be null.
+  void GetIntentServices(const string16& action,
+                         const string16& type,
+                         const QueryCallback& callback);
 
-  // Requests all intent providers. |consumer| must not be NULL
-  QueryID GetAllIntentProviders(Consumer* consumer);
+  // Requests all services.
+  // |callback| must not be null.
+  void GetAllIntentServices(const QueryCallback& callback);
 
-  // Tests for the existence of the given intent |provider|. Calls the
+  // Requests all default services.
+  // |callback| must not be null.
+  void GetAllDefaultIntentServices(
+      const DefaultIntentServicesCallback& callback);
+
+  // Tests for the existence of the given |service|. Calls the
   // provided |callback| with true if it exists, false if it does not.
-  // Checks for |provider| equality with ==.
-  QueryID IntentProviderExists(
-      const webkit_glue::WebIntentServiceData& provider,
+  // Checks for |service| equality with ==.
+  // |callback| must not be null.
+  void IntentServiceExists(
+      const webkit_glue::WebIntentServiceData& service,
       const base::Callback<void(bool)>& callback);
+
+  // Requests all extension services matching |action|, |type| and
+  // |extension_id|.
+  // |type| must conform to definition as outlined for GetIntentServices.
+  // |callback| must not be null.
+  void GetIntentServicesForExtensionFilter(const string16& action,
+                                           const string16& type,
+                                           const std::string& extension_id,
+                                           const QueryCallback& callback);
+
+  // Record the given default service entry.
+  virtual void RegisterDefaultIntentService(
+      const DefaultWebIntentService& default_service);
+
+  // Delete the given default service entry. Deletes entries matching
+  // the |action|, |type|, and |url_pattern| of |default_service|.
+  virtual void UnregisterDefaultIntentService(
+      const DefaultWebIntentService& default_service);
+
+  // Requests the best default intent service for the given invocation
+  // parameters.
+  // |callback| must not be null.
+  void GetDefaultIntentService(const string16& action,
+                               const string16& type,
+                               const GURL& invoking_url,
+                               const DefaultQueryCallback& callback);
 
  protected:
   // Make sure that only WebIntentsRegistryFactory can create an instance of
@@ -73,27 +109,57 @@ class WebIntentsRegistry
   friend class WebIntentsRegistryFactory;
   friend class WebIntentsRegistryTest;
   friend class WebIntentsModelTest;
+  FRIEND_TEST_ALL_PREFIXES(WebIntentsRegistryTest, CollapseIntents);
 
   WebIntentsRegistry();
   virtual ~WebIntentsRegistry();
 
+  // Collapses a list of IntentServices by joining intents that have identical
+  // service URLs, actions, and mime types.
+  // |services| is the list of intent services to be collapsed when passed in
+  // and will be modified with the new list in-place.
+  void CollapseIntents(IntentServiceList* services);
+
  private:
-   struct IntentsQuery;
+  struct QueryParams;
+  class QueryAdapter;
+  typedef std::vector<QueryAdapter*> QueryVector;
 
-  // Maps web data requests to intents queries.
-  // Allows OnWebDataServiceRequestDone to forward to appropriate consumer.
-  typedef base::hash_map<WebDataService::Handle, IntentsQuery*> QueryMap;
+  // Handles services loaded
+  void OnWebIntentsResultReceived(
+      const QueryParams& params,
+      const QueryCallback& callback,
+      const WDTypedResult* result);
 
-  // WebDataServiceConsumer implementation.
-  virtual void OnWebDataServiceRequestDone(
-      WebDataService::Handle h,
-      const WDTypedResult* result) OVERRIDE;
+  // Handles default services loaded, supplying an unfiltered list
+  // to the callback.
+  void OnAllDefaultIntentServicesReceived(
+      const DefaultIntentServicesCallback& callback,
+      const WDTypedResult* result);
+
+  // Handles default services loaded
+  void OnWebIntentsDefaultsResultReceived(
+      const QueryParams& params,
+      const DefaultQueryCallback& callback,
+      const WDTypedResult* result);
+
+  // Implementation of GetIntentServicesForExtensionFilter.
+  void DoGetIntentServicesForExtensionFilter(
+      const QueryParams& params,
+      const std::string& extension_id,
+      const QueryCallback& callback);
+
+  const extensions::Extension* ExtensionForURL(const std::string& url);
+
+  // Adds a query to the list of pending queries.
+  void TrackQuery(QueryAdapter* query);
+
+  // Takes ownership of a query. This removes a query from the list
+  // of pending queries.
+  void ReleaseQuery(QueryAdapter* query);
 
   // Map for all in-flight web data requests/intent queries.
-  QueryMap queries_;
-
-  // Unique identifier for next intent query.
-  QueryID next_query_id_;
+  QueryVector pending_queries_;
 
   // Local reference to Web Data Service.
   scoped_refptr<WebDataService> wds_;

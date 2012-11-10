@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -16,7 +16,6 @@
 
 #ifndef CHROME_BROWSER_SAFE_BROWSING_BLOOM_FILTER_H_
 #define CHROME_BROWSER_SAFE_BROWSING_BLOOM_FILTER_H_
-#pragma once
 
 #include <vector>
 
@@ -67,6 +66,10 @@ class BloomFilter : public base::RefCountedThreadSafe<BloomFilter> {
   // tests wish to make their own calculations.
   static int FilterSizeForKeyCount(int key_count);
 
+  // Check whether the contents of the bloom filter have changed since
+  // construction.  Present while debugging PrefixSet.
+  bool CheckChecksum() const;
+
  private:
   friend class base::RefCountedThreadSafe<BloomFilter>;
   FRIEND_TEST_ALL_PREFIXES(SafeBrowsingBloomFilter, BloomFilterUse);
@@ -102,6 +105,10 @@ class BloomFilter : public base::RefCountedThreadSafe<BloomFilter> {
 
   // Random keys used for hashing.
   HashKeys hash_keys_;
+
+  // For debugging, used to verify that |hash_keys_| and |data_| have
+  // not changed other than via constructor or Insert().
+  uint32 checksum_;
 
   DISALLOW_COPY_AND_ASSIGN(BloomFilter);
 };

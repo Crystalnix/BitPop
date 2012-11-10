@@ -2,9 +2,10 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
-html.loading * {
-  -webkit-transition-delay: 0 !important;
-  -webkit-transition-duration: 0 !important;
+body {
+  /* http://crbug.com/129406 --- horizontal scrollbars flicker when changing
+   * sections. */
+  overflow-x: hidden;
 }
 
 #navigation {
@@ -26,8 +27,8 @@ html.loading * {
   z-index: 1;
 }
 
-#navigation.animating {
-  -webkit-transition: -webkit-transform 100ms;
+#navigation.changing-content {
+  -webkit-transition: -webkit-transform 100ms, width 100ms;
 }
 
 .iframe-container {
@@ -49,7 +50,6 @@ html.loading * {
   opacity: 1;
   z-index: 2;
 }
-
 
 .iframe-container.expanded {
   left: 0;

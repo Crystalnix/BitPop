@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,15 +54,12 @@ class SslHmacChannelAuthenticator : public ChannelAuthenticator,
       crypto::RSAPrivateKey* local_private_key,
       const std::string& auth_key);
 
-  // TODO(sergeyu): This method is used only for the legacy
-  // V1Authenticator. Remove it when V1Authenticator is removed.
-  void SetLegacyOneWayMode(LegacyMode legacy_mode);
-
   virtual ~SslHmacChannelAuthenticator();
 
   // ChannelAuthenticator interface.
   virtual void SecureAndAuthenticate(
-      net::StreamSocket* socket, const DoneCallback& done_callback) OVERRIDE;
+      scoped_ptr<net::StreamSocket> socket,
+      const DoneCallback& done_callback) OVERRIDE;
 
  private:
   SslHmacChannelAuthenticator(const std::string& auth_key);
@@ -81,6 +78,7 @@ class SslHmacChannelAuthenticator : public ChannelAuthenticator,
   bool VerifyAuthBytes(const std::string& received_auth_bytes);
 
   void CheckDone(bool* callback_called);
+  void NotifyError(int error);
 
   // The mutual secret used for authentication.
   std::string auth_key_;
@@ -92,8 +90,6 @@ class SslHmacChannelAuthenticator : public ChannelAuthenticator,
   // Used in the CLIENT mode only.
   std::string remote_cert_;
   scoped_ptr<net::CertVerifier> cert_verifier_;
-
-  LegacyMode legacy_mode_;
 
   scoped_ptr<net::SSLSocket> socket_;
   DoneCallback done_callback_;

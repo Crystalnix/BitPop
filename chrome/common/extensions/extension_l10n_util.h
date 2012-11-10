@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -6,19 +6,20 @@
 
 #ifndef CHROME_COMMON_EXTENSIONS_EXTENSION_L10N_UTIL_H_
 #define CHROME_COMMON_EXTENSIONS_EXTENSION_L10N_UTIL_H_
-#pragma once
 
 #include <set>
 #include <string>
 #include <vector>
 
-class Extension;
-class ExtensionMessageBundle;
 class FilePath;
-struct ExtensionInfo;
 
 namespace base {
 class DictionaryValue;
+}
+
+namespace extensions {
+struct ExtensionInfo;
+class MessageBundle;
 }
 
 namespace extension_l10n_util {
@@ -35,11 +36,11 @@ std::string GetDefaultLocaleFromManifest(const base::DictionaryValue& manifest,
 
 // Returns true iff the extension was localized, and the current locale
 // doesn't match the locale written into info.extension_manifest.
-bool ShouldRelocalizeManifest(const ExtensionInfo& info);
+bool ShouldRelocalizeManifest(const extensions::ExtensionInfo& info);
 
 // Localize extension name, description, browser_action and other fields
 // in the manifest.
-bool LocalizeManifest(const ExtensionMessageBundle& messages,
+bool LocalizeManifest(const extensions::MessageBundle& messages,
                       base::DictionaryValue* manifest,
                       std::string* error);
 
@@ -67,6 +68,13 @@ std::string CurrentLocaleOrDefault();
 // proper fallback.
 void GetAllLocales(std::set<std::string>* all_locales);
 
+// Provides a vector of all fallback locales for message localization.
+// The vector is ordered by priority of locale - |application_locale|,
+// first_parent, ..., |default_locale|.
+void GetAllFallbackLocales(const std::string& application_locale,
+                           const std::string& default_locale,
+                           std::vector<std::string>* all_fallback_locales);
+
 // Adds valid locales to the extension.
 // 1. Do nothing if _locales directory is missing (not an error).
 // 2. Get list of Chrome locales.
@@ -83,7 +91,7 @@ bool GetValidLocales(const FilePath& locale_path,
 // parents.
 // Returns message bundle if it can load default locale messages file, and all
 // messages are valid, else returns NULL and sets error.
-ExtensionMessageBundle* LoadMessageCatalogs(
+extensions::MessageBundle* LoadMessageCatalogs(
     const FilePath& locale_path,
     const std::string& default_locale,
     const std::string& app_locale,
@@ -98,6 +106,24 @@ ExtensionMessageBundle* LoadMessageCatalogs(
 bool ShouldSkipValidation(const FilePath& locales_path,
                           const FilePath& locale_path,
                           const std::set<std::string>& all_locales);
+
+// Sets the process locale for the duration of the current scope, then reverts
+// back to whatever the current locale was before constructing this.
+// For testing purposed only!
+class ScopedLocaleForTest {
+ public:
+  // Only revert back to current locale at end of scope, don't set locale.
+  ScopedLocaleForTest();
+
+  // Set temporary locale for the current scope
+  explicit ScopedLocaleForTest(const std::string& locale);
+
+  ~ScopedLocaleForTest();
+
+ private:
+  std::string locale_;  // The current locale at ctor time.
+};
+
 
 }  // namespace extension_l10n_util
 

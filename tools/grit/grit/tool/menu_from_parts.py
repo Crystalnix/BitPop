@@ -1,21 +1,18 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 '''The 'grit menufromparts' tool.'''
 
-import os
-import getopt
 import types
 
-from grit.tool import interface
-from grit.tool import transl2tc
 from grit import grd_reader
 from grit import tclib
 from grit import util
 from grit import xtb_reader
-
+from grit.tool import interface
+from grit.tool import transl2tc
 
 import grit.extern.tclib
 
@@ -52,9 +49,8 @@ to being one message for the whole menu.'''
           msg.append(part[1])
       if len(msg):
         xtb[msg_id] = ''.join(msg)
-    f = file(xtb_file)
-    xtb_reader.Parse(f, Callback)
-    f.close()
+    with open(xtb_file) as f:
+      xtb_reader.Parse(f, Callback)
 
     translations = []  # list of translations as per transl2tc.WriteTranslations
     for node in grd:
@@ -78,7 +74,6 @@ to being one message for the whole menu.'''
         if len(translation):
           translations.append([message.GetId(), ''.join(translation)])
 
-    f = util.WrapOutputStream(file(output_file, 'w'))
-    transl2tc.TranslationToTc.WriteTranslations(f, translations)
-    f.close()
+    with util.WrapOutputStream(open(output_file, 'w')) as f:
+      transl2tc.TranslationToTc.WriteTranslations(f, translations)
 

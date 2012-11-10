@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@
 
 #ifndef CHROME_BROWSER_AUTOMATION_CHROME_FRAME_AUTOMATION_PROVIDER_H_
 #define CHROME_BROWSER_AUTOMATION_CHROME_FRAME_AUTOMATION_PROVIDER_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "chrome/browser/automation/automation_provider.h"
@@ -24,7 +23,7 @@ class ChromeFrameAutomationProvider : public AutomationProvider {
   explicit ChromeFrameAutomationProvider(Profile* profile);
   virtual ~ChromeFrameAutomationProvider();
 
-  // IPC::Channel::Listener overrides.
+  // IPC::Listener overrides.
   virtual bool OnMessageReceived(const IPC::Message& message);
 
  protected:
@@ -33,6 +32,10 @@ class ChromeFrameAutomationProvider : public AutomationProvider {
 
   // Returns true if the message received is a valid chrome frame message.
   bool IsValidMessage(uint32 type);
+
+  // Called to release an instance's ref count on the global BrowserProcess
+  // instance.
+  static void ReleaseBrowserProcess();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ChromeFrameAutomationProvider);

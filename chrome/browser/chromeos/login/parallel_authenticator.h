@@ -1,62 +1,45 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_PARALLEL_AUTHENTICATOR_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_PARALLEL_AUTHENTICATOR_H_
-#pragma once
 
 #include <string>
-#include <vector>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/cryptohome_library.h"
+#include "base/synchronization/lock.h"
 #include "chrome/browser/chromeos/login/authenticator.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state_resolver.h"
-#include "chrome/browser/chromeos/login/test_attempt_state.h"
-#include "chrome/browser/chromeos/login/cryptohome_op.h"
 #include "chrome/browser/chromeos/login/online_attempt.h"
+#include "chrome/browser/chromeos/login/test_attempt_state.h"
 #include "chrome/common/net/gaia/gaia_auth_consumer.h"
 
-class GaiaAuthFetcher;
 class LoginFailure;
 class Profile;
-
-namespace base {
-class Lock;
-}
-
-namespace crypto {
-class SymmetricKey;
-}
 
 namespace chromeos {
 
 class LoginStatusConsumer;
-class ParallelAuthenticator;
-class ResolveChecker;
 
 // Authenticates a Chromium OS user against the Google Accounts ClientLogin API.
 //
-// Simultaneously attempts authentication both offline and online, failing over
-// to the "localaccount" in the event that authentication fails.
+// Simultaneously attempts authentication both offline and online.
 //
 // At a high, level, here's what happens:
-// AuthenticateToLogin() creates an OnlineAttempt and a CryptohomeOp that
-// attempt to perform online and offline login simultaneously.  When one of
+// AuthenticateToLogin() creates an OnlineAttempt and calls a Cryptohome's
+// method to perform online and offline login simultaneously.  When one of
 // these completes, it will store results in a AuthAttemptState owned by
 // ParallelAuthenticator and then call Resolve().  Resolve() will attempt to
 // determine which AuthState we're in, based on the info at hand.
 // It then triggers further action based on the calculated AuthState; this
 // further action might include calling back the passed-in LoginStatusConsumer
 // to signal that login succeeded or failed, waiting for more outstanding
-// operations to complete, or triggering some more CryptohomeOps.
+// operations to complete, or triggering some more Cryptohome method calls.
 class ParallelAuthenticator : public Authenticator,
                               public AuthAttemptStateResolver {
  public:
@@ -73,15 +56,16 @@ class ParallelAuthenticator : public Authenticator,
     NEED_OLD_PW,     // User changed pw, and we have the new one.
     HAVE_NEW_PW,     // We have verified new pw, time to migrate key.
     OFFLINE_LOGIN,   // Login succeeded offline.
+    DEMO_LOGIN,      // Logged in as the demo user.
     ONLINE_LOGIN,    // Offline and online login succeeded.
     UNLOCK,          // Screen unlock succeeded.
-    LOCAL_LOGIN,     // Login with localaccount succeded.
     ONLINE_FAILED,   // Online login disallowed, but offline succeeded.
-    LOGIN_FAILED     // Login denied.
+    GUEST_LOGIN,     // Logged in guest mode.
+    LOGIN_FAILED,    // Login denied.
+    OWNER_REQUIRED   // Login is restricted to the owner only.
   };
 
   explicit ParallelAuthenticator(LoginStatusConsumer* consumer);
-  virtual ~ParallelAuthenticator();
 
   // Authenticator overrides.
   virtual void CompleteLogin(Profile* profile,
@@ -126,22 +110,22 @@ class ParallelAuthenticator : public Authenticator,
   virtual void AuthenticateToUnlock(const std::string& username,
                                     const std::string& password) OVERRIDE;
 
+  // Initiates demo user login.
+  // Mounts tmpfs and notifies consumer on the success/failure.
+  virtual void LoginDemoUser() OVERRIDE;
+
   // Initiates incognito ("browse without signing in") login.
   // Mounts tmpfs and notifies consumer on the success/failure.
   virtual void LoginOffTheRecord() OVERRIDE;
 
   // These methods must be called on the UI thread, as they make DBus calls
   // and also call back to the login UI.
-  virtual void OnLoginSuccess(
-      const GaiaAuthConsumer::ClientLoginResult& credentials,
-      bool request_pending)  OVERRIDE;
-
+  virtual void OnDemoUserLoginSuccess()  OVERRIDE;
+  virtual void OnLoginSuccess(bool request_pending)  OVERRIDE;
   virtual void OnLoginFailure(const LoginFailure& error) OVERRIDE;
   virtual void RecoverEncryptedData(
-      const std::string& old_password,
-      const GaiaAuthConsumer::ClientLoginResult& credentials) OVERRIDE;
-  virtual void ResyncEncryptedData(
-      const GaiaAuthConsumer::ClientLoginResult& credentials) OVERRIDE;
+      const std::string& old_password) OVERRIDE;
+  virtual void ResyncEncryptedData() OVERRIDE;
   virtual void RetryAuth(Profile* profile,
                          const std::string& username,
                          const std::string& password,
@@ -153,17 +137,23 @@ class ParallelAuthenticator : public Authenticator,
   // can't be made, defers until the next time this is called.
   // When a decision is made, will call back to |consumer_| on the UI thread.
   //
-  // Must be called on the IO thread.
+  // Must be called on the UI thread.
   virtual void Resolve() OVERRIDE;
 
-  // Call this on the FILE thread.
-  void CheckLocalaccount(const LoginFailure& error);
-
   void OnOffTheRecordLoginSuccess();
-  void OnPasswordChangeDetected(
-      const GaiaAuthConsumer::ClientLoginResult& credentials);
+  void OnPasswordChangeDetected();
+
+ protected:
+  virtual ~ParallelAuthenticator();
 
  private:
+  friend class ParallelAuthenticatorTest;
+  FRIEND_TEST_ALL_PREFIXES(ParallelAuthenticatorTest,
+                           ResolveOwnerNeededDirectFailedMount);
+  FRIEND_TEST_ALL_PREFIXES(ParallelAuthenticatorTest, ResolveOwnerNeededMount);
+  FRIEND_TEST_ALL_PREFIXES(ParallelAuthenticatorTest,
+                           ResolveOwnerNeededFailedMount);
+
   // Returns the AuthState we're in, given the status info we have at
   // the time of call.
   // Must be called on the IO thread.
@@ -200,6 +190,11 @@ class ParallelAuthenticator : public Authenticator,
   // Must be called on the IO thread.
   AuthState ResolveOnlineSuccessState(AuthState offline_state);
 
+  // Used to disable oauth, used for testing.
+  void set_using_oauth(bool value) {
+    using_oauth_ = value;
+  }
+
   // Used for testing.
   void set_attempt_state(TestAttemptState* new_state) {  // takes ownership.
     current_state_.reset(new_state);
@@ -207,13 +202,11 @@ class ParallelAuthenticator : public Authenticator,
 
   // Sets an online attemp for testing.
   void set_online_attempt(OnlineAttempt* attempt) {
-    current_online_ = attempt;
+    current_online_.reset(attempt);
   }
 
-  // Resets |current_state_| and then posts a task to the UI thread to
-  // Initiate() |to_initiate|.
-  // Call this method on the IO thread.
-  void ResyncRecoverHelper(CryptohomeOp* to_initiate);
+  // Used for testing to set the expected state of an owner check.
+  void SetOwnerState(bool owner_check_finished, bool check_result);
 
   // If we don't have the system salt yet, loads it from the CryptohomeLibrary.
   void LoadSystemSalt();
@@ -221,15 +214,14 @@ class ParallelAuthenticator : public Authenticator,
   // Returns false if the key can not be loaded/created.
   bool LoadSupplementalUserKey();
 
-  // If we haven't already, looks in a file called |filename| next to
-  // the browser executable for a "localaccount" name, and retrieves it
-  // if one is present.  If someone attempts to authenticate with this
-  // username, we will mount a tmpfs for them and let them use the
-  // browser.
-  // Should only be called on the FILE thread.
-  void LoadLocalaccount(const std::string& filename);
+  // checks if the current mounted home contains the owner case and either
+  // continues or fails the log-in. Used for policy lost mitigation "safe-mode".
+  // Returns true if the owner check has been successful or if it is not needed.
+  bool VerifyOwner();
 
-  void SetLocalaccount(const std::string& new_name);
+  // checks if the current mounted home contains the owner case and either
+  // continues or fails the log-in. Used for policy lost mitigation "safe-mode".
+  void FinishVerifyOwnerOnFileThread();
 
   // Records OAuth1 access token verification failure for |user_account|.
   void RecordOAuthCheckFailure(const std::string& user_account);
@@ -238,51 +230,34 @@ class ParallelAuthenticator : public Authenticator,
   // an external authentication provider (i.e. GAIA extension).
   void ResolveLoginCompletionStatus();
 
-    // Name of a file, next to chrome, that contains a local account username.
-  static const char kLocalaccountFile[];
-
-  // Milliseconds until we timeout our attempt to hit ClientLogin.
-  static const int kClientLoginTimeoutMs;
-
-  // Milliseconds until we re-check whether we've gotten the localaccount name.
-  static const int kLocalaccountRetryIntervalMs;
-
-  // Handles all net communications with Gaia.
-  scoped_ptr<GaiaAuthFetcher> gaia_authenticator_;
-
   // Used when we need to try online authentication again, after successful
   // mount, but failed online login.
   scoped_ptr<AuthAttemptState> reauth_state_;
 
   scoped_ptr<AuthAttemptState> current_state_;
-  scoped_refptr<OnlineAttempt> current_online_;
-  scoped_refptr<CryptohomeOp> mounter_;
-  scoped_refptr<CryptohomeOp> key_migrator_;
-  scoped_refptr<CryptohomeOp> data_remover_;
-  scoped_refptr<CryptohomeOp> guest_mounter_;
-  scoped_refptr<CryptohomeOp> key_checker_;
+  scoped_ptr<OnlineAttempt> current_online_;
+  bool migrate_attempted_;
+  bool remove_attempted_;
+  bool mount_guest_attempted_;
+  bool check_key_attempted_;
 
   // When the user has changed her password, but gives us the old one, we will
   // be able to mount her cryptohome, but online authentication will fail.
   // This allows us to present the same behavior to the caller, regardless
   // of the order in which we receive these results.
   bool already_reported_success_;
-  base::Lock success_lock_;  // A lock around already_reported_success_.
+  base::Lock success_lock_;  // A lock around |already_reported_success_|.
 
-  // Status relating to the local "backdoor" account.
-  std::string localaccount_;
-  bool checked_for_localaccount_;  // Needed because empty localaccount_ is ok.
-  base::Lock localaccount_lock_;  // A lock around checked_for_localaccount_.
+  // Flags signaling whether the owner verification has been done and the result
+  // of it.
+  bool owner_is_verified_;
+  bool user_can_login_;
+  // A lock for |owner_is_verified_| and |user_can_login_|.
+  base::Lock owner_verified_lock_;
 
   // True if we use OAuth-based authentication flow.
   bool using_oauth_;
 
-  friend class ResolveChecker;
-  friend class ParallelAuthenticatorTest;
-  FRIEND_TEST_ALL_PREFIXES(ParallelAuthenticatorTest, ReadLocalaccount);
-  FRIEND_TEST_ALL_PREFIXES(ParallelAuthenticatorTest,
-                           ReadLocalaccountTrailingWS);
-  FRIEND_TEST_ALL_PREFIXES(ParallelAuthenticatorTest, ReadNoLocalaccount);
   DISALLOW_COPY_AND_ASSIGN(ParallelAuthenticator);
 };
 

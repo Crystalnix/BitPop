@@ -393,9 +393,9 @@ sub parselicense($) {
 	$licensetext =~ /GNU (?:Affero )?General Public License as published by the Free Software Foundation; version ([^ ]+) /i) {
 
 	$gplver = " (v$1)";
-    } elsif ($licensetext =~ /GNU (Affero ?)General Public License, version ([^ ]+?)[ .]/) {
+    } elsif ($licensetext =~ /GNU (?:Affero ?)General Public License, version ([^ ]+?)[ .]/) {
 	$gplver = " (v$1)";
-    } elsif ($licensetext =~ /either version ([^ ]+) of the License, or \(at your option\) any later version/) {
+    } elsif ($licensetext =~ /either version ([^ ]+)(?: of the License)?, or \(at your option\) any later version/) {
 	$gplver = " (v$1 or later)";
     }
 
@@ -434,11 +434,12 @@ sub parselicense($) {
 	$license = "MIT/X11 (BSD like) $license";
     }
 
-    if ($licensetext  =~ /Permission to use, copy, modify, and(\/or)? distribute this software for any purpose (with or )?without fee is hereby granted, provided.*(copyright|entire) notice.*all copies/) {
+    if ($licensetext  =~ /Permission to use, copy, modify, and(\/or)? distribute this software (and its documentation )?for any purpose (with or )?without fee is hereby granted, provided.*(copyright|entire) notice.*all copies/) {
 	$license = "ISC $license";
     }
 
-    if ($licensetext =~ /THIS SOFTWARE IS PROVIDED .*AS IS AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY/) {
+    if ($licensetext =~ /THIS SOFTWARE IS PROVIDED .*AS IS AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY/ ||
+        $licensetext =~ /THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABIL- ITY/) {
 	if ($licensetext =~ /All advertising materials mentioning features or use of this software must display the following/) {
 	    $license = "BSD (4 clause) $license";
 	} elsif ($licensetext =~ /be used to endorse or promote products derived from this software/) {
@@ -535,6 +536,10 @@ sub parselicense($) {
 
     if ($licensetext =~ /As a special exception, you may create a larger work that contains part or all of the Bison parser skeleton and distribute that work under terms of your choice/) {
         $license = $license . "with Bison parser exception";
+    }
+
+    if ($licensetext =~ /As a special exception to the GNU General Public License, if you distribute this file as part of a program or library that is built using GNU Libtool, you may include this file under the same distribution terms that you use for the rest of that program/) {
+        $license = $license . "with libtool exception";
     }
 
     $license = "UNKNOWN" if (!length($license));

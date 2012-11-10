@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -10,12 +10,12 @@
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "chrome/common/net/gaia/gaia_oauth_client.h"
-#include "chrome/common/net/http_return.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/common/url_fetcher_delegate.h"
-#include "content/test/test_url_fetcher_factory.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
+#include "net/http/http_status_code.h"
+#include "net/url_request/test_url_fetcher_factory.h"
+#include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -24,17 +24,17 @@ using ::testing::_;
 
 namespace {
 // Responds as though OAuth returned from the server.
-class MockOAuthFetcher : public TestURLFetcher {
+class MockOAuthFetcher : public net::TestURLFetcher {
  public:
   MockOAuthFetcher(int response_code,
                    int max_failure_count,
                    const GURL& url,
                    const std::string& results,
-                   content::URLFetcher::RequestType request_type,
-                   content::URLFetcherDelegate* d)
-    : TestURLFetcher(0, url, d),
-      max_failure_count_(max_failure_count),
-      current_failure_count_(0) {
+                   net::URLFetcher::RequestType request_type,
+                   net::URLFetcherDelegate* d)
+      : net::TestURLFetcher(0, url, d),
+        max_failure_count_(max_failure_count),
+        current_failure_count_(0) {
     set_url(url);
     set_response_code(response_code);
     SetResponseString(results);
@@ -43,13 +43,13 @@ class MockOAuthFetcher : public TestURLFetcher {
   virtual ~MockOAuthFetcher() { }
 
   virtual void Start() {
-    if ((GetResponseCode() != RC_REQUEST_OK) && (max_failure_count_ != -1) &&
+    if ((GetResponseCode() != net::HTTP_OK) && (max_failure_count_ != -1) &&
         (current_failure_count_ == max_failure_count_)) {
-      set_response_code(RC_REQUEST_OK);
+      set_response_code(net::HTTP_OK);
     }
 
     net::URLRequestStatus::Status code = net::URLRequestStatus::SUCCESS;
-    if (GetResponseCode() != RC_REQUEST_OK) {
+    if (GetResponseCode() != net::HTTP_OK) {
       code = net::URLRequestStatus::FAILED;
       current_failure_count_++;
     }
@@ -64,19 +64,19 @@ class MockOAuthFetcher : public TestURLFetcher {
   DISALLOW_COPY_AND_ASSIGN(MockOAuthFetcher);
 };
 
-class MockOAuthFetcherFactory : public content::URLFetcherFactory,
-                                public ScopedURLFetcherFactory {
+class MockOAuthFetcherFactory : public net::URLFetcherFactory,
+                                public net::ScopedURLFetcherFactory {
  public:
   MockOAuthFetcherFactory()
-      : ScopedURLFetcherFactory(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
-        response_code_(RC_REQUEST_OK) {
+      : net::ScopedURLFetcherFactory(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+        response_code_(net::HTTP_OK) {
   }
   ~MockOAuthFetcherFactory() {}
-  virtual content::URLFetcher* CreateURLFetcher(
+  virtual net::URLFetcher* CreateURLFetcher(
       int id,
       const GURL& url,
-      content::URLFetcher::RequestType request_type,
-      content::URLFetcherDelegate* d) {
+      net::URLFetcher::RequestType request_type,
+      net::URLFetcherDelegate* d) {
     return new MockOAuthFetcher(
         response_code_,
         max_failure_count_,
@@ -141,7 +141,7 @@ class MockGaiaOAuthClientDelegate : public gaia::GaiaOAuthClient::Delegate {
 };
 
 TEST_F(GaiaOAuthClientTest, NetworkFailure) {
-  int response_code = RC_INTERNAL_SERVER_ERROR;
+  int response_code = net::HTTP_INTERNAL_SERVER_ERROR;
 
   MockGaiaOAuthClientDelegate delegate;
   EXPECT_CALL(delegate, OnNetworkError(response_code))
@@ -162,7 +162,7 @@ TEST_F(GaiaOAuthClientTest, NetworkFailure) {
 }
 
 TEST_F(GaiaOAuthClientTest, NetworkFailureRecover) {
-  int response_code = RC_INTERNAL_SERVER_ERROR;
+  int response_code = net::HTTP_INTERNAL_SERVER_ERROR;
 
   MockGaiaOAuthClientDelegate delegate;
   EXPECT_CALL(delegate, OnGetTokensResponse(kTestRefreshToken, kTestAccessToken,
@@ -184,7 +184,7 @@ TEST_F(GaiaOAuthClientTest, NetworkFailureRecover) {
 }
 
 TEST_F(GaiaOAuthClientTest, OAuthFailure) {
-  int response_code = RC_BAD_REQUEST;
+  int response_code = net::HTTP_BAD_REQUEST;
 
   MockGaiaOAuthClientDelegate delegate;
   EXPECT_CALL(delegate, OnOAuthError()).Times(1);

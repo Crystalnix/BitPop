@@ -1,21 +1,41 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef DBUS_MESSAGE_H_
 #define DBUS_MESSAGE_H_
-#pragma once
 
 #include <string>
 #include <vector>
 #include <dbus/dbus.h>
 
 #include "base/basictypes.h"
+#include "dbus/file_descriptor.h"
+#include "dbus/object_path.h"
+
+namespace google {
+namespace protobuf {
+
+class MessageLite;
+
+}  // namespace protobuf
+}  // namespace google
+
 
 namespace dbus {
 
 class MessageWriter;
 class MessageReader;
+
+// DBUS_TYPE_UNIX_FD was added in D-Bus version 1.4
+#if !defined(DBUS_TYPE_UNIX_FD)
+#define DBUS_TYPE_UNIX_FD      ((int) 'h')
+#endif
+
+// Returns true if Unix FD passing is supported in libdbus.
+// The check is done runtime rather than compile time as the libdbus
+// version used at runtime may be different from the one used at compile time.
+bool IsDBusTypeUnixFdSupported();
 
 // Message is the base class of D-Bus message types. Client code must use
 // sub classes such as MethodCall and Response instead.
@@ -57,6 +77,7 @@ class Message {
     STRUCT = DBUS_TYPE_STRUCT,
     DICT_ENTRY = DBUS_TYPE_DICT_ENTRY,
     VARIANT = DBUS_TYPE_VARIANT,
+    UNIX_FD = DBUS_TYPE_UNIX_FD,
   };
 
   // Returns the type of the message. Returns MESSAGE_INVALID if
@@ -70,12 +91,12 @@ class Message {
   DBusMessage* raw_message() { return raw_message_; }
 
   // Sets the destination, the path, the interface, the member, etc.
-  void SetDestination(const std::string& destination);
-  void SetPath(const std::string& path);
-  void SetInterface(const std::string& interface);
-  void SetMember(const std::string& member);
-  void SetErrorName(const std::string& error_name);
-  void SetSender(const std::string& sender);
+  bool SetDestination(const std::string& destination);
+  bool SetPath(const ObjectPath& path);
+  bool SetInterface(const std::string& interface);
+  bool SetMember(const std::string& member);
+  bool SetErrorName(const std::string& error_name);
+  bool SetSender(const std::string& sender);
   void SetSerial(uint32 serial);
   void SetReplySerial(uint32 reply_serial);
   // SetSignature() does not exist as we cannot do it.
@@ -83,7 +104,7 @@ class Message {
   // Gets the destination, the path, the interface, the member, etc.
   // If not set, an empty string is returned.
   std::string GetDestination();
-  std::string GetPath();
+  ObjectPath GetPath();
   std::string GetInterface();
   std::string GetMember();
   std::string GetErrorName();
@@ -94,7 +115,8 @@ class Message {
   uint32 GetReplySerial();
 
   // Returns the string representation of this message. Useful for
-  // debugging.
+  // debugging. The output is truncated as needed (ex. strings are truncated
+  // if longer than a certain limit defined in the .cc file).
   std::string ToString();
 
  protected:
@@ -190,16 +212,17 @@ class Response : public Message {
   // must delete the returned object. Useful for testing.
   static Response* CreateEmpty();
 
- private:
+ protected:
   // Creates a Response message. The internal raw message is NULL.
   Response();
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(Response);
 };
 
 // ErrorResponse is a type of message used to return an error to the
 // caller of a method.
-class ErrorResponse: public Message {
+class ErrorResponse: public Response {
  public:
   // Returns a newly created Response from the given raw message of the
   // type DBUS_MESSAGE_TYPE_METHOD_RETURN. The caller must delete the
@@ -240,8 +263,9 @@ class ErrorResponse: public Message {
 //
 class MessageWriter {
  public:
-  // Data added with Append* will be written to |message|.
-  MessageWriter(Message* message);
+  // Data added with Append* will be written to |message|, which may be NULL
+  // to create a sub-writer for passing to OpenArray, etc.
+  explicit MessageWriter(Message* message);
   ~MessageWriter();
 
   // Appends a byte to the message.
@@ -255,7 +279,8 @@ class MessageWriter {
   void AppendUint64(uint64 value);
   void AppendDouble(double value);
   void AppendString(const std::string& value);
-  void AppendObjectPath(const std::string& value);
+  void AppendObjectPath(const ObjectPath& value);
+  void AppendFileDescriptor(const FileDescriptor& value);
 
   // Opens an array. The array contents can be added to the array with
   // |sub_writer|. The client code must close the array with
@@ -292,7 +317,15 @@ class MessageWriter {
   // Appends the array of object paths. Arrays of object paths are often
   // used when exchanging object paths, hence it's worth having a
   // specialized function.
-  void AppendArrayOfObjectPaths(const std::vector<std::string>& object_paths);
+  void AppendArrayOfObjectPaths(const std::vector<ObjectPath>& object_paths);
+
+  // Appends the protocol buffer as an array of bytes. The buffer is serialized
+  // into an array of bytes before communication, since protocol buffers are not
+  // a native dbus type. On the receiving size the array of bytes needs to be
+  // read and deserialized into a protocol buffer of the correct type. There are
+  // methods in MessageReader to assist in this.  Return true on succes and fail
+  // when serialization is not successful.
+  bool AppendProtoAsArrayOfBytes(const google::protobuf::MessageLite& protobuf);
 
   // Appends the byte wrapped in a variant data container. Variants are
   // widely used in D-Bus services so it's worth having a specialized
@@ -308,7 +341,7 @@ class MessageWriter {
   void AppendVariantOfUint64(uint64 value);
   void AppendVariantOfDouble(double value);
   void AppendVariantOfString(const std::string& value);
-  void AppendVariantOfObjectPath(const std::string& value);
+  void AppendVariantOfObjectPath(const ObjectPath& value);
 
  private:
   // Helper function used to implement AppendByte etc.
@@ -331,8 +364,9 @@ class MessageWriter {
 // starting with Pop advance the iterator on success.
 class MessageReader {
  public:
-  // The data will be read from the given message.
-  MessageReader(Message* message);
+  // The data will be read from the given |message|, which may be NULL to
+  // create a sub-reader for passing to PopArray, etc.
+  explicit MessageReader(Message* message);
   ~MessageReader();
 
   // Returns true if the reader has more data to read. The function is
@@ -355,7 +389,8 @@ class MessageReader {
   bool PopUint64(uint64* value);
   bool PopDouble(double* value);
   bool PopString(std::string* value);
-  bool PopObjectPath(std::string* value);
+  bool PopObjectPath(ObjectPath* value);
+  bool PopFileDescriptor(FileDescriptor* value);
 
   // Sets up the given message reader to read an array at the current
   // iterator position.
@@ -390,7 +425,15 @@ class MessageReader {
   // Arrays of object paths are often used to communicate with D-Bus
   // services like NetworkManager, hence it's worth having a specialized
   // function.
-  bool PopArrayOfObjectPaths(std::vector<std::string>* object_paths);
+  bool PopArrayOfObjectPaths(std::vector<ObjectPath>* object_paths);
+
+  // Gets the array of bytes at the current iterator position. It then parses
+  // this binary blob into the protocol buffer supplied.
+  // Returns true and advances the iterator on success. On failure returns false
+  // and emits an error message on the source of the failure. The two most
+  // common errors come from the iterator not currently being at a byte array or
+  // the wrong type of protocol buffer is passed in and the parse fails.
+  bool PopArrayOfBytesAsProto(google::protobuf::MessageLite* protobuf);
 
   // Gets the byte from the variant data container at the current iterator
   // position.
@@ -409,7 +452,7 @@ class MessageReader {
   bool PopVariantOfUint64(uint64* value);
   bool PopVariantOfDouble(double* value);
   bool PopVariantOfString(std::string* value);
-  bool PopVariantOfObjectPath(std::string* value);
+  bool PopVariantOfObjectPath(ObjectPath* value);
 
   // Get the data type of the value at the current iterator
   // position. INVALID_DATA will be returned if the iterator points to the

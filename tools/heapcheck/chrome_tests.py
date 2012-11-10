@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -78,28 +78,29 @@ class ChromeTests(object):
     # The known list of tests.
     # Recognise the original abbreviations as well as full executable names.
     self._test_list = {
+      "ash": self.TestAsh,              "ash_unittests": self.TestAsh,
+      "aura": self.TestAura,            "aura_unittests": self.TestAura,
       "base": self.TestBase,            "base_unittests": self.TestBase,
       "browser": self.TestBrowser,      "browser_tests": self.TestBrowser,
-      "crypto": self.TestCrypto,        "crypto_unittests": self.TestCrypto,
-      "googleurl": self.TestGURL,       "googleurl_unittests": self.TestGURL,
       "content": self.TestContent,      "content_unittests": self.TestContent,
+      "content_browsertests": self.TestContentBrowser,
       "courgette": self.TestCourgette,
       "courgette_unittests": self.TestCourgette,
+      "crypto": self.TestCrypto,        "crypto_unittests": self.TestCrypto,
+      "googleurl": self.TestGURL,       "googleurl_unittests": self.TestGURL,
       "ipc": self.TestIpc,              "ipc_tests": self.TestIpc,
       "layout": self.TestLayout,        "layout_tests": self.TestLayout,
       "media": self.TestMedia,          "media_unittests": self.TestMedia,
       "net": self.TestNet,              "net_unittests": self.TestNet,
       "printing": self.TestPrinting,    "printing_unittests": self.TestPrinting,
       "remoting": self.TestRemoting,    "remoting_unittests": self.TestRemoting,
+      "sql": self.TestSql,              "sql_unittests": self.TestSql,
       "startup": self.TestStartup,      "startup_tests": self.TestStartup,
       "sync": self.TestSync,            "sync_unit_tests": self.TestSync,
       "test_shell": self.TestTestShell, "test_shell_tests": self.TestTestShell,
-      "ui": self.TestUI,                "ui_tests": self.TestUI,
+      "ui_unit": self.TestUIUnit,       "ui_unittests": self.TestUIUnit,
       "unit": self.TestUnit,            "unit_tests": self.TestUnit,
       "views": self.TestViews,          "views_unittests": self.TestViews,
-      "sql": self.TestSql,              "sql_unittests": self.TestSql,
-      "ui_unit": self.TestUIUnit,       "ui_unittests": self.TestUIUnit,
-      "gfx": self.TestGfx,              "gfx_unittests": self.TestGfx,
     }
 
     if test not in self._test_list:
@@ -242,11 +243,26 @@ class ChromeTests(object):
       os.putenv("LD_LIBRARY_PATH", self._options.build_dir)
     return heapcheck_test.RunTool(cmd, supp, module)
 
+  def TestAsh(self):
+    return self.SimpleTest("ash", "ash_unittests")
+
+  def TestAura(self):
+    return self.SimpleTest("aura", "aura_unittests")
+
   def TestBase(self):
     return self.SimpleTest("base", "base_unittests")
 
   def TestBrowser(self):
     return self.SimpleTest("chrome", "browser_tests")
+
+  def TestContent(self):
+    return self.SimpleTest("content", "content_unittests")
+
+  def TestContentBrowser(self):
+    return self.SimpleTest("content", "content_browsertests")
+
+  def TestCourgette(self):
+    return self.SimpleTest("courgette", "courgette_unittests")
 
   def TestCrypto(self):
     return self.SimpleTest("crypto", "crypto_unittests")
@@ -254,14 +270,14 @@ class ChromeTests(object):
   def TestGURL(self):
     return self.SimpleTest("chrome", "googleurl_unittests")
 
-  def TestContent(self):
-    return self.SimpleTest("content", "content_unittests")
-
-  def TestCourgette(self):
-    return self.SimpleTest("courgette", "courgette_unittests")
+  def TestIpc(self):
+    return self.SimpleTest("ipc", "ipc_tests")
 
   def TestMedia(self):
     return self.SimpleTest("chrome", "media_unittests")
+
+  def TestNet(self):
+    return self.SimpleTest("net", "net_unittests")
 
   def TestPrinting(self):
     return self.SimpleTest("chrome", "printing_unittests")
@@ -271,12 +287,6 @@ class ChromeTests(object):
 
   def TestSync(self):
     return self.SimpleTest("chrome", "sync_unit_tests")
-
-  def TestIpc(self):
-    return self.SimpleTest("ipc", "ipc_tests")
-
-  def TestNet(self):
-    return self.SimpleTest("net", "net_unittests")
 
   def TestStartup(self):
     # We don't need the performance results, we're just looking for pointer
@@ -288,26 +298,17 @@ class ChromeTests(object):
   def TestTestShell(self):
     return self.SimpleTest("webkit", "test_shell_tests")
 
+  def TestUIUnit(self):
+    return self.SimpleTest("chrome", "ui_unittests")
+
   def TestUnit(self):
     return self.SimpleTest("chrome", "unit_tests")
-
-  def TestViews(self):
-    return self.SimpleTest("views", "views_unittests")
 
   def TestSql(self):
     return self.SimpleTest("chrome", "sql_unittests")
 
-  def TestUIUnit(self):
-    return self.SimpleTest("chrome", "ui_unittests")
-
-  def TestGfx(self):
-    return self.SimpleTest("chrome", "gfx_unittests")
-
-  def TestUI(self):
-    return self.SimpleTest("chrome", "ui_tests",
-                           cmd_args=[
-                            "--ui-test-action-timeout=80000",
-                            "--ui-test-action-max-timeout=180000"])
+  def TestViews(self):
+    return self.SimpleTest("views", "views_unittests")
 
   def TestLayoutChunk(self, chunk_num, chunk_size):
     '''Runs tests [chunk_num*chunk_size .. (chunk_num+1)*chunk_size).

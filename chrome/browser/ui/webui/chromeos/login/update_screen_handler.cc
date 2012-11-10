@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,12 +34,25 @@ UpdateScreenHandler::~UpdateScreenHandler() {
 
 void UpdateScreenHandler::GetLocalizedStrings(
     DictionaryValue *localized_strings) {
+  const string16 short_product_name =
+      l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME);
+  localized_strings->SetString("checkingForUpdatesMsg",
+      l10n_util::GetStringFUTF16(IDS_CHECKING_FOR_UPDATE_MSG,
+                                 short_product_name));
   localized_strings->SetString("updateScreenTitle",
       l10n_util::GetStringUTF16(IDS_UPDATE_SCREEN_TITLE));
   localized_strings->SetString("checkingForUpdates",
       l10n_util::GetStringUTF16(IDS_CHECKING_FOR_UPDATES));
   localized_strings->SetString("installingUpdateDesc",
-      l10n_util::GetStringUTF16(IDS_INSTALLING_UPDATE_DESC));
+      l10n_util::GetStringFUTF16(IDS_UPDATE_MSG, short_product_name));
+  localized_strings->SetString("downloadingTimeLeftLong",
+      l10n_util::GetStringUTF16(IDS_DOWNLOADING_TIME_LEFT_LONG));
+  localized_strings->SetString("downloadingTimeLeftStatusOneHour",
+      l10n_util::GetStringUTF16(IDS_DOWNLOADING_TIME_LEFT_STATUS_ONE_HOUR));
+  localized_strings->SetString("downloadingTimeLeftStatusMinutes",
+      l10n_util::GetStringUTF16(IDS_DOWNLOADING_TIME_LEFT_STATUS_MINUTES));
+  localized_strings->SetString("downloadingTimeLeftSmall",
+      l10n_util::GetStringUTF16(IDS_DOWNLOADING_TIME_LEFT_SMALL));
 #if !defined(OFFICIAL_BUILD)
   localized_strings->SetString("cancelUpdateHint",
       l10n_util::GetStringUTF16(IDS_UPDATE_CANCEL));
@@ -85,6 +98,18 @@ void UpdateScreenHandler::SetProgress(int progress) {
   base::FundamentalValue progress_value(progress);
   web_ui()->CallJavascriptFunction("cr.ui.Oobe.setUpdateProgress",
                                    progress_value);
+}
+
+void UpdateScreenHandler::ShowEstimatedTimeLeft(bool enable) {
+  base::FundamentalValue enable_value(enable);
+  web_ui()->CallJavascriptFunction(
+      "cr.ui.Oobe.showUpdateEstimatedTimeLeft", enable_value);
+}
+
+void UpdateScreenHandler::SetEstimatedTimeLeft(const base::TimeDelta& time) {
+  base::FundamentalValue seconds_value(time.InSecondsF());
+  web_ui()->CallJavascriptFunction(
+      "cr.ui.Oobe.setUpdateEstimatedTimeLeft", seconds_value);
 }
 
 void UpdateScreenHandler::ShowCurtain(bool enable) {

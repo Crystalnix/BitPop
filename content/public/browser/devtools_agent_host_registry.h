@@ -1,18 +1,16 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_PUBLIC_BROWSER_DEVTOOLS_AGENT_HOST_REGISTRY_H_
 #define CONTENT_PUBLIC_BROWSER_DEVTOOLS_AGENT_HOST_REGISTRY_H_
-#pragma once
 
 #include "content/common/content_export.h"
-
-class RenderViewHost;
 
 namespace content {
 
 class DevToolsAgentHost;
+class RenderViewHost;
 class WebContents;
 
 class CONTENT_EXPORT DevToolsAgentHostRegistry {
@@ -22,7 +20,8 @@ class CONTENT_EXPORT DevToolsAgentHostRegistry {
   static DevToolsAgentHost* GetDevToolsAgentHost(RenderViewHost* rvh);
 
   // Returns render view host instance for given |agent_host|.
-  static RenderViewHost* GetRenderViewHost(DevToolsAgentHost* agent_host);
+  static RenderViewHost* GetRenderViewHost(
+      DevToolsAgentHost* agent_host);
 
   // Returns true iff an instance of DevToolsAgentHost for the |rvh|
   // does exist.

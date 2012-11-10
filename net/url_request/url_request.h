@@ -4,17 +4,15 @@
 
 #ifndef NET_URL_REQUEST_URL_REQUEST_H_
 #define NET_URL_REQUEST_URL_REQUEST_H_
-#pragma once
 
-#include <map>
 #include <string>
 #include <vector>
 
 #include "base/debug/leak_tracker.h"
 #include "base/logging.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
+#include "base/supports_user_data.h"
 #include "base/time.h"
 #include "base/threading/non_thread_safe.h"
 #include "googleurl/src/gurl.h"
@@ -25,6 +23,7 @@
 #include "net/base/net_log.h"
 #include "net/base/network_delegate.h"
 #include "net/base/request_priority.h"
+#include "net/cookies/canonical_cookie.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/url_request/url_request_status.h"
@@ -35,11 +34,14 @@ class FilePath;
 class AutoUpdateInterceptor;
 class ChildProcessSecurityPolicyTest;
 class ComponentUpdateInterceptor;
-class ResourceDispatcherHostTest;
 class TestAutomationProvider;
 class URLRequestAutomationJob;
-class UserScriptListenerTest;
-class NetworkDelayListenerTest;
+
+namespace base {
+namespace debug {
+class StackTrace;
+}
+}
 
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
@@ -51,9 +53,20 @@ class AppCacheURLRequestJobTest;
 
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
+namespace content {
+class ResourceDispatcherHostTest;
+}
+
+// Temporary layering violation to allow existing users of a deprecated
+// interface.
+namespace extensions {
+class UserScriptListenerTest;
+}
+
+// Temporary layering violation to allow existing users of a deprecated
+// interface.
 namespace fileapi {
 class FileSystemDirURLRequestJobTest;
-class FileSystemOperationWriteTest;
 class FileSystemURLRequestJobTest;
 class FileWriterDelegateTest;
 }
@@ -72,7 +85,6 @@ class BlobURLRequestJobTest;
 
 namespace net {
 
-class CookieList;
 class CookieOptions;
 class HostPortPair;
 class IOBuffer;
@@ -99,7 +111,8 @@ typedef std::vector<std::string> ResponseCookies;
 //
 // NOTE: All usage of all instances of this class should be on the same thread.
 //
-class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
+class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
+                              public base::SupportsUserData {
  public:
   // Callback function implemented by protocol handlers to create new jobs.
   // The factory may return NULL to indicate an error, which will cause other
@@ -116,12 +129,19 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
 #undef HTTP_ATOM
   };
 
-  // Derive from this class and add your own data members to associate extra
-  // information with a URLRequest. Use GetUserData(key) and SetUserData()
-  class UserData {
-   public:
-    UserData() {}
-    virtual ~UserData() {}
+  // Referrer policies (see set_referrer_policy): During server redirects, the
+  // referrer header might be cleared, if the protocol changes from HTTPS to
+  // HTTP. This is the default behavior of URLRequest, corresponding to
+  // CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE. Alternatively, the
+  // referrer policy can be set to never change the referrer header. This
+  // behavior corresponds to NEVER_CLEAR_REFERRER. Embedders will want to use
+  // NEVER_CLEAR_REFERRER when implementing the meta-referrer support
+  // (http://wiki.whatwg.org/wiki/Meta_referrer) and sending requests with a
+  // non-default referrer policy. Only the default referrer policy requires
+  // the referrer to be cleared on transitions from HTTPS to HTTP.
+  enum ReferrerPolicy {
+    CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE,
+    NEVER_CLEAR_REFERRER,
   };
 
   // This class handles network interception.  Use with
@@ -164,18 +184,16 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
     friend class ::AutoUpdateInterceptor;
     friend class ::ChildProcessSecurityPolicyTest;
     friend class ::ComponentUpdateInterceptor;
-    friend class ::ResourceDispatcherHostTest;
     friend class ::TestAutomationProvider;
-    friend class ::UserScriptListenerTest;
-    friend class ::NetworkDelayListenerTest;
     friend class ::URLRequestAutomationJob;
     friend class TestInterceptor;
     friend class URLRequestFilter;
     friend class appcache::AppCacheInterceptor;
     friend class appcache::AppCacheRequestHandlerTest;
     friend class appcache::AppCacheURLRequestJobTest;
+    friend class content::ResourceDispatcherHostTest;
+    friend class extensions::UserScriptListenerTest;
     friend class fileapi::FileSystemDirURLRequestJobTest;
-    friend class fileapi::FileSystemOperationWriteTest;
     friend class fileapi::FileSystemURLRequestJobTest;
     friend class fileapi::FileWriterDelegateTest;
     friend class policy::CannedResponseInterceptor;
@@ -217,8 +235,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   //
   class NET_EXPORT Delegate {
    public:
-    virtual ~Delegate() {}
-
     // Called upon a server-initiated redirect.  The delegate may call the
     // request's Cancel method to prevent the redirect from being followed.
     // Since there may be multiple chained redirects, there may also be more
@@ -270,19 +286,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
                                        const SSLInfo& ssl_info,
                                        bool fatal);
 
-    // Called when reading cookies to allow the delegate to block access to the
-    // cookie. This method will never be invoked when LOAD_DO_NOT_SEND_COOKIES
-    // is specified.
-    virtual bool CanGetCookies(const URLRequest* request,
-                               const CookieList& cookie_list) const;
-
-    // Called when a cookie is set to allow the delegate to block access to the
-    // cookie. This method will never be invoked when LOAD_DO_NOT_SAVE_COOKIES
-    // is specified.
-    virtual bool CanSetCookie(const URLRequest* request,
-                              const std::string& cookie_line,
-                              CookieOptions* options) const;
-
     // After calling Start(), the delegate will receive an OnResponseStarted
     // callback when the request has completed.  If an error occurred, the
     // request->status() will be set.  On success, all redirects have been
@@ -299,22 +302,28 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
     // If an error occurred, request->status() will contain the error,
     // and bytes read will be -1.
     virtual void OnReadCompleted(URLRequest* request, int bytes_read) = 0;
+
+   protected:
+    virtual ~Delegate() {}
   };
 
   // Initialize an URL request.
-  URLRequest(const GURL& url, Delegate* delegate);
+  URLRequest(const GURL& url,
+             Delegate* delegate,
+             const URLRequestContext* context);
 
   // If destroyed after Start() has been called but while IO is pending,
   // then the request will be effectively canceled and the delegate
   // will not have any more of its methods called.
-  ~URLRequest();
+  virtual ~URLRequest();
 
-  // The user data allows the clients to associate data with this request.
-  // Multiple user data values can be stored under different keys.
-  // This request will TAKE OWNERSHIP of the given data pointer, and will
-  // delete the object if it is changed or the request is destroyed.
-  UserData* GetUserData(const void* key) const;
-  void SetUserData(const void* key, UserData* data);
+  // Changes the default cookie policy from allowing all cookies to blocking all
+  // cookies. Embedders that want to implement a more flexible policy should
+  // change the default to blocking all cookies, and provide a NetworkDelegate
+  // with the URLRequestContext that maintains the CookieStore.
+  // The cookie policy default has to be set before the first URLRequest is
+  // started. Once it was set to block all cookies, it cannot be changed back.
+  static void SetDefaultCookiePolicyToBlock();
 
   // Returns true if the scheme can be handled by URLRequest. False otherwise.
   static bool IsHandledProtocol(const std::string& scheme);
@@ -327,14 +336,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // Profile.
   static bool IsHandledURL(const GURL& url);
 
-  // Allow access to file:// on ChromeOS for tests.
-  static void AllowFileAccess();
-  static bool IsFileAccessAllowed();
-
-  // See switches::kEnableMacCookies.
-  static void EnableMacCookies();
-  static bool AreMacCookiesEnabled();
-
   // The original url is the url used to initialize the request, and it may
   // differ from the url if the request was redirected.
   const GURL& original_url() const { return url_chain_.front(); }
@@ -345,6 +346,16 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
 
   // The URL that should be consulted for the third-party cookie blocking
   // policy.
+  //
+  // WARNING: This URL must only be used for the third-party cookie blocking
+  //          policy. It MUST NEVER be used for any kind of SECURITY check.
+  //
+  //          For example, if a top-level navigation is redirected, the
+  //          first-party for cookies will be the URL of the first URL in the
+  //          redirect chain throughout the whole redirect. If it was used for
+  //          a security check, an attacker might try to get around this check
+  //          by starting from some page that redirects to the
+  //          host-to-be-attacked.
   const GURL& first_party_for_cookies() const {
     return first_party_for_cookies_;
   }
@@ -366,6 +377,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   void set_referrer(const std::string& referrer);
   // Returns the referrer header with potential username and password removed.
   GURL GetSanitizedReferrer() const;
+
+  // The referrer policy to apply when updating the referrer during redirects.
+  // The referrer policy may only be changed before Start() is called.
+  void set_referrer_policy(ReferrerPolicy referrer_policy);
 
   // Sets the delegate of the request.  This value may be changed at any time,
   // and it is permissible for it to be null.
@@ -398,7 +413,8 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   void set_upload(UploadData* upload);
 
   // Get the upload data directly.
-  UploadData* get_upload();
+  const UploadData* get_upload() const;
+  UploadData* get_upload_mutable();
 
   // Returns true if the request has a non-empty message body to upload.
   bool has_upload() const;
@@ -529,13 +545,13 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
 
   // Cancels the request and sets the error to |error| (see net_error_list.h
   // for values).
-  void SimulateError(int error);
+  void CancelWithError(int error);
 
   // Cancels the request and sets the error to |error| (see net_error_list.h
   // for values) and attaches |ssl_info| as the SSLInfo for that request.  This
   // is useful to attach a certificate and certificate error to a canceled
   // request.
-  void SimulateSSLError(int error, const SSLInfo& ssl_info);
+  void CancelWithSSLError(int error, const SSLInfo& ssl_info);
 
   // Read initiates an asynchronous read from the response, and must only
   // be called after the OnResponseStarted callback is received with a
@@ -591,7 +607,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
 
   // Used to specify the context (cookie store, cache) for this request.
   const URLRequestContext* context() const;
-  void set_context(const URLRequestContext* context);
 
   const BoundNetLog& net_log() const { return net_log_; }
 
@@ -601,14 +616,27 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // Returns the priority level for this request.
   RequestPriority priority() const { return priority_; }
   void set_priority(RequestPriority priority) {
-    DCHECK_GE(priority, HIGHEST);
+    DCHECK_GE(priority, MINIMUM_PRIORITY);
     DCHECK_LT(priority, NUM_PRIORITIES);
     priority_ = priority;
   }
 
+  // Returns true iff this request would be internally redirected to HTTPS
+  // due to HSTS. If so, |redirect_url| is rewritten to the new HTTPS URL.
+  bool GetHSTSRedirect(GURL* redirect_url) const;
+
   // This method is intended only for unit tests, but it is being used by
   // unit tests outside of net :(.
   URLRequestJob* job() { return job_; }
+
+  // TODO(willchan): Undo this. Only temporarily public.
+  bool has_delegate() const { return delegate_ != NULL; }
+
+  // NOTE(willchan): This is just temporary for debugging
+  // http://crbug.com/90971.
+  // Allows to setting debug info into the URLRequest.
+  void set_stack_trace(const base::debug::StackTrace& stack_trace);
+  const base::debug::StackTrace* stack_trace() const;
 
  protected:
   // Allow the URLRequestJob class to control the is_pending() flag.
@@ -630,8 +658,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
 
  private:
   friend class URLRequestJob;
-
-  typedef std::map<const void*, linked_ptr<UserData> > UserDataMap;
 
   // Registers a new protocol handler for the given scheme. If the scheme is
   // already handled, this will overwrite the given factory. To delete the
@@ -686,8 +712,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // occurs.
   void NotifyResponseStarted();
 
-  bool has_delegate() const { return delegate_ != NULL; }
-
   // These functions delegate to |delegate_| and may only be used if
   // |delegate_| is not NULL. See URLRequest::Delegate for the meaning
   // of these functions.
@@ -708,7 +732,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // Contextual information used for this request (can be NULL). This contains
   // most of the dependencies which are shared between requests (disk cache,
   // cookie store, socket pool, etc.)
-  scoped_refptr<const URLRequestContext> context_;
+  const URLRequestContext* context_;
 
   // Tracks the time spent in various load states throughout this request.
   BoundNetLog net_log_;
@@ -720,6 +744,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   GURL delegate_redirect_url_;
   std::string method_;  // "GET", "POST", etc. Should be all uppercase.
   std::string referrer_;
+  ReferrerPolicy referrer_policy_;
   HttpRequestHeaders extra_request_headers_;
   int load_flags_;  // Flags indicating the request type for the load;
                     // expected values are LOAD_* enums above.
@@ -740,9 +765,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // Start() is called to the time we dispatch RequestComplete and indicates
   // whether the job is active.
   bool is_pending_;
-
-  // Externally-defined data accessible by key
-  UserDataMap user_data_;
 
   // Number of times we're willing to redirect.  Used to guard against
   // infinite redirects.
@@ -792,6 +814,8 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   scoped_refptr<AuthChallengeInfo> auth_info_;
 
   base::TimeTicks creation_time_;
+
+  scoped_ptr<const base::debug::StackTrace> stack_trace_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequest);
 };

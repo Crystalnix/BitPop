@@ -10,6 +10,7 @@
 #include "base/memory/scoped_nsobject.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 
 namespace gfx {
@@ -23,9 +24,6 @@ PlatformFontMac::PlatformFontMac() {
   NSFont* system_font = [NSFont systemFontOfSize:font_size_];
   font_name_ = base::SysNSStringToUTF8([system_font fontName]);
   CalculateMetrics();
-}
-
-PlatformFontMac::PlatformFontMac(const Font& other) {
 }
 
 PlatformFontMac::PlatformFontMac(NativeFont native_font) {
@@ -53,6 +51,11 @@ int PlatformFontMac::GetBaseline() const {
 
 int PlatformFontMac::GetAverageCharacterWidth() const {
   return average_width_;
+}
+
+int PlatformFontMac::GetStringWidth(const string16& text) const {
+  return Canvas::GetStringWidth(text,
+                                Font(const_cast<PlatformFontMac*>(this)));
 }
 
 int PlatformFontMac::GetExpectedTextWidth(int length) const {
@@ -104,7 +107,7 @@ void PlatformFontMac::CalculateMetrics() {
   height_ = [layout_manager defaultLineHeightForFont:font];
   ascent_ = [font ascender];
   average_width_ =
-      [font boundingRectForGlyph:[font glyphWithName:@"x"]].size.width;
+      NSWidth([font boundingRectForGlyph:[font glyphWithName:@"x"]]);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -113,11 +116,6 @@ void PlatformFontMac::CalculateMetrics() {
 // static
 PlatformFont* PlatformFont::CreateDefault() {
   return new PlatformFontMac;
-}
-
-// static
-PlatformFont* PlatformFont::CreateFromFont(const Font& other) {
-  return new PlatformFontMac(other);
 }
 
 // static

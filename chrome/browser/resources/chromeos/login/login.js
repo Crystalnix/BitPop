@@ -41,7 +41,7 @@ cr.define('cr.ui', function() {
     cr.ui.Bubble.decorate($('bubble'));
     login.HeaderBar.decorate($('login-header-bar'));
 
-    chrome.send('screenStateInitialize', []);
+    chrome.send('screenStateInitialize');
   };
 
   /**
@@ -69,6 +69,8 @@ cr.define('cr.ui', function() {
   Oobe.setUsageStats = function(checked) {};
   Oobe.setOemEulaUrl = function(oemEulaUrl) {};
   Oobe.setUpdateProgress = function(progress) {};
+  Oobe.showUpdateEstimatedTimeLeft = function(enable) {};
+  Oobe.setUpdateEstimatedTimeLeft = function(seconds) {};
   Oobe.setUpdateMessage = function(message) {};
   Oobe.showUpdateCurtain = function(enable) {};
   Oobe.setTpmPassword = function(password) {};
@@ -159,6 +161,16 @@ cr.define('cr.ui', function() {
     DisplayManager.setLabelText(labelId, labelText);
   };
 
+  /**
+   * Sets the text content of the enterprise info message.
+   * If the text is empty, the entire notification will be hidden.
+   * @param {string} messageText The message text.
+   * @param {boolean} showTrackingHint Whether to show the reporting warning.
+   */
+  Oobe.setEnterpriseInfo = function(messageText, showReportingWarning) {
+    DisplayManager.setEnterpriseInfo(messageText, showReportingWarning);
+  };
+
   // Export
   return {
     Oobe: Oobe
@@ -167,6 +179,13 @@ cr.define('cr.ui', function() {
 
 var Oobe = cr.ui.Oobe;
 
-disableTextSelectAndDrag();
+// Allow selection events on components with editable text (password field)
+// bug (http://code.google.com/p/chromium/issues/detail?id=125863)
+disableTextSelectAndDrag(function(e) {
+  var src = e.target;
+  return src instanceof HTMLTextAreaElement ||
+         src instanceof HTMLInputElement &&
+         /text|password|search/.test(src.type);
+});
 
 document.addEventListener('DOMContentLoaded', cr.ui.Oobe.initialize);

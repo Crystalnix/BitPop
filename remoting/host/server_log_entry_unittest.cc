@@ -60,25 +60,37 @@ class ServerLogEntryTest : public testing::Test {
   }
 };
 
-TEST_F(ServerLogEntryTest, MakeSessionStateChange) {
+TEST_F(ServerLogEntryTest, MakeForSessionStateChange) {
   scoped_ptr<ServerLogEntry> entry(
-      ServerLogEntry::MakeSessionStateChange(true));
-  scoped_ptr<XmlElement> stanza(entry->ToStanza());
+      ServerLogEntry::MakeForSessionStateChange(true));
+  scoped_ptr<XmlElement> stanza = entry->ToStanza();
   std::string error;
   std::map<std::string, std::string> key_value_pairs;
   key_value_pairs["role"] = "host";
   key_value_pairs["event-name"] = "session-state";
   key_value_pairs["session-state"] = "connected";
   std::set<std::string> keys;
-  ASSERT_TRUE(VerifyStanza(key_value_pairs, keys, stanza.get(), &error)) <<
-      error;
+  ASSERT_TRUE(VerifyStanza(key_value_pairs, keys, stanza.get(), &error))
+      << error;
+}
+
+TEST_F(ServerLogEntryTest, MakeForHeartbeat) {
+  scoped_ptr<ServerLogEntry> entry(ServerLogEntry::MakeForHeartbeat());
+  scoped_ptr<XmlElement> stanza = entry->ToStanza();
+  std::string error;
+  std::map<std::string, std::string> key_value_pairs;
+  key_value_pairs["role"] = "host";
+  key_value_pairs["event-name"] = "heartbeat";
+  std::set<std::string> keys;
+  ASSERT_TRUE(VerifyStanza(key_value_pairs, keys, stanza.get(), &error))
+      << error;
 }
 
 TEST_F(ServerLogEntryTest, AddHostFields) {
   scoped_ptr<ServerLogEntry> entry(
-      ServerLogEntry::MakeSessionStateChange(true));
+      ServerLogEntry::MakeForSessionStateChange(true));
   entry->AddHostFields();
-  scoped_ptr<XmlElement> stanza(entry->ToStanza());
+  scoped_ptr<XmlElement> stanza = entry->ToStanza();
   std::string error;
   std::map<std::string, std::string> key_value_pairs;
   key_value_pairs["role"] = "host";
@@ -104,9 +116,9 @@ TEST_F(ServerLogEntryTest, AddHostFields) {
 
 TEST_F(ServerLogEntryTest, AddModeField1) {
   scoped_ptr<ServerLogEntry> entry(
-      ServerLogEntry::MakeSessionStateChange(true));
+      ServerLogEntry::MakeForSessionStateChange(true));
   entry->AddModeField(ServerLogEntry::IT2ME);
-  scoped_ptr<XmlElement> stanza(entry->ToStanza());
+  scoped_ptr<XmlElement> stanza = entry->ToStanza();
   std::string error;
   std::map<std::string, std::string> key_value_pairs;
   key_value_pairs["role"] = "host";
@@ -120,9 +132,9 @@ TEST_F(ServerLogEntryTest, AddModeField1) {
 
 TEST_F(ServerLogEntryTest, AddModeField2) {
   scoped_ptr<ServerLogEntry> entry(
-      ServerLogEntry::MakeSessionStateChange(true));
+      ServerLogEntry::MakeForSessionStateChange(true));
   entry->AddModeField(ServerLogEntry::ME2ME);
-  scoped_ptr<XmlElement> stanza(entry->ToStanza());
+  scoped_ptr<XmlElement> stanza = entry->ToStanza();
   std::string error;
   std::map<std::string, std::string> key_value_pairs;
   key_value_pairs["role"] = "host";

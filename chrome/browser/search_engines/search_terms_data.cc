@@ -9,11 +9,11 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/instant/instant_controller.h"
-#include "chrome/browser/instant/instant_field_trial.h"
+#include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
 
-#if defined(OS_WIN) && defined(GOOGLE_CHROME_BUILD)
+#if defined(ENABLE_RLZ)
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/rlz/rlz.h"
 #endif
@@ -24,6 +24,10 @@ SearchTermsData::SearchTermsData() {
 }
 
 SearchTermsData::~SearchTermsData() {
+}
+
+std::string SearchTermsData::GoogleBaseURLValue() const {
+  return GoogleURLTracker::kDefaultGoogleHomepage;
 }
 
 std::string SearchTermsData::GoogleBaseSuggestURLValue() const {
@@ -46,20 +50,25 @@ std::string SearchTermsData::GoogleBaseSuggestURLValue() const {
   return base_url.ReplaceComponents(repl).spec();
 }
 
-std::string SearchTermsData::InstantEnabledParam() const {
-  return std::string();
+std::string SearchTermsData::GetApplicationLocale() const {
+  return "en";
 }
 
-std::string SearchTermsData::InstantFieldTrialUrlParam() const {
+#if defined(ENABLE_RLZ)
+string16 SearchTermsData::GetRlzParameterValue() const {
+  return string16();
+}
+#endif
+
+std::string SearchTermsData::InstantEnabledParam() const {
   return std::string();
 }
 
 // static
 std::string* UIThreadSearchTermsData::google_base_url_ = NULL;
 
-UIThreadSearchTermsData::UIThreadSearchTermsData() : profile_(NULL) {
-  // GoogleURLTracker::GoogleURL() DCHECKs this also, but adding it here helps
-  // us catch bad behavior at a more common place in this code.
+UIThreadSearchTermsData::UIThreadSearchTermsData(Profile* profile)
+    : profile_(profile) {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
@@ -67,8 +76,10 @@ UIThreadSearchTermsData::UIThreadSearchTermsData() : profile_(NULL) {
 std::string UIThreadSearchTermsData::GoogleBaseURLValue() const {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return google_base_url_ ?
-    (*google_base_url_) : GoogleURLTracker::GoogleURL().spec();
+  if (google_base_url_)
+    return *google_base_url_;
+  return profile_ ? GoogleURLTracker::GoogleURL(profile_).spec() :
+      SearchTermsData::GoogleBaseURLValue();
 }
 
 std::string UIThreadSearchTermsData::GetApplicationLocale() const {
@@ -77,7 +88,7 @@ std::string UIThreadSearchTermsData::GetApplicationLocale() const {
   return g_browser_process->GetApplicationLocale();
 }
 
-#if defined(OS_WIN) && defined(GOOGLE_CHROME_BUILD)
+#if defined(ENABLE_RLZ)
 string16 UIThreadSearchTermsData::GetRlzParameterValue() const {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -99,21 +110,11 @@ string16 UIThreadSearchTermsData::GetRlzParameterValue() const {
 std::string UIThreadSearchTermsData::InstantEnabledParam() const {
   DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (profile_ && InstantController::IsEnabled(profile_) &&
-      !InstantFieldTrial::IsHiddenExperiment(profile_)) {
-    return "&ion=1";
-  }
-  return std::string();
-}
-
-std::string UIThreadSearchTermsData::InstantFieldTrialUrlParam() const {
-  DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
-         BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return InstantFieldTrial::GetGroupAsUrlParam(profile_);
+  return InstantController::IsEnabled(profile_) ? "&ion=1" : std::string();
 }
 
 // static
-void UIThreadSearchTermsData::SetGoogleBaseURL(std::string* google_base_url) {
+void UIThreadSearchTermsData::SetGoogleBaseURL(const std::string& base_url) {
   delete google_base_url_;
-  google_base_url_ = google_base_url;
+  google_base_url_ = base_url.empty() ? NULL : new std::string(base_url);
 }

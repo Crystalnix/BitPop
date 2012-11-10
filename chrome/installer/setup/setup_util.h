@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -6,12 +6,15 @@
 
 #ifndef CHROME_INSTALLER_SETUP_SETUP_UTIL_H_
 #define CHROME_INSTALLER_SETUP_SETUP_UTIL_H_
-#pragma once
 
+#include <windows.h>
+
+#include "base/basictypes.h"
 #include "base/file_path.h"
+#include "base/string16.h"
 #include "base/version.h"
 #include "base/win/scoped_handle.h"
-#include "chrome/installer/util/install_util.h"
+#include "chrome/installer/util/browser_distribution.h"
 
 namespace installer {
 
@@ -41,29 +44,38 @@ Version* GetMaxVersionFromArchiveDir(const FilePath& chrome_path);
 bool DeleteFileFromTempProcess(const FilePath& path,
                                uint32 delay_before_delete_ms);
 
-// A predicate that compares the program portion of a command line with a given
-// file path.  First, the file paths are compared directly.  If they do not
-// match, the filesystem is consulted to determine if the paths reference the
-// same file.
-class ProgramCompare : public InstallUtil::RegistryValuePredicate {
+// Get the path to this distribution's Active Setup registry entries.
+// e.g. Software\Microsoft\Active Setup\Installed Components\<dist_guid>
+string16 GetActiveSetupPath(BrowserDistribution* dist);
+
+// This class will enable the privilege defined by |privilege_name| on the
+// current process' token. The privilege will be disabled upon the
+// ScopedTokenPrivilege's destruction (unless it was already enabled when the
+// ScopedTokenPrivilege object was constructed).
+// Some privileges might require admin rights to be enabled (check is_enabled()
+// to know whether |privilege_name| was successfully enabled).
+class ScopedTokenPrivilege {
  public:
-  explicit ProgramCompare(const FilePath& path_to_match);
-  virtual ~ProgramCompare();
-  virtual bool Evaluate(const std::wstring& value) const OVERRIDE;
+  explicit ScopedTokenPrivilege(const wchar_t* privilege_name);
+  ~ScopedTokenPrivilege();
 
- protected:
-  static bool OpenForInfo(const FilePath& path,
-                          base::win::ScopedHandle* handle);
-  static bool GetInfo(const base::win::ScopedHandle& handle,
-                      BY_HANDLE_FILE_INFORMATION* info);
-
-  FilePath path_to_match_;
-  base::win::ScopedHandle file_handle_;
-  BY_HANDLE_FILE_INFORMATION file_info_;
+  // Always returns true unless the privilege could not be enabled.
+  bool is_enabled() const { return is_enabled_; }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(ProgramCompare);
-};  // class ProgramCompare
+  // Always true unless the privilege could not be enabled.
+  bool is_enabled_;
+
+  // A scoped handle to the current process' token. This will be closed
+  // preemptively should enabling the privilege fail in the constructor.
+  base::win::ScopedHandle token_;
+
+  // The previous state of the privilege this object is responsible for. As set
+  // by AdjustTokenPrivileges() upon construction.
+  TOKEN_PRIVILEGES previous_privileges_;
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(ScopedTokenPrivilege);
+};
 
 }  // namespace installer
 

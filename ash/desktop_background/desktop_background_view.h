@@ -1,19 +1,21 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef ASH_DESKTOP_BACKGROUND_DESKTOP_BACKGROUND_VIEW_H_
 #define ASH_DESKTOP_BACKGROUND_DESKTOP_BACKGROUND_VIEW_H_
-#pragma once
 
-#include "third_party/skia/include/core/SkBitmap.h"
+#include "ash/desktop_background/desktop_background_resources.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/views/context_menu_controller.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget_delegate.h"
 
 namespace ash {
 namespace internal {
 
-class DesktopBackgroundView : public views::WidgetDelegateView {
+class DesktopBackgroundView : public views::WidgetDelegateView,
+                              public views::ContextMenuController {
  public:
   DesktopBackgroundView();
   virtual ~DesktopBackgroundView();
@@ -22,9 +24,10 @@ class DesktopBackgroundView : public views::WidgetDelegateView {
   // Overridden from views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual bool OnMousePressed(const views::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseReleased(const views::MouseEvent& event) OVERRIDE;
 
-  SkBitmap wallpaper_;
+  // Overridden from views::ContextMenuController:
+  virtual void ShowContextMenuForView(views::View* source,
+                                      const gfx::Point& point) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopBackgroundView);
 };

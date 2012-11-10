@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/rounded_rect_painter.h"
 #include "chrome/browser/profiles/profile.h"
-#include "content/browser/child_process_security_policy.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -52,9 +51,13 @@ const int kStopDelayMs = 500;
 ///////////////////////////////////////////////////////////////////////////////
 // WebPageDomView, public:
 
+WebPageDomView::WebPageDomView(content::BrowserContext* browser_context)
+    : views::WebView(browser_context) {
+}
+
 void WebPageDomView::SetWebContentsDelegate(
     content::WebContentsDelegate* delegate) {
-  dom_contents_->web_contents()->SetDelegate(delegate);
+  web_contents()->SetDelegate(delegate);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -90,13 +93,12 @@ void WebPageView::Init() {
                      &WebPageView::ShowWaitingControls);
 }
 
-void WebPageView::InitDOM(Profile* profile,
-                          SiteInstance* site_instance) {
-  dom_view()->Init(profile, site_instance);
+void WebPageView::InitWebView(SiteInstance* site_instance) {
+  dom_view()->CreateWebContentsWithSiteInstance(site_instance);
 }
 
 void WebPageView::LoadURL(const GURL& url) {
-  dom_view()->LoadURL(url);
+  dom_view()->LoadInitialURL(url);
 }
 
 void WebPageView::SetWebContentsDelegate(

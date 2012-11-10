@@ -1,11 +1,8 @@
 /* Copyright (c) 2012 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+ * found in the LICENSE file. */
 
 html {
-  font-family: segoe ui, arial, helvetica, sans-serif;
-  font-size: 14px;
   /* It's necessary to put this here instead of in body in order to get the
      background-size of 100% to work properly */
   height: 100%;
@@ -13,7 +10,7 @@ html {
 }
 
 body {
-  /* Don't highlight links when they're tapped.  Safari has bugs here that
+  /* Don't highlight links when they're tapped. Safari has bugs here that
      show up as flicker when dragging in some situations */
   -webkit-tap-highlight-color: transparent;
   /* Don't allow selecting text - can occur when dragging */
@@ -28,28 +25,38 @@ body {
 }
 
 #notification-container {
-  -webkit-transition-duration: 100ms;
-  -webkit-transition-property: opacity;
+  -webkit-transition: opacity 200ms;
+  bottom: 31px;
   display: block;
-  margin-top: 2px;
+  float: left;
   position: relative;
-  text-align: center;
+  text-align: start;
   z-index: 15;
 }
 
+html[dir='rtl'] #notification-container {
+  float: right;
+}
+
+#notification-container.card-changed {
+  -webkit-transition: none;
+  opacity: 0;
+}
+
 #notification-container.inactive {
-  -webkit-transition-duration: 200ms;
+  -webkit-transition: opacity 200ms;
   opacity: 0;
 }
 
 #notification {
-  background-color: #FFF199;
-  border: 1px solid lightGrey;
-  border-radius: 6px;
-  color: black;
   display: inline-block;
   font-weight: bold;
-  padding: 7px 15px;
+  white-space: nowrap;
+}
+
+#notification > * {
+  display: inline-block;
+  white-space: normal;
 }
 
 #notification > div > div,
@@ -57,16 +64,24 @@ body {
   display: inline-block;
 }
 
+/* NOTE: This is in the probable case that we start stuffing 16x16 data URI'd
+ * icons in the promo notification responses. */
+#notification > span > img {
+  margin-bottom: -3px;
+}
+
 #notification .close-button {
-  -webkit-margin-start: 0.5em;
-  vertical-align: middle;
+  -webkit-margin-start: 8px;  /* Matching value in TilePage#repositionTile_. */
+  vertical-align: top;
 }
 
 .close-button {
   background: no-repeat;
   background-color: transparent;
   /* TODO(estade): this should animate between states. */
-  background-image: url('../../../../ui/resources/close_bar.png');
+  background-image: -webkit-image-set(
+      url('../../../../ui/resources/default_100_percent/close_bar.png') 1x,
+      url('../../../../ui/resources/default_200_percent/close_bar.png') 2x);
   border: 0;
   cursor: default;
   display: inline-block;
@@ -77,19 +92,23 @@ body {
 
 .close-button:hover,
 .close-button:focus {
-  background-image: url('../../../../ui/resources/close_bar_h.png');
+  background-image: -webkit-image-set(
+      url('../../../../ui/resources/default_100_percent/close_bar_hover.png')
+          1x,
+      url('../../../../ui/resources/default_200_percent/close_bar_hover.png')
+          2x);
 }
 
 .close-button:active {
-  background-image: url('../../../../ui/resources/close_bar_p.png');
+  background-image: -webkit-image-set(
+      url('../../../../ui/resources/default_100_percent/close_bar_pressed.png')
+          1x,
+      url('../../../../ui/resources/default_200_percent/close_bar_pressed.png')
+          2x);
 }
 
-.linkButton {
+.link-button {
   -webkit-margin-start: 0.5em;
-  color: #06C;
-  cursor: pointer;
-  display: inline-block;
-  text-decoration: underline;
 }
 
 #card-slider-frame {
@@ -103,10 +122,14 @@ body {
   width: 100%;
 }
 
+body.bare-minimum #card-slider-frame {
+  bottom: 0;
+}
+
 #page-list {
   /* fill the apps-frame */
-  height: 100%;
   display: -webkit-box;
+  height: 100%;
 }
 
 #attribution {
@@ -122,8 +145,10 @@ body {
 }
 
 /* For themes that right-align their images, we flip the attribution to the
- * left to avoid conflicts.  */
+ * left to avoid conflicts. We also do this for bare-minimum mode since there
+ * can be conflicts with the recently closed menu. */
 html[themegravity='right'] #attribution,
+body.bare-minimum #attribution,
 html[dir='rtl'] #attribution {
   left: 0;
   right: auto;
@@ -132,13 +157,16 @@ html[dir='rtl'] #attribution {
 
 #attribution > span {
   display: block;
-  font-size: 84%;
 }
 
 #footer {
   background-image: -webkit-linear-gradient(
       rgba(242, 242, 242, 0.9), rgba(222, 222, 222, 0.9));
   bottom: 0;
+  color: #7F7F7F;
+  font-size: 0.9em;
+  font-weight: bold;
+  overflow: hidden;
   position: fixed;
   width: 100%;
   z-index: 5;
@@ -165,6 +193,25 @@ html[dir='rtl'] #attribution {
   margin-top: 4px;
 }
 
+body.bare-minimum #footer {
+  background: transparent;
+  bottom: auto;
+  font-weight: normal;
+  position: absolute;
+  right: 0;
+}
+
+html[dir='rtl'] body.bare-minimum #footer {
+  left: 0;
+  right: auto;
+}
+
+body.bare-minimum #footer-border,
+body.bare-minimum #logo-img,
+body.bare-minimum #dot-list {
+  visibility: hidden;
+}
+
 .starting-up * {
   -webkit-transition: none !important;
 }
@@ -175,8 +222,9 @@ html[dir='rtl'] #attribution {
   -webkit-box-shadow: none;
   background: transparent none;
   border: none;
+  color: inherit;
   cursor: pointer;
-  font-size: 13px;
+  font: inherit;
   /* Leave room for the scrollbar. */
   margin-left: 13px;
   margin-right: 13px;
@@ -205,16 +253,13 @@ html[dir='rtl'] .login-status-icon {
   background-position-x: left;
 }
 
-.profile-name:hover {
-  text-decoration: underline;
-}
-
+.profile-name:hover,
 .link-span {
   text-decoration: underline;
 }
 
 #login-status-bubble-contents {
-  font-size: 13px;
+  font-size: 1.1em;
 }
 
 #login-status-message-container {
@@ -247,8 +292,8 @@ html[dir='rtl'] .login-status-icon {
   -webkit-transition-delay: 0, 200ms;
   color: #222;
   height: 100%;
-  position: absolute;
   opacity: 0;
+  position: absolute;
   right: 0;
   top: 50px;
   width: auto;
@@ -276,7 +321,6 @@ html[dir='rtl'] #trash {
   border: 1px dashed #7f7f7f;
   border-radius: 4px;
   display: inline-block;
-  font-size: 84%;
   padding-bottom: 9px;
   padding-top: 10px;
   position: relative;
@@ -298,7 +342,7 @@ html[dir='rtl'] #footer.showing-trash-mode #trash.drag-target .lid {
 
 #fontMeasuringDiv {
   /* The font attributes match the nav inputs. */
-  font-size: 8pt;
+  font-size: 0.9em;
   font-weight: bold;
   pointer-events: none;
   position: absolute;
@@ -313,38 +357,37 @@ html[dir='rtl'] #footer.showing-trash-mode #trash.drag-target .lid {
   border: none;
   bottom: 0;
   font-size: 40px;
-  padding: 0;
-  position: absolute;
   margin: 0;
   max-width: 150px;
   min-width: 90px;
   outline: none;
+  padding: 0;
+  position: absolute;
   top: 0;
   z-index: 5;
 }
 
-#chrome-web-store-href {
+#chrome-web-store-link {
   -webkit-padding-end: 12px;
   /* Match transition delay of recently closed button. */
   -webkit-transition-delay: 100ms;
-  color: #7F7F7F;
+  color: inherit;
   cursor: pointer;
-  display: none;
+  display: inline-block;
   margin: 0;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 #chrome-web-store-title {
-  -webkit-padding-end: 26px;
-  -webkit-padding-start: 16px;
+  -webkit-padding-end: 36px;
+  -webkit-padding-start: 15px;
   background: url('chrome://theme/IDR_WEBSTORE_ICON_24') right 50% no-repeat;
   display: inline-block;
-  font-weight: bold;
-  font-size: 9pt;
   line-height: 49px;
 }
 
-#chrome-web-store-href:hover {
+#chrome-web-store-link:hover {
   color: #666;
 }
 
@@ -352,17 +395,59 @@ html[dir='rtl'] #chrome-web-store-title {
   background-position-x: left;
 }
 
-/* Show the chrome-web-store button when the experiment is turned on. */
-.enable-cws-experiment #chrome-web-store-href {
-  display: inline-block;
+#vertical-separator {
+  -webkit-box-ordinal-group: 3;
+  background-color: rgb(178, 178, 178);
+  display: none;
+  height: 20px;
+  margin: 0;
+  vertical-align: middle;
+  width: 1px;
 }
 
-/* Reserve space for the menu button even when it's hidden. */
-#footer.showing-trash-mode #chrome-web-store-href {
+/* Show the separator only if one of the menus is visible. */
+.footer-menu-button:not(.invisible) ~ #vertical-separator {
+  display: block;
+}
+
+/* In trash mode, hide the menus and web store link. */
+#footer.showing-trash-mode #chrome-web-store-link,
+#footer.showing-trash-mode .menu-container {
+  -webkit-transition-delay: 0;
+  opacity: 0;
   visibility: hidden;
 }
 
-#footer.showing-trash-mode #chrome-web-store-href {
-  -webkit-transition-delay: 0;
-  opacity: 0;
+#footer .menu-container {
+  -webkit-box-align: center;
+  /* Put menus in a box so the order can easily be swapped. */
+  display: -webkit-box;
+  height: 100%;
+  margin: 0;
+}
+
+#recently-closed-menu-button.invisible {
+  visibility: hidden;
+}
+
+#recently-closed-menu-button:not(.invisible) {
+  /* Put the recently closed menu to the right when it's visible. */
+  -webkit-box-ordinal-group: 2;
+}
+
+#other-sessions-menu-button.invisible {
+  display: none;
+}
+
+.other-sessions-promo-message {
+  display: none;
+  padding: 0;
+}
+
+.other-sessions-promo-message:only-child {
+  display: block;
+}
+
+.other-sessions-promo-message p {
+  margin: 0;
 }

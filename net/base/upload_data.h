@@ -4,14 +4,15 @@
 
 #ifndef NET_BASE_UPLOAD_DATA_H_
 #define NET_BASE_UPLOAD_DATA_H_
-#pragma once
 
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
 #include "base/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
+#include "base/supports_user_data.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_export.h"
@@ -31,7 +32,16 @@ class NET_EXPORT_PRIVATE ChunkCallback {
   virtual ~ChunkCallback() {}
 };
 
-class NET_EXPORT UploadData : public base::RefCounted<UploadData> {
+//-----------------------------------------------------------------------------
+// A very concrete class representing the data to be uploaded as part of a
+// URLRequest.
+//
+// Until there is a more abstract class for this, this one derives from
+// SupportsUserData to allow users to stash random data by
+// key and ensure its destruction when UploadData is finally deleted.
+class NET_EXPORT UploadData
+    : public base::RefCounted<UploadData>,
+      public base::SupportsUserData {
  public:
   enum Type {
     TYPE_BYTES,
@@ -107,16 +117,34 @@ class NET_EXPORT UploadData : public base::RefCounted<UploadData> {
 
     // Returns the byte-length of the element.  For files that do not exist, 0
     // is returned.  This is done for consistency with Mozilla.
-    // Once called, this function will always return the same value.
     uint64 GetContentLength();
 
-    // Returns a FileStream opened for reading for this element, positioned at
-    // |file_range_offset_|.  The caller gets ownership and is responsible
-    // for cleaning up the FileStream. Returns NULL if this element is not of
-    // type TYPE_FILE or if the file is not openable.
-    FileStream* NewFileStreamForReading();
+    // Reads up to |buf_len| bytes synchronously. Returns the number of bytes
+    // read. This function never fails. If there's less data to read than we
+    // initially observed, then pad with zero (this can happen with files).
+    // |buf_len| must be greater than 0.
+    int ReadSync(char* buf, int buf_len);
+
+    // Returns the number of bytes remaining to read.
+    uint64 BytesRemaining();
+
+    // Resets the offset to zero and closes the file stream if opened, so
+    // that the element can be reread.
+    void ResetOffset();
 
    private:
+    // Returns a FileStream opened for reading for this element, positioned
+    // at |file_range_offset_|. Returns NULL if the file is not openable.
+    FileStream* OpenFileStream();
+
+    // Reads up to |buf_len| bytes synchronously from memory (i.e. type_ is
+    // TYPE_BYTES or TYPE_CHUNK).
+    int ReadFromMemorySync(char* buf, int buf_len);
+
+    // Reads up to |buf_len| bytes synchronously from a file (i.e. type_ is
+    // TYPE_FILE).
+    int ReadFromFileSync(char* buf, int buf_len);
+
     // Allows tests to override the result of GetContentLength.
     void SetContentLength(uint64 content_length) {
       override_content_length_ = true;
@@ -134,10 +162,20 @@ class NET_EXPORT UploadData : public base::RefCounted<UploadData> {
     bool override_content_length_;
     bool content_length_computed_;
     uint64 content_length_;
+
+    // The byte offset from the beginning of the element data. Used to track
+    // the current position when reading data.
+    size_t offset_;
+
+    // The stream of the element data, if this element is of TYPE_FILE.
     FileStream* file_stream_;
 
     FRIEND_TEST_ALL_PREFIXES(UploadDataStreamTest, FileSmallerThanLength);
     FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionTest,
+                             UploadFileSmallerThanLength);
+    FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionSpdy2Test,
+                             UploadFileSmallerThanLength);
+    FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionSpdy3Test,
                              UploadFileSmallerThanLength);
   };
 
@@ -163,14 +201,33 @@ class NET_EXPORT UploadData : public base::RefCounted<UploadData> {
   void set_is_chunked(bool set) { is_chunked_ = set; }
   bool is_chunked() const { return is_chunked_; }
 
-  // Returns the total size in bytes of the data to upload.
-  uint64 GetContentLength();
+  // Gets the total size in bytes of the data to upload. Computing the
+  // content length can result in performing file IO hence the operation is
+  // done asynchronously. Runs the callback with the content length once the
+  // computation is done.
+  typedef base::Callback<void(uint64 content_length)> ContentLengthCallback;
+  void GetContentLength(const ContentLengthCallback& callback);
+
+  // Returns the total size in bytes of the data to upload, for testing.
+  // This version may perform file IO on the current thread. This function
+  // will fail if called on a thread where file IO is prohibited. Usually
+  // used for testing, but Chrome Frame also uses this version.
+  uint64 GetContentLengthSync();
 
   // Returns true if the upload data is entirely in memory (i.e. the
   // upload data is not chunked, and all elemnts are of TYPE_BYTES).
   bool IsInMemory() const;
 
-  std::vector<Element>* elements() {
+  // Resets the offset of each upload data element to zero, so that the
+  // upload data can be reread. This can happen if the same upload data is
+  // reused for a new UploadDataStream.
+  void ResetOffset();
+
+  const std::vector<Element>* elements() const {
+    return &elements_;
+  }
+
+  std::vector<Element>* elements_mutable() {
     return &elements_;
   }
 
@@ -187,9 +244,12 @@ class NET_EXPORT UploadData : public base::RefCounted<UploadData> {
   int64 identifier() const { return identifier_; }
 
  private:
+  // Helper function for GetContentLength().
+  void DoGetContentLength(uint64* content_length);
+
   friend class base::RefCounted<UploadData>;
 
-  ~UploadData();
+  virtual ~UploadData();
 
   std::vector<Element> elements_;
   int64 identifier_;

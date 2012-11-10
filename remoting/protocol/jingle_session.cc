@@ -4,550 +4,41 @@
 
 #include "remoting/protocol/jingle_session.h"
 
-#include "base/base64.h"
 #include "base/bind.h"
-#include "base/location.h"
-#include "base/logging.h"
-#include "base/message_loop_proxy.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
-#include "crypto/hmac.h"
-#include "jingle/glue/utils.h"
-#include "net/base/ip_endpoint.h"
-#include "net/base/net_errors.h"
-#include "net/base/net_util.h"
-#include "net/socket/stream_socket.h"
+#include "base/string_number_conversions.h"
+#include "base/time.h"
 #include "remoting/base/constants.h"
-#include "remoting/protocol/auth_util.h"
+#include "remoting/jingle_glue/iq_sender.h"
 #include "remoting/protocol/authenticator.h"
 #include "remoting/protocol/channel_authenticator.h"
-#include "remoting/protocol/jingle_datagram_connector.h"
+#include "remoting/protocol/content_description.h"
+#include "remoting/protocol/jingle_messages.h"
 #include "remoting/protocol/jingle_session_manager.h"
-#include "remoting/protocol/jingle_stream_connector.h"
-#include "third_party/libjingle/source/talk/base/thread.h"
-#include "third_party/libjingle/source/talk/p2p/base/p2ptransportchannel.h"
-#include "third_party/libjingle/source/talk/p2p/base/session.h"
-#include "third_party/libjingle/source/talk/p2p/base/transport.h"
+#include "remoting/protocol/session_config.h"
+#include "third_party/libjingle/source/talk/p2p/base/candidate.h"
+#include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
 
-using cricket::BaseSession;
+using buzz::XmlElement;
 
 namespace remoting {
 namespace protocol {
 
-JingleSession::JingleSession(
-    JingleSessionManager* jingle_session_manager,
-    cricket::Session* cricket_session,
-    scoped_ptr<Authenticator> authenticator)
-    : jingle_session_manager_(jingle_session_manager),
-      authenticator_(authenticator.Pass()),
-      state_(INITIALIZING),
-      error_(OK),
-      closing_(false),
-      cricket_session_(cricket_session),
-      config_set_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
-  jid_ = cricket_session_->remote_name();
-  cricket_session_->SignalState.connect(this, &JingleSession::OnSessionState);
-  cricket_session_->SignalError.connect(this, &JingleSession::OnSessionError);
-  cricket_session_->SignalInfoMessage.connect(
-      this, &JingleSession::OnSessionInfoMessage);
-  cricket_session_->SignalReceivedTerminateReason.connect(
-      this, &JingleSession::OnTerminateReason);
-}
-
-JingleSession::~JingleSession() {
-  // Reset the callback so that it's not called from Close().
-  state_change_callback_.Reset();
-  Close();
-  jingle_session_manager_->SessionDestroyed(this);
-  DCHECK(channel_connectors_.empty());
-}
-
-void JingleSession::SendSessionInitiate() {
-  DCHECK_EQ(authenticator_->state(), Authenticator::MESSAGE_READY);
-  cricket_session_->Initiate(
-      jid_, CreateSessionDescription(
-          candidate_config()->Clone(),
-          authenticator_->GetNextMessage()).release());
-}
-
-void JingleSession::CloseInternal(int result, Error error) {
-  DCHECK(CalledOnValidThread());
-
-  if (state_ != FAILED && state_ != CLOSED && !closing_) {
-    closing_ = true;
-
-    // Tear down the cricket session, including the cricket transport channels.
-    if (cricket_session_) {
-      std::string reason;
-      switch (error) {
-        case OK:
-          reason = cricket::STR_TERMINATE_SUCCESS;
-          break;
-        case SESSION_REJECTED:
-        case AUTHENTICATION_FAILED:
-          reason = cricket::STR_TERMINATE_DECLINE;
-          break;
-        case INCOMPATIBLE_PROTOCOL:
-          reason = cricket::STR_TERMINATE_INCOMPATIBLE_PARAMETERS;
-          break;
-        default:
-          reason = cricket::STR_TERMINATE_ERROR;
-      }
-      cricket_session_->TerminateWithReason(reason);
-      cricket_session_->SignalState.disconnect(this);
-    }
-
-    error_ = error;
-
-    // Inform the StateChangeCallback, so calling code knows not to
-    // touch any channels. Needs to be done in the end because the
-    // session may be deleted in response to this event.
-    if (error != OK) {
-      SetState(FAILED);
-    } else {
-      SetState(CLOSED);
-    }
-  }
-}
-
-bool JingleSession::HasSession(cricket::Session* cricket_session) {
-  DCHECK(CalledOnValidThread());
-  return cricket_session_ == cricket_session;
-}
-
-cricket::Session* JingleSession::ReleaseSession() {
-  DCHECK(CalledOnValidThread());
-
-  // Session may be destroyed only after it is closed.
-  DCHECK(state_ == FAILED || state_ == CLOSED);
-
-  cricket::Session* session = cricket_session_;
-  if (cricket_session_)
-    cricket_session_->SignalState.disconnect(this);
-  cricket_session_ = NULL;
-  return session;
-}
-
-void JingleSession::SetStateChangeCallback(
-    const StateChangeCallback& callback) {
-  DCHECK(CalledOnValidThread());
-  DCHECK(!callback.is_null());
-  state_change_callback_ = callback;
-}
-
-void JingleSession::SetRouteChangeCallback(
-    const RouteChangeCallback& callback) {
-  DCHECK(CalledOnValidThread());
-  route_change_callback_ = callback;
-}
-
-Session::Error JingleSession::error() {
-  DCHECK(CalledOnValidThread());
-  return error_;
-}
-
-void JingleSession::CreateStreamChannel(
-      const std::string& name, const StreamChannelCallback& callback) {
-  DCHECK(CalledOnValidThread());
-
-  AddChannelConnector(
-      name, new JingleStreamConnector(this, name, callback));
-}
-
-void JingleSession::CreateDatagramChannel(
-    const std::string& name, const DatagramChannelCallback& callback) {
-  DCHECK(CalledOnValidThread());
-
-  AddChannelConnector(
-      name, new JingleDatagramConnector(this, name, callback));
-}
-
-void JingleSession::CancelChannelCreation(const std::string& name) {
-  ChannelConnectorsMap::iterator it = channel_connectors_.find(name);
-  if (it != channel_connectors_.end()) {
-    delete it->second;
-    channel_connectors_.erase(it);
-  }
-}
-
-const std::string& JingleSession::jid() {
-  DCHECK(CalledOnValidThread());
-  return jid_;
-}
-
-const CandidateSessionConfig* JingleSession::candidate_config() {
-  DCHECK(CalledOnValidThread());
-  DCHECK(candidate_config_.get());
-  return candidate_config_.get();
-}
-
-void JingleSession::set_candidate_config(
-    scoped_ptr<CandidateSessionConfig> candidate_config) {
-  DCHECK(CalledOnValidThread());
-  DCHECK(!candidate_config_.get());
-  DCHECK(candidate_config.get());
-  candidate_config_ = candidate_config.Pass();
-}
-
-const SessionConfig& JingleSession::config() {
-  DCHECK(CalledOnValidThread());
-  DCHECK(config_set_);
-  return config_;
-}
-
-void JingleSession::set_config(const SessionConfig& config) {
-  DCHECK(CalledOnValidThread());
-  DCHECK(!config_set_);
-  config_ = config;
-  config_set_ = true;
-}
-
-void JingleSession::Close() {
-  DCHECK(CalledOnValidThread());
-
-  CloseInternal(net::ERR_CONNECTION_CLOSED, OK);
-}
-
-void JingleSession::OnSessionState(
-    BaseSession* session, BaseSession::State state) {
-  DCHECK(CalledOnValidThread());
-  DCHECK_EQ(cricket_session_, session);
-
-  if (state_ == FAILED || state_ == CLOSED) {
-    // Don't do anything if we already closed.
-    return;
-  }
-
-  switch (state) {
-    case cricket::Session::STATE_SENTINITIATE:
-    case cricket::Session::STATE_RECEIVEDINITIATE:
-      OnInitiate();
-      break;
-
-    case cricket::Session::STATE_SENTACCEPT:
-    case cricket::Session::STATE_RECEIVEDACCEPT:
-      OnAccept();
-      break;
-
-    case cricket::Session::STATE_SENTTERMINATE:
-    case cricket::Session::STATE_RECEIVEDTERMINATE:
-    case cricket::Session::STATE_SENTREJECT:
-    case cricket::Session::STATE_RECEIVEDREJECT:
-      OnTerminate();
-      break;
-
-    case cricket::Session::STATE_DEINIT:
-      // Close() must have been called before this.
-      NOTREACHED();
-      break;
-
-    default:
-      // We don't care about other steates.
-      break;
-  }
-}
-
-void JingleSession::OnSessionError(
-    BaseSession* session, BaseSession::Error error) {
-  DCHECK(CalledOnValidThread());
-  DCHECK_EQ(cricket_session_, session);
-
-  if (error != cricket::Session::ERROR_NONE) {
-    // TODO(sergeyu): Report different errors depending on |error|.
-    CloseInternal(net::ERR_CONNECTION_ABORTED, CHANNEL_CONNECTION_ERROR);
-  }
-}
-
-void JingleSession::OnSessionInfoMessage(cricket::Session* session,
-                                         const buzz::XmlElement* message) {
-  DCHECK_EQ(cricket_session_,session);
-
-  const buzz::XmlElement* auth_message =
-      Authenticator::FindAuthenticatorMessage(message);
-  if (auth_message) {
-    if (state_ != CONNECTED ||
-        authenticator_->state() != Authenticator::WAITING_MESSAGE) {
-      LOG(WARNING) << "Received unexpected authenticator message "
-                   << auth_message->Str();
-      return;
-    }
-
-    authenticator_->ProcessMessage(auth_message);
-    ProcessAuthenticationStep();
-  }
-}
-
-void JingleSession::OnTerminateReason(cricket::Session* session,
-                                      const std::string& reason) {
-  terminate_reason_ = reason;
-}
-
-void JingleSession::OnInitiate() {
-  DCHECK(CalledOnValidThread());
-  jid_ = cricket_session_->remote_name();
-
-  if (cricket_session_->initiator()) {
-    // Set state to CONNECTING if this is an outgoing message. We need
-    // to post this task because channel creation works only after we
-    // return from this method. This is because
-    // JingleChannelConnector::Connect() needs to call
-    // set_incoming_only() on P2PTransportChannel, but
-    // P2PTransportChannel is created only after we return from this
-    // method.
-    // TODO(sergeyu): Add set_incoming_only() in TransportChannelProxy.
-    jingle_session_manager_->message_loop_->PostTask(
-        FROM_HERE,
-        base::Bind(&JingleSession::SetState,
-                   weak_factory_.GetWeakPtr(),
-                   CONNECTING));
-  } else {
-    jingle_session_manager_->message_loop_->PostTask(
-        FROM_HERE,
-        base::Bind(&JingleSession::AcceptConnection,
-                   weak_factory_.GetWeakPtr()));
-  }
-}
-
-bool JingleSession::InitializeConfigFromDescription(
-    const cricket::SessionDescription* description) {
-  // We should only be called after ParseContent has succeeded, in which
-  // case there will always be a Chromoting session configuration.
-  const cricket::ContentInfo* content =
-      description->FirstContentByType(kChromotingXmlNamespace);
-  CHECK(content);
-  const protocol::ContentDescription* content_description =
-      static_cast<const protocol::ContentDescription*>(content->description);
-  CHECK(content_description);
-
-  // Process authenticator message.
-  const buzz::XmlElement* auth_message =
-      content_description->authenticator_message();
-  if (!auth_message) {
-    DLOG(WARNING) << "Received session-accept without authentication message "
-                  << auth_message->Str();
-    return false;
-  }
-
-  DCHECK_EQ(authenticator_->state(), Authenticator::WAITING_MESSAGE);
-  authenticator_->ProcessMessage(auth_message);
-
-  // Initialize session configuration.
-  SessionConfig config;
-  if (!content_description->config()->GetFinalConfig(&config)) {
-    LOG(ERROR) << "Connection response does not specify configuration";
-    return false;
-  }
-  if (!candidate_config()->IsSupported(config)) {
-    LOG(ERROR) << "Connection response specifies an invalid configuration";
-    return false;
-  }
-
-  set_config(config);
-  return true;
-}
-
-void JingleSession::OnAccept() {
-  DCHECK(CalledOnValidThread());
-
-  // If we initiated the session, store the candidate configuration that the
-  // host responded with, to refer to later.
-  if (cricket_session_->initiator()) {
-    if (!InitializeConfigFromDescription(
-            cricket_session_->remote_description())) {
-      CloseInternal(net::ERR_CONNECTION_FAILED, INCOMPATIBLE_PROTOCOL);
-      return;
-    }
-  }
-
-  SetState(CONNECTED);
-
-  // Process authentication.
-  if (authenticator_->state() == Authenticator::ACCEPTED) {
-    SetState(AUTHENTICATED);
-  } else {
-    ProcessAuthenticationStep();
-  }
-}
-
-void JingleSession::OnTerminate() {
-  DCHECK(CalledOnValidThread());
-
-  if (terminate_reason_ == "success") {
-    CloseInternal(net::ERR_CONNECTION_ABORTED, OK);
-  } else if (terminate_reason_ == "decline") {
-    CloseInternal(net::ERR_CONNECTION_ABORTED, AUTHENTICATION_FAILED);
-  } else if (terminate_reason_ == "incompatible-protocol") {
-    CloseInternal(net::ERR_CONNECTION_ABORTED, INCOMPATIBLE_PROTOCOL);
-  } else {
-    CloseInternal(net::ERR_CONNECTION_ABORTED, UNKNOWN_ERROR);
-  }
-}
-
-void JingleSession::AcceptConnection() {
-  SetState(CONNECTING);
-
-  const cricket::SessionDescription* session_description =
-      cricket_session_->remote_description();
-  const cricket::ContentInfo* content =
-      session_description->FirstContentByType(kChromotingXmlNamespace);
-
-  CHECK(content);
-  const ContentDescription* content_description =
-      static_cast<const ContentDescription*>(content->description);
-  candidate_config_ = content_description->config()->Clone();
-
-  SessionManager::IncomingSessionResponse response =
-      jingle_session_manager_->AcceptConnection(this);
-  if (response != SessionManager::ACCEPT) {
-    if (response == SessionManager::INCOMPATIBLE) {
-      cricket_session_->TerminateWithReason(
-          cricket::STR_TERMINATE_INCOMPATIBLE_PARAMETERS);
-    } else {
-      cricket_session_->TerminateWithReason(cricket::STR_TERMINATE_DECLINE);
-    }
-    Close();
-    // Release session so that JingleSessionManager::SessionDestroyed()
-    // doesn't try to call cricket::SessionManager::DestroySession() for it.
-    ReleaseSession();
-    delete this;
-    return;
-  }
-
-  const buzz::XmlElement* auth_message =
-      content_description->authenticator_message();
-  if (!auth_message) {
-    DLOG(WARNING) << "Received session-initiate without authenticator message.";
-    CloseInternal(net::ERR_CONNECTION_FAILED, INCOMPATIBLE_PROTOCOL);
-    return;
-  }
-
-  authenticator_ =
-      jingle_session_manager_->CreateAuthenticator(jid(), auth_message);
-  if (!authenticator_.get()) {
-    CloseInternal(net::ERR_CONNECTION_FAILED, INCOMPATIBLE_PROTOCOL);
-    return;
-  }
-
-  DCHECK(authenticator_->state() == Authenticator::WAITING_MESSAGE);
-  authenticator_->ProcessMessage(auth_message);
-  if (authenticator_->state() == Authenticator::REJECTED) {
-    CloseInternal(net::ERR_CONNECTION_FAILED,
-                  RejectionReasonToError(authenticator_->rejection_reason()));
-    return;
-  }
-
-  // Connection must be configured by the AcceptConnection() callback.
-  scoped_ptr<CandidateSessionConfig> candidate_config =
-      CandidateSessionConfig::CreateFrom(config());
-
-  scoped_ptr<buzz::XmlElement> auth_reply;
-  if (authenticator_->state() == Authenticator::MESSAGE_READY)
-    auth_reply = authenticator_->GetNextMessage();
-  DCHECK_NE(authenticator_->state(), Authenticator::MESSAGE_READY);
-  cricket_session_->Accept(
-      CreateSessionDescription(candidate_config.Pass(),
-                               auth_reply.Pass()).release());
-}
-
-void JingleSession::ProcessAuthenticationStep() {
-  DCHECK_EQ(state_, CONNECTED);
-
-  if (authenticator_->state() == Authenticator::MESSAGE_READY) {
-    scoped_ptr<buzz::XmlElement> auth_message =
-        authenticator_->GetNextMessage();
-    cricket::XmlElements message;
-    message.push_back(auth_message.release());
-    cricket_session_->SendInfoMessage(message);
-  }
-  DCHECK_NE(authenticator_->state(), Authenticator::MESSAGE_READY);
-
-  if (authenticator_->state() == Authenticator::ACCEPTED) {
-    SetState(AUTHENTICATED);
-  } else if (authenticator_->state() == Authenticator::REJECTED) {
-    CloseInternal(net::ERR_CONNECTION_FAILED,
-                  RejectionReasonToError(authenticator_->rejection_reason()));
-  }
-}
-
-void JingleSession::AddChannelConnector(
-    const std::string& name, JingleChannelConnector* connector) {
-  DCHECK(channel_connectors_.find(name) == channel_connectors_.end());
-
-  const std::string& content_name = GetContentInfo()->name;
-  cricket::TransportChannel* raw_channel =
-      cricket_session_->CreateChannel(content_name, name);
-
-  raw_channel->SignalRouteChange.connect(this, &JingleSession::OnRouteChange);
-
-  if (!jingle_session_manager_->allow_nat_traversal_ &&
-      !cricket_session_->initiator()) {
-    // Don't make outgoing connections from the host to client when
-    // NAT traversal is disabled.
-    raw_channel->GetP2PChannel()->set_incoming_only(true);
-  }
-
-  channel_connectors_[name] = connector;
-  scoped_ptr<ChannelAuthenticator> authenticator =
-      authenticator_->CreateChannelAuthenticator();
-  connector->Connect(authenticator.Pass(), raw_channel);
-
-  // Workaround bug in libjingle - it doesn't connect channels if they
-  // are created after the session is accepted. See crbug.com/89384.
-  // TODO(sergeyu): Fix the bug and remove this line.
-  cricket_session_->GetTransport(content_name)->ConnectChannels();
-}
-
-void JingleSession::OnChannelConnectorFinished(
-    const std::string& name, JingleChannelConnector* connector) {
-  DCHECK(CalledOnValidThread());
-  DCHECK_EQ(channel_connectors_[name], connector);
-  channel_connectors_.erase(name);
-}
-
-void JingleSession::OnRouteChange(cricket::TransportChannel* channel,
-                                  const cricket::Candidate& candidate) {
-  net::IPEndPoint end_point;
-  if (!jingle_glue::SocketAddressToIPEndPoint(candidate.address(),
-                                              &end_point)) {
-    NOTREACHED();
-    return;
-  }
-
-  if (!route_change_callback_.is_null())
-    route_change_callback_.Run(channel->name(), end_point);
-}
-
-const cricket::ContentInfo* JingleSession::GetContentInfo() const {
-  const cricket::SessionDescription* session_description;
-  // If we initiate the session, we get to specify the content name. When
-  // accepting one, the remote end specifies it.
-  if (cricket_session_->initiator()) {
-    session_description = cricket_session_->local_description();
-  } else {
-    session_description = cricket_session_->remote_description();
-  }
-  const cricket::ContentInfo* content =
-      session_description->FirstContentByType(kChromotingXmlNamespace);
-  CHECK(content);
-  return content;
-}
-
-void JingleSession::SetState(State new_state) {
-  DCHECK(CalledOnValidThread());
-
-  if (new_state != state_) {
-    DCHECK_NE(state_, CLOSED);
-    DCHECK_NE(state_, FAILED);
-
-    state_ = new_state;
-    if (!state_change_callback_.is_null())
-      state_change_callback_.Run(new_state);
-  }
-}
-
-// static
-Session::Error JingleSession::RejectionReasonToError(
+namespace {
+// Delay after candidate creation before sending transport-info
+// message. This is neccessary to be able to pack multiple candidates
+// into one transport-info messages. The value needs to be greater
+// than zero because ports are opened asynchronously in the browser
+// process.
+const int kTransportInfoSendDelayMs = 2;
+
+// How long we should wait for a response from the other end. This
+// value is used for all requests include |session-initiate| and
+// |transport-info|.
+const int kMessageResponseTimeoutSeconds = 10;
+
+ErrorCode AuthRejectionReasonToErrorCode(
     Authenticator::RejectionReason reason) {
   switch (reason) {
     case Authenticator::INVALID_CREDENTIALS:
@@ -559,16 +50,536 @@ Session::Error JingleSession::RejectionReasonToError(
   return UNKNOWN_ERROR;
 }
 
-// static
-scoped_ptr<cricket::SessionDescription> JingleSession::CreateSessionDescription(
-    scoped_ptr<CandidateSessionConfig> config,
-    scoped_ptr<buzz::XmlElement> authenticator_message) {
-  scoped_ptr<cricket::SessionDescription> desc(
-      new cricket::SessionDescription());
-  desc->AddContent(
-      ContentDescription::kChromotingContentName, kChromotingXmlNamespace,
-      new ContentDescription(config.Pass(), authenticator_message.Pass()));
-  return desc.Pass();
+}  // namespace
+
+JingleSession::JingleSession(JingleSessionManager* session_manager)
+    : session_manager_(session_manager),
+      event_handler_(NULL),
+      state_(INITIALIZING),
+      error_(OK),
+      config_is_set_(false) {
+}
+
+JingleSession::~JingleSession() {
+  STLDeleteContainerPointers(pending_requests_.begin(),
+                             pending_requests_.end());
+  STLDeleteContainerPairSecondPointers(channels_.begin(), channels_.end());
+  session_manager_->SessionDestroyed(this);
+}
+
+void JingleSession::SetEventHandler(Session::EventHandler* event_handler) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(event_handler);
+  event_handler_ = event_handler;
+}
+
+ErrorCode JingleSession::error() {
+  DCHECK(CalledOnValidThread());
+  return error_;
+}
+
+void JingleSession::StartConnection(
+    const std::string& peer_jid,
+    scoped_ptr<Authenticator> authenticator,
+    scoped_ptr<CandidateSessionConfig> config) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(authenticator.get());
+  DCHECK_EQ(authenticator->state(), Authenticator::MESSAGE_READY);
+
+  peer_jid_ = peer_jid;
+  authenticator_ = authenticator.Pass();
+  candidate_config_ = config.Pass();
+
+  // Generate random session ID. There are usually not more than 1
+  // concurrent session per host, so a random 64-bit integer provides
+  // enough entropy. In the worst case connection will fail when two
+  // clients generate the same session ID concurrently.
+  session_id_ = base::Int64ToString(base::RandGenerator(kint64max));
+
+  // Send session-initiate message.
+  JingleMessage message(peer_jid_, JingleMessage::SESSION_INITIATE,
+                        session_id_);
+  message.from = session_manager_->signal_strategy_->GetLocalJid();
+  message.description.reset(
+      new ContentDescription(candidate_config_->Clone(),
+                             authenticator_->GetNextMessage()));
+  SendMessage(message);
+
+  SetState(CONNECTING);
+}
+
+void JingleSession::InitializeIncomingConnection(
+    const JingleMessage& initiate_message,
+    scoped_ptr<Authenticator> authenticator) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(initiate_message.description.get());
+  DCHECK(authenticator.get());
+  DCHECK_EQ(authenticator->state(), Authenticator::WAITING_MESSAGE);
+
+  peer_jid_ = initiate_message.from;
+  authenticator_ = authenticator.Pass();
+  session_id_ = initiate_message.sid;
+  candidate_config_ = initiate_message.description->config()->Clone();
+
+  SetState(CONNECTING);
+}
+
+void JingleSession::AcceptIncomingConnection(
+    const JingleMessage& initiate_message) {
+  DCHECK(config_is_set_);
+
+  // Process the first authentication message.
+  const buzz::XmlElement* first_auth_message =
+      initiate_message.description->authenticator_message();
+
+  if (!first_auth_message) {
+    CloseInternal(INCOMPATIBLE_PROTOCOL);
+    return;
+  }
+
+  DCHECK_EQ(authenticator_->state(), Authenticator::WAITING_MESSAGE);
+  authenticator_->ProcessMessage(first_auth_message);
+  if (authenticator_->state() == Authenticator::REJECTED) {
+    CloseInternal(AuthRejectionReasonToErrorCode(
+        authenticator_->rejection_reason()));
+    return;
+  }
+
+  // Send the session-accept message.
+  JingleMessage message(peer_jid_, JingleMessage::SESSION_ACCEPT,
+                        session_id_);
+
+  scoped_ptr<buzz::XmlElement> auth_message;
+  if (authenticator_->state() == Authenticator::MESSAGE_READY)
+    auth_message = authenticator_->GetNextMessage();
+
+  message.description.reset(
+      new ContentDescription(CandidateSessionConfig::CreateFrom(config_),
+                             auth_message.Pass()));
+  SendMessage(message);
+
+  // Update state.
+  SetState(CONNECTED);
+
+  if (authenticator_->state() == Authenticator::ACCEPTED) {
+    SetState(AUTHENTICATED);
+  } else {
+    DCHECK_EQ(authenticator_->state(), Authenticator::WAITING_MESSAGE);
+  }
+
+  return;
+}
+
+void JingleSession::CreateStreamChannel(
+      const std::string& name,
+      const StreamChannelCallback& callback) {
+  DCHECK(!channels_[name]);
+
+  scoped_ptr<ChannelAuthenticator> channel_authenticator =
+      authenticator_->CreateChannelAuthenticator();
+  scoped_ptr<StreamTransport> channel =
+      session_manager_->transport_factory_->CreateStreamTransport();
+  channel->Initialize(name, this, channel_authenticator.Pass());
+  channel->Connect(callback);
+  channels_[name] = channel.release();
+}
+
+void JingleSession::CreateDatagramChannel(
+    const std::string& name,
+    const DatagramChannelCallback& callback) {
+  DCHECK(!channels_[name]);
+
+  scoped_ptr<ChannelAuthenticator> channel_authenticator =
+      authenticator_->CreateChannelAuthenticator();
+  scoped_ptr<DatagramTransport> channel =
+      session_manager_->transport_factory_->CreateDatagramTransport();
+  channel->Initialize(name, this, channel_authenticator.Pass());
+  channel->Connect(callback);
+  channels_[name] = channel.release();
+}
+
+void JingleSession::CancelChannelCreation(const std::string& name) {
+  ChannelsMap::iterator it = channels_.find(name);
+  if (it != channels_.end() && !it->second->is_connected()) {
+    delete it->second;
+    DCHECK(!channels_[name]);
+  }
+}
+
+const std::string& JingleSession::jid() {
+  DCHECK(CalledOnValidThread());
+  return peer_jid_;
+}
+
+const CandidateSessionConfig* JingleSession::candidate_config() {
+  DCHECK(CalledOnValidThread());
+  return candidate_config_.get();
+}
+
+const SessionConfig& JingleSession::config() {
+  DCHECK(CalledOnValidThread());
+  return config_;
+}
+
+void JingleSession::set_config(const SessionConfig& config) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(!config_is_set_);
+  config_ = config;
+  config_is_set_ = true;
+}
+
+void JingleSession::Close() {
+  DCHECK(CalledOnValidThread());
+
+  CloseInternal(OK);
+}
+
+void JingleSession::OnTransportCandidate(Transport* transport,
+                                         const cricket::Candidate& candidate) {
+  pending_candidates_.push_back(JingleMessage::NamedCandidate(
+      transport->name(), candidate));
+
+  if (!transport_infos_timer_.IsRunning()) {
+    // Delay sending the new candidates in case we get more candidates
+    // that we can send in one message.
+    transport_infos_timer_.Start(
+        FROM_HERE, base::TimeDelta::FromMilliseconds(kTransportInfoSendDelayMs),
+        this, &JingleSession::SendTransportInfo);
+  }
+}
+
+void JingleSession::OnTransportRouteChange(Transport* transport,
+                                           const TransportRoute& route) {
+  if (event_handler_)
+    event_handler_->OnSessionRouteChange(transport->name(), route);
+}
+
+void JingleSession::OnTransportReady(Transport* transport, bool ready) {
+  if (event_handler_)
+    event_handler_->OnSessionChannelReady(transport->name(), ready);
+}
+
+void JingleSession::OnTransportDeleted(Transport* transport) {
+  ChannelsMap::iterator it = channels_.find(transport->name());
+  DCHECK_EQ(it->second, transport);
+  channels_.erase(it);
+}
+
+void JingleSession::SendMessage(const JingleMessage& message) {
+  scoped_ptr<IqRequest> request = session_manager_->iq_sender()->SendIq(
+      message.ToXml(),
+      base::Bind(&JingleSession::OnMessageResponse,
+                 base::Unretained(this), message.action));
+  if (request.get()) {
+    request->SetTimeout(
+        base::TimeDelta::FromSeconds(kMessageResponseTimeoutSeconds));
+    pending_requests_.push_back(request.release());
+  } else {
+    LOG(ERROR) << "Failed to send a "
+               << JingleMessage::GetActionName(message.action) << " message";
+  }
+}
+
+void JingleSession::OnMessageResponse(
+    JingleMessage::ActionType request_type,
+    IqRequest* request,
+    const buzz::XmlElement* response) {
+  std::string type_str = JingleMessage::GetActionName(request_type);
+  CleanupPendingRequests(request);
+
+  if (!response) {
+    LOG(ERROR) << type_str << " request timed out.";
+    CloseInternal(SIGNALING_TIMEOUT);
+  } else {
+    const std::string& type = response->Attr(buzz::QName("", "type"));
+    if (type != "result") {
+      LOG(ERROR) << "Received error in response to " << type_str
+                 << " message: \"" << response->Str()
+                 << "\". Terminating the session.";
+
+      switch (request_type) {
+        case JingleMessage::SESSION_INFO:
+          // session-info is used for the new authentication protocol,
+          // and wasn't previously supported.
+          CloseInternal(INCOMPATIBLE_PROTOCOL);
+          break;
+
+        default:
+          // TODO(sergeyu): There may be different reasons for error
+          // here. Parse the response stanza to find failure reason.
+          CloseInternal(PEER_IS_OFFLINE);
+      }
+    }
+  }
+}
+
+void JingleSession::CleanupPendingRequests(IqRequest* request) {
+  DCHECK(!pending_requests_.empty());
+  DCHECK(request);
+
+  // This method is called whenever a response to |request| is
+  // received. Here we delete that request and all requests that were
+  // sent before it. The idea here is that if we send messages A, B
+  // and C and then suddenly receive response to C then it means that
+  // either A and B messages or the corresponding response messages
+  // were somehow lost. E.g. that may happen when the client switches
+  // from one network to another. The best way to handle that case is
+  // to ignore errors and timeouts for A and B by deleting the
+  // corresponding IqRequest objects.
+  while (!pending_requests_.empty() && pending_requests_.front() != request) {
+    delete pending_requests_.front();
+    pending_requests_.pop_front();
+  }
+
+  // Delete the |request| itself.
+  DCHECK_EQ(request, pending_requests_.front());
+  delete request;
+  if (!pending_requests_.empty())
+    pending_requests_.pop_front();
+}
+
+void JingleSession::OnIncomingMessage(const JingleMessage& message,
+                                      const ReplyCallback& reply_callback) {
+  DCHECK(CalledOnValidThread());
+
+  if (message.from != peer_jid_) {
+    // Ignore messages received from a different Jid.
+    reply_callback.Run(JingleMessageReply::INVALID_SID);
+    return;
+  }
+
+  switch (message.action) {
+    case JingleMessage::SESSION_ACCEPT:
+      OnAccept(message, reply_callback);
+      break;
+
+    case JingleMessage::SESSION_INFO:
+      OnSessionInfo(message, reply_callback);
+      break;
+
+    case JingleMessage::TRANSPORT_INFO:
+      reply_callback.Run(JingleMessageReply::NONE);
+      ProcessTransportInfo(message);
+      break;
+
+    case JingleMessage::SESSION_TERMINATE:
+      OnTerminate(message, reply_callback);
+      break;
+
+    default:
+      reply_callback.Run(JingleMessageReply::UNEXPECTED_REQUEST);
+  }
+}
+
+void JingleSession::OnAccept(const JingleMessage& message,
+                             const ReplyCallback& reply_callback) {
+  if (state_ != CONNECTING) {
+    reply_callback.Run(JingleMessageReply::UNEXPECTED_REQUEST);
+    return;
+  }
+
+  reply_callback.Run(JingleMessageReply::NONE);
+
+  const buzz::XmlElement* auth_message =
+      message.description->authenticator_message();
+  if (!auth_message) {
+    DLOG(WARNING) << "Received session-accept without authentication message "
+                  << auth_message->Str();
+    CloseInternal(INCOMPATIBLE_PROTOCOL);
+    return;
+  }
+
+  DCHECK(authenticator_->state() == Authenticator::WAITING_MESSAGE);
+  authenticator_->ProcessMessage(auth_message);
+
+  if (!InitializeConfigFromDescription(message.description.get())) {
+    CloseInternal(INCOMPATIBLE_PROTOCOL);
+    return;
+  }
+
+  // In case there is transport information in the accept message.
+  ProcessTransportInfo(message);
+
+  SetState(CONNECTED);
+
+  // Process authentication.
+  if (authenticator_->state() == Authenticator::ACCEPTED) {
+    SetState(AUTHENTICATED);
+  } else {
+    ProcessAuthenticationStep();
+  }
+}
+
+void JingleSession::OnSessionInfo(const JingleMessage& message,
+                                  const ReplyCallback& reply_callback) {
+  if (!message.info.get() ||
+      !Authenticator::IsAuthenticatorMessage(message.info.get())) {
+    reply_callback.Run(JingleMessageReply::UNSUPPORTED_INFO);
+    return;
+  }
+
+  if (state_ != CONNECTED ||
+      authenticator_->state() != Authenticator::WAITING_MESSAGE) {
+    LOG(WARNING) << "Received unexpected authenticator message "
+                 << message.info->Str();
+    reply_callback.Run(JingleMessageReply::UNEXPECTED_REQUEST);
+    CloseInternal(INCOMPATIBLE_PROTOCOL);
+    return;
+  }
+
+  reply_callback.Run(JingleMessageReply::NONE);
+
+  authenticator_->ProcessMessage(message.info.get());
+  ProcessAuthenticationStep();
+}
+
+void JingleSession::ProcessTransportInfo(const JingleMessage& message) {
+  for (std::list<JingleMessage::NamedCandidate>::const_iterator it =
+           message.candidates.begin();
+       it != message.candidates.end(); ++it) {
+    ChannelsMap::iterator channel = channels_.find(it->name);
+    if (channel == channels_.end()) {
+      LOG(WARNING) << "Received candidate for unknown channel " << it->name;
+      continue;
+    }
+    channel->second->AddRemoteCandidate(it->candidate);
+  }
+}
+
+void JingleSession::OnTerminate(const JingleMessage& message,
+                                const ReplyCallback& reply_callback) {
+  if (state_ != CONNECTING && state_ != CONNECTED && state_ != AUTHENTICATED) {
+    LOG(WARNING) << "Received unexpected session-terminate message.";
+    reply_callback.Run(JingleMessageReply::UNEXPECTED_REQUEST);
+    return;
+  }
+
+  reply_callback.Run(JingleMessageReply::NONE);
+
+  switch (message.reason) {
+    case JingleMessage::SUCCESS:
+      if (state_ == CONNECTING) {
+        error_ = SESSION_REJECTED;
+      } else {
+        error_ = OK;
+      }
+      break;
+    case JingleMessage::DECLINE:
+      error_ = AUTHENTICATION_FAILED;
+      break;
+    case JingleMessage::CANCEL:
+      error_ = HOST_OVERLOAD;
+      break;
+    case JingleMessage::GENERAL_ERROR:
+      error_ = CHANNEL_CONNECTION_ERROR;
+      break;
+    case JingleMessage::INCOMPATIBLE_PARAMETERS:
+      error_ = INCOMPATIBLE_PROTOCOL;
+      break;
+    default:
+      error_ = UNKNOWN_ERROR;
+  }
+
+  if (error_ != OK) {
+    SetState(FAILED);
+  } else {
+    SetState(CLOSED);
+  }
+}
+
+bool JingleSession::InitializeConfigFromDescription(
+    const ContentDescription* description) {
+  DCHECK(description);
+
+  if (!description->config()->GetFinalConfig(&config_)) {
+    LOG(ERROR) << "session-accept does not specify configuration";
+    return false;
+  }
+  if (!candidate_config()->IsSupported(config_)) {
+    LOG(ERROR) << "session-accept specifies an invalid configuration";
+    return false;
+  }
+
+  return true;
+}
+
+void JingleSession::ProcessAuthenticationStep() {
+  DCHECK_EQ(state_, CONNECTED);
+
+  if (authenticator_->state() == Authenticator::MESSAGE_READY) {
+    JingleMessage message(peer_jid_, JingleMessage::SESSION_INFO, session_id_);
+    message.info = authenticator_->GetNextMessage();
+    DCHECK(message.info.get());
+    SendMessage(message);
+  }
+  DCHECK_NE(authenticator_->state(), Authenticator::MESSAGE_READY);
+
+  if (authenticator_->state() == Authenticator::ACCEPTED) {
+    SetState(AUTHENTICATED);
+  } else if (authenticator_->state() == Authenticator::REJECTED) {
+    CloseInternal(AuthRejectionReasonToErrorCode(
+        authenticator_->rejection_reason()));
+  }
+}
+
+void JingleSession::SendTransportInfo() {
+  JingleMessage message(peer_jid_, JingleMessage::TRANSPORT_INFO, session_id_);
+  message.candidates.swap(pending_candidates_);
+  SendMessage(message);
+}
+
+void JingleSession::CloseInternal(ErrorCode error) {
+  DCHECK(CalledOnValidThread());
+
+  if (state_ == CONNECTING || state_ == CONNECTED || state_ == AUTHENTICATED) {
+    // Send session-terminate message with the appropriate error code.
+    JingleMessage::Reason reason;
+    switch (error) {
+      case OK:
+        reason = JingleMessage::SUCCESS;
+        break;
+      case SESSION_REJECTED:
+      case AUTHENTICATION_FAILED:
+        reason = JingleMessage::DECLINE;
+        break;
+      case INCOMPATIBLE_PROTOCOL:
+        reason = JingleMessage::INCOMPATIBLE_PARAMETERS;
+        break;
+      case HOST_OVERLOAD:
+        reason = JingleMessage::CANCEL;
+        break;
+      default:
+        reason = JingleMessage::GENERAL_ERROR;
+    }
+
+    JingleMessage message(peer_jid_, JingleMessage::SESSION_TERMINATE,
+                          session_id_);
+    message.reason = reason;
+    SendMessage(message);
+  }
+
+  error_ = error;
+
+  if (state_ != FAILED && state_ != CLOSED) {
+    if (error != OK) {
+      SetState(FAILED);
+    } else {
+      SetState(CLOSED);
+    }
+  }
+}
+
+void JingleSession::SetState(State new_state) {
+  DCHECK(CalledOnValidThread());
+
+  if (new_state != state_) {
+    DCHECK_NE(state_, CLOSED);
+    DCHECK_NE(state_, FAILED);
+
+    state_ = new_state;
+    if (event_handler_)
+      event_handler_->OnSessionStateChange(new_state);
+  }
 }
 
 }  // namespace protocol

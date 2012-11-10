@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,8 +11,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/canvas_skia.h"
-#include "ui/gfx/path.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
@@ -72,17 +70,7 @@ void PaintCircle(const Circle& circle, gfx::Canvas* canvas) {
   paint.setAntiAlias(true);
   paint.setStyle(SkPaint::kFill_Style);
   paint.setColor(circle.color);
-  gfx::Path path;
-  gfx::Rect bounds(circle.center.x() - circle.radius,
-                   circle.center.y() - circle.radius,
-                   circle.radius * 2,
-                   circle.radius * 2);
-  SkRect rect;
-  rect.set(SkIntToScalar(bounds.x()), SkIntToScalar(bounds.y()),
-           SkIntToScalar(bounds.right()), SkIntToScalar(bounds.bottom()));
-  SkScalar radius = SkIntToScalar(circle.radius);
-  path.addRoundRect(rect, radius, radius);
-  canvas->GetSkCanvas()->drawPath(path, paint);
+  canvas->DrawCircle(circle.center, circle.radius, paint);
 }
 
 // The points may not match exactly, since the selection range computation may
@@ -101,14 +89,14 @@ namespace views {
 // A View that displays the text selection handle.
 class TouchSelectionControllerImpl::SelectionHandleView : public View {
  public:
-  SelectionHandleView(TouchSelectionControllerImpl* controller)
+  explicit SelectionHandleView(TouchSelectionControllerImpl* controller)
       : controller_(controller) {
     widget_.reset(CreateTouchSelectionPopupWidget());
     widget_->SetContentsView(this);
     widget_->SetAlwaysOnTop(true);
 
     // We are owned by the TouchSelectionController.
-    set_parent_owned(false);
+    set_owned_by_client();
   }
 
   virtual ~SelectionHandleView() {
@@ -119,8 +107,9 @@ class TouchSelectionControllerImpl::SelectionHandleView : public View {
                      kSelectionHandleRadius + kSelectionHandleCursorHeight),
                      kSelectionHandleColor};
     PaintCircle(circle, canvas);
-    canvas->DrawLineInt(kSelectionHandleColor, kSelectionHandleRadius, 0,
-                        kSelectionHandleRadius, kSelectionHandleCursorHeight);
+    canvas->DrawLine(gfx::Point(kSelectionHandleRadius, 0),
+        gfx::Point(kSelectionHandleRadius, kSelectionHandleCursorHeight),
+        kSelectionHandleColor);
   }
 
   virtual bool OnMousePressed(const MouseEvent& event) OVERRIDE {
@@ -165,7 +154,7 @@ class TouchSelectionControllerImpl::SelectionHandleView : public View {
   }
 
   gfx::Point GetScreenPosition() {
-    return widget_->GetClientAreaScreenBounds().origin();
+    return widget_->GetClientAreaBoundsInScreen().origin();
   }
 
  private:
@@ -191,15 +180,15 @@ class ContextMenuButtonBackground : public Background {
     }
     int w = view->width();
     int h = view->height();
-    canvas->FillRect(background_color, gfx::Rect(1, 1, w - 2, h - 2));
-    canvas->FillRect(border_color, gfx::Rect(2, 0, w - 4, 1));
-    canvas->FillRect(border_color, gfx::Rect(1, 1, 1, 1));
-    canvas->FillRect(border_color, gfx::Rect(0, 2, 1, h - 4));
-    canvas->FillRect(border_color, gfx::Rect(1, h - 2, 1, 1));
-    canvas->FillRect(border_color, gfx::Rect(2, h - 1, w - 4, 1));
-    canvas->FillRect(border_color, gfx::Rect(w - 2, 1, 1, 1));
-    canvas->FillRect(border_color, gfx::Rect(w - 1, 2, 1, h - 4));
-    canvas->FillRect(border_color, gfx::Rect(w - 2, h - 2, 1, 1));
+    canvas->FillRect(gfx::Rect(1, 1, w - 2, h - 2), background_color);
+    canvas->FillRect(gfx::Rect(2, 0, w - 4, 1), border_color);
+    canvas->FillRect(gfx::Rect(1, 1, 1, 1), border_color);
+    canvas->FillRect(gfx::Rect(0, 2, 1, h - 4), border_color);
+    canvas->FillRect(gfx::Rect(1, h - 2, 1, 1), border_color);
+    canvas->FillRect(gfx::Rect(2, h - 1, w - 4, 1), border_color);
+    canvas->FillRect(gfx::Rect(w - 2, 1, 1, 1), border_color);
+    canvas->FillRect(gfx::Rect(w - 1, 2, 1, h - 4), border_color);
+    canvas->FillRect(gfx::Rect(w - 2, h - 2, 1, 1), border_color);
   }
 
  private:
@@ -211,14 +200,14 @@ class TouchSelectionControllerImpl::TouchContextMenuView
     : public ButtonListener,
       public View {
  public:
-  TouchContextMenuView(TouchSelectionControllerImpl* controller)
+  explicit TouchContextMenuView(TouchSelectionControllerImpl* controller)
       : controller_(controller) {
     widget_.reset(CreateTouchSelectionPopupWidget());
     widget_->SetContentsView(this);
     widget_->SetAlwaysOnTop(true);
 
     // We are owned by the TouchSelectionController.
-    set_parent_owned(false);
+    set_owned_by_client();
     SetLayoutManager(new BoxLayout(BoxLayout::kHorizontal, kContextMenuPadding,
         kContextMenuPadding, kContextMenuPadding));
   }
@@ -242,7 +231,7 @@ class TouchSelectionControllerImpl::TouchContextMenuView
   }
 
   gfx::Point GetScreenPosition() {
-    return widget_->GetClientAreaScreenBounds().origin();
+    return widget_->GetClientAreaBoundsInScreen().origin();
   }
 
   void OnPaintBackground(gfx::Canvas* canvas) OVERRIDE {
@@ -261,8 +250,8 @@ class TouchSelectionControllerImpl::TouchContextMenuView
     };
 
     SkPoint points[2];
-    points[0].set(SkIntToScalar(0), SkIntToScalar(0));
-    points[1].set(SkIntToScalar(0), SkIntToScalar(height()));
+    points[0].iset(0, 0);
+    points[1].iset(0, height());
 
     SkShader* shader = SkGradientShader::CreateLinear(points,
         kGradientColors, kGradientPoints, arraysize(kGradientPoints),
@@ -278,14 +267,14 @@ class TouchSelectionControllerImpl::TouchContextMenuView
 
     canvas->DrawRect(GetLocalBounds(), paint);
 #else
-    // This is the same as COLOR_TOOLBAR.
-    canvas->GetSkCanvas()->drawColor(SkColorSetRGB(210, 225, 246),
-                                     SkXfermode::kSrc_Mode);
+    canvas->DrawColor(SkColorSetRGB(210, 225, 246),
+                                   SkXfermode::kSrc_Mode);
 #endif
   }
 
-  // ButtonListener
-  virtual void ButtonPressed(Button* sender, const views::Event& event) {
+  // Overridden from ButtonListener:
+  virtual void ButtonPressed(Button* sender,
+                             const views::Event& event) OVERRIDE {
     controller_->ExecuteCommand(sender->tag());
   }
 
@@ -322,7 +311,7 @@ class TouchSelectionControllerImpl::TouchContextMenuView
                             total_width,
                             height);
     gfx::Rect monitor_bounds =
-        gfx::Screen::GetMonitorAreaNearestPoint(position);
+        gfx::Screen::GetDisplayNearestPoint(position).bounds();
     widget_->SetBounds(widget_bounds.AdjustToFit(monitor_bounds));
     Layout();
   }
@@ -424,7 +413,7 @@ void TouchSelectionControllerImpl::SelectionHandleDragged(
 void TouchSelectionControllerImpl::ConvertPointToClientView(
     SelectionHandleView* source, gfx::Point* point) {
   View::ConvertPointToScreen(source, point);
-  gfx::Rect r = client_view_->GetWidget()->GetClientAreaScreenBounds();
+  gfx::Rect r = client_view_->GetWidget()->GetClientAreaBoundsInScreen();
   point->SetPoint(point->x() - r.x(), point->y() - r.y());
   View::ConvertPointFromWidget(client_view_, point);
 }

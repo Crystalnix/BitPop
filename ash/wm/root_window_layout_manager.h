@@ -4,10 +4,11 @@
 
 #ifndef ASH_WM_ROOT_WINDOW_LAYOUT_MANAGER_H_
 #define ASH_WM_ROOT_WINDOW_LAYOUT_MANAGER_H_
-#pragma once
 
+#include "ash/shell_window_ids.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "ui/aura/layout_manager.h"
 
 namespace aura {
@@ -15,6 +16,9 @@ class Window;
 }
 namespace gfx {
 class Rect;
+}
+namespace ui {
+class Layer;
 }
 namespace views {
 class Widget;
@@ -30,16 +34,11 @@ class RootWindowLayoutManager : public aura::LayoutManager {
   explicit RootWindowLayoutManager(aura::Window* owner);
   virtual ~RootWindowLayoutManager();
 
-  views::Widget* background_widget() { return background_widget_; }
-
-  // Sets the background to |widget|. Closes and destroys the old widget if it
-  // exists and differs from the new widget.
-  void SetBackgroundWidget(views::Widget* widget);
-
   // Overridden from aura::LayoutManager:
   virtual void OnWindowResized() OVERRIDE;
   virtual void OnWindowAddedToLayout(aura::Window* child) OVERRIDE;
   virtual void OnWillRemoveWindowFromLayout(aura::Window* child) OVERRIDE;
+  virtual void OnWindowRemovedFromLayout(aura::Window* child) OVERRIDE;
   virtual void OnChildWindowVisibilityChanged(aura::Window* child,
                                               bool visible) OVERRIDE;
   virtual void SetChildBounds(aura::Window* child,
@@ -47,9 +46,6 @@ class RootWindowLayoutManager : public aura::LayoutManager {
 
  private:
   aura::Window* owner_;
-
-  // May be NULL if we're not painting a background.
-  views::Widget* background_widget_;
 
   DISALLOW_COPY_AND_ASSIGN(RootWindowLayoutManager);
 };

@@ -5,11 +5,14 @@
 #ifndef MEDIA_WEBM_WEBM_CONSTANTS_H_
 #define MEDIA_WEBM_WEBM_CONSTANTS_H_
 
+#include "base/basictypes.h"
+
 namespace media {
 
 // WebM element IDs.
 // This is a subset of the IDs in the Matroska spec.
 // http://www.matroska.org/technical/specs/index.html
+const int kWebMIdAESSettingsCipherMode = 0x47E8;
 const int kWebMIdAspectRatioType = 0x54B3;
 const int kWebMIdAttachedFile = 0x61A7;
 const int kWebMIdAttachmentLink = 0x7446;
@@ -19,7 +22,7 @@ const int kWebMIdBitDepth = 0x6264;
 const int kWebMIdBlock = 0xA1;
 const int kWebMIdBlockAddID = 0xEE;
 const int kWebMIdBlockAdditions = 0x75A1;
-const int kWebMIdBlockAdditional = 0xA4;
+const int kWebMIdBlockAdditional = 0xA5;
 const int kWebMIdBlockDuration = 0x9B;
 const int kWebMIdBlockGroup = 0xA0;
 const int kWebMIdBlockMore = 0xA6;
@@ -60,6 +63,7 @@ const int kWebMIdColorSpace = 0x2EB524;
 const int kWebMIdContentCompAlgo = 0x4254;
 const int kWebMIdContentCompression = 0x5034;
 const int kWebMIdContentCompSettings = 0x4255;
+const int kWebMIdContentEncAESSettings = 0x47E7;
 const int kWebMIdContentEncAlgo = 0x47E1;
 const int kWebMIdContentEncKeyID = 0x47E2;
 const int kWebMIdContentEncoding = 0x6240;
@@ -190,7 +194,16 @@ const int kWebMIdVideo = 0xE0;
 const int kWebMIdVoid = 0xEC;
 const int kWebMIdWritingApp = 0x5741;
 
+const int64 kWebMReservedId = 0x1FFFFFFF;
 const int64 kWebMUnknownSize = GG_LONGLONG(0x00FFFFFFFFFFFFFF);
+
+const uint8 kWebMFlagKeyframe = 0x80;
+
+// The size is from the WebM encrypted specification. Current encrypted WebM
+// request for comments specification is here
+// http://wiki.webmproject.org/encryption/webm-encryption-rfc
+const uint8 kWebMFlagEncryptedFrame = 0x1;
+const int kWebMHmacSize = 12;
 
 }  // namespace media
 

@@ -4,23 +4,18 @@
 
 #ifndef CONTENT_PUBLIC_BROWSER_WEB_CONTENTS_H_
 #define CONTENT_PUBLIC_BROWSER_WEB_CONTENTS_H_
-#pragma once
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
 #include "base/process_util.h"
 #include "base/string16.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/save_page_type.h"
 #include "content/public/browser/web_ui.h"
-#include "content/public/common/view_type.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/native_widget_types.h"
 #include "webkit/glue/window_open_disposition.h"
-
-class InterstitialPage;
-class RenderViewHost;
-class RenderWidgetHostView;
-class SessionStorageNamespace;
 
 namespace base {
 class PropertyBag;
@@ -39,38 +34,45 @@ struct LoadStateWithParam;
 namespace content {
 
 class BrowserContext;
+class InterstitialPage;
 class NavigationController;
 class RenderProcessHost;
-class WebContentsDelegate;
-struct RendererPreferences;
+class RenderViewHost;
+class RenderWidgetHostView;
+class SessionStorageNamespace;
 class SiteInstance;
-struct SSLStatus;
-// TODO(jam): of course we will have to rename WebContentsView etc to use
-// WebContents.
+class WebContentsDelegate;
 class WebContentsView;
+struct RendererPreferences;
 
 // Describes what goes in the main content area of a tab.
 class WebContents : public PageNavigator {
  public:
-  // |base_tab_contents| is used if we want to size the new tab contents view
-  // based on an existing tab contents view.  This can be NULL if not needed.
+  // |base_web_contents| is used if we want to size the new WebContents's view
+  // based on the view of an existing WebContents.  This can be NULL if not
+  // needed.
   //
   // The session storage namespace parameter allows multiple render views and
-  // tab contentses to share the same session storage (part of the WebStorage
+  // web contentses to share the same session storage (part of the WebStorage
   // spec) space. This is useful when restoring tabs, but most callers should
   // pass in NULL which will cause a new SessionStorageNamespace to be created.
   CONTENT_EXPORT static WebContents* Create(
       BrowserContext* browser_context,
       SiteInstance* site_instance,
       int routing_id,
-      const WebContents* base_tab_contents,
+      const WebContents* base_web_contents,
       SessionStorageNamespace* session_storage_namespace);
+
+  // Returns a WebContents that wraps the RenderViewHost, or NULL if the
+  // render view host's delegate isn't a WebContents.
+  CONTENT_EXPORT static WebContents* FromRenderViewHost(
+      const RenderViewHost* rvh);
 
   virtual ~WebContents() {}
 
   // Intrinsic tab state -------------------------------------------------------
 
-  // Returns the property bag for this tab contents, where callers can add
+  // Returns the property bag for this WebContents, where callers can add
   // extra data they may wish to associate with the tab. Returns a pointer
   // rather than a reference since the PropertyAccessors expect this.
   virtual const base::PropertyBag* GetPropertyBag() const = 0;
@@ -80,17 +82,13 @@ class WebContents : public PageNavigator {
   virtual WebContentsDelegate* GetDelegate() = 0;
   virtual void SetDelegate(WebContentsDelegate* delegate) = 0;
 
-  // Gets the controller for this tab contents.
+  // Gets the controller for this WebContents.
   virtual NavigationController& GetController() = 0;
   virtual const NavigationController& GetController() const = 0;
 
   // Returns the user browser context associated with this WebContents (via the
   // NavigationController).
   virtual content::BrowserContext* GetBrowserContext() const = 0;
-
-  // Allows overriding the type of this tab.
-  virtual void SetViewType(content::ViewType type) = 0;
-  virtual content::ViewType GetViewType() const = 0;
 
   // Gets the URL that is currently being displayed, if there is one.
   virtual const GURL& GetURL() const = 0;
@@ -104,7 +102,7 @@ class WebContents : public PageNavigator {
 
   // Returns the currently active RenderWidgetHostView. This may change over
   // time and can be NULL (during setup and teardown).
-  virtual RenderWidgetHostView* GetRenderWidgetHostView() const = 0;
+  virtual content::RenderWidgetHostView* GetRenderWidgetHostView() const = 0;
 
   // The WebContentsView will never change and is guaranteed non-NULL.
   virtual WebContentsView* GetView() const = 0;
@@ -121,6 +119,10 @@ class WebContents : public PageNavigator {
   virtual WebUI* GetWebUI() const = 0;
   virtual WebUI* GetCommittedWebUI() const = 0;
 
+  // Allows overriding the user agent used for NavigationEntries it owns.
+  virtual void SetUserAgentOverride(const std::string& override) = 0;
+  virtual const std::string& GetUserAgentOverride() const = 0;
+
   // Tab navigation state ------------------------------------------------------
 
   // Returns the current navigation properties, which if a navigation is
@@ -129,15 +131,14 @@ class WebContents : public PageNavigator {
   virtual const string16& GetTitle() const = 0;
 
   // The max page ID for any page that the current SiteInstance has loaded in
-  // this TabContents.  Page IDs are specific to a given SiteInstance and
-  // TabContents, corresponding to a specific RenderView in the renderer.
+  // this WebContents.  Page IDs are specific to a given SiteInstance and
+  // WebContents, corresponding to a specific RenderView in the renderer.
   // Page IDs increase with each new page that is loaded by a tab.
   virtual int32 GetMaxPageID() = 0;
 
   // The max page ID for any page that the given SiteInstance has loaded in
-  // this TabContents.
-  virtual int32 GetMaxPageIDForSiteInstance(
-      SiteInstance* site_instance) = 0;
+  // this WebContents.
+  virtual int32 GetMaxPageIDForSiteInstance(SiteInstance* site_instance) = 0;
 
   // Returns the SiteInstance associated with the current page.
   virtual SiteInstance* GetSiteInstance() const = 0;
@@ -146,10 +147,10 @@ class WebContents : public PageNavigator {
   // returns the current SiteInstance.
   virtual SiteInstance* GetPendingSiteInstance() const = 0;
 
-  // Return whether this tab contents is loading a resource.
+  // Return whether this WebContents is loading a resource.
   virtual bool IsLoading() const = 0;
 
-  // Returns whether this tab contents is waiting for a first-response for the
+  // Returns whether this WebContents is waiting for a first-response for the
   // main resource of the page.
   virtual bool IsWaitingForResponse() const = 0;
 
@@ -169,8 +170,8 @@ class WebContents : public PageNavigator {
 
   // Internal state ------------------------------------------------------------
 
-  // This flag indicates whether the tab contents is currently being
-  // screenshotted by the DraggedTabController.
+  // This flag indicates whether the WebContents is currently being
+  // screenshotted.
   virtual void SetCapturingContents(bool cap)  = 0;
 
   // Indicates whether this tab should be considered crashed. The setter will
@@ -189,18 +190,12 @@ class WebContents : public PageNavigator {
   // change. See InvalidateType enum.
   virtual void NotifyNavigationStateChanged(unsigned changed_flags) = 0;
 
-  // Invoked when the tab contents becomes selected. If you override, be sure
-  // and invoke super's implementation.
-  virtual void DidBecomeSelected() = 0;
+  // Get the last time that the WebContents was made visible with WasShown()
   virtual base::TimeTicks GetLastSelectedTime() const = 0;
 
-  // Invoked when the tab contents becomes hidden.
-  // NOTE: If you override this, call the superclass version too!
+  // Invoked when the WebContents becomes shown/hidden.
+  virtual void WasShown() = 0;
   virtual void WasHidden() = 0;
-
-  // TODO(brettw) document these.
-  virtual void ShowContents() = 0;
-  virtual void HideContents() = 0;
 
   // Returns true if the before unload and unload listeners need to be
   // fired. The value of this changes over time. For example, if true and the
@@ -217,11 +212,6 @@ class WebContents : public PageNavigator {
   // heap-allocated pointer is owned by the caller.
   virtual WebContents* Clone() = 0;
 
-  // Shows the page info.
-  virtual void ShowPageInfo(const GURL& url,
-                            const SSLStatus& ssl,
-                            bool show_history) = 0;
-
   // Window management ---------------------------------------------------------
 
   // Adds a new tab or window with the given already-created contents.
@@ -234,14 +224,14 @@ class WebContents : public PageNavigator {
   // TODO(brettw): Most of these should be removed and the caller should call
   // the view directly.
 
-  // Returns the actual window that is focused when this TabContents is shown.
+  // Returns the actual window that is focused when this WebContents is shown.
   virtual gfx::NativeView GetContentNativeView() const = 0;
 
-  // Returns the NativeView associated with this TabContents. Outside of
+  // Returns the NativeView associated with this WebContents. Outside of
   // automation in the context of the UI, this is required to be implemented.
   virtual gfx::NativeView GetNativeView() const = 0;
 
-  // Returns the bounds of this TabContents in the screen coordinate system.
+  // Returns the bounds of this WebContents in the screen coordinate system.
   virtual void GetContainerBounds(gfx::Rect* out) const = 0;
 
   // Makes the tab the focused window.
@@ -277,13 +267,19 @@ class WebContents : public PageNavigator {
                         const FilePath& dir_path,
                         SavePageType save_type) = 0;
 
+  // Generate an MHTML representation of the current page in the given file.
+  virtual void GenerateMHTML(
+      const FilePath& file,
+      const base::Callback<void(const FilePath& /* path to the MHTML file */,
+                                int64 /* size of the file */)>& callback) = 0;
+
   // Returns true if the active NavigationEntry's page_id equals page_id.
   virtual bool IsActiveEntry(int32 page_id) = 0;
 
   // Returns the contents MIME type after a navigation.
   virtual const std::string& GetContentsMimeType() const = 0;
 
-  // Returns true if this TabContents will notify about disconnection.
+  // Returns true if this WebContents will notify about disconnection.
   virtual bool WillNotifyDisconnection() const = 0;
 
   // Override the encoding and reload the page by sending down
@@ -301,9 +297,13 @@ class WebContents : public PageNavigator {
   virtual content::RendererPreferences* GetMutableRendererPrefs() = 0;
 
   // Set the time when we started to create the new tab page.  This time is
-  // from before we created this TabContents.
+  // from before we created this WebContents.
   virtual void SetNewTabStartTime(const base::TimeTicks& time) = 0;
   virtual base::TimeTicks GetNewTabStartTime() const = 0;
+
+  // Tells the tab to close now. The tab will take care not to close until it's
+  // out of nested message loops.
+  virtual void Close() = 0;
 
   // Notification that tab closing has started.  This can be called multiple
   // times, subsequent calls are ignored.
@@ -313,8 +313,13 @@ class WebContents : public PageNavigator {
   virtual bool ShouldAcceptDragAndDrop() const = 0;
 
   // A render view-originated drag has ended. Informs the render view host and
-  // tab contents delegate.
+  // WebContentsDelegate.
   virtual void SystemDragEnded() = 0;
+
+  // Notification the user has made a gesture while focus was on the
+  // page. This is used to avoid uninitiated user downloads (aka carpet
+  // bombing), see DownloadRequestLimiter for details.
+  virtual void UserGestureDone() = 0;
 
   // Indicates if this tab was explicitly closed by the user (control-w, close
   // tab menu item...). This is false for actions that indirectly close the tab,
@@ -358,6 +363,13 @@ class WebContents : public PageNavigator {
   // locked.
   virtual bool GotResponseToLockMouseRequest(bool allowed) = 0;
 
+  // Called when the user has selected a color in the color chooser.
+  virtual void DidChooseColorInColorChooser(int color_chooser_id,
+                                            SkColor color) = 0;
+
+  // Called when the color chooser has ended.
+  virtual void DidEndColorChooser(int color_chooser_id) = 0;
+
   // Returns true if the location bar should be focused by default rather than
   // the page contents. The view calls this function when the tab is focused
   // to see what it should do.
@@ -365,6 +377,9 @@ class WebContents : public PageNavigator {
 
   // Focuses the location bar.
   virtual void SetFocusToLocationBar(bool select_all) = 0;
+
+  // Does this have an opener associated with it?
+  virtual bool HasOpener() const = 0;
 };
 
 }  // namespace content

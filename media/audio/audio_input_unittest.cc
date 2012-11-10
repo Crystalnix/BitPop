@@ -11,6 +11,8 @@
 #include "media/audio/audio_manager_base.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace media {
+
 static const int kSamplingRate = 8000;
 static const int kSamplesPerPacket = kSamplingRate / 20;
 
@@ -21,11 +23,10 @@ class TestInputCallback : public AudioInputStream::AudioInputCallback {
   explicit TestInputCallback(int max_data_bytes)
       : callback_count_(0),
         had_error_(0),
-        was_closed_(0),
         max_data_bytes_(max_data_bytes) {
   }
   virtual void OnData(AudioInputStream* stream, const uint8* data,
-                      uint32 size, uint32 hardware_delay_bytes) {
+                      uint32 size, uint32 hardware_delay_bytes, double volume) {
     ++callback_count_;
     // Read the first byte to make sure memory is good.
     if (size) {
@@ -34,9 +35,7 @@ class TestInputCallback : public AudioInputStream::AudioInputCallback {
       EXPECT_GE(value, 0);
     }
   }
-  virtual void OnClose(AudioInputStream* stream) {
-    ++was_closed_;
-  }
+  virtual void OnClose(AudioInputStream* stream) {}
   virtual void OnError(AudioInputStream* stream, int code) {
     ++had_error_;
   }
@@ -49,18 +48,9 @@ class TestInputCallback : public AudioInputStream::AudioInputCallback {
     return had_error_;
   }
 
-  void set_error(bool error) {
-    had_error_ += error ? 1 : 0;
-  }
-  // Returns how many times the OnClose callback was called.
-  int was_closed() const {
-    return was_closed_;
-  }
-
  private:
   int callback_count_;
   int had_error_;
-  int was_closed_;
   int max_data_bytes_;
 };
 
@@ -84,13 +74,13 @@ static AudioInputStream* CreateTestAudioInputStream(AudioManager* audio_man) {
 
 // Test that AudioInputStream rejects out of range parameters.
 TEST(AudioInputTest, SanityOnMakeParams) {
-  scoped_refptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
   if (!CanRunAudioTests(audio_man.get()))
     return;
 
   AudioParameters::Format fmt = AudioParameters::AUDIO_PCM_LINEAR;
   EXPECT_TRUE(NULL == audio_man->MakeAudioInputStream(
-      AudioParameters(fmt, CHANNEL_LAYOUT_7POINT1, 8000, 16,
+      AudioParameters(fmt, CHANNEL_LAYOUT_7_1, 8000, 16,
                       kSamplesPerPacket), AudioManagerBase::kDefaultDeviceId));
   EXPECT_TRUE(NULL == audio_man->MakeAudioInputStream(
       AudioParameters(fmt, CHANNEL_LAYOUT_MONO, 1024 * 1024, 16,
@@ -118,7 +108,7 @@ TEST(AudioInputTest, SanityOnMakeParams) {
 
 // Test create and close of an AudioInputStream without recording audio.
 TEST(AudioInputTest, CreateAndClose) {
-  scoped_refptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
   if (!CanRunAudioTests(audio_man.get()))
     return;
   AudioInputStream* ais = CreateTestAudioInputStream(audio_man.get());
@@ -127,7 +117,7 @@ TEST(AudioInputTest, CreateAndClose) {
 
 // Test create, open and close of an AudioInputStream without recording audio.
 TEST(AudioInputTest, OpenAndClose) {
-  scoped_refptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
   if (!CanRunAudioTests(audio_man.get()))
     return;
   AudioInputStream* ais = CreateTestAudioInputStream(audio_man.get());
@@ -137,7 +127,7 @@ TEST(AudioInputTest, OpenAndClose) {
 
 // Test create, open, stop and close of an AudioInputStream without recording.
 TEST(AudioInputTest, OpenStopAndClose) {
-  scoped_refptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
   if (!CanRunAudioTests(audio_man.get()))
     return;
   AudioInputStream* ais = CreateTestAudioInputStream(audio_man.get());
@@ -148,7 +138,7 @@ TEST(AudioInputTest, OpenStopAndClose) {
 
 // Test a normal recording sequence using an AudioInputStream.
 TEST(AudioInputTest, Record) {
-  scoped_refptr<AudioManager> audio_man(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
   if (!CanRunAudioTests(audio_man.get()))
     return;
   MessageLoop message_loop(MessageLoop::TYPE_DEFAULT);
@@ -159,7 +149,10 @@ TEST(AudioInputTest, Record) {
   ais->Start(&test_callback);
   // Verify at least 500ms worth of audio was recorded, after giving sufficient
   // extra time.
-  message_loop.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(), 590);
+  message_loop.PostDelayedTask(
+      FROM_HERE,
+      MessageLoop::QuitClosure(),
+      base::TimeDelta::FromMilliseconds(590));
   message_loop.Run();
   EXPECT_GE(test_callback.callback_count(), 10);
   EXPECT_FALSE(test_callback.had_error());
@@ -167,3 +160,5 @@ TEST(AudioInputTest, Record) {
   ais->Stop();
   ais->Close();
 }
+
+}  // namespace media

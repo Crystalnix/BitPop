@@ -23,6 +23,7 @@
 #include "base/sys_info.h"
 #include "base/win/object_watcher.h"
 #include "base/win/scoped_handle.h"
+#include "base/win/scoped_process_information.h"
 #include "base/win/windows_version.h"
 
 // userenv.dll is required for CreateEnvironmentBlock().
@@ -174,6 +175,17 @@ ProcessHandle GetCurrentProcessHandle() {
   return ::GetCurrentProcess();
 }
 
+HMODULE GetModuleFromAddress(void* address) {
+  HMODULE instance = NULL;
+  if (!::GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            static_cast<char*>(address),
+                            &instance)) {
+    NOTREACHED();
+  }
+  return instance;
+}
+
 bool OpenProcessHandle(ProcessId pid, ProcessHandle* handle) {
   // We try to limit privileges granted to the handle. If you need this
   // for test code, consider using OpenPrivilegedProcessHandle instead of
@@ -181,7 +193,7 @@ bool OpenProcessHandle(ProcessId pid, ProcessHandle* handle) {
   ProcessHandle result = OpenProcess(PROCESS_DUP_HANDLE | PROCESS_TERMINATE,
                                      FALSE, pid);
 
-  if (result == INVALID_HANDLE_VALUE)
+  if (result == NULL)
     return false;
 
   *handle = result;
@@ -196,7 +208,7 @@ bool OpenPrivilegedProcessHandle(ProcessId pid, ProcessHandle* handle) {
                                      SYNCHRONIZE,
                                      FALSE, pid);
 
-  if (result == INVALID_HANDLE_VALUE)
+  if (result == NULL)
     return false;
 
   *handle = result;
@@ -208,7 +220,7 @@ bool OpenProcessHandleWithAccess(ProcessId pid,
                                  ProcessHandle* handle) {
   ProcessHandle result = OpenProcess(access_flags, FALSE, pid);
 
-  if (result == INVALID_HANDLE_VALUE)
+  if (result == NULL)
     return false;
 
   *handle = result;
@@ -296,7 +308,6 @@ bool LaunchProcess(const string16& cmdline,
     startup_info.lpDesktop = L"";
   startup_info.dwFlags = STARTF_USESHOWWINDOW;
   startup_info.wShowWindow = options.start_hidden ? SW_HIDE : SW_SHOW;
-  PROCESS_INFORMATION process_info;
 
   DWORD flags = 0;
 
@@ -308,6 +319,8 @@ bool LaunchProcess(const string16& cmdline,
     // The CREATE_BREAKAWAY_FROM_JOB flag is used to prevent this.
     flags |= CREATE_BREAKAWAY_FROM_JOB;
   }
+
+  base::win::ScopedProcessInformation process_info;
 
   if (options.as_user) {
     flags |= CREATE_UNICODE_ENVIRONMENT;
@@ -321,7 +334,7 @@ bool LaunchProcess(const string16& cmdline,
                             const_cast<wchar_t*>(cmdline.c_str()),
                             NULL, NULL, options.inherit_handles, flags,
                             enviroment_block, NULL, &startup_info,
-                            &process_info);
+                            process_info.Receive());
     DestroyEnvironmentBlock(enviroment_block);
     if (!launched)
       return false;
@@ -329,34 +342,29 @@ bool LaunchProcess(const string16& cmdline,
     if (!CreateProcess(NULL,
                        const_cast<wchar_t*>(cmdline.c_str()), NULL, NULL,
                        options.inherit_handles, flags, NULL, NULL,
-                       &startup_info, &process_info)) {
+                       &startup_info, process_info.Receive())) {
       return false;
     }
   }
 
   if (options.job_handle) {
     if (0 == AssignProcessToJobObject(options.job_handle,
-                                      process_info.hProcess)) {
+                                      process_info.process_handle())) {
       DLOG(ERROR) << "Could not AssignProcessToObject.";
-      KillProcess(process_info.hProcess, kProcessKilledExitCode, true);
+      KillProcess(process_info.process_handle(), kProcessKilledExitCode, true);
       return false;
     }
 
-    ResumeThread(process_info.hThread);
+    ResumeThread(process_info.thread_handle());
   }
-
-  // Handles must be closed or they will leak.
-  CloseHandle(process_info.hThread);
 
   if (options.wait)
-    WaitForSingleObject(process_info.hProcess, INFINITE);
+    WaitForSingleObject(process_info.process_handle(), INFINITE);
 
   // If the caller wants the process handle, we won't close it.
-  if (process_handle) {
-    *process_handle = process_info.hProcess;
-  } else {
-    CloseHandle(process_info.hProcess);
-  }
+  if (process_handle)
+    *process_handle = process_info.TakeProcessHandle();
+
   return true;
 }
 
@@ -420,9 +428,9 @@ bool GetAppOutput(const CommandLine& cl, std::string* output) {
     return false;
   }
 
-  std::wstring writable_command_line_string(cl.GetCommandLineString());
+  FilePath::StringType writable_command_line_string(cl.GetCommandLineString());
 
-  PROCESS_INFORMATION proc_info = { 0 };
+  base::win::ScopedProcessInformation proc_info;
   STARTUPINFO start_info = { 0 };
 
   start_info.cb = sizeof(STARTUPINFO);
@@ -437,13 +445,10 @@ bool GetAppOutput(const CommandLine& cl, std::string* output) {
                      &writable_command_line_string[0],
                      NULL, NULL,
                      TRUE,  // Handles are inherited.
-                     0, NULL, NULL, &start_info, &proc_info)) {
+                     0, NULL, NULL, &start_info, proc_info.Receive())) {
     NOTREACHED() << "Failed to start process";
     return false;
   }
-
-  // We don't need the thread handle, close it now.
-  CloseHandle(proc_info.hThread);
 
   // Close our writing end of pipe now. Otherwise later read would not be able
   // to detect end of child's output.
@@ -462,8 +467,7 @@ bool GetAppOutput(const CommandLine& cl, std::string* output) {
   }
 
   // Let's wait for the process to finish.
-  WaitForSingleObject(proc_info.hProcess, INFINITE);
-  CloseHandle(proc_info.hProcess);
+  WaitForSingleObject(proc_info.process_handle(), INFINITE);
 
   return true;
 }
@@ -535,14 +539,15 @@ TerminationStatus GetTerminationStatus(ProcessHandle handle, int* exit_code) {
 }
 
 bool WaitForExitCode(ProcessHandle handle, int* exit_code) {
-  bool success = WaitForExitCodeWithTimeout(handle, exit_code, INFINITE);
+  bool success = WaitForExitCodeWithTimeout(
+      handle, exit_code, base::TimeDelta::FromMilliseconds(INFINITE));
   CloseProcessHandle(handle);
   return success;
 }
 
 bool WaitForExitCodeWithTimeout(ProcessHandle handle, int* exit_code,
-                                int64 timeout_milliseconds) {
-  if (::WaitForSingleObject(handle, timeout_milliseconds) != WAIT_OBJECT_0)
+                                base::TimeDelta timeout) {
+  if (::WaitForSingleObject(handle, timeout.InMilliseconds()) != WAIT_OBJECT_0)
     return false;
   DWORD temp_code;  // Don't clobber out-parameters in case of failure.
   if (!::GetExitCodeProcess(handle, &temp_code))
@@ -584,8 +589,8 @@ bool NamedProcessIterator::IncludeEntry() {
          ProcessIterator::IncludeEntry();
 }
 
-bool WaitForProcessesToExit(const std::wstring& executable_name,
-                            int64 wait_milliseconds,
+bool WaitForProcessesToExit(const FilePath::StringType& executable_name,
+                            base::TimeDelta wait,
                             const ProcessFilter* filter) {
   const ProcessEntry* entry;
   bool result = true;
@@ -593,8 +598,8 @@ bool WaitForProcessesToExit(const std::wstring& executable_name,
 
   NamedProcessIterator iter(executable_name, filter);
   while ((entry = iter.NextProcessEntry())) {
-    DWORD remaining_wait =
-        std::max<int64>(0, wait_milliseconds - (GetTickCount() - start_time));
+    DWORD remaining_wait = std::max<int64>(
+        0, wait.InMilliseconds() - (GetTickCount() - start_time));
     HANDLE process = OpenProcess(SYNCHRONIZE,
                                  FALSE,
                                  entry->th32ProcessID);
@@ -606,20 +611,18 @@ bool WaitForProcessesToExit(const std::wstring& executable_name,
   return result;
 }
 
-bool WaitForSingleProcess(ProcessHandle handle, int64 wait_milliseconds) {
+bool WaitForSingleProcess(ProcessHandle handle, base::TimeDelta wait) {
   int exit_code;
-  if (!WaitForExitCodeWithTimeout(handle, &exit_code, wait_milliseconds))
+  if (!WaitForExitCodeWithTimeout(handle, &exit_code, wait))
     return false;
   return exit_code == 0;
 }
 
-bool CleanupProcesses(const std::wstring& executable_name,
-                      int64 wait_milliseconds,
+bool CleanupProcesses(const FilePath::StringType& executable_name,
+                      base::TimeDelta wait,
                       int exit_code,
                       const ProcessFilter* filter) {
-  bool exited_cleanly = WaitForProcessesToExit(executable_name,
-                                               wait_milliseconds,
-                                               filter);
+  bool exited_cleanly = WaitForProcessesToExit(executable_name, wait, filter);
   if (!exited_cleanly)
     KillProcesses(executable_name, exit_code, filter);
   return exited_cleanly;
@@ -638,7 +641,7 @@ void EnsureProcessTerminated(ProcessHandle process) {
       FROM_HERE,
       base::Bind(&TimerExpiredTask::TimedOut,
                  base::Owned(new TimerExpiredTask(process))),
-      kWaitInterval);
+      base::TimeDelta::FromMilliseconds(kWaitInterval));
 }
 
 ///////////////////////////////////////////////////////////////////////////////

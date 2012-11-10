@@ -17,12 +17,11 @@
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
-#include "ui/base/gtk/gtk_screen_utils.h"
+#include "ui/base/gtk/gtk_screen_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/text_elider.h"
 #include "ui/gfx/canvas_skia_paint.h"
 #include "ui/gfx/font.h"
-#include "ui/gfx/gtk_util.h"
 #include "ui/gfx/image/image.h"
 
 namespace {
@@ -146,7 +145,8 @@ gboolean OnDragIconExpose(GtkWidget* sender,
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   const gfx::Font& base_font = rb.GetFont(ui::ResourceBundle::BaseFont);
   canvas.DrawStringInt(data->text, base_font, data->text_color,
-                       text_x, 0, text_width, allocation.height);
+                       text_x, 0, text_width, allocation.height,
+                       gfx::Canvas::NO_SUBPIXEL_RENDERING);
 
   return TRUE;
 }
@@ -168,14 +168,15 @@ GdkPixbuf* GetPixbufForNode(const BookmarkNode* node, BookmarkModel* model,
   GdkPixbuf* pixbuf;
 
   if (node->is_url()) {
-    if (model->GetFavicon(node).width() != 0) {
-      pixbuf = gfx::GdkPixbufFromSkBitmap(&model->GetFavicon(node));
+    const gfx::Image& favicon = model->GetFavicon(node);
+    if (!favicon.IsEmpty()) {
+      pixbuf = favicon.CopyGdkPixbuf();
     } else {
-      pixbuf = GtkThemeService::GetDefaultFavicon(native)->ToGdkPixbuf();
+      pixbuf = GtkThemeService::GetDefaultFavicon(native).ToGdkPixbuf();
       g_object_ref(pixbuf);
     }
   } else {
-    pixbuf = GtkThemeService::GetFolderIcon(native)->ToGdkPixbuf();
+    pixbuf = GtkThemeService::GetFolderIcon(native).ToGdkPixbuf();
     g_object_ref(pixbuf);
   }
 

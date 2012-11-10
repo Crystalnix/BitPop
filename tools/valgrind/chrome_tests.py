@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -28,6 +28,7 @@ class BuildDirAmbiguous(Exception): pass
 
 class ChromeTests:
   SLOW_TOOLS = ["memcheck", "tsan", "tsan_rv", "drmemory"]
+  LAYOUT_TESTS_DEFAULT_CHUNK_SIZE = 1500
 
   def __init__(self, options, args, test):
     if ':' in test:
@@ -210,6 +211,7 @@ class ChromeTests:
     tool = valgrind_test.CreateTool(self._options.valgrind_tool)
     cmd = self._DefaultCommand(tool, name, valgrind_test_args)
     self._AppendGtestFilter(tool, name, cmd)
+    cmd.extend(['--test-tiny-timeout=1000'])
     if cmd_args:
       cmd.extend(cmd_args)
 
@@ -222,11 +224,20 @@ class ChromeTests:
     self.SetupLdPath(False)
     return tool.Run(cmd, None)
 
+  def TestAsh(self):
+    return self.SimpleTest("ash", "ash_unittests")
+
+  def TestAura(self):
+    return self.SimpleTest("aura", "aura_unittests")
+
   def TestBase(self):
     return self.SimpleTest("base", "base_unittests")
 
   def TestContent(self):
     return self.SimpleTest("content", "content_unittests")
+
+  def TestContentBrowser(self):
+    return self.SimpleTest("content", "content_browsertests")
 
   def TestCourgette(self):
     return self.SimpleTest("courgette", "courgette_unittests")
@@ -234,8 +245,11 @@ class ChromeTests:
   def TestCrypto(self):
     return self.SimpleTest("crypto", "crypto_unittests")
 
-  def TestGfx(self):
-    return self.SimpleTest("chrome", "gfx_unittests")
+  def TestFFmpeg(self):
+    return self.SimpleTest("chrome", "ffmpeg_unittests")
+
+  def TestFFmpegRegressions(self):
+    return self.SimpleTest("chrome", "ffmpeg_regression_tests")
 
   def TestGPU(self):
     return self.SimpleTest("gpu", "gpu_unittests")
@@ -278,6 +292,12 @@ class ChromeTests:
     return self.SimpleTest("webkit", "test_shell_tests")
 
   def TestUnit(self):
+    # http://crbug.com/51716
+    # Disabling all unit tests
+    # Problems reappeared after r119922
+    if common.IsMac() and (self._options.valgrind_tool == "memcheck"):
+      logging.warning("unit_tests are disabled for memcheck on MacOS.")
+      return 0;
     return self.SimpleTest("chrome", "unit_tests")
 
   def TestUIUnit(self):
@@ -292,6 +312,13 @@ class ChromeTests:
   UI_TEST_ARGS = ["--ui-test-action-timeout=60000",
                   "--ui-test-action-max-timeout=150000"]
 
+  # TODO(thestig) fine-tune these values.
+  # Valgrind timeouts are in seconds.
+  BROWSER_VALGRIND_ARGS = ["--timeout=50000", "--trace_children", "--indirect"]
+  # Browser test timeouts are in milliseconds.
+  BROWSER_TEST_ARGS = ["--ui-test-action-timeout=200000",
+                       "--ui-test-action-max-timeout=400000"]
+
   def TestAutomatedUI(self):
     return self.SimpleTest("chrome", "automated_ui_tests",
                            valgrind_test_args=self.UI_VALGRIND_ARGS,
@@ -299,8 +326,8 @@ class ChromeTests:
 
   def TestBrowser(self):
     return self.SimpleTest("chrome", "browser_tests",
-                           valgrind_test_args=self.UI_VALGRIND_ARGS,
-                           cmd_args=self.UI_TEST_ARGS)
+                           valgrind_test_args=self.BROWSER_VALGRIND_ARGS,
+                           cmd_args=self.BROWSER_TEST_ARGS)
 
   def TestInteractiveUI(self):
     return self.SimpleTest("chrome", "interactive_ui_tests",
@@ -324,11 +351,6 @@ class ChromeTests:
     return self.SimpleTest("chrome", "sync_integration_tests",
                            valgrind_test_args=self.UI_VALGRIND_ARGS,
                            cmd_args=(["--ui-test-action-max-timeout=450000"]))
-
-  def TestUI(self):
-    return self.SimpleTest("chrome", "ui_tests",
-                           valgrind_test_args=self.UI_VALGRIND_ARGS,
-                           cmd_args=self.UI_TEST_ARGS)
 
   def TestLayoutChunk(self, chunk_num, chunk_size):
     # Run tests [chunk_num*chunk_size .. (chunk_num+1)*chunk_size) from the
@@ -363,9 +385,10 @@ class ChromeTests:
                           "run_webkit_tests.py")
     script_cmd = ["python", script, "-v",
                   "--run-singly",  # run a separate DumpRenderTree for each test
-                  "--experimental-fully-parallel",
+                  "--fully-parallel",
                   "--time-out-ms=200000",
                   "--noshow-results",
+                  "--no-retry-failures",  # retrying takes too much time
                   "--nocheck-sys-deps"]
     # Pass build mode to run_webkit_tests.py.  We aren't passed it directly,
     # so parse it out of build_dir.  run_webkit_tests.py can only handle
@@ -386,7 +409,16 @@ class ChromeTests:
     # Now run script_cmd with the wrapper in cmd
     cmd.extend(["--"])
     cmd.extend(script_cmd)
-    return tool.Run(cmd, "layout")
+
+    # Layout tests often times fail quickly, but the buildbot remains green.
+    # Detect this situation when running with the default chunk size.
+    if chunk_size == self.LAYOUT_TESTS_DEFAULT_CHUNK_SIZE:
+      min_runtime_in_seconds=120
+    else:
+      min_runtime_in_seconds=0
+    ret = tool.Run(cmd, "layout", min_runtime_in_seconds=min_runtime_in_seconds)
+    return ret
+
 
   def TestLayout(self):
     # A "chunk file" is maintained in the local directory so that each test
@@ -438,13 +470,19 @@ class ChromeTests:
   # Recognise the original abbreviations as well as full executable names.
   _test_list = {
     "cmdline" : RunCmdLine,
+    "ash": TestAsh,              "ash_unittests": TestAsh,
+    "aura": TestAura,            "aura_unittests": TestAura,
     "automated_ui" : TestAutomatedUI,
     "base": TestBase,            "base_unittests": TestBase,
     "browser": TestBrowser,      "browser_tests": TestBrowser,
-    "crypto": TestCrypto,        "crypto_unittests": TestCrypto,
-    "googleurl": TestGURL,       "googleurl_unittests": TestGURL,
     "content": TestContent,      "content_unittests": TestContent,
+    "content_browsertests": TestContentBrowser,
     "courgette": TestCourgette,  "courgette_unittests": TestCourgette,
+    "crypto": TestCrypto,        "crypto_unittests": TestCrypto,
+    "ffmpeg": TestFFmpeg,        "ffmpeg_unittests": TestFFmpeg,
+    "ffmpeg_regression_tests": TestFFmpegRegressions,
+    "googleurl": TestGURL,       "googleurl_unittests": TestGURL,
+    "gpu": TestGPU,              "gpu_unittests": TestGPU,
     "ipc": TestIpc,              "ipc_tests": TestIpc,
     "interactive_ui": TestInteractiveUI,
     "layout": TestLayout,        "layout_tests": TestLayout,
@@ -457,16 +495,13 @@ class ChromeTests:
     "reliability": TestReliability, "reliability_tests": TestReliability,
     "remoting": TestRemoting,    "remoting_unittests": TestRemoting,
     "safe_browsing": TestSafeBrowsing, "safe_browsing_tests": TestSafeBrowsing,
+    "sql": TestSql,              "sql_unittests": TestSql,
     "sync": TestSync,            "sync_unit_tests": TestSync,
     "sync_integration_tests": TestSyncIntegration,
     "sync_integration": TestSyncIntegration,
     "test_shell": TestTestShell, "test_shell_tests": TestTestShell,
-    "ui": TestUI,                "ui_tests": TestUI,
-    "unit": TestUnit,            "unit_tests": TestUnit,
-    "sql": TestSql,              "sql_unittests": TestSql,
     "ui_unit": TestUIUnit,       "ui_unittests": TestUIUnit,
-    "gfx": TestGfx,              "gfx_unittests": TestGfx,
-    "gpu": TestGPU,              "gpu_unittests": TestGPU,
+    "unit": TestUnit,            "unit_tests": TestUnit,
     "views": TestViews,          "views_unittests": TestViews,
   }
 
@@ -497,8 +532,12 @@ def _main():
                          "instead of /tmp.\nThis can be useful for tool "
                          "developers/maintainers.\nPlease note that the <tool>"
                          ".logs directory will be clobbered on tool startup.")
-  parser.add_option("-n", "--num_tests", default=1500, type="int",
+  parser.add_option("-n", "--num_tests", type="int",
+                    default=ChromeTests.LAYOUT_TESTS_DEFAULT_CHUNK_SIZE,
                     help="for layout tests: # of subtests per run.  0 for all.")
+  # TODO(thestig) Remove this if we can.
+  parser.add_option("", "--gtest_color", dest="gtest_color", default="no",
+                    help="dummy compatibility flag for sharding_supervisor.")
 
   options, args = parser.parse_args()
 

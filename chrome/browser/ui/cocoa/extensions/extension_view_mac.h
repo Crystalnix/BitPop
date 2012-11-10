@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_COCOA_EXTENSIONS_EXTENSION_VIEW_MAC_H_
 #define CHROME_BROWSER_UI_COCOA_EXTENSIONS_EXTENSION_VIEW_MAC_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -12,16 +11,30 @@
 #include "ui/gfx/size.h"
 
 class Browser;
-class ExtensionHost;
-class RenderViewHost;
 class SkBitmap;
+
+namespace content {
+class RenderViewHost;
+}
+
+namespace extensions {
+class ExtensionHost;
+}
 
 // This class represents extension views. An extension view internally contains
 // a bridge to an extension process, which draws to the extension view's
 // native view object through IPC.
 class ExtensionViewMac {
  public:
-  ExtensionViewMac(ExtensionHost* extension_host, Browser* browser);
+  class Container {
+   public:
+    virtual ~Container() {}
+    virtual void OnExtensionSizeChanged(ExtensionViewMac* view,
+                                        const gfx::Size& new_size) {}
+    virtual void OnExtensionViewDidShow(ExtensionViewMac* view) {};
+  };
+
+  ExtensionViewMac(extensions::ExtensionHost* extension_host, Browser* browser);
   ~ExtensionViewMac();
 
   // Starts the extension process and creates the native view. You must call
@@ -41,9 +54,12 @@ class ExtensionViewMac {
   // Sets the extensions's background image.
   void SetBackground(const SkBitmap& background);
 
+  // Sets the container for this view.
+  void set_container(Container* container) { container_ = container; }
+
   // Method for the ExtensionHost to notify us about the correct size for
   // extension contents.
-  void UpdatePreferredSize(const gfx::Size& new_size);
+  void ResizeDueToAutoResize(const gfx::Size& new_size);
 
   // Method for the ExtensionHost to notify us when the RenderViewHost has a
   // connection.
@@ -62,7 +78,7 @@ class ExtensionViewMac {
   static const CGFloat kMaxHeight;
 
  private:
-  RenderViewHost* render_view_host() const;
+  content::RenderViewHost* render_view_host() const;
 
   void CreateWidgetHostView();
 
@@ -71,7 +87,7 @@ class ExtensionViewMac {
 
   Browser* browser_;  // weak
 
-  ExtensionHost* extension_host_;  // weak
+  extensions::ExtensionHost* extension_host_;  // weak
 
   // The background the view should have once it is initialized. This is set
   // when the view has a custom background, but hasn't been initialized yet.
@@ -80,6 +96,8 @@ class ExtensionViewMac {
   // What we should set the preferred width to once the ExtensionView has
   // loaded.
   gfx::Size pending_preferred_size_;
+
+  Container* container_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionViewMac);
 };

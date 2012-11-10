@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -51,7 +51,7 @@
         'gtest_prod',
       ],
       'conditions': [
-        ['OS == "mac"', {
+        ['OS == "mac" or OS == "ios"', {
           'sources': [
             'gtest_mac.h',
             'gtest_mac.mm',
@@ -60,6 +60,34 @@
           'link_settings': {
             'libraries': [
               '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
+            ],
+          },
+        }],
+        ['OS == "ios"', {
+          'direct_dependent_settings': {
+            'target_conditions': [
+              # Turn all tests into bundles on iOS because that's the only
+              # type of executable supported for iOS.
+              ['_type=="executable"', {
+                'variables': {
+                  # Use a variable so the path gets fixed up so it is always
+                  # correct when INFOPLIST_FILE finally gets set.
+                  'ios_unittest_info_plist_path':
+                    '<(DEPTH)/testing/gtest_ios/unittest-Info.plist',
+                },
+                'mac_bundle': 1,
+                'xcode_settings': {
+                  'BUNDLE_ID_TEST_NAME':
+                    '>!(echo ">(_target_name)" | sed -e "s/_//g")',
+                  'INFOPLIST_FILE': '>(ios_unittest_info_plist_path)',
+                },
+                'mac_bundle_resources': [
+                  '<(ios_unittest_info_plist_path)',
+                ],
+                'mac_bundle_resources!': [
+                  '<(ios_unittest_info_plist_path)',
+                ],
+              }],
             ],
           },
         }],
@@ -77,6 +105,16 @@
           'direct_dependent_settings': {
             'defines': [
               'GTEST_HAS_RTTI=0',
+            ],
+          },
+        }],
+        ['OS=="android" and android_app_abi=="x86"', {
+          'defines': [
+            'GTEST_HAS_CLONE=0',
+          ],
+          'direct_dependent_settings': {
+            'defines': [
+              'GTEST_HAS_CLONE=0',
             ],
           },
         }],
@@ -109,6 +147,17 @@
               ['OS=="mac"', {
                 'run_as': {
                   'action????': ['${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}'],
+                },
+              }],
+              ['OS=="ios"', {
+                'variables': {
+                  # Use a variable so the path gets fixed up so it is always
+                  # correct when the action finally gets used.
+                  'ios_run_unittest_script_path':
+                    '<(DEPTH)/testing/gtest_ios/run-unittest.sh',
+                },
+                'run_as': {
+                  'action????': ['>(ios_run_unittest_script_path)'],
                 },
               }],
               ['OS=="win"', {

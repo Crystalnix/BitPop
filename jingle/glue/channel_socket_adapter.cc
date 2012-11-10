@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <limits>
 
+#include "base/callback.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "net/base/io_buffer.h"
@@ -30,6 +31,13 @@ TransportChannelSocketAdapter::TransportChannelSocketAdapter(
 }
 
 TransportChannelSocketAdapter::~TransportChannelSocketAdapter() {
+  if (!destruction_callback_.is_null())
+    destruction_callback_.Run();
+}
+
+void TransportChannelSocketAdapter::SetOnDestroyedCallback(
+    const base::Closure& callback) {
+  destruction_callback_ = callback;
 }
 
 int TransportChannelSocketAdapter::Read(
@@ -128,7 +136,10 @@ void TransportChannelSocketAdapter::Close(int error_code) {
 }
 
 void TransportChannelSocketAdapter::OnNewPacket(
-    cricket::TransportChannel* channel, const char* data, size_t data_size) {
+    cricket::TransportChannel* channel,
+    const char* data,
+    size_t data_size,
+    int flags) {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
   DCHECK_EQ(channel, channel_);
   if (!read_callback_.is_null()) {

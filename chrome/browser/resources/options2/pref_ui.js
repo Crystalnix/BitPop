@@ -31,7 +31,7 @@ cr.define('options', function() {
       // 'other'.
       delete el.disabledReasons['other'];
       if (Object.keys(el.disabledReasons).length > 0)
-        console.error("Element is not disabled but should be");
+        console.error('Element is not disabled but should be');
     }
     if (disabled) {
       el.disabledReasons[reason] = true;
@@ -72,6 +72,12 @@ cr.define('options', function() {
     __proto__: HTMLInputElement.prototype,
 
     /**
+     * The stored value of the preference that this checkbox controls.
+     * @type {boolean}
+     */
+    prefValue_: null,
+
+    /**
      * Initialization function for the cr.ui framework.
      */
     decorate: function() {
@@ -81,39 +87,55 @@ cr.define('options', function() {
       self.initializeValueType(self.getAttribute('value-type'));
 
       // Listen to pref changes.
-      Preferences.getInstance().addEventListener(
-          this.pref,
-          function(event) {
-            var value = event.value && event.value['value'] != undefined ?
-                event.value['value'] : event.value;
+      Preferences.getInstance().addEventListener(this.pref, function(event) {
+        var value = event.value && event.value['value'] != undefined ?
+            event.value['value'] : event.value;
 
-            // Invert pref value if inverted_pref == true.
-            if (self.inverted_pref)
-              self.checked = !Boolean(value);
-            else
-              self.checked = Boolean(value);
+        self.prefValue_ = Boolean(value);
+        self.resetPrefState();
 
-            updateElementState_(self, event);
-          });
+        updateElementState_(self, event);
+      });
 
       // Listen to user events.
-      this.addEventListener(
-          'change',
-          function(e) {
-            if (self.customChangeHandler(e))
-              return;
-            var value = self.inverted_pref ? !self.checked : self.checked;
-            switch(self.valueType) {
-              case 'number':
-                Preferences.setIntegerPref(self.pref,
-                    Number(value), self.metric);
-                break;
-              case 'boolean':
-                Preferences.setBooleanPref(self.pref,
-                    value, self.metric);
-                break;
-            }
-          });
+      this.addEventListener('change', function(e) {
+        if (self.customChangeHandler(e))
+          return;
+
+        if (!this.dialogPref)
+          this.updatePreferenceValue_();
+      });
+    },
+
+    /**
+     * Update the preference value based on the checkbox state.
+     * @private
+     */
+    updatePreferenceValue_: function() {
+      var value = this.inverted_pref ? !this.checked : this.checked;
+      switch (this.valueType) {
+        case 'number':
+          Preferences.setIntegerPref(this.pref, Number(value), this.metric);
+          break;
+        case 'boolean':
+          Preferences.setBooleanPref(this.pref, value, this.metric);
+          break;
+      }
+    },
+
+    /**
+     * Called by SettingsDialog to save the preference.
+     */
+    savePrefState: function() {
+      this.updatePreferenceValue_();
+    },
+
+    /**
+     * Called by SettingsDialog to reset the UI to match the current preference
+     * value.
+     */
+    resetPrefState: function() {
+      this.checked = this.inverted_pref ? !this.prefValue_ : this.prefValue_;
     },
 
     /**
@@ -148,6 +170,14 @@ cr.define('options', function() {
    * @type {string}
    */
   cr.defineProperty(PrefCheckbox, 'pref', cr.PropertyKind.ATTR);
+
+  /**
+   * A special preference type specific to dialogs. These preferences are reset
+   * when the dialog is shown and are not saved until the user confirms the
+   * dialog.
+   * @type {boolean}
+   */
+  cr.defineProperty(PrefCheckbox, 'dialogPref', cr.PropertyKind.BOOL_ATTR);
 
   /**
    * Whether the preference is controlled by something else than the user's
@@ -192,6 +222,8 @@ cr.define('options', function() {
       // Listen to preference changes.
       Preferences.getInstance().addEventListener(this.pref,
           function(event) {
+            if (self.customChangeHandler(event))
+              return;
             var value = event.value && event.value['value'] != undefined ?
                 event.value['value'] : event.value;
             self.checked = String(value) == self.value;
@@ -234,6 +266,17 @@ cr.define('options', function() {
      */
     setDisabled: function(reason, disabled) {
       updateDisabledState_(this, reason, disabled);
+    },
+
+    /**
+     * This method is called first while processing an onchange event. If it
+     * returns false, regular onchange processing continues (setting the
+     * associated pref, etc). If it returns true, the rest of the onchange is
+     * not performed. I.e., this works like stopPropagation or cancelBubble.
+     * @param {Event} event Change event.
+     */
+    customChangeHandler: function(event) {
+      return false;
     },
   };
 
@@ -502,70 +545,93 @@ cr.define('options', function() {
     __proto__: HTMLSelectElement.prototype,
 
     /**
+     * @type {string} The stored value of the preference that this select
+     *     controls.
+     */
+    prefValue_: null,
+
+    /**
     * Initialization function for the cr.ui framework.
     */
     decorate: function() {
       var self = this;
 
       // Listen to pref changes.
-      Preferences.getInstance().addEventListener(this.pref,
-          function(event) {
-            var value = event.value && event.value['value'] != undefined ?
-                event.value['value'] : event.value;
+      Preferences.getInstance().addEventListener(this.pref, function(event) {
+        var value = event.value && event.value['value'] != undefined ?
+            event.value['value'] : event.value;
 
-            // Make sure |value| is a string, because the value is stored as a
-            // string in the HTMLOptionElement.
-            value = value.toString();
+        // Make sure |value| is a string, because the value is stored as a
+        // string in the HTMLOptionElement.
+        value = value.toString();
 
-            updateElementState_(self, event);
-
-            var found = false;
-            for (var i = 0; i < self.options.length; i++) {
-              if (self.options[i].value == value) {
-                self.selectedIndex = i;
-                found = true;
-              }
-            }
-
-            // Item not found, select first item.
-            if (!found)
-              self.selectedIndex = 0;
-
-            if (self.onchange != undefined)
-              self.onchange(event);
-          });
+        updateElementState_(self, event);
+        self.prefValue_ = value;
+        self.resetPrefState();
+      });
 
       // Listen to user events.
-      this.addEventListener('change',
-          function(e) {
-            if (!self.dataType) {
-              console.error('undefined data type for <select> pref');
-              return;
-            }
+      this.addEventListener('change', function(event) {
+        if (!self.dialogPref)
+          self.updatePreference_(self.prefValue_);
+      });
+    },
 
-            switch(self.dataType) {
-              case 'number':
-                Preferences.setIntegerPref(self.pref,
-                    self.options[self.selectedIndex].value, self.metric);
-                break;
-              case 'double':
-                Preferences.setDoublePref(self.pref,
-                    self.options[self.selectedIndex].value, self.metric);
-                break;
-              case 'boolean':
-                var option = self.options[self.selectedIndex];
-                var value = (option.value == 'true') ? true : false;
-                Preferences.setBooleanPref(self.pref, value, self.metric);
-                break;
-              case 'string':
-                Preferences.setStringPref(self.pref,
-                    self.options[self.selectedIndex].value, self.metric);
-                break;
-              default:
-                console.error('unknown data type for <select> pref: ' +
-                              self.dataType);
-            }
-          });
+    /**
+     * Resets the input to the stored value.
+     */
+    resetPrefState: function() {
+      var found = false;
+      for (var i = 0; i < this.options.length; i++) {
+        if (this.options[i].value == this.prefValue_) {
+          this.selectedIndex = i;
+          found = true;
+        }
+      }
+
+      // Item not found, select first item.
+      if (!found)
+        this.selectedIndex = 0;
+
+      if (this.onchange)
+        this.onchange(event);
+    },
+
+    /**
+     * Updates the preference to the currently selected value.
+     */
+    updatePreference_: function() {
+      if (!this.dataType) {
+        console.error('undefined data type for <select> pref');
+        return;
+      }
+
+      var prefValue = this.options[this.selectedIndex].value;
+      switch (this.dataType) {
+        case 'number':
+          Preferences.setIntegerPref(this.pref, prefValue, this.metric);
+          break;
+        case 'double':
+          Preferences.setDoublePref(this.pref, prefValue, this.metric);
+          break;
+        case 'boolean':
+          var value = (prefValue == 'true');
+          Preferences.setBooleanPref(this.pref, value, this.metric);
+          break;
+        case 'string':
+          Preferences.setStringPref(this.pref, prefValue, this.metric);
+          break;
+        default:
+          console.error('unknown data type for <select> pref: ' +
+                        this.dataType);
+      }
+    },
+
+    /**
+     * Called by SettingsDialog to save the stored value to preferences.
+     */
+    savePrefState: function() {
+      this.updatePreference_();
     },
 
     /**
@@ -590,6 +656,14 @@ cr.define('options', function() {
   cr.defineProperty(PrefSelect, 'controlledBy', cr.PropertyKind.ATTR);
 
   /**
+   * A special preference type specific to dialogs. These preferences are reset
+   * when the dialog is shown and are not saved until the user confirms the
+   * dialog.
+   * @type {boolean}
+   */
+  cr.defineProperty(PrefSelect, 'dialogPref', cr.PropertyKind.BOOL_ATTR);
+
+  /**
    * The user metric string.
    * @type {string}
    */
@@ -612,6 +686,40 @@ cr.define('options', function() {
     __proto__: HTMLInputElement.prototype,
 
     /**
+     * @type {string} The stored value of the preference that this text field
+     * controls.
+     */
+    prefValue_: null,
+
+    /**
+     * Saves the value of the input back into the preference. May be called
+     * directly to save dialog preferences.
+     */
+    savePrefState: function() {
+      switch (this.dataType) {
+        case 'number':
+          Preferences.setIntegerPref(this.pref, this.value, this.metric);
+          break;
+        case 'double':
+          Preferences.setDoublePref(this.pref, this.value, this.metric);
+          break;
+        case 'url':
+          Preferences.setURLPref(this.pref, this.value, this.metric);
+          break;
+        default:
+          Preferences.setStringPref(this.pref, this.value, this.metric);
+          break;
+      }
+    },
+
+    /**
+     * Resets the input to the stored value.
+     */
+    resetPrefState: function() {
+      this.value = this.prefValue_;
+    },
+
+    /**
      * Initialization function for the cr.ui framework.
      */
     decorate: function() {
@@ -624,26 +732,13 @@ cr.define('options', function() {
                 event.value['value'] : event.value;
 
             updateElementState_(self, event);
+
+            self.prefValue_ = self.value;
           });
 
       // Listen to user events.
-      this.addEventListener('change',
-          function(e) {
-            switch(self.dataType) {
-              case 'number':
-                Preferences.setIntegerPref(self.pref, self.value, self.metric);
-                break;
-              case 'double':
-                Preferences.setDoublePref(self.pref, self.value, self.metric);
-                break;
-              case 'url':
-                Preferences.setURLPref(self.pref, self.value, self.metric);
-                break;
-              default:
-                Preferences.setStringPref(self.pref, self.value, self.metric);
-                break;
-            }
-          });
+      if (!this.dialogPref)
+        this.addEventListener('change', this.savePrefState.bind(this));
 
       window.addEventListener('unload',
           function() {
@@ -665,6 +760,14 @@ cr.define('options', function() {
    * @type {string}
    */
   cr.defineProperty(PrefTextField, 'pref', cr.PropertyKind.ATTR);
+
+  /**
+   * A special preference type specific to dialogs. These preferences are reset
+   * when the dialog is shown and are not saved until the user confirms the
+   * dialog.
+   * @type {boolean}
+   */
+  cr.defineProperty(PrefTextField, 'dialogPref', cr.PropertyKind.BOOL_ATTR);
 
   /**
    * Whether the preference is controlled by something else than the user's

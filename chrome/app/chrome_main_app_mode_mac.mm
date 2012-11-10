@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,12 +7,15 @@
 // passing the appropriate data. This is the entry point into the framework for
 // those app bundles.
 
-#include <string>  // TODO(viettrungluu): only needed for temporary hack
-
 #include "base/basictypes.h"
+#include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/logging.h"
+#include "base/mac/bundle_locations.h"
+#include "chrome/browser/shell_integration.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/mac/app_mode_common.h"
 
 extern "C" {
@@ -37,20 +40,33 @@ int ChromeAppModeStart(const app_mode::ChromeAppModeInfo* info) {
     return 1;
   }
 
-  RAW_CHECK(info->chrome_versioned_path);
+  RAW_CHECK(!info->chrome_versioned_path.empty());
   FilePath* chrome_versioned_path = new FilePath(info->chrome_versioned_path);
   RAW_CHECK(!chrome_versioned_path->empty());
   chrome::SetOverrideVersionedDirectory(chrome_versioned_path);
+  base::mac::SetOverrideOuterBundlePath(info->chrome_outer_bundle_path);
+  base::mac::SetOverrideFrameworkBundlePath(
+      chrome_versioned_path->Append(chrome::kFrameworkName));
 
-  // TODO(viettrungluu): do something intelligent with data
-//  return ChromeMain(info->argc, info->argv);
-  // For now, a cheesy hack instead.
-  RAW_CHECK(info->app_mode_url);
-  std::string argv1(std::string("--app=") + info->app_mode_url);
-  RAW_CHECK(info->app_mode_id);
-  std::string argv2(std::string("--user-data-dir=/tmp/") + info->app_mode_id);
-  char* argv[] = { info->argv[0],
-                   const_cast<char*>(argv1.c_str()),
-                   const_cast<char*>(argv2.c_str()) };
-  return ChromeMain(static_cast<int>(arraysize(argv)), argv);
+  // This struct is used to communicate information to the Chrome code, prefer
+  // this to modifying the command line below.
+  struct ShellIntegration::AppModeInfo app_mode_info;
+  ShellIntegration::SetAppModeInfo(&app_mode_info);
+
+  CommandLine command_line(CommandLine::NO_PROGRAM);
+  command_line.AppendSwitch(info->argv[0]);
+
+  RAW_CHECK(info->app_mode_id.size());
+  command_line.AppendSwitchASCII(switches::kAppId, info->app_mode_id);
+  command_line.AppendSwitchPath(switches::kUserDataDir, info->user_data_dir);
+  // TODO(sail): Use a different flag that doesn't imply Location::LOAD for the
+  // extension.
+  command_line.AppendSwitchPath(switches::kLoadExtension, info->extension_path);
+
+  int argc = command_line.argv().size();
+  char* argv[argc];
+  for (int i = 0; i < argc; ++i)
+    argv[i] = const_cast<char*>(command_line.argv()[i].c_str());
+
+  return ChromeMain(argc, argv);
 }

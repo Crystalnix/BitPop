@@ -1,9 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <stdio.h>
 
+#include "base/command_line.h"
 #include "chrome/installer/gcapi/gcapi.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -15,8 +16,10 @@ void call_statically() {
   // running this twice verifies that the first call does not set
   // a flag that would make the second fail.  Thus, the results
   // of the two calls should be the same (no state should have changed)
-  result_flag_off = GoogleChromeCompatibilityCheck(FALSE, &reason);
-  result_flag_on = GoogleChromeCompatibilityCheck(TRUE, &reason);
+  result_flag_off = GoogleChromeCompatibilityCheck(
+      FALSE, GCAPI_INVOKED_STANDARD_SHELL, &reason);
+  result_flag_on = GoogleChromeCompatibilityCheck(
+      TRUE, GCAPI_INVOKED_STANDARD_SHELL, &reason);
 
   if (result_flag_off != result_flag_on)
       printf("Registry key flag is not being set properly.");
@@ -40,8 +43,8 @@ void call_dynamically() {
     // running this twice verifies that the first call does not set
     // a flag that would make the second fail.  Thus, the results
     // of the two calls should be the same (no state should have changed)
-    BOOL result_flag_off = gccfn(FALSE, &reason);
-    BOOL result_flag_on = gccfn(TRUE, &reason);
+    BOOL result_flag_off = gccfn(FALSE, GCAPI_INVOKED_STANDARD_SHELL, &reason);
+    BOOL result_flag_on = gccfn(TRUE, GCAPI_INVOKED_STANDARD_SHELL, &reason);
 
     if (result_flag_off != result_flag_on)
       printf("Registry key flag is not being set properly.");
@@ -54,11 +57,17 @@ void call_dynamically() {
   FreeLibrary(module);
 }
 
+const char kManualLaunchTests[] = "launch-chrome";
+
 int main(int argc, char* argv[]) {
+  CommandLine::Init(argc, argv);
+
   testing::InitGoogleTest(&argc, argv);
   RUN_ALL_TESTS();
 
-  call_dynamically();
-  call_statically();
-  printf("LaunchChrome returned %d.\n", LaunchGoogleChrome());
+  if (CommandLine::ForCurrentProcess()->HasSwitch(kManualLaunchTests)) {
+    call_dynamically();
+    call_statically();
+    printf("LaunchChrome returned %d.\n", LaunchGoogleChrome());
+  }
 }

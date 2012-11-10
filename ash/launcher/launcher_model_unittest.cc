@@ -38,7 +38,7 @@ class TestLauncherModelObserver : public LauncherModelObserver {
   virtual void LauncherItemAdded(int index) OVERRIDE {
     added_count_++;
   }
-  virtual void LauncherItemRemoved(int index) OVERRIDE {
+  virtual void LauncherItemRemoved(int index, LauncherID id) OVERRIDE {
     removed_count_++;
   }
   virtual void LauncherItemChanged(int index,
@@ -47,8 +47,6 @@ class TestLauncherModelObserver : public LauncherModelObserver {
   }
   virtual void LauncherItemMoved(int start_index, int target_index) OVERRIDE {
     moved_count_++;
-  }
-  virtual void LauncherItemWillChange(int index) OVERRIDE {
   }
 
  private:
@@ -82,46 +80,120 @@ TEST(LauncherModel, BasicAssertions) {
   // Add an item.
   model.AddObserver(&observer);
   LauncherItem item;
-  model.Add(0, item);
+  int index = model.Add(item);
   EXPECT_EQ(3, model.item_count());
-  // New item should get a unique id.
-  EXPECT_NE(model.items()[1].id, model.items()[2].id);
   EXPECT_EQ("added=1", observer.StateStringAndClear());
+  // Verifies all the items get unique ids.
+  std::set<LauncherID> ids;
+  for (int i = 0; i < model.item_count(); ++i)
+    ids.insert(model.items()[i].id);
+  EXPECT_EQ(model.item_count(), static_cast<int>(ids.size()));
 
   // Change a tabbed image.
-  LauncherID original_id = model.items()[0].id;
-  model.Set(0, LauncherItem());
-  EXPECT_EQ(original_id, model.items()[0].id);
+  LauncherID original_id = model.items()[index].id;
+  model.Set(index, LauncherItem());
+  EXPECT_EQ(original_id, model.items()[index].id);
   EXPECT_EQ("changed=1", observer.StateStringAndClear());
-  EXPECT_EQ(TYPE_TABBED, model.items()[0].type);
+  EXPECT_EQ(TYPE_TABBED, model.items()[index].type);
 
   // Remove the item.
-  model.RemoveItemAt(0);
+  model.RemoveItemAt(index);
   EXPECT_EQ(2, model.item_count());
   EXPECT_EQ("removed=1", observer.StateStringAndClear());
 
   // Add an app item.
-  item.type = TYPE_APP;
-  model.Add(0, item);
+  item.type = TYPE_APP_SHORTCUT;
+  index = model.Add(item);
   observer.StateStringAndClear();
 
   // Change everything.
-  model.Set(0, item);
+  model.Set(index, item);
   EXPECT_EQ("changed=1", observer.StateStringAndClear());
-  EXPECT_EQ(TYPE_APP, model.items()[0].type);
+  EXPECT_EQ(TYPE_APP_SHORTCUT, model.items()[index].type);
 
   // Add another item.
-  item.type = TYPE_APP;
-  model.Add(1, item);
+  item.type = TYPE_APP_SHORTCUT;
+  model.Add(item);
   observer.StateStringAndClear();
 
-  // Move the second item to be first.
-  model.Move(1, 0);
+  // Move the third to the second.
+  model.Move(2, 1);
   EXPECT_EQ("moved=1", observer.StateStringAndClear());
 
-  // Move the first item to the second item.
-  model.Move(0, 1);
+  // And back.
+  model.Move(1, 2);
   EXPECT_EQ("moved=1", observer.StateStringAndClear());
+}
+
+// Assertions around where items are added.
+TEST(LauncherModel, AddIndices) {
+  TestLauncherModelObserver observer;
+  LauncherModel model;
+
+  // Model is initially populated with two items.
+  EXPECT_EQ(2, model.item_count());
+  // Two initial items should have different ids.
+  EXPECT_NE(model.items()[0].id, model.items()[1].id);
+
+  // Tabbed items should be after shortcut.
+  LauncherItem item;
+  int tabbed_index1 = model.Add(item);
+  EXPECT_EQ(1, tabbed_index1);
+
+  // Add another tabbed item, it should follow first.
+  int tabbed_index2 = model.Add(item);
+  EXPECT_EQ(2, tabbed_index2);
+
+  // APP_SHORTCUT preceed browsers.
+  item.type = TYPE_APP_SHORTCUT;
+  int app_shortcut_index1 = model.Add(item);
+  EXPECT_EQ(1, app_shortcut_index1);
+
+  item.type = TYPE_APP_SHORTCUT;
+  int app_shortcut_index2 = model.Add(item);
+  EXPECT_EQ(2, app_shortcut_index2);
+
+  // Check that AddAt() figures out the correct indexes for app shortcuts.
+  item.type = TYPE_APP_SHORTCUT;
+  int app_shortcut_index3 = model.AddAt(0, item);
+  EXPECT_EQ(1, app_shortcut_index3);
+
+  item.type = TYPE_APP_SHORTCUT;
+  int app_shortcut_index4 = model.AddAt(5, item);
+  EXPECT_EQ(4, app_shortcut_index4);
+
+  item.type = TYPE_APP_SHORTCUT;
+  int app_shortcut_index5 = model.AddAt(2, item);
+  EXPECT_EQ(2, app_shortcut_index5);
+
+  // Check that AddAt() figures out the correct indexes for tabs and panels.
+  item.type = TYPE_TABBED;
+  int tabbed_index3 = model.AddAt(2, item);
+  EXPECT_EQ(6, tabbed_index3);
+
+  item.type = TYPE_APP_PANEL;
+  int app_panel_index1 = model.AddAt(2, item);
+  EXPECT_EQ(6, app_panel_index1);
+
+  item.type = TYPE_TABBED;
+  int tabbed_index4 = model.AddAt(11, item);
+  EXPECT_EQ(10, tabbed_index4);
+
+  item.type = TYPE_APP_PANEL;
+  int app_panel_index2 = model.AddAt(12, item);
+  EXPECT_EQ(11, app_panel_index2);
+
+  item.type = TYPE_TABBED;
+  int tabbed_index5 = model.AddAt(7, item);
+  EXPECT_EQ(7, tabbed_index5);
+
+  item.type = TYPE_APP_PANEL;
+  int app_panel_index3 = model.AddAt(8, item);
+  EXPECT_EQ(8, app_panel_index3);
+
+  // Browser shortcut and app list should still be first and last, respectively.
+  EXPECT_EQ(TYPE_BROWSER_SHORTCUT, model.items()[0].type);
+  EXPECT_EQ(TYPE_APP_LIST, model.items()[model.item_count() - 1].type);
 }
 
 }  // namespace ash

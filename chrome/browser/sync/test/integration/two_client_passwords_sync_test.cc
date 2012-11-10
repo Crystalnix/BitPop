@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/sync/engine/model_safe_worker.h"
 #include "chrome/browser/sync/profile_sync_service_harness.h"
-#include "chrome/browser/sync/sessions/session_state.h"
-#include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/sync/test/integration/passwords_helper.h"
+#include "chrome/browser/sync/test/integration/sync_test.h"
+#include "sync/internal_api/public/engine/model_safe_worker.h"
+#include "sync/internal_api/public/sessions/sync_session_snapshot.h"
 
 using passwords_helper::AddLogin;
 using passwords_helper::AllProfilesContainSamePasswordForms;
@@ -20,7 +20,8 @@ using passwords_helper::GetVerifierPasswordStore;
 using passwords_helper::ProfileContainsSamePasswordFormsAsVerifier;
 using passwords_helper::RemoveLogin;
 using passwords_helper::RemoveLogins;
-using passwords_helper::SetPassphrase;
+using passwords_helper::SetDecryptionPassphrase;
+using passwords_helper::SetEncryptionPassphrase;
 using passwords_helper::UpdateLogin;
 
 using webkit::forms::PasswordForm;
@@ -72,18 +73,18 @@ IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest, DisablePasswords) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
   ASSERT_TRUE(AllProfilesContainSamePasswordFormsAsVerifier());
 
-  ASSERT_TRUE(GetClient(1)->DisableSyncForDatatype(syncable::PASSWORDS));
+  ASSERT_TRUE(GetClient(1)->DisableSyncForDatatype(syncer::PASSWORDS));
   PasswordForm form = CreateTestPasswordForm(0);
   AddLogin(GetVerifierPasswordStore(), form);
   ASSERT_EQ(1, GetVerifierPasswordCount());
   AddLogin(GetPasswordStore(0), form);
   ASSERT_EQ(1, GetPasswordCount(0));
 
-  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
+  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion("Added a password."));
   ASSERT_TRUE(ProfileContainsSamePasswordFormsAsVerifier(0));
   ASSERT_FALSE(ProfileContainsSamePasswordFormsAsVerifier(1));
 
-  ASSERT_TRUE(GetClient(1)->EnableSyncForDatatype(syncable::PASSWORDS));
+  ASSERT_TRUE(GetClient(1)->EnableSyncForDatatype(syncer::PASSWORDS));
   ASSERT_TRUE(AwaitQuiescence());
   ASSERT_TRUE(AllProfilesContainSamePasswordFormsAsVerifier());
   ASSERT_EQ(1, GetPasswordCount(1));
@@ -114,11 +115,12 @@ IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest, DisableSync) {
 IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest, SetPassphrase) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
-  SetPassphrase(0, kValidPassphrase);
+  SetEncryptionPassphrase(0, kValidPassphrase, ProfileSyncService::EXPLICIT);
   ASSERT_TRUE(GetClient(0)->AwaitPassphraseAccepted());
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
 
-  SetPassphrase(1, kValidPassphrase);
+  ASSERT_TRUE(GetClient(1)->AwaitPassphraseRequired());
+  ASSERT_TRUE(SetDecryptionPassphrase(1, kValidPassphrase));
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseAccepted());
   ASSERT_TRUE(GetClient(1)->AwaitFullSyncCompletion("Set passphrase."));
 }
@@ -127,11 +129,12 @@ IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest,
                        SetPassphraseAndAddPassword) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
-  SetPassphrase(0, kValidPassphrase);
+  SetEncryptionPassphrase(0, kValidPassphrase, ProfileSyncService::EXPLICIT);
   ASSERT_TRUE(GetClient(0)->AwaitPassphraseAccepted());
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
 
-  SetPassphrase(1, kValidPassphrase);
+  ASSERT_TRUE(GetClient(1)->AwaitPassphraseRequired());
+  ASSERT_TRUE(SetDecryptionPassphrase(1, kValidPassphrase));
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseAccepted());
 
   PasswordForm form = CreateTestPasswordForm(0);
@@ -183,7 +186,13 @@ IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest, Delete) {
 }
 
 // TCM ID - 7573511
-IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest, DeleteAll) {
+// Flaky on Mac and Windows: http://crbug.com/111399
+#if defined(OS_WIN) || defined(OS_MACOSX)
+#define MAYBE_DeleteAll DISABLED_DeleteAll
+#else
+#define MAYBE_DeleteAll DeleteAll
+#endif
+IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest, MAYBE_DeleteAll) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
   ASSERT_TRUE(AllProfilesContainSamePasswordFormsAsVerifier());
 
@@ -220,27 +229,35 @@ IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest, Merge) {
   ASSERT_TRUE(AllProfilesContainSamePasswordForms());
 }
 
+// This test is disabled on MAC. See bug http://crbug.com/135336
+#if defined(OS_MACOSX)
+#define MAYBE_SetPassphraseAndThenSetupSync \
+    DISABLED_SetPassphraseAndThenSetupSync
+#else
+#define MAYBE_SetPassphraseAndThenSetupSync SetPassphraseAndThenSetupSync
+#endif
 IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest,
-                       SetPassphraseAndThenSetupSync) {
+                       MAYBE_SetPassphraseAndThenSetupSync) {
   ASSERT_TRUE(SetupClients()) << "SetupClients() failed.";
 
   ASSERT_TRUE(GetClient(0)->SetupSync());
-  SetPassphrase(0, kValidPassphrase);
+  SetEncryptionPassphrase(0, kValidPassphrase, ProfileSyncService::EXPLICIT);
   ASSERT_TRUE(GetClient(0)->AwaitPassphraseAccepted());
   ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion("Initial sync."));
 
   ASSERT_FALSE(GetClient(1)->SetupSync());
-  SetPassphrase(1, kValidPassphrase);
+  ASSERT_TRUE(GetClient(1)->AwaitPassphraseRequired());
+  ASSERT_TRUE(SetDecryptionPassphrase(1, kValidPassphrase));
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseAccepted());
   ASSERT_TRUE(GetClient(1)->AwaitFullSyncCompletion("Initial sync."));
 
   // Following ensures types are enabled and active (see bug 87572).
-  browser_sync::ModelSafeRoutingInfo routes;
+  syncer::ModelSafeRoutingInfo routes;
   GetClient(0)->service()->GetModelSafeRoutingInfo(&routes);
-  ASSERT_EQ(browser_sync::GROUP_PASSWORD, routes[syncable::PASSWORDS]);
+  ASSERT_EQ(syncer::GROUP_PASSWORD, routes[syncer::PASSWORDS]);
   routes.clear();
   GetClient(1)->service()->GetModelSafeRoutingInfo(&routes);
-  ASSERT_EQ(browser_sync::GROUP_PASSWORD, routes[syncable::PASSWORDS]);
+  ASSERT_EQ(syncer::GROUP_PASSWORD, routes[syncer::PASSWORDS]);
 }
 
 IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest,
@@ -248,13 +265,14 @@ IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest,
   ASSERT_TRUE(SetupClients()) << "SetupClients() failed.";
 
   ASSERT_TRUE(GetClient(0)->SetupSync());
-  SetPassphrase(0, kValidPassphrase);
+  SetEncryptionPassphrase(0, kValidPassphrase, ProfileSyncService::EXPLICIT);
   ASSERT_TRUE(GetClient(0)->AwaitPassphraseAccepted());
   ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion("Initial sync."));
 
   // Setup 1 with a different passphrase, so that it fails to sync.
   ASSERT_FALSE(GetClient(1)->SetupSync());
-  SetPassphrase(1, kAnotherValidPassphrase);
+  ASSERT_TRUE(GetClient(1)->AwaitPassphraseRequired());
+  ASSERT_FALSE(SetDecryptionPassphrase(1, kAnotherValidPassphrase));
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseRequired());
 
   // Add a password on 0 while clients have different passphrases.
@@ -268,7 +286,8 @@ IN_PROC_BROWSER_TEST_F(TwoClientPasswordsSyncTest,
   ASSERT_FALSE(AllProfilesContainSamePasswordFormsAsVerifier());
 
   // Update 1 with the correct passphrase, the password should now sync over.
-  SetPassphrase(1, kValidPassphrase);
+  ASSERT_TRUE(GetClient(1)->AwaitPassphraseRequired());
+  ASSERT_TRUE(SetDecryptionPassphrase(1, kValidPassphrase));
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseAccepted());
 
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));

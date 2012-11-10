@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,7 @@
 #include "base/bind.h"
 #include "base/eintr_wrapper.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/statistics_recorder.h"
 #include "base/perftimer.h"
 #include "base/time.h"
 #include "chrome/browser/browser_process.h"
@@ -31,8 +32,27 @@ using content::UserMetricsAction;
 
 namespace chromeos {
 
-// The interval between external metrics collections, in milliseconds.
-static const int kExternalMetricsCollectionIntervalMs = 30 * 1000;
+// The interval between external metrics collections in seconds
+static const int kExternalMetricsCollectionIntervalSeconds = 30;
+
+class SystemHistogram : public base::Histogram {
+ public:
+  static bool CheckValues(const std::string& name,
+                          int minimum,
+                          int maximum,
+                          size_t bucket_count) {
+    return base::Histogram::InspectConstructionArguments(
+        name, &minimum, &maximum, &bucket_count);
+  }
+  static bool CheckLinearValues(const std::string& name, int maximum) {
+    if (!CheckValues(name, 1, maximum, maximum + 1))
+      return false;
+    Histogram* histogram = base::StatisticsRecorder::FindHistogram(name);
+    if (!histogram)
+      return true;
+    return histogram->HasConstructionArguments(1, maximum, maximum + 1);
+  }
+};
 
 ExternalMetrics::ExternalMetrics()
     : test_recorder_(NULL) {
@@ -46,12 +66,6 @@ void ExternalMetrics::Start() {
   // these are explicitly added in that script.
   // TODO(derat): We shouldn't need to verify actions before reporting them;
   // remove all of this once http://crosbug.com/11125 is fixed.
-  valid_user_actions_.insert("Accel_NextWindow_Tab");
-  valid_user_actions_.insert("Accel_PrevWindow_Tab");
-  valid_user_actions_.insert("Accel_NextWindow_F5");
-  valid_user_actions_.insert("Accel_PrevWindow_F5");
-  valid_user_actions_.insert("Accel_BrightnessDown_F6");
-  valid_user_actions_.insert("Accel_BrightnessUp_F7");
   valid_user_actions_.insert("Cryptohome.PKCS11InitFail");
   valid_user_actions_.insert("Updater.ServerCertificateChanged");
   valid_user_actions_.insert("Updater.ServerCertificateFailed");
@@ -95,6 +109,14 @@ void ExternalMetrics::RecordHistogram(const char* histogram_data) {
     LOG(ERROR) << "bad histogram request: " << histogram_data;
     return;
   }
+
+  if (!SystemHistogram::CheckValues(name, min, max, nbuckets)) {
+    LOG(ERROR) << "Invalid histogram " << name
+               << ", min=" << min
+               << ", max=" << max
+               << ", nbuckets=" << nbuckets;
+    return;
+  }
   // Do not use the UMA_HISTOGRAM_... macros here.  They cache the Histogram
   // instance and thus only work if |name| is constant.
   base::Histogram* counter = base::Histogram::FactoryGet(
@@ -108,6 +130,12 @@ void ExternalMetrics::RecordLinearHistogram(const char* histogram_data) {
   int n = sscanf(histogram_data, "%127s %d %d", name, &sample, &max);
   if (n != 3) {
     LOG(ERROR) << "bad linear histogram request: " << histogram_data;
+    return;
+  }
+
+  if (!SystemHistogram::CheckLinearValues(name, max)) {
+    LOG(ERROR) << "Invalid linear histogram " << name
+               << ", max=" << max;
     return;
   }
   // Do not use the UMA_HISTOGRAM_... macros here.  They cache the Histogram
@@ -240,7 +268,7 @@ void ExternalMetrics::ScheduleCollector() {
   result = BrowserThread::PostDelayedTask(
     BrowserThread::FILE, FROM_HERE,
     base::Bind(&chromeos::ExternalMetrics::CollectEventsAndReschedule, this),
-    kExternalMetricsCollectionIntervalMs);
+    base::TimeDelta::FromSeconds(kExternalMetricsCollectionIntervalSeconds));
   DCHECK(result);
 }
 

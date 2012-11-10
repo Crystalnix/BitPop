@@ -4,6 +4,7 @@
 
 #include "base/message_pump_glib.h"
 
+#include <glib.h>
 #include <math.h>
 
 #include <algorithm>
@@ -17,7 +18,7 @@
 #include "base/threading/thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 #include <gtk/gtk.h>
 #endif
 
@@ -161,12 +162,12 @@ class MessagePumpGLibTest : public testing::Test {
  public:
   MessagePumpGLibTest() : loop_(NULL), injector_(NULL) { }
 
-  virtual void SetUp() {
+  // Overridden from testing::Test:
+  virtual void SetUp() OVERRIDE {
     loop_ = new MessageLoop(MessageLoop::TYPE_UI);
     injector_ = new EventInjector();
   }
-
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     delete injector_;
     injector_ = NULL;
     delete loop_;
@@ -252,7 +253,9 @@ TEST_F(MessagePumpGLibTest, TestWorkWhileWaitingForEvents) {
   task_count = 0;
   for (int i = 0; i < 10; ++i) {
     loop()->PostDelayedTask(
-        FROM_HERE, base::Bind(&IncrementInt, &task_count), 10*i);
+        FROM_HERE,
+        base::Bind(&IncrementInt, &task_count),
+        base::TimeDelta::FromMilliseconds(10*i));
   }
   // After all the previous tasks have executed, enqueue an event that will
   // quit.
@@ -261,7 +264,8 @@ TEST_F(MessagePumpGLibTest, TestWorkWhileWaitingForEvents) {
   loop()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&EventInjector::AddEvent, base::Unretained(injector()), 10,
-                 MessageLoop::QuitClosure()), 150);
+                 MessageLoop::QuitClosure()),
+      base::TimeDelta::FromMilliseconds(150));
   loop()->Run();
   ASSERT_EQ(10, task_count);
   EXPECT_EQ(1, injector()->processed_events());
@@ -404,7 +408,7 @@ TEST_F(MessagePumpGLibTest, TestDrainingGLib) {
 
 namespace {
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 void AddEventsAndDrainGtk(EventInjector* injector) {
   // Add a couple of dummy events
   injector->AddDummyEvent(0);
@@ -425,7 +429,7 @@ void AddEventsAndDrainGtk(EventInjector* injector) {
 
 }  // namespace
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 TEST_F(MessagePumpGLibTest, TestDrainingGtk) {
   // Tests that draining events using Gtk works.
   loop()->PostTask(
@@ -451,7 +455,7 @@ class GLibLoopRunner : public base::RefCounted<GLibLoopRunner> {
   }
 
   void RunLoop() {
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
     while (!quit_) {
       gtk_main_iteration();
     }
@@ -497,9 +501,13 @@ void TestGLibLoopInternal(EventInjector* injector) {
   injector->AddDummyEvent(10);
   // Delayed work
   MessageLoop::current()->PostDelayedTask(
-      FROM_HERE, base::Bind(&IncrementInt, &task_count), 30);
+      FROM_HERE,
+      base::Bind(&IncrementInt, &task_count),
+      base::TimeDelta::FromMilliseconds(30));
   MessageLoop::current()->PostDelayedTask(
-      FROM_HERE, base::Bind(&GLibLoopRunner::Quit, runner.get()), 40);
+      FROM_HERE,
+      base::Bind(&GLibLoopRunner::Quit, runner.get()),
+      base::TimeDelta::FromMilliseconds(40));
 
   // Run a nested, straight GLib message loop.
   runner->RunGLib();
@@ -528,9 +536,13 @@ void TestGtkLoopInternal(EventInjector* injector) {
   injector->AddDummyEvent(10);
   // Delayed work
   MessageLoop::current()->PostDelayedTask(
-      FROM_HERE, base::Bind(&IncrementInt, &task_count), 30);
+      FROM_HERE,
+      base::Bind(&IncrementInt, &task_count),
+      base::TimeDelta::FromMilliseconds(30));
   MessageLoop::current()->PostDelayedTask(
-      FROM_HERE, base::Bind(&GLibLoopRunner::Quit, runner.get()), 40);
+      FROM_HERE,
+      base::Bind(&GLibLoopRunner::Quit, runner.get()),
+      base::TimeDelta::FromMilliseconds(40));
 
   // Run a nested, straight Gtk message loop.
   runner->RunLoop();

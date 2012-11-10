@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/views/controls/tabbed_pane/tabbed_pane.h"
 #include "ui/views/controls/tabbed_pane/tabbed_pane_listener.h"
@@ -20,6 +20,9 @@ const SkColor kTabTitleColor_Inactive = SkColorSetRGB(0x66, 0x66, 0x66);
 const SkColor kTabTitleColor_Active = SkColorSetRGB(0x20, 0x20, 0x20);
 const SkColor kTabTitleColor_Pressed = SkColorSetRGB(0x33, 0x33, 0x33);
 const SkColor kTabTitleColor_Hovered = SkColorSetRGB(0x22, 0x22, 0x22);
+// TODO(markusheintz): The tab background color should be provided by the
+// NativeTheme.
+const SkColor kTabBackgroundColor_Active = SK_ColorWHITE;
 const SkColor kTabBorderColor = SkColorSetRGB(0xCC, 0xCC, 0xCC);
 const SkScalar kTabBorderThickness = 1.0f;
 const SkScalar kTabBorderRadius = 2.0f;
@@ -63,6 +66,12 @@ class Tab : public View {
   }
 
  private:
+  void PaintTabBackground(gfx::Canvas* canvas) {
+    // Fill the background. Note that we don't constrain to the bounds as
+    // canvas is already clipped for us.
+    canvas->DrawColor(kTabBackgroundColor_Active);
+  }
+
   void PaintTabBorder(gfx::Canvas* canvas) {
     SkPath path;
     SkRect bounds = { 0, 0, SkIntToScalar(width()), SkIntToScalar(height()) };
@@ -78,7 +87,7 @@ class Tab : public View {
     paint.setColor(kTabBorderColor);
     paint.setStrokeWidth(kTabBorderThickness * 2);
 
-    canvas->AsCanvasSkia()->sk_canvas()->drawPath(path, paint);
+    canvas->DrawPath(path, paint);
   }
 
   void PaintTabTitle(gfx::Canvas* canvas, bool selected) {
@@ -149,7 +158,8 @@ class TabStrip : public View {
     return gfx::Size(50, Tab::GetMinimumTabHeight());
   }
   virtual void Layout() OVERRIDE {
-    int x = 0;
+    const int kTabOffset = 18;
+    int x = kTabOffset;  // Layout tabs with an offset to the tabstrip border.
     for (int i = 0; i < child_count(); ++i) {
       gfx::Size ps = child_at(i)->GetPreferredSize();
       child_at(i)->SetBounds(x, 0, ps.width(), ps.height());
@@ -162,8 +172,7 @@ class TabStrip : public View {
     paint.setStrokeWidth(kTabBorderThickness);
     SkScalar line_y = SkIntToScalar(height()) - kTabBorderThickness;
     SkScalar line_width = SkIntToScalar(width());
-    canvas->AsCanvasSkia()->sk_canvas()->drawLine(0, line_y, line_width, line_y,
-                                                  paint);
+    canvas->sk_canvas()->drawLine(0, line_y, line_width, line_y, paint);
   }
 
  private:
@@ -179,8 +188,10 @@ void Tab::OnSelectedStateChanged(bool selected) {
 
 void Tab::OnPaint(gfx::Canvas* canvas) {
   bool selected = tab_strip_->IsTabSelected(this);
-  if (selected)
+  if (selected) {
+    PaintTabBackground(canvas);
     PaintTabBorder(canvas);
+  }
   PaintTabTitle(canvas, selected);
 }
 
@@ -301,7 +312,7 @@ void NativeTabbedPaneViews::AddTabAtIndex(int index,
                                           View* contents,
                                           bool select_if_first_tab) {
   DCHECK(index <= static_cast<int>(tab_strip_->child_count()));
-  contents->set_parent_owned(false);
+  contents->set_owned_by_client();
   contents->SetVisible(false);
 
   tab_strip_->AddChildViewAt(new Tab(tab_strip_, title, contents), index);
@@ -348,7 +359,7 @@ int NativeTabbedPaneViews::GetSelectedTabIndex() {
 }
 
 View* NativeTabbedPaneViews::GetSelectedTab() {
-  return tab_strip_->selected_tab();
+  return content_view_->child_at(GetSelectedTabIndex());
 }
 
 View* NativeTabbedPaneViews::GetView() {
@@ -393,18 +404,8 @@ void NativeTabbedPaneViews::InitControl() {
 }
 
 void NativeTabbedPaneViews::InitializeTabs() {
-  for (std::vector<View*>::const_iterator tab = tab_strip_->children_begin();
-       tab != tab_strip_->children_end(); ++tab)
-    content_view_->AddChildView(Tab::GetContents(*tab));
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// NativeTabbedPaneWrapper, public:
-
-// static
-NativeTabbedPaneWrapper* NativeTabbedPaneWrapper::CreateNativeWrapper(
-    TabbedPane* tabbed_pane) {
-  return new NativeTabbedPaneViews(tabbed_pane);
+  for (int i = 0; i < tab_strip_->child_count(); ++i)
+    content_view_->AddChildView(Tab::GetContents(tab_strip_->child_at(i)));
 }
 
 }  // namespace views

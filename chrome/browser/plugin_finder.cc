@@ -16,50 +16,51 @@
 #include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "grit/browser_resources.h"
+#include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
+
+using base::DictionaryValue;
+
+// static
+void PluginFinder::Get(const base::Callback<void(PluginFinder*)>& cb) {
+  // At a later point we might want to do intialization here that needs to be
+  // done asynchronously, like loading the plug-in list from disk or from a URL.
+  MessageLoop::current()->PostTask(FROM_HERE, base::Bind(cb, GetInstance()));
+}
 
 // static
 PluginFinder* PluginFinder::GetInstance() {
+  // PluginFinder::GetInstance() is the only method that's allowed to call
+  // Singleton<PluginFinder>::get().
   return Singleton<PluginFinder>::get();
 }
 
 PluginFinder::PluginFinder() : plugin_list_(LoadPluginList()) {
-  if (!plugin_list_.get()) {
-    NOTREACHED();
-    plugin_list_.reset(new base::ListValue());
-  }
+  if (!plugin_list_.get())
+    plugin_list_.reset(new DictionaryValue());
 }
 
 // static
-scoped_ptr<base::ListValue> PluginFinder::LoadPluginList() {
-  return scoped_ptr<base::ListValue>(LoadPluginListInternal()).Pass();
-}
-
-base::ListValue* PluginFinder::LoadPluginListInternal() {
-#if defined(OS_WIN) || defined(OS_MACOSX)
+DictionaryValue* PluginFinder::LoadPluginList() {
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
   base::StringPiece json_resource(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
-          IDR_PLUGIN_DB_JSON));
-  bool allow_trailing_comma = false;
+          IDR_PLUGIN_DB_JSON, ui::SCALE_FACTOR_NONE));
   std::string error_str;
   scoped_ptr<base::Value> value(base::JSONReader::ReadAndReturnError(
-      json_resource.as_string(),
-      allow_trailing_comma,
+      json_resource,
+      base::JSON_PARSE_RFC,
       NULL,
       &error_str));
   if (!value.get()) {
     DLOG(ERROR) << error_str;
     return NULL;
   }
-  base::DictionaryValue* dict = NULL;
-  if (!value->GetAsDictionary(&dict))
+  if (value->GetType() != base::Value::TYPE_DICTIONARY)
     return NULL;
-  base::ListValue* list = NULL;
-  if (!dict->GetList("plugins", &list))
-    return NULL;
-  return list->DeepCopy();
+  return static_cast<base::DictionaryValue*>(value.release());
 #else
-  return new base::ListValue();
+  return new DictionaryValue();
 #endif
 }
 
@@ -67,30 +68,23 @@ PluginFinder::~PluginFinder() {
   STLDeleteValues(&installers_);
 }
 
-void PluginFinder::FindPlugin(
-    const std::string& mime_type,
-    const std::string& language,
-    const FindPluginCallback& found_callback,
-    const base::Closure& not_found_callback) {
-  if (g_browser_process->local_state()->GetBoolean(
-          prefs::kDisablePluginFinder)) {
-    MessageLoop::current()->PostTask(FROM_HERE, not_found_callback);
-    return;
-  }
-  for (ListValue::const_iterator plugin_it = plugin_list_->begin();
-       plugin_it != plugin_list_->end(); ++plugin_it) {
-    const base::DictionaryValue* plugin = NULL;
-    if (!(*plugin_it)->GetAsDictionary(&plugin)) {
+PluginInstaller* PluginFinder::FindPlugin(const std::string& mime_type,
+                                          const std::string& language) {
+  if (g_browser_process->local_state()->GetBoolean(prefs::kDisablePluginFinder))
+    return NULL;
+  for (DictionaryValue::Iterator plugin_it(*plugin_list_);
+       plugin_it.HasNext(); plugin_it.Advance()) {
+    const DictionaryValue* plugin = NULL;
+    if (!plugin_it.value().GetAsDictionary(&plugin)) {
       NOTREACHED();
       continue;
     }
     std::string language_str;
     bool success = plugin->GetString("lang", &language_str);
-    DCHECK(success);
     if (language_str != language)
       continue;
-    ListValue* mime_types = NULL;
-    success = plugin->GetList("mime_types", &mime_types);
+    const ListValue* mime_types = NULL;
+    plugin->GetList("mime_types", &mime_types);
     DCHECK(success);
     for (ListValue::const_iterator mime_type_it = mime_types->begin();
          mime_type_it != mime_types->end(); ++mime_type_it) {
@@ -98,32 +92,72 @@ void PluginFinder::FindPlugin(
       success = (*mime_type_it)->GetAsString(&mime_type_str);
       DCHECK(success);
       if (mime_type_str == mime_type) {
-        std::string identifier;
-        success = plugin->GetString("identifier", &identifier);
-        DCHECK(success);
-        PluginInstaller* installer = installers_[identifier];
-        if (!installer) {
-          std::string url;
-          success = plugin->GetString("url", &url);
-          DCHECK(success);
-          std::string help_url;
-          plugin->GetString("help_url", &help_url);
-          string16 name;
-          success = plugin->GetString("name", &name);
-          DCHECK(success);
-          bool display_url = false;
-          plugin->GetBoolean("displayurl", &display_url);
-          installer = new PluginInstaller(identifier,
-                                          GURL(url), GURL(help_url), name,
-                                          display_url);
-          installers_[identifier] = installer;
-        }
-        MessageLoop::current()->PostTask(
-            FROM_HERE,
-            base::Bind(found_callback, installer));
-        return;
+        std::string identifier = plugin_it.key();
+        std::map<std::string, PluginInstaller*>::const_iterator installer =
+            installers_.find(identifier);
+        if (installer != installers_.end())
+          return installer->second;
+        return CreateInstaller(identifier, plugin);
       }
     }
   }
-  MessageLoop::current()->PostTask(FROM_HERE, not_found_callback);
+  return NULL;
+}
+
+PluginInstaller* PluginFinder::FindPluginWithIdentifier(
+    const std::string& identifier) {
+  std::map<std::string, PluginInstaller*>::const_iterator it =
+      installers_.find(identifier);
+  if (it != installers_.end())
+    return it->second;
+  DictionaryValue* plugin = NULL;
+  if (plugin_list_->GetDictionaryWithoutPathExpansion(identifier, &plugin))
+    return CreateInstaller(identifier, plugin);
+  return NULL;
+}
+
+PluginInstaller* PluginFinder::CreateInstaller(
+    const std::string& identifier,
+    const DictionaryValue* plugin_dict) {
+  DCHECK(!installers_[identifier]);
+  std::string url;
+  bool success = plugin_dict->GetString("url", &url);
+  std::string help_url;
+  plugin_dict->GetString("help_url", &help_url);
+  string16 name;
+  success = plugin_dict->GetString("name", &name);
+  DCHECK(success);
+  bool display_url = false;
+  plugin_dict->GetBoolean("displayurl", &display_url);
+
+  PluginInstaller* installer = new PluginInstaller(identifier,
+                                                   name,
+                                                   display_url,
+                                                   GURL(url),
+                                                   GURL(help_url));
+  const ListValue* versions = NULL;
+  if (plugin_dict->GetList("versions", &versions)) {
+    for (ListValue::const_iterator it = versions->begin();
+         it != versions->end(); ++it) {
+      DictionaryValue* version_dict = NULL;
+      if (!(*it)->GetAsDictionary(&version_dict)) {
+        NOTREACHED();
+        continue;
+      }
+      std::string version;
+      success = version_dict->GetString("version", &version);
+      DCHECK(success);
+      std::string status_str;
+      success = version_dict->GetString("status", &status_str);
+      DCHECK(success);
+      PluginInstaller::SecurityStatus status =
+          PluginInstaller::SECURITY_STATUS_UP_TO_DATE;
+      success = PluginInstaller::ParseSecurityStatus(status_str, &status);
+      DCHECK(success);
+      installer->AddVersion(Version(version), status);
+    }
+  }
+
+  installers_[identifier] = installer;
+  return installer;
 }

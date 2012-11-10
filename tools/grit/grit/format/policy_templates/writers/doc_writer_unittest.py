@@ -1,4 +1,5 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -6,22 +7,16 @@
 
 
 import os
-import re
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../../../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../../../..'))
 
-import tempfile
 import unittest
-import StringIO
 from xml.dom import minidom
 
-from grit.format import rc
 from grit.format.policy_templates.writers import writer_unittest_common
 from grit.format.policy_templates.writers import doc_writer
-from grit import grd_reader
-from grit import util
-from grit.tool import build
+
 
 class MockMessageDictionary:
   '''A mock dictionary passed to a writer as the dictionary of
@@ -475,6 +470,85 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
           '<div style="style_div.group_desc;">PolicyDesc</div>'
           '<a href="#top">_test_back_to_top</a>'
         '</div>'
+      '</root>')
+
+  def testAddDictionaryExample(self):
+    policy = {
+      'name': 'PolicyName',
+      'caption': 'PolicyCaption',
+      'desc': 'PolicyDesc',
+      'type': 'dict',
+      'supported_on': [{
+        'product': 'chrome',
+        'platforms': ['win'],
+        'since_version': '7',
+        'until_version': '',
+      }],
+      'features': {'dynamic_refresh': False},
+      'example_value': {
+        "ProxyMode": "direct",
+        "List": ["1", "2", "3"],
+        "True": True,
+        "False": False,
+        "Integer": 123,
+        "DictList": [ {
+            "A": 1,
+            "B": 2,
+          }, {
+            "C": 3,
+            "D": 4,
+          },
+        ],
+      },
+    }
+    self.writer._AddDictionaryExample(self.doc_root, policy)
+    value = str(policy['example_value'])
+    self.assertEquals(
+      self.doc_root.toxml(),
+      '<root>'
+        '<dl style="style_dd dl;">'
+          '<dt>Windows:</dt>'
+          '<dd style="style_.monospace;style_.pre;">MockKey\PolicyName = '
+              '&quot;' + value + '&quot;'
+          '</dd>'
+          '<dt>Linux:</dt>'
+          '<dd style="style_.monospace;">PolicyName: ' + value + '</dd>'
+          '<dt>Mac:</dt>'
+          '<dd style="style_.monospace;style_.pre;">'
+            '&lt;key&gt;PolicyName&lt;/key&gt;\n'
+            '&lt;dict&gt;\n'
+            '  &lt;key&gt;DictList&lt;/key&gt;\n'
+            '  &lt;array&gt;\n'
+            '    &lt;dict&gt;\n'
+            '      &lt;key&gt;A&lt;/key&gt;\n'
+            '      &lt;integer&gt;1&lt;/integer&gt;\n'
+            '      &lt;key&gt;B&lt;/key&gt;\n'
+            '      &lt;integer&gt;2&lt;/integer&gt;\n'
+            '    &lt;/dict&gt;\n'
+            '    &lt;dict&gt;\n'
+            '      &lt;key&gt;C&lt;/key&gt;\n'
+            '      &lt;integer&gt;3&lt;/integer&gt;\n'
+            '      &lt;key&gt;D&lt;/key&gt;\n'
+            '      &lt;integer&gt;4&lt;/integer&gt;\n'
+            '    &lt;/dict&gt;\n'
+            '  &lt;/array&gt;\n'
+            '  &lt;key&gt;False&lt;/key&gt;\n'
+            '  &lt;false/&gt;\n'
+            '  &lt;key&gt;Integer&lt;/key&gt;\n'
+            '  &lt;integer&gt;123&lt;/integer&gt;\n'
+            '  &lt;key&gt;List&lt;/key&gt;\n'
+            '  &lt;array&gt;\n'
+            '    &lt;string&gt;1&lt;/string&gt;\n'
+            '    &lt;string&gt;2&lt;/string&gt;\n'
+            '    &lt;string&gt;3&lt;/string&gt;\n'
+            '  &lt;/array&gt;\n'
+            '  &lt;key&gt;ProxyMode&lt;/key&gt;\n'
+            '  &lt;string&gt;direct&lt;/string&gt;\n'
+            '  &lt;key&gt;True&lt;/key&gt;\n'
+            '  &lt;true/&gt;\n'
+            '&lt;/dict&gt;'
+          '</dd>'
+        '</dl>'
       '</root>')
 
 

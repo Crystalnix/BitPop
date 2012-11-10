@@ -1,16 +1,19 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/chromeos/sms_observer.h"
 
+#include "ash/ash_switches.h"
+#include "ash/shell.h"
+#include "ash/system/network/sms_observer.h"
+#include "ash/system/tray/system_tray.h"
+#include "base/command_line.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/notifications/system_notification.h"
-#include "chrome/browser/profiles/profile.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "third_party/cros/chromeos_network.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace chromeos {
@@ -46,7 +49,7 @@ void SmsObserver::UpdateObservers(NetworkLibrary* library) {
     }
     if (!found) {
       VLOG(1) << "Remove SMS monitor for " << it_observer->first;
-      chromeos::DisconnectSMSMonitor(it_observer->second);
+      delete it_observer->second;
       observers_.erase(it_observer++);
     } else {
       ++it_observer;
@@ -65,9 +68,11 @@ void SmsObserver::UpdateObservers(NetworkLibrary* library) {
     ObserversMap::iterator it_observer = observers_.find(device_path);
     if (it_observer == observers_.end()) {
       VLOG(1) << "Add SMS monitor for " << device_path;
-      chromeos::SMSMonitor monitor =
-          chromeos::MonitorSMS(device_path.c_str(), &StaticCallback, this);
-      observers_.insert(ObserversMap::value_type(device_path, monitor));
+      CrosNetworkWatcher* watcher =
+          CrosMonitorSMS(device_path,
+                         base::Bind(&SmsObserver::OnNewMessage,
+                                    base::Unretained(this)));
+      observers_.insert(ObserversMap::value_type(device_path, watcher));
     } else {
       VLOG(1) << "Already has SMS monitor for " << device_path;
     }
@@ -82,7 +87,7 @@ void SmsObserver::DisconnectAll() {
   for (ObserversMap::iterator it = observers_.begin();
        it != observers_.end(); ++it) {
     VLOG(1) << "Remove SMS monitor for " << it->first;
-    chromeos::DisconnectSMSMonitor(it->second);
+    delete it->second;
   }
   observers_.clear();
 }
@@ -91,27 +96,38 @@ void SmsObserver::OnNetworkManagerChanged(NetworkLibrary* library) {
   UpdateObservers(library);
 }
 
-// static
-void SmsObserver::StaticCallback(void* object,
-                                 const char* modem_device_path,
-                                 const SMS* message) {
-  SmsObserver* monitor = static_cast<SmsObserver*>(object);
-  monitor->OnNewMessage(modem_device_path, message);
-}
+void SmsObserver::OnNewMessage(const std::string& modem_device_path,
+                               const SMS& message) {
+  VLOG(1) << "New message notification from " << message.number
+          << " text: " << message.text;
 
-void SmsObserver::OnNewMessage(const char* modem_device_path,
-                               const SMS* message) {
-  VLOG(1) << "New message notification from " << message->number
-          << " text: " << message->text;
+  // Don't show empty messages. Such messages most probably "Message Waiting
+  // Indication" and it should be determined by data-coding-scheme,
+  // see crosbug.com/27883. But this field is not exposed from libcros.
+  // TODO(dpokuhin): when libcros refactoring done, implement check for
+  // "Message Waiting Indication" to filter out such messages.
+  if (message.text.empty())
+    return;
 
-  SystemNotification note(
-      profile_,
-      "incoming _sms.chromeos",
-      IDR_NOTIFICATION_SMS,
-      l10n_util::GetStringFUTF16(
-          IDS_SMS_NOTIFICATION_TITLE, UTF8ToUTF16(message->number)));
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          ash::switches::kAshNotify)) {
+    SystemNotification note(
+        profile_,
+        "incoming _sms.chromeos",
+        IDR_NOTIFICATION_SMS,
+        l10n_util::GetStringFUTF16(
+            IDS_SMS_NOTIFICATION_TITLE, UTF8ToUTF16(message.number)));
 
-  note.Show(UTF8ToUTF16(message->text), true, false);
+    note.Show(UTF8ToUTF16(message.text), true, false);
+    return;
+  }
+
+  // Add an Ash SMS notification. TODO(stevenjb): Replace this code with
+  // NetworkSmsHandler when fixed: crbug.com/133416.
+  base::DictionaryValue dict;
+  dict.SetString(ash::kSmsNumberKey, message.number);
+  dict.SetString(ash::kSmsTextKey, message.text);
+  ash::Shell::GetInstance()->system_tray()->sms_observer()->AddMessage(dict);
 }
 
 }  // namespace chromeos

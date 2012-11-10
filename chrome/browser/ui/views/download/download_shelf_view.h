@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_UI_VIEWS_DOWNLOAD_DOWNLOAD_SHELF_VIEW_H_
 #define CHROME_BROWSER_UI_VIEWS_DOWNLOAD_DOWNLOAD_SHELF_VIEW_H_
-#pragma once
 
 #include <vector>
 
@@ -21,6 +20,10 @@ class BaseDownloadItemModel;
 class Browser;
 class BrowserView;
 class DownloadItemView;
+
+namespace content {
+class PageNavigator;
+}
 
 namespace ui {
 class SlideAnimation;
@@ -49,6 +52,10 @@ class DownloadShelfView : public views::AccessiblePaneView,
   // Sent from the DownloadItemView when the user opens an item.
   void OpenedDownload(DownloadItemView* view);
 
+  // Returns the relevant containing object that can load pages.
+  // i.e. the |browser_|.
+  content::PageNavigator* GetNavigator();
+
   // Implementation of View.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void Layout() OVERRIDE;
@@ -76,8 +83,8 @@ class DownloadShelfView : public views::AccessiblePaneView,
   virtual bool IsClosing() const OVERRIDE;
   virtual Browser* browser() const OVERRIDE;
 
-  // Implementation of MouseWatcherDelegate OVERRIDE.
-  virtual void MouseMovedOutOfView();
+  // Implementation of MouseWatcherListener OVERRIDE.
+  virtual void MouseMovedOutOfHost() OVERRIDE;
 
   // Override views::FocusChangeListener method from AccessiblePaneView.
   virtual void OnWillChangeFocus(View* focused_before,
@@ -114,7 +121,7 @@ class DownloadShelfView : public views::AccessiblePaneView,
   void UpdateButtonColors();
 
   // Overridden from views::View.
-  virtual void OnThemeChanged();
+  virtual void OnThemeChanged() OVERRIDE;
 
   // Called when the "close shelf" animation ended.
   void Closed();

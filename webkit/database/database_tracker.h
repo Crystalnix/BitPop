@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -86,12 +86,13 @@ class DatabaseTracker
     virtual void OnDatabaseScheduledForDeletion(
         const string16& origin_identifier,
         const string16& database_name) = 0;
+
+   protected:
     virtual ~Observer() {}
   };
 
   DatabaseTracker(const FilePath& profile_path,
                   bool is_incognito,
-                  bool clear_local_state_on_exit,
                   quota::SpecialStoragePolicy* special_storage_policy,
                   quota::QuotaManagerProxy* quota_manager_proxy,
                   base::MessageLoopProxy* db_tracker_thread);
@@ -105,6 +106,10 @@ class DatabaseTracker
                         const string16& database_name);
   void DatabaseClosed(const string16& origin_identifier,
                       const string16& database_name);
+  void HandleSqliteError(const string16& origin_identifier,
+                         const string16& database_name,
+                         int error);
+
   void CloseDatabases(const DatabaseConnections& connections);
 
   void AddObserver(Observer* observer);
@@ -162,11 +167,10 @@ class DatabaseTracker
   bool HasSavedIncognitoFileHandle(const string16& vfs_file_path) const;
 
   // Shutdown the database tracker, deleting database files if the tracker is
-  // used for an incognito profile or |clear_local_state_on_exit_| is true.
+  // used for an incognito profile.
   void Shutdown();
-  void SetClearLocalStateOnExit(bool clear_local_state_on_exit);
-  // Disables the exit-time deletion for all data (also session-only data).
-  void SaveSessionState();
+  // Disables the exit-time deletion of session-only data.
+  void SetForceKeepSessionState();
 
  private:
   friend class base::RefCountedThreadSafe<DatabaseTracker>;
@@ -202,10 +206,8 @@ class DatabaseTracker
   // Deletes the directory that stores all DBs in incognito mode, if it exists.
   void DeleteIncognitoDBDirectory();
 
-  // If clear_all_databases is true, deletes all databases not protected by
-  // special storage policy. Otherwise deletes session-only databases. Blocks
-  // databases from being created/opened.
-  void ClearLocalState(bool clear_all_databases);
+  // Deletes session-only databases. Blocks databases from being created/opened.
+  void ClearSessionOnlyOrigins();
 
   bool DeleteClosedDatabase(const string16& origin_identifier,
                             const string16& database_name);
@@ -258,8 +260,7 @@ class DatabaseTracker
 
   bool is_initialized_;
   const bool is_incognito_;
-  bool clear_local_state_on_exit_;
-  bool save_session_state_;
+  bool force_keep_session_state_;
   bool shutting_down_;
   const FilePath profile_path_;
   const FilePath db_dir_;

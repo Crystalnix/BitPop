@@ -1,27 +1,19 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // extension_apitest.js
 // mini-framework for ExtensionApiTest browser tests
 
-var chrome = chrome || {};
-(function() {
   chrome.test = chrome.test || {};
 
   chrome.test.tests = chrome.test.tests || [];
 
-  var completed = false;
   var currentTest = null;
   var lastTest = null;
-
-  function complete() {
-    completed = true;
-
-    // Try to get the script to stop running immediately.
-    // This isn't an error, just an attempt at saying "done".
-    throw "completed";
-  }
+  var testsFailed = 0;
+  var testCount = 1;
+  var failureException = 'chrome.test.failure';
 
   // Helper function to get around the fact that function names in javascript
   // are read-only, and you can't assign one to anonymous functions.
@@ -29,36 +21,23 @@ var chrome = chrome || {};
     return test ? (test.name || test.generatedName) : "(no test)";
   }
 
-  chrome.test.fail = function(message) {
-    if (completed) throw "completed";
-    chrome.test.log("(  FAILED  ) " + testName(currentTest));
+  function testDone() {
+    // Use setTimeout here to allow previous test contexts to be
+    // eligible for garbage collection.
+    setTimeout(chrome.test.runNextTest, 0);
+  }
 
-    var stack = "(no stack available)";
-    try {
-      crash.me += 0;  // An intentional exception to get the stack trace.
-    } catch (e) {
-      if (typeof(e.stack) != undefined) {
-        stack = e.stack.split("\n");
-        stack = stack.slice(2);  // Remove title and fail() lines.
-        stack = stack.join("\n");
-      }
+  function allTestsDone() {
+    if (testsFailed == 0) {
+      chrome.test.notifyPass();
+    } else {
+      chrome.test.notifyFail('Failed ' + testsFailed + ' of ' +
+                             testCount + ' tests');
     }
 
-    if (!message) {
-      message = "FAIL (no message)";
-    }
-    message += "\n" + stack;
-    console.log("[FAIL] " + testName(currentTest) + ": " + message);
-    chrome.test.notifyFail(message);
-    complete();
-  };
-
-  function allTestsSucceeded() {
-    console.log("All tests succeeded");
-    if (completed) throw "completed";
-
-    chrome.test.notifyPass();
-    complete();
+    // Try to get the script to stop running immediately.
+    // This isn't an error, just an attempt at saying "done".
+    throw "completed";
   }
 
   var pendingCallbacks = 0;
@@ -75,30 +54,49 @@ var chrome = chrome || {};
   };
 
   chrome.test.runNextTest = function() {
-    chrome.test.assertEq(0, pendingCallbacks);
+    // There may have been callbacks which were interrupted by failure
+    // exceptions.
+    pendingCallbacks = 0;
+
     lastTest = currentTest;
     currentTest = chrome.test.tests.shift();
+
     if (!currentTest) {
-      allTestsSucceeded();
+      allTestsDone();
       return;
     }
+
     try {
       chrome.test.log("( RUN      ) " + testName(currentTest));
       currentTest.call();
     } catch (e) {
-      var message = e.stack || "(no stack available)";
-      console.log("[FAIL] " + testName(currentTest) + ": " + message);
-      chrome.test.notifyFail(message);
-      complete();
+      if (e !== failureException)
+        chrome.test.fail('uncaught exception: ' + e);
     }
+  };
+
+  chrome.test.fail = function(message) {
+    chrome.test.log("(  FAILED  ) " + testName(currentTest));
+
+    var stack = {};
+    Error.captureStackTrace(stack, chrome.test.fail);
+
+    if (!message)
+      message = "FAIL (no message)";
+
+    message += "\n" + stack.stack;
+    console.log("[FAIL] " + testName(currentTest) + ": " + message);
+    testsFailed++;
+    testDone();
+
+    // Interrupt the rest of the test.
+    throw failureException;
   };
 
   chrome.test.succeed = function() {
     console.log("[SUCCESS] " + testName(currentTest));
     chrome.test.log("(  SUCCESS )");
-    // Use setTimeout here to allow previous test contexts to be
-    // eligible for garbage collection.
-    setTimeout(chrome.test.runNextTest, 0);
+    testDone();
   };
 
   chrome.test.assertTrue = function(test, message) {
@@ -112,11 +110,10 @@ var chrome = chrome || {};
   chrome.test.assertBool = function(test, expected, message) {
     if (test !== expected) {
       if (typeof(test) == "string") {
-        if (message) {
+        if (message)
           message = test + "\n" + message;
-        } else {
+        else
           message = test;
-        }
       }
       chrome.test.fail(message);
     }
@@ -186,28 +183,26 @@ var chrome = chrome || {};
   };
 
   chrome.test.assertNoLastError = function() {
-    if (chrome.extension.lastError != undefined) {
+    if (chrome.runtime.lastError != undefined) {
       chrome.test.fail("lastError.message == " +
-                       chrome.extension.lastError.message);
+                       chrome.runtime.lastError.message);
     }
   };
 
+  chrome.test.assertLastError = function(expectedError) {
+    chrome.test.assertEq(typeof(expectedError), 'string');
+    chrome.test.assertTrue(chrome.runtime.lastError != undefined,
+        "No lastError, but expected " + expectedError);
+    chrome.test.assertEq(expectedError, chrome.runtime.lastError.message);
+  }
+
   function safeFunctionApply(func, arguments) {
     try {
-      if (func) {
+      if (func)
         func.apply(null, arguments);
-      }
     } catch (e) {
-      var stack = "(no stack available)";
-      if (typeof(e.stack) != "undefined") {
-        stack = e.stack.toString();
-      }
-      var msg = "Exception during execution of callback in " +
-                testName(currentTest);
-      msg += "\n" + stack;
-      console.log("[FAIL] " + testName(currentTest) + ": " + msg);
-      chrome.test.notifyFail(msg);
-      complete();
+      var msg = "uncaught exception " + e;
+      chrome.test.fail(msg);
     }
   };
 
@@ -223,10 +218,7 @@ var chrome = chrome || {};
       if (expectedError == null) {
         chrome.test.assertNoLastError();
       } else {
-        chrome.test.assertEq(typeof(expectedError), 'string');
-        chrome.test.assertTrue(chrome.extension.lastError != undefined,
-            "No lastError, but expected " + expectedError);
-        chrome.test.assertEq(expectedError, chrome.extension.lastError.message);
+        chrome.test.assertLastError(expectedError);
       }
 
       if (func) {
@@ -273,6 +265,6 @@ var chrome = chrome || {};
 
   chrome.test.runTests = function(tests) {
     chrome.test.tests = tests;
+    testCount = chrome.test.tests.length;
     chrome.test.runNextTest();
   };
-})();

@@ -7,54 +7,49 @@
 #include "base/bind.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/extensions/api/dns/host_resolver_wrapper.h"
 #include "chrome/browser/io_thread.h"
+#include "chrome/common/extensions/api/experimental_dns.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
+#include "net/base/net_log.h"
 
 using content::BrowserThread;
+using extensions::api::experimental_dns::ResolveCallbackResolveInfo;
+
+namespace Resolve = extensions::api::experimental_dns::Resolve;
 
 namespace extensions {
 
-const char kAddressKey[] = "address";
-const char kResultCodeKey[] = "resultCode";
-
-// static
-net::HostResolver* DNSResolveFunction::host_resolver_for_testing;
-
-DNSResolveFunction::DNSResolveFunction()
+DnsResolveFunction::DnsResolveFunction()
     : response_(false),
       io_thread_(g_browser_process->io_thread()),
-      capturing_bound_net_log_(new net::CapturingBoundNetLog(
-          net::CapturingNetLog::kUnbounded)),
       request_handle_(new net::HostResolver::RequestHandle()),
       addresses_(new net::AddressList) {
 }
 
-DNSResolveFunction::~DNSResolveFunction() {
-}
+DnsResolveFunction::~DnsResolveFunction() {}
 
-// static
-void DNSResolveFunction::set_host_resolver_for_testing(
-    net::HostResolver* host_resolver_for_testing_param) {
-  host_resolver_for_testing = host_resolver_for_testing_param;
-}
+bool DnsResolveFunction::RunImpl() {
+  scoped_ptr<Resolve::Params> params(Resolve::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
 
-bool DNSResolveFunction::RunImpl() {
-  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &hostname_));
+  hostname_ = params->hostname;
+
   bool result = BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&DNSResolveFunction::WorkOnIOThread, this));
+      base::Bind(&DnsResolveFunction::WorkOnIOThread, this));
   DCHECK(result);
   return true;
 }
 
-void DNSResolveFunction::WorkOnIOThread() {
+void DnsResolveFunction::WorkOnIOThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  net::HostResolver* host_resolver = host_resolver_for_testing ?
-      host_resolver_for_testing : io_thread_->globals()->host_resolver.get();
+  net::HostResolver* host_resolver =
+      HostResolverWrapper::GetInstance()->GetHostResolver(
+          io_thread_->globals()->host_resolver.get());
   DCHECK(host_resolver);
 
   // Yes, we are passing zero as the port. There are some interesting but not
@@ -66,8 +61,8 @@ void DNSResolveFunction::WorkOnIOThread() {
   net::HostResolver::RequestInfo request_info(host_port_pair);
   int resolve_result = host_resolver->Resolve(
       request_info, addresses_.get(),
-      base::Bind(&DNSResolveFunction::OnLookupFinished, this),
-      request_handle_.get(), capturing_bound_net_log_->bound());
+      base::Bind(&DnsResolveFunction::OnLookupFinished, this),
+      request_handle_.get(), net::BoundNetLog());
 
   // Balanced in OnLookupFinished.
   AddRef();
@@ -76,28 +71,29 @@ void DNSResolveFunction::WorkOnIOThread() {
     OnLookupFinished(resolve_result);
 }
 
-void DNSResolveFunction::OnLookupFinished(int resolve_result) {
-  DictionaryValue* api_result = new DictionaryValue();
-  api_result->SetInteger(kResultCodeKey, resolve_result);
+void DnsResolveFunction::RespondOnUIThread() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  SendResponse(response_);
+}
+
+void DnsResolveFunction::OnLookupFinished(int resolve_result) {
+  scoped_ptr<ResolveCallbackResolveInfo> resolve_info(
+      new ResolveCallbackResolveInfo());
+  resolve_info->result_code = resolve_result;
   if (resolve_result == net::OK) {
-    const struct addrinfo* head = addresses_->head();
-    DCHECK(head);
-    api_result->SetString(kAddressKey, net::NetAddressToString(head));
+    DCHECK(!addresses_->empty());
+    resolve_info->address.reset(
+        new std::string(addresses_->front().ToStringWithoutPort()));
   }
-  result_.reset(api_result);
+  results_ = Resolve::Results::Create(*resolve_info);
   response_ = true;
 
   bool post_task_result = BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&DNSResolveFunction::RespondOnUIThread, this));
+      base::Bind(&DnsResolveFunction::RespondOnUIThread, this));
   DCHECK(post_task_result);
 
   Release();  // Added in WorkOnIOThread().
-}
-
-void DNSResolveFunction::RespondOnUIThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  SendResponse(response_);
 }
 
 }  // namespace extensions

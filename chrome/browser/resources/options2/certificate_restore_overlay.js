@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  const OptionsPage = options.OptionsPage;
+  /** @const */ var OptionsPage = options.OptionsPage;
 
   /**
    * CertificateRestoreOverlay class
@@ -11,8 +11,7 @@ cr.define('options', function() {
    * @class
    */
   function CertificateRestoreOverlay() {
-    OptionsPage.call(this, 'certificateRestore',
-                     '',
+    OptionsPage.call(this, 'certificateRestore', '',
                      'certificateRestoreOverlay');
   }
 
@@ -36,6 +35,11 @@ cr.define('options', function() {
       };
 
       self.clearInputFields_();
+    },
+
+    /** @inheritDoc */
+    didShowPage: function() {
+      $('certificateRestorePassword').focus();
     },
 
     /**

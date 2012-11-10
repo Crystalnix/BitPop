@@ -4,13 +4,12 @@
 
 #include "remoting/client/plugin/pepper_input_handler.h"
 
-#include <iomanip>
-
 #include "base/logging.h"
+#include "ppapi/c/dev/ppb_keyboard_input_event_dev.h"
 #include "ppapi/cpp/input_event.h"
+#include "ppapi/cpp/module_impl.h"
 #include "ppapi/cpp/point.h"
 #include "remoting/proto/event.pb.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 
 namespace remoting {
 
@@ -20,6 +19,17 @@ PepperInputHandler::PepperInputHandler(protocol::InputStub* input_stub)
 }
 
 PepperInputHandler::~PepperInputHandler() {
+}
+
+// Helper function to get the USB key code using the Dev InputEvent interface.
+uint32_t GetUsbKeyCode(pp::KeyboardInputEvent pp_key_event) {
+  const PPB_KeyboardInputEvent_Dev* key_event_interface =
+      reinterpret_cast<const PPB_KeyboardInputEvent_Dev*>(
+          pp::Module::Get()->GetBrowserInterface(
+              PPB_KEYBOARD_INPUT_EVENT_DEV_INTERFACE));
+  if (!key_event_interface)
+    return 0;
+  return key_event_interface->GetUsbKeyCode(pp_key_event.pp_resource());
 }
 
 bool PepperInputHandler::HandleInputEvent(const pp::InputEvent& event) {
@@ -34,18 +44,11 @@ bool PepperInputHandler::HandleInputEvent(const pp::InputEvent& event) {
     case PP_INPUTEVENT_TYPE_KEYUP: {
       pp::KeyboardInputEvent pp_key_event(event);
       protocol::KeyEvent key_event;
-
       key_event.set_keycode(pp_key_event.GetKeyCode());
+      uint32 keycode = GetUsbKeyCode(pp_key_event);
+      if (keycode != 0)
+        key_event.set_usb_keycode(keycode);
       key_event.set_pressed(event.GetType() == PP_INPUTEVENT_TYPE_KEYDOWN);
-
-      // Dump the modifiers associated with each ESC key release event
-      // to facilitate debugging of issues caused by mixed up modifiers.
-      if ((pp_key_event.GetKeyCode() == ui::VKEY_ESCAPE) &&
-          (event.GetType() == PP_INPUTEVENT_TYPE_KEYUP)) {
-        LOG(INFO) << "ESC released: modifiers=0x"
-                  << std::hex << pp_key_event.GetModifiers() << std::dec;
-      }
-
       input_stub_->InjectKeyEvent(key_event);
       return true;
     }
@@ -70,6 +73,8 @@ bool PepperInputHandler::HandleInputEvent(const pp::InputEvent& event) {
       if (mouse_event.has_button()) {
         bool is_down = (event.GetType() == PP_INPUTEVENT_TYPE_MOUSEDOWN);
         mouse_event.set_button_down(is_down);
+        mouse_event.set_x(pp_mouse_event.GetPosition().x());
+        mouse_event.set_y(pp_mouse_event.GetPosition().y());
         input_stub_->InjectMouseEvent(mouse_event);
       }
       return true;

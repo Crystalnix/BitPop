@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_VIEWS_PAINTER_H_
 #define UI_VIEWS_PAINTER_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -13,9 +12,11 @@
 
 namespace gfx {
 class Canvas;
+class ImageSkia;
 class Insets;
+class Rect;
+class Size;
 }
-class SkBitmap;
 
 namespace views {
 
@@ -26,8 +27,9 @@ class VIEWS_EXPORT Painter {
  public:
   // A convenience method for painting a Painter in a particular region.
   // This translates the canvas to x/y and paints the painter.
-  static void PaintPainterAt(int x, int y, int w, int h,
-                             gfx::Canvas* canvas, Painter* painter);
+  static void PaintPainterAt(gfx::Canvas* canvas,
+                             Painter* painter,
+                             const gfx::Rect& rect);
 
   // Creates a painter that draws a gradient between the two colors.
   static Painter* CreateHorizontalGradient(SkColor c1, SkColor c2);
@@ -39,14 +41,14 @@ class VIEWS_EXPORT Painter {
   // insets.left()xinsets.right()). The four edges are stretched to fill the
   // destination size.
   // Ownership is passed to the caller.
-  static Painter* CreateImagePainter(const SkBitmap& image,
+  static Painter* CreateImagePainter(const gfx::ImageSkia& image,
                                      const gfx::Insets& insets,
                                      bool paint_center);
 
   virtual ~Painter() {}
 
   // Paints the painter in the specified region.
-  virtual void Paint(int w, int h, gfx::Canvas* canvas) = 0;
+  virtual void Paint(gfx::Canvas* canvas, const gfx::Size& size) = 0;
 };
 
 // HorizontalPainter paints 3 images into a box: left, center and right. The
@@ -62,7 +64,7 @@ class VIEWS_EXPORT HorizontalPainter : public Painter {
   virtual ~HorizontalPainter() {}
 
   // Paints the images.
-  virtual void Paint(int w, int h, gfx::Canvas* canvas) OVERRIDE;
+  virtual void Paint(gfx::Canvas* canvas, const gfx::Size& size) OVERRIDE;
 
   // Height of the images.
   int height() const { return height_; }
@@ -78,7 +80,7 @@ class VIEWS_EXPORT HorizontalPainter : public Painter {
   // The height.
   int height_;
   // NOTE: the images are owned by ResourceBundle. Don't free them.
-  SkBitmap* images_[3];
+  const gfx::ImageSkia* images_[3];
 
   DISALLOW_COPY_AND_ASSIGN(HorizontalPainter);
 };

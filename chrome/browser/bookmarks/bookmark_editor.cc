@@ -1,17 +1,56 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/bookmarks/bookmark_editor.h"
-#include "chrome/browser/bookmarks/bookmark_input_window_dialog_controller.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "grit/generated_resources.h"
 
 BookmarkEditor::EditDetails::EditDetails(Type node_type)
     : type(node_type), existing_node(NULL), parent_node(NULL), index(-1) {
+}
+
+BookmarkNode::Type BookmarkEditor::EditDetails::GetNodeType() const {
+  BookmarkNode::Type node_type = BookmarkNode::URL;
+  switch (type) {
+    case EXISTING_NODE:
+      node_type = existing_node->type();
+      break;
+    case NEW_URL:
+      node_type = BookmarkNode::URL;
+      break;
+    case NEW_FOLDER:
+      node_type = BookmarkNode::FOLDER;
+      break;
+    default:
+      NOTREACHED();
+  }
+  return node_type;
+}
+
+int BookmarkEditor::EditDetails::GetWindowTitleId() const {
+  int dialog_title = IDS_BOOKMARK_EDITOR_TITLE;
+  switch (type) {
+    case EditDetails::EXISTING_NODE:
+    case EditDetails::NEW_URL:
+      dialog_title = (type == EditDetails::EXISTING_NODE &&
+                      existing_node->type() == BookmarkNode::FOLDER) ?
+          IDS_BOOKMARK_FOLDER_EDITOR_WINDOW_TITLE :
+          IDS_BOOKMARK_EDITOR_TITLE;
+      break;
+    case EditDetails::NEW_FOLDER:
+      dialog_title = urls.empty() ?
+          IDS_BOOKMARK_FOLDER_EDITOR_WINDOW_TITLE_NEW :
+          IDS_BOOKMARK_MANAGER_BOOKMARK_ALL_TABS;
+      break;
+    default:
+      NOTREACHED();
+  }
+  return dialog_title;
 }
 
 BookmarkEditor::EditDetails BookmarkEditor::EditDetails::EditNode(
@@ -25,10 +64,14 @@ BookmarkEditor::EditDetails BookmarkEditor::EditDetails::EditNode(
 
 BookmarkEditor::EditDetails BookmarkEditor::EditDetails::AddNodeInFolder(
     const BookmarkNode* parent_node,
-    int index) {
+    int index,
+    const GURL& url,
+    const string16& title) {
   EditDetails details(NEW_URL);
   details.parent_node = parent_node;
   details.index = index;
+  details.url = url;
+  details.title = title;
   return details;
 }
 
@@ -44,26 +87,9 @@ BookmarkEditor::EditDetails BookmarkEditor::EditDetails::AddFolder(
 BookmarkEditor::EditDetails::~EditDetails() {
 }
 
-void BookmarkEditor::Show(gfx::NativeWindow parent_window,
-                          Profile* profile,
-                          const EditDetails& details,
-                          Configuration configuration) {
-  if ((details.type == EditDetails::EXISTING_NODE &&
-       details.existing_node->is_folder()) ||
-      (details.type == EditDetails::NEW_FOLDER &&
-       details.urls.empty())) {
-    BookmarkInputWindowDialogController::Show(profile, parent_window, details);
-    return;
-  }
-
-  // Delegate to the platform native bookmark editor code.
-  ShowNative(parent_window, profile, details.parent_node, details,
-      configuration);
-}
-
 void BookmarkEditor::ShowBookmarkAllTabsDialog(Browser* browser) {
   Profile* profile = browser->profile();
-  BookmarkModel* model = profile->GetBookmarkModel();
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
   DCHECK(model && model->IsLoaded());
 
   BookmarkEditor::EditDetails details =
@@ -71,7 +97,7 @@ void BookmarkEditor::ShowBookmarkAllTabsDialog(Browser* browser) {
   bookmark_utils::GetURLsForOpenTabs(browser, &(details.urls));
   DCHECK(!details.urls.empty());
 
-  BookmarkEditor::Show(browser->window()->GetNativeHandle(),
+  BookmarkEditor::Show(browser->window()->GetNativeWindow(),
                        profile, details, BookmarkEditor::SHOW_TREE);
 }
 

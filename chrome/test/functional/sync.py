@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -48,7 +48,6 @@ class SyncTest(pyauto.PyUITest):
     test_utils.SignInToSyncAndVerifyState(self, 'test_google_account')
     self.RestartBrowser(clear_profile=False)
     self.assertTrue(self.AwaitSyncRestart())
-    self.assertTrue(self.GetSyncInfo()['summary'] == 'READY')
     self.assertTrue(self.GetSyncInfo()['last synced'] == 'Just now')
     self.assertTrue(self.GetSyncInfo()['updates received'] == 0)
 
@@ -62,10 +61,10 @@ class SyncTest(pyauto.PyUITest):
     customize_button = 'Customize'
     stop_button = 'Stop Sync'
     signed_in_text = 'Google Dashboard'
-    chrome_personal_stuff_url = 'chrome://settings/personal'
+    chrome_settings_url = 'chrome://settings-frame'
     new_timeout = pyauto.PyUITest.ActionTimeoutChanger(self,
                                                        2 * 60 * 1000)  # 2 min.
-    self.AppendTab(pyauto.GURL(chrome_personal_stuff_url))
+    self.AppendTab(pyauto.GURL(chrome_settings_url))
     self.assertTrue(self.WaitUntil(
         lambda: self.FindInPage(default_text, tab_index=1)['match_count'],
                 expect_retval=1),

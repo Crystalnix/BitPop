@@ -4,22 +4,26 @@
 
 #include "content/browser/webui/web_ui_impl.h"
 
-#include "base/command_line.h"
 #include "base/json/json_writer.h"
 #include "base/stl_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "content/browser/child_process_security_policy.h"
+#include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
-#include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/webui/generic_handler.h"
+#include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui_controller.h"
+#include "content/public/browser/web_ui_controller_factory.h"
+#include "content/public/browser/web_ui_message_handler.h"
 #include "content/public/common/bindings_policy.h"
-#include "content/public/common/content_switches.h"
+#include "content/public/common/content_client.h"
 
+using content::RenderViewHostImpl;
 using content::WebContents;
 using content::WebUIController;
 using content::WebUIMessageHandler;
@@ -38,7 +42,7 @@ string16 WebUI::GetJavascriptCall(
     if (i > 0)
       parameters += char16(',');
 
-    base::JSONWriter::Write(arg_list[i], false, &json);
+    base::JSONWriter::Write(arg_list[i], &json);
     parameters += UTF8ToUTF16(json);
   }
   return ASCIIToUTF16(function_name) +
@@ -55,7 +59,6 @@ WebUIImpl::WebUIImpl(WebContents* contents)
       bindings_(content::BINDINGS_POLICY_WEB_UI),
       web_contents_(contents) {
   DCHECK(contents);
-  AddMessageHandler(new GenericHandler());
 }
 
 WebUIImpl::~WebUIImpl() {
@@ -79,25 +82,23 @@ bool WebUIImpl::OnMessageReceived(const IPC::Message& message) {
 void WebUIImpl::OnWebUISend(const GURL& source_url,
                             const std::string& message,
                             const ListValue& args) {
-  if (!ChildProcessSecurityPolicy::GetInstance()->
-          HasWebUIBindings(web_contents_->GetRenderProcessHost()->GetID())) {
+  content::WebContentsDelegate* delegate = web_contents_->GetDelegate();
+  bool data_urls_allowed = delegate && delegate->CanLoadDataURLsInWebUI();
+  content::WebUIControllerFactory* factory =
+      content::GetContentClient()->browser()->GetWebUIControllerFactory();
+  if (!ChildProcessSecurityPolicyImpl::GetInstance()->
+          HasWebUIBindings(web_contents_->GetRenderProcessHost()->GetID()) ||
+      !factory->IsURLAcceptableForWebUI(web_contents_->GetBrowserContext(),
+                                        source_url,
+                                        data_urls_allowed)) {
     NOTREACHED() << "Blocked unauthorized use of WebUIBindings.";
     return;
   }
 
-  if (controller_->OverrideHandleWebUIMessage(source_url, message,args))
-    return;
-
-  // Look up the callback for this message.
-  MessageCallbackMap::const_iterator callback =
-      message_callbacks_.find(message);
-  if (callback != message_callbacks_.end()) {
-    // Forward this message and content on.
-    callback->second.Run(&args);
-  }
+  ProcessWebUIMessage(source_url, message, args);
 }
 
-void WebUIImpl::RenderViewCreated(RenderViewHost* render_view_host) {
+void WebUIImpl::RenderViewCreated(content::RenderViewHost* render_view_host) {
   controller_->RenderViewCreated(render_view_host);
 
   // Do not attempt to set the toolkit property if WebUI is not enabled, e.g.,
@@ -110,17 +111,14 @@ void WebUIImpl::RenderViewCreated(RenderViewHost* render_view_host) {
 #elif defined(TOOLKIT_GTK)
   render_view_host->SetWebUIProperty("toolkit", "GTK");
 #endif  // defined(TOOLKIT_VIEWS)
-
-  // Let the WebUI know that we're looking for UI that's optimized for touch
-  // input.
-  // TODO(rbyers) Figure out the right model for enabling touch-optimized UI
-  // (http://crbug.com/105380).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kTouchOptimizedUI))
-    render_view_host->SetWebUIProperty("touchOptimized", "true");
 }
 
 WebContents* WebUIImpl::GetWebContents() const {
   return web_contents_;
+}
+
+float WebUIImpl::GetDeviceScale() const {
+  return GetDIPScaleFactor(web_contents_->GetRenderWidgetHostView());
 }
 
 bool WebUIImpl::ShouldHideFavicon() const {
@@ -248,7 +246,16 @@ void WebUIImpl::RegisterMessageCallback(const std::string &message,
 void WebUIImpl::ProcessWebUIMessage(const GURL& source_url,
                                     const std::string& message,
                                     const base::ListValue& args) {
-  OnWebUISend(source_url, message, args);
+  if (controller_->OverrideHandleWebUIMessage(source_url, message, args))
+    return;
+
+  // Look up the callback for this message.
+  MessageCallbackMap::const_iterator callback =
+      message_callbacks_.find(message);
+  if (callback != message_callbacks_.end()) {
+    // Forward this message and content on.
+    callback->second.Run(&args);
+  }
 }
 
 // WebUIImpl, protected: -------------------------------------------------------
@@ -261,6 +268,7 @@ void WebUIImpl::AddMessageHandler(WebUIMessageHandler* handler) {
 }
 
 void WebUIImpl::ExecuteJavascript(const string16& javascript) {
-  web_contents_->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
+  static_cast<RenderViewHostImpl*>(
+      web_contents_->GetRenderViewHost())->ExecuteJavascriptInWebFrame(
       ASCIIToUTF16(frame_xpath_), javascript);
 }

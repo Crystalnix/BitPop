@@ -4,7 +4,6 @@
 
 #ifndef NET_BASE_NET_UTIL_H_
 #define NET_BASE_NET_UTIL_H_
-#pragma once
 
 #include "build/build_config.h"
 
@@ -25,8 +24,8 @@
 #include "base/string16.h"
 #include "net/base/escape.h"
 #include "net/base/net_export.h"
+#include "net/base/net_log.h"
 
-struct addrinfo;
 class FilePath;
 class GURL;
 
@@ -100,16 +99,22 @@ NET_EXPORT std::string GetHostAndPort(const GURL& url);
 // if it is the default for the URL's scheme.
 NET_EXPORT_PRIVATE std::string GetHostAndOptionalPort(const GURL& url);
 
+// Convenience struct for when you need a |struct sockaddr|.
+struct SockaddrStorage {
+  SockaddrStorage() : addr_len(sizeof(addr_storage)),
+                      addr(reinterpret_cast<struct sockaddr*>(&addr_storage)) {}
+  struct sockaddr_storage addr_storage;
+  socklen_t addr_len;
+  struct sockaddr* const addr;
+};
+
 // Returns the string representation of an address, like "192.168.0.1".
 // Returns empty string on failure.
-NET_EXPORT std::string NetAddressToString(const struct addrinfo* net_address);
 NET_EXPORT std::string NetAddressToString(const struct sockaddr* net_address,
                                           socklen_t address_len);
 
 // Same as NetAddressToString, but additionally includes the port number. For
 // example: "192.168.0.1:99" or "[::1]:80".
-NET_EXPORT std::string NetAddressToStringWithPort(
-    const struct addrinfo* net_address);
 NET_EXPORT std::string NetAddressToStringWithPort(
     const struct sockaddr* net_address,
     socklen_t address_len);
@@ -167,7 +172,7 @@ NET_EXPORT std::string CanonicalizeHost(const std::string& host,
 //   * One or more components separated by '.'
 //   * Each component begins with an alphanumeric character or '-'
 //   * Each component contains only alphanumeric characters and '-' or '_'
-//   * Each component ends with an alphanumeric character
+//   * Each component ends with an alphanumeric character or '-'
 //   * The last component begins with an alphabetic character
 //   * Optional trailing dot after last component (means "treat as FQDN")
 // If |desired_tld| is non-NULL, the host will only be considered invalid if
@@ -358,13 +363,44 @@ class NET_EXPORT ScopedPortException {
   DISALLOW_COPY_AND_ASSIGN(ScopedPortException);
 };
 
+// These are used for UMA histograms.  Any new values must be added to the end.
+enum IPv6SupportStatus {
+  IPV6_CANNOT_CREATE_SOCKETS,
+  IPV6_CAN_CREATE_SOCKETS,  // Obsolete
+  IPV6_GETIFADDRS_FAILED,
+  IPV6_GLOBAL_ADDRESS_MISSING,
+  IPV6_GLOBAL_ADDRESS_PRESENT,
+  IPV6_INTERFACE_ARRAY_TOO_SHORT,
+  IPV6_SUPPORT_MAX  // Bounding value for enumeration.  Also used for case
+                    // where detection is not supported.
+};
+
+// Encapsulates the results of an IPv6 probe.
+struct NET_EXPORT IPv6SupportResult {
+  IPv6SupportResult(bool ipv6_supported,
+                    IPv6SupportStatus ipv6_support_status,
+                    int os_error);
+
+  // Serializes the results to a Value.  Caller takes ownership of the returned
+  // Value.
+  base::Value* ToNetLogValue(NetLog::LogLevel log_level) const;
+
+  bool ipv6_supported;
+  // Set to IPV6_SUPPORT_MAX if detection isn't supported.
+  IPv6SupportStatus ipv6_support_status;
+
+  // Error code from the OS, or zero if there was no error.
+  int os_error;
+};
+
 // Perform a simplistic test to see if IPv6 is supported by trying to create an
 // IPv6 socket.
 // TODO(jar): Make test more in-depth as needed.
-NET_EXPORT bool IPv6Supported();
+NET_EXPORT IPv6SupportResult TestIPv6Support();
 
 // Returns true if it can determine that only loopback addresses are configured.
 // i.e. if only 127.0.0.1 and ::1 are routable.
+// Also returns false if it cannot determine this.
 bool HaveOnlyLoopbackAddresses();
 
 // IPAddressNumber is used to represent an IP address's numeric value as an
@@ -416,33 +452,12 @@ NET_EXPORT_PRIVATE bool IPNumberMatchesPrefix(const IPAddressNumber& ip_number,
                                               const IPAddressNumber& ip_prefix,
                                               size_t prefix_length_in_bits);
 
-// Makes a copy of |info|. The dynamically-allocated parts are copied as well.
-// If |recursive| is true, chained entries via ai_next are copied too.
-// The copy returned by this function should be freed using
-// FreeCopyOfAddrinfo(), and NOT freeaddrinfo().
-struct addrinfo* CreateCopyOfAddrinfo(const struct addrinfo* info,
-                                      bool recursive);
-
-// Frees an addrinfo that was created by CreateCopyOfAddrinfo().
-void FreeCopyOfAddrinfo(struct addrinfo* info);
-
-// Returns the port field of the sockaddr in |info|.
-const uint16* GetPortFieldFromAddrinfo(const struct addrinfo* info);
-uint16* GetPortFieldFromAddrinfo(struct addrinfo* info);
-
-// Returns the value of |info's| port (in host byte ordering).
-uint16 GetPortFromAddrinfo(const struct addrinfo* info);
-
-// Same except for struct sockaddr.
+// Retuns the port field of the |sockaddr|.
 const uint16* GetPortFieldFromSockaddr(const struct sockaddr* address,
                                        socklen_t address_len);
+// Returns the value of port in |sockaddr| (in host byte ordering).
 NET_EXPORT_PRIVATE int GetPortFromSockaddr(const struct sockaddr* address,
                                            socklen_t address_len);
-
-// Sets every addrinfo in the linked list |head| as having a port field of
-// |port|.
-NET_EXPORT_PRIVATE void SetPortForAllAddrinfos(struct addrinfo* head,
-                                               uint16 port);
 
 // Returns true if |host| is one of the names (e.g. "localhost") or IP
 // addresses (IPv4 127.0.0.0/8 or IPv6 ::1) that indicate a loopback.

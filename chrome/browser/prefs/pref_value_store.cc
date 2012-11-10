@@ -46,26 +46,22 @@ void PrefValueStore::PrefStoreKeeper::OnInitializationCompleted(
   pref_value_store_->OnInitializationCompleted(type_, succeeded);
 }
 
-PrefValueStore::PrefValueStore(PrefStore* managed_platform_prefs,
-                               PrefStore* managed_cloud_prefs,
+PrefValueStore::PrefValueStore(PrefStore* managed_prefs,
                                PrefStore* extension_prefs,
                                PrefStore* command_line_prefs,
                                PrefStore* user_prefs,
-                               PrefStore* recommended_platform_prefs,
-                               PrefStore* recommended_cloud_prefs,
+                               PrefStore* recommended_prefs,
                                PrefStore* default_prefs,
                                PrefModelAssociator* pref_sync_associator,
                                PrefNotifier* pref_notifier)
     : pref_sync_associator_(pref_sync_associator),
       pref_notifier_(pref_notifier),
       initialization_failed_(false) {
-  InitPrefStore(MANAGED_PLATFORM_STORE, managed_platform_prefs);
-  InitPrefStore(MANAGED_CLOUD_STORE, managed_cloud_prefs);
+  InitPrefStore(MANAGED_STORE, managed_prefs);
   InitPrefStore(EXTENSION_STORE, extension_prefs);
   InitPrefStore(COMMAND_LINE_STORE, command_line_prefs);
   InitPrefStore(USER_STORE, user_prefs);
-  InitPrefStore(RECOMMENDED_PLATFORM_STORE, recommended_platform_prefs);
-  InitPrefStore(RECOMMENDED_CLOUD_STORE, recommended_cloud_prefs);
+  InitPrefStore(RECOMMENDED_STORE, recommended_prefs);
   InitPrefStore(DEFAULT_STORE, default_prefs);
 
   CheckInitializationCompleted();
@@ -74,80 +70,67 @@ PrefValueStore::PrefValueStore(PrefStore* managed_platform_prefs,
 PrefValueStore::~PrefValueStore() {}
 
 PrefValueStore* PrefValueStore::CloneAndSpecialize(
-    PrefStore* managed_platform_prefs,
-    PrefStore* managed_cloud_prefs,
+    PrefStore* managed_prefs,
     PrefStore* extension_prefs,
     PrefStore* command_line_prefs,
     PrefStore* user_prefs,
-    PrefStore* recommended_platform_prefs,
-    PrefStore* recommended_cloud_prefs,
+    PrefStore* recommended_prefs,
     PrefStore* default_prefs,
     PrefModelAssociator* pref_sync_associator,
     PrefNotifier* pref_notifier) {
   DCHECK(pref_notifier);
-  if (!managed_platform_prefs)
-    managed_platform_prefs = GetPrefStore(MANAGED_PLATFORM_STORE);
-  if (!managed_cloud_prefs)
-    managed_cloud_prefs = GetPrefStore(MANAGED_CLOUD_STORE);
+  if (!managed_prefs)
+    managed_prefs = GetPrefStore(MANAGED_STORE);
   if (!extension_prefs)
     extension_prefs = GetPrefStore(EXTENSION_STORE);
   if (!command_line_prefs)
     command_line_prefs = GetPrefStore(COMMAND_LINE_STORE);
   if (!user_prefs)
     user_prefs = GetPrefStore(USER_STORE);
-  if (!recommended_platform_prefs)
-    recommended_platform_prefs = GetPrefStore(RECOMMENDED_PLATFORM_STORE);
-  if (!recommended_cloud_prefs)
-    recommended_cloud_prefs = GetPrefStore(RECOMMENDED_CLOUD_STORE);
+  if (!recommended_prefs)
+    recommended_prefs = GetPrefStore(RECOMMENDED_STORE);
   if (!default_prefs)
     default_prefs = GetPrefStore(DEFAULT_STORE);
 
   return new PrefValueStore(
-      managed_platform_prefs, managed_cloud_prefs, extension_prefs,
-      command_line_prefs, user_prefs, recommended_platform_prefs,
-      recommended_cloud_prefs, default_prefs, pref_sync_associator,
-      pref_notifier);
+      managed_prefs, extension_prefs, command_line_prefs, user_prefs,
+      recommended_prefs, default_prefs, pref_sync_associator, pref_notifier);
 }
 
 bool PrefValueStore::GetValue(const std::string& name,
                               base::Value::Type type,
                               const Value** out_value) const {
-  *out_value = NULL;
-  // Check the |PrefStore|s in order of their priority from highest to lowest
-  // to find the value of the preference described by the given preference name.
+  // Check the |PrefStore|s in order of their priority from highest to lowest,
+  // looking for the first preference value with the given |name| and |type|.
   for (size_t i = 0; i <= PREF_STORE_TYPE_MAX; ++i) {
-    if (GetValueFromStore(name.c_str(), static_cast<PrefStoreType>(i),
-                          out_value)) {
-      if (!(*out_value)->IsType(type)) {
-        LOG(WARNING) << "Expected type for " << name << " is " << type
-                     << " but got " << (*out_value)->GetType()
-                     << " in store " << i;
-        continue;
-      }
+    if (GetValueFromStoreWithType(name.c_str(), type,
+                                  static_cast<PrefStoreType>(i), out_value))
       return true;
-    }
   }
   return false;
+}
+
+bool PrefValueStore::GetRecommendedValue(const std::string& name,
+                                         base::Value::Type type,
+                                         const Value** out_value) const {
+  return GetValueFromStoreWithType(name.c_str(), type, RECOMMENDED_STORE,
+                                   out_value);
 }
 
 void PrefValueStore::NotifyPrefChanged(
     const char* path,
     PrefValueStore::PrefStoreType new_store) {
   DCHECK(new_store != INVALID_STORE);
-
-  // If the pref is controlled by a higher-priority store, its effective value
-  // cannot have changed.
-  PrefStoreType controller = ControllingPrefStoreForPref(path);
-  if (controller == INVALID_STORE || controller >= new_store) {
-    pref_notifier_->OnPreferenceChanged(path);
-    if (pref_sync_associator_)
-      pref_sync_associator_->ProcessPrefChange(path);
-  }
+  // A notification is sent when the pref value in any store changes. If this
+  // store is currently being overridden by a higher-priority store, the
+  // effective value of the pref will not have changed.
+  pref_notifier_->OnPreferenceChanged(path);
+  if (pref_sync_associator_)
+    pref_sync_associator_->ProcessPrefChange(path);
 }
 
 bool PrefValueStore::PrefValueInManagedStore(const char* name) const {
-  return PrefValueInStore(name, MANAGED_PLATFORM_STORE) ||
-         PrefValueInStore(name, MANAGED_CLOUD_STORE);
+  return PrefValueInStore(name, MANAGED_STORE);
 }
 
 bool PrefValueStore::PrefValueInExtensionStore(const char* name) const {
@@ -167,8 +150,7 @@ bool PrefValueStore::PrefValueFromUserStore(const char* name) const {
 }
 
 bool PrefValueStore::PrefValueFromRecommendedStore(const char* name) const {
-  return ControllingPrefStoreForPref(name) == RECOMMENDED_PLATFORM_STORE ||
-         ControllingPrefStoreForPref(name) == RECOMMENDED_CLOUD_STORE;
+  return ControllingPrefStoreForPref(name) == RECOMMENDED_STORE;
 }
 
 bool PrefValueStore::PrefValueFromDefaultStore(const char* name) const {
@@ -249,6 +231,23 @@ bool PrefValueStore::GetValueFromStore(const char* name,
   }
 
   // No valid value found for the given preference name: set the return false.
+  *out_value = NULL;
+  return false;
+}
+
+bool PrefValueStore::GetValueFromStoreWithType(const char* name,
+                                               base::Value::Type type,
+                                               PrefStoreType store,
+                                               const Value** out_value) const {
+  if (GetValueFromStore(name, store, out_value)) {
+    if ((*out_value)->IsType(type))
+      return true;
+
+    LOG(WARNING) << "Expected type for " << name << " is " << type
+                 << " but got " << (*out_value)->GetType()
+                 << " in store " << store;
+  }
+
   *out_value = NULL;
   return false;
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,9 +18,9 @@
 namespace {
 
 bool AddFileToZip(zipFile zip_file, const FilePath& src_dir) {
-  net::FileStream stream;
+  net::FileStream stream(NULL);
   int flags = base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ;
-  if (stream.Open(src_dir, flags) != 0) {
+  if (stream.OpenSync(src_dir, flags) != 0) {
     DLOG(ERROR) << "Could not open stream for path "
                 << src_dir.value();
     return false;
@@ -29,8 +29,7 @@ bool AddFileToZip(zipFile zip_file, const FilePath& src_dir) {
   int num_bytes;
   char buf[zip::internal::kZipBufSize];
   do {
-    num_bytes = stream.Read(buf, zip::internal::kZipBufSize,
-                            net::CompletionCallback());
+    num_bytes = stream.ReadSync(buf, zip::internal::kZipBufSize);
     if (num_bytes > 0) {
       if (ZIP_OK != zipWriteInFileInZip(zip_file, buf, num_bytes)) {
         DLOG(ERROR) << "Could not write data to zip for path "

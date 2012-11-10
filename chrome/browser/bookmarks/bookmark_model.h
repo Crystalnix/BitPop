@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_BOOKMARKS_BOOKMARK_MODEL_H_
 #define CHROME_BROWSER_BOOKMARKS_BOOKMARK_MODEL_H_
-#pragma once
 
 #include <set>
 #include <vector>
@@ -21,10 +20,11 @@
 #include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/history.h"
+#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/models/tree_node_model.h"
+#include "ui/gfx/image/image.h"
 
 class BookmarkExpandedStateTracker;
 class BookmarkIndex;
@@ -95,25 +95,7 @@ class BookmarkNode : public ui::TreeNode<BookmarkNode> {
   bool is_folder() const { return type_ != URL; }
   bool is_url() const { return type_ == URL; }
 
-  // Returns the favicon. In nearly all cases you should use the method
-  // BookmarkModel::GetFavicon rather than this. BookmarkModel::GetFavicon
-  // takes care of loading the favicon if it isn't already loaded, where as
-  // this does not.
-  const SkBitmap& favicon() const { return favicon_; }
-  void set_favicon(const SkBitmap& icon) { favicon_ = icon; }
-
-  // The following methods are used by the bookmark model, and are not
-  // really useful outside of it.
-
   bool is_favicon_loaded() const { return is_favicon_loaded_; }
-  void set_is_favicon_loaded(bool loaded) { is_favicon_loaded_ = loaded; }
-
-  HistoryService::Handle favicon_load_handle() const {
-    return favicon_load_handle_;
-  }
-  void set_favicon_load_handle(HistoryService::Handle handle) {
-    favicon_load_handle_ = handle;
-  }
 
   // Accessor method for controlling the visibility of a bookmark node/sub-tree.
   // Note that visibility is not propagated down the tree hierarchy so if a
@@ -134,6 +116,18 @@ class BookmarkNode : public ui::TreeNode<BookmarkNode> {
   // Called when the favicon becomes invalid.
   void InvalidateFavicon();
 
+  const gfx::Image& favicon() const { return favicon_; }
+  void set_favicon(const gfx::Image& icon) { favicon_ = icon; }
+
+  void set_is_favicon_loaded(bool loaded) { is_favicon_loaded_ = loaded; }
+
+  HistoryService::Handle favicon_load_handle() const {
+    return favicon_load_handle_;
+  }
+  void set_favicon_load_handle(HistoryService::Handle handle) {
+    favicon_load_handle_ = handle;
+  }
+
   // The unique identifier for this node.
   int64 id_;
 
@@ -151,7 +145,7 @@ class BookmarkNode : public ui::TreeNode<BookmarkNode> {
   base::Time date_folder_modified_;
 
   // The favicon of this node.
-  SkBitmap favicon_;
+  gfx::Image favicon_;
 
   // Whether the favicon has been loaded.
   bool is_favicon_loaded_;
@@ -192,19 +186,18 @@ class BookmarkPermanentNode : public BookmarkNode {
 // An observer may be attached to observe relevant events.
 //
 // You should NOT directly create a BookmarkModel, instead go through the
-// Profile.
+// BookmarkModelFactory.
 class BookmarkModel : public content::NotificationObserver,
-                      public BookmarkService {
+                      public BookmarkService,
+                      public ProfileKeyedService {
  public:
   explicit BookmarkModel(Profile* profile);
   virtual ~BookmarkModel();
 
-  static void RegisterUserPrefs(PrefService* prefs);
-
   // Invoked prior to destruction to release any necessary resources.
-  void Cleanup();
+  virtual void Shutdown() OVERRIDE;
 
-  // Loads the bookmarks. This is called by Profile upon creation of the
+  // Loads the bookmarks. This is called upon creation of the
   // BookmarkModel. You need not invoke this directly.
   void Load();
 
@@ -245,10 +238,19 @@ class BookmarkModel : public content::NotificationObserver,
   void AddObserver(BookmarkModelObserver* observer);
   void RemoveObserver(BookmarkModelObserver* observer);
 
-  // Notifies the observers that an import is about to happen, so they can delay
-  // any expensive UI updates until it's finished.
-  void BeginImportMode();
-  void EndImportMode();
+  // Notifies the observers that that an extensive set of changes is about to
+  // happen, such as during import or sync, so they can delay any expensive
+  // UI updates until it's finished.
+  void BeginExtensiveChanges();
+  void EndExtensiveChanges();
+
+  // Returns true if this bookmark model is currently in a mode where extensive
+  // changes might happen, such as for import and sync. This is helpful for
+  // observers that are created after the mode has started, and
+  // want to check state during their own initializer, such as the NTP.
+  bool IsDoingExtensiveChanges() const {
+    return extensive_changes_ > 0;
+  }
 
   // Removes the node at the given |index| from |parent|. Removing a folder node
   // recursively removes all nodes. Observers are notified immediately.
@@ -266,7 +268,7 @@ class BookmarkModel : public content::NotificationObserver,
 
   // Returns the favicon for |node|. If the favicon has not yet been
   // loaded it is loaded and the observer of the model notified when done.
-  const SkBitmap& GetFavicon(const BookmarkNode* node);
+  const gfx::Image& GetFavicon(const BookmarkNode* node);
 
   // Sets the title of |node|.
   void SetTitle(const BookmarkNode* node, const string16& title);
@@ -290,10 +292,11 @@ class BookmarkModel : public content::NotificationObserver,
   // See BookmarkService for more details on this.
   virtual bool IsBookmarked(const GURL& url) OVERRIDE;
 
-  // Returns all the bookmarked urls.
+  // Returns all the bookmarked urls and their titles.
   // This method is thread safe.
   // See BookmarkService for more details on this.
-  virtual void GetBookmarks(std::vector<GURL>* urls) OVERRIDE;
+  virtual void GetBookmarks(
+      std::vector<BookmarkService::URLAndTitle>* urls) OVERRIDE;
 
   // Blocks until loaded; this is NOT invoked on the main thread.
   // See BookmarkService for more details on this.
@@ -483,6 +486,9 @@ class BookmarkModel : public content::NotificationObserver,
   scoped_ptr<BookmarkIndex> index_;
 
   base::WaitableEvent loaded_signal_;
+
+  // See description of IsDoingExtensiveChanges above.
+  int extensive_changes_;
 
   scoped_ptr<BookmarkExpandedStateTracker> expanded_state_tracker_;
 

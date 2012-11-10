@@ -75,6 +75,7 @@ cr.define('login', function() {
      */
     handleShutdownClick_: function(e) {
       chrome.send('shutdownSystem');
+      e.stopPropagation();
     }
   };
 
@@ -90,8 +91,12 @@ cr.define('login', function() {
     if (state != NET_STATE.OFFLINE) {
       Oobe.showSigninUI();
     } else {
-      $('bubble').showTextForElement($('add-user-button'),
-          localStrings.getString('addUserErrorMessage'));
+      const BUBBLE_OFFSET = 8;
+      const BUBBLE_PADDING = 5;
+      $('bubble').showTextForElement(
+          $('add-user-button'),
+          localStrings.getString('addUserErrorMessage'),
+          cr.ui.Bubble.Attachment.TOP, BUBBLE_OFFSET, BUBBLE_PADDING);
       chrome.send('loginAddNetworkStateObserver',
                   ['login.HeaderBar.bubbleWatchdog']);
     }

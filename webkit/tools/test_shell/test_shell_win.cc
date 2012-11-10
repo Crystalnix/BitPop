@@ -21,8 +21,8 @@
 #include "base/utf_string_conversions.h"
 #include "base/win/resource_util.h"
 #include "breakpad/src/client/windows/handler/exception_handler.h"
-#include "grit/webkit_resources.h"
 #include "grit/webkit_chromium_resources.h"
+#include "grit/webkit_resources.h"
 #include "net/base/net_module.h"
 #include "net/url_request/url_request_file_job.h"
 #include "skia/ext/bitmap_platform_device.h"
@@ -162,7 +162,7 @@ void TestShell::InitializeTestShell(bool layout_test_mode,
   layout_test_mode_ = layout_test_mode;
   allow_external_pages_ = allow_external_pages;
 
-  web_prefs_ = new WebPreferences;
+  web_prefs_ = new webkit_glue::WebPreferences;
 
   ResetWebPreferences();
 
@@ -182,11 +182,21 @@ void TestShell::InitializeTestShell(bool layout_test_mode,
         parsed_command_line.GetSwitchValueNative(test_shell::kCrashDumps));
     if (parsed_command_line.HasSwitch(test_shell::kCrashDumpsFulldump)) {
         new google_breakpad::ExceptionHandler(
-            dir, 0, &MinidumpCallback, 0, true,
-            kFullDumpType, 0, 0);
+            dir,  // dump_path
+            NULL,  // filter
+            &MinidumpCallback,  // callback
+            NULL,  // callback_context
+            google_breakpad::ExceptionHandler::HANDLER_ALL,  // handler_types
+            kFullDumpType,  // dump_type
+            static_cast<const wchar_t*>(NULL),  // pipe_name
+            NULL);  // custom_info
     } else {
         new google_breakpad::ExceptionHandler(
-            dir, 0, &MinidumpCallback, 0, true);
+            dir,  // dump_path
+            NULL,  // filter
+            &MinidumpCallback,  // callback
+            NULL,  // callback_context
+            google_breakpad::ExceptionHandler::HANDLER_ALL);  // handler_tpes
     }
   }
 }
@@ -670,7 +680,9 @@ string16 TestShellWebKitInit::GetLocalizedString(int message_id) {
 }
 
 // TODO(tc): Convert this to using resources from test_shell.rc.
-base::StringPiece TestShellWebKitInit::GetDataResource(int resource_id) {
+base::StringPiece TestShellWebKitInit::GetDataResource(
+    int resource_id,
+    ui::ScaleFactor scale_factor) {
   switch (resource_id) {
   case IDR_BROKENIMAGE: {
     // Use webkit's broken image icon (16x16)
@@ -714,6 +726,7 @@ base::StringPiece TestShellWebKitInit::GetDataResource(int resource_id) {
   case IDR_INPUT_SPEECH:
   case IDR_INPUT_SPEECH_RECORDING:
   case IDR_INPUT_SPEECH_WAITING:
+    //TODO(flackr): Pass scale_factor.
     return TestShell::ResourceProvider(resource_id);
 
   default:

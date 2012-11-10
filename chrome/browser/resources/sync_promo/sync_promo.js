@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 // TODO(sail): Refactor options_page and remove this include.
-<include src="../options/options_page.js"/>
+<include src="../options2/options_page.js"/>
+<include src="../shared/js/util.js"/>
 <include src="../sync_setup_overlay.js"/>
 
 cr.define('sync_promo', function() {
@@ -15,12 +16,12 @@ cr.define('sync_promo', function() {
    */
   function SyncPromo() {
     options.SyncSetupOverlay.call(this, 'syncSetup',
-                                  templateData.syncSetupOverlayTitle,
-                                  'sync-setup-overlay');
+        loadTimeData.getString('syncSetupOverlayTabTitle'),
+        'sync-setup-overlay');
   }
 
   // Replicating enum from chrome/common/extensions/extension_constants.h.
-  const actions = (function() {
+  /** @const */ var actions = (function() {
     var i = 0;
     return {
       VIEWED: i++,
@@ -55,8 +56,6 @@ cr.define('sync_promo', function() {
 
     // Initializes the page.
     initializePage: function() {
-      localStrings = new LocalStrings();
-
       options.SyncSetupOverlay.prototype.initializePage.call(this);
 
       // Hide parts of the login UI and show the promo UI.
@@ -74,15 +73,10 @@ cr.define('sync_promo', function() {
       });
 
       var learnMoreClickedAlready = false;
-      $('promo-learn-more-show').addEventListener('click', function() {
-        self.showLearnMore_(true);
+      $('promo-learn-more').addEventListener('click', function() {
         if (!learnMoreClickedAlready)
           chrome.send('SyncPromo:UserFlowAction', [actions.LEARN_MORE_CLICKED]);
         learnMoreClickedAlready = true;
-      });
-
-      $('promo-learn-more-hide').addEventListener('click', function() {
-        self.showLearnMore_(false);
       });
 
       $('promo-advanced').addEventListener('click', function() {
@@ -117,7 +111,7 @@ cr.define('sync_promo', function() {
 
       var encryptionHelpClickedAlready = false;
       $('encryption-help-link').addEventListener('click', function() {
-        if (!encryptionHelpClickedAlready )
+        if (!encryptionHelpClickedAlready)
           chrome.send('SyncPromo:UserFlowAction',
                       [actions.ENCRYPTION_HELP_CLICKED]);
         encryptionHelpClickedAlready = true;
@@ -138,13 +132,11 @@ cr.define('sync_promo', function() {
       $('confirm-everything-cancel').addEventListener('click', cancelFunc);
       $('choose-datatypes-cancel').addEventListener('click', cancelFunc);
 
-      this.infographic_ = $('promo-infographic');
-      this.learnMore_ = $('promo-information');
-
-      this.infographic_.addEventListener('webkitTransitionEnd',
-                                         this.toggleHidden_.bind(this));
-      this.learnMore_.addEventListener('webkitTransitionEnd',
-                                       this.toggleHidden_.bind(this));
+      // Add the source parameter to the document so that it can be used to
+      // selectively show and hide elements using CSS.
+      var params = parseQueryParams(document.location);
+      if (params.source == '0')
+        document.documentElement.setAttribute('isstartup', '');
     },
 
     /**
@@ -156,37 +148,6 @@ cr.define('sync_promo', function() {
       chrome.send('SyncPromo:RecordSignInAttempts', [this.signInAttempts_]);
       if (this.throbberStart_)
         chrome.send('SyncPromo:UserFlowAction', [actions.LEFT_DURING_THROBBER]);
-    },
-
-    /**
-     * Remove the [hidden] attribute from the node that was not previously
-     * transitioning.
-     * @param {Event} e A -webkit-transition end event.
-     * @private
-     */
-    toggleHidden_: function(e) {
-      // Only show the other element if the target of this event was hidden
-      // (showing also triggers a transition end).
-      if (e.target.hidden) {
-        if (e.target === this.infographic_)
-          this.learnMore_.hidden = false;
-        else
-          this.infographic_.hidden = false;
-      }
-    },
-
-    /**
-     * Shows or hides the sync information.
-     * @param {Boolean} show True if sync information should be shown, false
-     *     otherwise.
-     * @private
-     */
-    showLearnMore_: function(show) {
-      $('promo-learn-more-show').hidden = show;
-      $('promo-learn-more-hide').hidden = !show;
-      // Setting [hidden] triggers a transition, which (when ended) will trigger
-      // this.toggleHidden_.
-      (show ? this.infographic_ : this.learnMore_).hidden = true;
     },
 
     /** @inheritDoc */
@@ -211,16 +172,6 @@ cr.define('sync_promo', function() {
       // Pass through to SyncSetupOverlay to handle display logic.
       options.SyncSetupOverlay.prototype.setThrobbersVisible_.apply(
           this, arguments);
-    },
-
-    /**
-     * Shows the given promo version. Each version changes the UI slightly
-     * (for example, replacing text with an infographic).
-     * @param {Integer} the version of the promo.
-     * @private
-     */
-    showPromoVersion_: function(version) {
-      document.documentElement.setAttribute('promo-version', version);
     },
 
     /**
@@ -272,10 +223,6 @@ cr.define('sync_promo', function() {
 
   SyncPromo.populatePromoMessage = function(resName) {
     SyncPromo.getInstance().populatePromoMessage_(resName);
-  };
-
-  SyncPromo.showPromoVersion = function(version) {
-    SyncPromo.getInstance().showPromoVersion_(version);
   };
 
   // Export

@@ -9,34 +9,36 @@
 #include <pk11pub.h>
 
 #include "base/file_util.h"
-#include "base/json/json_value_serializer.h"
+#include "base/json/json_string_value_serializer.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
+#include "chrome/browser/chromeos/cros/certificate_pattern.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
-#include "chrome/browser/chromeos/dbus/dbus_thread_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/system/runtime_environment.h"
+#include "chrome/browser/chromeos/login/mock_user_manager.h"
 #include "chrome/browser/net/pref_proxy_config_tracker_impl.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/net/x509_certificate_model.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_pref_service.h"
-#include "content/test/test_browser_thread.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "content/public/test/test_browser_thread.h"
 #include "crypto/nss_util.h"
 #include "net/base/cert_database.h"
 #include "net/base/cert_type.h"
 #include "net/base/crypto_module.h"
 #include "net/base/x509_certificate.h"
 #include "net/proxy/proxy_config.h"
-#include "net/third_party/mozilla_security_manager/nsNSSCertTrust.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
-namespace msm = mozilla_security_manager;
+using ::testing::AnyNumber;
+using ::testing::Return;
+
 namespace chromeos {
 
 namespace {
@@ -45,14 +47,7 @@ const char g_token_name[] = "OncNetworkParserTest token";
 
 net::CertType GetCertType(const net::X509Certificate* cert) {
   DCHECK(cert);
-  msm::nsNSSCertTrust trust(cert->os_cert_handle()->trust);
-  if (trust.HasAnyUser())
-    return net::USER_CERT;
-  if (trust.HasPeer(PR_TRUE, PR_FALSE, PR_FALSE))
-    return net::SERVER_CERT;
-  if (trust.HasAnyCA() || CERT_IsCACert(cert->os_cert_handle(), NULL))
-    return net::CA_CERT;
-  return net::UNKNOWN_CERT;
+  return x509_certificate_model::GetType(cert->os_cert_handle());
 }
 
 }  // namespace
@@ -191,7 +186,7 @@ void OncNetworkParserTest::TestProxySettings(const std::string test_blob,
                                              net::ProxyConfig* net_config) {
   // Parse Network Configuration including ProxySettings dictionary.
   OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
-  scoped_ptr<Network> network(parser.ParseNetwork(0));
+  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
   EXPECT_FALSE(network->proxy_config().empty());
 
@@ -207,6 +202,29 @@ void OncNetworkParserTest::TestProxySettings(const std::string test_blob,
                                                                 net_config));
 }
 
+TEST_F(OncNetworkParserTest, TestLoadingBrokenEncryption) {
+  {
+    std::string test_blob;
+    GetTestData("broken-encrypted-iterations.onc", &test_blob);
+    OncNetworkParser parser(test_blob,
+                            "test0000",
+                            NetworkUIData::ONC_SOURCE_USER_IMPORT);
+    EXPECT_FALSE(parser.parse_error().empty());
+    EXPECT_EQ(0, parser.GetNetworkConfigsSize());
+    EXPECT_EQ(0, parser.GetCertificatesSize());
+  }
+  {
+    std::string test_blob;
+    GetTestData("broken-encrypted-zero-iterations.onc", &test_blob);
+    OncNetworkParser parser(test_blob,
+                            "test0000",
+                            NetworkUIData::ONC_SOURCE_USER_IMPORT);
+    EXPECT_FALSE(parser.parse_error().empty());
+    EXPECT_EQ(0, parser.GetNetworkConfigsSize());
+    EXPECT_EQ(0, parser.GetCertificatesSize());
+  }
+}
+
 TEST_F(OncNetworkParserTest, TestCreateNetworkWifi) {
   std::string test_blob;
   GetTestData("network-wifi.onc", &test_blob);
@@ -214,18 +232,18 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkWifi) {
 
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
   EXPECT_EQ(0, parser.GetCertificatesSize());
-  scoped_ptr<Network> network(parser.ParseNetwork(0));
+  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
 
-  EXPECT_EQ(network->type(), chromeos::TYPE_WIFI);
+  EXPECT_EQ(chromeos::TYPE_WIFI, network->type());
   WifiNetwork* wifi = static_cast<WifiNetwork*>(network.get());
-  EXPECT_EQ(wifi->encryption(), chromeos::SECURITY_WEP);
+  EXPECT_EQ(chromeos::SECURITY_WEP, wifi->encryption());
   CheckStringProperty(wifi, PROPERTY_INDEX_SECURITY, flimflam::kSecurityWep);
-  EXPECT_EQ(wifi->name(), "ssid");
+  EXPECT_EQ("ssid", wifi->name());
   CheckStringProperty(wifi, PROPERTY_INDEX_SSID, "ssid");
-  EXPECT_EQ(wifi->auto_connect(), false);
-  EXPECT_EQ(wifi->passphrase(), "z123456789012");
-  CheckStringProperty(wifi, PROPERTY_INDEX_PASSPHRASE, "z123456789012");
+  EXPECT_FALSE(wifi->auto_connect());
+  EXPECT_EQ("0x1234567890", wifi->passphrase());
+  CheckStringProperty(wifi, PROPERTY_INDEX_PASSPHRASE, "0x1234567890");
 }
 
 TEST_F(OncNetworkParserTest, TestCreateNetworkEthernet) {
@@ -234,12 +252,12 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkEthernet) {
   OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
 
   EXPECT_GE(parser.GetNetworkConfigsSize(), 1);
-  scoped_ptr<Network> network(parser.ParseNetwork(0));
+  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
 
-  EXPECT_EQ(network->type(), chromeos::TYPE_ETHERNET);
+  EXPECT_EQ(chromeos::TYPE_ETHERNET, network->type());
   EthernetNetwork* ethernet = static_cast<EthernetNetwork*>(network.get());
-  EXPECT_EQ(ethernet->name(), "My Ethernet Network");
+  EXPECT_EQ(ethernet->unique_id(), "{485d6076-dd44-6b6d-69787465725f5045}");
 }
 
 TEST_F(OncNetworkParserTest, TestLoadEncryptedOnc) {
@@ -251,17 +269,68 @@ TEST_F(OncNetworkParserTest, TestLoadEncryptedOnc) {
   ASSERT_TRUE(parser.parse_error().empty());
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
   EXPECT_EQ(0, parser.GetCertificatesSize());
-  scoped_ptr<Network> network(parser.ParseNetwork(0));
+  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
 
-  EXPECT_EQ(network->type(), chromeos::TYPE_WIFI);
+  EXPECT_EQ(chromeos::TYPE_WIFI, network->type());
   WifiNetwork* wifi = static_cast<WifiNetwork*>(network.get());
-  EXPECT_EQ(wifi->encryption(), chromeos::SECURITY_NONE);
-  EXPECT_EQ(wifi->name(), "WirelessNetwork");
-  EXPECT_EQ(wifi->auto_connect(), false);
-  EXPECT_EQ(wifi->passphrase(), "");
+  EXPECT_EQ(chromeos::SECURITY_NONE, wifi->encryption());
+  EXPECT_EQ("WirelessNetwork", wifi->name());
+  EXPECT_FALSE(wifi->auto_connect());
+  EXPECT_EQ("", wifi->passphrase());
 }
 
+TEST_F(OncNetworkParserTest, TestLoadWifiCertificatePattern) {
+  std::string test_blob;
+  GetTestData("cert-pattern.onc", &test_blob);
+  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  ASSERT_TRUE(parser.parse_error().empty());
+  EXPECT_EQ(1, parser.GetNetworkConfigsSize());
+  EXPECT_EQ(2, parser.GetCertificatesSize());
+  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
+  ASSERT_TRUE(network.get());
+
+  EXPECT_EQ(chromeos::TYPE_WIFI, network->type());
+  WifiNetwork* wifi = static_cast<WifiNetwork*>(network.get());
+  EXPECT_EQ(chromeos::SECURITY_8021X, wifi->encryption());
+  EXPECT_EQ("WirelessNetwork", wifi->name());
+  EXPECT_FALSE(wifi->auto_connect());
+  EXPECT_EQ("", wifi->passphrase());
+  EXPECT_EQ(chromeos::EAP_METHOD_TLS, wifi->eap_method());
+  EXPECT_EQ(chromeos::CLIENT_CERT_TYPE_PATTERN, wifi->client_cert_type());
+  EXPECT_EQ("Google, Inc.",
+            wifi->client_cert_pattern().issuer().organization());
+  ASSERT_EQ(2ul, wifi->client_cert_pattern().enrollment_uri_list().size());
+  EXPECT_EQ("http://youtu.be/dQw4w9WgXcQ",
+            wifi->client_cert_pattern().enrollment_uri_list()[0]);
+  EXPECT_EQ("chrome-extension://abc/keygen-cert.html",
+            wifi->client_cert_pattern().enrollment_uri_list()[1]);
+}
+
+
+TEST_F(OncNetworkParserTest, TestLoadVPNCertificatePattern) {
+  std::string test_blob;
+  GetTestData("cert-pattern-vpn.onc", &test_blob);
+  OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  ASSERT_TRUE(parser.parse_error().empty());
+  EXPECT_EQ(1, parser.GetNetworkConfigsSize());
+  EXPECT_EQ(2, parser.GetCertificatesSize());
+  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
+  ASSERT_TRUE(network.get());
+
+  EXPECT_EQ(chromeos::TYPE_VPN, network->type());
+  VirtualNetwork* vpn = static_cast<VirtualNetwork*>(network.get());
+  EXPECT_EQ("MyVPN", vpn->name());
+  EXPECT_FALSE(vpn->auto_connect());
+  EXPECT_EQ(chromeos::CLIENT_CERT_TYPE_PATTERN, vpn->client_cert_type());
+  EXPECT_EQ("Google, Inc.",
+            vpn->client_cert_pattern().issuer().organization());
+  ASSERT_EQ(2ul, vpn->client_cert_pattern().enrollment_uri_list().size());
+  EXPECT_EQ("http://youtu.be/dQw4w9WgXcQ",
+            vpn->client_cert_pattern().enrollment_uri_list()[0]);
+  EXPECT_EQ("chrome-extension://abc/keygen-cert.html",
+            vpn->client_cert_pattern().enrollment_uri_list()[1]);
+}
 
 TEST_F(OncNetworkParserTest, TestCreateNetworkWifiEAP1) {
   std::string test_blob;
@@ -270,20 +339,20 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkWifiEAP1) {
 
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
   EXPECT_EQ(0, parser.GetCertificatesSize());
-  scoped_ptr<Network> network(parser.ParseNetwork(0));
+  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
 
-  EXPECT_EQ(network->type(), chromeos::TYPE_WIFI);
+  EXPECT_EQ(chromeos::TYPE_WIFI, network->type());
   WifiNetwork* wifi = static_cast<WifiNetwork*>(network.get());
-  EXPECT_EQ(wifi->encryption(), chromeos::SECURITY_8021X);
+  EXPECT_EQ(chromeos::SECURITY_8021X, wifi->encryption());
   CheckStringProperty(wifi, PROPERTY_INDEX_SECURITY, flimflam::kSecurity8021x);
-  EXPECT_EQ(wifi->name(), "ssid");
-  EXPECT_EQ(wifi->auto_connect(), true);
+  EXPECT_EQ("ssid", wifi->name());
+  EXPECT_EQ(true, wifi->auto_connect());
   CheckBooleanProperty(wifi, PROPERTY_INDEX_AUTO_CONNECT, true);
-  EXPECT_EQ(wifi->eap_method(), EAP_METHOD_PEAP);
+  EXPECT_EQ(EAP_METHOD_PEAP, wifi->eap_method());
   CheckStringProperty(wifi, PROPERTY_INDEX_EAP_METHOD,
                       flimflam::kEapMethodPEAP);
-  EXPECT_EQ(wifi->eap_use_system_cas(), false);
+  EXPECT_FALSE(wifi->eap_use_system_cas());
 }
 
 TEST_F(OncNetworkParserTest, TestCreateNetworkWifiEAP2) {
@@ -294,21 +363,21 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkWifiEAP2) {
 
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
   EXPECT_EQ(0, parser.GetCertificatesSize());
-  scoped_ptr<Network> network(parser.ParseNetwork(0));
+  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
 
-  EXPECT_EQ(network->type(), chromeos::TYPE_WIFI);
+  EXPECT_EQ(chromeos::TYPE_WIFI, network->type());
   WifiNetwork* wifi = static_cast<WifiNetwork*>(network.get());
-  EXPECT_EQ(wifi->encryption(), chromeos::SECURITY_8021X);
-  EXPECT_EQ(wifi->name(), "ssid");
-  EXPECT_EQ(wifi->auto_connect(), false);
-  EXPECT_EQ(wifi->eap_method(), EAP_METHOD_LEAP);
-  EXPECT_EQ(wifi->eap_use_system_cas(), true);
-  EXPECT_EQ(wifi->eap_identity(), "user");
+  EXPECT_EQ(chromeos::SECURITY_8021X, wifi->encryption());
+  EXPECT_EQ("ssid", wifi->name());
+  EXPECT_FALSE(wifi->auto_connect());
+  EXPECT_EQ(EAP_METHOD_LEAP, wifi->eap_method());
+  EXPECT_EQ(true, wifi->eap_use_system_cas());
+  EXPECT_EQ("user", wifi->eap_identity());
   CheckStringProperty(wifi, PROPERTY_INDEX_EAP_IDENTITY, "user");
-  EXPECT_EQ(wifi->eap_passphrase(), "pass");
+  EXPECT_EQ("pass", wifi->eap_passphrase());
   CheckStringProperty(wifi, PROPERTY_INDEX_EAP_PASSWORD, "pass");
-  EXPECT_EQ(wifi->eap_anonymous_identity(), "anon");
+  EXPECT_EQ("anon", wifi->eap_anonymous_identity());
   CheckStringProperty(wifi, PROPERTY_INDEX_EAP_ANONYMOUS_IDENTITY, "anon");
 }
 
@@ -317,14 +386,14 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkUnknownFields) {
   GetTestData("network-unknown-fields.onc", &test_blob);
 
   OncNetworkParser parser(test_blob, "", NetworkUIData::ONC_SOURCE_USER_IMPORT);
-  scoped_ptr<Network> network(parser.ParseNetwork(0));
+  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get());
 
-  EXPECT_EQ(network->type(), chromeos::TYPE_WIFI);
+  EXPECT_EQ(chromeos::TYPE_WIFI, network->type());
   WifiNetwork* wifi = static_cast<WifiNetwork*>(network.get());
-  EXPECT_EQ(wifi->encryption(), chromeos::SECURITY_WEP);
-  EXPECT_EQ(wifi->name(), "ssid");
-  EXPECT_EQ(wifi->passphrase(), "z123456789012");
+  EXPECT_EQ(chromeos::SECURITY_WEP, wifi->encryption());
+  EXPECT_EQ("ssid", wifi->name());
+  EXPECT_EQ("z123456789012", wifi->passphrase());
 }
 
 TEST_F(OncNetworkParserTest, TestCreateNetworkOpenVPN) {
@@ -335,10 +404,10 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkOpenVPN) {
 
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
   EXPECT_EQ(1, parser.GetCertificatesSize());
-  scoped_ptr<Network> network(parser.ParseNetwork(0));
+  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get() != NULL);
 
-  EXPECT_EQ(network->type(), chromeos::TYPE_VPN);
+  EXPECT_EQ(chromeos::TYPE_VPN, network->type());
   CheckStringProperty(network.get(), PROPERTY_INDEX_TYPE, flimflam::kTypeVPN);
   VirtualNetwork* vpn = static_cast<VirtualNetwork*>(network.get());
   EXPECT_EQ("MyVPN", vpn->name());
@@ -394,10 +463,10 @@ TEST_F(OncNetworkParserTest, TestCreateNetworkL2TPIPsec) {
 
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
   EXPECT_EQ(0, parser.GetCertificatesSize());
-  scoped_ptr<Network> network(parser.ParseNetwork(0));
+  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network != NULL);
 
-  EXPECT_EQ(network->type(), chromeos::TYPE_VPN);
+  EXPECT_EQ(chromeos::TYPE_VPN, network->type());
   CheckStringProperty(network.get(), PROPERTY_INDEX_TYPE, flimflam::kTypeVPN);
   VirtualNetwork* vpn = static_cast<VirtualNetwork*>(network.get());
   EXPECT_EQ("MyL2TPVPN", vpn->name());
@@ -738,9 +807,9 @@ TEST_F(OncNetworkParserTest, TestNetworkAndCertificate) {
   EXPECT_TRUE(parser.ParseCertificate(0));
 
   EXPECT_EQ(1, parser.GetNetworkConfigsSize());
-  scoped_ptr<Network> network(parser.ParseNetwork(0));
+  scoped_ptr<Network> network(parser.ParseNetwork(0, NULL));
   ASSERT_TRUE(network.get() != NULL);
-  EXPECT_EQ(network->type(), chromeos::TYPE_VPN);
+  EXPECT_EQ(chromeos::TYPE_VPN, network->type());
   VirtualNetwork* vpn = static_cast<VirtualNetwork*>(network.get());
   EXPECT_EQ(PROVIDER_TYPE_OPEN_VPN, vpn->provider_type());
 }
@@ -831,6 +900,13 @@ TEST_F(OncNetworkParserTest, TestProxySettingsManual) {
 }
 
 TEST(OncNetworkParserUserExpansionTest, GetUserExpandedValue) {
+  ScopedMockUserManagerEnabler mock_user_manager;
+  mock_user_manager.user_manager()->SetLoggedInUser("onc@example.com");
+
+  EXPECT_CALL(*mock_user_manager.user_manager(), IsUserLoggedIn())
+      .Times(2)
+      .WillRepeatedly(Return(false));
+
   NetworkUIData::ONCSource source = NetworkUIData::ONC_SOURCE_USER_IMPORT;
 
   // Setup environment needed by UserManager.
@@ -852,13 +928,30 @@ TEST(OncNetworkParserUserExpansionTest, GetUserExpandedValue) {
                 login_email_pattern, source));
 
   // Log in a user and check that the expansions work as expected.
-  UserManager::Get()->UserLoggedIn("onc@example.com");
+  EXPECT_CALL(*mock_user_manager.user_manager(), IsUserLoggedIn())
+      .Times(2)
+      .WillRepeatedly(Return(true));
+
   EXPECT_EQ("a onc b",
             chromeos::OncNetworkParser::GetUserExpandedValue(
                 login_id_pattern, source));
   EXPECT_EQ("a onc@example.com b",
             chromeos::OncNetworkParser::GetUserExpandedValue(
                 login_email_pattern, source));
+}
+
+TEST_F(OncNetworkParserTest, TestRemoveNetworkWifi) {
+  std::string test_blob;
+  GetTestData("network-wifi-remove.onc", &test_blob);
+  OncNetworkParser parser(test_blob, "",
+                                 NetworkUIData::ONC_SOURCE_USER_IMPORT);
+  EXPECT_EQ(1, parser.GetNetworkConfigsSize());
+  EXPECT_EQ(0, parser.GetCertificatesSize());
+  bool marked_for_removal = false;
+  scoped_ptr<Network> network(parser.ParseNetwork(0, &marked_for_removal));
+
+  EXPECT_TRUE(marked_for_removal);
+  EXPECT_EQ("{485d6076-dd44-6b6d-69787465725f5045}", network->unique_id());
 }
 
 }  // namespace chromeos

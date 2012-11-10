@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_IN_PROCESS_WEBKIT_INDEXED_DB_CALLBACKS_H_
 #define CONTENT_BROWSER_IN_PROCESS_WEBKIT_INDEXED_DB_CALLBACKS_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
@@ -12,12 +11,14 @@
 #include "googleurl/src/gurl.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBCallbacks.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBCursor.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBDatabase.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBDatabaseError.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBTransaction.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 
 class IndexedDBMsg_CallbacksSuccessIDBDatabase;
 class IndexedDBMsg_CallbacksSuccessIDBTransaction;
+class IndexedDBMsg_CallbacksUpgradeNeeded;
 
 // Template magic to figure out what message to send to the renderer based on
 // which (overloaded) onSuccess method we expect to be called.
@@ -28,6 +29,10 @@ template <> struct WebIDBToMsgHelper<WebKit::WebIDBDatabase> {
 template <> struct WebIDBToMsgHelper<WebKit::WebIDBTransaction> {
   typedef IndexedDBMsg_CallbacksSuccessIDBTransaction MsgType;
 };
+
+namespace {
+int32 kDatabaseNotAdded = -1;
+}
 
 // The code the following two classes share.
 class IndexedDBCallbacksBase : public WebKit::WebIDBCallbacks {
@@ -40,6 +45,7 @@ class IndexedDBCallbacksBase : public WebKit::WebIDBCallbacks {
 
   virtual void onError(const WebKit::WebIDBDatabaseError& error);
   virtual void onBlocked();
+  virtual void onBlocked(long long old_version);
 
  protected:
   IndexedDBDispatcherHost* dispatcher_host() const {
@@ -66,27 +72,44 @@ class IndexedDBCallbacks : public IndexedDBCallbacksBase {
       int32 response_id,
       const GURL& origin_url)
       : IndexedDBCallbacksBase(dispatcher_host, thread_id, response_id),
-    origin_url_(origin_url) {
+    origin_url_(origin_url),
+    database_id_(kDatabaseNotAdded) {
   }
 
   virtual void onSuccess(WebObjectType* idb_object) {
-    int32 object_id = dispatcher_host()->Add(idb_object, thread_id(),
-                                             origin_url_);
+    int32 object_id = database_id_;
+    if (object_id == kDatabaseNotAdded) {
+      object_id = dispatcher_host()->Add(idb_object, thread_id(), origin_url_);
+    } else {
+      // We already have this database and don't need a new copy of it.
+      delete idb_object;
+    }
+
     dispatcher_host()->Send(
         new typename WebIDBToMsgHelper<WebObjectType>::MsgType(thread_id(),
                                                                response_id(),
                                                                object_id));
   }
 
+  void onUpgradeNeeded(
+      long long old_version,
+      WebKit::WebIDBTransaction* transaction,
+      WebKit::WebIDBDatabase* database) {
+    NOTREACHED();
+  }
+
+
  private:
   GURL origin_url_;
+  int32 database_id_;
   DISALLOW_IMPLICIT_CONSTRUCTORS(IndexedDBCallbacks);
 };
 
 // WebIDBCursor uses onSuccess(WebIDBCursor*) when a cursor has been opened,
 // onSuccessWithContinuation() when a continue() call has succeeded, or
-// onSuccess() without params to indicate it does not contain any data, i.e.,
-// there is no key within the key range, or it has reached the end.
+// onSuccess(SerializedScriptValue::nullValue()) to indicate it does
+// not contain any data, i.e., there is no key within the key range,
+// or it has reached the end.
 template <>
 class IndexedDBCallbacks<WebKit::WebIDBCursor>
     : public IndexedDBCallbacksBase {
@@ -165,6 +188,9 @@ class IndexedDBCallbacks<WebKit::WebSerializedScriptValue>
       : IndexedDBCallbacksBase(dispatcher_host, thread_id, response_id) { }
 
   virtual void onSuccess(const WebKit::WebSerializedScriptValue& value);
+  virtual void onSuccess(const WebKit::WebSerializedScriptValue& value,
+                         const WebKit::WebIDBKey& key,
+                         const WebKit::WebIDBKeyPath& keyPath);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(IndexedDBCallbacks);

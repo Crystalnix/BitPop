@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,14 +14,6 @@ namespace base {
 namespace debug {
 
 StackTrace::StackTrace() {
-}
-
-StackTrace::~StackTrace() {
-}
-
-const void* const* StackTrace::Addresses(size_t* count) const {
-  NOTIMPLEMENTED();
-  return NULL;
 }
 
 // Sends fake SIGSTKFLT signals to let the Android linker and debuggerd dump

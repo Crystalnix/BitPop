@@ -13,7 +13,9 @@ namespace ppapi_proxy {
 // Implements the untrusted side of the PPB_NetAddress_Private interface.
 class PluginNetAddressPrivate {
  public:
-  static const PPB_NetAddress_Private* GetInterface();
+  static const PPB_NetAddress_Private_0_1* GetInterface0_1();
+  static const PPB_NetAddress_Private_1_0* GetInterface1_0();
+  static const PPB_NetAddress_Private_1_1* GetInterface1_1();
 
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(PluginNetAddressPrivate);

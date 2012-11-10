@@ -34,7 +34,7 @@ class BubbleGtkTest : public InProcessBrowserTest,
 
   GtkWidget* GetNativeBrowserWindow() {
     if (!browser_window_)
-      browser_window_ = GTK_WIDGET(browser()->window()->GetNativeHandle());
+      browser_window_ = GTK_WIDGET(browser()->window()->GetNativeWindow());
     return browser_window_;
   }
 
@@ -84,8 +84,9 @@ IN_PROC_BROWSER_TEST_F(BubbleGtkTest, ArrowLocation) {
                                           &rect,
                                           label,
                                           kPreferredLocations[j],
-                                          true,
-                                          true,
+                                          BubbleGtk::MATCH_SYSTEM_THEME |
+                                              BubbleGtk::POPUP_WINDOW |
+                                              BubbleGtk::GRAB_INPUT,
                                           theme_service,
                                           this);
       EXPECT_EQ(points[i].expected, bubble->current_arrow_location_);
@@ -124,8 +125,9 @@ IN_PROC_BROWSER_TEST_F(BubbleGtkTest, NoArrow) {
                                           &rect,
                                           label,
                                           kPreferredLocations[j],
-                                          true,
-                                          true,
+                                          BubbleGtk::MATCH_SYSTEM_THEME |
+                                              BubbleGtk::POPUP_WINDOW |
+                                              BubbleGtk::GRAB_INPUT,
                                           theme_service,
                                           this);
       EXPECT_EQ(points[i].expected, bubble->current_arrow_location_);

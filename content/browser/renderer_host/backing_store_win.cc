@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,12 +6,13 @@
 
 #include "base/command_line.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
-#include "content/browser/renderer_host/render_widget_host.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/public/common/content_switches.h"
 #include "skia/ext/platform_canvas.h"
 #include "ui/gfx/gdi_util.h"
-#include "ui/gfx/surface/transport_dib.h"
+#include "ui/surface/transport_dib.h"
 
+namespace content {
 namespace {
 
 // Creates a dib conforming to the height/width/section parameters passed in.
@@ -114,10 +115,11 @@ size_t BackingStoreWin::MemorySize() {
 }
 
 void BackingStoreWin::PaintToBackingStore(
-    content::RenderProcessHost* process,
+    RenderProcessHost* process,
     TransportDIB::Id bitmap,
     const gfx::Rect& bitmap_rect,
     const std::vector<gfx::Rect>& copy_rects,
+    float scale_factor,
     const base::Closure& completion_callback,
     bool* scheduled_completion_callback) {
   *scheduled_completion_callback = false;
@@ -177,3 +179,5 @@ void BackingStoreWin::ScrollBackingStore(int dx, int dy,
   // TODO(darin): this doesn't work if dx and dy are both non-zero!
   DCHECK(dx == 0 || dy == 0);
 }
+
+}  // namespace content

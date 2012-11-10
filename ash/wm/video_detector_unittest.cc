@@ -5,7 +5,7 @@
 #include "ash/wm/video_detector.h"
 
 #include "ash/shell.h"
-#include "ash/test/aura_shell_test_base.h"
+#include "ash/test/ash_test_base.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
@@ -38,19 +38,24 @@ class TestVideoDetectorObserver : public VideoDetectorObserver {
   DISALLOW_COPY_AND_ASSIGN(TestVideoDetectorObserver);
 };
 
-class VideoDetectorTest : public AuraShellTestBase {
+class VideoDetectorTest : public AshTestBase {
  public:
   VideoDetectorTest() {}
   virtual ~VideoDetectorTest() {}
 
-  void SetUp() OVERRIDE {
-    AuraShellTestBase::SetUp();
+  virtual void SetUp() OVERRIDE {
+    AshTestBase::SetUp();
     observer_.reset(new TestVideoDetectorObserver);
     detector_ = Shell::GetInstance()->video_detector();
     detector_->AddObserver(observer_.get());
 
     now_ = base::TimeTicks::Now();
     detector_->set_now_for_test(now_);
+  }
+
+  virtual void TearDown() OVERRIDE {
+    detector_->RemoveObserver(observer_.get());
+    AshTestBase::TearDown();
   }
 
  protected:
@@ -119,7 +124,7 @@ TEST_F(VideoDetectorTest, WindowNotVisible) {
 
   // Reparent the window to the root to make sure that visibility changes aren't
   // animated.
-  aura::RootWindow::GetInstance()->AddChild(window.get());
+  Shell::GetPrimaryRootWindow()->AddChild(window.get());
 
   // We shouldn't report video that's played in a hidden window.
   window->Hide();
@@ -143,7 +148,7 @@ TEST_F(VideoDetectorTest, WindowNotVisible) {
   observer_->reset_stats();
   AdvanceTime(base::TimeDelta::FromSeconds(2));
   gfx::Rect offscreen_bounds(
-      gfx::Point(aura::RootWindow::GetInstance()->bounds().width(), 0),
+      gfx::Point(Shell::GetPrimaryRootWindow()->bounds().width(), 0),
       window_bounds.size());
   window->SetBounds(offscreen_bounds);
   ASSERT_EQ(offscreen_bounds, window->bounds());

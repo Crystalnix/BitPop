@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,6 +30,8 @@ class TestFullscreen : public TestCase {
   virtual bool HandleInputEvent(const pp::InputEvent& event);
   virtual void DidChangeView(const pp::View& view);
 
+  void CheckPluginPaint();
+
  private:
   std::string TestGetScreenSize();
   std::string TestNormalToFullscreenToNormal();
@@ -49,14 +51,15 @@ class TestFullscreen : public TestCase {
   pp::Fullscreen screen_mode_;
   pp::Size screen_size_;
   pp::Rect normal_position_;
+  pp::Size painted_size_;
+  uint32_t painted_color_;
 
   bool fullscreen_pending_;
   bool normal_pending_;
-  bool saw_first_fullscreen_didchangeview;
   pp::Graphics2D graphics2d_;
-  TestCompletionCallback set_fullscreen_true_callback_;
-  TestCompletionCallback fullscreen_callback_;
-  TestCompletionCallback normal_callback_;
+
+  NestedEvent fullscreen_event_;
+  NestedEvent normal_event_;
 };
 
 #endif  // PAPPI_TESTS_TEST_FULLSCREEN_H_

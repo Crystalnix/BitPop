@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,8 +47,9 @@ class Audio : public Resource, public PPB_Audio_Shared {
   virtual PP_Resource GetCurrentConfig() OVERRIDE;
   virtual PP_Bool StartPlayback() OVERRIDE;
   virtual PP_Bool StopPlayback() OVERRIDE;
-  virtual int32_t OpenTrusted(PP_Resource config_id,
-                              PP_CompletionCallback create_callback) OVERRIDE;
+  virtual int32_t OpenTrusted(
+      PP_Resource config_id,
+      scoped_refptr<TrackedCallback> create_callback) OVERRIDE;
   virtual int32_t GetSyncSocket(int* sync_socket) OVERRIDE;
   virtual int32_t GetSharedMemory(int* shm_handle, uint32_t* shm_size) OVERRIDE;
 
@@ -64,7 +65,7 @@ Audio::Audio(const HostResource& audio_id,
              PP_Resource config_id,
              PPB_Audio_Callback callback,
              void* user_data)
-    : Resource(audio_id),
+    : Resource(OBJECT_IS_PROXY, audio_id),
       config_(config_id) {
   SetCallback(callback, user_data);
   PpapiGlobals::Get()->GetResourceTracker()->AddRefResource(config_);
@@ -105,7 +106,7 @@ PP_Bool Audio::StopPlayback() {
 }
 
 int32_t Audio::OpenTrusted(PP_Resource config_id,
-                           PP_CompletionCallback create_callback) {
+                           scoped_refptr<TrackedCallback> create_callback) {
   return PP_ERROR_NOTSUPPORTED;  // Don't proxy the trusted interface.
 }
 
@@ -157,9 +158,12 @@ PP_Resource PPB_Audio_Proxy::CreateProxyResource(
 bool PPB_Audio_Proxy::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PPB_Audio_Proxy, msg)
+// Don't build host side into NaCl IRT.
+#if !defined(OS_NACL)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBAudio_Create, OnMsgCreate)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBAudio_StartOrStop,
                         OnMsgStartOrStop)
+#endif
     IPC_MESSAGE_HANDLER(PpapiMsg_PPBAudio_NotifyAudioStreamCreated,
                         OnMsgNotifyAudioStreamCreated)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -171,8 +175,7 @@ void PPB_Audio_Proxy::OnMsgCreate(PP_Instance instance_id,
                                   int32_t sample_rate,
                                   uint32_t sample_frame_count,
                                   HostResource* result) {
-  thunk::EnterFunction<thunk::ResourceCreationAPI> resource_creation(
-      instance_id, true);
+  thunk::EnterResourceCreation resource_creation(instance_id);
   if (resource_creation.failed())
     return;
 
@@ -227,28 +230,6 @@ void PPB_Audio_Proxy::OnMsgStartOrStop(const HostResource& audio_id,
     enter.object()->StartPlayback();
   else
     enter.object()->StopPlayback();
-}
-
-// Processed in the plugin (message from host).
-void PPB_Audio_Proxy::OnMsgNotifyAudioStreamCreated(
-    const HostResource& audio_id,
-    int32_t result_code,
-    IPC::PlatformFileForTransit socket_handle,
-    base::SharedMemoryHandle handle,
-    uint32_t length) {
-  EnterPluginFromHostResource<PPB_Audio_API> enter(audio_id);
-  if (enter.failed() || result_code != PP_OK) {
-    // The caller may still have given us these handles in the failure case.
-    // The easiest way to clean these up is to just put them in the objects
-    // and then close them. This failure case is not performance critical.
-    base::SyncSocket temp_socket(
-        IPC::PlatformFileForTransitToPlatformFile(socket_handle));
-    base::SharedMemory temp_mem(handle, false);
-  } else {
-    static_cast<Audio*>(enter.object())->SetStreamInfo(
-        handle, length,
-        IPC::PlatformFileForTransitToPlatformFile(socket_handle));
-  }
 }
 
 void PPB_Audio_Proxy::AudioChannelConnected(
@@ -312,6 +293,28 @@ int32_t PPB_Audio_Proxy::GetAudioConnectedHandles(
     return PP_ERROR_FAILED;
 
   return PP_OK;
+}
+
+// Processed in the plugin (message from host).
+void PPB_Audio_Proxy::OnMsgNotifyAudioStreamCreated(
+    const HostResource& audio_id,
+    int32_t result_code,
+    IPC::PlatformFileForTransit socket_handle,
+    base::SharedMemoryHandle handle,
+    uint32_t length) {
+  EnterPluginFromHostResource<PPB_Audio_API> enter(audio_id);
+  if (enter.failed() || result_code != PP_OK) {
+    // The caller may still have given us these handles in the failure case.
+    // The easiest way to clean these up is to just put them in the objects
+    // and then close them. This failure case is not performance critical.
+    base::SyncSocket temp_socket(
+        IPC::PlatformFileForTransitToPlatformFile(socket_handle));
+    base::SharedMemory temp_mem(handle, false);
+  } else {
+    static_cast<Audio*>(enter.object())->SetStreamInfo(
+        enter.resource()->pp_instance(), handle, length,
+        IPC::PlatformFileForTransitToPlatformFile(socket_handle));
+  }
 }
 
 }  // namespace proxy

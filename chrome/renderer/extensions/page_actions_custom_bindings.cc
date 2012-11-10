@@ -14,15 +14,10 @@
 namespace extensions {
 
 PageActionsCustomBindings::PageActionsCustomBindings(
-    int dependency_count,
-    const char** dependencies,
     ExtensionDispatcher* extension_dispatcher)
-    : ChromeV8Extension(
-          "extensions/page_actions_custom_bindings.js",
-          IDR_PAGE_ACTIONS_CUSTOM_BINDINGS_JS,
-          dependency_count,
-          dependencies,
-          extension_dispatcher) {}
+    : ChromeV8Extension(extension_dispatcher) {
+  RouteStaticFunction("GetCurrentPageActions", &GetCurrentPageActions);
+}
 
 // static
 v8::Handle<v8::Value> PageActionsCustomBindings::GetCurrentPageActions(
@@ -31,7 +26,7 @@ v8::Handle<v8::Value> PageActionsCustomBindings::GetCurrentPageActions(
       GetFromArguments<PageActionsCustomBindings>(args);
   std::string extension_id = *v8::String::Utf8Value(args[0]->ToString());
   CHECK(!extension_id.empty());
-  const ::Extension* extension =
+  const Extension* extension =
       self->extension_dispatcher_->extensions()->GetByID(extension_id);
   CHECK(extension);
 
@@ -43,17 +38,6 @@ v8::Handle<v8::Value> PageActionsCustomBindings::GetCurrentPageActions(
   }
 
   return page_action_vector;
-}
-
-
-v8::Handle<v8::FunctionTemplate> PageActionsCustomBindings::GetNativeFunction(
-    v8::Handle<v8::String> name) {
-  if (name->Equals(v8::String::New("GetCurrentPageActions"))) {
-    return v8::FunctionTemplate::New(GetCurrentPageActions,
-                                     v8::External::New(this));
-  }
-
-  return ChromeV8Extension::GetNativeFunction(name);
 }
 
 }  // extensions

@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  const ArrayDataModel = cr.ui.ArrayDataModel;
-  const OptionsPage = options.OptionsPage;
-  const SettingsDialog = options.SettingsDialog;
+  /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
+  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var SettingsDialog = options.SettingsDialog;
 
   /**
    * StartupOverlay class
@@ -14,9 +14,11 @@ cr.define('options', function() {
    * @class
    */
   function StartupOverlay() {
-    SettingsDialog.call(this, 'startup', templateData.startupPagesDialogTitle,
-      'startup-overlay',
-      $('startup-overlay-confirm'), $('startup-overlay-cancel'));
+    SettingsDialog.call(this, 'startup',
+                        loadTimeData.getString('startupPagesOverlayTabTitle'),
+                        'startup-overlay',
+                        $('startup-overlay-confirm'),
+                        $('startup-overlay-cancel'));
   };
 
   cr.addSingletonGetter(StartupOverlay);
@@ -31,23 +33,9 @@ cr.define('options', function() {
      */
     autocompleteList_: null,
 
-    // TODO(tbreisacher): Work with jhawkins to refactor this so that we're not
-    // overriding private handle* methods in SettingsDialog.
-
-    /**
-     * @override
-     */
-    handleConfirm_: function() {
-      OptionsPage.closeOverlay();
-      chrome.send('commitStartupPrefChanges');
-    },
-
-    /**
-     * @override
-     */
-    handleCancel_: function() {
-      OptionsPage.closeOverlay();
-      chrome.send('cancelStartupPrefChanges');
+    startup_pages_pref_: {
+      'name': 'session.urls_to_restore_on_startup',
+      'disabled': false
     },
 
     /**
@@ -66,6 +54,10 @@ cr.define('options', function() {
         chrome.send('setStartupPagesToCurrentPages');
       };
 
+      Preferences.getInstance().addEventListener(
+          this.startup_pages_pref_.name,
+          this.handleStartupPageListChange_.bind(this));
+
       var suggestionList = new cr.ui.AutocompleteList();
       suggestionList.autoExpands = true;
       suggestionList.suggestionUpdateRequestCallback =
@@ -73,6 +65,53 @@ cr.define('options', function() {
       $('startup-overlay').appendChild(suggestionList);
       this.autocompleteList_ = suggestionList;
       startupPagesList.autocompleteList = suggestionList;
+    },
+
+    /** @inheritDoc */
+    handleConfirm: function() {
+      SettingsDialog.prototype.handleConfirm.call(this);
+      chrome.send('commitStartupPrefChanges');
+    },
+
+    /** @inheritDoc */
+    handleCancel: function() {
+      SettingsDialog.prototype.handleCancel.call(this);
+      chrome.send('cancelStartupPrefChanges');
+    },
+
+    /**
+     * Sets the enabled state of the custom startup page list
+     * @param {boolean} disable True to disable, false to enable
+     */
+    setControlsDisabled: function(disable) {
+      var startupPagesList = $('startupPagesList');
+      startupPagesList.disabled = disable;
+      startupPagesList.setAttribute('tabindex', disable ? -1 : 0);
+      // Explicitly set disabled state for input text elements.
+      var inputs = startupPagesList.querySelectorAll("input[type='text']");
+      for (var i = 0; i < inputs.length; i++)
+        inputs[i].disabled = disable;
+      $('startupUseCurrentButton').disabled = disable;
+    },
+
+    /**
+     * Enables or disables the the custom startup page list controls
+     * based on the whether the 'pages to restore on startup' pref is enabled.
+     */
+    updateControlStates: function() {
+      this.setControlsDisabled(
+          this.startup_pages_pref_.disabled);
+    },
+
+    /**
+     * Handles change events of the preference
+     * 'session.urls_to_restore_on_startup'.
+     * @param {event} preference changed event.
+     * @private
+     */
+    handleStartupPageListChange_: function(event) {
+      this.startup_pages_pref_.disabled = event.value['disabled'];
+      this.updateControlStates();
     },
 
     /**

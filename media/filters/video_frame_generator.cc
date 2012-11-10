@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/message_loop.h"
 #include "media/base/demuxer_stream.h"
+#include "media/base/video_frame.h"
 
 namespace media {
 
@@ -15,56 +16,55 @@ VideoFrameGenerator::VideoFrameGenerator(
     const gfx::Size& size,
     const base::TimeDelta& frame_duration)
     : message_loop_proxy_(message_loop_proxy),
-      natural_size_(size),
+      size_(size),
       stopped_(true),
       frame_duration_(frame_duration) {
 }
 
-VideoFrameGenerator::~VideoFrameGenerator() {}
-
 void VideoFrameGenerator::Initialize(
-    DemuxerStream* demuxer_stream,
-    const PipelineStatusCB& filter_callback,
-    const StatisticsCallback& stat_callback) {
+    const scoped_refptr<DemuxerStream>& stream,
+    const PipelineStatusCB& status_cb,
+    const StatisticsCB& statistics_cb) {
   message_loop_proxy_->PostTask(
       FROM_HERE,
       base::Bind(&VideoFrameGenerator::InitializeOnDecoderThread,
-                 this, make_scoped_refptr(demuxer_stream),
-                 filter_callback, stat_callback));
+                 this, stream, status_cb, statistics_cb));
 }
 
-void VideoFrameGenerator::Read(const ReadCB& callback) {
+void VideoFrameGenerator::Read(const ReadCB& read_cb) {
   message_loop_proxy_->PostTask(
       FROM_HERE,
-      base::Bind(&VideoFrameGenerator::ReadOnDecoderThread,
-                 this, callback));
+      base::Bind(&VideoFrameGenerator::ReadOnDecoderThread, this, read_cb));
 }
 
-const gfx::Size& VideoFrameGenerator::natural_size() {
-  return natural_size_;
-}
-
-void VideoFrameGenerator::Stop(const base::Closure& callback) {
+void VideoFrameGenerator::Reset(const base::Closure& closure) {
   message_loop_proxy_->PostTask(
       FROM_HERE,
-      base::Bind(&VideoFrameGenerator::StopOnDecoderThread,
-                 this, callback));
+      base::Bind(&VideoFrameGenerator::ResetOnDecoderThread, this, closure));
 }
+
+void VideoFrameGenerator::Stop(const base::Closure& closure) {
+  message_loop_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&VideoFrameGenerator::StopOnDecoderThread, this, closure));
+}
+
+VideoFrameGenerator::~VideoFrameGenerator() {}
 
 void VideoFrameGenerator::InitializeOnDecoderThread(
-    DemuxerStream* demuxer_stream,
-    const PipelineStatusCB& filter_callback,
-    const StatisticsCallback& stat_callback) {
+    const scoped_refptr<DemuxerStream>& /* stream */,
+    const PipelineStatusCB& status_cb,
+    const StatisticsCB& statistics_cb) {
   DVLOG(1) << "InitializeOnDecoderThread";
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
 
-  filter_callback.Run(PIPELINE_OK);
+  status_cb.Run(PIPELINE_OK);
   stopped_ = false;
 }
 
-void VideoFrameGenerator::ReadOnDecoderThread(const ReadCB& callback) {
+void VideoFrameGenerator::ReadOnDecoderThread(const ReadCB& read_cb) {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
-  CHECK(!callback.is_null());
+  CHECK(!read_cb.is_null());
   if (stopped_)
     return;
 
@@ -72,26 +72,28 @@ void VideoFrameGenerator::ReadOnDecoderThread(const ReadCB& callback) {
   //
   // TODO(scherkus): migrate this to proper buffer recycling.
   scoped_refptr<VideoFrame> video_frame =
-      VideoFrame::CreateFrame(VideoFrame::YV12,
-                              natural_size_.width(),
-                              natural_size_.height(),
-                              current_time_,
-                              frame_duration_);
+      VideoFrame::CreateFrame(VideoFrame::YV12, size_, size_, current_time_);
   current_time_ += frame_duration_;
 
   // TODO(wjia): set pixel data to pre-defined patterns if it's desired to
   // verify frame content.
 
-  callback.Run(video_frame);
+  read_cb.Run(kOk, video_frame);
 }
 
-void VideoFrameGenerator::StopOnDecoderThread(
-    const base::Closure& callback) {
+void VideoFrameGenerator::ResetOnDecoderThread(const base::Closure& closure) {
+  DVLOG(1) << "ResetOnDecoderThread";
+  DCHECK(message_loop_proxy_->BelongsToCurrentThread());
+  current_time_ = base::TimeDelta();
+  closure.Run();
+}
+
+void VideoFrameGenerator::StopOnDecoderThread(const base::Closure& closure) {
   DVLOG(1) << "StopOnDecoderThread";
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
   stopped_ = true;
   current_time_ = base::TimeDelta();
-  callback.Run();
+  closure.Run();
 }
 
 }  // namespace media

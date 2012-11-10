@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_CHROMEOS_OPTIONS_NETWORK_CONFIG_VIEW_H_
 #define CHROME_BROWSER_CHROMEOS_OPTIONS_NETWORK_CONFIG_VIEW_H_
-#pragma once
 
 #include <string>
 
@@ -15,6 +14,10 @@
 #include "ui/gfx/native_widget_types.h"  // gfx::NativeWindow
 #include "ui/views/controls/button/button.h"  // views::ButtonListener
 #include "ui/views/window/dialog_delegate.h"
+
+namespace gfx {
+class ImageSkia;
+}
 
 namespace views {
 class ImageView;
@@ -42,11 +45,10 @@ class NetworkConfigView : public views::DialogDelegateView,
      virtual ~Delegate() {}
   };
 
-  // Login dialog for known networks.
-  explicit NetworkConfigView(Network* network);
-  // Login dialog for new/hidden networks.
-  explicit NetworkConfigView(ConnectionType type);
-  virtual ~NetworkConfigView() {}
+  // Shows a network connection dialog if none is currently visible.
+  // Returns false if a dialog is already visible.
+  static bool Show(Network* network, gfx::NativeWindow parent);
+  static bool ShowForType(ConnectionType type, gfx::NativeWindow parent);
 
   // Returns corresponding native window.
   gfx::NativeWindow GetNativeWindow() const;
@@ -57,11 +59,11 @@ class NetworkConfigView : public views::DialogDelegateView,
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual views::View* GetExtraView() OVERRIDE;
+  virtual views::View* GetInitiallyFocusedView() OVERRIDE;
 
   // views::WidgetDelegate methods.
   virtual ui::ModalType GetModalType() const OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
 
   // views::View overrides.
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
@@ -83,6 +85,12 @@ class NetworkConfigView : public views::DialogDelegateView,
                                     views::View* child) OVERRIDE;
 
  private:
+  // Login dialog for known networks.
+  explicit NetworkConfigView(Network* network);
+  // Login dialog for new/hidden networks.
+  explicit NetworkConfigView(ConnectionType type);
+  virtual ~NetworkConfigView();
+
   // Creates an "Advanced" button in the lower-left corner of the dialog.
   void CreateAdvancedButton();
 
@@ -113,8 +121,8 @@ class ChildNetworkConfigView : public views::View {
       : parent_(parent) {}
   virtual ~ChildNetworkConfigView() {}
 
-  // Called to get title for parent NetworkConfigView dialog box.
-  virtual string16 GetTitle() = 0;
+  // Returns view that should be focused on dialog activation.
+  virtual views::View* GetInitiallyFocusedView() = 0;
 
   // Called to determine if "Connect" button should be enabled.
   virtual bool CanLogin() = 0;
@@ -126,8 +134,8 @@ class ChildNetworkConfigView : public views::View {
   // Called when "Cancel" button is clicked.
   virtual void Cancel() = 0;
 
-  // Called to set initial focus in a reasonable widget.  Must be done
-  // post-construction after the view has a parent window.
+  // Called to set focus when view is recreated with the same dialog
+  // being active. For example, clicking on "Advanced" button.
   virtual void InitFocus() = 0;
 
   // Minimum with of input fields / combo boxes.
@@ -165,8 +173,8 @@ class ControlledSettingIndicatorView : public views::View {
 
   bool managed_;
   views::ImageView* image_view_;
-  const SkBitmap* gray_image_;
-  const SkBitmap* color_image_;
+  const gfx::ImageSkia* gray_image_;
+  const gfx::ImageSkia* color_image_;
 
   DISALLOW_COPY_AND_ASSIGN(ControlledSettingIndicatorView);
 };

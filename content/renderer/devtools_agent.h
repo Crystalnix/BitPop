@@ -1,14 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_RENDERER_DEVTOOLS_AGENT_H_
 #define CONTENT_RENDERER_DEVTOOLS_AGENT_H_
-#pragma once
 
 #include <string>
 
 #include "base/basictypes.h"
+#include "content/public/common/console_message_level.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsAgentClient.h"
 
@@ -56,8 +56,9 @@ class DevToolsAgent : public content::RenderViewObserver,
   void OnDetach();
   void OnDispatchOnInspectorBackend(const std::string& message);
   void OnInspectElement(int x, int y);
-  void OnSetApuAgentEnabled(bool enabled);
-  void OnNavigate();
+  void OnAddMessageToConsole(content::ConsoleMessageLevel level,
+                             const std::string& message);
+  void ContinueProgram();
   void OnSetupDevToolsClient();
 
   bool is_attached_;

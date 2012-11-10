@@ -4,15 +4,13 @@
 
 #ifndef UI_VIEWS_CONTROLS_TEXTFIELD_TEXTFIELD_H_
 #define UI_VIEWS_CONTROLS_TEXTFIELD_TEXTFIELD_H_
-#pragma once
-
-#include "build/build_config.h"
 
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/string16.h"
+#include "build/build_config.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/keycodes/keyboard_codes.h"
@@ -90,8 +88,10 @@ class VIEWS_EXPORT Textfield : public View {
   // Returns the text that is currently selected.
   string16 GetSelectedText() const;
 
-  // Causes the edit field to be fully selected.
-  void SelectAll();
+  // Select the entire text range. If |reversed| is true, the range will end at
+  // the logical beginning of the text; this generally shows the leading portion
+  // of text that overflows its display area.
+  void SelectAll(bool reversed);
 
   // Clears the selection within the edit field and sets the caret to the end.
   void ClearSelection() const;
@@ -126,6 +126,14 @@ class VIEWS_EXPORT Textfield : public View {
   }
   void UseDefaultBackgroundColor();
 
+  // Gets/Sets the color to be used for the cursor.
+  SkColor cursor_color() const { return cursor_color_; }
+  void SetCursorColor(SkColor color);
+
+  // Gets/Sets whether we use the system's default color for the cursor.
+  bool use_default_cursor_color() const { return use_default_cursor_color_; }
+  void UseDefaultCursorColor();
+
   // Gets/Sets the font used when rendering the text within the Textfield.
   const gfx::Font& font() const { return font_; }
   void SetFont(const gfx::Font& font);
@@ -149,14 +157,19 @@ class VIEWS_EXPORT Textfield : public View {
   void RemoveBorder();
 
   // Sets the text to display when empty.
-  void set_text_to_display_when_empty(const string16& text) {
-    text_to_display_when_empty_ = text;
+  void set_placeholder_text(const string16& text) {
+    placeholder_text_ = text;
 #if !defined(OS_LINUX)
     NOTIMPLEMENTED();
 #endif
   }
-  const string16& text_to_display_when_empty() {
-    return text_to_display_when_empty_;
+  const string16& placeholder_text() const {
+    return placeholder_text_;
+  }
+
+  SkColor placeholder_text_color() const { return placeholder_text_color_; }
+  void set_placeholder_text_color(SkColor color) {
+    placeholder_text_color_ = color;
   }
 
   // Getter for the horizontal margins that were set. Returns false if
@@ -229,7 +242,6 @@ class VIEWS_EXPORT Textfield : public View {
   virtual void AboutToRequestFocusFromTabTraversal(bool reverse) OVERRIDE;
   virtual bool SkipDefaultKeyEventProcessing(const KeyEvent& e) OVERRIDE;
   virtual void OnEnabledChanged() OVERRIDE;
-  virtual void OnPaintBackground(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnPaintFocusBorder(gfx::Canvas* canvas) OVERRIDE;
   virtual bool OnKeyPressed(const views::KeyEvent& e) OVERRIDE;
   virtual bool OnKeyReleased(const views::KeyEvent& e) OVERRIDE;
@@ -269,23 +281,23 @@ class VIEWS_EXPORT Textfield : public View {
   // Whether the border is drawn.
   bool draw_border_;
 
-  // The text color to be used when painting the Textfield, provided
-  // |use_default_text_color_| is set to false.
+  // Text color.  Only used if |use_default_text_color_| is false.
   SkColor text_color_;
 
-  // When true, the system text color for Textfields is used when painting this
-  // Textfield. When false, the value of |text_color_| determines the
-  // Textfield's text color.
+  // Should we use the system text color instead of |text_color_|?
   bool use_default_text_color_;
 
-  // The background color to be used when painting the Textfield, provided
-  // |use_default_background_color_| is set to false.
+  // Background color.  Only used if |use_default_background_color_| is false.
   SkColor background_color_;
 
-  // When true, the system background color for Textfields is used when painting
-  // this Textfield. When false, the value of |background_color_| determines the
-  // Textfield's background color.
+  // Should we use the system background color instead of |background_color_|?
   bool use_default_background_color_;
+
+  // Cursor color.  Only used if |use_default_cursor_color_| is false.
+  SkColor cursor_color_;
+
+  // Should we use the system cursor color instead of |cursor_color_|?
+  bool use_default_cursor_color_;
 
   // TODO(beng): remove this once NativeTextfieldWin subclasses
   //             NativeControlWin.
@@ -299,7 +311,10 @@ class VIEWS_EXPORT Textfield : public View {
   bool vertical_margins_were_set_;
 
   // Text to display when empty.
-  string16 text_to_display_when_empty_;
+  string16 placeholder_text_;
+
+  // Placeholder text color.
+  SkColor placeholder_text_color_;
 
   // The accessible name of the text field.
   string16 accessible_name_;

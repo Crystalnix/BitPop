@@ -4,7 +4,6 @@
 
 #ifndef UI_GFX_PLATFORM_FONT_H_
 #define UI_GFX_PLATFORM_FONT_H_
-#pragma once
 
 #include <string>
 
@@ -21,7 +20,6 @@ class UI_EXPORT PlatformFont : public base::RefCounted<PlatformFont> {
  public:
   // Creates an appropriate PlatformFont implementation.
   static PlatformFont* CreateDefault();
-  static PlatformFont* CreateFromFont(const Font& other);
   static PlatformFont* CreateFromNativeFont(NativeFont native_font);
   // Creates a PlatformFont implementation with the specified |font_name|
   // (encoded in UTF-8) and |font_size| in pixels.
@@ -46,6 +44,10 @@ class UI_EXPORT PlatformFont : public base::RefCounted<PlatformFont> {
 
   // Returns the average character width for the font.
   virtual int GetAverageCharacterWidth() const = 0;
+
+  // Returns the number of horizontal pixels needed to display the specified
+  // string.
+  virtual int GetStringWidth(const string16& text) const = 0;
 
   // Returns the expected number of horizontal pixels needed to display the
   // specified length of characters. Call GetStringWidth() to retrieve the

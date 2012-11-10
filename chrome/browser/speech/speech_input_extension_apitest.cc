@@ -1,9 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/speech/speech_input_extension_api.h"
@@ -11,14 +12,19 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "content/browser/speech/speech_recognizer.h"
-#include "content/public/common/speech_input_result.h"
+#include "content/public/browser/speech_recognition_event_listener.h"
+#include "content/public/common/speech_recognition_error.h"
+#include "content/public/common/speech_recognition_result.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
 
 namespace net {
 class URLRequestContextGetter;
+}
+
+namespace {
+const int kSessionIDForTests = 0;
 }
 
 // Mock class used to test the extension speech input API.
@@ -32,11 +38,11 @@ class SpeechInputExtensionApiTest : public ExtensionApiTest,
     recording_devices_available_ = available;
   }
 
-  void SetRecognitionError(content::SpeechInputError error) {
+  void SetRecognitionError(content::SpeechRecognitionErrorCode error) {
     next_error_ = error;
   }
 
-  void SetRecognitionResult(const content::SpeechInputResult& result) {
+  void SetRecognitionResult(const content::SpeechRecognitionResult& result) {
     next_result_ = result;
   }
 
@@ -46,6 +52,11 @@ class SpeechInputExtensionApiTest : public ExtensionApiTest,
 
   // Used as delay when the corresponding call should not be dispatched.
   static const int kDontDispatchCall = -1;
+
+  // InProcessBrowserTest methods.
+  virtual void SetUpOnMainThread() OVERRIDE {
+    manager_ = SpeechInputExtensionManager::GetForProfile(browser()->profile());
+  }
 
   // ExtensionApiTest methods.
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
@@ -58,7 +69,7 @@ class SpeechInputExtensionApiTest : public ExtensionApiTest,
     return recording_devices_available_;
   }
 
-  virtual bool IsRecordingInProcess() OVERRIDE {
+  virtual bool IsCapturingAudio() OVERRIDE {
     // Only the mock recognizer is supposed to be recording during testing.
     return HasValidRecognizer();
   }
@@ -68,17 +79,18 @@ class SpeechInputExtensionApiTest : public ExtensionApiTest,
   }
 
   virtual void StartRecording(
-      speech_input::SpeechRecognizerDelegate* delegate,
+      content::SpeechRecognitionEventListener* listener,
       net::URLRequestContextGetter* context_getter,
-      int caller_id,
+      const std::string& extension_name,
       const std::string& language,
       const std::string& grammar,
-      bool filter_profanities) OVERRIDE;
+      bool filter_profanities,
+      int render_process_id) OVERRIDE;
 
   virtual void StopRecording(bool recognition_failed) OVERRIDE;
 
   SpeechInputExtensionManager* GetManager() {
-    return SpeechInputExtensionManager::GetForProfile(browser()->profile());
+    return manager_.get();
   }
 
   // Auxiliary class used to hook the API manager into the test during its
@@ -100,19 +112,21 @@ class SpeechInputExtensionApiTest : public ExtensionApiTest,
   };
 
  private:
-  void ProvideResults(int caller_id);
+  void ProvideResults();
 
   bool recording_devices_available_;
   bool recognizer_is_valid_;
-  content::SpeechInputError next_error_;
-  content::SpeechInputResult next_result_;
+  content::SpeechRecognitionErrorCode next_error_;
+  content::SpeechRecognitionResult next_result_;
   int result_delay_ms_;
+
+  scoped_refptr<SpeechInputExtensionManager> manager_;
 };
 
 SpeechInputExtensionApiTest::SpeechInputExtensionApiTest()
     : recording_devices_available_(true),
       recognizer_is_valid_(false),
-      next_error_(content::SPEECH_INPUT_ERROR_NONE),
+      next_error_(content::SPEECH_RECOGNITION_ERROR_NONE),
       result_delay_ms_(0) {
 }
 
@@ -120,30 +134,38 @@ SpeechInputExtensionApiTest::~SpeechInputExtensionApiTest() {
 }
 
 void SpeechInputExtensionApiTest::StartRecording(
-      speech_input::SpeechRecognizerDelegate* delegate,
+      content::SpeechRecognitionEventListener* listener,
       net::URLRequestContextGetter* context_getter,
-      int caller_id,
+      const std::string& extension_name,
       const std::string& language,
       const std::string& grammar,
-      bool filter_profanities) {
+      bool filter_profanities,
+      int render_process_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   recognizer_is_valid_ = true;
 
   // Notify that recording started.
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-      base::Bind(&SpeechInputExtensionManager::DidStartReceivingAudio,
-      GetManager(), caller_id), 0);
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&SpeechInputExtensionManager::OnAudioStart,
+                 GetManager(),
+                 kSessionIDForTests),
+      base::TimeDelta());
 
   // Notify sound start in the input device.
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-      base::Bind(&SpeechInputExtensionManager::DidStartReceivingSpeech,
-      GetManager(), caller_id), 0);
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&SpeechInputExtensionManager::OnSoundStart,
+                 GetManager(),
+                 kSessionIDForTests),
+      base::TimeDelta());
 
   if (result_delay_ms_ != kDontDispatchCall) {
     // Dispatch the recognition results.
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
-        base::Bind(&SpeechInputExtensionApiTest::ProvideResults, this,
-        caller_id), result_delay_ms_);
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&SpeechInputExtensionApiTest::ProvideResults, this),
+        base::TimeDelta::FromMilliseconds(result_delay_ms_));
   }
 }
 
@@ -152,16 +174,19 @@ void SpeechInputExtensionApiTest::StopRecording(bool recognition_failed) {
   recognizer_is_valid_ = false;
 }
 
-void SpeechInputExtensionApiTest::ProvideResults(int caller_id) {
+void SpeechInputExtensionApiTest::ProvideResults() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  if (next_error_ != content::SPEECH_INPUT_ERROR_NONE) {
-    GetManager()->OnRecognizerError(caller_id, next_error_);
+  if (next_error_ != content::SPEECH_RECOGNITION_ERROR_NONE) {
+    GetManager()->OnRecognitionError(
+        kSessionIDForTests, content::SpeechRecognitionError(next_error_));
     return;
   }
 
-  GetManager()->DidStopReceivingSpeech(caller_id);
-  GetManager()->SetRecognitionResult(caller_id, next_result_);
+  GetManager()->OnSoundEnd(kSessionIDForTests);
+  GetManager()->OnAudioEnd(kSessionIDForTests);
+  GetManager()->OnRecognitionResult(kSessionIDForTests, next_result_);
+  GetManager()->OnRecognitionEnd(kSessionIDForTests);
 }
 
 // Every test should leave the manager in the idle state when finished.
@@ -182,9 +207,10 @@ IN_PROC_BROWSER_TEST_F(SpeechInputExtensionApiTest, NoDevicesAvailable) {
 IN_PROC_BROWSER_TEST_F(SpeechInputExtensionApiTest, RecognitionSuccessful) {
   AutoManagerHook hook(this);
 
-  content::SpeechInputResult result;
+  content::SpeechRecognitionResult result;
   result.hypotheses.push_back(
-      content::SpeechInputHypothesis(UTF8ToUTF16("this is a test"), 0.99));
+      content::SpeechRecognitionHypothesis(
+          UTF8ToUTF16("this is a test"), 0.99));
   SetRecognitionResult(result);
   ASSERT_TRUE(RunExtensionTest("speech_input/recognition")) << message_;
 }
@@ -192,6 +218,6 @@ IN_PROC_BROWSER_TEST_F(SpeechInputExtensionApiTest, RecognitionSuccessful) {
 IN_PROC_BROWSER_TEST_F(SpeechInputExtensionApiTest, RecognitionError) {
   AutoManagerHook hook(this);
 
-  SetRecognitionError(content::SPEECH_INPUT_ERROR_NETWORK);
+  SetRecognitionError(content::SPEECH_RECOGNITION_ERROR_NETWORK);
   ASSERT_TRUE(RunExtensionTest("speech_input/recognition_error")) << message_;
 }

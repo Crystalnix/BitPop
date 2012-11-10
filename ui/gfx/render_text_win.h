@@ -4,13 +4,15 @@
 
 #ifndef UI_GFX_RENDER_TEXT_WIN_H_
 #define UI_GFX_RENDER_TEXT_WIN_H_
-#pragma once
 
 #include <usp10.h>
 
+#include <map>
+#include <string>
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "ui/gfx/render_text.h"
 
 namespace gfx {
@@ -28,6 +30,8 @@ struct TextRun {
   //            See the example at: http://www.catch22.net/tuts/neatpad/12.
   SkColor foreground;
   // A gfx::Font::FontStyle flag to specify bold and italic styles.
+  // Supersedes |font.GetFontStyle()|. Stored separately to avoid calling
+  // |font.DeriveFont()|, which is expensive on Windows.
   int font_style;
   bool strike;
   bool diagonal_strike;
@@ -62,11 +66,10 @@ class RenderTextWin : public RenderText {
   virtual ~RenderTextWin();
 
   // Overridden from RenderText:
-  virtual base::i18n::TextDirection GetTextDirection() OVERRIDE;
-  virtual int GetStringWidth() OVERRIDE;
+  virtual Size GetStringSize() OVERRIDE;
+  virtual int GetBaseline() OVERRIDE;
   virtual SelectionModel FindCursorPosition(const Point& point) OVERRIDE;
-  virtual Rect GetCursorBounds(const SelectionModel& selection,
-                               bool insert_mode) OVERRIDE;
+  virtual std::vector<FontSpan> GetFontSpansForTesting() OVERRIDE;
 
  protected:
   // Overridden from RenderText:
@@ -76,42 +79,61 @@ class RenderTextWin : public RenderText {
   virtual SelectionModel AdjacentWordSelectionModel(
       const SelectionModel& selection,
       VisualCursorDirection direction) OVERRIDE;
-  virtual SelectionModel EdgeSelectionModel(
-      VisualCursorDirection direction) OVERRIDE;
-  virtual std::vector<Rect> GetSubstringBounds(size_t from, size_t to) OVERRIDE;
   virtual void SetSelectionModel(const SelectionModel& model) OVERRIDE;
+  virtual void GetGlyphBounds(size_t index,
+                              ui::Range* xspan,
+                              int* height) OVERRIDE;
+  virtual std::vector<Rect> GetSubstringBounds(ui::Range range) OVERRIDE;
   virtual bool IsCursorablePosition(size_t position) OVERRIDE;
-  virtual void UpdateLayout() OVERRIDE;
+  virtual void ResetLayout() OVERRIDE;
   virtual void EnsureLayout() OVERRIDE;
   virtual void DrawVisualText(Canvas* canvas) OVERRIDE;
 
  private:
-  virtual size_t IndexOfAdjacentGrapheme(
-      size_t index,
-      LogicalCursorDirection direction) OVERRIDE;
-
   void ItemizeLogicalText();
   void LayoutVisualText();
 
+  // Helper function to update the font on a text run after font substitution.
+  void ApplySubstituteFont(internal::TextRun* run, const Font& font);
+
+  // Returns the number of characters in |run| that have missing glyphs.
+  int CountCharsWithMissingGlyphs(internal::TextRun* run) const;
+
+  // Returns a vector of linked fonts corresponding to |font|.
+  const std::vector<Font>* GetLinkedFonts(const Font& font) const;
+
   // Return the run index that contains the argument; or the length of the
   // |runs_| vector if argument exceeds the text length or width.
-  size_t GetRunContainingPosition(size_t position) const;
+  size_t GetRunContainingCaret(const SelectionModel& caret) const;
   size_t GetRunContainingPoint(const Point& point) const;
 
   // Given a |run|, returns the SelectionModel that contains the logical first
   // or last caret position inside (not at a boundary of) the run.
   // The returned value represents a cursor/caret position without a selection.
-  SelectionModel FirstSelectionModelInsideRun(internal::TextRun* run);
-  SelectionModel LastSelectionModelInsideRun(internal::TextRun* run);
+  SelectionModel FirstSelectionModelInsideRun(const internal::TextRun* run);
+  SelectionModel LastSelectionModelInsideRun(const internal::TextRun* run);
 
-  // National Language Support native digit and digit substitution settings.
-  SCRIPT_DIGITSUBSTITUTE digit_substitute_;
+  // Cached HDC for performing Uniscribe API calls.
+  static HDC cached_hdc_;
+
+  // Cached map from font names to vectors of linked fonts.
+  static std::map<std::string, std::vector<Font> > cached_linked_fonts_;
+
+  // Cached map of system fonts, from file names to font families.
+  static std::map<std::string, std::string> cached_system_fonts_;
+
+  // Cached map from font name to the last successful substitute font used.
+  static std::map<std::string, Font> successful_substitute_fonts_;
 
   SCRIPT_CONTROL script_control_;
   SCRIPT_STATE script_state_;
 
-  std::vector<internal::TextRun*> runs_;
-  int string_width_;
+  ScopedVector<internal::TextRun> runs_;
+  Size string_size_;
+
+  // A common vertical baseline for all the text runs. This is computed as the
+  // largest baseline over all the runs' fonts.
+  int common_baseline_;
 
   scoped_array<int> visual_to_logical_;
   scoped_array<int> logical_to_visual_;

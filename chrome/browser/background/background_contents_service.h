@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_BACKGROUND_BACKGROUND_CONTENTS_SERVICE_H_
 #define CHROME_BROWSER_BACKGROUND_BACKGROUND_CONTENTS_SERVICE_H_
-#pragma once
 
 #include <map>
 #include <string>
@@ -23,7 +22,6 @@
 class CommandLine;
 class PrefService;
 class Profile;
-class TabContents;
 
 namespace base {
 class DictionaryValue;
@@ -53,6 +51,12 @@ class BackgroundContentsService : private content::NotificationObserver,
   // Returns the BackgroundContents associated with the passed application id,
   // or NULL if none.
   BackgroundContents* GetAppBackgroundContents(const string16& appid);
+
+  // Returns true if there's a registered BackgroundContents for this app. It
+  // is possible for this routine to return true when GetAppBackgroundContents()
+  // returns false, if the BackgroundContents closed due to the render process
+  // crashing.
+  bool HasRegisteredBackgroundContents(const string16& appid);
 
   // Returns all currently opened BackgroundContents (used by the task manager).
   std::vector<BackgroundContents*> GetBackgroundContents() const;
@@ -152,6 +156,11 @@ class BackgroundContentsService : private content::NotificationObserver,
 
   // Returns true if this BackgroundContents is in the contents_list_.
   bool IsTracked(BackgroundContents* contents) const;
+
+  // Sends out a notification when our association of background contents with
+  // apps may have changed (used by BackgroundApplicationListModel to update the
+  // set of background apps as new background contents are opened/closed).
+  void SendChangeNotification(Profile* profile);
 
   // PrefService used to store list of background pages (or NULL if this is
   // running under an incognito profile).

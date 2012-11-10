@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include "base/debug/leak_annotations.h"
 #include "base/logging.h"
+#include "base/metrics/statistics_recorder.h"
 #include "net/disk_cache/stats.h"
 
 namespace disk_cache {
@@ -23,32 +24,25 @@ StatsHistogram::~StatsHistogram() {
 }
 
 StatsHistogram* StatsHistogram::FactoryGet(const std::string& name) {
-  Histogram* histogram(NULL);
-
   Sample minimum = 1;
   Sample maximum = disk_cache::Stats::kDataSizesLength - 1;
   size_t bucket_count = disk_cache::Stats::kDataSizesLength;
 
-  if (StatisticsRecorder::FindHistogram(name, &histogram)) {
-    DCHECK(histogram != NULL);
-  } else {
+  Histogram* histogram = StatisticsRecorder::FindHistogram(name);
+  if (!histogram) {
     // To avoid racy destruction at shutdown, the following will be leaked.
     StatsHistogram* stats_histogram =
         new StatsHistogram(name, minimum, maximum, bucket_count);
-    stats_histogram->InitializeBucketRange();
     stats_histogram->SetFlags(kUmaTargetedHistogramFlag);
     histogram = StatisticsRecorder::RegisterOrDeleteDuplicate(stats_histogram);
   }
 
   DCHECK(HISTOGRAM == histogram->histogram_type());
-  DCHECK(histogram->HasConstructorArguments(minimum, maximum, bucket_count));
+  DCHECK(histogram->HasConstructionArguments(minimum, maximum, bucket_count));
 
   // We're preparing for an otherwise unsafe upcast by ensuring we have the
   // proper class type.
   StatsHistogram* return_histogram = static_cast<StatsHistogram*>(histogram);
-  // Validate upcast by seeing that we're probably providing the checksum.
-  CHECK_EQ(return_histogram->StatsHistogram::CalculateRangeChecksum(),
-           return_histogram->CalculateRangeChecksum());
   return return_histogram;
 }
 
@@ -87,12 +81,6 @@ void StatsHistogram::SnapshotSample(SampleSet* sample) const {
 Histogram::Inconsistencies StatsHistogram::FindCorruption(
     const SampleSet& snapshot) const {
   return NO_INCONSISTENCIES;  // This class won't monitor inconsistencies.
-}
-
-uint32 StatsHistogram::CalculateRangeChecksum() const {
-  // We don't calculate checksums, so at least establish a unique constant.
-  const uint32 kStatsHistogramChecksum = 0x0cecce;
-  return kStatsHistogramChecksum;
 }
 
 }  // namespace disk_cache

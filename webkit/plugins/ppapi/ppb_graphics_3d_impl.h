@@ -46,6 +46,9 @@ class PPB_Graphics3D_Impl : public ::ppapi::PPB_Graphics3D_Shared {
   // Returns the id of texture that can be used by the compositor.
   unsigned int GetBackingTextureId();
 
+  // Returns true if the backing texture is always opaque.
+  bool IsOpaque();
+
   // Notifications about the view's progress painting.  See PluginInstance.
   // These messages are used to send Flush callbacks to the plugin.
   void ViewWillInitiatePaint();
@@ -64,14 +67,15 @@ class PPB_Graphics3D_Impl : public ::ppapi::PPB_Graphics3D_Shared {
  private:
   explicit PPB_Graphics3D_Impl(PP_Instance instance);
 
-  bool Init(PP_Resource share_context,
+  bool Init(PPB_Graphics3D_API* share_context,
             const int32_t* attrib_list);
-  bool InitRaw(PP_Resource share_context,
+  bool InitRaw(PPB_Graphics3D_API* share_context,
                const int32_t* attrib_list);
 
   // Notifications received from the GPU process.
   void OnSwapBuffers();
   void OnContextLost();
+  void OnConsoleMessage(const std::string& msg, int id);
   // Notifications sent to plugin.
   void SendContextLost();
 

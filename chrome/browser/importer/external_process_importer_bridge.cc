@@ -1,11 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/importer/external_process_importer_bridge.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
+#include "base/task_runner.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/history/history_types.h"
@@ -27,8 +29,10 @@ const int kNumFaviconsToSend = 100;
 
 ExternalProcessImporterBridge::ExternalProcessImporterBridge(
     const DictionaryValue& localized_strings,
-    IPC::Message::Sender* sender)
-    : sender_(sender) {
+    IPC::Sender* sender,
+    base::TaskRunner* task_runner)
+    : sender_(sender),
+      task_runner_(task_runner) {
   // Bridge needs to make its own copy because OS 10.6 autoreleases the
   // localized_strings value that is passed in (see http://crbug.com/46003 ).
   localized_strings_.reset(localized_strings.DeepCopy());
@@ -84,15 +88,15 @@ void ExternalProcessImporterBridge::SetFavicons(
 }
 
 void ExternalProcessImporterBridge::SetHistoryItems(
-    const std::vector<history::URLRow>& rows,
+    const history::URLRows& rows,
     history::VisitSource visit_source) {
   Send(new ProfileImportProcessHostMsg_NotifyHistoryImportStart(rows.size()));
 
-  std::vector<history::URLRow>::const_iterator it;
+  history::URLRows::const_iterator it;
   for (it = rows.begin(); it < rows.end();
        it = it + kNumHistoryRowsToSend) {
-    std::vector<history::URLRow> row_group;
-    std::vector<history::URLRow>::const_iterator end_group =
+    history::URLRows row_group;
+    history::URLRows::const_iterator end_group =
         it + kNumHistoryRowsToSend < rows.end() ?
         it + kNumHistoryRowsToSend : rows.end();
     row_group.assign(it, end_group);
@@ -104,14 +108,10 @@ void ExternalProcessImporterBridge::SetHistoryItems(
 
 void ExternalProcessImporterBridge::SetKeywords(
     const std::vector<TemplateURL*>& template_urls,
-    int default_keyword_index,
     bool unique_on_host_and_path) {
-  std::vector<TemplateURL> urls;
-  for (size_t i = 0; i < template_urls.size(); ++i) {
-    urls.push_back(*template_urls[i]);
-  }
-  Send(new ProfileImportProcessHostMsg_NotifyKeywordsReady(urls,
-      default_keyword_index, unique_on_host_and_path));
+  Send(new ProfileImportProcessHostMsg_NotifyKeywordsReady(template_urls,
+      unique_on_host_and_path));
+  STLDeleteContainerPointers(template_urls.begin(), template_urls.end());
 }
 
 void ExternalProcessImporterBridge::SetPasswordForm(
@@ -144,6 +144,14 @@ string16 ExternalProcessImporterBridge::GetLocalizedString(int message_id) {
 
 ExternalProcessImporterBridge::~ExternalProcessImporterBridge() {}
 
-bool ExternalProcessImporterBridge::Send(IPC::Message* message) {
-  return sender_->Send(message);
+void ExternalProcessImporterBridge::Send(IPC::Message* message) {
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&ExternalProcessImporterBridge::SendInternal,
+                 this, message));
+}
+
+void ExternalProcessImporterBridge::SendInternal(IPC::Message* message) {
+  DCHECK(task_runner_->RunsTasksOnCurrentThread());
+  sender_->Send(message);
 }

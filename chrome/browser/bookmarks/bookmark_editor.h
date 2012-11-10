@@ -1,21 +1,20 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_BOOKMARKS_BOOKMARK_EDITOR_H_
 #define CHROME_BROWSER_BOOKMARKS_BOOKMARK_EDITOR_H_
-#pragma once
 
 #include <utility>
 #include <vector>
 
 #include "base/string16.h"
+#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "ui/gfx/native_widget_types.h"
 
-class BookmarkNode;
+class Browser;
 class GURL;
 class Profile;
-class Browser;
 
 // Small, cross platform interface that shows the correct platform specific
 // bookmark editor dialog.
@@ -30,13 +29,22 @@ class BookmarkEditor {
   // Describes what the user is editing.
   class EditDetails {
    public:
+    // Returns the type of the existing or new node.
+    BookmarkNode::Type GetNodeType() const;
+
+    // Returns the resource id for the string resource to use on the window
+    // title for this edit operation.
+    int GetWindowTitleId() const;
+
     // Returns an EditDetails instance for the user editing the given bookmark.
     static EditDetails EditNode(const BookmarkNode* node);
 
     // Returns an EditDetails instance for the user adding a bookmark within
     // a given parent node with a specified index.
     static EditDetails AddNodeInFolder(const BookmarkNode* parent_node,
-                                       int index);
+                                       int index,
+                                       const GURL& url,
+                                       const string16& title);
 
     // Returns an EditDetails instance for the user adding a folder within a
     // given parent node with a specified index.
@@ -74,6 +82,10 @@ class BookmarkEditor {
     // the new node at.
     int index;
 
+    // If type == NEW_URL this gives the URL/title.
+    GURL url;
+    string16 title;
+
     // If type == NEW_FOLDER, this is the urls/title pairs to add to the
     // folder.
     std::vector<std::pair<GURL, string16> > urls;
@@ -96,19 +108,6 @@ class BookmarkEditor {
 
   // Shows the bookmark all tabs dialog.
   static void ShowBookmarkAllTabsDialog(Browser* browser);
-
- private:
-  // Shows the native bookmark editor.
-  // TODO(flackr): Remove parent argument.
-  static void ShowNative(gfx::NativeWindow parent_window,
-                         Profile* profile,
-                         const BookmarkNode* parent,
-                         const EditDetails& details,
-                         Configuration configuration);
-
-  // Shows the WebUI bookmark editor.
-  static void ShowWebUI(Profile* profile,
-                        const EditDetails& details);
 };
 
 #endif  // CHROME_BROWSER_BOOKMARKS_BOOKMARK_EDITOR_H_

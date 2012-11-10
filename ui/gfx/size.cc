@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,24 +6,26 @@
 
 #if defined(OS_WIN)
 #include <windows.h>
-#elif defined(OS_MACOSX)
-#include <CoreGraphics/CGGeometry.h>
 #endif
 
 #include "base/logging.h"
 #include "base/stringprintf.h"
+#include "ui/gfx/size_base.h"
+#include "ui/gfx/size_base_impl.h"
 
 namespace gfx {
 
-Size::Size() : width_(0), height_(0) {}
+template class SizeBase<Size, int>;
 
-Size::Size(int width, int height) {
+Size::Size() : SizeBase<Size, int>(0, 0) {}
+
+Size::Size(int width, int height) : SizeBase<Size, int>(0, 0) {
   set_width(width);
   set_height(height);
 }
 
 #if defined(OS_MACOSX)
-Size::Size(const CGSize& s) {
+Size::Size(const CGSize& s) : SizeBase<Size, int>(0, 0) {
   set_width(s.width);
   set_height(s.height);
 }
@@ -35,37 +37,23 @@ Size& Size::operator=(const CGSize& s) {
 }
 #endif
 
+Size::~Size() {}
+
 #if defined(OS_WIN)
 SIZE Size::ToSIZE() const {
   SIZE s;
-  s.cx = width_;
-  s.cy = height_;
+  s.cx = width();
+  s.cy = height();
   return s;
 }
 #elif defined(OS_MACOSX)
 CGSize Size::ToCGSize() const {
-  return CGSizeMake(width_, height_);
+  return CGSizeMake(width(), height());
 }
 #endif
 
-void Size::set_width(int width) {
-  if (width < 0) {
-    NOTREACHED() << "negative width:" << width;
-    width = 0;
-  }
-  width_ = width;
-}
-
-void Size::set_height(int height) {
-  if (height < 0) {
-    NOTREACHED() << "negative height:" << height;
-    height = 0;
-  }
-  height_ = height;
-}
-
 std::string Size::ToString() const {
-  return base::StringPrintf("%dx%d", width_, height_);
+  return base::StringPrintf("%dx%d", width(), height());
 }
 
 }  // namespace gfx

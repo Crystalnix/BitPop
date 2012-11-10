@@ -3,22 +3,17 @@
 include_rules = [
   "+crypto",
 
-  "-chrome",
-  # Until we move most of our testing infrastructure in a way that content can
-  # make use of it.
-  "+chrome/test",
-
   # The subdirectories in content/ will manually allow their own include
   # directories in content/ so we disallow all of them.
   "-content",
   "+content/common",
   "+content/public/common",
+  "+content/public/test",
+  "+content/shell",  # for content_browsertests
   "+content/test",
 
-  # TODO(ben): remove this
-  "+content/public/browser/native_web_keyboard_event.h",
-
   "+grit/content_resources.h",
+  "+grit/ui_resources.h",
   "+grit/webkit_chromium_resources.h",
   "+grit/webkit_resources.h",
   "+grit/webkit_strings.h",
@@ -36,19 +31,26 @@ include_rules = [
   "-tools",
 
   # Allow inclusion of third-party code:
+  "+third_party/angle",
+  "+third_party/flac",
   "+third_party/gpsd",
   "+third_party/mozilla",
   "+third_party/npapi/bindings",
+  "+third_party/skia",
   "+third_party/sqlite",
   "+third_party/tcmalloc",
   "+third_party/khronos",
-  # Allow inclusion of WebKit API files.
+  "+third_party/webrtc",
+  "+third_party/WebKit/Source/Platform/chromium",
   "+third_party/WebKit/Source/WebKit/chromium",
 
   # Aura is analogous to Win32 or a Gtk, so it is allowed.
   "+ui/aura",
   "+ui/base",
+  "+ui/compositor",
   "+ui/gfx",
+  "+ui/gl",
+  "+ui/surface",
   # Content knows about grd files, but the specifics of how to get a resource
   # given its id is left to the embedder.
   "-ui/base/l10n",
@@ -65,4 +67,7 @@ include_rules = [
   "-ui/aura_shell",
 
   "+webkit",
+
+  # For generated JNI includes
+  "+jni",
 ]

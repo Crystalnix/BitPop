@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -157,6 +157,21 @@ message ClientDownloadRequest {
 
   // True if the download was user initiated.
   optional bool user_initiated = 6;
+
+  // Name of the file where the download would be stored if the
+  // download completes.  E.g., "bla.exe".
+  optional string file_basename = 9;
+
+  // Starting with Chrome M19 we're also sending back pings for Chrome
+  // extensions that get downloaded by users.
+  enum DownloadType {
+    WIN_EXECUTABLE = 0;    // Currently all .exe, .cab and .msi files.
+    CHROME_EXTENSION = 1;  // .crx files.
+    ANDROID_APK = 2;       // .apk files.
+    // .zip files containing one of the above executable types.
+    ZIPPED_EXECUTABLE = 3;
+  }
+  optional DownloadType download_type = 10 [default = WIN_EXECUTABLE];
 }
 
 message ClientDownloadResponse {
@@ -166,6 +181,8 @@ message ClientDownloadResponse {
     // Download is considered dangerous.  Chrome should show a warning to the
     // user.
     DANGEROUS = 1;
+    // Download is unknown.  Chrome should display a less severe warning.
+    UNCOMMON = 2;
   }
   required Verdict verdict = 1;
 }

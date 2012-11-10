@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/intents/default_web_intent_service.h"
 #include "chrome/browser/intents/web_intents_registry.h"
 
 WebIntentsTreeNode::WebIntentsTreeNode()
@@ -132,11 +133,11 @@ WebIntentsTreeNode* WebIntentsModel::GetNodeForHost(const std::string& host) {
 
 void WebIntentsModel::LoadModel() {
   NotifyObserverBeginBatch();
-  intents_registry_->GetAllIntentProviders(this);
+  intents_registry_->GetAllIntentServices(
+      base::Bind(&WebIntentsModel::OnIntentsQueryDone, base::Unretained(this)));
 }
 
 void WebIntentsModel::OnIntentsQueryDone(
-    WebIntentsRegistry::QueryID query_id,
     const std::vector<webkit_glue::WebIntentServiceData>& services) {
   for (size_t i = 0; i < services.size(); ++i) {
     WebIntentsTreeNode* n = GetNodeForHost(services[i].service_url.host());

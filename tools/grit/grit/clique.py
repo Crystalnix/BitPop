@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,10 +7,12 @@
 collections of cliques (uber-cliques).
 '''
 
+import re
 import types
 
 from grit import constants
 from grit import exception
+from grit import lazy_re
 from grit import pseudo
 from grit import pseudo_rtl
 from grit import tclib
@@ -55,7 +57,11 @@ class UberClique(object):
     '''
     def ReportTranslation(clique, langs):
       text = clique.GetMessage().GetPresentableContent()
-      extract = text[0:40]
+      # The text 'error' (usually 'Error:' but we are conservative)
+      # can trigger some build environments (Visual Studio, we're
+      # looking at you) to consider invocation of grit to have failed,
+      # so we make sure never to output that word.
+      extract = re.sub('(?i)error', 'REDACTED', text[0:40])[0:40]
       ellipsis = ''
       if len(text) > 40:
         ellipsis = '...'
@@ -206,7 +212,7 @@ class UberClique(object):
               break
           if not found_placeholder:
             raise exception.MismatchingPlaceholders(
-              'Translation for message ID %s had <ph name="%s%/>, no match\n'
+              'Translation for message ID %s had <ph name="%s"/>, no match\n'
               'in original message' % (id, text))
       self.FindCliqueAndAddTranslation(translation, lang)
     return Callback
@@ -281,8 +287,14 @@ class MessageClique(object):
   # special language constants.CONSTANT_LANGUAGE.
   CONSTANT_TRANSLATION = tclib.Translation(text='TTTTTT')
 
+  # A pattern to match messages that are empty or whitespace only.
+  WHITESPACE_MESSAGE = lazy_re.compile(u'^\s*$')
+
   def __init__(self, uber_clique, message, translateable=True, custom_type=None):
     '''Create a new clique initialized with just a message.
+
+    Note that messages with a body comprised only of whitespace will implicitly
+    be marked non-translatable.
 
     Args:
       uber_clique: Our uber-clique (collection of cliques)
@@ -294,6 +306,12 @@ class MessageClique(object):
     self.uber_clique = uber_clique
     # If not translateable, we only store the original message.
     self.translateable = translateable
+
+    # We implicitly mark messages that have a whitespace-only body as
+    # non-translateable.
+    if MessageClique.WHITESPACE_MESSAGE.match(message.GetRealContent()):
+      self.translateable = False
+
     # A mapping of language identifiers to tclib.BaseMessage and its
     # subclasses (i.e. tclib.Message and tclib.Translation).
     self.clique = { MessageClique.source_language : message }

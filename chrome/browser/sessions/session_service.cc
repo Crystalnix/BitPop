@@ -5,8 +5,8 @@
 #include "chrome/browser/sessions/session_service.h"
 
 #include <algorithm>
-#include <limits>
 #include <set>
+#include <utility>
 #include <vector>
 
 #include "base/bind.h"
@@ -18,7 +18,7 @@
 #include "base/metrics/histogram.h"
 #include "base/pickle.h"
 #include "base/threading/thread.h"
-#include "chrome/browser/extensions/extension_tab_helper.h"
+#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/restore_tab_helper.h"
@@ -26,21 +26,23 @@
 #include "chrome/browser/sessions/session_command.h"
 #include "chrome/browser/sessions/session_restore.h"
 #include "chrome/browser/sessions/session_types.h"
-#include "chrome/browser/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/browser_init.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/startup/startup_browser_creator.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/session_storage_namespace.h"
 #include "content/public/browser/web_contents.h"
 
 #if defined(OS_MACOSX)
-#include "chrome/browser/app_controller_cppsafe_mac.h"
+#include "chrome/browser/app_controller_mac.h"
 #endif
 
 using base::Time;
@@ -51,8 +53,10 @@ static const SessionCommand::id_type kCommandSetTabWindow = 0;
 // OBSOLETE Superseded by kCommandSetWindowBounds3.
 // static const SessionCommand::id_type kCommandSetWindowBounds = 1;
 static const SessionCommand::id_type kCommandSetTabIndexInWindow = 2;
-static const SessionCommand::id_type kCommandTabClosed = 3;
-static const SessionCommand::id_type kCommandWindowClosed = 4;
+// Original kCommandTabClosed/kCommandWindowClosed. See comment in
+// MigrateClosedPayload for details on why they were replaced.
+static const SessionCommand::id_type kCommandTabClosedObsolete = 3;
+static const SessionCommand::id_type kCommandWindowClosedObsolete = 4;
 static const SessionCommand::id_type
     kCommandTabNavigationPathPrunedFromBack = 5;
 static const SessionCommand::id_type kCommandUpdateTabNavigation = 6;
@@ -66,6 +70,11 @@ static const SessionCommand::id_type
 static const SessionCommand::id_type kCommandSetPinnedState = 12;
 static const SessionCommand::id_type kCommandSetExtensionAppID = 13;
 static const SessionCommand::id_type kCommandSetWindowBounds3 = 14;
+static const SessionCommand::id_type kCommandSetWindowAppName = 15;
+static const SessionCommand::id_type kCommandTabClosed = 16;
+static const SessionCommand::id_type kCommandWindowClosed = 17;
+static const SessionCommand::id_type kCommandSetTabUserAgentOverride = 18;
+static const SessionCommand::id_type kCommandSessionStorageAssociated = 19;
 
 // Every kWritesPerReset commands triggers recreating the file.
 static const int kWritesPerReset = 250;
@@ -158,6 +167,31 @@ ui::WindowShowState AdjustShowState(ui::WindowShowState state) {
   return ui::SHOW_STATE_NORMAL;
 }
 
+// Migrates a |ClosedPayload|, returning true on success (migration was
+// necessary and happened), or false (migration was not necessary or was not
+// successful).
+bool MigrateClosedPayload(const SessionCommand& command,
+                          ClosedPayload* payload) {
+#if defined(OS_CHROMEOS)
+  // Pre M17 versions of chromeos were 32bit. Post M17 is 64 bit. Apparently the
+  // 32 bit versions of chrome on pre M17 resulted in a sizeof 12 for the
+  // ClosedPayload, where as post M17 64-bit gives a sizeof 16 (presumably the
+  // struct is padded).
+  if ((command.id() == kCommandWindowClosedObsolete ||
+       command.id() == kCommandTabClosedObsolete) &&
+      command.size() == 12 && sizeof(payload->id) == 4 &&
+      sizeof(payload->close_time) == 8) {
+    memcpy(&payload->id, command.contents(), 4);
+    memcpy(&payload->close_time, command.contents() + 4, 8);
+    return true;
+  } else {
+    return false;
+  }
+#else
+  return false;
+#endif
+}
+
 }  // namespace
 
 // SessionService -------------------------------------------------------------
@@ -168,7 +202,8 @@ SessionService::SessionService(Profile* profile)
       move_on_new_browser_(false),
       save_delay_in_millis_(base::TimeDelta::FromMilliseconds(2500)),
       save_delay_in_mins_(base::TimeDelta::FromMinutes(10)),
-      save_delay_in_hrs_(base::TimeDelta::FromHours(8)) {
+      save_delay_in_hrs_(base::TimeDelta::FromHours(8)),
+      force_browser_not_alive_with_no_windows_(false) {
   Init();
 }
 
@@ -178,7 +213,8 @@ SessionService::SessionService(const FilePath& save_path)
       move_on_new_browser_(false),
       save_delay_in_millis_(base::TimeDelta::FromMilliseconds(2500)),
       save_delay_in_mins_(base::TimeDelta::FromMinutes(10)),
-      save_delay_in_hrs_(base::TimeDelta::FromHours(8)) {
+      save_delay_in_hrs_(base::TimeDelta::FromHours(8)),
+      force_browser_not_alive_with_no_windows_(false)  {
   Init();
 }
 
@@ -319,8 +355,9 @@ void SessionService::WindowClosed(const SessionID& window_id) {
 }
 
 void SessionService::SetWindowType(const SessionID& window_id,
-                                   Browser::Type type) {
-  if (!should_track_changes_for_browser_type(type))
+                                   Browser::Type type,
+                                   AppType app_type) {
+  if (!should_track_changes_for_browser_type(type, app_type))
     return;
 
   windows_tracking_.insert(window_id.id());
@@ -334,6 +371,18 @@ void SessionService::SetWindowType(const SessionID& window_id,
 
   ScheduleCommand(
       CreateSetWindowTypeCommand(window_id, WindowTypeForBrowserType(type)));
+}
+
+void SessionService::SetWindowAppName(
+    const SessionID& window_id,
+    const std::string& app_name) {
+  if (!ShouldTrackChangesToWindow(window_id))
+    return;
+
+  ScheduleCommand(CreateSetTabExtensionAppIDCommand(
+                      kCommandSetWindowAppName,
+                      window_id.id(),
+                      app_name));
 }
 
 void SessionService::TabNavigationPathPrunedFromBack(const SessionID& window_id,
@@ -397,7 +446,7 @@ void SessionService::UpdateTabNavigation(
                                                    tab_id.id(), index, entry));
 }
 
-void SessionService::TabRestored(TabContentsWrapper* tab, bool pinned) {
+void SessionService::TabRestored(TabContents* tab, bool pinned) {
   if (!ShouldTrackChangesToWindow(tab->restore_tab_helper()->window_id()))
     return;
 
@@ -460,9 +509,9 @@ void SessionService::Save() {
 
 void SessionService::Init() {
   // Register for the notifications we're interested in.
-  registrar_.Add(this, content::NOTIFICATION_TAB_PARENTED,
+  registrar_.Add(this, chrome::NOTIFICATION_TAB_PARENTED,
                  content::NotificationService::AllSources());
-  registrar_.Add(this, content::NOTIFICATION_TAB_CLOSED,
+  registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_DESTROYED,
                  content::NotificationService::AllSources());
   registrar_.Add(this, content::NOTIFICATION_NAV_LIST_PRUNED,
                  content::NotificationService::AllSources());
@@ -470,7 +519,8 @@ void SessionService::Init() {
                  content::NotificationService::AllSources());
   registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
                  content::NotificationService::AllSources());
-  registrar_.Add(this, chrome::NOTIFICATION_BROWSER_OPENED,
+  // Wait for NOTIFICATION_BROWSER_WINDOW_READY so that is_app() is set.
+  registrar_.Add(this, chrome::NOTIFICATION_BROWSER_WINDOW_READY,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(
       this, chrome::NOTIFICATION_TAB_CONTENTS_APPLICATION_EXTENSION_CHANGED,
@@ -478,18 +528,24 @@ void SessionService::Init() {
 }
 
 bool SessionService::ShouldNewWindowStartSession() {
-  if (!has_open_trackable_browsers_ && !BrowserInit::InProcessStartup() &&
+  // ChromeOS and OSX have different ideas of application lifetime than
+  // the other platforms.
+  // On ChromeOS opening a new window should never start a new session.
+#if defined(OS_CHROMEOS)
+  if (!force_browser_not_alive_with_no_windows_)
+    return false;
+#endif
+  if (!has_open_trackable_browsers_ &&
+      !StartupBrowserCreator::InSynchronousProfileLaunch() &&
       !SessionRestore::IsRestoring(profile())
 #if defined(OS_MACOSX)
-      // OSX has a fairly different idea of application lifetime than the
-      // other platforms. We need to check that we aren't opening a window
+      // On OSX, a new window should not start a new session if it was opened
       // from the dock or the menubar.
       && !app_controller_mac::IsOpeningNewWindow()
-#endif
+#endif  // OS_MACOSX
       ) {
     return true;
   }
-
   return false;
 }
 
@@ -503,7 +559,7 @@ bool SessionService::RestoreIfNecessary(const std::vector<GURL>& urls_to_open,
       MoveCurrentSessionToLastSession();
       move_on_new_browser_ = false;
     }
-    SessionStartupPref pref = BrowserInit::GetSessionStartupPref(
+    SessionStartupPref pref = StartupBrowserCreator::GetSessionStartupPref(
         *CommandLine::ForCurrentProcess(), profile());
     if (pref.type == SessionStartupPref::LAST) {
       SessionRestore::RestoreSession(
@@ -521,21 +577,21 @@ void SessionService::Observe(int type,
                              const content::NotificationDetails& details) {
   // All of our messages have the NavigationController as the source.
   switch (type) {
-    case chrome::NOTIFICATION_BROWSER_OPENED: {
+    case chrome::NOTIFICATION_BROWSER_WINDOW_READY: {
       Browser* browser = content::Source<Browser>(source).ptr();
+      AppType app_type = browser->is_app() ? TYPE_APP : TYPE_NORMAL;
       if (browser->profile() != profile() ||
-          !should_track_changes_for_browser_type(browser->type())) {
+          !should_track_changes_for_browser_type(browser->type(), app_type))
         return;
-      }
 
       RestoreIfNecessary(std::vector<GURL>(), browser);
-      SetWindowType(browser->session_id(), browser->type());
+      SetWindowType(browser->session_id(), browser->type(), app_type);
+      SetWindowAppName(browser->session_id(), browser->app_name());
       break;
     }
 
-    case content::NOTIFICATION_TAB_PARENTED: {
-      TabContentsWrapper* tab =
-          content::Source<TabContentsWrapper>(source).ptr();
+    case chrome::NOTIFICATION_TAB_PARENTED: {
+      TabContents* tab = content::Source<TabContents>(source).ptr();
       if (tab->profile() != profile())
         return;
       SetTabWindow(tab->restore_tab_helper()->window_id(),
@@ -546,29 +602,38 @@ void SessionService::Observe(int type,
             tab->restore_tab_helper()->session_id(),
             tab->extension_tab_helper()->extension_app()->id());
       }
+
+      // Record the association between the SessionStorageNamespace and the
+      // tab.
+      content::SessionStorageNamespace* session_storage_namespace =
+          tab->web_contents()->GetController().GetSessionStorageNamespace();
+      ScheduleCommand(CreateSessionStorageAssociatedCommand(
+          tab->restore_tab_helper()->session_id(),
+          session_storage_namespace->persistent_id()));
+      session_storage_namespace->SetShouldPersist(true);
       break;
     }
 
-    case content::NOTIFICATION_TAB_CLOSED: {
-      TabContentsWrapper* tab =
-          TabContentsWrapper::GetCurrentWrapperForContents(
-              content::Source<content::NavigationController>(
-                  source).ptr()->GetWebContents());
+    case chrome::NOTIFICATION_TAB_CONTENTS_DESTROYED: {
+      TabContents* tab = content::Source<TabContents>(source).ptr();
       if (!tab || tab->profile() != profile())
         return;
+      // Allow the associated sessionStorage to get deleted; it won't be needed
+      // in the session restore.
+      content::SessionStorageNamespace* session_storage_namespace =
+          tab->web_contents()->GetController().GetSessionStorageNamespace();
+      session_storage_namespace->SetShouldPersist(false);
       TabClosed(tab->restore_tab_helper()->window_id(),
                 tab->restore_tab_helper()->session_id(),
                 tab->web_contents()->GetClosedByUserGesture());
-      RecordSessionUpdateHistogramData(content::NOTIFICATION_TAB_CLOSED,
-          &last_updated_tab_closed_time_);
+      RecordSessionUpdateHistogramData(type, &last_updated_tab_closed_time_);
       break;
     }
 
     case content::NOTIFICATION_NAV_LIST_PRUNED: {
-      TabContentsWrapper* tab =
-          TabContentsWrapper::GetCurrentWrapperForContents(
-              content::Source<content::NavigationController>(
-                  source).ptr()->GetWebContents());
+      TabContents* tab = TabContents::FromWebContents(
+          content::Source<content::NavigationController>(source).ptr()->
+              GetWebContents());
       if (!tab || tab->profile() != profile())
         return;
       content::Details<content::PrunedDetails> pruned_details(details);
@@ -589,10 +654,9 @@ void SessionService::Observe(int type,
     }
 
     case content::NOTIFICATION_NAV_ENTRY_CHANGED: {
-      TabContentsWrapper* tab =
-          TabContentsWrapper::GetCurrentWrapperForContents(
-              content::Source<content::NavigationController>(
-                  source).ptr()->GetWebContents());
+      TabContents* tab = TabContents::FromWebContents(
+          content::Source<content::NavigationController>(source).ptr()->
+              GetWebContents());
       if (!tab || tab->profile() != profile())
         return;
       content::Details<content::EntryChangedDetails> changed(details);
@@ -604,10 +668,9 @@ void SessionService::Observe(int type,
     }
 
     case content::NOTIFICATION_NAV_ENTRY_COMMITTED: {
-      TabContentsWrapper* tab =
-          TabContentsWrapper::GetCurrentWrapperForContents(
-              content::Source<content::NavigationController>(
-                  source).ptr()->GetWebContents());
+      TabContents* tab = TabContents::FromWebContents(
+          content::Source<content::NavigationController>(source).ptr()->
+              GetWebContents());
       if (!tab || tab->profile() != profile())
         return;
       int current_entry_index =
@@ -632,13 +695,13 @@ void SessionService::Observe(int type,
     }
 
     case chrome::NOTIFICATION_TAB_CONTENTS_APPLICATION_EXTENSION_CHANGED: {
-      ExtensionTabHelper* extension_tab_helper =
-          content::Source<ExtensionTabHelper>(source).ptr();
-      if (extension_tab_helper->tab_contents_wrapper()->profile() != profile())
+      extensions::TabHelper* extension_tab_helper =
+          content::Source<extensions::TabHelper>(source).ptr();
+      if (extension_tab_helper->tab_contents()->profile() != profile())
         return;
       if (extension_tab_helper->extension_app()) {
         RestoreTabHelper* helper =
-            extension_tab_helper->tab_contents_wrapper()->restore_tab_helper();
+            extension_tab_helper->tab_contents()->restore_tab_helper();
         SetTabExtensionAppID(helper->window_id(),
                              helper->session_id(),
                              extension_tab_helper->extension_app()->id());
@@ -662,6 +725,19 @@ void SessionService::SetTabExtensionAppID(
                       kCommandSetExtensionAppID,
                       tab_id.id(),
                       extension_app_id));
+}
+
+void SessionService::SetTabUserAgentOverride(
+    const SessionID& window_id,
+    const SessionID& tab_id,
+    const std::string& user_agent_override) {
+  if (!ShouldTrackChangesToWindow(window_id))
+    return;
+
+  ScheduleCommand(CreateSetTabUserAgentOverrideCommand(
+                      kCommandSetTabUserAgentOverride,
+                      tab_id.id(),
+                      user_agent_override));
 }
 
 SessionCommand* SessionService::CreateSetSelectedTabInWindow(
@@ -779,6 +855,15 @@ SessionCommand* SessionService::CreatePinnedStateCommand(
   return command;
 }
 
+SessionCommand* SessionService::CreateSessionStorageAssociatedCommand(
+    const SessionID& tab_id,
+    const std::string& session_storage_persistent_id) {
+  Pickle pickle;
+  pickle.WriteInt(tab_id.id());
+  pickle.WriteString(session_storage_persistent_id);
+  return new SessionCommand(kCommandSessionStorageAssociated, pickle);
+}
+
 void SessionService::OnGotSessionCommands(
     Handle handle,
     scoped_refptr<InternalGetCommandsRequest> request) {
@@ -798,6 +883,7 @@ void SessionService::RestoreSessionFromCommands(
   std::map<int, SessionTab*> tabs;
   std::map<int, SessionWindow*> windows;
 
+  VLOG(1) << "RestoreSessionFromCommands " << commands.size();
   if (CreateTabsAndWindows(commands, &tabs, &windows)) {
     AddTabsToWindows(&tabs, &windows);
     SortTabsBasedOnVisualOrderAndPrune(&windows, valid_windows);
@@ -885,23 +971,26 @@ void SessionService::SortTabsBasedOnVisualOrderAndPrune(
     std::vector<SessionWindow*>* valid_windows) {
   std::map<int, SessionWindow*>::iterator i = windows->begin();
   while (i != windows->end()) {
-    if (i->second->tabs.empty() || i->second->is_constrained ||
+    SessionWindow* window = i->second;
+    AppType app_type = window->app_name.empty() ? TYPE_NORMAL : TYPE_APP;
+    if (window->tabs.empty() || window->is_constrained ||
         !should_track_changes_for_browser_type(
-            static_cast<Browser::Type>(i->second->type))) {
-      delete i->second;
+            static_cast<Browser::Type>(window->type),
+            app_type)) {
+      delete window;
       windows->erase(i++);
     } else {
       // Valid window; sort the tabs and add it to the list of valid windows.
-      std::sort(i->second->tabs.begin(), i->second->tabs.end(),
+      std::sort(window->tabs.begin(), window->tabs.end(),
                 &TabVisualIndexSortFunction);
       // Add the window such that older windows appear first.
       if (valid_windows->empty()) {
-        valid_windows->push_back(i->second);
+        valid_windows->push_back(window);
       } else {
         valid_windows->insert(
             std::upper_bound(valid_windows->begin(), valid_windows->end(),
-                             i->second, &WindowOrderSortFunction),
-            i->second);
+                             window, &WindowOrderSortFunction),
+            window);
       }
       ++i;
     }
@@ -910,6 +999,8 @@ void SessionService::SortTabsBasedOnVisualOrderAndPrune(
 
 void SessionService::AddTabsToWindows(std::map<int, SessionTab*>* tabs,
                                       std::map<int, SessionWindow*>* windows) {
+  VLOG(1) << "AddTabsToWindws";
+  VLOG(1) << "Tabs " << tabs->size() << ", windows " << windows->size();
   std::map<int, SessionTab*>::iterator i = tabs->begin();
   while (i != tabs->end()) {
     SessionTab* tab = i->second;
@@ -943,17 +1034,21 @@ bool SessionService::CreateTabsAndWindows(
     std::map<int, SessionWindow*>* windows) {
   // If the file is corrupt (command with wrong size, or unknown command), we
   // still return true and attempt to restore what we we can.
+  VLOG(1) << "CreateTabsAndWindows";
 
   for (std::vector<SessionCommand*>::const_iterator i = data.begin();
        i != data.end(); ++i) {
     const SessionCommand::id_type kCommandSetWindowBounds2 = 10;
     const SessionCommand* command = *i;
 
+    VLOG(1) << "Read command " << (int) command->id();
     switch (command->id()) {
       case kCommandSetTabWindow: {
         SessionID::id_type payload[2];
-        if (!command->GetPayload(payload, sizeof(payload)))
+        if (!command->GetPayload(payload, sizeof(payload))) {
+          VLOG(1) << "Failed reading command " << command->id();
           return true;
+        }
         GetTab(payload[1], tabs)->window_id.set_id(payload[0]);
         break;
       }
@@ -962,8 +1057,10 @@ bool SessionService::CreateTabsAndWindows(
       // |kCommandSetWindowBounds3|.
       case kCommandSetWindowBounds2: {
         WindowBoundsPayload2 payload;
-        if (!command->GetPayload(&payload, sizeof(payload)))
+        if (!command->GetPayload(&payload, sizeof(payload))) {
+          VLOG(1) << "Failed reading command " << command->id();
           return true;
+        }
         GetWindow(payload.window_id, windows)->bounds.SetRect(payload.x,
                                                               payload.y,
                                                               payload.w,
@@ -976,8 +1073,10 @@ bool SessionService::CreateTabsAndWindows(
 
       case kCommandSetWindowBounds3: {
         WindowBoundsPayload3 payload;
-        if (!command->GetPayload(&payload, sizeof(payload)))
+        if (!command->GetPayload(&payload, sizeof(payload))) {
+          VLOG(1) << "Failed reading command " << command->id();
           return true;
+        }
         GetWindow(payload.window_id, windows)->bounds.SetRect(payload.x,
                                                               payload.y,
                                                               payload.w,
@@ -997,18 +1096,26 @@ bool SessionService::CreateTabsAndWindows(
 
       case kCommandSetTabIndexInWindow: {
         TabIndexInWindowPayload payload;
-        if (!command->GetPayload(&payload, sizeof(payload)))
+        if (!command->GetPayload(&payload, sizeof(payload))) {
+          VLOG(1) << "Failed reading command " << command->id();
           return true;
+        }
         GetTab(payload.id, tabs)->tab_visual_index = payload.index;
         break;
       }
 
+      case kCommandTabClosedObsolete:
+      case kCommandWindowClosedObsolete:
       case kCommandTabClosed:
       case kCommandWindowClosed: {
         ClosedPayload payload;
-        if (!command->GetPayload(&payload, sizeof(payload)))
+        if (!command->GetPayload(&payload, sizeof(payload)) &&
+            !MigrateClosedPayload(*command, &payload)) {
+          VLOG(1) << "Failed reading command " << command->id();
           return true;
-        if (command->id() == kCommandTabClosed) {
+        }
+        if (command->id() == kCommandTabClosed ||
+            command->id() == kCommandTabClosedObsolete) {
           delete GetTab(payload.id, tabs);
           tabs->erase(payload.id);
         } else {
@@ -1020,8 +1127,10 @@ bool SessionService::CreateTabsAndWindows(
 
       case kCommandTabNavigationPathPrunedFromBack: {
         TabNavigationPathPrunedFromBackPayload payload;
-        if (!command->GetPayload(&payload, sizeof(payload)))
+        if (!command->GetPayload(&payload, sizeof(payload))) {
+          VLOG(1) << "Failed reading command " << command->id();
           return true;
+        }
         SessionTab* tab = GetTab(payload.id, tabs);
         tab->navigations.erase(
             FindClosestNavigationWithIndex(&(tab->navigations), payload.index),
@@ -1033,6 +1142,7 @@ bool SessionService::CreateTabsAndWindows(
         TabNavigationPathPrunedFromFrontPayload payload;
         if (!command->GetPayload(&payload, sizeof(payload)) ||
             payload.index <= 0) {
+          VLOG(1) << "Failed reading command " << command->id();
           return true;
         }
         SessionTab* tab = GetTab(payload.id, tabs);
@@ -1056,9 +1166,11 @@ bool SessionService::CreateTabsAndWindows(
       case kCommandUpdateTabNavigation: {
         TabNavigation navigation;
         SessionID::id_type tab_id;
-        if (!RestoreUpdateTabNavigationCommand(*command, &navigation, &tab_id))
+        if (!RestoreUpdateTabNavigationCommand(
+                *command, &navigation, &tab_id)) {
+          VLOG(1) << "Failed reading command " << command->id();
           return true;
-
+        }
         SessionTab* tab = GetTab(tab_id, tabs);
         std::vector<TabNavigation>::iterator i =
             FindClosestNavigationWithIndex(&(tab->navigations),
@@ -1072,24 +1184,30 @@ bool SessionService::CreateTabsAndWindows(
 
       case kCommandSetSelectedNavigationIndex: {
         SelectedNavigationIndexPayload payload;
-        if (!command->GetPayload(&payload, sizeof(payload)))
+        if (!command->GetPayload(&payload, sizeof(payload))) {
+          VLOG(1) << "Failed reading command " << command->id();
           return true;
+        }
         GetTab(payload.id, tabs)->current_navigation_index = payload.index;
         break;
       }
 
       case kCommandSetSelectedTabInIndex: {
         SelectedTabInIndexPayload payload;
-        if (!command->GetPayload(&payload, sizeof(payload)))
+        if (!command->GetPayload(&payload, sizeof(payload))) {
+          VLOG(1) << "Failed reading command " << command->id();
           return true;
+        }
         GetWindow(payload.id, windows)->selected_tab_index = payload.index;
         break;
       }
 
       case kCommandSetWindowType: {
         WindowTypePayload payload;
-        if (!command->GetPayload(&payload, sizeof(payload)))
+        if (!command->GetPayload(&payload, sizeof(payload))) {
+          VLOG(1) << "Failed reading command " << command->id();
           return true;
+        }
         GetWindow(payload.id, windows)->is_constrained = false;
         GetWindow(payload.id, windows)->type =
             BrowserTypeForWindowType(
@@ -1099,9 +1217,21 @@ bool SessionService::CreateTabsAndWindows(
 
       case kCommandSetPinnedState: {
         PinnedStatePayload payload;
-        if (!command->GetPayload(&payload, sizeof(payload)))
+        if (!command->GetPayload(&payload, sizeof(payload))) {
+          VLOG(1) << "Failed reading command " << command->id();
           return true;
+        }
         GetTab(payload.tab_id, tabs)->pinned = payload.pinned_state;
+        break;
+      }
+
+      case kCommandSetWindowAppName: {
+        SessionID::id_type window_id;
+        std::string app_name;
+        if (!RestoreSetWindowAppNameCommand(*command, &window_id, &app_name))
+          return true;
+
+        GetWindow(window_id, windows)->app_name.swap(app_name);
         break;
       }
 
@@ -1110,6 +1240,7 @@ bool SessionService::CreateTabsAndWindows(
         std::string extension_app_id;
         if (!RestoreSetTabExtensionAppIDCommand(
                 *command, &tab_id, &extension_app_id)) {
+          VLOG(1) << "Failed reading command " << command->id();
           return true;
         }
 
@@ -1117,7 +1248,34 @@ bool SessionService::CreateTabsAndWindows(
         break;
       }
 
+      case kCommandSetTabUserAgentOverride: {
+        SessionID::id_type tab_id;
+        std::string user_agent_override;
+        if (!RestoreSetTabUserAgentOverrideCommand(
+                *command, &tab_id, &user_agent_override)) {
+          return true;
+        }
+
+        GetTab(tab_id, tabs)->user_agent_override.swap(user_agent_override);
+        break;
+      }
+
+      case kCommandSessionStorageAssociated: {
+        scoped_ptr<Pickle> command_pickle(command->PayloadAsPickle());
+        SessionID::id_type command_tab_id;
+        std::string session_storage_persistent_id;
+        PickleIterator iter(*command_pickle.get());
+        if (!command_pickle->ReadInt(&iter, &command_tab_id) ||
+            !command_pickle->ReadString(&iter, &session_storage_persistent_id))
+          return true;
+        // Associate the session storage back.
+        GetTab(command_tab_id, tabs)->session_storage_persistent_id =
+            session_storage_persistent_id;
+        break;
+      }
+
       default:
+        VLOG(1) << "Failed reading an unknown command " << command->id();
         return true;
     }
   }
@@ -1126,7 +1284,7 @@ bool SessionService::CreateTabsAndWindows(
 
 void SessionService::BuildCommandsForTab(
     const SessionID& window_id,
-    TabContentsWrapper* tab,
+    TabContents* tab,
     int index_in_window,
     bool is_pinned,
     std::vector<SessionCommand*>* commands,
@@ -1134,6 +1292,7 @@ void SessionService::BuildCommandsForTab(
   DCHECK(tab && commands && window_id.id());
   const SessionID& session_id(tab->restore_tab_helper()->session_id());
   commands->push_back(CreateSetTabWindowCommand(window_id, session_id));
+
   const int current_index =
       tab->web_contents()->GetController().GetCurrentEntryIndex();
   const int min_index = std::max(0,
@@ -1147,17 +1306,25 @@ void SessionService::BuildCommandsForTab(
     (*tab_to_available_range)[session_id.id()] =
         std::pair<int, int>(min_index, max_index);
   }
+
   if (is_pinned) {
     commands->push_back(CreatePinnedStateCommand(session_id, true));
   }
-  TabContentsWrapper* wrapper =
-      TabContentsWrapper::GetCurrentWrapperForContents(tab->web_contents());
-  if (wrapper->extension_tab_helper()->extension_app()) {
+
+  if (tab->extension_tab_helper()->extension_app()) {
     commands->push_back(
         CreateSetTabExtensionAppIDCommand(
             kCommandSetExtensionAppID, session_id.id(),
-            wrapper->extension_tab_helper()->extension_app()->id()));
+            tab->extension_tab_helper()->extension_app()->id()));
   }
+
+  const std::string& ua_override = tab->web_contents()->GetUserAgentOverride();
+  if (!ua_override.empty()) {
+    commands->push_back(
+        CreateSetTabUserAgentOverrideCommand(
+            kCommandSetTabUserAgentOverride, session_id.id(), ua_override));
+  }
+
   for (int i = min_index; i < max_index; ++i) {
     const NavigationEntry* entry = (i == pending_index) ?
         tab->web_contents()->GetController().GetPendingEntry() :
@@ -1176,6 +1343,13 @@ void SessionService::BuildCommandsForTab(
     commands->push_back(
         CreateSetTabIndexInWindowCommand(session_id, index_in_window));
   }
+
+  // Record the association between the sessionStorage namespace and the tab.
+  content::SessionStorageNamespace* session_storage_namespace =
+      tab->web_contents()->GetController().GetSessionStorageNamespace();
+  ScheduleCommand(CreateSessionStorageAssociatedCommand(
+      tab->restore_tab_helper()->session_id(),
+      session_storage_namespace->persistent_id()));
 }
 
 void SessionService::BuildCommandsForBrowser(
@@ -1200,13 +1374,20 @@ void SessionService::BuildCommandsForBrowser(
   commands->push_back(CreateSetWindowTypeCommand(
       browser->session_id(), WindowTypeForBrowserType(browser->type())));
 
+  if (!browser->app_name().empty()) {
+    commands->push_back(CreateSetWindowAppNameCommand(
+        kCommandSetWindowAppName,
+        browser->session_id().id(),
+        browser->app_name()));
+  }
+
   bool added_to_windows_to_track = false;
   for (int i = 0; i < browser->tab_count(); ++i) {
-    TabContentsWrapper* tab = browser->GetTabContentsWrapperAt(i);
+    TabContents* tab = chrome::GetTabContentsAt(browser, i);
     DCHECK(tab);
     if (tab->profile() == profile() || profile() == NULL) {
       BuildCommandsForTab(browser->session_id(), tab, i,
-                          browser->tabstrip_model()->IsTabPinned(i),
+                          browser->tab_strip_model()->IsTabPinned(i),
                           commands, tab_to_available_range);
       if (windows_to_track && !added_to_windows_to_track) {
         windows_to_track->insert(browser->session_id().id());
@@ -1226,15 +1407,18 @@ void SessionService::BuildCommandsFromBrowsers(
   DCHECK(commands);
   for (BrowserList::const_iterator i = BrowserList::begin();
        i != BrowserList::end(); ++i) {
+    Browser* browser = *i;
     // Make sure the browser has tabs and a window. Browsers destructor
     // removes itself from the BrowserList. When a browser is closed the
     // destructor is not necessarily run immediately. This means its possible
     // for us to get a handle to a browser that is about to be removed. If
     // the tab count is 0 or the window is NULL, the browser is about to be
     // deleted, so we ignore it.
-    if (should_track_changes_for_browser_type((*i)->type()) &&
-        (*i)->tab_count() && (*i)->window()) {
-      BuildCommandsForBrowser(*i, commands, tab_to_available_range,
+    AppType app_type = browser->is_app() ? TYPE_APP : TYPE_NORMAL;
+    if (should_track_changes_for_browser_type(browser->type(), app_type) &&
+        browser->tab_count() &&
+        browser->window()) {
+      BuildCommandsForBrowser(browser, commands, tab_to_available_range,
                               windows_to_track);
     }
   }
@@ -1262,8 +1446,8 @@ bool SessionService::ReplacePendingCommand(SessionCommand* command) {
   // well.
   if (command->id() != kCommandUpdateTabNavigation)
     return false;
-  void* iterator = NULL;
   scoped_ptr<Pickle> command_pickle(command->PayloadAsPickle());
+  PickleIterator iterator(*command_pickle);
   SessionID::id_type command_tab_id;
   int command_nav_index;
   if (!command_pickle->ReadInt(&iterator, &command_tab_id) ||
@@ -1281,7 +1465,7 @@ bool SessionService::ReplacePendingCommand(SessionCommand* command) {
         // the command. Make sure we delete the pickle before the command, else
         // the pickle references deleted memory.
         scoped_ptr<Pickle> existing_pickle(existing_command->PayloadAsPickle());
-        iterator = NULL;
+        iterator = PickleIterator(*existing_pickle);
         if (!existing_pickle->ReadInt(&iterator, &existing_tab_id) ||
             !existing_pickle->ReadInt(&iterator, &existing_nav_index)) {
           return false;
@@ -1341,9 +1525,11 @@ bool SessionService::IsOnlyOneTabLeft() {
   int window_count = 0;
   for (BrowserList::const_iterator i = BrowserList::begin();
        i != BrowserList::end(); ++i) {
-    const SessionID::id_type window_id = (*i)->session_id().id();
-    if (should_track_changes_for_browser_type((*i)->type()) &&
-        (*i)->profile() == profile() &&
+    Browser* browser = *i;
+    const SessionID::id_type window_id = browser->session_id().id();
+    AppType app_type = browser->is_app() ? TYPE_APP : TYPE_NORMAL;
+    if (should_track_changes_for_browser_type(browser->type(), app_type) &&
+        browser->profile() == profile() &&
         window_closing_ids_.find(window_id) == window_closing_ids_.end()) {
       if (++window_count > 1)
         return false;
@@ -1366,9 +1552,10 @@ bool SessionService::HasOpenTrackableBrowsers(const SessionID& window_id) {
        i != BrowserList::end(); ++i) {
     Browser* browser = *i;
     const SessionID::id_type browser_id = browser->session_id().id();
+    AppType app_type = browser->is_app() ? TYPE_APP : TYPE_NORMAL;
     if (browser_id != window_id.id() &&
         window_closing_ids_.find(browser_id) == window_closing_ids_.end() &&
-        should_track_changes_for_browser_type(browser->type()) &&
+        should_track_changes_for_browser_type(browser->type(), app_type) &&
         browser->profile() == profile()) {
       return true;
     }
@@ -1381,7 +1568,14 @@ bool SessionService::ShouldTrackChangesToWindow(const SessionID& window_id) {
 }
 
 
-bool SessionService::should_track_changes_for_browser_type(Browser::Type type) {
+bool SessionService::should_track_changes_for_browser_type(Browser::Type type,
+                                                           AppType app_type) {
+#if defined(USE_AURA)
+  // Restore app popups for aura alone.
+  if (type == Browser::TYPE_POPUP && app_type == TYPE_APP)
+    return true;
+#endif
+
   return type == Browser::TYPE_TABBED ||
         (type == Browser::TYPE_POPUP && browser_defaults::kRestorePopups);
 }
@@ -1424,7 +1618,7 @@ void SessionService::RecordSessionUpdateHistogramData(int type,
         RecordUpdatedSaveTime(delta, use_long_period);
         RecordUpdatedSessionNavigationOrTab(delta, use_long_period);
         break;
-      case content::NOTIFICATION_TAB_CLOSED:
+      case chrome::NOTIFICATION_TAB_CONTENTS_DESTROYED:
         RecordUpdatedTabClosed(delta, use_long_period);
         RecordUpdatedSessionNavigationOrTab(delta, use_long_period);
         break;

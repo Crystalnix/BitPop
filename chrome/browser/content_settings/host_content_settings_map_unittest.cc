@@ -18,7 +18,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/testing_pref_service.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/static_cookie_policy.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -399,7 +399,8 @@ TEST_F(HostContentSettingsMapTest, HostTrimEndingDotCheck) {
   TestingProfile profile;
   HostContentSettingsMap* host_content_settings_map =
       profile.GetHostContentSettingsMap();
-  CookieSettings* cookie_settings = CookieSettings::GetForProfile(&profile);
+  CookieSettings* cookie_settings =
+      CookieSettings::Factory::GetForProfile(&profile);
 
   ContentSettingsPattern pattern =
        ContentSettingsPattern::FromString("[*.]example.com");
@@ -623,7 +624,6 @@ TEST_F(HostContentSettingsMapTest, OffTheRecord) {
       profile.GetHostContentSettingsMap();
   scoped_refptr<HostContentSettingsMap> otr_map(
       new HostContentSettingsMap(profile.GetPrefs(),
-                                 profile.GetExtensionService(),
                                  true));
 
   GURL host("http://example.com/");
@@ -666,24 +666,6 @@ TEST_F(HostContentSettingsMapTest, OffTheRecord) {
                 host, host, CONTENT_SETTINGS_TYPE_IMAGES, ""));
 
   otr_map->ShutdownOnUIThread();
-}
-
-TEST_F(HostContentSettingsMapTest, MigrateObsoletePopupPrefs) {
-  TestingProfile profile;
-  PrefService* prefs = profile.GetPrefs();
-
-  // Set obsolete data.
-  ListValue popup_hosts;
-  popup_hosts.Append(new StringValue("[*.]example.com"));
-  prefs->Set(prefs::kPopupWhitelistedHosts, popup_hosts);
-
-  HostContentSettingsMap* host_content_settings_map =
-      profile.GetHostContentSettingsMap();
-
-  GURL host("http://example.com");
-  EXPECT_EQ(CONTENT_SETTING_ALLOW,
-            host_content_settings_map->GetContentSetting(
-                host, host, CONTENT_SETTINGS_TYPE_POPUPS, ""));
 }
 
 TEST_F(HostContentSettingsMapTest, MigrateObsoleteNotificationsPrefs) {
@@ -731,7 +713,7 @@ TEST_F(HostContentSettingsMapTest, CanonicalizeExceptionsUnicodeOnly) {
 
   const DictionaryValue* all_settings_dictionary =
       prefs->GetDictionary(prefs::kContentSettingsPatternPairs);
-  DictionaryValue* result = NULL;
+  const DictionaryValue* result = NULL;
   EXPECT_FALSE(all_settings_dictionary->GetDictionaryWithoutPathExpansion(
       "[*.]\xC4\x87ira.com,*", &result));
   EXPECT_TRUE(all_settings_dictionary->GetDictionaryWithoutPathExpansion(
@@ -744,12 +726,12 @@ TEST_F(HostContentSettingsMapTest, CanonicalizeExceptionsUnicodeAndPunycode) {
   TestingProfile profile;
 
   scoped_ptr<Value> value(base::JSONReader::Read(
-      "{\"[*.]\\xC4\\x87ira.com,*\":{\"images\":1}}", false));
+      "{\"[*.]\\xC4\\x87ira.com,*\":{\"images\":1}}"));
   profile.GetPrefs()->Set(prefs::kContentSettingsPatternPairs, *value);
 
   // Set punycode equivalent, with different setting.
   scoped_ptr<Value> puny_value(base::JSONReader::Read(
-      "{\"[*.]xn--ira-ppa.com,*\":{\"images\":2}}", false));
+      "{\"[*.]xn--ira-ppa.com,*\":{\"images\":2}}"));
   profile.GetPrefs()->Set(prefs::kContentSettingsPatternPairs, *puny_value);
 
   // Initialize the content map.
@@ -758,7 +740,7 @@ TEST_F(HostContentSettingsMapTest, CanonicalizeExceptionsUnicodeAndPunycode) {
   const DictionaryValue* content_setting_prefs =
       profile.GetPrefs()->GetDictionary(prefs::kContentSettingsPatternPairs);
   std::string prefs_as_json;
-  base::JSONWriter::Write(content_setting_prefs, false, &prefs_as_json);
+  base::JSONWriter::Write(content_setting_prefs, &prefs_as_json);
   EXPECT_STREQ("{\"[*.]xn--ira-ppa.com,*\":{\"images\":2}}",
                prefs_as_json.c_str());
 }
@@ -816,7 +798,7 @@ TEST_F(HostContentSettingsMapTest, ResourceIdentifierPrefs) {
 
   TestingProfile profile;
   scoped_ptr<Value> value(base::JSONReader::Read(
-      "{\"[*.]example.com,*\":{\"per_plugin\":{\"someplugin\":2}}}", false));
+      "{\"[*.]example.com,*\":{\"per_plugin\":{\"someplugin\":2}}}"));
   profile.GetPrefs()->Set(prefs::kContentSettingsPatternPairs, *value);
   HostContentSettingsMap* host_content_settings_map =
       profile.GetHostContentSettingsMap();
@@ -843,7 +825,7 @@ TEST_F(HostContentSettingsMapTest, ResourceIdentifierPrefs) {
   const DictionaryValue* content_setting_prefs =
       profile.GetPrefs()->GetDictionary(prefs::kContentSettingsPatternPairs);
   std::string prefs_as_json;
-  base::JSONWriter::Write(content_setting_prefs, false, &prefs_as_json);
+  base::JSONWriter::Write(content_setting_prefs, &prefs_as_json);
   EXPECT_EQ("{}", prefs_as_json);
 
   host_content_settings_map->SetContentSetting(
@@ -855,7 +837,7 @@ TEST_F(HostContentSettingsMapTest, ResourceIdentifierPrefs) {
 
   content_setting_prefs =
       profile.GetPrefs()->GetDictionary(prefs::kContentSettingsPatternPairs);
-  base::JSONWriter::Write(content_setting_prefs, false, &prefs_as_json);
+  base::JSONWriter::Write(content_setting_prefs, &prefs_as_json);
   EXPECT_EQ("{\"[*.]example.com,*\":{\"per_plugin\":{\"otherplugin\":2}}}",
             prefs_as_json);
 }
@@ -1035,7 +1017,7 @@ TEST_F(HostContentSettingsMapTest, SettingDefaultContentSettingsWhenManaged) {
                 CONTENT_SETTINGS_TYPE_PLUGINS, NULL));
 }
 
-TEST_F(HostContentSettingsMapTest, ShouldAllowAllContent) {
+TEST_F(HostContentSettingsMapTest, GetContentSetting) {
   TestingProfile profile;
   HostContentSettingsMap* host_content_settings_map =
       profile.GetHostContentSettingsMap();
@@ -1056,4 +1038,76 @@ TEST_F(HostContentSettingsMapTest, ShouldAllowAllContent) {
   EXPECT_EQ(CONTENT_SETTING_ALLOW,
             host_content_settings_map->GetContentSetting(
                 embedder, host, CONTENT_SETTINGS_TYPE_IMAGES, ""));
+}
+
+TEST_F(HostContentSettingsMapTest, ShouldAllowAllContent) {
+  TestingProfile profile;
+  HostContentSettingsMap* host_content_settings_map =
+      profile.GetHostContentSettingsMap();
+
+  GURL http_host("http://example.com/");
+  GURL https_host("https://example.com/");
+  GURL embedder("chrome://foo");
+  GURL extension("chrome-extension://foo");
+  EXPECT_FALSE(host_content_settings_map->ShouldAllowAllContent(
+                   http_host, embedder, CONTENT_SETTINGS_TYPE_NOTIFICATIONS));
+  EXPECT_FALSE(host_content_settings_map->ShouldAllowAllContent(
+                   http_host, embedder, CONTENT_SETTINGS_TYPE_GEOLOCATION));
+  EXPECT_FALSE(host_content_settings_map->ShouldAllowAllContent(
+                   http_host, embedder, CONTENT_SETTINGS_TYPE_COOKIES));
+  EXPECT_TRUE(host_content_settings_map->ShouldAllowAllContent(
+                  https_host, embedder, CONTENT_SETTINGS_TYPE_COOKIES));
+  EXPECT_TRUE(host_content_settings_map->ShouldAllowAllContent(
+                  https_host, embedder, CONTENT_SETTINGS_TYPE_COOKIES));
+  EXPECT_TRUE(host_content_settings_map->ShouldAllowAllContent(
+                  embedder, http_host, CONTENT_SETTINGS_TYPE_COOKIES));
+  EXPECT_TRUE(host_content_settings_map->ShouldAllowAllContent(
+                  extension, extension, CONTENT_SETTINGS_TYPE_COOKIES));
+  EXPECT_FALSE(host_content_settings_map->ShouldAllowAllContent(
+                   extension, extension, CONTENT_SETTINGS_TYPE_PLUGINS));
+  EXPECT_TRUE(host_content_settings_map->ShouldAllowAllContent(
+                  extension, extension, CONTENT_SETTINGS_TYPE_INTENTS));
+  EXPECT_FALSE(host_content_settings_map->ShouldAllowAllContent(
+                   extension, http_host, CONTENT_SETTINGS_TYPE_COOKIES));
+}
+
+TEST_F(HostContentSettingsMapTest, MigrateClearOnExit) {
+  TestingProfile profile;
+  TestingPrefService* prefs = profile.GetTestingPrefService();
+
+  prefs->SetBoolean(prefs::kClearSiteDataOnExit, true);
+
+  scoped_ptr<Value> patterns(base::JSONReader::Read(
+      "{\"[*.]example.com,*\":{\"cookies\": 1},"
+      " \"[*.]other.com,*\":{\"cookies\": 2},"
+      " \"[*.]third.com,*\":{\"cookies\": 4}}"));
+  profile.GetPrefs()->Set(prefs::kContentSettingsPatternPairs, *patterns);
+
+  scoped_ptr<Value> defaults(base::JSONReader::Read("{\"cookies\": 1}"));
+  profile.GetPrefs()->Set(prefs::kDefaultContentSettings, *defaults);
+
+  HostContentSettingsMap* host_content_settings_map =
+      profile.GetHostContentSettingsMap();
+
+  EXPECT_EQ(CONTENT_SETTING_SESSION_ONLY,
+            host_content_settings_map->GetDefaultContentSetting(
+                CONTENT_SETTINGS_TYPE_COOKIES, NULL));
+  EXPECT_EQ(CONTENT_SETTING_SESSION_ONLY,
+            host_content_settings_map->GetContentSetting(
+                GURL("http://example.com"),
+                GURL("http://example.com"),
+                CONTENT_SETTINGS_TYPE_COOKIES,
+                std::string()));
+  EXPECT_EQ(CONTENT_SETTING_BLOCK,
+            host_content_settings_map->GetContentSetting(
+                GURL("http://other.com"),
+                GURL("http://other.com"),
+                CONTENT_SETTINGS_TYPE_COOKIES,
+                std::string()));
+  EXPECT_EQ(CONTENT_SETTING_SESSION_ONLY,
+            host_content_settings_map->GetContentSetting(
+                GURL("http://third.com"),
+                GURL("http://third.com"),
+                CONTENT_SETTINGS_TYPE_COOKIES,
+                std::string()));
 }

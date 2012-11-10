@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/memory/aligned_memory.h"
 #include "base/memory/ref_counted.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -96,25 +97,42 @@ TEST(StackContainer, VectorDoubleDelete) {
   // Shouldn't crash at exit.
 }
 
+namespace {
+
+template <size_t alignment>
+class AlignedData {
+ public:
+  AlignedData() { memset(data_.void_data(), 0, alignment); }
+  ~AlignedData() {}
+  base::AlignedMemory<alignment, alignment> data_;
+};
+
+}  // anonymous namespace
+
+#define EXPECT_ALIGNED(ptr, align) \
+    EXPECT_EQ(0u, reinterpret_cast<uintptr_t>(ptr) & (align - 1))
+
 TEST(StackContainer, BufferAlignment) {
   StackVector<wchar_t, 16> text;
   text->push_back(L'A');
-  text->push_back(L'B');
-  text->push_back(L'C');
-  text->push_back(L'D');
-  text->push_back(L'E');
-  text->push_back(L'F');
-  text->push_back(0);
+  EXPECT_ALIGNED(&text[0], ALIGNOF(wchar_t));
 
-  const wchar_t* buffer = &text[1];
-  bool even_aligned = (0 == (((size_t)buffer) & 0x1));
-  EXPECT_EQ(even_aligned, true);
+  StackVector<double, 1> doubles;
+  doubles->push_back(0.0);
+  EXPECT_ALIGNED(&doubles[0], ALIGNOF(double));
+
+  StackVector<AlignedData<16>, 1> aligned16;
+  aligned16->push_back(AlignedData<16>());
+  EXPECT_ALIGNED(&aligned16[0], 16);
+
+#if !defined(OS_ANDROID)
+  // It seems that android doesn't respect greater than 16 byte alignment for
+  // non-POD data on the stack, even though ALIGNOF(aligned256) == 256.
+  StackVector<AlignedData<256>, 1> aligned256;
+  aligned256->push_back(AlignedData<256>());
+  EXPECT_ALIGNED(&aligned256[0], 256);
+#endif
 }
 
-#ifdef COMPILER_MSVC
-// Make sure all the class compiles correctly.
-// TODO(pinkerton): i'm not sure why this doesn't compile on GCC, but
-// it doesn't.
-template StackVector<int, 2>;
-template StackVector<scoped_refptr<Dummy>, 2>;
-#endif
+template class StackVector<int, 2>;
+template class StackVector<scoped_refptr<Dummy>, 2>;

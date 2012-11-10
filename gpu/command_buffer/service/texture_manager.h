@@ -12,18 +12,23 @@
 #include "base/memory/ref_counted.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gl_utils.h"
+#include "gpu/gpu_export.h"
 
 namespace gpu {
 namespace gles2 {
 
 class GLES2Decoder;
+class Display;
+class TextureDefinition;
+class MemoryTracker;
+class MemoryTypeTracker;
 
 // This class keeps track of the textures and their sizes so we can do NPOT and
 // texture complete checking.
 //
 // NOTE: To support shared resources an instance of this class will need to be
 // shared by multiple GLES2Decoders.
-class TextureManager {
+class GPU_EXPORT TextureManager {
  public:
   enum DefaultAndBlackTextures {
     kTexture2D,
@@ -34,35 +39,11 @@ class TextureManager {
   };
 
   // Info about Textures currently in the system.
-  class TextureInfo : public base::RefCounted<TextureInfo> {
+  class GPU_EXPORT TextureInfo : public base::RefCounted<TextureInfo> {
    public:
     typedef scoped_refptr<TextureInfo> Ref;
 
-    TextureInfo(TextureManager* manager, GLuint service_id)
-        : manager_(manager),
-          service_id_(service_id),
-          deleted_(false),
-          cleared_(true),
-          num_uncleared_mips_(0),
-          target_(0),
-          min_filter_(GL_NEAREST_MIPMAP_LINEAR),
-          mag_filter_(GL_LINEAR),
-          wrap_s_(GL_REPEAT),
-          wrap_t_(GL_REPEAT),
-          usage_(GL_NONE),
-          max_level_set_(-1),
-          texture_complete_(false),
-          cube_complete_(false),
-          npot_(false),
-          has_been_bound_(false),
-          framebuffer_attachment_count_(0),
-          owned_(true),
-          stream_texture_(false),
-          immutable_(false),
-          estimated_size_(0) {
-      if (manager_)
-        ++manager_->texture_info_count_;
-    }
+    TextureInfo(TextureManager* manager, GLuint service_id);
 
     GLenum min_filter() const {
       return min_filter_;
@@ -221,6 +202,20 @@ class TextureManager {
            estimated_size(0) {
       }
 
+      LevelInfo(const LevelInfo& rhs)
+         : cleared(rhs.cleared),
+           target(rhs.target),
+           level(rhs.level),
+           internal_format(rhs.internal_format),
+           width(rhs.width),
+           height(rhs.height),
+           depth(rhs.depth),
+           border(rhs.border),
+           format(rhs.format),
+           type(rhs.type),
+           estimated_size(rhs.estimated_size) {
+      }
+
       bool cleared;
       GLenum target;
       GLint level;
@@ -272,7 +267,6 @@ class TextureManager {
     bool MarkMipmapsGenerated(const FeatureInfo* feature_info);
 
     void MarkAsDeleted() {
-      service_id_ = 0;
       deleted_ = true;
     }
 
@@ -359,7 +353,8 @@ class TextureManager {
     DISALLOW_COPY_AND_ASSIGN(TextureInfo);
   };
 
-  TextureManager(FeatureInfo* feature_info,
+  TextureManager(MemoryTracker* memory_tracker,
+                 FeatureInfo* feature_info,
                  GLsizei max_texture_size,
                  GLsizei max_cube_map_texture_size);
   ~TextureManager();
@@ -434,6 +429,13 @@ class TextureManager {
       GLenum format,
       GLenum type,
       bool cleared);
+
+  // Save the texture definition and leave it undefined.
+  TextureDefinition* Save(TextureInfo* info);
+
+  // Redefine all the levels from the texture definition.
+  bool Restore(TextureInfo* info,
+               TextureDefinition* definition);
 
   // Sets a mip as cleared.
   void SetLevelCleared(TextureInfo* info, GLenum target, GLint level);
@@ -510,6 +512,10 @@ class TextureManager {
     }
   }
 
+  uint32 mem_represented() const {
+    return mem_represented_;
+  }
+
  private:
   // Helper for Initialize().
   TextureInfo::Ref CreateDefaultAndBlackTextures(
@@ -518,7 +524,10 @@ class TextureManager {
 
   void UpdateMemRepresented();
 
+  void StartTracking(TextureInfo* info);
   void StopTracking(TextureInfo* info);
+
+  scoped_ptr<MemoryTypeTracker> texture_memory_tracker_;
 
   FeatureInfo::Ref feature_info_;
 
@@ -540,7 +549,8 @@ class TextureManager {
   unsigned int texture_info_count_;
 
   uint32 mem_represented_;
-  uint32 last_reported_mem_represented_;
+
+  bool have_context_;
 
   // Black (0,0,0,1) textures for when non-renderable textures are used.
   // NOTE: There is no corresponding TextureInfo for these textures.

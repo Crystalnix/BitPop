@@ -9,16 +9,19 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
+#include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/child_process_security_policy.h"
-#include "content/browser/renderer_host/render_view_host.h"
+#include "content/public/browser/child_process_security_policy.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_about_job.h"
 #include "net/url_request/url_request_filter.h"
 
+using content::ChildProcessSecurityPolicy;
+using content::NativeWebKeyboardEvent;
 using content::OpenURLParams;
 using content::SiteInstance;
 using content::WebContents;
@@ -41,6 +44,11 @@ const char kRegistrationSkippedUrl[] = "cros://register/skipped";
 ///////////////////////////////////////////////////////////////////////////////
 // RegistrationView, protected:
 
+RegistrationView::RegistrationView(content::BrowserContext* browser_context)
+    : dom_view_(new WebPageDomView(browser_context)) {
+}
+
+
 WebPageDomView* RegistrationView::dom_view() {
   return dom_view_;
 }
@@ -61,6 +69,12 @@ RegistrationScreen::~RegistrationScreen() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// RegistrationScreen, WizardScreen implementation:
+std::string RegistrationScreen::GetName() const {
+  return WizardController::kRegistrationScreenName;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // RegistrationScreen, ViewScreen implementation:
 void RegistrationScreen::CreateView() {
   ViewScreen<RegistrationView>::CreateView();
@@ -70,13 +84,13 @@ void RegistrationScreen::Refresh() {
   StartTimeoutTimer();
   GURL url(kRegistrationHostPageUrl);
   Profile* profile = ProfileManager::GetDefaultProfile();
-  view()->InitDOM(profile, SiteInstance::CreateForURL(profile, url));
+  view()->InitWebView(SiteInstance::CreateForURL(profile, url));
   view()->SetWebContentsDelegate(this);
   view()->LoadURL(url);
 }
 
 RegistrationView* RegistrationScreen::AllocateView() {
-  return new RegistrationView();
+  return new RegistrationView(ProfileManager::GetDefaultProfile());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -117,7 +131,7 @@ void RegistrationScreen::CloseScreen(ScreenObserver::ExitCodes code) {
     const std::string locale = g_browser_process->GetApplicationLocale();
     input_method::InputMethodManager* manager =
         input_method::InputMethodManager::GetInstance();
-    manager->EnableInputMethods(locale, input_method::kKeyboardLayoutsOnly, "");
+    manager->EnableLayouts(locale, "");
   }
   delegate()->GetObserver()->OnExit(code);
 }

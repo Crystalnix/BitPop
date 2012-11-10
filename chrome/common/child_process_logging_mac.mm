@@ -8,10 +8,12 @@
 
 #include "base/command_line.h"
 #include "base/string_number_conversions.h"
+#include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/common/metrics/experiments_helper.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "content/public/common/gpu_info.h"
 #include "googleurl/src/gurl.h"
@@ -36,6 +38,7 @@ const char *kGPUGLVersionParamName = "gpu-glver";
 const char *kNumberOfViews = "num-views";
 NSString* const kNumExtensionsName = @"num-extensions";
 NSString* const kExtensionNameFormat = @"extension-%d";
+NSString* const kPrinterInfoNameFormat = @"prn-info-%zu";
 
 // Account for the terminating null character.
 static const size_t kClientIdSize = 32 + 1;
@@ -140,10 +143,10 @@ void SetGpuKeyValue(const char* param_name, const std::string& value_str,
 void SetGpuInfoImpl(const content::GPUInfo& gpu_info,
                     SetCrashKeyValueFuncPtr set_key_func) {
   SetGpuKeyValue(kGPUVendorIdParamName,
-                 base::StringPrintf("0x%04x", gpu_info.vendor_id),
+                 base::StringPrintf("0x%04x", gpu_info.gpu.vendor_id),
                  set_key_func);
   SetGpuKeyValue(kGPUDeviceIdParamName,
-                 base::StringPrintf("0x%04x", gpu_info.device_id),
+                 base::StringPrintf("0x%04x", gpu_info.gpu.device_id),
                  set_key_func);
   SetGpuKeyValue(kGPUDriverVersionParamName,
                  gpu_info.driver_version,
@@ -163,6 +166,19 @@ void SetGpuInfo(const content::GPUInfo& gpu_info) {
     SetGpuInfoImpl(gpu_info, SetCrashKeyValue);
 }
 
+void SetPrinterInfo(const char* printer_info) {
+  std::vector<std::string> info;
+  base::SplitString(printer_info, L';', &info);
+  info.resize(kMaxReportedPrinterRecords);
+  for (size_t i = 0; i < info.size(); ++i) {
+    NSString* key = [NSString stringWithFormat:kPrinterInfoNameFormat, i];
+    ClearCrashKey(key);
+    if (!info[i].empty()) {
+      NSString *value = [NSString stringWithUTF8String:info[i].c_str()];
+      SetCrashKeyValue(key, value);
+    }
+  }
+}
 
 void SetNumberOfViewsImpl(int number_of_views,
                           SetCrashKeyValueFuncPtr set_key_func) {
@@ -182,7 +198,7 @@ void SetCommandLine(const CommandLine* command_line) {
 
   // These should match the corresponding strings in breakpad_win.cc.
   NSString* const kNumSwitchesKey = @"num-switches";
-  NSString* const kSwitchKeyFormat = @"switch-%d";  // 1-based.
+  NSString* const kSwitchKeyFormat = @"switch-%zu";  // 1-based.
 
   // Note the total number of switches, not including the exec path.
   const CommandLine::StringVector& argv = command_line->argv();
@@ -203,6 +219,40 @@ void SetCommandLine(const CommandLine* command_line) {
     NSString* key = [NSString stringWithFormat:kSwitchKeyFormat, (key_i + 1)];
     ClearCrashKey(key);
   }
+}
+
+void SetExperimentList(const std::vector<string16>& experiments) {
+  // These should match the corresponding strings in breakpad_win.cc.
+  NSString* const kNumExperimentsKey = @"num-experiments";
+  NSString* const kExperimentChunkFormat = @"experiment-chunk-%zu";  // 1-based.
+
+  std::vector<string16> chunks;
+  experiments_helper::GenerateExperimentChunks(experiments, &chunks);
+
+  // Store up to |kMaxReportedExperimentChunks| chunks.
+  for (size_t i = 0; i < kMaxReportedExperimentChunks; ++i) {
+    NSString* key = [NSString stringWithFormat:kExperimentChunkFormat, i + 1];
+    if (i < chunks.size()) {
+      NSString* value = base::SysUTF16ToNSString(chunks[i]);
+      SetCrashKeyValue(key, value);
+    } else {
+      ClearCrashKey(key);
+    }
+  }
+
+  // Make note of the total number of experiments, which may be greater than
+  // what was able to fit in |kMaxReportedExperimentChunks|. This is useful
+  // when correlating stability with the number of experiments running
+  // simultaneously.
+  SetCrashKeyValue(kNumExperimentsKey,
+                   [NSString stringWithFormat:@"%zu", experiments.size()]);
+}
+
+void SetChannel(const std::string& channel) {
+  // This should match the corresponding string in breakpad_win.cc.
+  NSString* const kChannelKey = @"channel";
+
+  SetCrashKeyValue(kChannelKey, base::SysUTF8ToNSString(channel));
 }
 
 }  // namespace child_process_logging

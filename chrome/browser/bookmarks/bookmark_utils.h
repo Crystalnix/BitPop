@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_BOOKMARKS_BOOKMARK_UTILS_H_
 #define CHROME_BROWSER_BOOKMARKS_BOOKMARK_UTILS_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -21,7 +20,6 @@ class BookmarkNode;
 class Browser;
 class PrefService;
 class Profile;
-class TabContents;
 
 namespace content {
 class PageNavigator;
@@ -85,18 +83,14 @@ void DragBookmarks(Profile* profile,
 // Opens all the bookmarks in |nodes| that are of type url and all the child
 // bookmarks that are of type url for folders in |nodes|. |initial_disposition|
 // dictates how the first URL is opened, all subsequent URLs are opened as
-// background tabs.  |navigator| is used to open the URLs. If |navigator| is
-// NULL the last tabbed browser with the profile |profile| is used. If there is
-// no browser with the specified profile a new one is created.
+// background tabs.  |navigator| is used to open the URLs.
 void OpenAll(gfx::NativeWindow parent,
-             Profile* profile,
              content::PageNavigator* navigator,
              const std::vector<const BookmarkNode*>& nodes,
              WindowOpenDisposition initial_disposition);
 
 // Convenience for |OpenAll| with a single BookmarkNode.
 void OpenAll(gfx::NativeWindow parent,
-             Profile* profile,
              content::PageNavigator* navigator,
              const BookmarkNode* node,
              WindowOpenDisposition initial_disposition);
@@ -197,12 +191,6 @@ void GetURLAndTitleToBookmark(content::WebContents* web_contents,
                               GURL* url,
                               string16* title);
 
-// Fills in the URL and title for a bookmark from the current tab of the
-// specified profile.
-void GetURLAndTitleToBookmarkFromCurrentTab(Profile* profile,
-                                            GURL* url,
-                                            string16* title);
-
 // Returns, by reference in |urls|, the url and title pairs for each open
 // tab in browser.
 void GetURLsForOpenTabs(Browser* browser,
@@ -267,6 +255,11 @@ enum BookmarkLaunchLocation {
 
 // Records the launch of a bookmark for UMA purposes.
 void RecordBookmarkLaunch(BookmarkLaunchLocation location);
+
+#if defined(OS_WIN) || defined(OS_CHROMEOS) || defined(USE_AURA)
+void DisableBookmarkBarViewAnimationsForTesting(bool disabled);
+bool IsBookmarkBarViewAnimationsDisabled();
+#endif
 
 }  // namespace bookmark_utils
 

@@ -1,23 +1,23 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_CHROMEOS_POWER_BRIGHTNESS_OBSERVER_H_
 #define CHROME_BROWSER_CHROMEOS_POWER_BRIGHTNESS_OBSERVER_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/chromeos/dbus/power_manager_client.h"
+#include "chromeos/dbus/power_manager_client.h"
 
 namespace chromeos {
 
-// This observer displays a bubble at the bottom of the screen showing the
-// current brightness level whenever the user changes it.
+// This observer listens for changes to the screen brightness and notifies
+// extensions and ash::PowerButtonController about them.
 class BrightnessObserver : public PowerManagerClient::Observer {
  public:
-  BrightnessObserver() {}
-  virtual ~BrightnessObserver() {}
+  // This class registers/unregisters itself as an observer in ctor/dtor.
+  BrightnessObserver();
+  virtual ~BrightnessObserver();
 
  private:
   // PowerManagerClient::Observer implementation.

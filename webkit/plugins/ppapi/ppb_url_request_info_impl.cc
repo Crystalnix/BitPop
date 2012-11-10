@@ -18,6 +18,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
 #include "webkit/glue/webkit_glue.h"
+#include "webkit/glue/weburlrequest_extradata_impl.h"
 #include "webkit/plugins/ppapi/common.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppb_file_ref_impl.h"
@@ -49,7 +50,7 @@ const int32_t kDefaultPrefetchBufferLowerThreshold = 50 * 1000 * 1000;
 PPB_URLRequestInfo_Impl::PPB_URLRequestInfo_Impl(
     PP_Instance instance,
     const PPB_URLRequestInfo_Data& data)
-    : PPB_URLRequestInfo_Shared(instance, data) {
+    : PPB_URLRequestInfo_Shared(::ppapi::OBJECT_IS_IMPL, instance, data) {
 }
 
 PPB_URLRequestInfo_Impl::~PPB_URLRequestInfo_Impl() {
@@ -64,6 +65,7 @@ bool PPB_URLRequestInfo_Impl::ToWebURLRequest(WebFrame* frame,
     return false;
 
   dest->initialize();
+  dest->setTargetType(WebURLRequest::TargetIsObject);
   dest->setURL(frame->document().completeURL(WebString::fromUTF8(
       data().url)));
   dest->setDownloadToFile(data().stream_to_file);
@@ -76,7 +78,7 @@ bool PPB_URLRequestInfo_Impl::ToWebURLRequest(WebFrame* frame,
 
   const std::string& headers = data().headers;
   if (!headers.empty()) {
-    net::HttpUtil::HeadersIterator it(headers.begin(), headers.end(), "\n");
+    net::HttpUtil::HeadersIterator it(headers.begin(), headers.end(), "\n\r");
     while (it.GetNext()) {
       dest->addHTTPHeaderField(
           WebString::fromUTF8(it.name()),
@@ -112,12 +114,17 @@ bool PPB_URLRequestInfo_Impl::ToWebURLRequest(WebFrame* frame,
     frame->setReferrerForRequest(*dest, GURL(data().custom_referrer_url));
   }
 
-  if (data().has_custom_content_transfer_encoding) {
-    if (!data().custom_content_transfer_encoding.empty()) {
-      dest->addHTTPHeaderField(
-          WebString::fromUTF8("Content-Transfer-Encoding"),
-          WebString::fromUTF8(data().custom_content_transfer_encoding));
-    }
+  if (data().has_custom_content_transfer_encoding &&
+      !data().custom_content_transfer_encoding.empty()) {
+    dest->addHTTPHeaderField(
+        WebString::fromUTF8("Content-Transfer-Encoding"),
+        WebString::fromUTF8(data().custom_content_transfer_encoding));
+  }
+
+  if (data().has_custom_user_agent) {
+    dest->setExtraData(new webkit_glue::WebURLRequestExtraDataImpl(
+        WebKit::WebReferrerPolicyDefault,  // Ignored.
+        WebString::fromUTF8(data().custom_user_agent)));
   }
 
   return true;
@@ -127,6 +134,7 @@ bool PPB_URLRequestInfo_Impl::RequiresUniversalAccess() const {
   return
       data().has_custom_referrer_url ||
       data().has_custom_content_transfer_encoding ||
+      data().has_custom_user_agent ||
       url_util::FindAndCompareScheme(data().url, "javascript", NULL);
 }
 

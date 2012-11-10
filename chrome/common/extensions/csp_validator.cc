@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,11 @@ const char kDefaultSrc[] = "default-src";
 const char kScriptSrc[] = "script-src";
 const char kObjectSrc[] = "object-src";
 
+const char kSandboxDirectiveName[] = "sandbox";
+const char kAllowSameOriginToken[] = "allow-same-origin";
+const char kAllowTopNavigation[] = "allow-top-navigation";
+const char kAllowPopups[] = "allow-popups";
+
 struct DirectiveStatus {
   explicit DirectiveStatus(const char* name)
     : directive_name(name)
@@ -30,7 +35,7 @@ struct DirectiveStatus {
   bool is_secure;
 };
 
-bool HasOnlySecureTokens(StringTokenizer& tokenizer) {
+bool HasOnlySecureTokens(StringTokenizer& tokenizer, Extension::Type type) {
   while (tokenizer.GetNext()) {
     std::string source = tokenizer.token();
     StringToLowerASCII(&source);
@@ -43,8 +48,16 @@ bool HasOnlySecureTokens(StringTokenizer& tokenizer) {
         source == "'none'" ||
         StartsWithASCII(source, "https://", true) ||
         StartsWithASCII(source, "chrome://", true) ||
-        StartsWithASCII(source, "chrome-extension://", true)) {
+        StartsWithASCII(source, "chrome-extension://", true) ||
+        StartsWithASCII(source, "chrome-extension-resource:", true)) {
       continue;
+    }
+
+    // crbug.com/146487
+    if (type == Extension::TYPE_EXTENSION ||
+        type == Extension::TYPE_PACKAGED_APP) {
+      if (source == "'unsafe-eval'")
+        continue;
     }
 
     return false;
@@ -56,13 +69,14 @@ bool HasOnlySecureTokens(StringTokenizer& tokenizer) {
 // Returns true if |directive_name| matches |status.directive_name|.
 bool UpdateStatus(const std::string& directive_name,
                   StringTokenizer& tokenizer,
-                  DirectiveStatus* status) {
+                  DirectiveStatus* status,
+                  Extension::Type type) {
   if (status->seen_in_policy)
     return false;
   if (directive_name != status->directive_name)
     return false;
   status->seen_in_policy = true;
-  status->is_secure = HasOnlySecureTokens(tokenizer);
+  status->is_secure = HasOnlySecureTokens(tokenizer, type);
   return true;
 }
 
@@ -71,13 +85,14 @@ bool UpdateStatus(const std::string& directive_name,
 bool ContentSecurityPolicyIsLegal(const std::string& policy) {
   // We block these characters to prevent HTTP header injection when
   // representing the content security policy as an HTTP header.
-  const char kBadChars[] = {'\r', '\n', '\0'};
+  const char kBadChars[] = {',', '\r', '\n', '\0'};
 
   return policy.find_first_of(kBadChars, 0, arraysize(kBadChars)) ==
       std::string::npos;
 }
 
-bool ContentSecurityPolicyIsSecure(const std::string& policy) {
+bool ContentSecurityPolicyIsSecure(const std::string& policy,
+                                   Extension::Type type) {
   // See http://www.w3.org/TR/CSP/#parse-a-csp-policy for parsing algorithm.
   std::vector<std::string> directives;
   base::SplitString(policy, ';', &directives);
@@ -95,11 +110,11 @@ bool ContentSecurityPolicyIsSecure(const std::string& policy) {
     std::string directive_name = tokenizer.token();
     StringToLowerASCII(&directive_name);
 
-    if (UpdateStatus(directive_name, tokenizer, &default_src_status))
+    if (UpdateStatus(directive_name, tokenizer, &default_src_status, type))
       continue;
-    if (UpdateStatus(directive_name, tokenizer, &script_src_status))
+    if (UpdateStatus(directive_name, tokenizer, &script_src_status, type))
       continue;
-    if (UpdateStatus(directive_name, tokenizer, &object_src_status))
+    if (UpdateStatus(directive_name, tokenizer, &object_src_status, type))
       continue;
   }
 
@@ -116,6 +131,48 @@ bool ContentSecurityPolicyIsSecure(const std::string& policy) {
 
   return default_src_status.seen_in_policy ||
       (script_src_status.seen_in_policy && object_src_status.seen_in_policy);
+}
+
+bool ContentSecurityPolicyIsSandboxed(
+    const std::string& policy, Extension::Type type) {
+  // See http://www.w3.org/TR/CSP/#parse-a-csp-policy for parsing algorithm.
+  std::vector<std::string> directives;
+  base::SplitString(policy, ';', &directives);
+
+  bool seen_sandbox = false;
+
+  for (size_t i = 0; i < directives.size(); ++i) {
+    std::string& input = directives[i];
+    StringTokenizer tokenizer(input, " \t\r\n");
+    if (!tokenizer.GetNext())
+      continue;
+
+    std::string directive_name = tokenizer.token();
+    StringToLowerASCII(&directive_name);
+
+    if (directive_name != kSandboxDirectiveName)
+      continue;
+
+    seen_sandbox = true;
+
+    while (tokenizer.GetNext()) {
+      std::string token = tokenizer.token();
+      StringToLowerASCII(&token);
+
+      // The same origin token negates the sandboxing.
+      if (token == kAllowSameOriginToken)
+        return false;
+
+      // Platform apps don't allow navigation (and have a separate windowing
+      // API that should be used for popups)
+      if (type == Extension::TYPE_PLATFORM_APP) {
+        if (token == kAllowTopNavigation || token == kAllowPopups)
+          return false;
+      }
+    }
+  }
+
+  return seen_sandbox;
 }
 
 }  // csp_validator

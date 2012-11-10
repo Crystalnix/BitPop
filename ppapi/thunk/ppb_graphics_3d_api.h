@@ -1,16 +1,20 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef PPAPI_THUNK_PPB_GRAPHICS_3D_API_H_
 #define PPAPI_THUNK_PPB_GRAPHICS_3D_API_H_
 
+#include "base/memory/ref_counted.h"
 #include "ppapi/c/ppb_graphics_3d.h"
 #include "ppapi/c/trusted/ppb_graphics_3d_trusted.h"
 #include "ppapi/c/dev/ppb_gles_chromium_texture_mapping_dev.h"
 #include "ppapi/thunk/ppapi_thunk_export.h"
 
 namespace ppapi {
+
+class TrackedCallback;
+
 namespace thunk {
 
 class PPAPI_THUNK_EXPORT PPB_Graphics3D_API {
@@ -18,11 +22,11 @@ class PPAPI_THUNK_EXPORT PPB_Graphics3D_API {
   virtual ~PPB_Graphics3D_API() {}
 
   // Graphics3D API.
-  virtual int32_t GetAttribs(int32_t* attrib_list) = 0;
-  virtual int32_t SetAttribs(int32_t* attrib_list) = 0;
+  virtual int32_t GetAttribs(int32_t attrib_list[]) = 0;
+  virtual int32_t SetAttribs(const int32_t attrib_list[]) = 0;
   virtual int32_t GetError() = 0;
   virtual int32_t ResizeBuffers(int32_t width, int32_t height) = 0;
-  virtual int32_t SwapBuffers(PP_CompletionCallback callback) = 0;
+  virtual int32_t SwapBuffers(scoped_refptr<TrackedCallback> callback) = 0;
 
   // Graphics3DTrusted API.
   virtual PP_Bool InitCommandBuffer() = 0;

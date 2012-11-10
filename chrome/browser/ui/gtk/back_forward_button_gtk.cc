@@ -6,18 +6,19 @@
 
 #include <gtk/gtk.h>
 
-#include "base/message_loop.h"
 #include "base/bind.h"
+#include "base/message_loop.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/gtk/event_utils.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "chrome/browser/ui/toolbar/back_forward_menu_model.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 
 // The time in milliseconds between when the user clicks and the menu appears.
@@ -89,9 +90,10 @@ void BackForwardButtonGtk::ShowBackForwardMenu(int button, guint32 event_time) {
 void BackForwardButtonGtk::OnClick(GtkWidget* widget) {
   weak_factory_.InvalidateWeakPtrs();
 
-  browser_->ExecuteCommandWithDisposition(
+  chrome::ExecuteCommandWithDisposition(
+      browser_,
       is_forward_ ? IDC_FORWARD : IDC_BACK,
-      gtk_util::DispositionForCurrentButtonPressEvent());
+      event_utils::DispositionForCurrentButtonPressEvent());
 }
 
 gboolean BackForwardButtonGtk::OnButtonPress(GtkWidget* widget,

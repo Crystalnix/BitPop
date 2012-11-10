@@ -4,42 +4,43 @@
 
 #include "chrome/browser/chromeos/login/webui_login_view.h"
 
+#include "ash/shell.h"
+#include "ash/system/tray/system_tray.h"
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/i18n/rtl.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/dbus/dbus_thread_manager.h"
-#include "chrome/browser/chromeos/dbus/session_manager_client.h"
+#include "chrome/browser/chromeos/login/base_login_display_host.h"
 #include "chrome/browser/chromeos/login/proxy_settings_dialog.h"
 #include "chrome/browser/chromeos/login/webui_login_display.h"
-#include "chrome/browser/chromeos/status/status_area_view.h"
+#include "chrome/browser/media/media_stream_devices_controller.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/views/dom_view.h"
+#include "chrome/browser/renderer_preferences_util.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/render_messages.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/session_manager_client.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_view_host_observer.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "ui/aura/env.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
+#include "ui/views/controls/webview/webview.h"
 #include "ui/views/widget/widget.h"
 
-#if defined(TOOLKIT_USES_GTK)
-#include "chrome/browser/chromeos/legacy_window_manager/wm_ipc.h"
-#include "ui/views/widget/native_widget_gtk.h"
-#endif
-
-#if defined(USE_VIRTUAL_KEYBOARD)
-#include "chrome/browser/ui/virtual_keyboard/virtual_keyboard_manager.h"
-#endif
-
-#if defined(USE_AURA)
-#include "chrome/browser/ui/views/aura/chrome_shell_delegate.h"
-#endif
-
+using content::NativeWebKeyboardEvent;
+using content::RenderViewHost;
 using content::WebContents;
 
 namespace {
@@ -47,10 +48,8 @@ namespace {
 const char kViewClassName[] = "browser/chromeos/login/WebUILoginView";
 
 // These strings must be kept in sync with handleAccelerator() in oobe.js.
-const char kAccelNameAccessibility[] = "accessibility";
 const char kAccelNameCancel[] = "cancel";
 const char kAccelNameEnrollment[] = "enrollment";
-const char kAccelNameExit[] = "exit";
 const char kAccelNameVersion[] = "version";
 
 // Observes IPC messages from the FrameSniffer and notifies JS if error
@@ -66,7 +65,7 @@ class SnifferObserver : public content::RenderViewHostObserver {
 
   virtual ~SnifferObserver() {}
 
-  // IPC::Channel::Listener implementation.
+  // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) {
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(SnifferObserver, message)
@@ -110,32 +109,26 @@ void RightAlignedView::ChildPreferredSizeChanged(View* child) {
 
 namespace chromeos {
 
-// static
-const int WebUILoginView::kStatusAreaCornerPadding = 5;
-
 // WebUILoginView public: ------------------------------------------------------
 
 WebUILoginView::WebUILoginView()
-    : status_area_(NULL),
-      webui_login_(NULL),
+    : webui_login_(NULL),
       login_window_(NULL),
-      status_window_(NULL),
       host_window_frozen_(false),
-      status_area_visibility_on_init_(true) {
-#if defined(USE_VIRTUAL_KEYBOARD)
-  // Make sure the singleton VirtualKeyboardManager object is created.
-  VirtualKeyboardManager::GetInstance();
-#endif
-  accel_map_[ui::Accelerator(ui::VKEY_Z, false, true, true)] =
-      kAccelNameAccessibility;
-  accel_map_[ui::Accelerator(ui::VKEY_ESCAPE, false, false, false)] =
+      is_hidden_(false),
+      login_visible_notification_fired_(false),
+      login_prompt_visible_handled_(false),
+      should_emit_login_prompt_visible_(true) {
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_LOGIN_WEBUI_VISIBLE,
+                 content::NotificationService::AllSources());
+
+  accel_map_[ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE)] =
       kAccelNameCancel;
-  accel_map_[ui::Accelerator(ui::VKEY_E, false, true, true)] =
+  accel_map_[ui::Accelerator(ui::VKEY_E,
+                             ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN)] =
       kAccelNameEnrollment;
-  // This should be kept in sync with the IDC_EXIT accelerator.
-  accel_map_[ui::Accelerator(ui::VKEY_Q, true, true, false)] =
-      kAccelNameExit;
-  accel_map_[ui::Accelerator(ui::VKEY_V, false, false, true)] =
+  accel_map_[ui::Accelerator(ui::VKEY_V, ui::EF_ALT_DOWN)] =
       kAccelNameVersion;
 
   for (AccelMap::iterator i(accel_map_.begin()); i != accel_map_.end(); ++i)
@@ -143,22 +136,36 @@ WebUILoginView::WebUILoginView()
 }
 
 WebUILoginView::~WebUILoginView() {
-  if (status_window_)
-    status_window_->CloseNow();
-  status_window_ = NULL;
+  ash::SystemTray* tray = ash::Shell::GetInstance()->system_tray();
+  if (tray)
+    tray->SetNextFocusableView(NULL);
 }
 
 void WebUILoginView::Init(views::Widget* login_window) {
   login_window_ = login_window;
-  webui_login_ = new DOMView();
+  webui_login_ = new views::WebView(ProfileManager::GetDefaultProfile());
   AddChildView(webui_login_);
-  webui_login_->Init(ProfileManager::GetDefaultProfile(), NULL);
-  webui_login_->SetVisible(true);
 
-  WebContents* web_contents = webui_login_->dom_contents()->web_contents();
+  // We create the WebContents ourselves because the TabContents assumes
+  // ownership of it. This should be reworked once we don't need to use the
+  // TabContents here.
+  WebContents* web_contents =
+      WebContents::Create(ProfileManager::GetDefaultProfile(),
+                          NULL,
+                          MSG_ROUTING_NONE,
+                          NULL,
+                          NULL);
+  tab_contents_.reset(new TabContents(web_contents));
+  webui_login_->SetWebContents(web_contents);
+
   web_contents->SetDelegate(this);
+  renderer_preferences_util::UpdateFromSystemSettings(
+      web_contents->GetMutableRendererPrefs(),
+      ProfileManager::GetDefaultProfile());
 
-  tab_watcher_.reset(new TabFirstRenderWatcher(web_contents, this));
+  registrar_.Add(this,
+                 content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
+                 content::Source<WebContents>(web_contents));
 }
 
 std::string WebUILoginView::GetClassName() const {
@@ -189,54 +196,64 @@ gfx::NativeWindow WebUILoginView::GetNativeWindow() const {
 }
 
 void WebUILoginView::OnWindowCreated() {
-#if defined(TOOLKIT_USES_GTK)
-  // Freezes host window update until the tab is rendered.
-  host_window_frozen_ = static_cast<views::NativeWidgetGtk*>(
-      GetWidget()->native_widget())->SuppressFreezeUpdates();
-#else
-  // TODO(saintlou): Unclear if we need this for the !gtk case.
-  // According to nkostylev it prevents the renderer from flashing with a
-  // white solid background until the content is fully rendered.
-#endif
 }
 
 void WebUILoginView::UpdateWindowType() {
-#if defined(TOOLKIT_USES_GTK)
-  std::vector<int> params;
-  WmIpc::instance()->SetWindowType(
-      GTK_WIDGET(GetNativeWindow()),
-      WM_IPC_WINDOW_LOGIN_WEBUI,
-      &params);
-#endif
 }
 
 void WebUILoginView::LoadURL(const GURL & url) {
-  webui_login_->LoadURL(url);
+  webui_login_->LoadInitialURL(url);
   webui_login_->RequestFocus();
+
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (!command_line->HasSwitch(switches::kDisableNewOobe)) {
+    // TODO(nkostylev): Use WebContentsObserver::RenderViewCreated to track
+    // when RenderView is created.
+    // Use a background with transparency to trigger transparency in Webkit.
+    SkBitmap background;
+    background.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
+    background.allocPixels();
+    background.eraseARGB(0x00, 0x00, 0x00, 0x00);
+    content::RenderViewHost* host =
+        tab_contents_->web_contents()->GetRenderViewHost();
+    host->GetView()->SetBackground(background);
+  }
 }
 
 content::WebUI* WebUILoginView::GetWebUI() {
-  return webui_login_->dom_contents()->web_contents()->GetWebUI();
+  return webui_login_->web_contents()->GetWebUI();
+}
+
+content::WebContents* WebUILoginView::GetWebContents() {
+  return webui_login_->web_contents();
 }
 
 void WebUILoginView::OpenProxySettings() {
-  if (!proxy_settings_dialog_.get()) {
-    proxy_settings_dialog_.reset(
-        new ProxySettingsDialog(NULL, GetNativeWindow()));
-  }
-  proxy_settings_dialog_->Show();
+  ProxySettingsDialog* dialog =
+      new ProxySettingsDialog(NULL, GetNativeWindow());
+  dialog->Show();
 }
 
-void WebUILoginView::SetStatusAreaEnabled(bool enable) {
-  if (status_area_)
-    status_area_->MakeButtonsActive(enable);
+void WebUILoginView::OnPostponedShow() {
+  set_is_hidden(false);
+  // If notification will happen later let it fire login-prompt-visible signal.
+  if (login_visible_notification_fired_) {
+    LOG(INFO) << "Login WebUI >> postponed show, login_visible already fired";
+    OnLoginPromptVisible();
+  }
 }
 
 void WebUILoginView::SetStatusAreaVisible(bool visible) {
-  if (status_area_)
-    status_area_->SetVisible(visible);
-  else
-    status_area_visibility_on_init_ = visible;
+  ash::SystemTray* tray = ash::Shell::GetInstance()->system_tray();
+  if (tray) {
+    if (visible) {
+      // Tray may have been initialized being hidden.
+      tray->SetVisible(visible);
+      tray->GetWidget()->Show();
+    } else {
+      tray->GetWidget()->Hide();
+    }
+  }
 }
 
 // WebUILoginView protected: ---------------------------------------------------
@@ -247,9 +264,6 @@ void WebUILoginView::Layout() {
 }
 
 void WebUILoginView::OnLocaleChanged() {
-  // Proxy settings dialog contains localized strings.
-  proxy_settings_dialog_.reset();
-  SchedulePaint();
 }
 
 void WebUILoginView::ChildPreferredSizeChanged(View* child) {
@@ -257,165 +271,43 @@ void WebUILoginView::ChildPreferredSizeChanged(View* child) {
   SchedulePaint();
 }
 
-// Overridden from StatusAreaButton::Delegate:
-
-bool WebUILoginView::ShouldExecuteStatusAreaCommand(
-    const views::View* button_view, int command_id) const {
-  if (command_id == StatusAreaButton::Delegate::SHOW_NETWORK_OPTIONS)
-    return true;
-  return false;
+void WebUILoginView::AboutToRequestFocusFromTabTraversal(bool reverse) {
+  // Return the focus to the web contents.
+  webui_login_->web_contents()->FocusThroughTabTraversal(reverse);
+  GetWidget()->Activate();
 }
 
-void WebUILoginView::ExecuteStatusAreaCommand(
-    const views::View* button_view, int command_id) {
-  if (command_id == StatusAreaButton::Delegate::SHOW_NETWORK_OPTIONS)
-    OpenProxySettings();
-}
-
-gfx::Font WebUILoginView::GetStatusAreaFont(const gfx::Font& font) const {
-  return font;
-}
-
-StatusAreaButton::TextStyle WebUILoginView::GetStatusAreaTextStyle() const {
-  return StatusAreaButton::GRAY_PLAIN;
-}
-
-void WebUILoginView::ButtonVisibilityChanged(views::View* button_view) {
-  if (status_area_)
-    status_area_->UpdateButtonVisibility();
-}
-
-void WebUILoginView::OnRenderHostCreated(RenderViewHost* host) {
-  new SnifferObserver(host, GetWebUI());
-}
-
-void WebUILoginView::OnTabMainFrameLoaded() {
-  VLOG(1) << "WebUI login main frame loaded.";
-}
-
-void WebUILoginView::OnTabMainFrameFirstRender() {
-  VLOG(1) << "WebUI login main frame rendered.";
-  StatusAreaViewChromeos::SetScreenMode(GetScreenMode());
-  // In aura there's a global status area shown already.
-#if defined(USE_AURA)
-  status_area_ = ChromeShellDelegate::instance()->GetStatusArea();
-  status_area_->SetVisible(status_area_visibility_on_init_);
-#else
-  InitStatusArea();
-#endif
-
-#if defined(TOOLKIT_USES_GTK)
-  if (host_window_frozen_) {
-    host_window_frozen_ = false;
-
-    // Unfreezes the host window since tab is rendered now.
-    views::NativeWidgetGtk::UpdateFreezeUpdatesProperty(
-        GetNativeWindow(), false);
+void WebUILoginView::Observe(int type,
+                             const content::NotificationSource& source,
+                             const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_LOGIN_WEBUI_VISIBLE: {
+      login_visible_notification_fired_ = true;
+      OnLoginPromptVisible();
+      registrar_.RemoveAll();
+      break;
+    }
+    case content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED: {
+      RenderViewHost* render_view_host =
+          content::Details<RenderViewHost>(details).ptr();
+      new SnifferObserver(render_view_host, GetWebUI());
+      break;
+    }
+    default:
+      NOTREACHED() << "Unexpected notification " << type;
   }
-#endif
-
-  bool emit_login_visible = false;
-
-  // In aura, there will be no window-manager. So chrome needs to emit the
-  // 'login-prompt-visible' signal. This needs to happen here, after the page
-  // has completed rendering itself.
-#if defined(USE_AURA)
-  emit_login_visible = true;
-#endif
-  if (emit_login_visible)
-    chromeos::DBusThreadManager::Get()->GetSessionManagerClient()
-        ->EmitLoginPromptVisible();
-
-  OobeUI* oobe_ui = static_cast<OobeUI*>(GetWebUI()->GetController());
-  // Notify OOBE that the login frame has been rendered. Currently
-  // this is used to start camera presence check.
-  oobe_ui->OnLoginPromptVisible();
-}
-
-void WebUILoginView::InitStatusArea() {
-  DCHECK(status_area_ == NULL);
-  DCHECK(status_window_ == NULL);
-  StatusAreaViewChromeos* status_area_chromeos = new StatusAreaViewChromeos();
-  status_area_chromeos->Init(this);
-  status_area_ = status_area_chromeos;
-  status_area_->SetVisible(status_area_visibility_on_init_);
-
-  // Width of |status_window| is meant to be large enough.
-  // The current value of status_area_->GetPreferredSize().width()
-  // will be too small when button status is changed.
-  // (e.g. when CapsLock indicator appears)
-  gfx::Size widget_size(width()/2,
-                        status_area_->GetPreferredSize().height());
-  const int widget_x = base::i18n::IsRTL() ?
-      kStatusAreaCornerPadding :
-      width() - widget_size.width() - kStatusAreaCornerPadding;
-  gfx::Rect widget_bounds(widget_x, kStatusAreaCornerPadding,
-                          widget_size.width(), widget_size.height());
-  // TODO(nkostylev|oshima): Make status area in the same window as
-  // |webui_login_| once RenderWidgetHostViewViews and compositor are
-  // ready. This will also avoid having to override the status area
-  // widget type for the lock screen.
-  views::Widget::InitParams widget_params(GetStatusAreaWidgetType());
-  widget_params.bounds = widget_bounds;
-  widget_params.transparent = true;
-  widget_params.parent_widget = login_window_;
-  status_window_ = new views::Widget;
-  status_window_->Init(widget_params);
-
-#if defined(TOOLKIT_USES_GTK)
-  std::vector<int> params;
-  params.push_back(1);  // Show while screen is locked.
-  chromeos::WmIpc::instance()->SetWindowType(
-      status_window_->GetNativeView(),
-      chromeos::WM_IPC_WINDOW_CHROME_INFO_BUBBLE,
-      &params);
-#endif
-
-  views::View* contents_view = new RightAlignedView;
-  contents_view->AddChildView(status_area_);
-  status_window_->SetContentsView(contents_view);
-  status_window_->Show();
-}
-
-StatusAreaViewChromeos::ScreenMode WebUILoginView::GetScreenMode() {
-  return StatusAreaViewChromeos::LOGIN_MODE_WEBUI;
-}
-
-views::Widget::InitParams::Type WebUILoginView::GetStatusAreaWidgetType() {
-  return views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
 }
 
 // WebUILoginView private: -----------------------------------------------------
 
-bool WebUILoginView::HandleContextMenu(const ContextMenuParams& params) {
+bool WebUILoginView::HandleContextMenu(
+    const content::ContextMenuParams& params) {
   // Do not show the context menu.
 #ifndef NDEBUG
   return false;
 #else
   return true;
 #endif
-}
-
-bool WebUILoginView::IsPopupOrPanel(const WebContents* source) const {
-  return true;
-}
-
-bool WebUILoginView::TakeFocus(bool reverse) {
-  if (status_area_ && status_area_->visible()) {
-    // Forward the focus to the status area.
-    base::Callback<void(bool)> return_focus_cb =
-        base::Bind(&WebUILoginView::ReturnFocus, base::Unretained(this));
-    status_area_->TakeFocus(reverse, return_focus_cb);
-    status_area_->GetWidget()->Activate();
-  }
-  return true;
-}
-
-void WebUILoginView::ReturnFocus(bool reverse) {
-  // Return the focus to the web contents.
-  webui_login_->dom_contents()->web_contents()->
-      FocusThroughTabTraversal(reverse);
-  GetWidget()->Activate();
 }
 
 void WebUILoginView::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
@@ -430,6 +322,65 @@ void WebUILoginView::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
     if (web_ui)
       web_ui->CallJavascriptFunction("cr.ui.Oobe.clearErrors");
   }
+}
+
+bool WebUILoginView::IsPopupOrPanel(const WebContents* source) const {
+  return true;
+}
+
+bool WebUILoginView::TakeFocus(bool reverse) {
+  ash::SystemTray* tray = ash::Shell::GetInstance()->system_tray();
+  if (tray && tray->GetWidget()->IsVisible()) {
+    tray->SetNextFocusableView(this);
+    ash::Shell::GetInstance()->RotateFocus(reverse ? ash::Shell::BACKWARD :
+                                                     ash::Shell::FORWARD);
+  }
+
+  return true;
+}
+
+void WebUILoginView::RequestMediaAccessPermission(
+    WebContents* web_contents,
+    const content::MediaStreamRequest* request,
+    const content::MediaResponseCallback& callback) {
+  TabContents* tab = TabContents::FromWebContents(web_contents);
+  DCHECK(tab);
+
+  scoped_ptr<MediaStreamDevicesController>
+      controller(new MediaStreamDevicesController(
+          tab->profile(), request, callback));
+  if (!controller->DismissInfoBarAndTakeActionOnSettings())
+    NOTREACHED() << "Media stream not allowed for WebUI";
+}
+
+void WebUILoginView::OnLoginPromptVisible() {
+  // If we're hidden than will generate this signal once we're shown.
+  if (is_hidden_ || login_prompt_visible_handled_) {
+    LOG(INFO) << "Login WebUI >> not emitting signal, hidden: " << is_hidden_;
+    return;
+  }
+
+  if (should_emit_login_prompt_visible_) {
+    LOG(INFO) << "Login WebUI >> login-prompt-visible";
+    chromeos::DBusThreadManager::Get()->GetSessionManagerClient()->
+        EmitLoginPromptVisible();
+  }
+  login_prompt_visible_handled_ = true;
+
+  OobeUI* oobe_ui = static_cast<OobeUI*>(GetWebUI()->GetController());
+  // Notify OOBE that the login frame has been rendered. Currently
+  // this is used to start camera presence check.
+  oobe_ui->OnLoginPromptVisible();
+
+  // Let RenderWidgetHostViewAura::OnPaint() show white background when
+  // loading page and when backing store is not present.
+  aura::Env::GetInstance()->set_render_white_bg(true);
+}
+
+void WebUILoginView::ReturnFocus(bool reverse) {
+  // Return the focus to the web contents.
+  webui_login_->web_contents()->FocusThroughTabTraversal(reverse);
+  GetWidget()->Activate();
 }
 
 }  // namespace chromeos

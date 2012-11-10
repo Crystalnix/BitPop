@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_HISTORY_EXPIRE_HISTORY_BACKEND_H_
 #define CHROME_BROWSER_HISTORY_EXPIRE_HISTORY_BACKEND_H_
-#pragma once
 
 #include <queue>
 #include <set>
@@ -159,7 +158,7 @@ class ExpireHistoryBackend {
 
   // Deletes all the URLs in the given vector and handles their dependencies.
   // This will delete starred URLs
-  void DeleteURLs(const std::vector<URLRow>& urls,
+  void DeleteURLs(const URLRows& urls,
                   DeleteDependencies* dependencies);
 
   // Expiration involves removing visits, then propagating the visits out from
@@ -195,8 +194,18 @@ class ExpireHistoryBackend {
   // care about favicons so much, so don't want to stop everything if it fails).
   void DeleteFaviconsIfPossible(const std::set<FaviconID>& favicon_id);
 
+  // Enum representing what type of action resulted in the history DB deletion.
+  enum DeletionType {
+    // User initiated the deletion from the History UI.
+    DELETION_USER_INITIATED,
+    // History data was automatically archived due to being more than 90 days
+    // old.
+    DELETION_ARCHIVED
+  };
+
   // Broadcast the URL deleted notification.
-  void BroadcastDeleteNotifications(DeleteDependencies* dependencies);
+  void BroadcastDeleteNotifications(DeleteDependencies* dependencies,
+                                    DeletionType type);
 
   // Schedules a call to DoArchiveIteration.
   void ScheduleArchive();

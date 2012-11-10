@@ -1,15 +1,15 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_SEARCH_ENGINES_TEMPLATE_URL_PARSER_H_
 #define CHROME_BROWSER_SEARCH_ENGINES_TEMPLATE_URL_PARSER_H_
-#pragma once
 
 #include <string>
 
 #include "base/basictypes.h"
 
+class Profile;
 class TemplateURL;
 
 // TemplateURLParser, as the name implies, handling reading of TemplateURLs
@@ -26,20 +26,20 @@ class TemplateURLParser {
    protected:
     virtual ~ParameterFilter() {}
   };
-  // Decodes the chunk of data representing a TemplateURL. If data does
-  // not describe a valid TemplateURL false is returned. Additionally, if the
-  // URLs referenced do not point to valid http/https resources, false is
-  // returned. |parameter_filter| can be used if you want to filter out some
-  // parameters out of the URL. For example when importing from another browser
-  // we remove any parameter identifying that browser.  If set to NULL, the URL
-  // is not modified.
-  //
-  // NOTE: This does not clear all values of the supplied TemplateURL; it's
-  // expected callers will supply a new TemplateURL to this method.
-  static bool Parse(const unsigned char* data,
-                    size_t length,
-                    ParameterFilter* parameter_filter,
-                    TemplateURL* url);
+
+  // Decodes the chunk of data representing a TemplateURL, creates the
+  // TemplateURL, and returns it.  The caller owns the returned object.  Returns
+  // NULL if data does not describe a valid TemplateURL, the URLs referenced do
+  // not point to valid http/https resources, or for some other reason we do not
+  // support the described TemplateURL.  |parameter_filter| can be used if you
+  // want to filter some parameters out of the URL.  For example, when importing
+  // from another browser, we remove any parameter identifying that browser.  If
+  // set to NULL, the URL is not modified.
+  static TemplateURL* Parse(Profile* profile,
+                            bool show_in_default_list,
+                            const char* data,
+                            size_t length,
+                            ParameterFilter* parameter_filter);
 
  private:
   // No one should create one of these.

@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_COMMON_EXTENSIONS_MANIFEST_H_
 #define CHROME_COMMON_EXTENSIONS_MANIFEST_H_
-#pragma once
 
 #include <map>
 #include <string>
@@ -12,74 +11,47 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
-
-namespace base {
-class DictionaryValue;
-class ListValue;
-class Value;
-}
+#include "base/values.h"
+#include "chrome/common/extensions/extension.h"
 
 namespace extensions {
 
-// Lightweight wrapper around a DictionaryValue representing an extension's
-// manifest. Currently enforces access to properties of the manifest based
-// on manifest type.
-//
-// TODO(aa): Move more smarts about mmanifest into this class over time.
+// Wraps the DictionaryValue form of extension's manifest. Enforces access to
+// properties of the manifest using ManifestFeatureProvider.
 class Manifest {
  public:
-  // Flags for matching types of extension manifests.
-  enum Type {
-    kTypeNone = 0,
-
-    // Extension::TYPE_EXTENSION and Extension::TYPE_USER_SCRIPT
-    kTypeExtension = 1 << 0,
-
-    // Extension::TYPE_THEME
-    kTypeTheme = 1 << 1,
-
-    // Extension::TYPE_HOSTED_APP
-    kTypeHostedApp = 1 << 2,
-
-    // Extension::TYPE_PACKAGED_APP
-    kTypePackagedApp = 1 << 3,
-
-    // Extension::TYPE_PLATFORM_APP
-    kTypePlatformApp = 1 << 4,
-
-    // All types
-    kTypeAll = (1 << 5) - 1,
-  };
-
-  // Returns all known keys (this is used for testing).
-  static std::set<std::string> GetAllKnownKeys();
-
-  // Takes over ownership of |value|.
-  explicit Manifest(base::DictionaryValue* value);
+  Manifest(Extension::Location location, scoped_ptr<DictionaryValue> value);
   virtual ~Manifest();
 
-  // Returns true if all keys in the manifest can be specified by
+  const std::string& extension_id() const { return extension_id_; }
+  void set_extension_id(const std::string& id) { extension_id_ = id; }
+
+  Extension::Location location() const { return location_; }
+
+  // |error| will be non-empty if the manifest is malformed. |warnings| will
+  // be populated if there are keys in the manifest that cannot be specified by
   // the extension type.
-  bool ValidateManifest(string16* error) const;
+  void ValidateManifest(std::string* error,
+                        Extension::InstallWarningVector* warnings) const;
+
+  // The version of this extension's manifest. We increase the manifest
+  // version when making breaking changes to the extension system. If the
+  // manifest contains no explicit manifest version, this returns the current
+  // system default.
+  int GetManifestVersion() const;
 
   // Returns the manifest type.
-  Type GetType() const;
+  Extension::Type type() const { return type_; }
 
-  // Returns true if the manifest represents an Extension::TYPE_THEME.
-  bool IsTheme() const;
-
-  // Returns true for Extension::TYPE_PLATFORM_APP
-  bool IsPlatformApp() const;
-
-  // Returns true for Extension::TYPE_PACKAGED_APP.
-  bool IsPackagedApp() const;
-
-  // Returns true for Extension::TYPE_HOSTED_APP.
-  bool IsHostedApp() const;
+  bool is_theme() const { return type_ == Extension::TYPE_THEME; }
+  bool is_platform_app() const { return type_ == Extension::TYPE_PLATFORM_APP; }
+  bool is_packaged_app() const { return type_ == Extension::TYPE_PACKAGED_APP; }
+  bool is_hosted_app() const { return type_ == Extension::TYPE_HOSTED_APP; }
 
   // These access the wrapped manifest value, returning false when the property
   // does not exist or if the manifest type can't access it.
   bool HasKey(const std::string& key) const;
+  bool HasPath(const std::string& path) const;
   bool Get(const std::string& path, base::Value** out_value) const;
   bool GetBoolean(const std::string& path, bool* out_value) const;
   bool GetInteger(const std::string& path, int* out_value) const;
@@ -97,14 +69,29 @@ class Manifest {
   bool Equals(const Manifest* other) const;
 
   // Gets the underlying DictionaryValue representing the manifest.
-  // Note: only know this when you KNOW you don't need the validation.
-  base::DictionaryValue* value() const { return value_.get(); }
+  // Note: only use this when you KNOW you don't need the validation.
+  const base::DictionaryValue* value() const { return value_.get(); }
 
  private:
   // Returns true if the extension can specify the given |path|.
   bool CanAccessPath(const std::string& path) const;
+  bool CanAccessKey(const std::string& key) const;
 
+  // A persistent, globally unique ID. An extension's ID is used in things
+  // like directory structures and URLs, and is expected to not change across
+  // versions. It is generated as a SHA-256 hash of the extension's public
+  // key, or as a hash of the path in the case of unpacked extensions.
+  std::string extension_id_;
+
+  // The location the extension was loaded from.
+  Extension::Location location_;
+
+  // The underlying dictionary representation of the manifest.
   scoped_ptr<base::DictionaryValue> value_;
+
+  Extension::Type type_;
+
+  DISALLOW_COPY_AND_ASSIGN(Manifest);
 };
 
 }  // namespace extensions

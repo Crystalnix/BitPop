@@ -6,9 +6,10 @@
 
 namespace remoting {
 
-ClientContext::ClientContext(base::MessageLoopProxy* main_message_loop_proxy)
-    : main_message_loop_proxy_(main_message_loop_proxy),
-      decode_thread_("ChromotingClientDecodeThread") {
+ClientContext::ClientContext(base::SingleThreadTaskRunner* main_task_runner)
+    : main_task_runner_(main_task_runner),
+      decode_thread_("ChromotingClientDecodeThread"),
+      audio_decode_thread_("ChromotingClientAudioDecodeThread") {
 }
 
 ClientContext::~ClientContext() {
@@ -17,23 +18,25 @@ ClientContext::~ClientContext() {
 void ClientContext::Start() {
   // Start all the threads.
   decode_thread_.Start();
+  audio_decode_thread_.Start();
 }
 
 void ClientContext::Stop() {
   // Stop all the threads.
   decode_thread_.Stop();
+  audio_decode_thread_.Stop();
 }
 
-base::MessageLoopProxy* ClientContext::main_message_loop() {
-  return main_message_loop_proxy_;
+base::SingleThreadTaskRunner* ClientContext::main_task_runner() {
+  return main_task_runner_;
 }
 
-base::MessageLoopProxy* ClientContext::decode_message_loop() {
+base::SingleThreadTaskRunner* ClientContext::decode_task_runner() {
   return decode_thread_.message_loop_proxy();
 }
 
-base::MessageLoopProxy* ClientContext::network_message_loop() {
-  return main_message_loop_proxy_;
+base::SingleThreadTaskRunner* ClientContext::audio_decode_task_runner() {
+  return audio_decode_thread_.message_loop_proxy();
 }
 
 }  // namespace remoting

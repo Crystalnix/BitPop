@@ -1,9 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ppapi/shared_impl/resource_tracker.h"
 
+#include "base/bind.h"
+#include "base/compiler_specific.h"
+#include "base/message_loop.h"
 #include "ppapi/shared_impl/callback_tracker.h"
 #include "ppapi/shared_impl/id_assignment.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
@@ -11,7 +14,9 @@
 
 namespace ppapi {
 
-ResourceTracker::ResourceTracker() : last_resource_value_(0) {
+ResourceTracker::ResourceTracker()
+    : last_resource_value_(0),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
 }
 
 ResourceTracker::~ResourceTracker() {
@@ -65,6 +70,14 @@ void ResourceTracker::ReleaseResource(PP_Resource res) {
     // FROM OUR LIST.
     i->second.first->Release();
   }
+}
+
+void ResourceTracker::ReleaseResourceSoon(PP_Resource res) {
+  MessageLoop::current()->PostNonNestableTask(
+      FROM_HERE,
+      base::Bind(&ResourceTracker::ReleaseResource,
+             weak_ptr_factory_.GetWeakPtr(),
+             res));
 }
 
 void ResourceTracker::DidCreateInstance(PP_Instance instance) {
@@ -170,8 +183,18 @@ void ResourceTracker::RemoveResource(Resource* object) {
 }
 
 void ResourceTracker::LastPluginRefWasDeleted(Resource* object) {
-  PpapiGlobals::Get()->GetCallbackTrackerForInstance(object->pp_instance())->
-      PostAbortForResource(object->pp_resource());
+  // Bug http://crbug.com/134611 indicates that sometimes the resource tracker
+  // is null here. This should never be the case since if we have a resource in
+  // the tracker, it should always have a valid instance associated with it.
+  // As a result, we do some CHECKs here to see what types of problems the
+  // instance might have before dispatching.
+  //
+  // TODO(brettw) remove these checks when this bug is no longer relevant.
+  CHECK(object->pp_instance());
+  CallbackTracker* callback_tracker =
+      PpapiGlobals::Get()->GetCallbackTrackerForInstance(object->pp_instance());
+  CHECK(callback_tracker);
+  callback_tracker->PostAbortForResource(object->pp_resource());
   object->LastPluginRefWasDeleted();
 }
 

@@ -1,16 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_PUBLIC_BROWSER_DEVTOOLS_MANAGER_H_
 #define CONTENT_PUBLIC_BROWSER_DEVTOOLS_MANAGER_H_
-#pragma once
 
 #include <string>
 
 #include "content/common/content_export.h"
-
-class TabContents;
+#include "content/public/common/console_message_level.h"
 
 namespace IPC {
 class Message;
@@ -35,9 +33,10 @@ class CONTENT_EXPORT DevToolsManager {
   virtual bool DispatchOnInspectorBackend(DevToolsClientHost* from,
                                           const std::string& message) = 0;
 
-  // Invoked when a tab is replaced by another tab. This is triggered by
+  // Invoked when contents is replaced by another contents. This is triggered by
   // TabStripModel::ReplaceTabContentsAt.
-  virtual void TabReplaced(WebContents* old_tab, WebContents* new_tab) = 0;
+  virtual void ContentsReplaced(WebContents* old_contents,
+                                WebContents* new_contents) = 0;
 
   // Closes all open developer tools windows.
   virtual void CloseAllClientHosts() = 0;
@@ -76,6 +75,12 @@ class CONTENT_EXPORT DevToolsManager {
 
   // Starts inspecting element at position (x, y) in the specified page.
   virtual void InspectElement(DevToolsAgentHost* agent_host, int x, int y) = 0;
+
+  // Logs given |message| on behalf of the given |agent_host|.
+  virtual void AddMessageToConsole(DevToolsAgentHost* agent_host,
+                                   ConsoleMessageLevel level,
+                                   const std::string& message) = 0;
+
 };
 
 }  // namespace content

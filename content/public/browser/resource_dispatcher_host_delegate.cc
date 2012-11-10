@@ -12,37 +12,29 @@ bool ResourceDispatcherHostDelegate::ShouldBeginRequest(
     const std::string& method,
     const GURL& url,
     ResourceType::Type resource_type,
-    const ResourceContext& resource_context,
+    ResourceContext* resource_context,
     const Referrer& referrer) {
   return true;
 }
 
-ResourceHandler* ResourceDispatcherHostDelegate::RequestBeginning(
-    ResourceHandler* handler,
+void ResourceDispatcherHostDelegate::RequestBeginning(
     net::URLRequest* request,
-    const ResourceContext& resource_context,
-    bool is_subresource,
+    ResourceContext* resource_context,
+    ResourceType::Type resource_type,
     int child_id,
     int route_id,
-    bool is_continuation_of_transferred_request) {
-  return handler;
+    bool is_continuation_of_transferred_request,
+    ScopedVector<ResourceThrottle>* throttles) {
 }
 
-ResourceHandler* ResourceDispatcherHostDelegate::DownloadStarting(
-    ResourceHandler* handler,
-    const ResourceContext& resource_context,
+void ResourceDispatcherHostDelegate::DownloadStarting(
     net::URLRequest* request,
+    ResourceContext* resource_context,
     int child_id,
     int route_id,
     int request_id,
-    bool is_new_request) {
-  return handler;
-}
-
-bool ResourceDispatcherHostDelegate::ShouldDeferStart(
-    net::URLRequest* request,
-    const ResourceContext& resource_context) {
-  return false;
+    bool is_content_initiated,
+    ScopedVector<ResourceThrottle>* throttles) {
 }
 
 bool ResourceDispatcherHostDelegate::AcceptSSLClientCertificateRequest(
@@ -77,12 +69,15 @@ bool ResourceDispatcherHostDelegate::ShouldForceDownloadResource(
 
 void ResourceDispatcherHostDelegate::OnResponseStarted(
     net::URLRequest* request,
+    ResourceContext* resource_context,
     ResourceResponse* response,
-    IPC::Message::Sender* sender) {
+    IPC::Sender* sender) {
 }
 
 void ResourceDispatcherHostDelegate::OnRequestRedirected(
+    const GURL& redirect_url,
     net::URLRequest* request,
+    ResourceContext* resource_context,
     ResourceResponse* response) {
 }
 

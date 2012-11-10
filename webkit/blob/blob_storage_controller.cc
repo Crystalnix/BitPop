@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -68,6 +68,7 @@ void BlobStorageController::AppendBlobDataItem(
   // All the Blob items in the passing blob data are resolved and expanded into
   // a set of Data and File items.
 
+  DCHECK(item.length > 0);
   switch (item.type) {
     case BlobData::TYPE_DATA:
       // WebBlobData does not allow partial data.
@@ -172,7 +173,8 @@ void BlobStorageController::ResolveBlobReferencesInUploadData(
     net::UploadData* upload_data) {
   DCHECK(upload_data);
 
-  std::vector<net::UploadData::Element>* uploads = upload_data->elements();
+  std::vector<net::UploadData::Element>* uploads =
+      upload_data->elements_mutable();
   std::vector<net::UploadData::Element>::iterator iter;
   for (iter = uploads->begin(); iter != uploads->end();) {
     if (iter->type() != net::UploadData::TYPE_BLOB) {
@@ -198,6 +200,11 @@ void BlobStorageController::ResolveBlobReferencesInUploadData(
     if (blob_data->items().empty())
       continue;
 
+    // Ensure the blob and any attached shareable files survive until
+    // upload completion.
+    upload_data->SetUserData(blob_data,
+                             new base::UserDataAdapter<BlobData>(blob_data));
+
     // Insert the elements in the referred blob data.
     // Note that we traverse from the bottom so that the elements can be
     // inserted in the original order.
@@ -208,13 +215,13 @@ void BlobStorageController::ResolveBlobReferencesInUploadData(
       switch (item.type) {
         case BlobData::TYPE_DATA:
           // TODO(jianli): Figure out how to avoid copying the data.
+          // TODO(michaeln): Now that blob_data surives for the duration,
+          // maybe UploadData could take a raw ptr without having to copy.
           iter->SetToBytes(
               &item.data.at(0) + static_cast<int>(item.offset),
               static_cast<int>(item.length));
           break;
         case BlobData::TYPE_FILE:
-          // TODO(michaeln): Ensure that any temp files survive till the
-          // net::URLRequest is done with the upload.
           iter->SetToFilePathRange(
               item.file_path,
               item.offset,
@@ -274,10 +281,10 @@ void BlobStorageController::AppendFileItem(
                                expected_modification_time);
 
   // It may be a temporary file that should be deleted when no longer needed.
-  scoped_refptr<DeletableFileReference> deletable_file =
-      DeletableFileReference::Get(file_path);
-  if (deletable_file)
-    target_blob_data->AttachDeletableFileReference(deletable_file);
+  scoped_refptr<ShareableFileReference> shareable_file =
+      ShareableFileReference::Get(file_path);
+  if (shareable_file)
+    target_blob_data->AttachShareableFileReference(shareable_file);
 }
 
 void BlobStorageController::IncrementBlobDataUsage(BlobData* blob_data) {

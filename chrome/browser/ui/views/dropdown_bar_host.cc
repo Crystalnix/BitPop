@@ -22,8 +22,6 @@
 #include "ui/gfx/scoped_sk_region.h"
 #elif defined(OS_WIN)
 #include "base/win/scoped_gdi_object.h"
-#elif defined(TOOLKIT_USES_GTK)
-#include "ui/base/gtk/scoped_handle_gtk.h"
 #endif
 
 namespace {
@@ -32,8 +30,6 @@ namespace {
 typedef gfx::ScopedSkRegion ScopedPlatformRegion;
 #elif defined(OS_WIN)
 typedef base::win::ScopedRegion ScopedPlatformRegion;
-#elif defined(TOOLKIT_USES_GTK)
-typedef ui::ScopedRegion ScopedPlatformRegion;
 #endif
 
 }  // namespace
@@ -338,14 +334,15 @@ void DropdownBarHost::UpdateWindowEdges(const gfx::Rect& new_pos) {
 
 void DropdownBarHost::RegisterAccelerators() {
   DCHECK(!esc_accel_target_registered_);
-  ui::Accelerator escape(ui::VKEY_ESCAPE, false, false, false);
-  focus_manager_->RegisterAccelerator(escape, this);
+  ui::Accelerator escape(ui::VKEY_ESCAPE, ui::EF_NONE);
+  focus_manager_->RegisterAccelerator(
+      escape, ui::AcceleratorManager::kNormalPriority, this);
   esc_accel_target_registered_ = true;
 }
 
 void DropdownBarHost::UnregisterAccelerators() {
   DCHECK(esc_accel_target_registered_);
-  ui::Accelerator escape(ui::VKEY_ESCAPE, false, false, false);
+  ui::Accelerator escape(ui::VKEY_ESCAPE, ui::EF_NONE);
   focus_manager_->UnregisterAccelerator(escape, this);
   esc_accel_target_registered_ = false;
 }

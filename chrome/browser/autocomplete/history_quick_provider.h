@@ -4,10 +4,12 @@
 
 #ifndef CHROME_BROWSER_AUTOCOMPLETE_HISTORY_QUICK_PROVIDER_H_
 #define CHROME_BROWSER_AUTOCOMPLETE_HISTORY_QUICK_PROVIDER_H_
-#pragma once
 
 #include <string>
 
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/history_provider.h"
 #include "chrome/browser/history/history_types.h"
@@ -16,18 +18,21 @@
 class Profile;
 class TermMatches;
 
+namespace history {
+struct ScoredHistoryMatch;
+}  // namespace history
+
 // This class is an autocomplete provider (a pseudo-internal component of
 // the history system) which quickly (and synchronously) provides matching
 // results from recently or frequently visited sites in the profile's
 // history.
 class HistoryQuickProvider : public HistoryProvider {
  public:
-  HistoryQuickProvider(ACProviderListener* listener, Profile* profile);
+  HistoryQuickProvider(AutocompleteProviderListener* listener,
+                       Profile* profile);
 
-  virtual ~HistoryQuickProvider();
-
-  // AutocompleteProvider. |minimal_changes| is ignored since there
-  // is no asynch completion performed.
+  // AutocompleteProvider. |minimal_changes| is ignored since there is no asynch
+  // completion performed.
   virtual void Start(const AutocompleteInput& input,
                      bool minimal_changes) OVERRIDE;
 
@@ -45,24 +50,16 @@ class HistoryQuickProvider : public HistoryProvider {
   FRIEND_TEST_ALL_PREFIXES(HistoryQuickProviderTest, Spans);
   FRIEND_TEST_ALL_PREFIXES(HistoryQuickProviderTest, Relevance);
 
+  virtual ~HistoryQuickProvider();
+
   // Performs the autocomplete matching and scoring.
   void DoAutocomplete();
 
-  // Creates an AutocompleteMatch from |history_match|. |max_match_score| gives
-  // the maximum possible score for the match.
+  // Creates an AutocompleteMatch from |history_match|, assigning it
+  // the score |score|.
   AutocompleteMatch QuickMatchToACMatch(
       const history::ScoredHistoryMatch& history_match,
-      bool prevent_inline_autocomplete,
-      int* max_match_score);
-
-  // Determines the relevance score of |history_match|. The maximum allowed
-  // score for the match is passed in |max_match_score|. The |max_match_score|
-  // is always set to the resulting score minus 1 whenever the match's score
-  // has to be limited or is <= to |max_match_score|. This function should be
-  // called in a loop with each match in decreasing order of raw score.
-  static int CalculateRelevance(
-      const history::ScoredHistoryMatch& history_match,
-      int* max_match_score);
+      int score);
 
   // Returns the index that should be used for history lookups.
   history::InMemoryURLIndex* GetIndex();
@@ -82,11 +79,31 @@ class HistoryQuickProvider : public HistoryProvider {
   AutocompleteInput autocomplete_input_;
   std::string languages_;
 
+  // True if we're allowed to reorder results depending on
+  // inlineability in order to assign higher relevance scores.
+  // Consider a case where ScoredHistoryMatch provides results x and
+  // y, where x is not inlineable and has a score of 3000 and y is
+  // inlineable and has a score of 2500.  If reorder_for_inlining_ is
+  // false, then x gets demoted to a non-inlineable score (1199) and y
+  // gets demoted to a lower score (1198) because we try to preserve
+  // the order.  On the other hand, if reorder_for_inlining_ is true,
+  // then y keeps its score of 2500 and x gets demoted to 2499 in
+  // order to follow y.  There will not be any problems with an
+  // unexpected inline because the non-inlineable result x scores
+  // lower than the inlineable one.
+  // TODO(mpearson): remove this variable after we're done experimenting.
+  // (This member is meant to only exist for experimentation purposes.
+  // Once we know which behavior is better, we should rip out this variable
+  // and make the best behavior the default.)
+  bool reorder_for_inlining_;
+
   // Only used for testing.
   scoped_ptr<history::InMemoryURLIndex> index_for_testing_;
 
   // This provider is disabled when true.
   static bool disabled_;
+
+  DISALLOW_COPY_AND_ASSIGN(HistoryQuickProvider);
 };
 
 #endif  // CHROME_BROWSER_AUTOCOMPLETE_HISTORY_QUICK_PROVIDER_H_

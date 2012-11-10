@@ -11,13 +11,13 @@
 #include "base/message_loop_proxy.h"
 #include "base/scoped_temp_dir.h"
 #include "content/browser/browser_thread_impl.h"
-#include "content/browser/in_process_webkit/indexed_db_context.h"
+#include "content/browser/in_process_webkit/indexed_db_context_impl.h"
 #include "content/browser/in_process_webkit/indexed_db_quota_client.h"
-#include "content/browser/in_process_webkit/webkit_context.h"
-#include "content/test/test_browser_context.h"
+#include "content/public/test/test_browser_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/database/database_util.h"
 
+using content::BrowserContext;
 using content::BrowserThread;
 
 // Declared to shorten the line lengths.
@@ -41,16 +41,22 @@ class IndexedDBQuotaClientTest : public testing::Test {
         usage_(0),
         weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
         message_loop_(MessageLoop::TYPE_IO),
+        db_thread_(BrowserThread::DB, &message_loop_),
         webkit_thread_(BrowserThread::WEBKIT_DEPRECATED, &message_loop_),
+        file_thread_(BrowserThread::FILE, &message_loop_),
+        file_user_blocking_thread_(
+            BrowserThread::FILE_USER_BLOCKING, &message_loop_),
         io_thread_(BrowserThread::IO, &message_loop_) {
-    TestBrowserContext browser_context;
-    idb_context_ = browser_context.GetWebKitContext()->indexed_db_context();
+    browser_context_.reset(new content::TestBrowserContext());
+    idb_context_ = static_cast<IndexedDBContextImpl*>(
+        BrowserContext::GetIndexedDBContext(browser_context_.get()));
+    message_loop_.RunAllPending();
     setup_temp_dir();
   }
   void setup_temp_dir() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     FilePath indexeddb_dir = temp_dir_.path().Append(
-        IndexedDBContext::kIndexedDBDirectory);
+        IndexedDBContextImpl::kIndexedDBDirectory);
     ASSERT_TRUE(file_util::CreateDirectory(indexeddb_dir));
     idb_context()->set_data_path_for_testing(indexeddb_dir);
   }
@@ -61,6 +67,7 @@ class IndexedDBQuotaClientTest : public testing::Test {
     // class.  Cause IndexedDBContext's destruction now to ensure that it
     // doesn't outlive BrowserThread::WEBKIT_DEPRECATED.
     idb_context_ = NULL;
+    browser_context_.reset();
     MessageLoop::current()->RunAllPending();
   }
 
@@ -116,7 +123,7 @@ class IndexedDBQuotaClientTest : public testing::Test {
     return delete_status_;
   }
 
-  IndexedDBContext* idb_context() { return idb_context_.get(); }
+  IndexedDBContextImpl* idb_context() { return idb_context_.get(); }
 
   void SetFileSizeTo(const FilePath& path, int size) {
     std::string junk(size, 'a');
@@ -124,7 +131,7 @@ class IndexedDBQuotaClientTest : public testing::Test {
   }
 
   void AddFakeIndexedDB(const GURL& origin, int size) {
-    FilePath file_path_origin = idb_context()->GetIndexedDBFilePath(
+    FilePath file_path_origin = idb_context()->GetFilePathForTesting(
         DatabaseUtil::GetOriginIdentifier(origin));
     if (!file_util::CreateDirectory(file_path_origin)) {
       LOG(ERROR) << "failed to file_util::CreateDirectory "
@@ -154,11 +161,15 @@ class IndexedDBQuotaClientTest : public testing::Test {
   int64 usage_;
   std::set<GURL> origins_;
   quota::StorageType type_;
-  scoped_refptr<IndexedDBContext> idb_context_;
+  scoped_refptr<IndexedDBContextImpl> idb_context_;
   base::WeakPtrFactory<IndexedDBQuotaClientTest> weak_factory_;
   MessageLoop message_loop_;
+  BrowserThreadImpl db_thread_;
   BrowserThreadImpl webkit_thread_;
+  BrowserThreadImpl file_thread_;
+  BrowserThreadImpl file_user_blocking_thread_;
   BrowserThreadImpl io_thread_;
+  scoped_ptr<content::TestBrowserContext> browser_context_;
   quota::QuotaStatusCode delete_status_;
 };
 

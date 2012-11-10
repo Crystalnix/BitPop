@@ -37,12 +37,17 @@ class RootWindowHostMac : public RootWindowHost,
   virtual gfx::Size GetSize() const OVERRIDE;
   virtual void SetSize(const gfx::Size& size) OVERRIDE;
   virtual gfx::Point GetLocationOnNativeScreen() const OVERRIDE;
+  virtual void SetCapture() OVERRIDE;
+  virtual void ReleaseCapture() OVERRIDE;
   virtual void SetCursor(gfx::NativeCursor cursor) OVERRIDE;
   virtual void ShowCursor(bool show) OVERRIDE;
-  virtual gfx::Point QueryMouseLocation() OVERRIDE;
+  virtual bool QueryMouseLocation(gfx::Point* location_return) OVERRIDE;
   virtual void MoveCursorTo(const gfx::Point& location) OVERRIDE;
   virtual bool ConfineCursorToRootWindow() OVERRIDE;
   virtual void UnConfineCursor() OVERRIDE;
+  virtual bool GrabSnapshot(
+      const gfx::Rect& snapshot_bounds,
+      std::vector<unsigned char>* png_representation) OVERRIDE;
 
   // RootWindowHostMacDelegate:
   virtual void SendEvent(const base::NativeEvent& native_event) OVERRIDE;
@@ -141,14 +146,21 @@ gfx::Point RootWindowHostMac::GetLocationOnNativeScreen() const {
   return gfx::Point();
 }
 
+void RootWindowHostMac::SetCapture() {
+}
+
+void RootWindowHostMac::ReleaseCapture() {
+}
+
 void RootWindowHostMac::SetCursor(gfx::NativeCursor cursor) {
 }
 
 void RootWindowHostMac::ShowCursor(bool show) {
 }
 
-gfx::Point RootWindowHostMac::QueryMouseLocation() {
-  return gfx::Point();
+bool RootWindowHostMac::QueryMouseLocation(gfx::Point* location_return) {
+  *location_return = gfx::Point();
+  return true;
 }
 
 void RootWindowHostMac::MoveCursorTo(const gfx::Point& location) {
@@ -159,6 +171,13 @@ bool RootWindowHostMac::ConfineCursorToRootWindow() {
 }
 
 void RootWindowHostMac::UnConfineCursor() {
+}
+
+bool RootWindowHostMac::GrabSnapshot(
+    const gfx::Rect& snapshot_bounds,
+    std::vector<unsigned char>* png_representation) {
+  NOTIMPLEMENTED();
+  return false;
 }
 
 void RootWindowHostMac::SendEvent(const base::NativeEvent& native_event) {

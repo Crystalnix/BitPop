@@ -8,23 +8,26 @@
 #include "base/file_util.h"
 #include "base/message_loop.h"
 #include "content/browser/download/download_stats.h"
-#include "content/browser/download/download_types.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item.h"
+#include "content/public/browser/download_save_info.h"
+#include "content/public/browser/download_url_parameters.h"
 #include "net/base/file_stream.h"
 
+using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadItem;
 using content::DownloadManager;
+using content::DownloadUrlParameters;
 using content::WebContents;
 
 DragDownloadFile::DragDownloadFile(
     const FilePath& file_name_or_path,
     linked_ptr<net::FileStream> file_stream,
     const GURL& url,
-    const GURL& referrer,
+    const content::Referrer& referrer,
     const std::string& referrer_encoding,
     WebContents* web_contents)
     : file_stream_(file_stream),
@@ -125,22 +128,22 @@ void DragDownloadFile::InitiateDownload() {
   }
 #endif
 
-  download_manager_ = web_contents_->GetBrowserContext()->GetDownloadManager();
+  download_manager_ = BrowserContext::GetDownloadManager(
+      web_contents_->GetBrowserContext());
   download_manager_observer_added_ = true;
   download_manager_->AddObserver(this);
 
-  DownloadSaveInfo save_info;
+  content::DownloadSaveInfo save_info;
   save_info.file_path = file_path_;
   save_info.file_stream = file_stream_;
 
-  download_manager_->DownloadUrl(url_,
-                                 referrer_,
-                                 referrer_encoding_,
-                                 false,
-                                 save_info,
-                                 web_contents_);
-  download_stats::RecordDownloadCount(
-      download_stats::INITIATED_BY_DRAG_N_DROP_COUNT);
+  download_stats::RecordDownloadSource(
+      download_stats::INITIATED_BY_DRAG_N_DROP);
+  scoped_ptr<DownloadUrlParameters> params(
+      DownloadUrlParameters::FromWebContents(web_contents_, url_, save_info));
+  params->set_referrer(referrer_);
+  params->set_referrer_encoding(referrer_encoding_);
+  download_manager_->DownloadUrl(params.Pass());
 }
 
 void DragDownloadFile::DownloadCompleted(bool is_successful) {
@@ -172,8 +175,9 @@ void DragDownloadFile::DownloadCompleted(bool is_successful) {
 #endif
 }
 
-void DragDownloadFile::ModelChanged() {
+void DragDownloadFile::ModelChanged(DownloadManager* manager) {
   AssertCurrentlyOnUIThread();
+  DCHECK_EQ(manager, download_manager_);
 
   if (download_item_)
     return;
@@ -221,11 +225,10 @@ void DragDownloadFile::AssertCurrentlyOnUIThread() {
 void DragDownloadFile::StartNestedMessageLoop() {
   AssertCurrentlyOnDragThread();
 
-  bool old_state = MessageLoop::current()->NestableTasksAllowed();
-  MessageLoop::current()->SetNestableTasksAllowed(true);
+  MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
   is_running_nested_message_loop_ = true;
   MessageLoop::current()->Run();
-  MessageLoop::current()->SetNestableTasksAllowed(old_state);
+  DCHECK(!is_running_nested_message_loop_);
 }
 
 void DragDownloadFile::QuitNestedMessageLoop() {

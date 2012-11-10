@@ -1,6 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+#include <utility>
+#include <vector>
 
 #include "base/utf_string_conversions.h"
 #include "ui/base/accelerators/accelerator.h"
@@ -10,15 +13,12 @@
 #include "ui/views/focus/accelerator_handler.h"
 #include "ui/views/focus/focus_manager_factory.h"
 #include "ui/views/focus/focus_manager_test.h"
+#include "ui/views/focus/widget_focus_manager.h"
 #include "ui/views/widget/widget.h"
 
 #if !defined(USE_AURA)
 #include "ui/views/controls/tabbed_pane/native_tabbed_pane_wrapper.h"
 #include "ui/views/controls/tabbed_pane/tabbed_pane.h"
-#endif
-
-#if defined(OS_LINUX)
-#include "ui/base/keycodes/keyboard_code_conversion_gtk.h"
 #endif
 
 namespace views {
@@ -101,14 +101,8 @@ TEST_F(FocusManagerTest, FocusChangeListener) {
   TestFocusChangeListener listener;
   AddFocusChangeListener(&listener);
 
-  // Visual Studio 2010 has problems converting NULL to the null pointer for
-  // std::pair.  See http://connect.microsoft.com/VisualStudio/feedback/details/520043/error-converting-from-null-to-a-pointer-type-in-std-pair
-  // It will work if we pass nullptr.
-#if defined(_MSC_VER) && _MSC_VER >= 1600
-  views::View* null_view = nullptr;
-#else
+  // Required for VS2010: http://connect.microsoft.com/VisualStudio/feedback/details/520043/error-converting-from-null-to-a-pointer-type-in-std-pair
   views::View* null_view = NULL;
-#endif
 
   view1->RequestFocus();
   ASSERT_EQ(1, static_cast<int>(listener.focus_changes().size()));
@@ -123,6 +117,41 @@ TEST_F(FocusManagerTest, FocusChangeListener) {
   GetFocusManager()->ClearFocus();
   ASSERT_EQ(1, static_cast<int>(listener.focus_changes().size()));
   EXPECT_TRUE(listener.focus_changes()[0] == ViewPair(view2, null_view));
+}
+
+TEST_F(FocusManagerTest, WidgetFocusChangeListener) {
+  TestWidgetFocusChangeListener widget_listener;
+  AddWidgetFocusChangeListener(&widget_listener);
+
+  Widget::InitParams params;
+  params.type = views::Widget::InitParams::TYPE_WINDOW;
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.bounds = gfx::Rect(10, 10, 100, 100);
+  params.parent_widget = GetWidget();
+
+  scoped_ptr<Widget> widget1(new Widget);
+  widget1->Init(params);
+  widget1->Show();
+
+  scoped_ptr<Widget> widget2(new Widget);
+  widget2->Init(params);
+  widget2->Show();
+
+  widget_listener.ClearFocusChanges();
+  gfx::NativeView native_view1 = widget1->GetNativeView();
+  GetWidget()->FocusNativeView(native_view1);
+  ASSERT_EQ(2, static_cast<int>(widget_listener.focus_changes().size()));
+  EXPECT_EQ(native_view1, widget_listener.focus_changes()[0].second);
+  EXPECT_EQ(native_view1, widget_listener.focus_changes()[1].second);
+
+  widget_listener.ClearFocusChanges();
+  gfx::NativeView native_view2 = widget2->GetNativeView();
+  GetWidget()->FocusNativeView(native_view2);
+  ASSERT_EQ(2, static_cast<int>(widget_listener.focus_changes().size()));
+  EXPECT_EQ(NativeViewPair(native_view1, native_view2),
+            widget_listener.focus_changes()[0]);
+  EXPECT_EQ(NativeViewPair(native_view1, native_view2),
+            widget_listener.focus_changes()[1]);
 }
 
 #if !defined(USE_AURA)
@@ -147,6 +176,7 @@ class TestTabbedPane : public TabbedPane {
 TEST_F(FocusManagerTest, FAILS_FocusNativeControls) {
   TestTextfield* textfield = new TestTextfield();
   TestTabbedPane* tabbed_pane = new TestTabbedPane();
+  tabbed_pane->set_use_native_win_control(true);
   TestTextfield* textfield2 = new TestTextfield();
 
   GetContentsView()->AddChildView(textfield);
@@ -172,7 +202,9 @@ TEST_F(FocusManagerTest, ContainsView) {
   View* view = new View();
   scoped_ptr<View> detached_view(new View());
   TabbedPane* tabbed_pane = new TabbedPane();
+  tabbed_pane->set_use_native_win_control(true);
   TabbedPane* nested_tabbed_pane = new TabbedPane();
+  nested_tabbed_pane->set_use_native_win_control(true);
   NativeTextButton* tab_button = new NativeTextButton(
       NULL, ASCIIToUTF16("tab button"));
 
@@ -217,15 +249,15 @@ class TestAcceleratorTarget : public ui::AcceleratorTarget {
  private:
   int accelerator_count_;  // number of times that the accelerator is activated
   bool process_accelerator_;  // return value of AcceleratorPressed
-  bool can_handle_accelerators_; // return value of CanHandleAccelerators
+  bool can_handle_accelerators_;  // return value of CanHandleAccelerators
 
   DISALLOW_COPY_AND_ASSIGN(TestAcceleratorTarget);
 };
 
 TEST_F(FocusManagerTest, CallsNormalAcceleratorTarget) {
   FocusManager* focus_manager = GetFocusManager();
-  ui::Accelerator return_accelerator(ui::VKEY_RETURN, false, false, false);
-  ui::Accelerator escape_accelerator(ui::VKEY_ESCAPE, false, false, false);
+  ui::Accelerator return_accelerator(ui::VKEY_RETURN, ui::EF_NONE);
+  ui::Accelerator escape_accelerator(ui::VKEY_ESCAPE, ui::EF_NONE);
 
   TestAcceleratorTarget return_target(true);
   TestAcceleratorTarget escape_target(true);
@@ -237,8 +269,12 @@ TEST_F(FocusManagerTest, CallsNormalAcceleratorTarget) {
             focus_manager->GetCurrentTargetForAccelerator(escape_accelerator));
 
   // Register targets.
-  focus_manager->RegisterAccelerator(return_accelerator, &return_target);
-  focus_manager->RegisterAccelerator(escape_accelerator, &escape_target);
+  focus_manager->RegisterAccelerator(return_accelerator,
+                                     ui::AcceleratorManager::kNormalPriority,
+                                     &return_target);
+  focus_manager->RegisterAccelerator(escape_accelerator,
+                                     ui::AcceleratorManager::kNormalPriority,
+                                     &escape_target);
 
   // Checks if the correct target is registered.
   EXPECT_EQ(&return_target,
@@ -259,7 +295,9 @@ TEST_F(FocusManagerTest, CallsNormalAcceleratorTarget) {
   // Register another target for the return key.
   TestAcceleratorTarget return_target2(true);
   EXPECT_EQ(return_target2.accelerator_count(), 0);
-  focus_manager->RegisterAccelerator(return_accelerator, &return_target2);
+  focus_manager->RegisterAccelerator(return_accelerator,
+                                     ui::AcceleratorManager::kNormalPriority,
+                                     &return_target2);
   EXPECT_EQ(&return_target2,
             focus_manager->GetCurrentTargetForAccelerator(return_accelerator));
 
@@ -271,7 +309,9 @@ TEST_F(FocusManagerTest, CallsNormalAcceleratorTarget) {
   // Register a target that does not process the accelerator event.
   TestAcceleratorTarget return_target3(false);
   EXPECT_EQ(return_target3.accelerator_count(), 0);
-  focus_manager->RegisterAccelerator(return_accelerator, &return_target3);
+  focus_manager->RegisterAccelerator(return_accelerator,
+                                     ui::AcceleratorManager::kNormalPriority,
+                                     &return_target3);
   EXPECT_EQ(&return_target3,
             focus_manager->GetCurrentTargetForAccelerator(return_accelerator));
 
@@ -314,15 +354,108 @@ TEST_F(FocusManagerTest, CallsNormalAcceleratorTarget) {
   EXPECT_EQ(escape_target.accelerator_count(), 1);
 }
 
+TEST_F(FocusManagerTest, HighPriorityHandlers) {
+  FocusManager* focus_manager = GetFocusManager();
+  ui::Accelerator escape_accelerator(ui::VKEY_ESCAPE, ui::EF_NONE);
+
+  TestAcceleratorTarget escape_target_high(true);
+  TestAcceleratorTarget escape_target_normal(true);
+  EXPECT_EQ(escape_target_high.accelerator_count(), 0);
+  EXPECT_EQ(escape_target_normal.accelerator_count(), 0);
+  EXPECT_EQ(NULL,
+      focus_manager->GetCurrentTargetForAccelerator(escape_accelerator));
+  EXPECT_FALSE(focus_manager->HasPriorityHandler(escape_accelerator));
+
+  // Register high priority target.
+  focus_manager->RegisterAccelerator(escape_accelerator,
+                                     ui::AcceleratorManager::kHighPriority,
+                                     &escape_target_high);
+  EXPECT_EQ(&escape_target_high,
+     focus_manager->GetCurrentTargetForAccelerator(escape_accelerator));
+  EXPECT_TRUE(focus_manager->HasPriorityHandler(escape_accelerator));
+
+  // Hit the escape key.
+  EXPECT_TRUE(focus_manager->ProcessAccelerator(escape_accelerator));
+  EXPECT_EQ(escape_target_high.accelerator_count(), 1);
+  EXPECT_EQ(escape_target_normal.accelerator_count(), 0);
+
+  // Add a normal priority target and make sure it doesn't see the key.
+  focus_manager->RegisterAccelerator(escape_accelerator,
+                                     ui::AcceleratorManager::kNormalPriority,
+                                     &escape_target_normal);
+
+  // Checks if the correct target is registered (same as before, the high
+  // priority one).
+  EXPECT_EQ(&escape_target_high,
+      focus_manager->GetCurrentTargetForAccelerator(escape_accelerator));
+  EXPECT_TRUE(focus_manager->HasPriorityHandler(escape_accelerator));
+
+  // Hit the escape key.
+  EXPECT_TRUE(focus_manager->ProcessAccelerator(escape_accelerator));
+  EXPECT_EQ(escape_target_high.accelerator_count(), 2);
+  EXPECT_EQ(escape_target_normal.accelerator_count(), 0);
+
+  // Unregister the high priority accelerator.
+  focus_manager->UnregisterAccelerator(escape_accelerator, &escape_target_high);
+  EXPECT_EQ(&escape_target_normal,
+      focus_manager->GetCurrentTargetForAccelerator(escape_accelerator));
+  EXPECT_FALSE(focus_manager->HasPriorityHandler(escape_accelerator));
+
+  // Hit the escape key.
+  EXPECT_TRUE(focus_manager->ProcessAccelerator(escape_accelerator));
+  EXPECT_EQ(escape_target_high.accelerator_count(), 2);
+  EXPECT_EQ(escape_target_normal.accelerator_count(), 1);
+
+  // Add the high priority target back and make sure it starts seeing the key.
+  focus_manager->RegisterAccelerator(escape_accelerator,
+                                     ui::AcceleratorManager::kHighPriority,
+                                     &escape_target_high);
+  EXPECT_EQ(&escape_target_high,
+      focus_manager->GetCurrentTargetForAccelerator(escape_accelerator));
+  EXPECT_TRUE(focus_manager->HasPriorityHandler(escape_accelerator));
+
+  // Hit the escape key.
+  EXPECT_TRUE(focus_manager->ProcessAccelerator(escape_accelerator));
+  EXPECT_EQ(escape_target_high.accelerator_count(), 3);
+  EXPECT_EQ(escape_target_normal.accelerator_count(), 1);
+
+  // Unregister the normal priority accelerator.
+  focus_manager->UnregisterAccelerator(
+      escape_accelerator, &escape_target_normal);
+  EXPECT_EQ(&escape_target_high,
+      focus_manager->GetCurrentTargetForAccelerator(escape_accelerator));
+  EXPECT_TRUE(focus_manager->HasPriorityHandler(escape_accelerator));
+
+  // Hit the escape key.
+  EXPECT_TRUE(focus_manager->ProcessAccelerator(escape_accelerator));
+  EXPECT_EQ(escape_target_high.accelerator_count(), 4);
+  EXPECT_EQ(escape_target_normal.accelerator_count(), 1);
+
+  // Unregister the high priority accelerator.
+  focus_manager->UnregisterAccelerator(escape_accelerator, &escape_target_high);
+  EXPECT_EQ(NULL,
+      focus_manager->GetCurrentTargetForAccelerator(escape_accelerator));
+  EXPECT_FALSE(focus_manager->HasPriorityHandler(escape_accelerator));
+
+  // Hit the escape key (no change, no targets registered).
+  EXPECT_FALSE(focus_manager->ProcessAccelerator(escape_accelerator));
+  EXPECT_EQ(escape_target_high.accelerator_count(), 4);
+  EXPECT_EQ(escape_target_normal.accelerator_count(), 1);
+}
+
 TEST_F(FocusManagerTest, CallsEnabledAcceleratorTargetsOnly) {
   FocusManager* focus_manager = GetFocusManager();
-  ui::Accelerator return_accelerator(ui::VKEY_RETURN, false, false, false);
+  ui::Accelerator return_accelerator(ui::VKEY_RETURN, ui::EF_NONE);
 
   TestAcceleratorTarget return_target1(true);
   TestAcceleratorTarget return_target2(true);
 
-  focus_manager->RegisterAccelerator(return_accelerator, &return_target1);
-  focus_manager->RegisterAccelerator(return_accelerator, &return_target2);
+  focus_manager->RegisterAccelerator(return_accelerator,
+                                     ui::AcceleratorManager::kNormalPriority,
+                                     &return_target1);
+  focus_manager->RegisterAccelerator(return_accelerator,
+                                     ui::AcceleratorManager::kNormalPriority,
+                                     &return_target2);
   EXPECT_TRUE(focus_manager->ProcessAccelerator(return_accelerator));
   EXPECT_EQ(0, return_target1.accelerator_count());
   EXPECT_EQ(1, return_target2.accelerator_count());
@@ -380,14 +513,16 @@ class SelfUnregisteringAcceleratorTarget : public ui::AcceleratorTarget {
 
 TEST_F(FocusManagerTest, CallsSelfDeletingAcceleratorTarget) {
   FocusManager* focus_manager = GetFocusManager();
-  ui::Accelerator return_accelerator(ui::VKEY_RETURN, false, false, false);
+  ui::Accelerator return_accelerator(ui::VKEY_RETURN, ui::EF_NONE);
   SelfUnregisteringAcceleratorTarget target(return_accelerator, focus_manager);
   EXPECT_EQ(target.accelerator_count(), 0);
   EXPECT_EQ(NULL,
             focus_manager->GetCurrentTargetForAccelerator(return_accelerator));
 
   // Register the target.
-  focus_manager->RegisterAccelerator(return_accelerator, &target);
+  focus_manager->RegisterAccelerator(return_accelerator,
+                                     ui::AcceleratorManager::kNormalPriority,
+                                     &target);
   EXPECT_EQ(&target,
             focus_manager->GetCurrentTargetForAccelerator(return_accelerator));
 
@@ -409,7 +544,7 @@ class FocusManagerDtorTest : public FocusManagerTest {
   class FocusManagerDtorTracked : public FocusManager {
    public:
     FocusManagerDtorTracked(Widget* widget, DtorTrackVector* dtor_tracker)
-      : FocusManager(widget),
+      : FocusManager(widget, NULL /* delegate */),
         dtor_tracker_(dtor_tracker) {
     }
 
@@ -493,6 +628,7 @@ class FocusManagerDtorTest : public FocusManagerTest {
 TEST_F(FocusManagerDtorTest, FocusManagerDestructedLast) {
   // Setup views hierarchy.
   TabbedPane* tabbed_pane = new TabbedPane();
+  tabbed_pane->set_use_native_win_control(true);
   GetContentsView()->AddChildView(tabbed_pane);
 
   NativeButtonDtorTracked* button = new NativeButtonDtorTracked(

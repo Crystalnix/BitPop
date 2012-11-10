@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_details.h"
@@ -25,6 +25,7 @@
 #include "webkit/quota/quota_types.h"
 
 using content::BrowserThread;
+using content::QuotaPermissionContext;
 using content::WebContents;
 
 namespace {
@@ -55,7 +56,8 @@ class RequestQuotaInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual ~RequestQuotaInfoBarDelegate() {
     if (!callback_.is_null())
       context_->DispatchCallbackOnIOThread(
-          callback_, QuotaPermissionContext::kResponseCancelled);
+          callback_,
+          QuotaPermissionContext::QUOTA_PERMISSION_RESPONSE_CANCELLED);
   }
 
   virtual bool ShouldExpire(
@@ -65,7 +67,6 @@ class RequestQuotaInfoBarDelegate : public ConfirmInfoBarDelegate {
   }
 
   virtual string16 GetMessageText() const OVERRIDE;
-  virtual void InfoBarDismissed() OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
 
@@ -77,11 +78,6 @@ class RequestQuotaInfoBarDelegate : public ConfirmInfoBarDelegate {
   DISALLOW_COPY_AND_ASSIGN(RequestQuotaInfoBarDelegate);
 };
 
-void RequestQuotaInfoBarDelegate::InfoBarDismissed() {
-  context_->DispatchCallbackOnIOThread(
-      callback_, QuotaPermissionContext::kResponseCancelled);
-}
-
 string16 RequestQuotaInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringFUTF16(
       (requested_quota_ > kRequestLargeQuotaThreshold ?
@@ -92,23 +88,21 @@ string16 RequestQuotaInfoBarDelegate::GetMessageText() const {
 
 bool RequestQuotaInfoBarDelegate::Accept() {
   context_->DispatchCallbackOnIOThread(
-      callback_, QuotaPermissionContext::kResponseAllow);
+      callback_,
+      QuotaPermissionContext::QUOTA_PERMISSION_RESPONSE_ALLOW);
   return true;
 }
 
 bool RequestQuotaInfoBarDelegate::Cancel() {
   context_->DispatchCallbackOnIOThread(
-      callback_, QuotaPermissionContext::kResponseCancelled);
+      callback_,
+      QuotaPermissionContext::QUOTA_PERMISSION_RESPONSE_CANCELLED);
   return true;
 }
 
 }  // anonymous namespace
 
-ChromeQuotaPermissionContext::ChromeQuotaPermissionContext() {
-}
-
-ChromeQuotaPermissionContext::~ChromeQuotaPermissionContext() {
-}
+ChromeQuotaPermissionContext::ChromeQuotaPermissionContext() {}
 
 void ChromeQuotaPermissionContext::RequestQuotaPermission(
     const GURL& origin_url,
@@ -120,7 +114,7 @@ void ChromeQuotaPermissionContext::RequestQuotaPermission(
   if (type != quota::kStorageTypePersistent) {
     // For now we only support requesting quota with this interface
     // for Persistent storage type.
-    callback.Run(kResponseDisallow);
+    callback.Run(QUOTA_PERMISSION_RESPONSE_DISALLOW);
     return;
   }
 
@@ -139,22 +133,29 @@ void ChromeQuotaPermissionContext::RequestQuotaPermission(
     // The tab may have gone away or the request may not be from a tab.
     LOG(WARNING) << "Attempt to request quota tabless renderer: "
                  << render_process_id << "," << render_view_id;
-    DispatchCallbackOnIOThread(callback, kResponseCancelled);
+    DispatchCallbackOnIOThread(callback, QUOTA_PERMISSION_RESPONSE_CANCELLED);
     return;
   }
 
-  TabContentsWrapper* wrapper =
-      TabContentsWrapper::GetCurrentWrapperForContents(web_contents);
-  InfoBarTabHelper* infobar_helper = wrapper->infobar_tab_helper();
+  TabContents* tab_contents = TabContents::FromWebContents(web_contents);
+  InfoBarTabHelper* infobar_helper =
+      tab_contents ? tab_contents->infobar_tab_helper() : NULL;
+  if (!infobar_helper) {
+    // The tab has no infobar helper.
+    LOG(WARNING) << "Attempt to request quota from a background page: "
+                 << render_process_id << "," << render_view_id;
+    DispatchCallbackOnIOThread(callback, QUOTA_PERMISSION_RESPONSE_CANCELLED);
+    return;
+  }
   infobar_helper->AddInfoBar(new RequestQuotaInfoBarDelegate(
       infobar_helper, this, origin_url, requested_quota,
-      wrapper->profile()->GetPrefs()->GetString(prefs::kAcceptLanguages),
+      tab_contents->profile()->GetPrefs()->GetString(prefs::kAcceptLanguages),
       callback));
 }
 
 void ChromeQuotaPermissionContext::DispatchCallbackOnIOThread(
     const PermissionCallback& callback,
-    Response response) {
+    QuotaPermissionResponse response) {
   DCHECK_EQ(false, callback.is_null());
 
   if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
@@ -167,3 +168,5 @@ void ChromeQuotaPermissionContext::DispatchCallbackOnIOThread(
 
   callback.Run(response);
 }
+
+ChromeQuotaPermissionContext::~ChromeQuotaPermissionContext() {}

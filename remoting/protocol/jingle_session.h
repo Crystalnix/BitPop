@@ -5,34 +5,42 @@
 #ifndef REMOTING_PROTOCOL_JINGLE_SESSION_H_
 #define REMOTING_PROTOCOL_JINGLE_SESSION_H_
 
+#include <list>
+#include <map>
+#include <string>
+
 #include "base/memory/ref_counted.h"
-#include "base/memory/weak_ptr.h"
+#include "base/timer.h"
+#include "crypto/rsa_private_key.h"
 #include "net/base/completion_callback.h"
+#include "remoting/jingle_glue/iq_sender.h"
 #include "remoting/protocol/authenticator.h"
+#include "remoting/protocol/jingle_messages.h"
 #include "remoting/protocol/session.h"
-#include "third_party/libjingle/source/talk/base/sigslot.h"
-#include "third_party/libjingle/source/talk/p2p/base/session.h"
+#include "remoting/protocol/session_config.h"
+#include "remoting/protocol/transport.h"
+
+namespace net {
+class Socket;
+class StreamSocket;
+}  // namespace net
 
 namespace remoting {
 namespace protocol {
 
-class JingleChannelConnector;
 class JingleSessionManager;
 
-// Implements protocol::Session that work over libjingle session (the
-// cricket::Session object is passed to Init() method). Created
-// by JingleSessionManager for incoming and outgoing connections.
-class JingleSession : public protocol::Session,
-                      public sigslot::has_slots<> {
+// JingleSessionManager and JingleSession implement the subset of the
+// Jingle protocol used in Chromoting. Instances of this class are
+// created by the JingleSessionManager.
+class JingleSession : public Session,
+                      public Transport::EventHandler {
  public:
   virtual ~JingleSession();
 
   // Session interface.
-  virtual void SetStateChangeCallback(
-      const StateChangeCallback& callback) OVERRIDE;
-  virtual void SetRouteChangeCallback(
-      const RouteChangeCallback& callback) OVERRIDE;
-  virtual Error error() OVERRIDE;
+  virtual void SetEventHandler(Session::EventHandler* event_handler) OVERRIDE;
+  virtual ErrorCode error() OVERRIDE;
   virtual void CreateStreamChannel(
       const std::string& name,
       const StreamChannelCallback& callback) OVERRIDE;
@@ -46,121 +54,102 @@ class JingleSession : public protocol::Session,
   virtual void set_config(const SessionConfig& config) OVERRIDE;
   virtual void Close() OVERRIDE;
 
+  // Transport::EventHandler interface.
+  virtual void OnTransportCandidate(
+      Transport* transport,
+      const cricket::Candidate& candidate) OVERRIDE;
+  virtual void OnTransportRouteChange(Transport* transport,
+                                      const TransportRoute& route) OVERRIDE;
+  virtual void OnTransportReady(Transport* transport,
+                                bool ready) OVERRIDE;
+  virtual void OnTransportDeleted(Transport* transport) OVERRIDE;
+
  private:
-  friend class JingleDatagramConnector;
   friend class JingleSessionManager;
-  friend class JingleStreamConnector;
 
-  typedef std::map<std::string, JingleChannelConnector*> ChannelConnectorsMap;
+  typedef std::map<std::string, Transport*> ChannelsMap;
+  typedef base::Callback<void(JingleMessageReply::ErrorType)> ReplyCallback;
 
-  JingleSession(JingleSessionManager* jingle_session_manager,
-                cricket::Session* cricket_session,
-                scoped_ptr<Authenticator> authenticator);
+  explicit JingleSession(JingleSessionManager* session_manager);
 
-  // Called by JingleSessionManager.
-  void set_candidate_config(
-      scoped_ptr<CandidateSessionConfig> candidate_config);
+  // Start connection by sending session-initiate message.
+  void StartConnection(const std::string& peer_jid,
+                       scoped_ptr<Authenticator> authenticator,
+                       scoped_ptr<CandidateSessionConfig> config);
 
-  // Sends session-initiate for new session.
-  void SendSessionInitiate();
+  // Called by JingleSessionManager for incoming connections.
+  void InitializeIncomingConnection(const JingleMessage& initiate_message,
+                                    scoped_ptr<Authenticator> authenticator);
+  void AcceptIncomingConnection(const JingleMessage& initiate_message);
 
-  // Close all the channels and terminate the session. |result|
-  // defines error code that should returned to currently opened
-  // channels. |error| specified new value for error().
-  void CloseInternal(int result, Error error);
+  // Helper to send IqRequests to the peer. It sets up the response
+  // callback to OnMessageResponse() which simply terminates the
+  // session whenever a request fails or times out. This method should
+  // not be used for messages that need to be handled differently.
+  void SendMessage(const JingleMessage& message);
+  void OnMessageResponse(JingleMessage::ActionType request_type,
+                         IqRequest* request,
+                         const buzz::XmlElement* response);
+  void CleanupPendingRequests(IqRequest* request);
 
-  bool HasSession(cricket::Session* cricket_session);
-  cricket::Session* ReleaseSession();
+  // Called by JingleSessionManager on incoming |message|. Must call
+  // |reply_callback| to send reply message before sending any other
+  // messages.
+  void OnIncomingMessage(const JingleMessage& message,
+                         const ReplyCallback& reply_callback);
 
-  // Initialize the session configuration from a received connection response
-  // stanza.
-  bool InitializeConfigFromDescription(
-      const cricket::SessionDescription* description);
+  // Message handlers for incoming messages.
+  void OnAccept(const JingleMessage& message,
+                const ReplyCallback& reply_callback);
+  void OnSessionInfo(const JingleMessage& message,
+                     const ReplyCallback& reply_callback);
+  void OnTerminate(const JingleMessage& message,
+                   const ReplyCallback& reply_callback);
+  void ProcessTransportInfo(const JingleMessage& message);
 
-  // Handlers for |cricket_session_| signals.
-  void OnSessionState(cricket::BaseSession* session,
-                      cricket::BaseSession::State state);
-  void OnSessionError(cricket::BaseSession* session,
-                      cricket::BaseSession::Error error);
-  void OnSessionInfoMessage(cricket::Session* session,
-                            const buzz::XmlElement* message);
-  void OnTerminateReason(cricket::Session* session,
-                         const std::string& reason);
-
-  void OnInitiate();
-  void OnAccept();
-  void OnTerminate();
-
-  // Notifies upper layer about incoming connection and
-  // accepts/rejects connection.
-  void AcceptConnection();
+  // Called from OnAccept() to initialize session config.
+  bool InitializeConfigFromDescription(const ContentDescription* description);
 
   void ProcessAuthenticationStep();
 
-  void AddChannelConnector(const std::string& name,
-                           JingleChannelConnector* connector);
+  void SendTransportInfo();
 
-  // Called by JingleChannelConnector when it has finished connecting
-  // the channel, to remove itself from the table of pending connectors.  The
-  // connector assumes responsibility for destroying itself after this call.
-  void OnChannelConnectorFinished(const std::string& name,
-                                  JingleChannelConnector* connector);
+  // Terminates the session and sends session-terminate if it is
+  // necessary. |error| specifies the error code in case when the
+  // session is being closed due to an error.
+  void CloseInternal(ErrorCode error);
 
-  void OnRouteChange(cricket::TransportChannel* channel,
-                     const cricket::Candidate& candidate);
-
-  const cricket::ContentInfo* GetContentInfo() const;
-
+  // Sets |state_| to |new_state| and calls state change callback.
   void SetState(State new_state);
 
-  static Error RejectionReasonToError(Authenticator::RejectionReason reason);
+  JingleSessionManager* session_manager_;
+  std::string peer_jid_;
+  scoped_ptr<CandidateSessionConfig> candidate_config_;
+  Session::EventHandler* event_handler_;
 
-  static scoped_ptr<cricket::SessionDescription> CreateSessionDescription(
-      scoped_ptr<CandidateSessionConfig> candidate_config,
-      scoped_ptr<buzz::XmlElement> authenticator_message);
+  std::string session_id_;
+  State state_;
+  ErrorCode error_;
 
-  // JingleSessionManager that created this session. Guaranteed to
-  // exist throughout the lifetime of the session.
-  JingleSessionManager* jingle_session_manager_;
+  SessionConfig config_;
+  bool config_is_set_;
 
   scoped_ptr<Authenticator> authenticator_;
 
-  State state_;
-  StateChangeCallback state_change_callback_;
-  RouteChangeCallback route_change_callback_;
+  // Container for pending Iq requests. Requests are removed in
+  // CleanupPendingRequests() which is called when a response is
+  // received or one of the requests times out.
+  std::list<IqRequest*> pending_requests_;
 
-  Error error_;
+  ChannelsMap channels_;
 
-  bool closing_;
-
-  // JID of the other side. Set when the connection is initialized,
-  // and never changed after that.
-  std::string jid_;
-
-  // The corresponding libjingle session.
-  cricket::Session* cricket_session_;
-
-  SessionConfig config_;
-  bool config_set_;
-
-  // These data members are only set on the receiving side.
-  scoped_ptr<const CandidateSessionConfig> candidate_config_;
-
-  // Channels that are currently being connected.
-  ChannelConnectorsMap channel_connectors_;
-
-  // Termination reason. Needs to be stored because
-  // SignalReceivedTerminateReason handler is not allowed to destroy
-  // the object.
-  std::string terminate_reason_;
-
-  base::WeakPtrFactory<JingleSession> weak_factory_;
+  base::OneShotTimer<JingleSession> transport_infos_timer_;
+  std::list<JingleMessage::NamedCandidate> pending_candidates_;
 
   DISALLOW_COPY_AND_ASSIGN(JingleSession);
 };
 
 }  // namespace protocol
-
 }  // namespace remoting
 
 #endif  // REMOTING_PROTOCOL_JINGLE_SESSION_H_

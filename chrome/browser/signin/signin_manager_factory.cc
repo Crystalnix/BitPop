@@ -7,14 +7,13 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/common/pref_names.h"
 
 SigninManagerFactory::SigninManagerFactory()
     : ProfileKeyedServiceFactory("SigninManager",
                                  ProfileDependencyManager::GetInstance()) {
-  // TODO(atwilson): SigninManager depends on TokenService - when this is
-  // converted to the ProfileKeyedService framework, uncomment this dependency.
-  // DependsOn(TokenServiceFactory::GetInstance());
+  DependsOn(TokenServiceFactory::GetInstance());
 }
 
 SigninManagerFactory::~SigninManagerFactory() {}
@@ -31,13 +30,21 @@ SigninManagerFactory* SigninManagerFactory::GetInstance() {
 }
 
 void SigninManagerFactory::RegisterUserPrefs(PrefService* user_prefs) {
-  user_prefs->RegisterBooleanPref(prefs::kSyncUsingOAuth, true,
-                                  PrefService::UNSYNCABLE_PREF);
   user_prefs->RegisterStringPref(prefs::kGoogleServicesUsername, "",
                                  PrefService::UNSYNCABLE_PREF);
   user_prefs->RegisterBooleanPref(prefs::kAutologinEnabled, true,
                                   PrefService::UNSYNCABLE_PREF);
   user_prefs->RegisterBooleanPref(prefs::kReverseAutologinEnabled, true,
+                                  PrefService::UNSYNCABLE_PREF);
+  user_prefs->RegisterListPref(prefs::kReverseAutologinRejectedEmailList,
+                               new ListValue, PrefService::UNSYNCABLE_PREF);
+  user_prefs->RegisterBooleanPref(prefs::kIsGooglePlusUser, false,
+                                 PrefService::UNSYNCABLE_PREF);
+}
+
+// static
+void SigninManagerFactory::RegisterPrefs(PrefService* local_state) {
+  local_state->RegisterStringPref(prefs::kGoogleServicesUsernamePattern, "",
                                   PrefService::UNSYNCABLE_PREF);
 }
 

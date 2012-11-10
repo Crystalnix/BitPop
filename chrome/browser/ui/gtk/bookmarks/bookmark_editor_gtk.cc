@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/gtk/bookmarks/bookmark_editor_gtk.h"
 
 #include <gtk/gtk.h>
+
 #include <set>
 
 #include "base/basictypes.h"
@@ -13,6 +14,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_expanded_state_tracker.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/net/url_fixer_upper.h"
@@ -21,6 +23,7 @@
 #include "chrome/browser/ui/gtk/bookmarks/bookmark_utils_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
+#include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -32,20 +35,14 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/point.h"
 
-#if defined(TOOLKIT_VIEWS)
-#include "ui/views/controls/menu/menu_2.h"
-#else
-#include "chrome/browser/ui/gtk/menu_gtk.h"
-#endif
-
 namespace {
 
 // Background color of text field when URL is invalid.
 const GdkColor kErrorColor = GDK_COLOR_RGB(0xFF, 0xBC, 0xBC);
 
 // Preferred initial dimensions, in pixels, of the folder tree.
-static const int kTreeWidth = 300;
-static const int kTreeHeight = 150;
+const int kTreeWidth = 300;
+const int kTreeHeight = 150;
 
 typedef std::set<int64> ExpandedNodeIDs;
 
@@ -107,11 +104,7 @@ class BookmarkEditorGtk::ContextMenuController
     menu_model_->AddItemWithStringId(
         COMMAND_NEW_FOLDER,
         IDS_BOOKMARK_EDITOR_NEW_FOLDER_MENU_ITEM);
-#if defined(TOOLKIT_VIEWS)
-    menu_.reset(new views::Menu2(menu_model_.get()));
-#else
     menu_.reset(new MenuGtk(NULL, menu_model_.get()));
-#endif
   }
   virtual ~ContextMenuController() {}
 
@@ -119,20 +112,12 @@ class BookmarkEditorGtk::ContextMenuController
     const BookmarkNode* selected_node = GetSelectedNode();
     if (selected_node)
       running_menu_for_root_ = selected_node->parent()->is_root();
-#if defined(TOOLKIT_VIEWS)
-    menu_->RunContextMenuAt(point);
-#else
     menu_->PopupAsContext(point, event_time);
-#endif
   }
 
   void Cancel() {
     editor_ = NULL;
-#if defined(TOOLKIT_VIEWS)
-    menu_->CancelMenu();
-#else
     menu_->Cancel();
-#endif
   }
 
  private:
@@ -242,11 +227,7 @@ class BookmarkEditorGtk::ContextMenuController
 
   // The model and view for the right click context menu.
   scoped_ptr<ui::SimpleMenuModel> menu_model_;
-#if defined(TOOLKIT_VIEWS)
-  scoped_ptr<views::Menu2> menu_;
-#else
   scoped_ptr<MenuGtk> menu_;
-#endif
 
   // The context menu was brought up for. Set to NULL when the menu is canceled.
   BookmarkEditorGtk* editor_;
@@ -259,14 +240,16 @@ class BookmarkEditorGtk::ContextMenuController
 };
 
 // static
-void BookmarkEditor::ShowNative(gfx::NativeWindow parent_hwnd,
-                                Profile* profile,
-                                const BookmarkNode* parent,
-                                const EditDetails& details,
-                                Configuration configuration) {
+void BookmarkEditor::Show(gfx::NativeWindow parent_hwnd,
+                          Profile* profile,
+                          const EditDetails& details,
+                          Configuration configuration) {
   DCHECK(profile);
   BookmarkEditorGtk* editor =
-      new BookmarkEditorGtk(parent_hwnd, profile, parent, details,
+      new BookmarkEditorGtk(parent_hwnd,
+                            profile,
+                            details.parent_node,
+                            details,
                             configuration);
   editor->Show();
 }
@@ -295,12 +278,12 @@ BookmarkEditorGtk::~BookmarkEditorGtk() {
 }
 
 void BookmarkEditorGtk::Init(GtkWindow* parent_window) {
-  bb_model_ = profile_->GetBookmarkModel();
+  bb_model_ = BookmarkModelFactory::GetForProfile(profile_);
   DCHECK(bb_model_);
   bb_model_->AddObserver(this);
 
   dialog_ = gtk_dialog_new_with_buttons(
-      l10n_util::GetStringUTF8(IDS_BOOKMARK_EDITOR_TITLE).c_str(),
+      l10n_util::GetStringUTF8(details_.GetWindowTitleId()).c_str(),
       parent_window,
       GTK_DIALOG_MODAL,
       GTK_STOCK_CANCEL, GTK_RESPONSE_REJECT,
@@ -362,10 +345,8 @@ void BookmarkEditorGtk::Init(GtkWindow* parent_window) {
   } else if (details_.type == EditDetails::NEW_FOLDER) {
     title = l10n_util::GetStringUTF8(IDS_BOOKMARK_EDITOR_NEW_FOLDER_NAME);
   } else if (details_.type == EditDetails::NEW_URL) {
-    string16 title16;
-    bookmark_utils::GetURLAndTitleToBookmarkFromCurrentTab(profile_,
-        &url, &title16);
-    title = UTF16ToUTF8(title16);
+    url = details_.url;
+    title = UTF16ToUTF8(details_.title);
   }
   gtk_entry_set_text(GTK_ENTRY(name_entry_), title.c_str());
   g_signal_connect(name_entry_, "changed",
@@ -373,7 +354,7 @@ void BookmarkEditorGtk::Init(GtkWindow* parent_window) {
   gtk_entry_set_activates_default(GTK_ENTRY(name_entry_), TRUE);
 
   GtkWidget* table;
-  if (details_.type != EditDetails::NEW_FOLDER) {
+  if (details_.GetNodeType() != BookmarkNode::FOLDER) {
     url_entry_ = gtk_entry_new();
     gtk_entry_set_text(GTK_ENTRY(url_entry_), url.spec().c_str());
     g_signal_connect(url_entry_, "changed",
@@ -592,7 +573,7 @@ void BookmarkEditorGtk::AddNewFolder(GtkTreeIter* parent, GtkTreeIter* child) {
   gtk_tree_store_set(
       tree_store_, child,
       bookmark_utils::FOLDER_ICON,
-      GtkThemeService::GetFolderIcon(true)->ToGdkPixbuf(),
+      GtkThemeService::GetFolderIcon(true).ToGdkPixbuf(),
       bookmark_utils::FOLDER_NAME,
           l10n_util::GetStringUTF8(IDS_BOOKMARK_EDITOR_NEW_FOLDER_NAME).c_str(),
       bookmark_utils::ITEM_ID, static_cast<int64>(0),
@@ -630,26 +611,16 @@ void BookmarkEditorGtk::OnWindowDestroy(GtkWidget* widget) {
 
 void BookmarkEditorGtk::OnEntryChanged(GtkWidget* entry) {
   gboolean can_close = TRUE;
-  if (details_.type == EditDetails::NEW_FOLDER) {
-    if (GetInputTitle().empty()) {
-      gtk_widget_modify_base(name_entry_, GTK_STATE_NORMAL,
-                             &kErrorColor);
-      can_close = FALSE;
-    } else {
-      gtk_widget_modify_base(name_entry_, GTK_STATE_NORMAL, NULL);
-    }
-  } else {
-    GURL url(GetInputURL());
-    if (!url.is_valid()) {
-      gtk_widget_modify_base(url_entry_, GTK_STATE_NORMAL,
-                             &kErrorColor);
-      can_close = FALSE;
-    } else {
+  if (details_.GetNodeType() != BookmarkNode::FOLDER) {
+    if (GetInputURL().is_valid()) {
       gtk_widget_modify_base(url_entry_, GTK_STATE_NORMAL, NULL);
+    } else {
+      gtk_widget_modify_base(url_entry_, GTK_STATE_NORMAL, &kErrorColor);
+      can_close = FALSE;
     }
   }
-  gtk_dialog_set_response_sensitive(GTK_DIALOG(dialog_),
-                                    GTK_RESPONSE_ACCEPT, can_close);
+  gtk_dialog_set_response_sensitive(GTK_DIALOG(dialog_), GTK_RESPONSE_ACCEPT,
+                                    can_close);
 }
 
 void BookmarkEditorGtk::OnNewFolderClicked(GtkWidget* button) {

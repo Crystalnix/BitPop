@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,8 +16,6 @@ class RenderbufferAttachment
       RenderbufferManager::RenderbufferInfo* renderbuffer)
       : renderbuffer_(renderbuffer) {
   }
-
-  virtual ~RenderbufferAttachment() { }
 
   virtual GLsizei width() const {
     return renderbuffer_->width();
@@ -63,13 +61,18 @@ class RenderbufferAttachment
   }
 
   virtual bool ValidForAttachmentType(GLenum attachment_type) {
-    // TODO(gman): Fill this out.
-    return true;
+    uint32 need = GLES2Util::GetChannelsNeededForAttachmentType(
+        attachment_type);
+    uint32 have = GLES2Util::GetChannelsForFormat(internal_format());
+    return (need & have) != 0;
   }
 
   RenderbufferManager::RenderbufferInfo* renderbuffer() const {
     return renderbuffer_.get();
   }
+
+ protected:
+  virtual ~RenderbufferAttachment() { }
 
  private:
   RenderbufferManager::RenderbufferInfo::Ref renderbuffer_;
@@ -86,8 +89,6 @@ class TextureAttachment
         target_(target),
         level_(level) {
   }
-
-  virtual ~TextureAttachment() { }
 
   virtual GLsizei width() const {
     GLsizei temp_width = 0;
@@ -146,9 +147,19 @@ class TextureAttachment
   }
 
   virtual bool ValidForAttachmentType(GLenum attachment_type) {
-    // TODO(gman): Fill this out.
-    return true;
+    GLenum type = 0;
+    GLenum internal_format = 0;
+    if (!texture_->GetLevelType(target_, level_, &type, &internal_format)) {
+      return false;
+    }
+    uint32 need = GLES2Util::GetChannelsNeededForAttachmentType(
+        attachment_type);
+    uint32 have = GLES2Util::GetChannelsForFormat(internal_format);
+    return (need & have) != 0;
   }
+
+ protected:
+  virtual ~TextureAttachment() { }
 
  private:
   TextureManager::TextureInfo::Ref texture_;
@@ -159,15 +170,20 @@ class TextureAttachment
 };
 
 FramebufferManager::FramebufferManager()
-    : framebuffer_state_change_count_(1) {
+    : framebuffer_state_change_count_(1),
+      framebuffer_info_count_(0),
+      have_context_(true) {
 }
 
 FramebufferManager::~FramebufferManager() {
   DCHECK(framebuffer_infos_.empty());
+  // If this triggers, that means something is keeping a reference to a
+  // FramebufferInfo belonging to this.
+  CHECK_EQ(framebuffer_info_count_, 0u);
 }
 
 void FramebufferManager::FramebufferInfo::MarkAsDeleted() {
-  service_id_ = 0;
+  deleted_ = true;
   while (!attachments_.empty()) {
     Attachment* attachment = attachments_.begin()->second.get();
     attachment->DetachFromFramebuffer();
@@ -176,17 +192,18 @@ void FramebufferManager::FramebufferInfo::MarkAsDeleted() {
 }
 
 void FramebufferManager::Destroy(bool have_context) {
-  while (!framebuffer_infos_.empty()) {
-    FramebufferInfo* info = framebuffer_infos_.begin()->second;
-    if (!info->IsDeleted()) {
-      if (have_context) {
-        GLuint service_id = info->service_id();
-        glDeleteFramebuffersEXT(1, &service_id);
-      }
-      info->MarkAsDeleted();
-    }
-    framebuffer_infos_.erase(framebuffer_infos_.begin());
-  }
+  have_context_ = have_context;
+  framebuffer_infos_.clear();
+}
+
+void FramebufferManager::StartTracking(
+    FramebufferManager::FramebufferInfo* /* framebuffer */) {
+  ++framebuffer_info_count_;
+}
+
+void FramebufferManager::StopTracking(
+    FramebufferManager::FramebufferInfo* /* framebuffer */) {
+  --framebuffer_info_count_;
 }
 
 void FramebufferManager::CreateFramebufferInfo(
@@ -195,17 +212,30 @@ void FramebufferManager::CreateFramebufferInfo(
       framebuffer_infos_.insert(
           std::make_pair(
               client_id,
-              FramebufferInfo::Ref(new FramebufferInfo(service_id))));
+              FramebufferInfo::Ref(new FramebufferInfo(this, service_id))));
   DCHECK(result.second);
 }
 
-FramebufferManager::FramebufferInfo::FramebufferInfo(GLuint service_id)
-    : service_id_(service_id),
+FramebufferManager::FramebufferInfo::FramebufferInfo(
+    FramebufferManager* manager, GLuint service_id)
+    : manager_(manager),
+      deleted_(false),
+      service_id_(service_id),
       has_been_bound_(false),
       framebuffer_complete_state_count_id_(0) {
+  manager->StartTracking(this);
 }
 
-FramebufferManager::FramebufferInfo::~FramebufferInfo() {}
+FramebufferManager::FramebufferInfo::~FramebufferInfo() {
+  if (manager_) {
+    if (manager_->have_context_) {
+      GLuint id = service_id();
+      glDeleteFramebuffersEXT(1, &id);
+    }
+    manager_->StopTracking(this);
+    manager_ = NULL;
+  }
+}
 
 bool FramebufferManager::FramebufferInfo::HasUnclearedAttachment(
     GLenum attachment) const {

@@ -4,7 +4,6 @@
 
 #ifndef CONTENT_TEST_GPU_GPU_TEST_EXPECTATIONS_PARSER_H_
 #define CONTENT_TEST_GPU_GPU_TEST_EXPECTATIONS_PARSER_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -20,6 +19,11 @@ class GPUTestExpectationsParser {
     kGpuTestFail = 1 << 1,
     kGpuTestFlaky = 1 << 2,
     kGpuTestTimeout = 1 << 3,
+    kGpuTestSkip = 1 << 4,
+  };
+
+  enum GPUTestProfile {
+    kWebGLConformanceTest,
   };
 
   GPUTestExpectationsParser();
@@ -30,6 +34,7 @@ class GPUTestExpectationsParser {
   // Return true if parsing succeeds.
   bool LoadTestExpectations(const std::string& data);
   bool LoadTestExpectations(const FilePath& path);
+  bool LoadTestExpectations(GPUTestProfile profile);
 
   // Query error messages from the last LoadTestExpectations() call.
   const std::vector<std::string>& GetErrorMessages() const;
@@ -37,6 +42,10 @@ class GPUTestExpectationsParser {
   // Get the test expectation of a given test on a given bot.
   int32 GetTestExpectation(const std::string& test_name,
                            const GPUTestBotConfig& bot_config) const;
+
+  // Parse a list of config modifiers. If we have a valid entry with no
+  // conflicts, | config | stores it, and the function returns true.
+  bool ParseConfig(const std::string& config_data, GPUTestConfig* config);
 
  private:
   struct GPUTestExpectationEntry {
@@ -70,6 +79,10 @@ class GPUTestExpectationsParser {
   void PushErrorMessage(const std::string& message,
                         size_t entry1_line_number,
                         size_t entry2_line_number);
+
+  // Return false if an error occurs or the path does not exist.
+  static bool GetExpectationsPath(GPUTestProfile profile,
+                                  FilePath* path);
 
   std::vector<GPUTestExpectationEntry> entries_;
   std::vector<std::string> error_messages_;

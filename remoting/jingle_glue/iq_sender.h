@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,12 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "remoting/jingle_glue/signal_strategy.h"
+
+namespace base {
+class TimeDelta;
+}  // namespace base
 
 namespace buzz {
 class XmlElement;
@@ -27,7 +32,10 @@ class SignalStrategy;
 // those requests.
 class IqSender : public SignalStrategy::Listener {
  public:
-  typedef base::Callback<void(const buzz::XmlElement*)> ReplyCallback;
+  // Callback that is called when an Iq response is received. Called
+  // with the |response| set to NULL in case of a timeout.
+  typedef base::Callback<void(IqRequest* request,
+                              const buzz::XmlElement* response)> ReplyCallback;
 
   explicit IqSender(SignalStrategy* signal_strategy);
   virtual ~IqSender();
@@ -35,17 +43,16 @@ class IqSender : public SignalStrategy::Listener {
   // Send an iq stanza. Returns an IqRequest object that represends
   // the request. |callback| is called when response to |stanza| is
   // received. Destroy the returned IqRequest to cancel the callback.
-  // Takes ownership of |stanza|. Caller must take ownership of the
-  // result. Result must be destroyed before sender is destroyed.
-  IqRequest* SendIq(buzz::XmlElement* stanza,
-                    const ReplyCallback& callback) WARN_UNUSED_RESULT;
+  // Caller must take ownership of the result. Result must be
+  // destroyed before sender is destroyed.
+  scoped_ptr<IqRequest> SendIq(scoped_ptr<buzz::XmlElement> stanza,
+                               const ReplyCallback& callback);
 
-  // Same as above, but also formats the message. Takes ownership of
-  // |iq_body|.
-  IqRequest* SendIq(const std::string& type,
-                    const std::string& addressee,
-                    buzz::XmlElement* iq_body,
-                    const ReplyCallback& callback) WARN_UNUSED_RESULT;
+  // Same as above, but also formats the message.
+  scoped_ptr<IqRequest> SendIq(const std::string& type,
+                               const std::string& addressee,
+                               scoped_ptr<buzz::XmlElement> iq_body,
+                               const ReplyCallback& callback);
 
   // SignalStrategy::Listener implementation.
   virtual void OnSignalStrategyStateChange(
@@ -58,9 +65,10 @@ class IqSender : public SignalStrategy::Listener {
   friend class IqRequest;
 
   // Helper function used to create iq stanzas.
-  static buzz::XmlElement* MakeIqStanza(const std::string& type,
-                                        const std::string& addressee,
-                                        buzz::XmlElement* iq_body);
+  static scoped_ptr<buzz::XmlElement> MakeIqStanza(
+      const std::string& type,
+      const std::string& addressee,
+      scoped_ptr<buzz::XmlElement> iq_body);
 
   // Removes |request| from the list of pending requests. Called by IqRequest.
   void RemoveRequest(IqRequest* request);
@@ -72,19 +80,30 @@ class IqSender : public SignalStrategy::Listener {
 };
 
 // This call must only be used on the thread it was created on.
-class IqRequest {
+class IqRequest : public  base::SupportsWeakPtr<IqRequest> {
  public:
-  IqRequest(IqSender* sender, const IqSender::ReplyCallback& callback);
+  IqRequest(IqSender* sender, const IqSender::ReplyCallback& callback,
+            const std::string& addressee);
   ~IqRequest();
+
+  // Sets timeout for the request. When the timeout expires the
+  // callback is called with the |response| set to NULL.
+  void SetTimeout(base::TimeDelta timeout);
 
  private:
   friend class IqSender;
 
+  void CallCallback(const buzz::XmlElement* stanza);
+  void OnTimeout();
+
   // Called by IqSender when a response is received.
   void OnResponse(const buzz::XmlElement* stanza);
 
+  void DeliverResponse(scoped_ptr<buzz::XmlElement> stanza);
+
   IqSender* sender_;
   IqSender::ReplyCallback callback_;
+  std::string addressee_;
 
   DISALLOW_COPY_AND_ASSIGN(IqRequest);
 };

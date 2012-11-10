@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,13 +8,17 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "content/common/content_export.h"
 #include "content/common/indexed_db/indexed_db_key.h"
+#include "content/common/indexed_db/indexed_db_key_path.h"
 #include "content/common/indexed_db/indexed_db_param_traits.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/serialized_script_value.h"
 #include "ipc/ipc_message_macros.h"
 #include "webkit/plugins/webplugininfo.h"
 
+#undef IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 #define IPC_MESSAGE_START UtilityMsgStart
 
 //------------------------------------------------------------------------------
@@ -26,12 +30,12 @@
 IPC_MESSAGE_CONTROL3(UtilityMsg_IDBKeysFromValuesAndKeyPath,
                      int,     // id
                      std::vector<content::SerializedScriptValue>,
-                     string16)  // IDBKeyPath
+                     content::IndexedDBKeyPath)
 
 IPC_MESSAGE_CONTROL3(UtilityMsg_InjectIDBKey,
-                     IndexedDBKey /* key */,
+                     content::IndexedDBKey /* key */,
                      content::SerializedScriptValue /* value */,
-                     string16 /* key path*/)
+                     content::IndexedDBKeyPath)
 
 // Tells the utility process that it's running in batch mode.
 IPC_MESSAGE_CONTROL0(UtilityMsg_BatchMode_Started)
@@ -54,12 +58,7 @@ IPC_MESSAGE_CONTROL1(UtilityMsg_LoadPlugins,
 // IDBKeyPath.
 IPC_MESSAGE_CONTROL2(UtilityHostMsg_IDBKeysFromValuesAndKeyPath_Succeeded,
                      int /* id */,
-                     std::vector<IndexedDBKey> /* value */)
-
-// Reply when the utility process has failed in obtaining the value for
-// IDBKeyPath.
-IPC_MESSAGE_CONTROL1(UtilityHostMsg_IDBKeysFromValuesAndKeyPath_Failed,
-                     int /* id */)
+                     std::vector<content::IndexedDBKey> /* value */)
 
 // Reply when the utility process has finished injecting an IDBKey into
 // a SerializedScriptValue.

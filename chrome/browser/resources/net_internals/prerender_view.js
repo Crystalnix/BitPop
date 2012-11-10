@@ -57,9 +57,9 @@ var PrerenderView = (function() {
       if (prerenderInfo && ('enabled' in prerenderInfo)) {
         this.prerenderEnabledSpan_.textContent =
             prerenderInfo.enabled.toString();
-        if (prerenderInfo.disabled_reason) {
+        if (prerenderInfo.enabled_note) {
           this.prerenderEnabledSpan_.textContent +=
-              ' ' + prerenderInfo.disabled_reason;
+              ' ' + prerenderInfo.enabled_note;
         }
       }
 
@@ -72,10 +72,10 @@ var PrerenderView = (function() {
         return false;
 
       var tabPrinter = createHistoryTablePrinter(prerenderInfo.history);
-      tabPrinter.toHTML(this.prerenderHistoryDiv_, 'styledTable');
+      tabPrinter.toHTML(this.prerenderHistoryDiv_, 'styled-table');
 
       var tabPrinter = createActiveTablePrinter(prerenderInfo.active);
-      tabPrinter.toHTML(this.prerenderActiveDiv_, 'styledTable');
+      tabPrinter.toHTML(this.prerenderActiveDiv_, 'styled-table');
 
       return true;
     }
@@ -108,7 +108,8 @@ var PrerenderView = (function() {
       tablePrinter.addCell(historyEntry.final_status);
 
       var date = new Date(parseInt(historyEntry.end_time));
-      tablePrinter.addCell(date.toLocaleString());
+      // TODO(eroman): Switch to addNodeWithDate()
+      tablePrinter.addCell(timeutil.dateToString(date));
     }
     return tablePrinter;
   }

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,14 +8,25 @@
 #include "base/path_service.h"
 #include "base/string16.h"
 #include "base/win/registry.h"
+#include "base/win/scoped_handle.h"
 #include "cloud_print/virtual_driver/win/port_monitor/spooler_win.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cloud_print {
+
 const wchar_t kChromeExePath[] = L"google\\chrome\\application\\chrometest.exe";
+const wchar_t kChromeExePathRegValue[] = L"PathToChromeTestExe";
+const wchar_t kChromeProfilePathRegValue[] = L"PathToChromeTestProfile";
+const bool kIsUnittest = true;
+
+namespace {
+
 const wchar_t kAlternateChromeExePath[] =
     L"google\\chrome\\application\\chrometestalternate.exe";
-const wchar_t kChromePathRegValue[] =L"PathToChromeTestExe";
+
+const wchar_t kCloudPrintRegKey[] = L"Software\\Google\\CloudPrint";
+
+}  // namespace
 
 class PortMonitorTest : public testing::Test  {
  public:
@@ -25,22 +36,29 @@ class PortMonitorTest : public testing::Test  {
   virtual void SetUpChromeExeRegistry() {
     // Create a temporary chrome.exe location value.
     base::win::RegKey key(HKEY_CURRENT_USER,
-                          cloud_print::kChromePathRegKey,
+                          cloud_print::kCloudPrintRegKey,
                           KEY_ALL_ACCESS);
 
     FilePath path;
     PathService::Get(base::DIR_LOCAL_APP_DATA, &path);
     path = path.Append(kAlternateChromeExePath);
     ASSERT_EQ(ERROR_SUCCESS,
-              key.WriteValue(cloud_print::kChromePathRegValue,
+              key.WriteValue(cloud_print::kChromeExePathRegValue,
                              path.value().c_str()));
+    FilePath temp;
+    PathService::Get(base::DIR_TEMP, &temp);
+    // Write any dir here.
+    ASSERT_EQ(ERROR_SUCCESS,
+              key.WriteValue(cloud_print::kChromeProfilePathRegValue,
+                             temp.value().c_str()));
   }
   // Deletes the registry entry created in SetUpChromeExeRegistry
   virtual void DeleteChromeExeRegistry() {
     base::win::RegKey key(HKEY_CURRENT_USER,
-                          cloud_print::kChromePathRegKey,
+                          cloud_print::kCloudPrintRegKey,
                           KEY_ALL_ACCESS);
-    key.DeleteValue(cloud_print::kChromePathRegValue);
+    key.DeleteValue(cloud_print::kChromeExePathRegValue);
+    key.DeleteValue(cloud_print::kChromeProfilePathRegValue);
   }
 
   virtual void CreateTempChromeExeFiles() {
@@ -62,24 +80,43 @@ class PortMonitorTest : public testing::Test  {
     ASSERT_TRUE(file_util::Delete(alternate_path, true));
   }
 
+ protected:
+  virtual void SetUp() {
+    SetUpChromeExeRegistry();
+  }
+
+  virtual void TearDown() {
+    DeleteChromeExeRegistry();
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(PortMonitorTest);
 };
 
 TEST_F(PortMonitorTest, GetChromeExePathTest) {
-  FilePath chrome_path;
-  SetUpChromeExeRegistry();
   CreateTempChromeExeFiles();
-  EXPECT_TRUE(cloud_print::GetChromeExePath(&chrome_path));
+  FilePath chrome_path = cloud_print::GetChromeExePath();
+  EXPECT_FALSE(chrome_path.empty());
   EXPECT_TRUE(
       chrome_path.value().rfind(kAlternateChromeExePath) != std::string::npos);
+  EXPECT_TRUE(file_util::PathExists(chrome_path));
   DeleteChromeExeRegistry();
-  chrome_path.clear();
-  EXPECT_TRUE(cloud_print::GetChromeExePath(&chrome_path));
-  EXPECT_TRUE(chrome_path.value().rfind(kChromeExePath) != std::string::npos);
-  EXPECT_TRUE(file_util::PathExists(FilePath(chrome_path)));
-  DeleteTempChromeExeFiles();
-  EXPECT_FALSE(cloud_print::GetChromeExePath(&chrome_path));
+  chrome_path = cloud_print::GetChromeExePath();
+  // No Chrome or regular chrome path.
+  EXPECT_TRUE(chrome_path.empty() ||
+              chrome_path.value().rfind(kChromeExePath) == std::string::npos);
+}
+
+TEST_F(PortMonitorTest, GetChromeProfilePathTest) {
+  FilePath data_path = cloud_print::GetChromeProfilePath();
+  EXPECT_FALSE(data_path.empty());
+  FilePath temp;
+  PathService::Get(base::DIR_TEMP, &temp);
+  EXPECT_EQ(data_path, temp);
+  EXPECT_TRUE(file_util::DirectoryExists(data_path));
+  DeleteChromeExeRegistry();
+  data_path = cloud_print::GetChromeProfilePath();
+  EXPECT_TRUE(data_path.empty());
 }
 
 TEST_F(PortMonitorTest, EnumPortsTest) {
@@ -194,24 +231,41 @@ TEST_F(PortMonitorTest, FlowTest) {
   EXPECT_TRUE(monitor2->pfnOpenPort(monitor_handle, NULL, &port_handle));
   EXPECT_TRUE(port_handle != NULL);
   EXPECT_TRUE(monitor2->pfnStartDocPort != NULL);
-  EXPECT_TRUE(monitor2->pfnStartDocPort(port_handle, L"", 0, 0, NULL));
   EXPECT_TRUE(monitor2->pfnWritePort != NULL);
-  EXPECT_TRUE(monitor2->pfnWritePort(port_handle,
+  EXPECT_TRUE(monitor2->pfnReadPort != NULL);
+  EXPECT_TRUE(monitor2->pfnEndDocPort != NULL);
+
+  // These functions should fail if we have not impersonated the user.
+  EXPECT_FALSE(monitor2->pfnStartDocPort(port_handle, L"", 0, 0, NULL));
+  EXPECT_FALSE(monitor2->pfnWritePort(port_handle,
                                      buffer,
                                      kBufferSize,
                                      &bytes_processed));
-  EXPECT_EQ(kBufferSize, bytes_processed);
-  EXPECT_TRUE(monitor2->pfnReadPort != NULL);
+  EXPECT_EQ(0, bytes_processed);
   EXPECT_FALSE(monitor2->pfnReadPort(port_handle,
                                      buffer,
                                      sizeof(buffer),
                                      &bytes_processed));
   EXPECT_EQ(0u, bytes_processed);
-  EXPECT_TRUE(monitor2->pfnEndDocPort != NULL);
+  EXPECT_FALSE(monitor2->pfnEndDocPort(port_handle));
+
+  // Now impersonate so we can test the success case.
+  ASSERT_TRUE(ImpersonateSelf(SecurityImpersonation));
+  EXPECT_TRUE(monitor2->pfnStartDocPort(port_handle, L"", 0, 0, NULL));
+  EXPECT_TRUE(monitor2->pfnWritePort(port_handle,
+                                     buffer,
+                                     kBufferSize,
+                                     &bytes_processed));
+  EXPECT_EQ(kBufferSize, bytes_processed);
+  EXPECT_FALSE(monitor2->pfnReadPort(port_handle,
+                                     buffer,
+                                     sizeof(buffer),
+                                     &bytes_processed));
+  EXPECT_EQ(0u, bytes_processed);
   EXPECT_TRUE(monitor2->pfnEndDocPort(port_handle));
+  RevertToSelf();
   EXPECT_TRUE(monitor2->pfnClosePort != NULL);
   EXPECT_TRUE(monitor2->pfnClosePort(port_handle));
-
   // Shutdown the port monitor.
   Monitor2Shutdown(monitor_handle);
 }

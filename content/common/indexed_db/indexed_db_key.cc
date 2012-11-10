@@ -8,7 +8,10 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 
+namespace content {
+
 using WebKit::WebIDBKey;
+using WebKit::WebVector;
 
 IndexedDBKey::IndexedDBKey()
     : type_(WebIDBKey::NullType),
@@ -55,8 +58,9 @@ void IndexedDBKey::Set(const WebIDBKey& key) {
   type_ = key.type();
   array_.clear();
   if (key.type() == WebIDBKey::ArrayType) {
-    for (size_t i = 0; i < key.array().size(); ++i) {
-      array_.push_back(IndexedDBKey(key.array()[i]));
+    WebVector<WebIDBKey> array = key.array();
+    for (size_t i = 0; i < array.size(); ++i) {
+      array_.push_back(IndexedDBKey(array[i]));
     }
   }
   string_ = key.type() == WebIDBKey::StringType ?
@@ -83,3 +87,5 @@ IndexedDBKey::operator WebIDBKey() const {
   NOTREACHED();
   return WebIDBKey::createInvalid();
 }
+
+}  // namespace content

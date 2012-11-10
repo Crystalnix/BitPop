@@ -1,13 +1,18 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef BASE_SYSTEM_MONITOR_SYSTEM_MONITOR_H_
 #define BASE_SYSTEM_MONITOR_SYSTEM_MONITOR_H_
-#pragma once
+
+#include <map>
+#include <string>
+#include <vector>
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
+#include "base/file_path.h"
+#include "base/string16.h"
 #include "build/build_config.h"
 
 // Windows HiRes timers drain the battery faster so we need to know the battery
@@ -23,10 +28,14 @@
 #include "base/timer.h"
 #endif  // defined(ENABLE_BATTERY_MONITORING)
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <IOKit/IOMessage.h>
-#endif  // OS_MACOSX
+#endif  // OS_MACOSX && !OS_IOS
+
+#if defined(OS_IOS)
+#include <objc/runtime.h>
+#endif  // OS_IOS
 
 namespace base {
 
@@ -42,6 +51,43 @@ class BASE_EXPORT SystemMonitor {
     RESUME_EVENT        // The system is being resumed.
   };
 
+  // Type of devices whose change need to be monitored, such as add/remove.
+  enum DeviceType {
+    DEVTYPE_AUDIO_CAPTURE,  // Audio capture device, e.g., microphone.
+    DEVTYPE_VIDEO_CAPTURE,  // Video capture device, e.g., webcam.
+    DEVTYPE_UNKNOWN,  // Other devices.
+  };
+
+  // Type of location data to identify a currently attached media device.
+  enum MediaDeviceType {
+    TYPE_PATH,  // FilePath::StringType, e.g. a mount point.
+    TYPE_MTP,   // (W)string to locate a MTP device, e.g. its usb bus/port.
+  };
+
+  struct MediaDeviceInfo {
+    MediaDeviceInfo(const std::string& id,
+                    const string16& device_name,
+                    MediaDeviceType device_type,
+                    const FilePath::StringType& device_location)
+        : unique_id(id),
+          name(device_name),
+          type(device_type),
+          location(device_location) {
+    }
+
+    // Unique media device id - persists between device attachments.
+    std::string unique_id;
+
+    // Human readable media device name.
+    string16 name;
+
+    // Media device type.
+    MediaDeviceType type;
+
+    // Current attached media device location.
+    FilePath::StringType location;
+  };
+
   // Create SystemMonitor. Only one SystemMonitor instance per application
   // is allowed.
   SystemMonitor();
@@ -55,8 +101,15 @@ class BASE_EXPORT SystemMonitor {
   //
   // This function must be called before instantiating an instance of the class
   // and before the Sandbox is initialized.
+#if !defined(OS_IOS)
   static void AllocateSystemIOPorts();
-#endif
+#else
+  static void AllocateSystemIOPorts() {}
+#endif  // OS_IOS
+#endif  // OS_MACOSX
+
+  // Returns information for attached media devices.
+  std::vector<MediaDeviceInfo> GetAttachedMediaDevices() const;
 
   //
   // Power-related APIs
@@ -93,7 +146,17 @@ class BASE_EXPORT SystemMonitor {
   class BASE_EXPORT DevicesChangedObserver {
    public:
     // Notification that the devices connected to the system have changed.
-    virtual void OnDevicesChanged() {}
+    // This is only implemented on Windows currently.
+    virtual void OnDevicesChanged(DeviceType device_type) {}
+
+    // When a media device is attached or detached, one of these two events
+    // is triggered.
+    virtual void OnMediaDeviceAttached(const std::string& id,
+                                       const string16& name,
+                                       MediaDeviceType type,
+                                       const FilePath::StringType& location) {}
+
+    virtual void OnMediaDeviceDetached(const std::string& id) {}
 
    protected:
     virtual ~DevicesChangedObserver() {}
@@ -122,9 +185,17 @@ class BASE_EXPORT SystemMonitor {
   void ProcessPowerMessage(PowerEvent event_id);
 
   // Cross-platform handling of a device change event.
-  void ProcessDevicesChanged();
+  void ProcessDevicesChanged(DeviceType device_type);
+  void ProcessMediaDeviceAttached(const std::string& id,
+                                  const string16& name,
+                                  MediaDeviceType type,
+                                  const FilePath::StringType& location);
+  void ProcessMediaDeviceDetached(const std::string& id);
 
  private:
+  // Mapping of unique device id to device info tuple.
+  typedef std::map<std::string, MediaDeviceInfo> MediaDeviceMap;
+
 #if defined(OS_MACOSX)
   void PlatformInit();
   void PlatformDestroy();
@@ -140,7 +211,12 @@ class BASE_EXPORT SystemMonitor {
   void BatteryCheck();
 
   // Functions to trigger notifications.
-  void NotifyDevicesChanged();
+  void NotifyDevicesChanged(DeviceType device_type);
+  void NotifyMediaDeviceAttached(const std::string& id,
+                                 const string16& name,
+                                 MediaDeviceType type,
+                                 const FilePath::StringType& data);
+  void NotifyMediaDeviceDetached(const std::string& id);
   void NotifyPowerStateChange();
   void NotifySuspend();
   void NotifyResume();
@@ -154,6 +230,14 @@ class BASE_EXPORT SystemMonitor {
 #if defined(ENABLE_BATTERY_MONITORING)
   base::OneShotTimer<SystemMonitor> delayed_battery_check_;
 #endif
+
+#if defined(OS_IOS)
+  // Holds pointers to system event notification observers.
+  std::vector<id> notification_observers_;
+#endif
+
+  // Map of all the attached media devices.
+  MediaDeviceMap media_device_map_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemMonitor);
 };

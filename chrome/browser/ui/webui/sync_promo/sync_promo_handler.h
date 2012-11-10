@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_UI_WEBUI_SYNC_PROMO_SYNC_PROMO_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_SYNC_PROMO_SYNC_PROMO_HANDLER_H_
-#pragma once
 
 #include "chrome/browser/ui/webui/sync_setup_handler.h"
 
@@ -13,8 +12,7 @@ class PrefService;
 // The handler for JavaScript messages related to the "sync promo" page.
 class SyncPromoHandler : public SyncSetupHandler {
  public:
-  explicit SyncPromoHandler(const std::string& source,
-                            ProfileManager* profile_manager);
+  explicit SyncPromoHandler(ProfileManager* profile_manager);
   virtual ~SyncPromoHandler();
 
   // Called to register our preferences before we use them (so there will be a
@@ -24,27 +22,28 @@ class SyncPromoHandler : public SyncSetupHandler {
   // WebUIMessageHandler implementation.
   virtual void RegisterMessages() OVERRIDE;
 
-  // SyncSetupFlowHandler implementation.
-  virtual void ShowGaiaSuccessAndClose() OVERRIDE;
-  virtual void ShowGaiaSuccessAndSettingUp() OVERRIDE;
-  virtual void ShowConfigure(const base::DictionaryValue& args) OVERRIDE;
+  // Overridden to skip sync settings dialog if user wants to use default
+  // settings. |show_advanced| is ignored because we never want to display the
+  // "Sync Everything" dialog for the sync promo.
+  virtual void DisplayConfigureSync(bool show_advanced,
+                                    bool passphrase_failed) OVERRIDE;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
- protected:
-  virtual void StepWizardForShowSetupUI() OVERRIDE;
+  // LoginUIService::LoginUI implementation.
+  virtual void CloseUI() OVERRIDE;
 
+ protected:
   virtual void ShowSetupUI() OVERRIDE;
+
+  virtual void RecordSignin() OVERRIDE;
 
  private:
   // JavaScript callback handler to close the sync promo.
   void HandleCloseSyncPromo(const base::ListValue* args);
-
-  // Gets the sync promo layout for the current sync promo version.
-  int GetPromoVersion();
 
   // JavaScript callback handler to initialize the sync promo.
   void HandleInitializeSyncPromo(const base::ListValue* args);
@@ -90,10 +89,6 @@ class SyncPromoHandler : public SyncSetupHandler {
   // tab as well, so this bool acts as a small mutex to only report the close
   // method once.
   bool window_already_closed_;
-
-  // Extra UMA histogram name to log stats to, based on the source for showing
-  // the sync promo page.
-  std::string histogram_name_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncPromoHandler);
 };

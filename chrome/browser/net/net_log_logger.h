@@ -1,13 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_NET_NET_LOG_LOGGER_H_
 #define CHROME_BROWSER_NET_NET_LOG_LOGGER_H_
-#pragma once
 
 #include "base/memory/scoped_handle.h"
-#include "chrome/browser/net/chrome_net_log.h"
+#include "net/base/net_log.h"
 
 class FilePath;
 
@@ -21,7 +20,7 @@ class FilePath;
 //
 // Relies on ChromeNetLog only calling an Observer once at a time for
 // thread-safety.
-class NetLogLogger : public ChromeNetLog::ThreadSafeObserverImpl {
+class NetLogLogger : public net::NetLog::ThreadSafeObserver {
  public:
   // If |log_path| is empty or file creation fails, writes to VLOG(1).
   // Otherwise, writes to |log_path|.  Uses one line per entry, for
@@ -29,12 +28,12 @@ class NetLogLogger : public ChromeNetLog::ThreadSafeObserverImpl {
   explicit NetLogLogger(const FilePath &log_path);
   virtual ~NetLogLogger();
 
-  // ThreadSafeObserver implementation:
-  virtual void OnAddEntry(net::NetLog::EventType type,
-                          const base::TimeTicks& time,
-                          const net::NetLog::Source& source,
-                          net::NetLog::EventPhase phase,
-                          net::NetLog::EventParameters* params) OVERRIDE;
+  // Starts observing specified NetLog.  Must not already be watching a NetLog.
+  // Separate from constructor to enforce thread safety.
+  void StartObserving(net::NetLog* net_log);
+
+  // net::NetLog::ThreadSafeObserver implementation:
+  virtual void OnAddEntry(const net::NetLog::Entry& entry) OVERRIDE;
 
  private:
   ScopedStdioHandle file_;

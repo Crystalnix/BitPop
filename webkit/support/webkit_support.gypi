@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -21,6 +21,7 @@
         'appcache',
         'blob',
         'database',
+        'dom_storage',
         'fileapi',
         'glue',
         'webkit_gpu',
@@ -39,6 +40,8 @@
       'sources': [
         'drt_application_mac.h',
         'drt_application_mac.mm',
+        'gc_extension.cc',
+        'gc_extension.h',
         'platform_support.h',
         'platform_support_android.cc',
         'platform_support_linux.cc',
@@ -46,6 +49,8 @@
         'platform_support_win.cc',
         'test_media_stream_client.cc',
         'test_media_stream_client.h',
+        'test_stream_texture_factory_android.cc',
+        'test_stream_texture_factory_android.h',
         'test_webkit_platform_support.cc',
         'test_webkit_platform_support.h',
         'test_webmessageportchannel.cc',
@@ -66,7 +71,10 @@
         ['OS=="mac"', {
           'copies': [{
             'destination': '<(SHARED_INTERMEDIATE_DIR)/webkit',
-            'files': ['../tools/test_shell/resources/textAreaResizeCorner.png'],
+            'files': [
+              '../tools/test_shell/resources/missingImage.png',
+              '../tools/test_shell/resources/textAreaResizeCorner.png',
+            ],
           }],
         },{ # OS!="mac"
           'copies': [{
@@ -89,6 +97,7 @@
         '<(DEPTH)/crypto/crypto.gyp:crypto',
         '<(DEPTH)/net/net.gyp:net',
         '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
         '<(DEPTH)/ui/ui.gyp:ui',
         'glue',
         'webkit_support_gfx',
@@ -104,6 +113,8 @@
         '<(DEPTH)/webkit/tools/test_shell/simple_appcache_system.cc',
         '<(DEPTH)/webkit/tools/test_shell/simple_appcache_system.h',
         '<(DEPTH)/webkit/tools/test_shell/simple_clipboard_impl.cc',
+        '<(DEPTH)/webkit/tools/test_shell/simple_dom_storage_system.cc',
+        '<(DEPTH)/webkit/tools/test_shell/simple_dom_storage_system.h',
         '<(DEPTH)/webkit/tools/test_shell/simple_file_system.cc',
         '<(DEPTH)/webkit/tools/test_shell/simple_file_system.h',
         '<(DEPTH)/webkit/tools/test_shell/simple_file_writer.cc',
@@ -140,6 +151,7 @@
       'variables': { 'enable_wexit_time_destructors': 1, },
       'dependencies': [
         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
+        '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
       ],
       'sources': [
         'webkit_support_gfx.h',

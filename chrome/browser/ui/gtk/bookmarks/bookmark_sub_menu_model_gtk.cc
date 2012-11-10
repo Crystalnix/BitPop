@@ -9,12 +9,14 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/event_disposition.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/gtk/bookmarks/bookmark_utils_gtk.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "grit/generated_resources.h"
+#include "ui/base/gtk/menu_label_accelerator_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::OpenURLParams;
@@ -61,7 +63,7 @@ void BookmarkNodeMenuModel::ActivatedAt(int index) {
 }
 
 void BookmarkNodeMenuModel::ActivatedAt(int index, int event_flags) {
-  NavigateToMenuItem(index, browser::DispositionFromEventFlags(event_flags));
+  NavigateToMenuItem(index, chrome::DispositionFromEventFlags(event_flags));
 }
 
 void BookmarkNodeMenuModel::PopulateMenu() {
@@ -72,13 +74,15 @@ void BookmarkNodeMenuModel::PopulateMenu() {
       AddSubMenuForNode(child);
     } else {
       // Ironically the label will end up getting converted back to UTF8 later.
-      const string16 label =
-        UTF8ToUTF16(bookmark_utils::BuildMenuLabelFor(child));
+      // We need to escape any Windows-style "&" characters since they will be
+      // converted in MenuGtk outside of our control here.
+      const string16 label = UTF8ToUTF16(ui::EscapeWindowsStyleAccelerators(
+          bookmark_utils::BuildMenuLabelFor(child)));
       // No command id. We override ActivatedAt below to handle activations.
       AddItem(kBookmarkItemCommandId, label);
-      const SkBitmap& node_icon = model_->GetFavicon(child);
-      if (node_icon.width() > 0)
-        SetIcon(GetItemCount() - 1, node_icon);
+      const gfx::Image& node_icon = model_->GetFavicon(child);
+      if (!node_icon.IsEmpty())
+        SetIcon(GetItemCount() - 1, *node_icon.ToSkBitmap());
       // TODO(mdm): set up an observer to watch for icon load events and set
       // the icons in response.
     }
@@ -88,7 +92,10 @@ void BookmarkNodeMenuModel::PopulateMenu() {
 void BookmarkNodeMenuModel::AddSubMenuForNode(const BookmarkNode* node) {
   DCHECK(node->is_folder());
   // Ironically the label will end up getting converted back to UTF8 later.
-  const string16 label = UTF8ToUTF16(bookmark_utils::BuildMenuLabelFor(node));
+  // We need to escape any Windows-style "&" characters since they will be
+  // converted in MenuGtk outside of our control here.
+  const string16 label = UTF8ToUTF16(ui::EscapeWindowsStyleAccelerators(
+      bookmark_utils::BuildMenuLabelFor(node)));
   // Don't pass in the delegate, if any. Bookmark submenus don't need one.
   BookmarkNodeMenuModel* submenu =
       new BookmarkNodeMenuModel(NULL, model_, node, page_navigator_);
@@ -115,7 +122,8 @@ BookmarkSubMenuModel::BookmarkSubMenuModel(
       browser_(browser),
       fixed_items_(0),
       bookmark_end_(0),
-      menu_(NULL) {
+      menu_(NULL),
+      menu_showing_(false) {
 }
 
 BookmarkSubMenuModel::~BookmarkSubMenuModel() {
@@ -130,7 +138,7 @@ void BookmarkSubMenuModel::Loaded(BookmarkModel* model, bool ids_reassigned) {
 }
 
 void BookmarkSubMenuModel::BookmarkModelChanged() {
-  if (menu_)
+  if (menu_showing_ && menu_)
     menu_->Cancel();
 }
 
@@ -143,13 +151,14 @@ void BookmarkSubMenuModel::BookmarkModelBeingDeleted(
 }
 
 void BookmarkSubMenuModel::MenuWillShow() {
+  menu_showing_ = true;
   Clear();
   AddCheckItemWithStringId(IDC_SHOW_BOOKMARK_BAR, IDS_SHOW_BOOKMARK_BAR);
   AddItemWithStringId(IDC_SHOW_BOOKMARK_MANAGER, IDS_BOOKMARK_MANAGER);
   AddItemWithStringId(IDC_IMPORT_SETTINGS, IDS_IMPORT_SETTINGS_MENU_LABEL);
   fixed_items_ = bookmark_end_ = GetItemCount();
   if (!model()) {
-    set_model(browser_->profile()->GetBookmarkModel());
+    set_model(BookmarkModelFactory::GetForProfile(browser_->profile()));
     if (!model())
       return;
     model()->AddObserver(this);
@@ -180,6 +189,11 @@ void BookmarkSubMenuModel::MenuWillShow() {
       AddSeparator();
     AddSubMenuForNode(model()->mobile_node());
   }
+}
+
+void BookmarkSubMenuModel::MenuClosed() {
+  menu_showing_ = false;
+  BookmarkNodeMenuModel::MenuClosed();
 }
 
 void BookmarkSubMenuModel::ActivatedAt(int index) {

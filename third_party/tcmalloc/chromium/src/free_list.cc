@@ -59,32 +59,50 @@
 // head to NULL.
 
 
+#include <limits>
 #include <stddef.h>
 #include "free_list.h"
+#include "system-alloc.h"
 
 #if defined(TCMALLOC_USE_DOUBLYLINKED_FREELIST)
 
+using tcmalloc::kCrash;
+
 // TODO(jar): We should use C++ rather than a macro here.
 #define MEMORY_CHECK(v1, v2) \
-  if (v1 != v2) CRASH("Memory corruption detected.\n")
+  if (v1 != v2) Log(kCrash, __FILE__, __LINE__, "Memory corruption detected.")
 
 namespace {
 void EnsureNonLoop(void* node, void* next) {
   // We only have time to do minimal checking.  We don't traverse the list, but
   // only look for an immediate loop (cycle back to ourself).
   if (node != next) return;
-  CRASH("Circular loop in list detected: %p\n", next);
+  Log(kCrash, __FILE__, __LINE__, "Circular loop in list detected: ", next);
+}
+
+inline void* MaskPtr(void* p) {
+  // Maximize ASLR entropy and guarantee the result is an invalid address.
+  const uintptr_t mask = ~(reinterpret_cast<uintptr_t>(TCMalloc_SystemAlloc)
+                           >> 13) | 1;
+  // Do not mask NULL pointers, otherwise we could leak address state.
+  if (p)
+    return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(p) ^ mask);
+  return p;
+}
+
+inline void* UnmaskPtr(void* p) {
+  return MaskPtr(p);
 }
 
 // Returns value of the |previous| pointer w/out running a sanity
 // check.
 inline void *FL_Previous_No_Check(void *t) {
-  return reinterpret_cast<void**>(t)[1];
+  return UnmaskPtr(reinterpret_cast<void**>(t)[1]);
 }
 
 // Returns value of the |next| pointer w/out running a sanity check.
 inline void *FL_Next_No_Check(void *t) {
-  return reinterpret_cast<void**>(t)[0];
+  return UnmaskPtr(reinterpret_cast<void**>(t)[0]);
 }
 
 void *FL_Previous(void *t) {
@@ -97,12 +115,12 @@ void *FL_Previous(void *t) {
 
 inline void FL_SetPrevious(void *t, void *n) {
   EnsureNonLoop(t, n);
-  reinterpret_cast<void**>(t)[1] = n;
+  reinterpret_cast<void**>(t)[1] = MaskPtr(n);
 }
 
 inline void FL_SetNext(void *t, void *n) {
   EnsureNonLoop(t, n);
-  reinterpret_cast<void**>(t)[0] = n;
+  reinterpret_cast<void**>(t)[0] = MaskPtr(n);
 }
 
 } // namespace

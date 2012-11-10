@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,14 +13,17 @@
 #include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/browser_test_utils.h"
 #include "net/base/net_util.h"
 
 // This file contains high-level startup tests for the extensions system. We've
@@ -36,31 +39,8 @@ class ExtensionStartupTestBase : public InProcessBrowserTest {
  protected:
   // InProcessBrowserTest
   virtual void SetUpCommandLine(CommandLine* command_line) {
-    EnableDOMAutomation();
-
-    FilePath profile_dir;
-    PathService::Get(chrome::DIR_USER_DATA, &profile_dir);
-    profile_dir = profile_dir.AppendASCII("Default");
-    file_util::CreateDirectory(profile_dir);
-
-    preferences_file_ = profile_dir.AppendASCII("Preferences");
-    user_scripts_dir_ = profile_dir.AppendASCII("User Scripts");
-    extensions_dir_ = profile_dir.AppendASCII("Extensions");
-
-    if (enable_extensions_) {
-      if (load_extensions_.empty()) {
-        FilePath src_dir;
-        PathService::Get(chrome::DIR_TEST_DATA, &src_dir);
-        src_dir = src_dir.AppendASCII("extensions").AppendASCII("good");
-
-        file_util::CopyFile(src_dir.AppendASCII("Preferences"),
-                            preferences_file_);
-        file_util::CopyDirectory(src_dir.AppendASCII("Extensions"),
-                                 profile_dir, true);  // recursive
-      }
-    } else {
+    if (!enable_extensions_)
       command_line->AppendSwitch(switches::kDisableExtensions);
-    }
 
     if (!load_extensions_.empty()) {
       FilePath::StringType paths = JoinString(load_extensions_, ',');
@@ -68,6 +48,29 @@ class ExtensionStartupTestBase : public InProcessBrowserTest {
                                        paths);
       command_line->AppendSwitch(switches::kDisableExtensionsFileAccessCheck);
     }
+  }
+
+  virtual bool SetUpUserDataDirectory() {
+    FilePath profile_dir;
+    PathService::Get(chrome::DIR_USER_DATA, &profile_dir);
+    profile_dir = profile_dir.AppendASCII(TestingProfile::kTestUserProfileDir);
+    file_util::CreateDirectory(profile_dir);
+
+    preferences_file_ = profile_dir.AppendASCII("Preferences");
+    user_scripts_dir_ = profile_dir.AppendASCII("User Scripts");
+    extensions_dir_ = profile_dir.AppendASCII("Extensions");
+
+    if (enable_extensions_ && load_extensions_.empty()) {
+      FilePath src_dir;
+      PathService::Get(chrome::DIR_TEST_DATA, &src_dir);
+      src_dir = src_dir.AppendASCII("extensions").AppendASCII("good");
+
+      file_util::CopyFile(src_dir.AppendASCII("Preferences"),
+                          preferences_file_);
+      file_util::CopyDirectory(src_dir.AppendASCII("Extensions"),
+                               profile_dir, true);  // recursive
+    }
+    return true;
   }
 
   virtual void TearDown() {
@@ -88,17 +91,18 @@ class ExtensionStartupTestBase : public InProcessBrowserTest {
     int found_extensions = 0;
     for (ExtensionSet::const_iterator it = service->extensions()->begin();
          it != service->extensions()->end(); ++it)
-      if ((*it)->location() != Extension::COMPONENT)
+      if ((*it)->location() != extensions::Extension::COMPONENT)
         found_extensions++;
 
     ASSERT_EQ(static_cast<uint32>(num_expected_extensions),
               static_cast<uint32>(found_extensions));
     ASSERT_EQ(expect_extensions_enabled, service->extensions_enabled());
 
-    ui_test_utils::WindowedNotificationObserver user_scripts_observer(
+    content::WindowedNotificationObserver user_scripts_observer(
         chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
         content::NotificationService::AllSources());
-    UserScriptMaster* master = browser()->profile()->GetUserScriptMaster();
+    extensions::UserScriptMaster* master =
+        browser()->profile()->GetUserScriptMaster();
     if (!master->ScriptsReady())
       user_scripts_observer.Wait();
     ASSERT_TRUE(master->ScriptsReady());
@@ -114,8 +118,8 @@ class ExtensionStartupTestBase : public InProcessBrowserTest {
     ui_test_utils::NavigateToURL(browser(), net::FilePathToFileURL(test_file));
 
     bool result = false;
-    ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
-        browser()->GetSelectedWebContents()->GetRenderViewHost(), L"",
+    ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
+        chrome::GetActiveWebContents(browser())->GetRenderViewHost(), L"",
         L"window.domAutomationController.send("
         L"document.defaultView.getComputedStyle(document.body, null)."
         L"getPropertyValue('background-color') == 'rgb(245, 245, 220)')",
@@ -123,8 +127,8 @@ class ExtensionStartupTestBase : public InProcessBrowserTest {
     EXPECT_EQ(expect_css, result);
 
     result = false;
-    ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
-        browser()->GetSelectedWebContents()->GetRenderViewHost(), L"",
+    ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
+        chrome::GetActiveWebContents(browser())->GetRenderViewHost(), L"",
         L"window.domAutomationController.send(document.title == 'Modified')",
         &result));
     EXPECT_EQ(expect_script, result);
@@ -170,19 +174,19 @@ IN_PROC_BROWSER_TEST_F(ExtensionsStartupTest, MAYBE_NoFileAccess) {
 
   // Keep a separate list of extensions for which to disable file access, since
   // doing so reloads them.
-  std::vector<const Extension*> extension_list;
+  std::vector<const extensions::Extension*> extension_list;
 
   ExtensionService* service = browser()->profile()->GetExtensionService();
   for (ExtensionSet::const_iterator it = service->extensions()->begin();
        it != service->extensions()->end(); ++it) {
-    if ((*it)->location() == Extension::COMPONENT)
+    if ((*it)->location() == extensions::Extension::COMPONENT)
       continue;
     if (service->AllowFileAccess(*it))
       extension_list.push_back(*it);
   }
 
   for (size_t i = 0; i < extension_list.size(); ++i) {
-    ui_test_utils::WindowedNotificationObserver user_scripts_observer(
+    content::WindowedNotificationObserver user_scripts_observer(
         chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
         content::NotificationService::AllSources());
     service->SetAllowFileAccess(extension_list[i], false);
@@ -213,13 +217,9 @@ class ExtensionsLoadTest : public ExtensionStartupTestBase {
 };
 
 // Fails inconsistently on Linux x64. http://crbug.com/80961
-#if defined(OS_LINUX) && defined(ARCH_CPU_64_BITS)
-#define Maybe_Test FLAKY_Test
-#else
-#define Maybe_Test Test
-#endif
-
-IN_PROC_BROWSER_TEST_F(ExtensionsLoadTest, Maybe_Test) {
+// TODO(dpapad): Has not failed since October 2011, let's reenable, monitor
+// and act accordingly.
+IN_PROC_BROWSER_TEST_F(ExtensionsLoadTest, Test) {
   WaitForServicesToStart(1, true);
   TestInjection(true, true);
 }

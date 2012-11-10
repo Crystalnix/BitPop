@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -74,6 +74,7 @@ static const struct Executables {
   { "xfd", AllowOnUserGesture },
   { "pl", AllowOnUserGesture },
   { "py", AllowOnUserGesture },
+  { "pyw", AllowOnUserGesture },
   { "rb", AllowOnUserGesture },
   { "shtm", AllowOnUserGesture },
   { "shtml", AllowOnUserGesture },
@@ -95,6 +96,7 @@ static const struct Executables {
   { "asx", AllowOnUserGesture },
   { "bas", AllowOnUserGesture },
   { "bat", AllowOnUserGesture },
+  { "cfg", Dangerous },
   { "chi", AllowOnUserGesture },
   { "chm", AllowOnUserGesture },
   { "cmd", AllowOnUserGesture },
@@ -110,15 +112,18 @@ static const struct Executables {
   { "hta", AllowOnUserGesture },
   { "htt", AllowOnUserGesture },
   { "inf", AllowOnUserGesture },
+  { "ini", Dangerous },
   { "ins", AllowOnUserGesture },
   { "isp", AllowOnUserGesture },
   { "js", AllowOnUserGesture },
   { "jse", AllowOnUserGesture },
   { "lnk", AllowOnUserGesture },
+  { "local", Dangerous },
   { "mad", AllowOnUserGesture },
   { "maf", AllowOnUserGesture },
   { "mag", AllowOnUserGesture },
   { "mam", AllowOnUserGesture },
+  { "manifest", Dangerous },
   { "maq", AllowOnUserGesture },
   { "mar", AllowOnUserGesture },
   { "mas", AllowOnUserGesture },
@@ -141,7 +146,7 @@ static const struct Executables {
   { "msi", AllowOnUserGesture },
   { "msp", AllowOnUserGesture },
   { "mst", AllowOnUserGesture },
-  { "ocx", AllowOnUserGesture },
+  { "ocx", Dangerous },
   { "ops", AllowOnUserGesture },
   { "pcd", AllowOnUserGesture },
   { "pif", AllowOnUserGesture },

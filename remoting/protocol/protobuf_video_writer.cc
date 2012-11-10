@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,9 +14,8 @@
 namespace remoting {
 namespace protocol {
 
-ProtobufVideoWriter::ProtobufVideoWriter(base::MessageLoopProxy* message_loop)
-    : session_(NULL),
-      buffered_writer_(new BufferedSocketWriter(message_loop)) {
+ProtobufVideoWriter::ProtobufVideoWriter()
+    : session_(NULL) {
 }
 
 ProtobufVideoWriter::~ProtobufVideoWriter() {
@@ -33,22 +32,23 @@ void ProtobufVideoWriter::Init(protocol::Session* session,
       base::Bind(&ProtobufVideoWriter::OnChannelReady, base::Unretained(this)));
 }
 
-void ProtobufVideoWriter::OnChannelReady(net::StreamSocket* socket) {
-  if (!socket) {
+void ProtobufVideoWriter::OnChannelReady(scoped_ptr<net::StreamSocket> socket) {
+  if (!socket.get()) {
     initialized_callback_.Run(false);
     return;
   }
 
   DCHECK(!channel_.get());
-  channel_.reset(socket);
+  channel_ = socket.Pass();
   // TODO(sergeyu): Provide WriteFailedCallback for the buffered writer.
-  buffered_writer_->Init(socket, BufferedSocketWriter::WriteFailedCallback());
+  buffered_writer_.Init(
+      channel_.get(), BufferedSocketWriter::WriteFailedCallback());
 
   initialized_callback_.Run(true);
 }
 
 void ProtobufVideoWriter::Close() {
-  buffered_writer_->Close();
+  buffered_writer_.Close();
   channel_.reset();
   if (session_) {
     session_->CancelChannelCreation(kVideoChannelName);
@@ -60,13 +60,13 @@ bool ProtobufVideoWriter::is_connected() {
   return channel_.get() != NULL;
 }
 
-void ProtobufVideoWriter::ProcessVideoPacket(const VideoPacket* packet,
+void ProtobufVideoWriter::ProcessVideoPacket(scoped_ptr<VideoPacket> packet,
                                              const base::Closure& done) {
-  buffered_writer_->Write(SerializeAndFrameMessage(*packet), done);
+  buffered_writer_.Write(SerializeAndFrameMessage(*packet), done);
 }
 
-int ProtobufVideoWriter::GetPendingPackets() {
-  return buffered_writer_->GetBufferChunks();
+int ProtobufVideoWriter::GetPendingVideoPackets() {
+  return buffered_writer_.GetBufferChunks();
 }
 
 }  // namespace protocol

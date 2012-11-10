@@ -7,8 +7,9 @@
 #include <map>
 #include <vector>
 
+#include "base/file_path.h"
 #include "base/file_util.h"
-#include "base/json/json_value_serializer.h"
+#include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
@@ -16,25 +17,29 @@
 #include "base/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_action.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
-#include "chrome/common/extensions/extension_message_bundle.h"
+#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/extension_resource.h"
+#include "chrome/common/extensions/message_bundle.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "net/base/file_stream.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using extensions::Extension;
 
 namespace errors = extension_manifest_errors;
 
 namespace extension_file_util {
 
 // Validates locale info. Doesn't check if messages.json files are valid.
-static bool ValidateLocaleInfo(const Extension& extension, std::string* error);
+static bool ValidateLocaleInfo(const Extension& extension,
+                               std::string* error);
 
 // Returns false and sets the error if script file can't be loaded,
 // or if it's not UTF-8 encoded.
@@ -124,12 +129,11 @@ scoped_refptr<Extension> LoadExtension(const FilePath& extension_path,
                                        Extension::Location location,
                                        int flags,
                                        std::string* error) {
-  return LoadExtension(
-      extension_path, std::string(), location, flags, error);
+  return LoadExtension(extension_path, std::string(), location, flags, error);
 }
 
 scoped_refptr<Extension> LoadExtension(const FilePath& extension_path,
-                                       std::string extension_id,
+                                       const std::string& extension_id,
                                        Extension::Location location,
                                        int flags,
                                        std::string* error) {
@@ -137,21 +141,23 @@ scoped_refptr<Extension> LoadExtension(const FilePath& extension_path,
   if (!manifest.get())
     return NULL;
   if (!extension_l10n_util::LocalizeExtension(extension_path, manifest.get(),
-                                              error))
+                                              error)) {
     return NULL;
+  }
 
-  scoped_refptr<Extension> extension(Extension::Create(
-      extension_path,
-      location,
-      *manifest,
-      flags,
-      extension_id,
-      error));
+  scoped_refptr<Extension> extension(Extension::Create(extension_path,
+                                                       location,
+                                                       *manifest,
+                                                       flags,
+                                                       extension_id,
+                                                       error));
   if (!extension.get())
     return NULL;
 
-  if (!ValidateExtension(extension.get(), error))
+  Extension::InstallWarningVector warnings;
+  if (!ValidateExtension(extension.get(), error, &warnings))
     return NULL;
+  extension->AddInstallWarnings(warnings);
 
   return extension;
 }
@@ -190,14 +196,53 @@ DictionaryValue* LoadManifest(const FilePath& extension_path,
   return static_cast<DictionaryValue*>(root.release());
 }
 
-bool ValidateExtension(const Extension* extension, std::string* error) {
+std::vector<FilePath> FindPrivateKeyFiles(const FilePath& extension_dir) {
+  std::vector<FilePath> result;
+  // Pattern matching only works at the root level, so filter manually.
+  file_util::FileEnumerator traversal(extension_dir, /*recursive=*/true,
+                                      file_util::FileEnumerator::FILES);
+  for (FilePath current = traversal.Next(); !current.empty();
+       current = traversal.Next()) {
+    if (!current.MatchesExtension(chrome::kExtensionKeyFileExtension))
+      continue;
+
+    std::string key_contents;
+    if (!file_util::ReadFileToString(current, &key_contents)) {
+      // If we can't read the file, assume it's not a private key.
+      continue;
+    }
+    std::string key_bytes;
+    if (!Extension::ParsePEMKeyBytes(key_contents, &key_bytes)) {
+      // If we can't parse the key, assume it's ok too.
+      continue;
+    }
+
+    result.push_back(current);
+  }
+  return result;
+}
+
+bool ValidateFilePath(const FilePath& path) {
+  int64 size = 0;
+  if (!file_util::PathExists(path) ||
+      !file_util::GetFileSize(path, &size) ||
+      size == 0) {
+    return false;
+  }
+
+  return true;
+}
+
+bool ValidateExtension(const Extension* extension,
+                       std::string* error,
+                       Extension::InstallWarningVector* warnings) {
   // Validate icons exist.
   for (ExtensionIconSet::IconMap::const_iterator iter =
            extension->icons().map().begin();
        iter != extension->icons().map().end();
        ++iter) {
     const FilePath path = extension->GetResource(iter->second).GetFilePath();
-    if (!file_util::PathExists(path)) {
+    if (!ValidateFilePath(path)) {
       *error =
           l10n_util::GetStringFUTF8(IDS_EXTENSION_LOAD_ICON_FAILED,
                                     UTF8ToUTF16(iter->second));
@@ -231,22 +276,32 @@ bool ValidateExtension(const Extension* extension, std::string* error) {
 
   // Validate that claimed script resources actually exist,
   // and are UTF-8 encoded.
+  ExtensionResource::SymlinkPolicy symlink_policy;
+  if ((extension->creation_flags() &
+       Extension::FOLLOW_SYMLINKS_ANYWHERE) != 0) {
+    symlink_policy = ExtensionResource::FOLLOW_SYMLINKS_ANYWHERE;
+  } else {
+    symlink_policy = ExtensionResource::SYMLINKS_MUST_RESOLVE_WITHIN_ROOT;
+  }
+
   for (size_t i = 0; i < extension->content_scripts().size(); ++i) {
-    const UserScript& script = extension->content_scripts()[i];
+    const extensions::UserScript& script = extension->content_scripts()[i];
 
     for (size_t j = 0; j < script.js_scripts().size(); j++) {
-      const UserScript::File& js_script = script.js_scripts()[j];
+      const extensions::UserScript::File& js_script = script.js_scripts()[j];
       const FilePath& path = ExtensionResource::GetFilePath(
-          js_script.extension_root(), js_script.relative_path());
+          js_script.extension_root(), js_script.relative_path(),
+          symlink_policy);
       if (!IsScriptValid(path, js_script.relative_path(),
                          IDS_EXTENSION_LOAD_JAVASCRIPT_FAILED, error))
         return false;
     }
 
     for (size_t j = 0; j < script.css_scripts().size(); j++) {
-      const UserScript::File& css_script = script.css_scripts()[j];
+      const extensions::UserScript::File& css_script = script.css_scripts()[j];
       const FilePath& path = ExtensionResource::GetFilePath(
-          css_script.extension_root(), css_script.relative_path());
+          css_script.extension_root(), css_script.relative_path(),
+          symlink_policy);
       if (!IsScriptValid(path, css_script.relative_path(),
                          IDS_EXTENSION_LOAD_CSS_FAILED, error))
         return false;
@@ -265,7 +320,7 @@ bool ValidateExtension(const Extension* extension, std::string* error) {
     }
   }
 
-  // Validate icon location for page actions.
+  // Validate icon location and icon file size for page actions.
   ExtensionAction* page_action = extension->page_action();
   if (page_action) {
     std::vector<std::string> icon_paths(*page_action->icon_paths());
@@ -273,7 +328,8 @@ bool ValidateExtension(const Extension* extension, std::string* error) {
       icon_paths.push_back(page_action->default_icon_path());
     for (std::vector<std::string>::iterator iter = icon_paths.begin();
          iter != icon_paths.end(); ++iter) {
-      if (!file_util::PathExists(extension->GetResource(*iter).GetFilePath())) {
+      const FilePath path = extension->GetResource(*iter).GetFilePath();
+      if (!ValidateFilePath(path)) {
         *error =
             l10n_util::GetStringFUTF8(
                 IDS_EXTENSION_LOAD_ICON_FOR_PAGE_ACTION_FAILED,
@@ -283,18 +339,20 @@ bool ValidateExtension(const Extension* extension, std::string* error) {
     }
   }
 
-  // Validate icon location for browser actions.
+  // Validate icon location and icon file size for browser actions.
   // Note: browser actions don't use the icon_paths().
   ExtensionAction* browser_action = extension->browser_action();
   if (browser_action) {
     std::string path = browser_action->default_icon_path();
-    if (!path.empty() &&
-        !file_util::PathExists(extension->GetResource(path).GetFilePath())) {
+    if (!path.empty()) {
+      const FilePath file_path = extension->GetResource(path).GetFilePath();
+      if (!ValidateFilePath(file_path)) {
         *error =
             l10n_util::GetStringFUTF8(
                 IDS_EXTENSION_LOAD_ICON_FOR_BROWSER_ACTION_FAILED,
                 UTF8ToUTF16(path));
         return false;
+      }
     }
   }
 
@@ -353,6 +411,27 @@ bool ValidateExtension(const Extension* extension, std::string* error) {
     return false;
   }
 
+  // Check that extensions don't include private key files.
+  std::vector<FilePath> private_keys = FindPrivateKeyFiles(extension->path());
+  if (extension->creation_flags() & Extension::ERROR_ON_PRIVATE_KEY) {
+    if (!private_keys.empty()) {
+      // Only print one of the private keys because l10n_util doesn't have a way
+      // to translate a list of strings.
+      *error = l10n_util::GetStringFUTF8(
+          IDS_EXTENSION_CONTAINS_PRIVATE_KEY,
+          private_keys.front().LossyDisplayName());
+      return false;
+    }
+  } else {
+    for (size_t i = 0; i < private_keys.size(); ++i) {
+      warnings->push_back(Extension::InstallWarning(
+          Extension::InstallWarning::FORMAT_TEXT,
+          l10n_util::GetStringFUTF8(
+              IDS_EXTENSION_CONTAINS_PRIVATE_KEY,
+              private_keys[i].LossyDisplayName())));
+    }
+    // Only warn; don't block loading the extension.
+  }
   return true;
 }
 
@@ -419,13 +498,14 @@ void GarbageCollectExtensions(
   }
 }
 
-ExtensionMessageBundle* LoadExtensionMessageBundle(
+extensions::MessageBundle* LoadMessageBundle(
     const FilePath& extension_path,
     const std::string& default_locale,
     std::string* error) {
   error->clear();
   // Load locale information if available.
-  FilePath locale_path = extension_path.Append(Extension::kLocaleFolder);
+  FilePath locale_path = extension_path.Append(
+      Extension::kLocaleFolder);
   if (!file_util::PathExists(locale_path))
     return NULL;
 
@@ -440,7 +520,7 @@ ExtensionMessageBundle* LoadExtensionMessageBundle(
     return NULL;
   }
 
-  ExtensionMessageBundle* message_bundle =
+  extensions::MessageBundle* message_bundle =
       extension_l10n_util::LoadMessageCatalogs(
           locale_path,
           default_locale,
@@ -451,7 +531,7 @@ ExtensionMessageBundle* LoadExtensionMessageBundle(
   return message_bundle;
 }
 
-SubstitutionMap* LoadExtensionMessageBundleSubstitutionMap(
+SubstitutionMap* LoadMessageBundleSubstitutionMap(
     const FilePath& extension_path,
     const std::string& extension_id,
     const std::string& default_locale) {
@@ -459,8 +539,8 @@ SubstitutionMap* LoadExtensionMessageBundleSubstitutionMap(
   if (!default_locale.empty()) {
     // Touch disk only if extension is localized.
     std::string error;
-    scoped_ptr<ExtensionMessageBundle> bundle(
-        LoadExtensionMessageBundle(extension_path, default_locale, &error));
+    scoped_ptr<extensions::MessageBundle> bundle(
+        LoadMessageBundle(extension_path, default_locale, &error));
 
     if (bundle.get())
       *returnValue = *bundle->dictionary();
@@ -469,14 +549,16 @@ SubstitutionMap* LoadExtensionMessageBundleSubstitutionMap(
   // Add @@extension_id reserved message here, so it's available to
   // non-localized extensions too.
   returnValue->insert(
-      std::make_pair(ExtensionMessageBundle::kExtensionIdKey, extension_id));
+      std::make_pair(extensions::MessageBundle::kExtensionIdKey, extension_id));
 
   return returnValue;
 }
 
-static bool ValidateLocaleInfo(const Extension& extension, std::string* error) {
+static bool ValidateLocaleInfo(const Extension& extension,
+                               std::string* error) {
   // default_locale and _locales have to be both present or both missing.
-  const FilePath path = extension.path().Append(Extension::kLocaleFolder);
+  const FilePath path = extension.path().Append(
+      Extension::kLocaleFolder);
   bool path_exists = file_util::PathExists(path);
   std::string default_locale = extension.default_locale();
 
@@ -625,6 +707,25 @@ FilePath ExtensionURLToRelativeFilePath(const GURL& url) {
   return path;
 }
 
+FilePath ExtensionResourceURLToFilePath(const GURL& url, const FilePath& root) {
+  std::string host = net::UnescapeURLComponent(url.host(),
+      net::UnescapeRule::SPACES | net::UnescapeRule::URL_SPECIAL_CHARS);
+  if (host.empty())
+    return FilePath();
+
+  FilePath relative_path = ExtensionURLToRelativeFilePath(url);
+  if (relative_path.empty())
+    return FilePath();
+
+  FilePath path = root.AppendASCII(host).Append(relative_path);
+  if (!file_util::PathExists(path) ||
+      !file_util::AbsolutePath(&path) ||
+      !root.IsParent(path)) {
+    return FilePath();
+  }
+  return path;
+}
+
 FilePath GetUserDataTempDir() {
   // We do file IO in this function, but only when the current profile's
   // Temp directory has never been used before, or in a rare error case.
@@ -632,8 +733,10 @@ FilePath GetUserDataTempDir() {
   // explicit thread check.
   base::ThreadRestrictions::AssertIOAllowed();
 
-  // Getting chrome::DIR_USER_DATA_TEMP is failing.  Use histogram to see why.
-  // TODO(skerner): Fix the problem, and remove this code.  crbug.com/70056
+  // The following enum used to be sent as a histogram to diagnose issues
+  // accessing the temp path (crbug/70056).  The histogram is gone, but
+  // the enum makes it clear exactly why the temp directory can not be
+  // accessed, which may aid debugging in the future.
   enum DirectoryCreationResult {
     SUCCESS = 0,
 
@@ -680,10 +783,6 @@ FilePath GetUserDataTempDir() {
     // Successfully created the Temp directory.
     result = SUCCESS;
   }
-
-  UMA_HISTOGRAM_ENUMERATION("Extensions.GetUserDataTempDir",
-                            result,
-                            NUM_DIRECTORY_CREATION_RESULTS);
 
   if (result == SUCCESS)
     return temp_path;

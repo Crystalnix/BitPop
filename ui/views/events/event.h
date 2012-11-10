@@ -4,11 +4,13 @@
 
 #ifndef UI_VIEWS_EVENTS_EVENT_H_
 #define UI_VIEWS_EVENTS_EVENT_H_
-#pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "base/logging.h"
 #include "base/time.h"
 #include "ui/base/events.h"
+#include "ui/base/gestures/gesture_types.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/gfx/point.h"
 #include "ui/views/views_export.h"
@@ -21,11 +23,6 @@ class OSExchangeData;
 namespace aura {
 class Event;
 }
-#endif
-
-// TODO(msw): Remove GTK support from views event code when possible.
-#if defined(TOOLKIT_USES_GTK)
-typedef union _GdkEvent GdkEvent;
 #endif
 
 namespace views {
@@ -57,9 +54,6 @@ class RootView;
 class VIEWS_EXPORT Event {
  public:
   const NativeEvent& native_event() const { return native_event_; }
-#if defined(TOOLKIT_USES_GTK)
-  GdkEvent* gdk_event() const { return gdk_event_; }
-#endif
   ui::EventType type() const { return type_; }
   const base::Time& time_stamp() const { return time_stamp_; }
 
@@ -94,18 +88,17 @@ class VIEWS_EXPORT Event {
            type_ == ui::ET_TOUCH_CANCELLED;
   }
 
+  bool IsScrollGestureEvent() const {
+    return type_ == ui::ET_GESTURE_SCROLL_BEGIN ||
+           type_ == ui::ET_GESTURE_SCROLL_UPDATE ||
+           type_ == ui::ET_GESTURE_SCROLL_END;
+  }
+
  protected:
   Event(ui::EventType type, int flags);
   Event(const NativeEvent& native_event, ui::EventType type, int flags);
-#if defined(TOOLKIT_USES_GTK)
-  Event(GdkEvent* gdk_event, ui::EventType type, int flags);
-#endif
-
   Event(const Event& model)
       : native_event_(model.native_event()),
-#if defined(TOOLKIT_USES_GTK)
-        gdk_event_(model.gdk_event_),
-#endif
         type_(model.type()),
         time_stamp_(model.time_stamp()),
         flags_(model.flags()) {
@@ -117,9 +110,6 @@ class VIEWS_EXPORT Event {
   void operator=(const Event&);
 
   NativeEvent native_event_;
-#if defined(TOOLKIT_USES_GTK)
-  GdkEvent* gdk_event_;
-#endif
   ui::EventType type_;
   base::Time time_stamp_;
   int flags_;
@@ -141,9 +131,6 @@ class VIEWS_EXPORT LocatedEvent : public Event {
 
  protected:
   explicit LocatedEvent(const NativeEvent& native_event);
-#if defined(TOOLKIT_USES_GTK)
-  explicit LocatedEvent(GdkEvent* gdk_event);
-#endif
 
   // TODO(msw): Kill this legacy constructor when we update uses.
   // Simple initialization from cracked metadata.
@@ -161,8 +148,6 @@ class VIEWS_EXPORT LocatedEvent : public Event {
   gfx::Point location_;
 };
 
-class TouchEvent;
-
 ////////////////////////////////////////////////////////////////////////////////
 //
 // MouseEvent class
@@ -173,21 +158,10 @@ class TouchEvent;
 class VIEWS_EXPORT MouseEvent : public LocatedEvent {
  public:
   explicit MouseEvent(const NativeEvent& native_event);
-#if defined(TOOLKIT_USES_GTK)
-  explicit MouseEvent(GdkEvent* gdk_event);
-#endif
-
   // Create a new MouseEvent which is identical to the provided model.
   // If source / target views are provided, the model location will be converted
   // from |source| coordinate system to |target| coordinate system.
   MouseEvent(const MouseEvent& model, View* source, View* target);
-
-  // Creates a new MouseEvent from a TouchEvent. The location of the TouchEvent
-  // is the same as the MouseEvent. Other attributes (e.g. type, flags) are
-  // mapped from the TouchEvent to appropriate MouseEvent attributes.
-  // GestureManager uses this to convert TouchEvents that are not handled by any
-  // view.
-  explicit MouseEvent(const TouchEvent& touch);
 
   // TODO(msw): Kill this legacy constructor when we update uses.
   // Create a new mouse event
@@ -243,7 +217,8 @@ class VIEWS_EXPORT MouseEvent : public LocatedEvent {
 // TouchEvent and PlatformTouchPoint.
 //
 ////////////////////////////////////////////////////////////////////////////////
-class VIEWS_EXPORT TouchEvent : public LocatedEvent {
+class VIEWS_EXPORT TouchEvent : public LocatedEvent,
+                                public ui::TouchEvent {
  public:
   explicit TouchEvent(const NativeEvent& native_event);
 
@@ -263,12 +238,25 @@ class VIEWS_EXPORT TouchEvent : public LocatedEvent {
   // from |source| coordinate system to |target| coordinate system.
   TouchEvent(const TouchEvent& model, View* source, View* target);
 
+  virtual ~TouchEvent();
+
   int identity() const { return touch_id_; }
 
   float radius_x() const { return radius_x_; }
   float radius_y() const { return radius_y_; }
   float rotation_angle() const { return rotation_angle_; }
   float force() const { return force_; }
+
+  // Overridden from ui::TouchEvent.
+  virtual ui::EventType GetEventType() const OVERRIDE;
+  virtual gfx::Point GetLocation() const OVERRIDE;
+  virtual int GetTouchId() const OVERRIDE;
+  virtual int GetEventFlags() const OVERRIDE;
+  virtual base::TimeDelta GetTimestamp() const OVERRIDE;
+  virtual float RadiusX() const OVERRIDE;
+  virtual float RadiusY() const OVERRIDE;
+  virtual float RotationAngle() const OVERRIDE;
+  virtual float Force() const OVERRIDE;
 
  private:
   friend class internal::RootView;
@@ -303,17 +291,12 @@ class VIEWS_EXPORT TouchEvent : public LocatedEvent {
 class VIEWS_EXPORT KeyEvent : public Event {
  public:
   explicit KeyEvent(const NativeEvent& native_event);
-#if defined(TOOLKIT_USES_GTK)
-  explicit KeyEvent(GdkEvent* gdk_event);
-#endif
 
   // Creates a new KeyEvent synthetically (i.e. not in response to an input
   // event from the host environment). This is typically only used in testing as
   // some metadata obtainable from the underlying native event is not present.
   // It's also used by input methods to fabricate keyboard events.
-  KeyEvent(ui::EventType type,
-           ui::KeyboardCode key_code,
-           int event_flags);
+  KeyEvent(ui::EventType type, ui::KeyboardCode key_code, int event_flags);
 
   ui::KeyboardCode key_code() const { return key_code_; }
 
@@ -343,6 +326,8 @@ class VIEWS_EXPORT KeyEvent : public Event {
   DISALLOW_COPY_AND_ASSIGN(KeyEvent);
 };
 
+class ScrollEvent;
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // MouseWheelEvent class
@@ -357,9 +342,7 @@ class VIEWS_EXPORT MouseWheelEvent : public MouseEvent {
   static const int kWheelDelta;
 
   explicit MouseWheelEvent(const NativeEvent& native_event);
-#if defined(TOOLKIT_USES_GTK)
-  explicit MouseWheelEvent(GdkEvent* gdk_event);
-#endif
+  explicit MouseWheelEvent(const ScrollEvent& scroll_event);
 
   // The amount to scroll. This is in multiples of kWheelDelta.
   int offset() const { return offset_; }
@@ -413,10 +396,19 @@ class VIEWS_EXPORT DropTargetEvent : public LocatedEvent {
 class VIEWS_EXPORT ScrollEvent : public MouseEvent {
  public:
   explicit ScrollEvent(const NativeEvent& native_event);
+
   float x_offset() const { return x_offset_; }
   float y_offset() const { return y_offset_; }
 
  private:
+  friend class internal::RootView;
+
+  ScrollEvent(const ScrollEvent& model, View* root)
+      : MouseEvent(model, root),
+        x_offset_(model.x_offset()),
+        y_offset_(model.y_offset()) {
+  }
+
   float x_offset_;
   float y_offset_;
 
@@ -427,7 +419,8 @@ class VIEWS_EXPORT ScrollEvent : public MouseEvent {
 // GestureEvent class
 //
 ////////////////////////////////////////////////////////////////////////////////
-class VIEWS_EXPORT GestureEvent : public LocatedEvent {
+class VIEWS_EXPORT GestureEvent : public LocatedEvent,
+                                  public ui::GestureEvent {
  public:
   explicit GestureEvent(const NativeEvent& native_event);
 
@@ -436,8 +429,9 @@ class VIEWS_EXPORT GestureEvent : public LocatedEvent {
   // from |source| coordinate system to |target| coordinate system.
   GestureEvent(const GestureEvent& model, View* source, View* target);
 
-  float delta_x() const { return delta_x_; }
-  float delta_y() const { return delta_y_; }
+  virtual ~GestureEvent();
+
+  const ui::GestureEventDetails& details() const { return details_; }
 
  protected:
   GestureEvent(ui::EventType type, int x, int y, int flags);
@@ -447,8 +441,10 @@ class VIEWS_EXPORT GestureEvent : public LocatedEvent {
 
   GestureEvent(const GestureEvent& model, View* root);
 
-  float delta_x_;
-  float delta_y_;
+  // Overridden from ui::GestureEvent.
+  virtual int GetLowestTouchId() const OVERRIDE;
+
+  ui::GestureEventDetails details_;
 
   DISALLOW_COPY_AND_ASSIGN(GestureEvent);
 };
@@ -460,6 +456,10 @@ class VIEWS_EXPORT GestureEventForTest : public GestureEvent {
  private:
   DISALLOW_COPY_AND_ASSIGN(GestureEventForTest);
 };
+
+#if defined(OS_WIN)
+int GetModifiersFromKeyState();
+#endif
 
 }  // namespace views
 

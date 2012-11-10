@@ -1,12 +1,8 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ui/views/controls/single_split_view.h"
-
-#if defined(TOOLKIT_USES_GTK)
-#include <gdk/gdk.h>
-#endif
 
 #include "skia/ext/skia_utils_win.h"
 #include "ui/base/accessibility/accessible_view_state.h"
@@ -14,12 +10,8 @@
 #include "ui/views/background.h"
 #include "ui/views/controls/single_split_view_listener.h"
 
-#if defined(TOOLKIT_USES_GTK)
-#include "ui/gfx/gtk_util.h"
-#endif
-
 #if defined(USE_AURA)
-#include "ui/aura/cursor.h"
+#include "ui/base/cursor/cursor.h"
 #endif
 
 namespace views {
@@ -103,14 +95,11 @@ gfx::NativeCursor SingleSplitView::GetCursor(const MouseEvent& event) {
     return gfx::kNullCursor;
 #if defined(USE_AURA)
   return is_horizontal_ ?
-      aura::kCursorEastWestResize : aura::kCursorNorthSouthResize;
+      ui::kCursorEastWestResize : ui::kCursorNorthSouthResize;
 #elif defined(OS_WIN)
   static HCURSOR we_resize_cursor = LoadCursor(NULL, IDC_SIZEWE);
   static HCURSOR ns_resize_cursor = LoadCursor(NULL, IDC_SIZENS);
   return is_horizontal_ ? we_resize_cursor : ns_resize_cursor;
-#elif defined(TOOLKIT_USES_GTK)
-  return gfx::GetCursor(is_horizontal_ ? GDK_SB_H_DOUBLE_ARROW :
-                                         GDK_SB_V_DOUBLE_ARROW);
 #endif
 }
 

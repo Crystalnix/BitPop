@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,16 +9,11 @@
 import os
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../../../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../../../..'))
 
-import tempfile
 import unittest
-import StringIO
 
 from grit.format.policy_templates.writers import writer_unittest_common
-from grit import grd_reader
-from grit import util
-from grit.tool import build
 
 
 class AdmWriterUnittest(writer_unittest_common.WriterUnittestCommon):
@@ -552,6 +547,76 @@ chromium_recommended="Chromium (Recommended)"
 ListPolicy_Policy="Caption of list policy."
 ListPolicy_Explain="Description of list policy.\\nWith a newline."
 ListPolicy_Part="Label of list policy."
+''')
+    self.CompareOutputs(output, expected_output)
+
+  def testDictionaryPolicy(self):
+    # Tests a policy group with a single policy of type 'dict'.
+    grd = self.PrepareTest('''
+      {
+        'policy_definitions': [
+          {
+            'name': 'DictionaryPolicy',
+            'type': 'dict',
+            'supported_on': ['chrome.win:8-'],
+            'features': { 'can_be_recommended': True },
+            'desc': 'Description of group.',
+            'caption': 'Caption of policy.',
+          },
+        ],
+        'placeholders': [],
+        'messages': {
+          'win_supported_winxpsp2': {
+            'text': 'At least Windows 3.13', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
+          }
+        }
+      }''')
+    output = self.GetOutput(grd, 'fr', {'_chromium' : '1'}, 'adm', 'en')
+    expected_output = self.ConstructOutput(
+        ['MACHINE', 'USER'], '''
+  CATEGORY !!chromium
+    KEYNAME "Software\\Policies\\Chromium"
+
+    POLICY !!DictionaryPolicy_Policy
+      #if version >= 4
+        SUPPORTED !!SUPPORTED_WINXPSP2
+      #endif
+      EXPLAIN !!DictionaryPolicy_Explain
+
+      PART !!DictionaryPolicy_Part  EDITTEXT
+        VALUENAME "DictionaryPolicy"
+      END PART
+    END POLICY
+
+  END CATEGORY
+
+  CATEGORY !!chromium_recommended
+    KEYNAME "Software\\Policies\\Chromium\\Recommended"
+
+    POLICY !!DictionaryPolicy_Policy
+      #if version >= 4
+        SUPPORTED !!SUPPORTED_WINXPSP2
+      #endif
+      EXPLAIN !!DictionaryPolicy_Explain
+
+      PART !!DictionaryPolicy_Part  EDITTEXT
+        VALUENAME "DictionaryPolicy"
+      END PART
+    END POLICY
+
+  END CATEGORY
+
+
+''', '''[Strings]
+SUPPORTED_WINXPSP2="At least Windows 3.13"
+chromium="Chromium"
+chromium_recommended="Chromium (Recommended)"
+DictionaryPolicy_Policy="Caption of policy."
+DictionaryPolicy_Explain="Description of group."
+DictionaryPolicy_Part="Caption of policy."
 ''')
     self.CompareOutputs(output, expected_output)
 

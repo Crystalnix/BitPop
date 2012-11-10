@@ -8,6 +8,7 @@
 #include <string>
 
 #include "ppapi/c/dev/ppp_find_dev.h"
+#include "ppapi/cpp/instance_handle.h"
 
 namespace pp {
 
@@ -53,7 +54,7 @@ class Find_Dev {
   void SelectedFindResultChanged(int32_t index);
 
  private:
-  Instance* associated_instance_;
+  InstanceHandle associated_instance_;
 };
 
 }  // namespace pp

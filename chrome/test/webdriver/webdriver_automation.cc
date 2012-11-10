@@ -24,13 +24,13 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/automation_constants.h"
+#include "chrome/common/automation_messages.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/automation/automation_json_requests.h"
 #include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
-#include "chrome/test/automation/extension_proxy.h"
 #include "chrome/test/automation/proxy_launcher.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/base/chrome_process_util.h"
@@ -179,6 +179,157 @@ bool GetDefaultChromeExe(FilePath* browser_exe) {
       CheckForChromeExe(browser_exes, chromium_locations, browser_exe);
 }
 
+// Message that duplicates a given message but uses a different type.
+class MessageWithAlternateType : public IPC::Message {
+ public:
+  MessageWithAlternateType(const IPC::Message& msg, int type)
+      : IPC::Message(msg) {
+    header()->type = type;
+  }
+  virtual ~MessageWithAlternateType() {}
+};
+
+// Filters incoming and outgoing messages on the IO thread. Translates messages
+// from old Chrome versions to the new version. This is needed so that new
+// ChromeDriver releases support the current stable and beta channels of Chrome.
+// TODO(kkania): Delete this when Chrome v21 is stable.
+class BackwardsCompatAutomationMessageFilter
+    : public IPC::ChannelProxy::MessageFilter,
+      public IPC::ChannelProxy::OutgoingMessageFilter {
+ public:
+  explicit BackwardsCompatAutomationMessageFilter(AutomationProxy* server);
+
+  // Overriden from IPC::ChannelProxy::MessageFiler.
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+
+  // Overriden from IPC::ChannelProxy::OutgoingMessageFiler.
+  virtual IPC::Message* Rewrite(IPC::Message* message) OVERRIDE;
+
+ private:
+  virtual ~BackwardsCompatAutomationMessageFilter();
+
+  // The first version of Chrome using the new IPC automation message set,
+  // after r137672 changed most of the message IDs.
+  static const int kNewAutomationVersion = 1142;
+
+  // The first version of Chrome using the new JSON interface which takes a
+  // browser index instead of a browser handle.
+  static const int kNewJSONInterfaceVersion = 1195;
+
+  AutomationProxy* server_;
+  bool old_version_;
+
+  DISALLOW_COPY_AND_ASSIGN(BackwardsCompatAutomationMessageFilter);
+};
+
+BackwardsCompatAutomationMessageFilter::BackwardsCompatAutomationMessageFilter(
+    AutomationProxy* server)
+    : server_(server), old_version_(false) {
+}
+
+bool BackwardsCompatAutomationMessageFilter::OnMessageReceived(
+    const IPC::Message& message) {
+  const uint32 kOldHelloType = 44,
+               kOldInitialLoadsCompleteType = 47,
+               kOldInitialNewTabUILoadCompleteType = 267;
+  if (message.type() == kOldHelloType) {
+    old_version_ = true;
+    std::string server_version;
+    PickleIterator iter(message);
+    CHECK(message.ReadString(&iter, &server_version));
+    server_->SignalAppLaunch(server_version);
+    return true;
+  }
+  if (!old_version_)
+    return false;
+
+  switch (message.type()) {
+    case kOldInitialLoadsCompleteType:
+      server_->SignalInitialLoads();
+      break;
+    case kOldInitialNewTabUILoadCompleteType:
+      server_->SignalNewTabUITab(-1);
+      break;
+    default:
+      return false;
+  }
+  return true;
+}
+
+IPC::Message* BackwardsCompatAutomationMessageFilter::Rewrite(
+    IPC::Message* message) {
+  int build_no = -1;
+  std::string version = server_->server_version();
+  std::vector<std::string> version_parts;
+  base::SplitString(version, '.', &version_parts);
+  CHECK(version_parts.size() == 4 &&
+        base::StringToInt(version_parts[2], &build_no))
+      << "Can't rewrite message (type: " << message->type()
+      << ") because unknown server (version: " << version << ")";
+  CHECK_EQ(static_cast<uint32>(AutomationMsg_SendJSONRequest::ID),
+           message->type());
+  int type = AutomationMsg_SendJSONRequest::ID;
+  // These old message types are determined by inspecting the line number
+  // of the SendJSONRequest message in older versions of
+  // automation_messages_internal.h.
+  if (build_no < kNewAutomationVersion)
+    type = 1301;
+  else if (build_no < kNewJSONInterfaceVersion)
+    type = 863;
+  IPC::Message* new_message = new MessageWithAlternateType(*message, type);
+  delete message;
+  return new_message;
+}
+
+BackwardsCompatAutomationMessageFilter::
+    ~BackwardsCompatAutomationMessageFilter() {
+}
+
+void AddBackwardsCompatFilter(AutomationProxy* proxy) {
+  // The filter is ref-counted in AddFilter.
+  BackwardsCompatAutomationMessageFilter* filter =
+      new BackwardsCompatAutomationMessageFilter(proxy);
+  proxy->channel()->AddFilter(filter);
+  proxy->channel()->set_outgoing_message_filter(filter);
+}
+
+class WebDriverAnonymousProxyLauncher : public AnonymousProxyLauncher {
+ public:
+  WebDriverAnonymousProxyLauncher()
+      : AnonymousProxyLauncher(false) {}
+  virtual ~WebDriverAnonymousProxyLauncher() {}
+
+  virtual AutomationProxy* CreateAutomationProxy(
+      base::TimeDelta execution_timeout) OVERRIDE {
+    AutomationProxy* proxy =
+        AnonymousProxyLauncher::CreateAutomationProxy(execution_timeout);
+    AddBackwardsCompatFilter(proxy);
+    return proxy;
+  }
+};
+
+class WebDriverNamedProxyLauncher : public NamedProxyLauncher {
+ public:
+  WebDriverNamedProxyLauncher(const std::string& channel_id,
+                              bool launch_browser)
+      : NamedProxyLauncher(channel_id, launch_browser, false) {}
+  virtual ~WebDriverNamedProxyLauncher() {}
+
+  virtual AutomationProxy* CreateAutomationProxy(
+      base::TimeDelta execution_timeout) OVERRIDE {
+    AutomationProxy* proxy =
+        NamedProxyLauncher::CreateAutomationProxy(execution_timeout);
+    // We can only add the filter here if the browser has not already been
+    // started. Otherwise the filter is not guaranteed to receive the
+    // first message. The only occasion where we don't launch the browser is
+    // in PyAuto, in which case the backwards compat filter isn't needed
+    // anyways because ChromeDriver and Chrome are at the same version there.
+    if (launch_browser_)
+      AddBackwardsCompatFilter(proxy);
+    return proxy;
+  }
+};
+
 }  // namespace
 
 namespace webdriver {
@@ -202,6 +353,9 @@ void Automation::Init(
     Error** error) {
   // Prepare Chrome's command line.
   CommandLine command(CommandLine::NO_PROGRAM);
+  if (CommandLine::ForCurrentProcess()->HasSwitch("no-sandbox")) {
+    command.AppendSwitch(switches::kNoSandbox);
+  }
   command.AppendSwitch(switches::kDisableHangMonitor);
   command.AppendSwitch(switches::kDisablePromptOnRepost);
   command.AppendSwitch(switches::kDomAutomationController);
@@ -270,10 +424,11 @@ void Automation::Init(
     command_line_str = command.GetCommandLineString();
 #endif
     logger_.Log(kInfoLogLevel, "Launching chrome: " + command_line_str);
-    launcher_.reset(new AnonymousProxyLauncher(false));
+    launcher_.reset(new WebDriverAnonymousProxyLauncher());
   } else {
     logger_.Log(kInfoLogLevel, "Using named testing interface");
-    launcher_.reset(new NamedProxyLauncher(channel_id, launch_browser, false));
+    launcher_.reset(new WebDriverNamedProxyLauncher(
+        channel_id, launch_browser));
   }
   ProxyLauncher::LaunchState launch_props = {
       false,  // clear_profile
@@ -292,9 +447,10 @@ void Automation::Init(
     return;
   }
 
-  launcher_->automation()->set_action_timeout_ms(base::kNoTimeout);
+  launcher_->automation()->set_action_timeout(
+      base::TimeDelta::FromMilliseconds(base::kNoTimeout));
   logger_.Log(kInfoLogLevel, "Connected to Chrome successfully. Version: " +
-                  automation()->server_version());
+              automation()->server_version());
 
   *error = DetermineBuildNumber();
   if (*error)
@@ -331,14 +487,17 @@ void Automation::Terminate() {
     scoped_ptr<Error> scoped_error(error);
 
     kill(launcher_->process(), SIGTERM);
+#else
+    automation()->Disconnect();
+#endif
     int exit_code = -1;
-    if (!launcher_->WaitForBrowserProcessToQuit(10000, &exit_code)) {
+    if (!launcher_->WaitForBrowserProcessToQuit(
+            base::TimeDelta::FromSeconds(10), &exit_code)) {
+      logger_.Log(kWarningLogLevel, "Chrome still running, terminating...");
       TerminateAllChromeProcesses(launcher_->process_id());
     }
     base::CloseProcessHandle(launcher_->process());
-#else
-    launcher_->TerminateBrowser();
-#endif
+    logger_.Log(kInfoLogLevel, "Chrome shutdown");
   }
 }
 
@@ -559,6 +718,23 @@ void Automation::CaptureEntirePageAsPNG(const WebViewId& view_id,
   }
 }
 
+#if !defined(NO_TCMALLOC) && (defined(OS_LINUX) || defined(OS_CHROMEOS))
+void Automation::HeapProfilerDump(const WebViewId& view_id,
+                                  const std::string& reason,
+                                  Error** error) {
+  WebViewLocator view_locator;
+  *error = ConvertViewIdToLocator(view_id, &view_locator);
+  if (*error)
+    return;
+
+  automation::Error auto_error;
+  if (!SendHeapProfilerDumpJSONRequest(
+          automation(), view_locator, reason, &auto_error)) {
+    *error = Error::FromAutomationError(auto_error);
+  }
+}
+#endif  // !defined(NO_TCMALLOC) && (defined(OS_LINUX) || defined(OS_CHROMEOS))
+
 void Automation::NavigateToURL(const WebViewId& view_id,
                                const std::string& url,
                                Error** error) {
@@ -723,6 +899,17 @@ void Automation::SetViewBounds(const WebViewId& view_id,
     *error = Error::FromAutomationError(auto_error);
 }
 
+void Automation::MaximizeView(const WebViewId& view_id, Error** error) {
+  *error = CheckMaximizeSupported();
+  if (*error)
+    return;
+
+  automation::Error auto_error;
+  if (!SendMaximizeJSONRequest(
+          automation(), view_id, &auto_error))
+    *error = Error::FromAutomationError(auto_error);
+}
+
 void Automation::GetAppModalDialogMessage(std::string* message, Error** error) {
   *error = CheckAlertsSupported();
   if (*error)
@@ -774,12 +961,6 @@ void Automation::WaitForAllViewsToStopLoading(Error** error) {
   automation::Error auto_error;
   if (!SendWaitForAllViewsToStopLoadingJSONRequest(automation(), &auto_error))
     *error = Error::FromAutomationError(auto_error);
-}
-
-void Automation::InstallExtensionDeprecated(
-    const FilePath& path, Error** error) {
-  if (!launcher_->automation()->InstallExtension(path, false).get())
-    *error = new Error(kUnknownError, "Failed to install extension");
 }
 
 void Automation::InstallExtension(
@@ -876,7 +1057,7 @@ void Automation::SetLocalStatePreference(const std::string& pref,
     request_dict.SetString("command", "SetLocalStatePrefs");
     request_dict.SetString("path", pref);
     request_dict.Set("value", scoped_value.release());
-    base::JSONWriter::Write(&request_dict, false, &request);
+    base::JSONWriter::Write(&request_dict, &request);
     if (!automation()->GetBrowserWindow(0)->SendJSONRequest(
             request, -1, &response)) {
       *error = new Error(kUnknownError, base::StringPrintf(
@@ -903,12 +1084,41 @@ void Automation::SetPreference(const std::string& pref,
     request_dict.SetInteger("windex", 0);
     request_dict.SetString("path", pref);
     request_dict.Set("value", scoped_value.release());
-    base::JSONWriter::Write(&request_dict, false, &request);
+    base::JSONWriter::Write(&request_dict, &request);
     if (!automation()->GetBrowserWindow(0)->SendJSONRequest(
             request, -1, &response)) {
       *error = new Error(kUnknownError, base::StringPrintf(
           "Failed to set pref '%s'", pref.c_str()));
     }
+  }
+}
+
+void Automation::GetGeolocation(scoped_ptr<DictionaryValue>* geolocation,
+                                Error** error) {
+  *error = CheckGeolocationSupported();
+  if (*error)
+    return;
+
+  if (geolocation_.get()) {
+    geolocation->reset(geolocation_->DeepCopy());
+  } else {
+    *error = new Error(kUnknownError,
+                       "Location must be set before it can be retrieved");
+  }
+}
+
+void Automation::OverrideGeolocation(const DictionaryValue* geolocation,
+                                     Error** error) {
+  *error = CheckGeolocationSupported();
+  if (*error)
+    return;
+
+  automation::Error auto_error;
+  if (SendOverrideGeolocationJSONRequest(
+          automation(), geolocation, &auto_error)) {
+    geolocation_.reset(geolocation->DeepCopy());
+  } else {
+    *error = Error::FromAutomationError(auto_error);
   }
 }
 
@@ -969,6 +1179,20 @@ Error* Automation::CheckNewExtensionInterfaceSupported() {
   const char* message =
       "Extension interface is not supported for this version of Chrome";
   return CheckVersion(947, message);
+}
+
+Error* Automation::CheckGeolocationSupported() {
+  const char* message =
+      "Geolocation automation interface is not supported for this version of "
+      "Chrome.";
+  return CheckVersion(1119, message);
+}
+
+Error* Automation::CheckMaximizeSupported() {
+  const char* message =
+      "Maximize automation interface is not supported for this version of "
+      "Chrome.";
+  return CheckVersion(1160, message);
 }
 
 }  // namespace webdriver

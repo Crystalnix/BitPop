@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_POLICY_USER_POLICY_CACHE_H_
 #define CHROME_BROWSER_POLICY_USER_POLICY_CACHE_H_
-#pragma once
 
 #include <string>
 
@@ -43,7 +42,7 @@ class UserPolicyCache : public CloudPolicyCacheBase,
 
   // CloudPolicyCacheBase implementation:
   virtual void Load() OVERRIDE;
-  virtual void SetPolicy(
+  virtual bool SetPolicy(
       const enterprise_management::PolicyFetchResponse& policy) OVERRIDE;
   virtual void SetUnmanaged() OVERRIDE;
   virtual void SetFetchingDone() OVERRIDE;

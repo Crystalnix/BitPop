@@ -1,32 +1,38 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ui/aura/client/tooltip_client.h"
 
 #include "ui/aura/root_window.h"
+#include "ui/aura/window_property.h"
+
+DECLARE_WINDOW_PROPERTY_TYPE(aura::client::TooltipClient*)
+DECLARE_WINDOW_PROPERTY_TYPE(string16*)
 
 namespace aura {
 namespace client {
 
-const char kRootWindowTooltipClientKey[] = "RootWindowTooltipClient";
-const char kTooltipTextKey[] = "TooltipText";
+DEFINE_LOCAL_WINDOW_PROPERTY_KEY(
+    TooltipClient*, kRootWindowTooltipClientKey, NULL);
+DEFINE_LOCAL_WINDOW_PROPERTY_KEY(string16*, kTooltipTextKey, NULL);
 
-void SetTooltipClient(TooltipClient* client) {
-  RootWindow::GetInstance()->SetProperty(kRootWindowTooltipClientKey, client);
+void SetTooltipClient(RootWindow* root_window, TooltipClient* client) {
+  root_window->SetProperty(kRootWindowTooltipClientKey, client);
 }
 
-TooltipClient* GetTooltipClient() {
-  return reinterpret_cast<TooltipClient*>(
-      RootWindow::GetInstance()->GetProperty(kRootWindowTooltipClientKey));
+TooltipClient* GetTooltipClient(RootWindow* root_window) {
+  return root_window ?
+      root_window->GetProperty(kRootWindowTooltipClientKey) : NULL;
 }
 
 void SetTooltipText(Window* window, string16* tooltip_text) {
   window->SetProperty(kTooltipTextKey, tooltip_text);
 }
 
-string16* GetTooltipText(Window* window) {
-  return reinterpret_cast<string16*>(window->GetProperty(kTooltipTextKey));
+const string16 GetTooltipText(Window* window) {
+  string16* string_ptr = window->GetProperty(kTooltipTextKey);
+  return string_ptr ? *string_ptr : string16();
 }
 
 }  // namespace client

@@ -12,13 +12,15 @@
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
 #include "chrome/browser/history/url_database.h"
+#include "chrome/browser/history/visit_filter.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/common/page_transition_types.h"
 #include "sql/statement.h"
 
 // Rows, in order, of the visit table.
 #define HISTORY_VISIT_ROW_FIELDS \
-  " id,url,visit_time,from_visit,transition,segment_id,is_indexed "
+    " id,url,visit_time,from_visit,transition,segment_id,is_indexed," \
+    "visit_duration "
 
 namespace history {
 
@@ -38,7 +40,8 @@ bool VisitDatabase::InitVisitTable() {
         "transition INTEGER DEFAULT 0 NOT NULL,"
         "segment_id INTEGER,"
         // True when we have indexed data for this visit.
-        "is_indexed BOOLEAN)"))
+        "is_indexed BOOLEAN,"
+        "visit_duration INTEGER DEFAULT 0 NOT NULL)"))
       return false;
   } else if (!GetDB().DoesColumnExist("visits", "is_indexed")) {
     // Old versions don't have the is_indexed column, we can just add that and
@@ -101,11 +104,16 @@ void VisitDatabase::FillVisitRow(sql::Statement& statement, VisitRow* visit) {
   visit->transition = content::PageTransitionFromInt(statement.ColumnInt(4));
   visit->segment_id = statement.ColumnInt64(5);
   visit->is_indexed = !!statement.ColumnInt(6);
+  visit->visit_duration =
+      base::TimeDelta::FromInternalValue(statement.ColumnInt64(7));
 }
 
 // static
 bool VisitDatabase::FillVisitVector(sql::Statement& statement,
                                     VisitVector* visits) {
+  if (!statement.is_valid())
+    return false;
+
   while (statement.Step()) {
     history::VisitRow visit;
     FillVisitRow(statement, &visit);
@@ -118,14 +126,15 @@ bool VisitDatabase::FillVisitVector(sql::Statement& statement,
 VisitID VisitDatabase::AddVisit(VisitRow* visit, VisitSource source) {
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "INSERT INTO visits "
-      "(url, visit_time, from_visit, transition, segment_id, is_indexed) "
-      "VALUES (?,?,?,?,?,?)"));
+      "(url, visit_time, from_visit, transition, segment_id, is_indexed, "
+      "visit_duration) VALUES (?,?,?,?,?,?,?)"));
   statement.BindInt64(0, visit->url_id);
   statement.BindInt64(1, visit->visit_time.ToInternalValue());
   statement.BindInt64(2, visit->referring_visit);
   statement.BindInt64(3, visit->transition);
   statement.BindInt64(4, visit->segment_id);
   statement.BindInt64(5, visit->is_indexed);
+  statement.BindInt64(6, visit->visit_duration.ToInternalValue());
 
   if (!statement.Run()) {
     VLOG(0) << "Failed to execute visit insert statement:  "
@@ -144,7 +153,7 @@ VisitID VisitDatabase::AddVisit(VisitRow* visit, VisitSource source) {
 
     if (!statement1.Run()) {
       VLOG(0) << "Failed to execute visit_source insert statement:  "
-              << "url_id = " << visit->visit_id;
+              << "id = " << visit->visit_id;
       return 0;
     }
   }
@@ -204,15 +213,16 @@ bool VisitDatabase::UpdateVisitRow(const VisitRow& visit) {
 
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "UPDATE visits SET "
-      "url=?,visit_time=?,from_visit=?,transition=?,segment_id=?,is_indexed=? "
-      "WHERE id=?"));
+      "url=?,visit_time=?,from_visit=?,transition=?,segment_id=?,is_indexed=?,"
+      "visit_duration=? WHERE id=?"));
   statement.BindInt64(0, visit.url_id);
   statement.BindInt64(1, visit.visit_time.ToInternalValue());
   statement.BindInt64(2, visit.referring_visit);
   statement.BindInt64(3, visit.transition);
   statement.BindInt64(4, visit.segment_id);
   statement.BindInt64(5, visit.is_indexed);
-  statement.BindInt64(6, visit.visit_id);
+  statement.BindInt64(6, visit.visit_duration.ToInternalValue());
+  statement.BindInt64(7, visit.visit_id);
 
   return statement.Run();
 }
@@ -327,6 +337,39 @@ void VisitDatabase::GetVisibleVisitsInRange(base::Time begin_time,
 
     if (max_count > 0 && static_cast<int>(visits->size()) >= max_count)
       break;
+  }
+}
+
+void VisitDatabase::GetDirectVisitsDuringTimes(const VisitFilter& time_filter,
+                                                int max_results,
+                                                VisitVector* visits) {
+  visits->clear();
+  if (max_results)
+    visits->reserve(max_results);
+  for (VisitFilter::TimeVector::const_iterator it = time_filter.times().begin();
+       it != time_filter.times().end(); ++it) {
+    sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
+        "SELECT" HISTORY_VISIT_ROW_FIELDS "FROM visits "
+        "WHERE visit_time >= ? AND visit_time < ? "
+        "AND (transition & ?) != 0 "  // CHAIN_START
+        "AND (transition & ?) IN (?, ?) "  // TYPED or AUTO_BOOKMARK only
+        "ORDER BY visit_time DESC, id DESC"));
+
+    statement.BindInt64(0, it->first.ToInternalValue());
+    statement.BindInt64(1, it->second.ToInternalValue());
+    statement.BindInt(2, content::PAGE_TRANSITION_CHAIN_START);
+    statement.BindInt(3, content::PAGE_TRANSITION_CORE_MASK);
+    statement.BindInt(4, content::PAGE_TRANSITION_TYPED);
+    statement.BindInt(5, content::PAGE_TRANSITION_AUTO_BOOKMARK);
+
+    while (statement.Step()) {
+      VisitRow visit;
+      FillVisitRow(statement, &visit);
+      visits->push_back(visit);
+
+      if (max_results > 0 && static_cast<int>(visits->size()) >= max_results)
+        return;
+    }
   }
 }
 
@@ -506,6 +549,45 @@ void VisitDatabase::GetVisitsSource(const VisitVector& visits,
           static_cast<VisitSource>(statement.ColumnInt(1)));
       sources->insert(source_entry);
     }
+  }
+}
+
+bool VisitDatabase::MigrateVisitsWithoutDuration() {
+  if (!GetDB().DoesTableExist("visits")) {
+    NOTREACHED() << " Visits table should exist before migration";
+    return false;
+  }
+
+  if (!GetDB().DoesColumnExist("visits", "visit_duration")) {
+    // Old versions don't have the visit_duration column, we modify the table
+    // to add that field.
+    if (!GetDB().Execute("ALTER TABLE visits "
+        "ADD COLUMN visit_duration INTEGER DEFAULT 0 NOT NULL"))
+      return false;
+  }
+  return true;
+}
+
+void VisitDatabase::GetBriefVisitInfoOfMostRecentVisits(
+    int max_visits,
+    std::vector<BriefVisitInfo>* result_vector) {
+  result_vector->clear();
+
+  sql::Statement statement(GetDB().GetUniqueStatement(
+      "SELECT url,visit_time,transition FROM visits "
+      "ORDER BY id DESC LIMIT ?"));
+
+  statement.BindInt64(0, max_visits);
+
+  if (!statement.is_valid())
+    return;
+
+  while (statement.Step()) {
+    BriefVisitInfo info;
+    info.url_id = statement.ColumnInt64(0);
+    info.time = base::Time::FromInternalValue(statement.ColumnInt64(1));
+    info.transition = content::PageTransitionFromInt(statement.ColumnInt(2));
+    result_vector->push_back(info);
   }
 }
 

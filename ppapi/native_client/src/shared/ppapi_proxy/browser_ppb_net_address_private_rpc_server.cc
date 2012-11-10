@@ -107,7 +107,7 @@ void PpbNetAddressPrivateRpcServer::PPB_NetAddress_Private_Describe(
       module,
       reinterpret_cast<PP_NetAddress_Private*>(addr),
       static_cast<PP_Bool>(include_port));
-  pp::Var address(pp::Var::PassRef(), pp_address);
+  pp::Var address(pp::PASS_REF, pp_address);
 
   if (!SerializeTo(&address.pp_var(), description, description_bytes))
     return;
@@ -174,6 +174,165 @@ void PpbNetAddressPrivateRpcServer::PPB_NetAddress_Private_GetAnyAddress(
       reinterpret_cast<PP_NetAddress_Private*>(addr));
 
   DebugPrintf("PPB_NetAddress_Private::GetAnyAddress\n");
+
+  rpc->result = NACL_SRPC_RESULT_OK;
+}
+
+void PpbNetAddressPrivateRpcServer::PPB_NetAddress_Private_GetFamily(
+    NaClSrpcRpc* rpc,
+    NaClSrpcClosure* done,
+    // input
+    nacl_abi_size_t addr_bytes, char* addr,
+    // output
+    int32_t* addr_family) {
+  NaClSrpcClosureRunner runner(done);
+  rpc->result = NACL_SRPC_RESULT_APP_ERROR;
+
+  if (addr_bytes !=
+      static_cast<nacl_abi_size_t>(sizeof(PP_NetAddress_Private))) {
+    return;
+  }
+
+  *addr_family = static_cast<int32_t>(
+      PPBNetAddressPrivateInterface()->GetFamily(
+          reinterpret_cast<PP_NetAddress_Private*>(addr)));
+
+  DebugPrintf("PPB_NetAddress_Private::GetFamily\n");
+
+  rpc->result = NACL_SRPC_RESULT_OK;
+}
+
+void PpbNetAddressPrivateRpcServer::PPB_NetAddress_Private_GetPort(
+    NaClSrpcRpc* rpc,
+    NaClSrpcClosure* done,
+    // input
+    nacl_abi_size_t addr_bytes, char* addr,
+    // output
+    int32_t* port) {
+  NaClSrpcClosureRunner runner(done);
+  rpc->result = NACL_SRPC_RESULT_APP_ERROR;
+
+  if (addr_bytes !=
+      static_cast<nacl_abi_size_t>(sizeof(PP_NetAddress_Private))) {
+    return;
+  }
+
+  *port = PPBNetAddressPrivateInterface()->GetPort(
+      reinterpret_cast<PP_NetAddress_Private*>(addr));
+
+  DebugPrintf("PPB_NetAddress_Private::GetPort\n");
+
+  rpc->result = NACL_SRPC_RESULT_OK;
+}
+
+void PpbNetAddressPrivateRpcServer::PPB_NetAddress_Private_GetAddress(
+    NaClSrpcRpc* rpc,
+    NaClSrpcClosure* done,
+    // input
+    nacl_abi_size_t addr_bytes, char* addr,
+    // output
+    nacl_abi_size_t* address_bytes, char* address,
+    int32_t* success) {
+  NaClSrpcClosureRunner runner(done);
+  rpc->result = NACL_SRPC_RESULT_APP_ERROR;
+
+  if (addr_bytes !=
+      static_cast<nacl_abi_size_t>(sizeof(PP_NetAddress_Private))) {
+    return;
+  }
+
+  PP_Bool pp_success = PPBNetAddressPrivateInterface()->GetAddress(
+      reinterpret_cast<PP_NetAddress_Private*>(addr),
+      address, static_cast<uint16_t>(*address_bytes));
+
+  DebugPrintf("PPB_NetAddress_Private::GetAddress: pp_success=%d\n",
+              pp_success);
+
+  *success = (pp_success == PP_TRUE);
+  rpc->result = NACL_SRPC_RESULT_OK;
+}
+
+void PpbNetAddressPrivateRpcServer::PPB_NetAddress_Private_GetScopeID(
+    NaClSrpcRpc* rpc,
+    NaClSrpcClosure* done,
+    // input
+    nacl_abi_size_t addr_bytes, char* addr,
+    // output
+    int32_t* scope_id) {
+  NaClSrpcClosureRunner runner(done);
+  rpc->result = NACL_SRPC_RESULT_APP_ERROR;
+
+  if (addr_bytes !=
+      static_cast<nacl_abi_size_t>(sizeof(PP_NetAddress_Private))) {
+    return;
+  }
+
+  *scope_id = PPBNetAddressPrivateInterface()->GetScopeID(
+      reinterpret_cast<PP_NetAddress_Private*>(addr));
+
+  DebugPrintf("PPB_NetAddress_Private::GetScopeID\n");
+
+  rpc->result = NACL_SRPC_RESULT_OK;
+}
+
+void
+PpbNetAddressPrivateRpcServer::PPB_NetAddress_Private_CreateFromIPv4Address(
+    NaClSrpcRpc* rpc,
+    NaClSrpcClosure* done,
+    // input
+    nacl_abi_size_t ip_bytes, char* ip,
+    int32_t port,
+    // output
+    nacl_abi_size_t* addr_bytes, char* addr) {
+  NaClSrpcClosureRunner runner(done);
+  rpc->result = NACL_SRPC_RESULT_APP_ERROR;
+
+  if (ip_bytes != static_cast<nacl_abi_size_t>(4))
+    return;
+  if (port < 0 || port > std::numeric_limits<uint16_t>::max())
+    return;
+  if (*addr_bytes !=
+      static_cast<nacl_abi_size_t>(sizeof(PP_NetAddress_Private))) {
+    return;
+  }
+
+  PPBNetAddressPrivateInterface()->CreateFromIPv4Address(
+      reinterpret_cast<uint8_t*>(ip), static_cast<uint16_t>(port),
+      reinterpret_cast<PP_NetAddress_Private*>(addr));
+
+  DebugPrintf("PPB_NetAddress_Private::CreateFromIPv4Address\n");
+
+  rpc->result = NACL_SRPC_RESULT_OK;
+}
+
+void
+PpbNetAddressPrivateRpcServer::PPB_NetAddress_Private_CreateFromIPv6Address(
+    NaClSrpcRpc* rpc,
+    NaClSrpcClosure* done,
+    // input
+    nacl_abi_size_t ip_bytes, char* ip,
+    int32_t scope_id,
+    int32_t port,
+    // output
+    nacl_abi_size_t* addr_bytes, char* addr) {
+  NaClSrpcClosureRunner runner(done);
+  rpc->result = NACL_SRPC_RESULT_APP_ERROR;
+
+  if (ip_bytes != static_cast<nacl_abi_size_t>(16))
+    return;
+  if (port < 0 || port > std::numeric_limits<uint16_t>::max())
+    return;
+  if (*addr_bytes !=
+      static_cast<nacl_abi_size_t>(sizeof(PP_NetAddress_Private))) {
+    return;
+  }
+
+  PPBNetAddressPrivateInterface()->CreateFromIPv6Address(
+      reinterpret_cast<uint8_t*>(ip), static_cast<uint32_t>(scope_id),
+      static_cast<uint16_t>(port),
+      reinterpret_cast<PP_NetAddress_Private*>(addr));
+
+  DebugPrintf("PPB_NetAddress_Private::CreateFromIPv6Address\n");
 
   rpc->result = NACL_SRPC_RESULT_OK;
 }

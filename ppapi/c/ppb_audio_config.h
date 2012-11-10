@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From ppb_audio_config.idl modified Wed Oct  5 14:06:02 2011. */
+/* From ppb_audio_config.idl modified Thu Mar  1 14:51:38 2012. */
 
 #ifndef PPAPI_C_PPB_AUDIO_CONFIG_H_
 #define PPAPI_C_PPB_AUDIO_CONFIG_H_
@@ -15,7 +15,8 @@
 #include "ppapi/c/pp_stdint.h"
 
 #define PPB_AUDIO_CONFIG_INTERFACE_1_0 "PPB_AudioConfig;1.0"
-#define PPB_AUDIO_CONFIG_INTERFACE PPB_AUDIO_CONFIG_INTERFACE_1_0
+#define PPB_AUDIO_CONFIG_INTERFACE_1_1 "PPB_AudioConfig;1.1"
+#define PPB_AUDIO_CONFIG_INTERFACE PPB_AUDIO_CONFIG_INTERFACE_1_1
 
 /**
  * @file
@@ -62,18 +63,20 @@ PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_AudioSampleRate, 4);
 /**
  * The <code>PPB_AudioConfig</code> interface contains pointers to several
  * functions for establishing your audio configuration within the browser.
- * This interface only supports stereo * 16bit output.
+ * This interface only supports 16-bit stereo output.
  *
  * Refer to the
- * <a href="/chrome/nativeclient/docs/audio.html">Pepper
+ * <a href="/native-client/{{pepperversion}}/devguide/coding/audio">Pepper
  * Audio API</a> for information on using this interface.
  */
-struct PPB_AudioConfig_1_0 {
+struct PPB_AudioConfig_1_1 {
   /**
    * CreateStereo16bit() creates a 16 bit audio configuration resource. The
-   * <code>sample_frame_count</code> should be the result of calling
-   * <code>RecommendSampleFrameCount</code>. If the sample frame count or bit
-   * rate isn't supported, this function will fail and return a null resource.
+   * <code>sample_rate</code> should be the result of calling
+   * <code>RecommendSampleRate</code> and <code>sample_frame_count</code> should
+   * be the result of calling <code>RecommendSampleFrameCount</code>. If the
+   * sample frame count or bit rate isn't supported, this function will fail and
+   * return a null resource.
    *
    * A single sample frame on a stereo device means one value for the left
    * channel and one value for the right channel.
@@ -93,7 +96,7 @@ struct PPB_AudioConfig_1_0 {
    *
    * @param[in] instance A <code>PP_Instance</code> identifying one instance
    * of a module.
-   * @param[in] sample_rate A P<code>P_AudioSampleRate</code> which is either
+   * @param[in] sample_rate A <code>PP_AudioSampleRate</code> which is either
    * <code>PP_AUDIOSAMPLERATE_44100</code> or
    * <code>PP_AUDIOSAMPLERATE_48000</code>.
    * @param[in] sample_frame_count A <code>uint32_t</code> frame count returned
@@ -118,8 +121,11 @@ struct PPB_AudioConfig_1_0 {
    * <code>PP_AUDIOMINSAMPLEFRAMECOUNT</code> and greater than
    * <code>PP_AUDIOMAXSAMPLEFRAMECOUNT</code> are never supported on any
    * system, but values in between aren't necessarily valid. This function
-   * will return a supported count closest to the requested value.
+   * will return a supported count closest to the requested frame count.
    *
+   * RecommendSampleFrameCount() result is intended for audio output devices.
+   *
+   * @param[in] instance
    * @param[in] sample_rate A <code>PP_AudioSampleRate</code> which is either
    * <code>PP_AUDIOSAMPLERATE_44100</code> or
    * <code>PP_AUDIOSAMPLERATE_48000.</code>
@@ -130,6 +136,7 @@ struct PPB_AudioConfig_1_0 {
    * count if successful.
    */
   uint32_t (*RecommendSampleFrameCount)(
+      PP_Instance instance,
       PP_AudioSampleRate sample_rate,
       uint32_t requested_sample_frame_count);
   /**
@@ -167,9 +174,34 @@ struct PPB_AudioConfig_1_0 {
    * RecommendSampleFrameCount() for more on sample frame counts.
    */
   uint32_t (*GetSampleFrameCount)(PP_Resource config);
+  /**
+   * RecommendSampleRate() returns the native sample rate that the browser
+   * is using in the backend.  Applications that use the recommended sample
+   * rate will have potentially better latency and fidelity.  The return value
+   * is indended for audio output devices.  If the output sample rate cannot be
+   * determined, this function can return PP_AUDIOSAMPLERATE_NONE.
+   *
+   * @param[in] instance
+   *
+   * @return A <code>uint32_t</code> containing the recommended sample frame
+   * count if successful.
+   */
+  PP_AudioSampleRate (*RecommendSampleRate)(PP_Instance instance);
 };
 
-typedef struct PPB_AudioConfig_1_0 PPB_AudioConfig;
+typedef struct PPB_AudioConfig_1_1 PPB_AudioConfig;
+
+struct PPB_AudioConfig_1_0 {
+  PP_Resource (*CreateStereo16Bit)(PP_Instance instance,
+                                   PP_AudioSampleRate sample_rate,
+                                   uint32_t sample_frame_count);
+  uint32_t (*RecommendSampleFrameCount)(
+      PP_AudioSampleRate sample_rate,
+      uint32_t requested_sample_frame_count);
+  PP_Bool (*IsAudioConfig)(PP_Resource resource);
+  PP_AudioSampleRate (*GetSampleRate)(PP_Resource config);
+  uint32_t (*GetSampleFrameCount)(PP_Resource config);
+};
 /**
  * @}
  */

@@ -1,12 +1,11 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 ''' Base class for preprocessing of RC files.
 '''
 
-import sys
 
 class PreProcessor(object):
   ''' Base class for preprocessing of the RC file data before being

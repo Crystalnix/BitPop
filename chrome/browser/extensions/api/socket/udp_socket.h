@@ -4,40 +4,62 @@
 
 #ifndef CHROME_BROWSER_EXTENSIONS_API_SOCKET_UDP_SOCKET_H_
 #define CHROME_BROWSER_EXTENSIONS_API_SOCKET_UDP_SOCKET_H_
-#pragma once
 
 #include <string>
 
 #include "chrome/browser/extensions/api/socket/socket.h"
-#include "chrome/browser/extensions/api/socket/socket_event_notifier.h"
-
-// This looks like it should be forward-declarable, but it does some tricky
-// moves that make it easier to just include it.
-#include "net/udp/datagram_client_socket.h"
-
-namespace net {
-class Socket;
-}
+#include "net/udp/udp_socket.h"
 
 namespace extensions {
 
+class ApiResourceEventNotifier;
+
 class UDPSocket : public Socket {
  public:
-  UDPSocket(net::DatagramClientSocket* datagram_client_socket,
-            const std::string& address, int port,
-            SocketEventNotifier* event_notifier);
+  explicit UDPSocket(ApiResourceEventNotifier* event_notifier);
   virtual ~UDPSocket();
 
-  virtual int Connect() OVERRIDE;
+  virtual void Connect(const std::string& address,
+                       int port,
+                       const CompletionCallback& callback) OVERRIDE;
   virtual void Disconnect() OVERRIDE;
+  virtual int Bind(const std::string& address, int port) OVERRIDE;
+  virtual void Read(int count,
+                    const ReadCompletionCallback& callback) OVERRIDE;
+  virtual void RecvFrom(int count,
+                        const RecvFromCompletionCallback& callback) OVERRIDE;
+  virtual void SendTo(scoped_refptr<net::IOBuffer> io_buffer,
+                      int byte_count,
+                      const std::string& address,
+                      int port,
+                      const CompletionCallback& callback) OVERRIDE;
+  virtual bool IsTCPSocket() OVERRIDE;
+  virtual bool GetPeerAddress(net::IPEndPoint* address) OVERRIDE;
+  virtual bool GetLocalAddress(net::IPEndPoint* address) OVERRIDE;
 
  protected:
-  virtual net::Socket* socket() OVERRIDE;
+  virtual int WriteImpl(net::IOBuffer* io_buffer,
+                        int io_buffer_size,
+                        const net::CompletionCallback& callback) OVERRIDE;
 
  private:
-  scoped_ptr<net::DatagramClientSocket> socket_;
-  const std::string address_;
-  int port_;
+  // Make net::IPEndPoint can be refcounted
+  typedef base::RefCountedData<net::IPEndPoint> IPEndPoint;
+
+  void OnReadComplete(scoped_refptr<net::IOBuffer> io_buffer,
+                      int result);
+  void OnRecvFromComplete(scoped_refptr<net::IOBuffer> io_buffer,
+                          scoped_refptr<IPEndPoint> address,
+                          int result);
+  void OnSendToComplete(int result);
+
+  net::UDPSocket socket_;
+
+  ReadCompletionCallback read_callback_;
+
+  RecvFromCompletionCallback recv_from_callback_;
+
+  CompletionCallback send_to_callback_;
 };
 
 }  //  namespace extensions

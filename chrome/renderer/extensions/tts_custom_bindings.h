@@ -4,7 +4,6 @@
 
 #ifndef CHROME_RENDERER_EXTENSIONS_TTS_CUSTOM_BINDINGS_H_
 #define CHROME_RENDERER_EXTENSIONS_TTS_CUSTOM_BINDINGS_H_
-#pragma once
 
 #include "chrome/renderer/extensions/chrome_v8_extension.h"
 
@@ -13,10 +12,10 @@ namespace extensions {
 // Implements custom bindings for the tts API.
 class TTSCustomBindings : public ChromeV8Extension {
  public:
-  TTSCustomBindings(int dependency_count, const char** dependencies);
+  TTSCustomBindings();
 
-  virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(
-      v8::Handle<v8::String> name) OVERRIDE;
+ private:
+  static v8::Handle<v8::Value> GetNextTTSEventId(const v8::Arguments& args);
 };
 
 }  // extensions

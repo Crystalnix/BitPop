@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,14 +6,18 @@
 
 #include <atlbase.h>
 #include <atlcom.h>
+#include <UIAutomationClient.h>
 
 #include <vector>
 
+#include "base/win/windows_version.h"
 #include "third_party/iaccessible2/ia2_api_all.h"
 #include "ui/base/accessibility/accessible_text_utils.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/view_prop.h"
+#include "ui/base/win/accessibility_misc_utils.h"
 #include "ui/base/win/atl_module.h"
+#include "ui/views/controls/button/custom_button.h"
 #include "ui/views/widget/native_widget_win.h"
 #include "ui/views/widget/widget.h"
 
@@ -318,6 +322,7 @@ STDMETHODIMP NativeViewAccessibilityWin::get_accFocus(VARIANT* focus_child) {
     focus_child->lVal = CHILDID_SELF;
   } else if (focus && view_->Contains(focus)) {
     // Return the child object that has the keyboard focus.
+    focus_child->vt = VT_DISPATCH;
     focus_child->pdispVal = focus->GetNativeViewAccessible();
     focus_child->pdispVal->AddRef();
     return S_OK;
@@ -786,12 +791,65 @@ STDMETHODIMP NativeViewAccessibilityWin::QueryService(
 
   if (guidService == IID_IAccessible ||
       guidService == IID_IAccessible2 ||
-      guidService == IID_IAccessibleText) {
+      guidService == IID_IAccessibleText)  {
+    return QueryInterface(riid, object);
+  }
+
+  // We only support the IAccessibleEx interface on Windows 8 and above. This
+  // is needed for the On screen Keyboard to show up in metro mode, when the
+  // user taps an editable region in the window.
+  // All methods in the IAccessibleEx interface are unimplemented.
+  if (riid == IID_IAccessibleEx &&
+      base::win::GetVersion() >= base::win::VERSION_WIN8) {
     return QueryInterface(riid, object);
   }
 
   *object = NULL;
   return E_FAIL;
+}
+
+STDMETHODIMP NativeViewAccessibilityWin::GetPatternProvider(
+    PATTERNID id, IUnknown** provider) {
+  DVLOG(1) << "In Function: "
+           << __FUNCTION__
+           << " for pattern id: "
+           << id;
+  if (id == UIA_ValuePatternId || id == UIA_TextPatternId) {
+    ui::AccessibleViewState state;
+    view_->GetAccessibleState(&state);
+    long role = MSAARole(state.role);
+
+    if (role == ROLE_SYSTEM_TEXT) {
+      DVLOG(1) << "Returning UIA text provider";
+      base::win::UIATextProvider::CreateTextProvider(true, provider);
+      return S_OK;
+    }
+  }
+  return E_NOTIMPL;
+}
+
+STDMETHODIMP NativeViewAccessibilityWin::GetPropertyValue(PROPERTYID id,
+                                                           VARIANT* ret) {
+  DVLOG(1) << "In Function: "
+           << __FUNCTION__
+           << " for property id: "
+           << id;
+  if (id == UIA_ControlTypePropertyId) {
+    ui::AccessibleViewState state;
+    view_->GetAccessibleState(&state);
+    long role = MSAARole(state.role);
+    if (role == ROLE_SYSTEM_TEXT) {
+      V_VT(ret) = VT_I4;
+      ret->lVal = UIA_EditControlTypeId;
+      DVLOG(1) << "Returning Edit control type";
+    } else {
+      DVLOG(1) << "Returning empty control type";
+      V_VT(ret) = VT_EMPTY;
+    }
+  } else {
+    V_VT(ret) = VT_EMPTY;
+  }
+  return S_OK;
 }
 
 //
@@ -830,7 +888,7 @@ int32 NativeViewAccessibilityWin::MSAAEvent(AccessibilityTypes::Event event) {
 int32 NativeViewAccessibilityWin::MSAARole(AccessibilityTypes::Role role) {
   switch (role) {
     case AccessibilityTypes::ROLE_ALERT:
-return ROLE_SYSTEM_ALERT;
+      return ROLE_SYSTEM_ALERT;
     case AccessibilityTypes::ROLE_APPLICATION:
       return ROLE_SYSTEM_APPLICATION;
     case AccessibilityTypes::ROLE_BUTTONDROPDOWN:
@@ -877,6 +935,8 @@ return ROLE_SYSTEM_ALERT;
       return ROLE_SYSTEM_SCROLLBAR;
     case AccessibilityTypes::ROLE_SEPARATOR:
       return ROLE_SYSTEM_SEPARATOR;
+    case AccessibilityTypes::ROLE_SLIDER:
+      return ROLE_SYSTEM_SLIDER;
     case AccessibilityTypes::ROLE_STATICTEXT:
       return ROLE_SYSTEM_STATICTEXT;
     case AccessibilityTypes::ROLE_TEXT:
@@ -977,8 +1037,11 @@ void NativeViewAccessibilityWin::SetState(
     msaa_state->lVal |= STATE_SYSTEM_UNAVAILABLE;
   if (!view->visible())
     msaa_state->lVal |= STATE_SYSTEM_INVISIBLE;
-  if (view->IsHotTracked())
-    msaa_state->lVal |= STATE_SYSTEM_HOTTRACKED;
+  if (view->GetClassName() == views::CustomButton::kViewClassName) {
+    views::CustomButton* button = static_cast<views::CustomButton*>(view);
+    if (button->IsHotTracked())
+      msaa_state->lVal |= STATE_SYSTEM_HOTTRACKED;
+  }
   if (view->HasFocus())
     msaa_state->lVal |= STATE_SYSTEM_FOCUSED;
 

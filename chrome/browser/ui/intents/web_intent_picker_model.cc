@@ -4,82 +4,166 @@
 
 #include "chrome/browser/ui/intents/web_intent_picker_model.h"
 
+#include <algorithm>
+
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "chrome/browser/ui/intents/web_intent_picker_model_observer.h"
+#include "grit/generated_resources.h"
 #include "grit/ui_resources.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 
+namespace {
+
+const size_t kMaxSuggestionCount = 5;  // Maximum number of visible suggestions.
+
+}  // namespace
+
 WebIntentPickerModel::WebIntentPickerModel()
-    : observer_(NULL),
-      inline_disposition_index_(std::string::npos) {
+    : observer_(NULL) {
 }
 
 WebIntentPickerModel::~WebIntentPickerModel() {
-  DestroyItems();
+  DestroyAll();
 }
 
-void WebIntentPickerModel::AddItem(const string16& title,
-                                   const GURL& url,
-                                   Disposition disposition) {
-  items_.push_back(new Item(title, url, disposition));
+void WebIntentPickerModel::AddInstalledService(const string16& title,
+                                               const GURL& url,
+                                               Disposition disposition) {
+  // TODO(groby): Revisit to remove O(n^2) complexity.
+  for (size_t i = 0; i < installed_services_.size(); ++i) {
+    InstalledService* service = installed_services_[i];
+    if (service->title == title && service->url == url &&
+        service->disposition == disposition)
+      return;
+  }
+  installed_services_.push_back(new InstalledService(title, url, disposition));
   if (observer_)
     observer_->OnModelChanged(this);
 }
 
-void WebIntentPickerModel::RemoveItemAt(size_t index) {
-  DCHECK(index < items_.size());
-  std::vector<Item*>::iterator iter = items_.begin() + index;
-  delete *iter;
-  items_.erase(iter);
+void WebIntentPickerModel::RemoveInstalledServiceAt(size_t index) {
+  DCHECK_LT(index, installed_services_.size());
+  InstalledService* service = installed_services_[index];
+  installed_services_.erase(installed_services_.begin() + index);
+  delete service;
   if (observer_)
     observer_->OnModelChanged(this);
 }
 
 void WebIntentPickerModel::Clear() {
-  DestroyItems();
-  inline_disposition_index_ = std::string::npos;
+  DestroyAll();
+  action_.clear();
+  mimetype_.clear();
+  inline_disposition_url_ = GURL::EmptyGURL();
   if (observer_)
     observer_->OnModelChanged(this);
 }
 
-const WebIntentPickerModel::Item& WebIntentPickerModel::GetItemAt(
-    size_t index) const {
-  DCHECK(index < items_.size());
-  return *items_[index];
+const WebIntentPickerModel::InstalledService&
+    WebIntentPickerModel::GetInstalledServiceAt(size_t index) const {
+  DCHECK_LT(index, installed_services_.size());
+  return *installed_services_[index];
 }
 
-size_t WebIntentPickerModel::GetItemCount() const {
-  return items_.size();
+const WebIntentPickerModel::InstalledService*
+    WebIntentPickerModel::GetInstalledServiceWithURL(const GURL& url) const {
+  for (size_t i = 0; i < installed_services_.size(); ++i) {
+    InstalledService* service = installed_services_[i];
+    if (service->url == url)
+      return service;
+  }
+  return NULL;
+}
+
+size_t WebIntentPickerModel::GetInstalledServiceCount() const {
+  return installed_services_.size();
 }
 
 void WebIntentPickerModel::UpdateFaviconAt(size_t index,
                                            const gfx::Image& image) {
-  DCHECK(index < items_.size());
-  items_[index]->favicon = image;
+  DCHECK_LT(index, installed_services_.size());
+  installed_services_[index]->favicon = image;
   if (observer_)
     observer_->OnFaviconChanged(this, index);
 }
 
-void WebIntentPickerModel::SetInlineDisposition(size_t index) {
-  DCHECK(index < items_.size());
-  inline_disposition_index_ = index;
+void WebIntentPickerModel::AddSuggestedExtension(const string16& title,
+                                                 const string16& id,
+                                                 double average_rating) {
+  suggested_extensions_.push_back(
+      new SuggestedExtension(title, id, average_rating));
   if (observer_)
-    observer_->OnInlineDisposition(this);
+    observer_->OnModelChanged(this);
+}
+
+void WebIntentPickerModel::RemoveSuggestedExtensionAt(size_t index) {
+  DCHECK_LT(index, suggested_extensions_.size());
+  SuggestedExtension* extension = suggested_extensions_[index];
+  suggested_extensions_.erase(suggested_extensions_.begin() + index);
+  delete extension;
+  if (observer_)
+    observer_->OnModelChanged(this);
+}
+
+const WebIntentPickerModel::SuggestedExtension&
+    WebIntentPickerModel::GetSuggestedExtensionAt(size_t index) const {
+  DCHECK_LT(index, suggested_extensions_.size());
+  return *suggested_extensions_[index];
+}
+
+size_t WebIntentPickerModel::GetSuggestedExtensionCount() const {
+  return std::min(suggested_extensions_.size(), kMaxSuggestionCount);
+}
+
+string16 WebIntentPickerModel::GetSuggestionsLinkText() const {
+  if (suggested_extensions_.size() <= kMaxSuggestionCount)
+    return string16();
+
+  return l10n_util::GetStringUTF16(GetInstalledServiceCount() == 0 ?
+      IDS_INTENT_PICKER_GET_MORE_SERVICES_NONE_INSTALLED :
+      IDS_INTENT_PICKER_GET_MORE_SERVICES);
+}
+
+void WebIntentPickerModel::SetSuggestedExtensionIconWithId(
+    const string16& id,
+    const gfx::Image& image) {
+  for (size_t i = 0; i < suggested_extensions_.size(); ++i) {
+    SuggestedExtension* extension = suggested_extensions_[i];
+    if (extension->id == id) {
+      extension->icon = image;
+
+      if (observer_)
+        observer_->OnExtensionIconChanged(this, extension->id);
+      break;
+    }
+  }
+}
+
+void WebIntentPickerModel::SetInlineDisposition(const GURL& url) {
+  inline_disposition_url_ = url;
+  if (observer_) {
+    const InstalledService* service = GetInstalledServiceWithURL(url);
+    DCHECK(service);
+    observer_->OnInlineDisposition(service->title, url);
+  }
 }
 
 bool WebIntentPickerModel::IsInlineDisposition() const {
-  return inline_disposition_index_ != std::string::npos;
+  return !inline_disposition_url_.is_empty();
 }
 
-void WebIntentPickerModel::DestroyItems() {
-  STLDeleteElements(&items_);
+void WebIntentPickerModel::DestroyAll() {
+  STLDeleteElements(&installed_services_);
+  STLDeleteElements(&suggested_extensions_);
 }
 
-WebIntentPickerModel::Item::Item(const string16& title,
-                                 const GURL& url,
-                                 Disposition disposition)
+WebIntentPickerModel::InstalledService::InstalledService(
+    const string16& title,
+    const GURL& url,
+    Disposition disposition)
     : title(title),
       url(url),
       favicon(ui::ResourceBundle::GetSharedInstance().GetNativeImageNamed(
@@ -87,5 +171,19 @@ WebIntentPickerModel::Item::Item(const string16& title,
       disposition(disposition) {
 }
 
-WebIntentPickerModel::Item::~Item() {
+WebIntentPickerModel::InstalledService::~InstalledService() {
+}
+
+WebIntentPickerModel::SuggestedExtension::SuggestedExtension(
+    const string16& title,
+    const string16& id,
+    double average_rating)
+    : title(title),
+      id(id),
+      average_rating(average_rating),
+      icon(ui::ResourceBundle::GetSharedInstance().GetNativeImageNamed(
+          IDR_DEFAULT_FAVICON)) {
+}
+
+WebIntentPickerModel::SuggestedExtension::~SuggestedExtension() {
 }

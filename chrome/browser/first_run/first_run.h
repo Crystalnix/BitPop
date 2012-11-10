@@ -4,8 +4,8 @@
 
 #ifndef CHROME_BROWSER_FIRST_RUN_FIRST_RUN_H_
 #define CHROME_BROWSER_FIRST_RUN_FIRST_RUN_H_
-#pragma once
 
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -19,12 +19,9 @@
 class CommandLine;
 class FilePath;
 class GURL;
+class PrefService;
 class Profile;
 class ProcessSingleton;
-
-// TODO(jennyz): All FirstRun class code will be refactored to first_run
-// namespace progressively with several changelists to be landed. Therefore,
-// we keep first_run namespace and FirstRun in the same file temporarily.
 
 // This namespace contains the chrome first-run installation actions needed to
 // fully test the custom installer. It also contains the opposite actions to
@@ -37,6 +34,12 @@ class ProcessSingleton;
 // install work for this user. After that the sentinel file is created.
 namespace first_run {
 
+enum FirstRunBubbleMetric {
+  FIRST_RUN_BUBBLE_SHOWN = 0,       // The search engine bubble was shown.
+  FIRST_RUN_BUBBLE_CHANGE_INVOKED,  // The bubble's "Change" was invoked.
+  NUM_FIRST_RUN_BUBBLE_METRICS
+};
+
 // See ProcessMasterPreferences for more info about this structure.
 struct MasterPrefs {
   MasterPrefs();
@@ -46,9 +49,8 @@ struct MasterPrefs {
   bool homepage_defined;
   int do_import_items;
   int dont_import_items;
-  bool run_search_engine_experiment;
-  bool randomize_search_engine_experiment;
   bool make_chrome_default;
+  bool suppress_first_run_default_browser_prompt;
   std::vector<GURL> new_tabs;
   std::vector<GURL> bookmarks;
 };
@@ -58,6 +60,12 @@ bool IsChromeFirstRun();
 
 // Creates the sentinel file that signals that chrome has been configured.
 bool CreateSentinel();
+
+// Get RLZ ping delay pref name.
+std::string GetPingDelayPrefName();
+
+// Register user preferences used by the MasterPrefs structure.
+void RegisterUserPrefs(PrefService* prefs);
 
 // Removes the sentinel file created in ConfigDone(). Returns false if the
 // sentinel file could not be removed.
@@ -80,6 +88,9 @@ bool SetShowWelcomePagePref();
 // Returns false if the pref could not be set.
 bool SetPersonalDataManagerFirstRunPref();
 
+// Log a metric for the "FirstRun.SearchEngineBubble" histogram.
+void LogFirstRunMetric(FirstRunBubbleMetric metric);
+
 // -- Platform-specific functions --
 
 // Automatically import history and home page (and search engine, if
@@ -99,6 +110,22 @@ int ImportNow(Profile* profile, const CommandLine& cmdline);
 
 // Returns the path for the master preferences file.
 FilePath MasterPrefsPath();
+
+// The master preferences is a JSON file with the same entries as the
+// 'Default\Preferences' file. This function locates this file from a standard
+// location and processes it so it becomes the default preferences in the
+// profile pointed to by |user_data_dir|. After processing the file, the
+// function returns true if and only if showing the first run dialog is
+// needed. The detailed settings in the preference file are reported via
+// |preference_details|.
+//
+// This function destroys any existing prefs file and it is meant to be
+// invoked only on first run.
+//
+// See chrome/installer/util/master_preferences.h for a description of
+// 'master_preferences' file.
+bool ProcessMasterPreferences(const FilePath& user_data_dir,
+                              MasterPrefs* out_prefs);
 
 // Show the first run search engine bubble at the first appropriate opportunity.
 // This bubble may be delayed by other UI, like global errors and sync promos.
@@ -123,59 +150,5 @@ class FirstRunBubbleLauncher : public content::NotificationObserver {
 };
 
 }  // namespace first_run
-
-// This class contains the chrome first-run installation actions needed to
-// fully test the custom installer. It also contains the opposite actions to
-// execute during uninstall. When the first run UI is ready we won't
-// do the actions unconditionally. Currently the only action is to create a
-// desktop shortcut.
-//
-// The way we detect first-run is by looking at a 'sentinel' file.
-// If it does not exist we understand that we need to do the first time
-// install work for this user. After that the sentinel file is created.
-class FirstRun {
- public:
-
-  // The master preferences is a JSON file with the same entries as the
-  // 'Default\Preferences' file. This function locates this file from a standard
-  // location and processes it so it becomes the default preferences in the
-  // profile pointed to by |user_data_dir|. After processing the file, the
-  // function returns true if and only if showing the first run dialog is
-  // needed. The detailed settings in the preference file are reported via
-  // |preference_details|.
-  //
-  // This function destroys any existing prefs file and it is meant to be
-  // invoked only on first run.
-  //
-  // See chrome/installer/util/master_preferences.h for a description of
-  // 'master_preferences' file.
-  static bool ProcessMasterPreferences(const FilePath& user_data_dir,
-                                       first_run::MasterPrefs* out_prefs);
-
- private:
-
-  // -- Platform-specific functions --
-
-#if defined(OS_WIN)
-  // Writes the EULA to a temporary file, returned in |*eula_path|, and returns
-  // true if successful.
-  static bool WriteEULAtoTempFile(FilePath* eula_path);
-
-  // Launches the setup exe with the given parameter/value on the command-line,
-  // waits for its termination, returns its exit code in |*ret_code|, and
-  // returns true if the exit code is valid.
-  static bool LaunchSetupWithParam(const std::string& param,
-                                   const std::wstring& value,
-                                   int* ret_code);
-
-  // Installs a task to do an extensions update check once the extensions system
-  // is running.
-  static void DoDelayedInstallExtensions();
-
-#endif
-
-  // This class is for scoping purposes.
-  DISALLOW_IMPLICIT_CONSTRUCTORS(FirstRun);
-};
 
 #endif  // CHROME_BROWSER_FIRST_RUN_FIRST_RUN_H_

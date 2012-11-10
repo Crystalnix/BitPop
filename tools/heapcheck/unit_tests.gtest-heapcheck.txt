@@ -1,7 +1,3 @@
-# This test has been failing on our heapchecker bot since circa Build 5778.
-# http://crbug.com/79000
-RendererMainTest.CreateDestroy
-
 # Disable JavaScript tests that cause V8 to install a SIGPROF handler that
 # times out the subsequent fork() calls.
 # http://crbug.com/79320
@@ -27,3 +23,19 @@ ProcessWatcherTest.ImmediateTermination
 
 # Fails under Heapcheck http://crbug.com/104566
 GViewRequestInterceptorTest.DoNotInterceptPdfWhenEnabled
+
+# Two memory leaks with too inconcrete stacks http://crbug.com/114988
+BookmarkEditorGtkTest.ModelsMatch
+BookmarkEditorGtkTest.MoveToNewParent
+
+# fails with gmock errors
+# http://crbug.com/117796
+SyncNewNonFrontendDataTypeControllerTest.StartAfterSyncShutdown
+
+# Randomly fails on the linux heapcheck bot
+HistoryQuickProviderTest.*
+
+# Don't run FLAKY or FAILS tests under the heapchecker.
+# They may cause flaky leak reports and timeouts.
+*FLAKY_*
+*FAILS_*

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,8 @@
 
 namespace fileapi {
 
-const char FileSystemUsageCache::kUsageFileName[] = ".usage";
+const FilePath::CharType FileSystemUsageCache::kUsageFileName[] =
+    FILE_PATH_LITERAL(".usage");
 const char FileSystemUsageCache::kUsageFileHeader[] = "FSU4";
 const int FileSystemUsageCache::kUsageFileHeaderSize = 4;
 
@@ -85,7 +86,10 @@ bool FileSystemUsageCache::Invalidate(const FilePath& usage_file_path) {
 bool FileSystemUsageCache::IsValid(const FilePath& usage_file_path) {
   bool is_valid = true;
   uint32 dirty = 0;
-  Read(usage_file_path, &is_valid, &dirty);
+  int64 result = Read(usage_file_path, &is_valid, &dirty);
+  if (result < 0)
+    return false;
+
   return is_valid;
 }
 
@@ -131,7 +135,7 @@ int64 FileSystemUsageCache::Read(const FilePath& usage_file_path,
       file_util::ReadFile(usage_file_path, buffer, kUsageFileSize))
     return -1;
   Pickle read_pickle(buffer, kUsageFileSize);
-  void* iter = NULL;
+  PickleIterator iter(read_pickle);
   int64 fs_usage;
 
   if (!read_pickle.ReadBytes(&iter, &header, kUsageFileHeaderSize) ||
@@ -162,8 +166,11 @@ int FileSystemUsageCache::Write(const FilePath& usage_file_path,
 
   DCHECK(!usage_file_path.empty());
   FilePath temporary_usage_file_path;
-  file_util::CreateTemporaryFileInDir(usage_file_path.DirName(),
-                                      &temporary_usage_file_path);
+  if (!file_util::CreateTemporaryFileInDir(usage_file_path.DirName(),
+                                           &temporary_usage_file_path)) {
+    return -1;
+  }
+
   int bytes_written = file_util::WriteFile(temporary_usage_file_path,
                                            (const char *)write_pickle.data(),
                                            write_pickle.size());

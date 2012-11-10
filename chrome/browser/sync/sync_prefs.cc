@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,10 @@ SyncPrefObserver::~SyncPrefObserver() {}
 
 SyncPrefs::SyncPrefs(PrefService* pref_service)
     : pref_service_(pref_service) {
+  RegisterPrefGroups();
+  // TODO(tim): Create a Mock instead of maintaining the if(!pref_service_) case
+  // throughout this file.  This is a problem now due to lack of injection at
+  // ProfileSyncService. Bug 130176.
   if (pref_service_) {
     RegisterPreferences();
     // Watch the preference that indicates sync is managed so we can take
@@ -29,68 +33,67 @@ SyncPrefs::SyncPrefs(PrefService* pref_service)
 }
 
 SyncPrefs::~SyncPrefs() {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
 }
 
 void SyncPrefs::AddSyncPrefObserver(SyncPrefObserver* sync_pref_observer) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   sync_pref_observers_.AddObserver(sync_pref_observer);
 }
 
 void SyncPrefs::RemoveSyncPrefObserver(SyncPrefObserver* sync_pref_observer) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   sync_pref_observers_.RemoveObserver(sync_pref_observer);
 }
 
 void SyncPrefs::ClearPreferences() {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   CHECK(pref_service_);
   pref_service_->ClearPref(prefs::kSyncLastSyncedTime);
   pref_service_->ClearPref(prefs::kSyncHasSetupCompleted);
   pref_service_->ClearPref(prefs::kSyncEncryptionBootstrapToken);
+  pref_service_->ClearPref(prefs::kSyncKeystoreEncryptionBootstrapToken);
 
   // TODO(nick): The current behavior does not clear
   // e.g. prefs::kSyncBookmarks.  Is that really what we want?
-
-  pref_service_->ClearPref(prefs::kSyncMaxInvalidationVersions);
 }
 
 bool SyncPrefs::HasSyncSetupCompleted() const {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   return
       pref_service_ &&
       pref_service_->GetBoolean(prefs::kSyncHasSetupCompleted);
 }
 
 void SyncPrefs::SetSyncSetupCompleted() {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   CHECK(pref_service_);
   pref_service_->SetBoolean(prefs::kSyncHasSetupCompleted, true);
   SetStartSuppressed(false);
 }
 
 bool SyncPrefs::IsStartSuppressed() const {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   return
       pref_service_ &&
       pref_service_->GetBoolean(prefs::kSyncSuppressStart);
 }
 
 void SyncPrefs::SetStartSuppressed(bool is_suppressed) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   CHECK(pref_service_);
   pref_service_->SetBoolean(prefs::kSyncSuppressStart, is_suppressed);
 }
 
 std::string SyncPrefs::GetGoogleServicesUsername() const {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   return
       pref_service_ ?
       pref_service_->GetString(prefs::kGoogleServicesUsername) : "";
 }
 
 base::Time SyncPrefs::GetLastSyncedTime() const {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   return
       base::Time::FromInternalValue(
           pref_service_ ?
@@ -98,233 +101,166 @@ base::Time SyncPrefs::GetLastSyncedTime() const {
 }
 
 void SyncPrefs::SetLastSyncedTime(base::Time time) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   CHECK(pref_service_);
   pref_service_->SetInt64(prefs::kSyncLastSyncedTime, time.ToInternalValue());
 }
 
 bool SyncPrefs::HasKeepEverythingSynced() const {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   return
       pref_service_ &&
       pref_service_->GetBoolean(prefs::kSyncKeepEverythingSynced);
 }
 
 void SyncPrefs::SetKeepEverythingSynced(bool keep_everything_synced) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   CHECK(pref_service_);
   pref_service_->SetBoolean(prefs::kSyncKeepEverythingSynced,
                             keep_everything_synced);
 }
 
-syncable::ModelTypeSet SyncPrefs::GetPreferredDataTypes(
-    syncable::ModelTypeSet registered_types) const {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+syncer::ModelTypeSet SyncPrefs::GetPreferredDataTypes(
+    syncer::ModelTypeSet registered_types) const {
+  DCHECK(CalledOnValidThread());
   if (!pref_service_) {
-    return syncable::ModelTypeSet();
+    return syncer::ModelTypeSet();
+  }
+
+  // First remove any datatypes that are inconsistent with the current policies
+  // on the client (so that "keep everything synced" doesn't include them).
+  if (pref_service_->HasPrefPath(prefs::kSavingBrowserHistoryDisabled) &&
+      pref_service_->GetBoolean(prefs::kSavingBrowserHistoryDisabled)) {
+    registered_types.Remove(syncer::TYPED_URLS);
   }
 
   if (pref_service_->GetBoolean(prefs::kSyncKeepEverythingSynced)) {
     return registered_types;
   }
 
-  // Remove autofill_profile since it's controlled by autofill, and
-  // search_engines since it's controlled by preferences (see code below).
-  syncable::ModelTypeSet user_selectable_types(registered_types);
-  DCHECK(!user_selectable_types.Has(syncable::NIGORI));
-  user_selectable_types.Remove(syncable::AUTOFILL_PROFILE);
-  user_selectable_types.Remove(syncable::SEARCH_ENGINES);
-
-  // Remove app_notifications since it's controlled by apps (see
-  // code below).
-  // TODO(akalin): Centralize notion of all user selectable data types.
-  user_selectable_types.Remove(syncable::APP_NOTIFICATIONS);
-
-  syncable::ModelTypeSet preferred_types;
-
-  for (syncable::ModelTypeSet::Iterator it = user_selectable_types.First();
+  syncer::ModelTypeSet preferred_types;
+  for (syncer::ModelTypeSet::Iterator it = registered_types.First();
        it.Good(); it.Inc()) {
     if (GetDataTypePreferred(it.Get())) {
       preferred_types.Put(it.Get());
     }
   }
-
-  // Group the enabled/disabled state of autofill_profile with autofill, and
-  // search_engines with preferences (since only autofill and preferences are
-  // shown on the UI).
-  if (registered_types.Has(syncable::AUTOFILL) &&
-      registered_types.Has(syncable::AUTOFILL_PROFILE) &&
-      GetDataTypePreferred(syncable::AUTOFILL)) {
-    preferred_types.Put(syncable::AUTOFILL_PROFILE);
-  }
-  if (registered_types.Has(syncable::PREFERENCES) &&
-      registered_types.Has(syncable::SEARCH_ENGINES) &&
-      GetDataTypePreferred(syncable::PREFERENCES)) {
-    preferred_types.Put(syncable::SEARCH_ENGINES);
-  }
-
-  // Set app_notifications to the same enabled/disabled state as
-  // apps (since only apps is shown on the UI).
-  if (registered_types.Has(syncable::APPS) &&
-      registered_types.Has(syncable::APP_NOTIFICATIONS) &&
-      GetDataTypePreferred(syncable::APPS)) {
-    preferred_types.Put(syncable::APP_NOTIFICATIONS);
-  }
-
-  return preferred_types;
+  return ResolvePrefGroups(registered_types, preferred_types);
 }
 
 void SyncPrefs::SetPreferredDataTypes(
-    syncable::ModelTypeSet registered_types,
-    syncable::ModelTypeSet preferred_types) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+    syncer::ModelTypeSet registered_types,
+    syncer::ModelTypeSet preferred_types) {
+  DCHECK(CalledOnValidThread());
   CHECK(pref_service_);
   DCHECK(registered_types.HasAll(preferred_types));
-  syncable::ModelTypeSet preferred_types_with_dependents(preferred_types);
-  // Set autofill_profile to the same enabled/disabled state as
-  // autofill (since only autofill is shown in the UI).
-  if (registered_types.Has(syncable::AUTOFILL) &&
-      registered_types.Has(syncable::AUTOFILL_PROFILE)) {
-    if (preferred_types_with_dependents.Has(syncable::AUTOFILL)) {
-      preferred_types_with_dependents.Put(syncable::AUTOFILL_PROFILE);
-    } else {
-      preferred_types_with_dependents.Remove(syncable::AUTOFILL_PROFILE);
-    }
-  }
-  // Set app_notifications to the same enabled/disabled state as
-  // apps (since only apps is shown in the UI).
-  if (registered_types.Has(syncable::APPS) &&
-      registered_types.Has(syncable::APP_NOTIFICATIONS)) {
-    if (preferred_types_with_dependents.Has(syncable::APPS)) {
-      preferred_types_with_dependents.Put(syncable::APP_NOTIFICATIONS);
-    } else {
-      preferred_types_with_dependents.Remove(syncable::APP_NOTIFICATIONS);
-    }
-  }
-  // Set search_engines to the same enabled/disabled state as
-  // preferences (since only preferences is shown in the UI).
-  if (registered_types.Has(syncable::PREFERENCES) &&
-      registered_types.Has(syncable::SEARCH_ENGINES)) {
-    if (preferred_types_with_dependents.Has(syncable::PREFERENCES)) {
-      preferred_types_with_dependents.Put(syncable::SEARCH_ENGINES);
-    } else {
-      preferred_types_with_dependents.Remove(syncable::SEARCH_ENGINES);
-    }
-  }
-
-  for (syncable::ModelTypeSet::Iterator it = registered_types.First();
-       it.Good(); it.Inc()) {
-    SetDataTypePreferred(
-        it.Get(), preferred_types_with_dependents.Has(it.Get()));
+  preferred_types = ResolvePrefGroups(registered_types, preferred_types);
+  for (syncer::ModelTypeSet::Iterator i = registered_types.First();
+       i.Good(); i.Inc()) {
+    SetDataTypePreferred(i.Get(), preferred_types.Has(i.Get()));
   }
 }
 
 bool SyncPrefs::IsManaged() const {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   return pref_service_ && pref_service_->GetBoolean(prefs::kSyncManaged);
 }
 
 std::string SyncPrefs::GetEncryptionBootstrapToken() const {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   return
       pref_service_ ?
       pref_service_->GetString(prefs::kSyncEncryptionBootstrapToken) : "";
 }
 
 void SyncPrefs::SetEncryptionBootstrapToken(const std::string& token) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
-  CHECK(pref_service_);
+  DCHECK(CalledOnValidThread());
   pref_service_->SetString(prefs::kSyncEncryptionBootstrapToken, token);
 }
 
-sync_notifier::InvalidationVersionMap SyncPrefs::GetAllMaxVersions() const {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
-  if (!pref_service_) {
-    return sync_notifier::InvalidationVersionMap();
-  }
-  // Complicated gross code to convert from a string -> string
-  // DictionaryValue to a ModelType -> int64 map.
-  const base::DictionaryValue* max_versions_dict =
-      pref_service_->GetDictionary(prefs::kSyncMaxInvalidationVersions);
-  CHECK(max_versions_dict);
-  sync_notifier::InvalidationVersionMap max_versions;
-  for (base::DictionaryValue::key_iterator it =
-           max_versions_dict->begin_keys();
-       it != max_versions_dict->end_keys(); ++it) {
-    int model_type_int = 0;
-    if (!base::StringToInt(*it, &model_type_int)) {
-      LOG(WARNING) << "Invalid model type key: " << *it;
-      continue;
-    }
-    if ((model_type_int < syncable::FIRST_REAL_MODEL_TYPE) ||
-        (model_type_int >= syncable::MODEL_TYPE_COUNT)) {
-      LOG(WARNING) << "Out-of-range model type key: " << model_type_int;
-      continue;
-    }
-    const syncable::ModelType model_type =
-        syncable::ModelTypeFromInt(model_type_int);
-    std::string max_version_str;
-    CHECK(max_versions_dict->GetString(*it, &max_version_str));
-    int64 max_version = 0;
-    if (!base::StringToInt64(max_version_str, &max_version)) {
-      LOG(WARNING) << "Invalid max invalidation version for "
-                   << syncable::ModelTypeToString(model_type) << ": "
-                   << max_version_str;
-      continue;
-    }
-    max_versions[model_type] = max_version;
-  }
-  return max_versions;
+std::string SyncPrefs::GetKeystoreEncryptionBootstrapToken() const {
+  DCHECK(CalledOnValidThread());
+  return
+      pref_service_ ?
+      pref_service_->GetString(prefs::kSyncKeystoreEncryptionBootstrapToken) :
+      "";
 }
 
-void SyncPrefs::SetMaxVersion(syncable::ModelType model_type,
-                              int64 max_version) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
-  DCHECK(syncable::IsRealDataType(model_type));
-  CHECK(pref_service_);
-  sync_notifier::InvalidationVersionMap max_versions =
-      GetAllMaxVersions();
-  sync_notifier::InvalidationVersionMap::iterator it =
-      max_versions.find(model_type);
-  if ((it != max_versions.end()) && (max_version <= it->second)) {
-    NOTREACHED();
-    return;
-  }
-  max_versions[model_type] = max_version;
-
-  // Gross code to convert from a ModelType -> int64 map to a string
-  // -> string DictionaryValue.
-  base::DictionaryValue max_versions_dict;
-  for (sync_notifier::InvalidationVersionMap::const_iterator it =
-           max_versions.begin();
-       it != max_versions.end(); ++it) {
-    max_versions_dict.SetString(
-        base::IntToString(it->first),
-        base::Int64ToString(it->second));
-  }
-  pref_service_->Set(prefs::kSyncMaxInvalidationVersions, max_versions_dict);
+void SyncPrefs::SetKeystoreEncryptionBootstrapToken(const std::string& token) {
+  DCHECK(CalledOnValidThread());
+  pref_service_->SetString(prefs::kSyncKeystoreEncryptionBootstrapToken, token);
 }
 
-void SyncPrefs::AcknowledgeSyncedTypes(
-    syncable::ModelTypeSet types) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+// static
+const char* SyncPrefs::GetPrefNameForDataType(syncer::ModelType data_type) {
+  switch (data_type) {
+    case syncer::BOOKMARKS:
+      return prefs::kSyncBookmarks;
+    case syncer::PASSWORDS:
+      return prefs::kSyncPasswords;
+    case syncer::PREFERENCES:
+      return prefs::kSyncPreferences;
+    case syncer::AUTOFILL:
+      return prefs::kSyncAutofill;
+    case syncer::AUTOFILL_PROFILE:
+      return prefs::kSyncAutofillProfile;
+    case syncer::THEMES:
+      return prefs::kSyncThemes;
+    case syncer::TYPED_URLS:
+      return prefs::kSyncTypedUrls;
+    case syncer::EXTENSION_SETTINGS:
+      return prefs::kSyncExtensionSettings;
+    case syncer::EXTENSIONS:
+      return prefs::kSyncExtensions;
+    case syncer::APP_SETTINGS:
+      return prefs::kSyncAppSettings;
+    case syncer::APPS:
+      return prefs::kSyncApps;
+    case syncer::SEARCH_ENGINES:
+      return prefs::kSyncSearchEngines;
+    case syncer::SESSIONS:
+      return prefs::kSyncSessions;
+    case syncer::APP_NOTIFICATIONS:
+      return prefs::kSyncAppNotifications;
+    default:
+      break;
+  }
+  NOTREACHED();
+  return NULL;
+}
+
+#if defined(OS_CHROMEOS)
+std::string SyncPrefs::GetSpareBootstrapToken() const {
+  DCHECK(CalledOnValidThread());
+  return pref_service_ ?
+      pref_service_->GetString(prefs::kSyncSpareBootstrapToken) : "";
+}
+
+void SyncPrefs::SetSpareBootstrapToken(const std::string& token) {
+  DCHECK(CalledOnValidThread());
+  pref_service_->SetString(prefs::kSyncSpareBootstrapToken, token);
+}
+#endif
+
+void SyncPrefs::AcknowledgeSyncedTypes(syncer::ModelTypeSet types) {
+  DCHECK(CalledOnValidThread());
   CHECK(pref_service_);
   // Add the types to the current set of acknowledged
   // types, and then store the resulting set in prefs.
-  const syncable::ModelTypeSet acknowledged_types =
+  const syncer::ModelTypeSet acknowledged_types =
       Union(types,
-            syncable::ModelTypeSetFromValue(
+            syncer::ModelTypeSetFromValue(
                 *pref_service_->GetList(prefs::kSyncAcknowledgedSyncTypes)));
 
   scoped_ptr<ListValue> value(
-      syncable::ModelTypeSetToValue(acknowledged_types));
+      syncer::ModelTypeSetToValue(acknowledged_types));
   pref_service_->Set(prefs::kSyncAcknowledgedSyncTypes, *value);
 }
 
 void SyncPrefs::Observe(int type,
                         const content::NotificationSource& source,
                         const content::NotificationDetails& details) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   DCHECK(content::Source<PrefService>(pref_service_) == source);
   switch (type) {
     case chrome::NOTIFICATION_PREF_CHANGED: {
@@ -343,63 +279,33 @@ void SyncPrefs::Observe(int type,
 }
 
 void SyncPrefs::SetManagedForTest(bool is_managed) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   CHECK(pref_service_);
   pref_service_->SetBoolean(prefs::kSyncManaged, is_managed);
 }
 
-syncable::ModelTypeSet SyncPrefs::GetAcknowledgeSyncedTypesForTest() const {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+syncer::ModelTypeSet SyncPrefs::GetAcknowledgeSyncedTypesForTest() const {
+  DCHECK(CalledOnValidThread());
   if (!pref_service_) {
-    return syncable::ModelTypeSet();
+    return syncer::ModelTypeSet();
   }
-  return syncable::ModelTypeSetFromValue(
+  return syncer::ModelTypeSetFromValue(
       *pref_service_->GetList(prefs::kSyncAcknowledgedSyncTypes));
 }
 
-namespace {
+void SyncPrefs::RegisterPrefGroups() {
+  pref_groups_[syncer::APPS].Put(syncer::APP_NOTIFICATIONS);
+  pref_groups_[syncer::APPS].Put(syncer::APP_SETTINGS);
 
-const char* GetPrefNameForDataType(syncable::ModelType data_type) {
-  switch (data_type) {
-    case syncable::BOOKMARKS:
-      return prefs::kSyncBookmarks;
-    case syncable::PASSWORDS:
-      return prefs::kSyncPasswords;
-    case syncable::PREFERENCES:
-      return prefs::kSyncPreferences;
-    case syncable::AUTOFILL:
-      return prefs::kSyncAutofill;
-    case syncable::AUTOFILL_PROFILE:
-      return prefs::kSyncAutofillProfile;
-    case syncable::THEMES:
-      return prefs::kSyncThemes;
-    case syncable::TYPED_URLS:
-      return prefs::kSyncTypedUrls;
-    case syncable::EXTENSION_SETTINGS:
-      return prefs::kSyncExtensionSettings;
-    case syncable::EXTENSIONS:
-      return prefs::kSyncExtensions;
-    case syncable::APP_SETTINGS:
-      return prefs::kSyncAppSettings;
-    case syncable::APPS:
-      return prefs::kSyncApps;
-    case syncable::SEARCH_ENGINES:
-      return prefs::kSyncSearchEngines;
-    case syncable::SESSIONS:
-      return prefs::kSyncSessions;
-    case syncable::APP_NOTIFICATIONS:
-      return prefs::kSyncAppNotifications;
-    default:
-      break;
-  }
-  NOTREACHED();
-  return NULL;
+  pref_groups_[syncer::AUTOFILL].Put(syncer::AUTOFILL_PROFILE);
+
+  pref_groups_[syncer::EXTENSIONS].Put(syncer::EXTENSION_SETTINGS);
+
+  pref_groups_[syncer::PREFERENCES].Put(syncer::SEARCH_ENGINES);
 }
 
-}  // namespace
-
 void SyncPrefs::RegisterPreferences() {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   CHECK(pref_service_);
   if (pref_service_->FindPreference(prefs::kSyncLastSyncedTime)) {
     return;
@@ -431,11 +337,11 @@ void SyncPrefs::RegisterPreferences() {
                                      PrefService::UNSYNCABLE_PREF);
 
   // Treat bookmarks specially.
-  RegisterDataTypePreferredPref(syncable::BOOKMARKS, true);
-  for (int i = syncable::PREFERENCES; i < syncable::MODEL_TYPE_COUNT; ++i) {
-    const syncable::ModelType type = syncable::ModelTypeFromInt(i);
+  RegisterDataTypePreferredPref(syncer::BOOKMARKS, true);
+  for (int i = syncer::PREFERENCES; i < syncer::MODEL_TYPE_COUNT; ++i) {
+    const syncer::ModelType type = syncer::ModelTypeFromInt(i);
     // Also treat nigori specially.
-    if (type == syncable::NIGORI) {
+    if (type == syncer::NIGORI) {
       continue;
     }
     RegisterDataTypePreferredPref(type, enable_by_default);
@@ -447,34 +353,40 @@ void SyncPrefs::RegisterPreferences() {
   pref_service_->RegisterStringPref(prefs::kSyncEncryptionBootstrapToken,
                                     "",
                                     PrefService::UNSYNCABLE_PREF);
+  pref_service_->RegisterStringPref(
+      prefs::kSyncKeystoreEncryptionBootstrapToken,
+      "",
+      PrefService::UNSYNCABLE_PREF);
+#if defined(OS_CHROMEOS)
+  pref_service_->RegisterStringPref(prefs::kSyncSpareBootstrapToken,
+                                    "",
+                                    PrefService::UNSYNCABLE_PREF);
+#endif
 
   // We will start prompting people about new data types after the launch of
   // SESSIONS - all previously launched data types are treated as if they are
   // already acknowledged.
-  syncable::ModelTypeSet model_set;
-  model_set.Put(syncable::BOOKMARKS);
-  model_set.Put(syncable::PREFERENCES);
-  model_set.Put(syncable::PASSWORDS);
-  model_set.Put(syncable::AUTOFILL_PROFILE);
-  model_set.Put(syncable::AUTOFILL);
-  model_set.Put(syncable::THEMES);
-  model_set.Put(syncable::EXTENSIONS);
-  model_set.Put(syncable::NIGORI);
-  model_set.Put(syncable::SEARCH_ENGINES);
-  model_set.Put(syncable::APPS);
-  model_set.Put(syncable::TYPED_URLS);
-  model_set.Put(syncable::SESSIONS);
+  syncer::ModelTypeSet model_set;
+  model_set.Put(syncer::BOOKMARKS);
+  model_set.Put(syncer::PREFERENCES);
+  model_set.Put(syncer::PASSWORDS);
+  model_set.Put(syncer::AUTOFILL_PROFILE);
+  model_set.Put(syncer::AUTOFILL);
+  model_set.Put(syncer::THEMES);
+  model_set.Put(syncer::EXTENSIONS);
+  model_set.Put(syncer::NIGORI);
+  model_set.Put(syncer::SEARCH_ENGINES);
+  model_set.Put(syncer::APPS);
+  model_set.Put(syncer::TYPED_URLS);
+  model_set.Put(syncer::SESSIONS);
   pref_service_->RegisterListPref(prefs::kSyncAcknowledgedSyncTypes,
-                                  syncable::ModelTypeSetToValue(model_set),
+                                  syncer::ModelTypeSetToValue(model_set),
                                   PrefService::UNSYNCABLE_PREF);
-
-  pref_service_->RegisterDictionaryPref(prefs::kSyncMaxInvalidationVersions,
-                                        PrefService::UNSYNCABLE_PREF);
 }
 
-void SyncPrefs::RegisterDataTypePreferredPref(syncable::ModelType type,
+void SyncPrefs::RegisterDataTypePreferredPref(syncer::ModelType type,
                                               bool is_preferred) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   CHECK(pref_service_);
   const char* pref_name = GetPrefNameForDataType(type);
   if (!pref_name) {
@@ -485,8 +397,8 @@ void SyncPrefs::RegisterDataTypePreferredPref(syncable::ModelType type,
                                      PrefService::UNSYNCABLE_PREF);
 }
 
-bool SyncPrefs::GetDataTypePreferred(syncable::ModelType type) const {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+bool SyncPrefs::GetDataTypePreferred(syncer::ModelType type) const {
+  DCHECK(CalledOnValidThread());
   if (!pref_service_) {
     return false;
   }
@@ -500,8 +412,8 @@ bool SyncPrefs::GetDataTypePreferred(syncable::ModelType type) const {
 }
 
 void SyncPrefs::SetDataTypePreferred(
-    syncable::ModelType type, bool is_preferred) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+    syncer::ModelType type, bool is_preferred) {
+  DCHECK(CalledOnValidThread());
   CHECK(pref_service_);
   const char* pref_name = GetPrefNameForDataType(type);
   if (!pref_name) {
@@ -509,6 +421,22 @@ void SyncPrefs::SetDataTypePreferred(
     return;
   }
   pref_service_->SetBoolean(pref_name, is_preferred);
+}
+
+syncer::ModelTypeSet SyncPrefs::ResolvePrefGroups(
+    syncer::ModelTypeSet registered_types,
+    syncer::ModelTypeSet types) const {
+  DCHECK(registered_types.HasAll(types));
+  syncer::ModelTypeSet types_with_groups = types;
+  for (PrefGroupsMap::const_iterator i = pref_groups_.begin();
+      i != pref_groups_.end(); ++i) {
+    if (types.Has(i->first))
+      types_with_groups.PutAll(i->second);
+    else
+      types_with_groups.RemoveAll(i->second);
+  }
+  types_with_groups.RetainAll(registered_types);
+  return types_with_groups;
 }
 
 }  // namespace browser_sync

@@ -1,25 +1,25 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/themes/browser_theme_pack.h"
 
 #include "base/file_util.h"
+#include "base/json/json_file_value_serializer.h"
 #include "base/json/json_reader.h"
-#include "base/json/json_value_serializer.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
 #include "base/values.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/common/chrome_paths.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "grit/theme_resources.h"
-#include "grit/theme_resources_standard.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/color_utils.h"
 
 using content::BrowserThread;
+using extensions::Extension;
 
 class BrowserThemePackTest : public ::testing::Test {
  public:
@@ -79,7 +79,7 @@ class BrowserThemePackTest : public ::testing::Test {
   }
 
   void LoadColorJSON(const std::string& json) {
-    scoped_ptr<Value> value(base::JSONReader::Read(json, false));
+    scoped_ptr<Value> value(base::JSONReader::Read(json));
     ASSERT_TRUE(value->IsType(Value::TYPE_DICTIONARY));
     LoadColorDictionary(static_cast<DictionaryValue*>(value.get()));
   }
@@ -89,7 +89,7 @@ class BrowserThemePackTest : public ::testing::Test {
   }
 
   void LoadTintJSON(const std::string& json) {
-    scoped_ptr<Value> value(base::JSONReader::Read(json, false));
+    scoped_ptr<Value> value(base::JSONReader::Read(json));
     ASSERT_TRUE(value->IsType(Value::TYPE_DICTIONARY));
     LoadTintDictionary(static_cast<DictionaryValue*>(value.get()));
   }
@@ -99,7 +99,7 @@ class BrowserThemePackTest : public ::testing::Test {
   }
 
   void LoadDisplayPropertiesJSON(const std::string& json) {
-    scoped_ptr<Value> value(base::JSONReader::Read(json, false));
+    scoped_ptr<Value> value(base::JSONReader::Read(json));
     ASSERT_TRUE(value->IsType(Value::TYPE_DICTIONARY));
     LoadDisplayPropertiesDictionary(static_cast<DictionaryValue*>(value.get()));
   }
@@ -110,7 +110,7 @@ class BrowserThemePackTest : public ::testing::Test {
 
   void ParseImageNamesJSON(const std::string& json,
                        std::map<int, FilePath>* out_file_paths) {
-    scoped_ptr<Value> value(base::JSONReader::Read(json, false));
+    scoped_ptr<Value> value(base::JSONReader::Read(json));
     ASSERT_TRUE(value->IsType(Value::TYPE_DICTIONARY));
     ParseImageNamesDictionary(static_cast<DictionaryValue*>(value.get()),
                               out_file_paths);
@@ -126,7 +126,7 @@ class BrowserThemePackTest : public ::testing::Test {
 
   bool LoadRawBitmapsTo(const std::map<int, FilePath>& out_file_paths) {
     return theme_pack_->LoadRawBitmapsTo(out_file_paths,
-                                         &theme_pack_->prepared_images_);
+                                         &theme_pack_->images_on_ui_thread_);
   }
 
   FilePath GetStarGazingPath() {
@@ -410,7 +410,7 @@ TEST_F(BrowserThemePackTest, CanBuildAndReadPack) {
     ASSERT_TRUE(valid_value.get());
     scoped_refptr<Extension> extension(Extension::Create(
         star_gazing_path, Extension::INVALID, *valid_value,
-        Extension::REQUIRE_KEY | Extension::STRICT_ERROR_CHECKS, &error));
+        Extension::REQUIRE_KEY, &error));
     ASSERT_TRUE(extension.get());
     ASSERT_EQ("", error);
 

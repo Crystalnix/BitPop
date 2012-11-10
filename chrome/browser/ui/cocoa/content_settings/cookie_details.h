@@ -1,17 +1,20 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import <Cocoa/Cocoa.h>
 
 #include "base/memory/scoped_nsobject.h"
-#include "chrome/browser/browsing_data_database_helper.h"
-#include "chrome/browser/browsing_data_indexed_db_helper.h"
-#include "chrome/browser/browsing_data_local_storage_helper.h"
-#include "net/base/cookie_monster.h"
+#include "chrome/browser/browsing_data/browsing_data_database_helper.h"
+#include "chrome/browser/browsing_data/browsing_data_indexed_db_helper.h"
+#include "chrome/browser/browsing_data/browsing_data_local_storage_helper.h"
 #include "webkit/appcache/appcache_service.h"
 
 class CookieTreeNode;
+
+namespace net {
+class CanonicalCookie;
+}
 
 // This enum specifies the type of information contained in the
 // cookie details.
@@ -161,8 +164,7 @@ enum CocoaCookieDetailsType {
 - (id)initAsFolder;
 
 // Used for cookie details in both the cookie tree and the cookie prompt dialog.
-- (id)initWithCookie:(const net::CookieMonster::CanonicalCookie*)treeNode
-              origin:(NSString*)origin
+- (id)initWithCookie:(const net::CanonicalCookie*)treeNode
    canEditExpiration:(BOOL)canEditExpiration;
 
 // Used for database details in the cookie tree.
@@ -181,7 +183,7 @@ enum CocoaCookieDetailsType {
 
 // -initWithAppCacheInfo: creates a cookie details with the manifest URL plus
 // all of this additional information that is available after an appcache is
-// actually created, including it's creation date, size and last accessed time.
+// actually created, including its creation date, size and last accessed time.
 - (id)initWithAppCacheInfo:(const appcache::AppCacheInfo*)appcacheInfo;
 
 // Used for local storage details in the cookie prompt dialog.

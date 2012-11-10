@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef NET_HTTP_HTTP_RESPONSE_HEADERS_H_
 #define NET_HTTP_HTTP_RESPONSE_HEADERS_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -13,9 +12,11 @@
 #include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "net/base/net_export.h"
+#include "net/base/net_log.h"
 #include "net/http/http_version.h"
 
 class Pickle;
+class PickleIterator;
 
 namespace base {
 class Time;
@@ -37,6 +38,7 @@ class NET_EXPORT HttpResponseHeaders
   static const PersistOptions PERSIST_SANS_HOP_BY_HOP = 1 << 2;
   static const PersistOptions PERSIST_SANS_NON_CACHEABLE = 1 << 3;
   static const PersistOptions PERSIST_SANS_RANGES = 1 << 4;
+  static const PersistOptions PERSIST_SANS_SECURITY_STATE = 1 << 5;
 
   // Parses the given raw_headers.  raw_headers should be formatted thus:
   // includes the http status response line, each line is \0-terminated, and
@@ -51,7 +53,7 @@ class NET_EXPORT HttpResponseHeaders
   // Initializes from the representation stored in the given pickle.  The data
   // for this object is found relative to the given pickle_iter, which should
   // be passed to the pickle's various Read* methods.
-  HttpResponseHeaders(const Pickle& pickle, void** pickle_iter);
+  HttpResponseHeaders(const Pickle& pickle, PickleIterator* pickle_iter);
 
   // Appends a representation of this object to the given pickle.
   // The options argument can be a combination of PersistOptions.
@@ -63,9 +65,9 @@ class NET_EXPORT HttpResponseHeaders
   // Removes all instances of a particular header.
   void RemoveHeader(const std::string& name);
 
-  // Removes a particular header. The header name is compared
+  // Removes a particular header line. The header name is compared
   // case-insensitively.
-  void RemoveHeaderWithValue(const std::string& name, const std::string& value);
+  void RemoveHeaderLine(const std::string& name, const std::string& value);
 
   // Adds a particular header.  |header| has to be a single header without any
   // EOL termination, just [<header-name>: <header-values>]
@@ -242,6 +244,18 @@ class NET_EXPORT HttpResponseHeaders
   // Returns true if the response is chunk-encoded.
   bool IsChunkEncoded() const;
 
+  // Creates a Value for use with the NetLog containing the response headers.
+  base::Value* NetLogCallback(NetLog::LogLevel log_level) const;
+
+  // Takes in a Value created by the above function, and attempts to create a
+  // copy of the original headers.  Returns true on success.  On failure,
+  // clears |http_response_headers|.
+  // TODO(mmenke):  Long term, we want to remove this, and migrate external
+  //                consumers to be NetworkDelegates.
+  static bool FromNetLogParam(
+      const base::Value* event_param,
+      scoped_refptr<HttpResponseHeaders>* http_response_headers);
+
   // Returns the HTTP response code.  This is 0 if the response code text seems
   // to exist but could not be parsed.  Otherwise, it defaults to 200 if the
   // response code is not found in the raw headers.
@@ -307,16 +321,6 @@ class NET_EXPORT HttpResponseHeaders
   void MergeWithHeaders(const std::string& raw_headers,
                         const HeaderSet& headers_to_remove);
 
-  // Replaces the current headers with the merged version of |raw_headers| and
-  // the current headers with out the header consisting of
-  // |header_to_remove_name| and |header_to_remove_value|. Note that
-  // |header_to_remove_name| is compared case-insensitively.
-  // Note that the header to remove is removed from the current headers (before
-  // the merge), not after the merge.
-  void MergeWithHeadersWithValue(const std::string& raw_headers,
-                                 const std::string& header_to_remove_name,
-                                 const std::string& header_to_remove_value);
-
   // Adds the values from any 'cache-control: no-cache="foo,bar"' headers.
   void AddNonCacheableHeaders(HeaderSet* header_names) const;
 
@@ -334,6 +338,9 @@ class NET_EXPORT HttpResponseHeaders
 
   // Adds the set of content range response headers.
   static void AddHopContentRangeHeaders(HeaderSet* header_names);
+
+  // Adds the set of transport security state headers.
+  static void AddSecurityStateHeaders(HeaderSet* header_names);
 
   // We keep a list of ParsedHeader objects.  These tell us where to locate the
   // header-value pairs within raw_headers_.

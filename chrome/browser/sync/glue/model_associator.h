@@ -1,18 +1,16 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_SYNC_GLUE_MODEL_ASSOCIATOR_H_
 #define CHROME_BROWSER_SYNC_GLUE_MODEL_ASSOCIATOR_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/synchronization/lock.h"
-#include "chrome/browser/sync/syncable/model_type.h"
+#include "sync/api/sync_error.h"
+#include "sync/internal_api/public/base/model_type.h"
 
-class SyncError;
-
-namespace sync_api {
+namespace syncer {
 class BaseNode;
 }
 
@@ -30,12 +28,10 @@ class AssociatorInterface {
   // should be identical and corresponding. Returns true on
   // success. On failure of this step, we should abort the sync
   // operation and report an error to the user.
-  // TODO(zea): return a SyncError instead of passing one in.
-  virtual bool AssociateModels(SyncError* error) = 0;
+  virtual syncer::SyncError AssociateModels() = 0;
 
   // Clears all the associations between the chrome and sync models.
-  // TODO(zea): return a SyncError instead of passing one in.
-  virtual bool DisassociateModels(SyncError* error) = 0;
+  virtual syncer::SyncError DisassociateModels() = 0;
 
   // The has_nodes out parameter is set to true if the sync model has
   // nodes other than the permanent tagged nodes.  The method may
@@ -69,7 +65,7 @@ class PerDataTypeAssociatorInterface : public AssociatorInterface {
  public:
   virtual ~PerDataTypeAssociatorInterface() {}
   // Returns sync id for the given chrome model id.
-  // Returns sync_api::kInvalidId if the sync node is not found for the given
+  // Returns syncer::kInvalidId if the sync node is not found for the given
   // chrome id.
   virtual int64 GetSyncIdFromChromeId(const IDType& id) = 0;
 
@@ -80,39 +76,15 @@ class PerDataTypeAssociatorInterface : public AssociatorInterface {
   // Initializes the given sync node from the given chrome node id.
   // Returns false if no sync node was found for the given chrome node id or
   // if the initialization of sync node fails.
-  virtual bool InitSyncNodeFromChromeId(const IDType& node_id,
-                                        sync_api::BaseNode* sync_node) = 0;
+  virtual bool InitSyncNodeFromChromeId(
+      const IDType& node_id,
+      syncer::BaseNode* sync_node) = 0;
 
   // Associates the given chrome node with the given sync id.
   virtual void Associate(const Node* node, int64 sync_id) = 0;
 
   // Remove the association that corresponds to the given sync id.
   virtual void Disassociate(int64 sync_id) = 0;
-};
-
-template <class Node, class IDType>
-class AbortablePerDataTypeAssociatorInterface
-    : public PerDataTypeAssociatorInterface<Node, IDType> {
- public:
-  AbortablePerDataTypeAssociatorInterface() : pending_abort_(false) {}
-
-  // Implementation of AssociatorInterface methods.
-  virtual void AbortAssociation() {
-    base::AutoLock lock(pending_abort_lock_);
-    pending_abort_ = true;
-  }
-
- protected:
-  // Overridable by tests.
-  virtual bool IsAbortPending() {
-    base::AutoLock lock(pending_abort_lock_);
-    return pending_abort_;
-  }
-
-  // Lock to ensure exclusive access to the pending_abort_ flag.
-  base::Lock pending_abort_lock_;
-  // Set to true if there's a pending abort.
-  bool pending_abort_;
 };
 
 }  // namespace browser_sync

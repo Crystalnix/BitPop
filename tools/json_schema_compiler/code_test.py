@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -147,6 +148,18 @@ class CodeTest(unittest.TestCase):
         '// ' + 'x' * 77 + '\n'
         '// ' + 'x' * 23,
         c.Render())
+
+  def testCommentWithSpecialCharacters(self):
+    c = Code()
+    c.Comment('20% of 80%s')
+    c.Substitute({})
+    self.assertEquals('// 20% of 80%s', c.Render())
+    d = Code()
+    d.Append('90')
+    d.Concat(c)
+    self.assertEquals('90\n'
+        '// 20% of 80%s',
+        d.Render())
 
 if __name__ == '__main__':
   unittest.main()

@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_COMMON_GPU_GPU_PROCESS_LAUNCH_CAUSES_H_
 #define CONTENT_COMMON_GPU_GPU_PROCESS_LAUNCH_CAUSES_H_
-#pragma once
 
 namespace content {
 
@@ -18,6 +17,8 @@ enum CauseForGpuLaunch {
   CAUSE_FOR_GPU_LAUNCH_NO_LAUNCH,
   CAUSE_FOR_GPU_LAUNCH_VIDEODECODEACCELERATOR_INITIALIZE,
   CAUSE_FOR_GPU_LAUNCH_PEPPERPLATFORMCONTEXT3DIMPL_INITIALIZE,
+  CAUSE_FOR_GPU_LAUNCH_BROWSER_STARTUP,
+  CAUSE_FOR_GPU_LAUNCH_CANVAS_2D,
 
   // All new values should be inserted above this point so that
   // existing values continue to match up with those in histograms.xml.

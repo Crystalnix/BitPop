@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_CONTENT_SETTINGS_CONTENT_SETTING_BUBBLE_MODEL_H_
 #define CHROME_BROWSER_UI_CONTENT_SETTINGS_CONTENT_SETTING_BUBBLE_MODEL_H_
-#pragma once
 
 #include <set>
 #include <string>
@@ -12,33 +11,27 @@
 
 #include "base/compiler_specific.h"
 #include "chrome/common/content_settings.h"
+#include "chrome/common/custom_handlers/protocol_handler.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
-class Browser;
+class ContentSettingBubbleModelDelegate;
 class Profile;
-class TabContentsWrapper;
+class ProtocolHandlerRegistry;
+class TabContents;
 
 // This model provides data for ContentSettingBubble, and also controls
 // the action triggered when the allow / block radio buttons are triggered.
 class ContentSettingBubbleModel : public content::NotificationObserver {
  public:
-  virtual ~ContentSettingBubbleModel();
-
-  static ContentSettingBubbleModel* CreateContentSettingBubbleModel(
-      Browser* browser,
-      TabContentsWrapper* tab_contents,
-      Profile* profile,
-      ContentSettingsType content_type);
-
-  ContentSettingsType content_type() const { return content_type_; }
+  typedef ContentSettingBubbleModelDelegate Delegate;
 
   struct PopupItem {
     SkBitmap bitmap;
     std::string title;
-    TabContentsWrapper* tab_contents;
+    TabContents* tab_contents;
   };
   typedef std::vector<PopupItem> PopupItems;
 
@@ -79,6 +72,16 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
     DISALLOW_COPY_AND_ASSIGN(BubbleContent);
   };
 
+  static ContentSettingBubbleModel* CreateContentSettingBubbleModel(
+      Delegate* delegate,
+      TabContents* tab_contents,
+      Profile* profile,
+      ContentSettingsType content_type);
+
+  virtual ~ContentSettingBubbleModel();
+
+  ContentSettingsType content_type() const { return content_type_; }
+
   const BubbleContent& bubble_content() const { return bubble_content_; }
 
   // content::NotificationObserver:
@@ -91,11 +94,15 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
   virtual void OnCustomLinkClicked() {}
   virtual void OnManageLinkClicked() {}
 
+  // Called by the view code when the bubble is closed by the user using the
+  // Done button.
+  virtual void OnDoneClicked() {}
+
  protected:
-  ContentSettingBubbleModel(TabContentsWrapper* tab_contents, Profile* profile,
+  ContentSettingBubbleModel(TabContents* tab_contents, Profile* profile,
       ContentSettingsType content_type);
 
-  TabContentsWrapper* tab_contents() const { return tab_contents_; }
+  TabContents* tab_contents() const { return tab_contents_; }
   Profile* profile() const { return profile_; }
 
   void set_title(const std::string& title) { bubble_content_.title = title; }
@@ -123,7 +130,7 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
   void AddBlockedResource(const std::string& resource_identifier);
 
  private:
-  TabContentsWrapper* tab_contents_;
+  TabContents* tab_contents_;
   Profile* profile_;
   ContentSettingsType content_type_;
   BubbleContent bubble_content_;
@@ -131,6 +138,55 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
   content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentSettingBubbleModel);
+};
+
+class ContentSettingTitleAndLinkModel : public ContentSettingBubbleModel {
+ public:
+  ContentSettingTitleAndLinkModel(Delegate* delegate,
+                                  TabContents* tab_contents,
+                                  Profile* profile,
+                                  ContentSettingsType content_type);
+  virtual ~ContentSettingTitleAndLinkModel() {}
+  Delegate* delegate() const { return delegate_; }
+
+ private:
+  void SetBlockedResources();
+  void SetTitle();
+  void SetManageLink();
+  virtual void OnManageLinkClicked() OVERRIDE;
+
+  Delegate* delegate_;
+};
+
+class ContentSettingRPHBubbleModel : public ContentSettingTitleAndLinkModel {
+ public:
+  ContentSettingRPHBubbleModel(Delegate* delegate,
+                               TabContents* tab_contents,
+                               Profile* profile,
+                               ProtocolHandlerRegistry* registry,
+                               ContentSettingsType content_type);
+
+  virtual void OnRadioClicked(int radio_index) OVERRIDE;
+  virtual void OnDoneClicked() OVERRIDE;
+
+ private:
+  // These states must match the order of appearance of the radio buttons
+  // in the XIB file for the Mac port.
+  enum RPHState {
+    RPH_ALLOW = 0,
+    RPH_BLOCK,
+    RPH_IGNORE,
+  };
+
+  void RegisterProtocolHandler();
+  void UnregisterProtocolHandler();
+  void IgnoreProtocolHandler();
+  void ClearOrSetPreviousHandler();
+
+  int selected_item_;
+  ProtocolHandlerRegistry* registry_;
+  ProtocolHandler pending_handler_;
+  ProtocolHandler previous_handler_;
 };
 
 #endif  // CHROME_BROWSER_UI_CONTENT_SETTINGS_CONTENT_SETTING_BUBBLE_MODEL_H_

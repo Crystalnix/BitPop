@@ -167,6 +167,9 @@ void GLES2Finish() {
 void GLES2Flush() {
   gles2::GetGLContext()->Flush();
 }
+void GLES2ShallowFlushCHROMIUM() {
+  gles2::GetGLContext()->ShallowFlushCHROMIUM();
+}
 void GLES2FramebufferRenderbuffer(
     GLenum target, GLenum attachment, GLenum renderbuffertarget,
     GLuint renderbuffer) {
@@ -520,6 +523,27 @@ void GLES2TexStorage2DEXT(
   gles2::GetGLContext()->TexStorage2DEXT(
       target, levels, internalFormat, width, height);
 }
+void GLES2GenQueriesEXT(GLsizei n, GLuint* queries) {
+  gles2::GetGLContext()->GenQueriesEXT(n, queries);
+}
+void GLES2DeleteQueriesEXT(GLsizei n, const GLuint* queries) {
+  gles2::GetGLContext()->DeleteQueriesEXT(n, queries);
+}
+GLboolean GLES2IsQueryEXT(GLuint id) {
+  return gles2::GetGLContext()->IsQueryEXT(id);
+}
+void GLES2BeginQueryEXT(GLenum target, GLuint id) {
+  gles2::GetGLContext()->BeginQueryEXT(target, id);
+}
+void GLES2EndQueryEXT(GLenum target) {
+  gles2::GetGLContext()->EndQueryEXT(target);
+}
+void GLES2GetQueryivEXT(GLenum target, GLenum pname, GLint* params) {
+  gles2::GetGLContext()->GetQueryivEXT(target, pname, params);
+}
+void GLES2GetQueryObjectuivEXT(GLuint id, GLenum pname, GLuint* params) {
+  gles2::GetGLContext()->GetQueryObjectuivEXT(id, pname, params);
+}
 void GLES2SwapBuffers() {
   gles2::GetGLContext()->SwapBuffers();
 }
@@ -600,6 +624,39 @@ void GLES2TexImageIOSurface2DCHROMIUM(
     GLuint plane) {
   gles2::GetGLContext()->TexImageIOSurface2DCHROMIUM(
       target, width, height, ioSurfaceId, plane);
+}
+void GLES2CopyTextureCHROMIUM(
+    GLenum target, GLenum source_id, GLenum dest_id, GLint level,
+    GLint internalformat) {
+  gles2::GetGLContext()->CopyTextureCHROMIUM(
+      target, source_id, dest_id, level, internalformat);
+}
+void GLES2DrawArraysInstancedANGLE(
+    GLenum mode, GLint first, GLsizei count, GLsizei primcount) {
+  gles2::GetGLContext()->DrawArraysInstancedANGLE(
+      mode, first, count, primcount);
+}
+void GLES2DrawElementsInstancedANGLE(
+    GLenum mode, GLsizei count, GLenum type, const void* indices,
+    GLsizei primcount) {
+  gles2::GetGLContext()->DrawElementsInstancedANGLE(
+      mode, count, type, indices, primcount);
+}
+void GLES2VertexAttribDivisorANGLE(GLuint index, GLuint divisor) {
+  gles2::GetGLContext()->VertexAttribDivisorANGLE(index, divisor);
+}
+void GLES2GenMailboxCHROMIUM(GLbyte* mailbox) {
+  gles2::GetGLContext()->GenMailboxCHROMIUM(mailbox);
+}
+void GLES2ProduceTextureCHROMIUM(GLenum target, const GLbyte* mailbox) {
+  gles2::GetGLContext()->ProduceTextureCHROMIUM(target, mailbox);
+}
+void GLES2ConsumeTextureCHROMIUM(GLenum target, const GLbyte* mailbox) {
+  gles2::GetGLContext()->ConsumeTextureCHROMIUM(target, mailbox);
+}
+void GLES2BindUniformLocationCHROMIUM(
+    GLuint program, GLint location, const char* name) {
+  gles2::GetGLContext()->BindUniformLocationCHROMIUM(program, location, name);
 }
 
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_C_LIB_AUTOGEN_H_

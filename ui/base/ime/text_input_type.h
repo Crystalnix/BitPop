@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_BASE_IME_TEXT_INPUT_TYPE_H_
 #define UI_BASE_IME_TEXT_INPUT_TYPE_H_
-#pragma once
 
 namespace ui {
 
@@ -26,6 +25,18 @@ enum TextInputType {
   TEXT_INPUT_TYPE_NUMBER,
   TEXT_INPUT_TYPE_TELEPHONE,
   TEXT_INPUT_TYPE_URL,
+  TEXT_INPUT_TYPE_DATE,
+  TEXT_INPUT_TYPE_DATE_TIME,
+  TEXT_INPUT_TYPE_DATE_TIME_LOCAL,
+  TEXT_INPUT_TYPE_MONTH,
+  TEXT_INPUT_TYPE_TIME,
+  TEXT_INPUT_TYPE_WEEK,
+  TEXT_INPUT_TYPE_TEXT_AREA,
+
+  // Input caret is in a contenteditable node (not an INPUT field).
+  TEXT_INPUT_TYPE_CONTENT_EDITABLE,
+
+  TEXT_INPUT_TYPE_MAX = TEXT_INPUT_TYPE_CONTENT_EDITABLE,
 };
 
 }  // namespace ui

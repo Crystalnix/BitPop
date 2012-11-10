@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,8 +42,7 @@ bool SocketAddressToIPEndPoint(const talk_base::SocketAddress& address_lj,
 std::string SerializeP2PCandidate(const cricket::Candidate& candidate) {
   // TODO(sergeyu): Use SDP to format candidates?
   DictionaryValue value;
-  value.SetString("name", candidate.name());
-  value.SetString("ip", candidate.address().IPAsString());
+  value.SetString("ip", candidate.address().ipaddr().ToString());
   value.SetInteger("port", candidate.address().port());
   value.SetString("type", candidate.type());
   value.SetString("protocol", candidate.protocol());
@@ -53,20 +52,20 @@ std::string SerializeP2PCandidate(const cricket::Candidate& candidate) {
   value.SetInteger("generation", candidate.generation());
 
   std::string result;
-  base::JSONWriter::Write(&value, false, &result);
+  base::JSONWriter::Write(&value, &result);
   return result;
 }
 
 bool DeserializeP2PCandidate(const std::string& candidate_str,
                              cricket::Candidate* candidate) {
-  scoped_ptr<Value> value(base::JSONReader::Read(candidate_str, true));
+  scoped_ptr<Value> value(
+      base::JSONReader::Read(candidate_str, base::JSON_ALLOW_TRAILING_COMMAS));
   if (!value.get() || !value->IsType(Value::TYPE_DICTIONARY)) {
     return false;
   }
 
   DictionaryValue* dic_value = static_cast<DictionaryValue*>(value.get());
 
-  std::string name;
   std::string ip;
   int port;
   std::string type;
@@ -76,8 +75,7 @@ bool DeserializeP2PCandidate(const std::string& candidate_str,
   double preference;
   int generation;
 
-  if (!dic_value->GetString("name", &name) ||
-      !dic_value->GetString("ip", &ip) ||
+  if (!dic_value->GetString("ip", &ip) ||
       !dic_value->GetInteger("port", &port) ||
       !dic_value->GetString("type", &type) ||
       !dic_value->GetString("protocol", &protocol) ||
@@ -88,7 +86,6 @@ bool DeserializeP2PCandidate(const std::string& candidate_str,
     return false;
   }
 
-  candidate->set_name(name);
   candidate->set_address(talk_base::SocketAddress(ip, port));
   candidate->set_type(type);
   candidate->set_protocol(protocol);

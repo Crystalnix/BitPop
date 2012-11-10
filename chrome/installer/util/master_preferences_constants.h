@@ -7,7 +7,6 @@
 
 #ifndef CHROME_INSTALLER_UTIL_MASTER_PREFERENCES_CONSTANTS_H_
 #define CHROME_INSTALLER_UTIL_MASTER_PREFERENCES_CONSTANTS_H_
-#pragma once
 
 namespace installer {
 namespace master_preferences {
@@ -23,6 +22,8 @@ extern const char kAltShortcutText[];
 extern const char kAutoLaunchChrome[];
 // Boolean. This is to be a Chrome install. (When using MultiInstall)
 extern const char kChrome[];
+// Boolean. This is to be a Chrome App Host install.
+extern const char kChromeAppHost[];
 // Boolean. This is to be a Chrome Frame install.
 extern const char kChromeFrame[];
 // Boolean. Chrome Frame is to be installed in ready-mode.
@@ -33,6 +34,8 @@ extern const char kChromeShortcutIconIndex[];
 extern const char kCreateAllShortcuts[];
 // Boolean pref that disables all logging.
 extern const char kDisableLogging[];
+// Name of the dictionary that holds the distribution values.
+extern const char kDistroDict[];
 // Boolean pref that triggers silent import of the default browser bookmarks.
 extern const char kDistroImportBookmarksPref[];
 // String pref that triggers silent import of bookmarks from the html file at
@@ -52,8 +55,6 @@ extern const char kDistroShowWelcomePage[];
 extern const char kDistroSkipFirstRunPref[];
 // Boolean. Do not show first run bubble, even if it would otherwise be shown.
 extern const char kDistroSuppressFirstRunBubble[];
-// Boolean. Do not create Chrome desktop shortcuts. Cmd line override present.
-extern const char kDoNotCreateShortcuts[];
 // Boolean. Do not launch Chrome after first install. Cmd line override present.
 extern const char kDoNotLaunchChrome[];
 // Boolean. Do not register with Google Update to have Chrome launched after
@@ -71,6 +72,11 @@ extern const char kMsi[];
 extern const char kMultiInstall[];
 // Boolean. Show EULA dialog before install.
 extern const char kRequireEula[];
+// Boolean. Indicates that the first-run 'set-as-default' dialog should not be
+// shown. Relevant in Windows 8+ context only. If this is true, the standard
+// 'set default browser' prompt on the butter-bar will appear during the first
+// run.
+extern const char kSuppressFirstRunDefaultBrowserPrompt[];
 // Boolean. Install Chrome to system wise location. Cmd line override present.
 extern const char kSystemLevel[];
 // Boolean. Run installer in verbose mode. Cmd line override present.

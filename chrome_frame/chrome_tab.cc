@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,12 +16,14 @@
 #include "base/file_version_info.h"
 #include "base/logging.h"
 #include "base/logging_win.h"
+#include "base/metrics/field_trial.h"
 #include "base/path_service.h"
 #include "base/string16.h"
 #include "base/string_number_conversions.h"
 #include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
+#include "base/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "base/win/windows_version.h"
 #include "chrome/common/chrome_constants.h"
@@ -36,6 +38,7 @@
 #include "chrome_frame/chrome_protocol.h"
 #include "chrome_frame/dll_redirector.h"
 #include "chrome_frame/exception_barrier.h"
+#include "chrome_frame/metrics_service.h"
 #include "chrome_frame/resource.h"
 #include "chrome_frame/utils.h"
 #include "googleurl/src/url_util.h"
@@ -192,7 +195,7 @@ class ChromeTabModule : public CAtlDllModuleT<ChromeTabModule> {
 ChromeTabModule _AtlModule;
 
 base::AtExitManager* g_exit_manager = NULL;
-
+base::FieldTrialList* g_field_trial_list = NULL;
 
 HRESULT RefreshElevationPolicy() {
   const wchar_t kIEFrameDll[] = L"ieframe.dll";
@@ -833,6 +836,12 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance,
         logging::DELETE_OLD_LOG_FILE,
         logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
 
+    // Log the same items as Chrome.
+    logging::SetLogItems(true,  // enable_process_id
+                         true,  // enable_thread_id
+                         false, // enable_timestamp
+                         true); // enable_tickcount
+
     DllRedirector* dll_redirector = DllRedirector::GetInstance();
     DCHECK(dll_redirector);
 
@@ -845,16 +854,26 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance,
           << "Found CF module with no DllGetClassObject export.";
     }
 
-    // Enable ETW logging.
+    // Enable trace control and transport through event tracing for Windows.
     logging::LogEventProvider::Initialize(kChromeFrameProvider);
+
+    // Initialize the field test infrastructure. Must be done somewhere that
+    // can only get called once. For Chrome Frame, that is here.
+    g_field_trial_list = new base::FieldTrialList(
+        MetricsService::GetClientID());
   } else if (reason == DLL_PROCESS_DETACH) {
+    delete g_field_trial_list;
+    g_field_trial_list = NULL;
+
     DllRedirector* dll_redirector = DllRedirector::GetInstance();
     DCHECK(dll_redirector);
-
     dll_redirector->UnregisterAsFirstCFModule();
+
     g_patch_helper.UnpatchIfNeeded();
+
     delete g_exit_manager;
     g_exit_manager = NULL;
+
     ShutdownCrashReporting();
   }
   return _AtlModule.DllMain(reason, reserved);

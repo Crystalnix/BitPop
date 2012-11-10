@@ -1,21 +1,20 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 '''Class for reading GRD files into memory, without processing them.
 '''
 
-import os.path
 import types
 import xml.sax
 import xml.sax.handler
 
 from grit import exception
+from grit import util
 from grit.node import base
 from grit.node import mapping
 from grit.node import misc
-from grit import util
 
 
 class StopParsingException(Exception):
@@ -108,7 +107,7 @@ class GrdContentHandler(xml.sax.handler.ContentHandler):
 
 
 def Parse(filename_or_stream, dir=None, flexible_root=False,
-          stop_after=None, debug=False, first_id_filename=None,
+          stop_after=None, first_ids_file=None, debug=False,
           defines=None, tags_to_ignore=None):
   '''Parses a GRD file into a tree of nodes (from grit.node).
 
@@ -125,16 +124,16 @@ def Parse(filename_or_stream, dir=None, flexible_root=False,
   If 'debug' is true, lots of information about the parsing events will be
   printed out during parsing of the file.
 
-  If first_id_filename is provided, then we use the provided path instead of
-  resources_id to gather the first id values for resources.
+  If 'first_ids_file' is non-empty, it is used to override the setting
+  for the first_ids_file attribute of the <grit> root node.
 
   Args:
     filename_or_stream: './bla.xml'  (must be filename if dir is None)
     dir: '.' or None (only if filename_or_stream is a filename)
     flexible_root: True | False
     stop_after: 'inputs'
+    first_ids_file: 'GRIT_DIR/../gritsettings/resource_ids'
     debug: False
-    first_id_filename: None
     defines: dictionary of defines, like {'chromeos': '1'}
 
   Return:
@@ -164,9 +163,11 @@ def Parse(filename_or_stream, dir=None, flexible_root=False,
     # Fix up the base_dir so it is relative to the input file.
     handler.root.SetOwnDir(dir)
 
-  # Assign first ids to the nodes that don't have them.
-  if isinstance(handler.root, misc.GritNode) and first_id_filename != '':
-    handler.root.AssignFirstIds(filename_or_stream, first_id_filename, defines)
+  if isinstance(handler.root, misc.GritNode):
+    if first_ids_file:
+      handler.root.attrs['first_ids_file'] = first_ids_file
+    # Assign first ids to the nodes that don't have them.
+    handler.root.AssignFirstIds(filename_or_stream, defines)
 
   return handler.root
 

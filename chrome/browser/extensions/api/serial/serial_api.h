@@ -4,48 +4,190 @@
 
 #ifndef CHROME_BROWSER_EXTENSIONS_API_SERIAL_SERIAL_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_SERIAL_SERIAL_API_H_
-#pragma once
 
 #include <string>
 
-#include "chrome/browser/extensions/extension_function.h"
+#include "base/memory/ref_counted.h"
+#include "chrome/browser/extensions/api/api_function.h"
+#include "chrome/browser/extensions/api/api_resource_manager.h"
+#include "chrome/common/extensions/api/serial.h"
+#include "net/base/io_buffer.h"
 
 namespace extensions {
 
+class ApiResourceEventNotifier;
+class SerialConnection;
+
 extern const char kConnectionIdKey[];
 
-class SerialOpenFunction : public AsyncExtensionFunction {
+class SerialAsyncApiFunction : public AsyncApiFunction {
  public:
-  SerialOpenFunction();
-  virtual ~SerialOpenFunction();
-
-  virtual bool RunImpl() OVERRIDE;
+  SerialAsyncApiFunction();
 
  protected:
-  void WorkOnIOThread();
-  void RespondOnUIThread();
+  virtual ~SerialAsyncApiFunction();
 
- private:
-  std::string port_;
+  // AsyncApiFunction:
+  virtual bool PrePrepare() OVERRIDE;
 
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.serial.open")
+  ApiResourceManager<SerialConnection>* manager_;
 };
 
-class SerialCloseFunction : public AsyncExtensionFunction {
+class SerialGetPortsFunction : public SerialAsyncApiFunction {
  public:
-  SerialCloseFunction();
-  virtual ~SerialCloseFunction();
+  DECLARE_EXTENSION_FUNCTION_NAME("serial.getPorts")
 
-  virtual bool RunImpl() OVERRIDE;
+  SerialGetPortsFunction();
 
  protected:
-  void WorkOnIOThread();
-  void RespondOnUIThread();
+  virtual ~SerialGetPortsFunction() {}
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void Work() OVERRIDE;
+  virtual bool Respond() OVERRIDE;
+};
+
+class SerialOpenFunction : public SerialAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("serial.open")
+
+  SerialOpenFunction();
+
+ protected:
+  virtual ~SerialOpenFunction();
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void AsyncWorkStart() OVERRIDE;
+  virtual void Work() OVERRIDE;
+  virtual bool Respond() OVERRIDE;
+
+  // Overrideable for testing.
+  virtual SerialConnection* CreateSerialConnection(
+      const std::string& port,
+      int bitrate,
+      ApiResourceEventNotifier* event_notifier);
+  virtual bool DoesPortExist(const std::string& port);
 
  private:
-  int connection_id_;
+  scoped_ptr<api::serial::Open::Params> params_;
+  int src_id_;
+  int bitrate_;
 
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.serial.close")
+  // SerialConnection will take ownership.
+  ApiResourceEventNotifier* event_notifier_;
+};
+
+class SerialCloseFunction : public SerialAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("serial.close")
+
+  SerialCloseFunction();
+
+ protected:
+  virtual ~SerialCloseFunction();
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void Work() OVERRIDE;
+  virtual bool Respond() OVERRIDE;
+
+ private:
+  scoped_ptr<api::serial::Close::Params> params_;
+};
+
+class SerialReadFunction : public SerialAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("serial.read")
+
+  SerialReadFunction();
+
+ protected:
+  virtual ~SerialReadFunction();
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void Work() OVERRIDE;
+  virtual bool Respond() OVERRIDE;
+
+ private:
+  scoped_ptr<api::serial::Read::Params> params_;
+};
+
+class SerialWriteFunction : public SerialAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("serial.write")
+
+  SerialWriteFunction();
+
+ protected:
+  virtual ~SerialWriteFunction();
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void Work() OVERRIDE;
+  virtual bool Respond() OVERRIDE;
+
+ private:
+  scoped_ptr<api::serial::Write::Params> params_;
+  scoped_refptr<net::IOBuffer> io_buffer_;
+  size_t io_buffer_size_;
+};
+
+class SerialFlushFunction : public SerialAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("serial.flush")
+
+  SerialFlushFunction();
+
+ protected:
+  virtual ~SerialFlushFunction();
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void Work() OVERRIDE;
+  virtual bool Respond() OVERRIDE;
+
+ private:
+  scoped_ptr<api::serial::Flush::Params> params_;
+};
+
+class SerialGetControlSignalsFunction : public SerialAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("serial.getControlSignals")
+
+  SerialGetControlSignalsFunction();
+
+ protected:
+  virtual ~SerialGetControlSignalsFunction();
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void Work() OVERRIDE;
+  virtual bool Respond() OVERRIDE;
+
+ private:
+  scoped_ptr<api::serial::GetControlSignals::Params> params_;
+  bool api_response_;
+};
+
+class SerialSetControlSignalsFunction : public SerialAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("serial.setControlSignals")
+
+  SerialSetControlSignalsFunction();
+
+ protected:
+  virtual ~SerialSetControlSignalsFunction();
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void Work() OVERRIDE;
+  virtual bool Respond() OVERRIDE;
+
+ private:
+  scoped_ptr<api::serial::SetControlSignals::Params> params_;
 };
 
 }  // namespace extensions

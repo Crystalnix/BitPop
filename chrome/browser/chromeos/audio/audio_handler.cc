@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,14 @@
 
 #include "base/logging.h"
 #include "base/memory/singleton.h"
+#include "chrome/browser/browser_process.h"
+#if defined(USE_CRAS)
+#include "chrome/browser/chromeos/audio/audio_mixer_cras.h"
+#else
 #include "chrome/browser/chromeos/audio/audio_mixer_alsa.h"
+#endif
+#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 
 using std::max;
@@ -19,9 +26,12 @@ namespace chromeos {
 
 namespace {
 
-// A value of less than one adjusts quieter volumes in larger steps (giving
-// finer resolution in the higher volumes).
-const double kVolumeBias = 0.5;
+// Default value for the volume pref, as a percent in the range [0.0, 100.0].
+const double kDefaultVolumePercent = 75.0;
+
+// Values used for muted preference.
+const int kPrefMuteOff = 0;
+const int kPrefMuteOn = 1;
 
 static AudioHandler* g_audio_handler = NULL;
 
@@ -30,7 +40,11 @@ static AudioHandler* g_audio_handler = NULL;
 // static
 void AudioHandler::Initialize() {
   CHECK(!g_audio_handler);
-  g_audio_handler = new AudioHandler();
+#if defined(USE_CRAS)
+  g_audio_handler = new AudioHandler(new AudioMixerCras());
+#else
+  g_audio_handler = new AudioHandler(new AudioMixerAlsa());
+#endif
 }
 
 // static
@@ -43,29 +57,54 @@ void AudioHandler::Shutdown() {
 }
 
 // static
+void AudioHandler::InitializeForTesting(AudioMixer* mixer) {
+  CHECK(!g_audio_handler);
+  g_audio_handler = new AudioHandler(mixer);
+}
+
+// static
 AudioHandler* AudioHandler::GetInstance() {
   VLOG_IF(1, !g_audio_handler)
       << "AudioHandler::GetInstance() called with NULL global instance.";
   return g_audio_handler;
 }
 
-bool AudioHandler::IsInitialized() {
-  return mixer_->IsInitialized();
+// static
+void AudioHandler::RegisterPrefs(PrefService* local_state) {
+  if (!local_state->FindPreference(prefs::kAudioVolumePercent))
+    local_state->RegisterDoublePref(prefs::kAudioVolumePercent,
+                                    kDefaultVolumePercent,
+                                    PrefService::UNSYNCABLE_PREF);
+  if (!local_state->FindPreference(prefs::kAudioMute))
+    local_state->RegisterIntegerPref(prefs::kAudioMute,
+                                     kPrefMuteOff,
+                                     PrefService::UNSYNCABLE_PREF);
+
+  // Register the old decibel-based pref so we can clear it.
+  // TODO(derat): Remove this after R20: http://crbug.com/112039
+  if (!local_state->FindPreference(prefs::kAudioVolumeDb))
+    local_state->RegisterDoublePref(prefs::kAudioVolumeDb,
+                                    0,
+                                    PrefService::UNSYNCABLE_PREF);
+  local_state->ClearPref(prefs::kAudioVolumeDb);
+  local_state->UnregisterPreference(prefs::kAudioVolumeDb);
 }
 
 double AudioHandler::GetVolumePercent() {
-  return VolumeDbToPercent(mixer_->GetVolumeDb());
+  return mixer_->GetVolumePercent();
 }
 
 void AudioHandler::SetVolumePercent(double volume_percent) {
   volume_percent = min(max(volume_percent, 0.0), 100.0);
-  mixer_->SetVolumeDb(PercentToVolumeDb(volume_percent));
+  if (IsMuted() && volume_percent > 0.0)
+    SetMuted(false);
+  mixer_->SetVolumePercent(volume_percent);
+  prefs_->SetDouble(prefs::kAudioVolumePercent, volume_percent);
+  FOR_EACH_OBSERVER(VolumeObserver, volume_observers_, OnVolumeChanged());
 }
 
 void AudioHandler::AdjustVolumeByPercent(double adjust_by_percent) {
-  const double old_volume_db = mixer_->GetVolumeDb();
-  const double old_percent = VolumeDbToPercent(old_volume_db);
-  SetVolumePercent(old_percent + adjust_by_percent);
+  SetVolumePercent(mixer_->GetVolumePercent() + adjust_by_percent);
 }
 
 bool AudioHandler::IsMuted() {
@@ -74,43 +113,28 @@ bool AudioHandler::IsMuted() {
 
 void AudioHandler::SetMuted(bool mute) {
   mixer_->SetMuted(mute);
+  prefs_->SetInteger(prefs::kAudioMute, mute ? kPrefMuteOn : kPrefMuteOff);
+  FOR_EACH_OBSERVER(VolumeObserver, volume_observers_, OnMuteToggled());
 }
 
-AudioHandler::AudioHandler()
-    : mixer_(new AudioMixerAlsa()) {
+void AudioHandler::AddVolumeObserver(VolumeObserver* observer) {
+  volume_observers_.AddObserver(observer);
+}
+
+void AudioHandler::RemoveVolumeObserver(VolumeObserver* observer) {
+  volume_observers_.RemoveObserver(observer);
+}
+
+AudioHandler::AudioHandler(AudioMixer* mixer)
+    : mixer_(mixer),
+      prefs_(g_browser_process->local_state()) {
+  mixer_->SetVolumePercent(prefs_->GetDouble(prefs::kAudioVolumePercent));
+  mixer_->SetMuted(prefs_->GetInteger(prefs::kAudioMute) == kPrefMuteOn);
   mixer_->Init();
 }
 
 AudioHandler::~AudioHandler() {
   mixer_.reset();
 };
-
-// VolumeDbToPercent() and PercentToVolumeDb() conversion functions allow us
-// complete control over how the 0 to 100% range is mapped to actual loudness.
-//
-// The mapping is confined to these two functions to make it easy to adjust and
-// have everything else just work.  The range is biased to give finer resolution
-// in the higher volumes if kVolumeBias is less than 1.0.
-
-double AudioHandler::VolumeDbToPercent(double volume_db) const {
-  double min_volume_db, max_volume_db;
-  mixer_->GetVolumeLimits(&min_volume_db, &max_volume_db);
-
-  if (volume_db < min_volume_db)
-    return 0.0;
-  // TODO(derat): Choose a better mapping between percent and decibels.  The
-  // bottom twenty-five percent or so is useless on a CR-48's internal speakers;
-  // it's all inaudible.
-  return 100.0 * pow((volume_db - min_volume_db) /
-      (max_volume_db - min_volume_db), 1/kVolumeBias);
-}
-
-double AudioHandler::PercentToVolumeDb(double volume_percent) const {
-  double min_volume_db, max_volume_db;
-  mixer_->GetVolumeLimits(&min_volume_db, &max_volume_db);
-
-  return pow(volume_percent / 100.0, kVolumeBias) *
-      (max_volume_db - min_volume_db) + min_volume_db;
-}
 
 }  // namespace chromeos

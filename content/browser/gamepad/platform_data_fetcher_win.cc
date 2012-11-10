@@ -8,11 +8,6 @@
 #include "content/common/gamepad_messages.h"
 #include "content/common/gamepad_hardware_buffer.h"
 
-#include <delayimp.h>
-
-#pragma comment(lib, "delayimp.lib")
-#pragma comment(lib, "xinput.lib")
-
 namespace content {
 
 using namespace WebKit;
@@ -33,6 +28,10 @@ static const BYTE kDeviceSubTypeDrumKit = 8;
 static const BYTE kDeviceSubTypeGuitarBass = 11;
 static const BYTE kDeviceSubTypeArcadePad = 19;
 
+float NormalizeAxis(SHORT value) {
+  return ((value + 32768.f) / 32767.5f) - 1.f;
+}
+
 const WebUChar* const GamepadSubTypeName(BYTE sub_type) {
   switch (sub_type) {
     case kDeviceSubTypeGamepad: return L"GAMEPAD";
@@ -49,37 +48,14 @@ const WebUChar* const GamepadSubTypeName(BYTE sub_type) {
   }
 }
 
-// Trap only the exceptions that DELAYLOAD can throw, otherwise rethrow.
-// See http://msdn.microsoft.com/en-us/library/1c9e046h(v=VS.90).aspx.
-LONG WINAPI DelayLoadDllExceptionFilter(PEXCEPTION_POINTERS pExcPointers) {
- LONG disposition = EXCEPTION_EXECUTE_HANDLER;
- switch (pExcPointers->ExceptionRecord->ExceptionCode) {
-   case VcppException(ERROR_SEVERITY_ERROR, ERROR_MOD_NOT_FOUND):
-   case VcppException(ERROR_SEVERITY_ERROR, ERROR_PROC_NOT_FOUND):
-      break;
-   default:
-      // Exception is not related to delay loading.
-      disposition = EXCEPTION_CONTINUE_SEARCH;
-      break;
-   }
-   return disposition;
-}
-
-bool EnableXInput() {
-  // We have specified DELAYLOAD for xinput1_3.dll. If the DLL is not
-  // installed (XP w/o DirectX redist installed), we disable functionality.
-  __try {
-    ;//XInputEnable(true);
-  } __except(DelayLoadDllExceptionFilter(GetExceptionInformation())) {
-    return false;
-  }
-  return true;
-}
-
-}
+}  // namespace
 
 GamepadPlatformDataFetcherWin::GamepadPlatformDataFetcherWin()
-    : xinput_available_(EnableXInput()) {
+    : xinput_dll_(FilePath(FILE_PATH_LITERAL("xinput1_3.dll"))),
+      xinput_available_(GetXinputDllFunctions()) {
+}
+
+GamepadPlatformDataFetcherWin::~GamepadPlatformDataFetcherWin() {
 }
 
 void GamepadPlatformDataFetcherWin::GetGamepadData(WebGamepads* pads,
@@ -106,7 +82,7 @@ void GamepadPlatformDataFetcherWin::GetGamepadData(WebGamepads* pads,
       WebGamepad& pad = pads->items[i];
       TRACE_EVENT1("GAMEPAD", "GetCapabilities", "id", i);
       XINPUT_CAPABILITIES caps;
-      DWORD res = XInputGetCapabilities(i, XINPUT_FLAG_GAMEPAD, &caps);
+      DWORD res = xinput_get_capabilities_(i, XINPUT_FLAG_GAMEPAD, &caps);
       if (res == ERROR_DEVICE_NOT_CONNECTED) {
         pad.connected = false;
       } else {
@@ -133,7 +109,7 @@ void GamepadPlatformDataFetcherWin::GetGamepadData(WebGamepads* pads,
     XINPUT_STATE state;
     memset(&state, 0, sizeof(XINPUT_STATE));
     TRACE_EVENT_BEGIN1("GAMEPAD", "XInputGetState", "id", i);
-    DWORD dwResult = XInputGetState(i, &state);
+    DWORD dwResult = xinput_get_state_(i, &state);
     TRACE_EVENT_END1("GAMEPAD", "XInputGetState", "id", i);
 
     if (dwResult == ERROR_SUCCESS) {
@@ -160,14 +136,33 @@ void GamepadPlatformDataFetcherWin::GetGamepadData(WebGamepads* pads,
 #undef ADD
       pad.axesLength = 0;
       // XInput are +up/+right, -down/-left, we want -up/-left.
-      pad.axes[pad.axesLength++] = state.Gamepad.sThumbLX / 32767.0;
-      pad.axes[pad.axesLength++] = -state.Gamepad.sThumbLY / 32767.0;
-      pad.axes[pad.axesLength++] = state.Gamepad.sThumbRX / 32767.0;
-      pad.axes[pad.axesLength++] = -state.Gamepad.sThumbRY / 32767.0;
+      pad.axes[pad.axesLength++] = NormalizeAxis(state.Gamepad.sThumbLX);
+      pad.axes[pad.axesLength++] = -NormalizeAxis(state.Gamepad.sThumbLY);
+      pad.axes[pad.axesLength++] = NormalizeAxis(state.Gamepad.sThumbRX);
+      pad.axes[pad.axesLength++] = -NormalizeAxis(state.Gamepad.sThumbRY);
     } else {
       pad.connected = false;
     }
   }
 }
 
-} // namespace content
+bool GamepadPlatformDataFetcherWin::GetXinputDllFunctions() {
+  xinput_get_capabilities_ = NULL;
+  xinput_get_state_ = NULL;
+  xinput_enable_ = static_cast<XInputEnableFunc>(
+      xinput_dll_.GetFunctionPointer("XInputEnable"));
+  if (!xinput_enable_)
+    return false;
+  xinput_get_capabilities_ = static_cast<XInputGetCapabilitiesFunc>(
+      xinput_dll_.GetFunctionPointer("XInputGetCapabilities"));
+  if (!xinput_get_capabilities_)
+    return false;
+  xinput_get_state_ = static_cast<XInputGetStateFunc>(
+      xinput_dll_.GetFunctionPointer("XInputGetState"));
+  if (!xinput_get_state_)
+    return false;
+  xinput_enable_(true);
+  return true;
+}
+
+}  // namespace content

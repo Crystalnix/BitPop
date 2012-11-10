@@ -7,12 +7,13 @@
 #include "base/bind.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/password_manager/password_store.h"
+#include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/api/sync_error.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/webdata/web_data_service.h"
 #include "content/public/browser/browser_thread.h"
+#include "sync/api/sync_error.h"
 
 using content::BrowserThread;
 
@@ -27,30 +28,38 @@ PasswordDataTypeController::PasswordDataTypeController(
                                     sync_service) {
 }
 
-PasswordDataTypeController::~PasswordDataTypeController() {
+syncer::ModelType PasswordDataTypeController::type() const {
+  return syncer::PASSWORDS;
+}
+
+syncer::ModelSafeGroup PasswordDataTypeController::model_safe_group()
+    const {
+  return syncer::GROUP_PASSWORD;
+}
+
+PasswordDataTypeController::~PasswordDataTypeController() {}
+
+bool PasswordDataTypeController::PostTaskOnBackendThread(
+      const tracked_objects::Location& from_here,
+      const base::Closure& task) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(password_store_.get());
+  return password_store_->ScheduleTask(task);
 }
 
 bool PasswordDataTypeController::StartModels() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_EQ(state(), MODEL_STARTING);
-  password_store_ = profile()->GetPasswordStore(Profile::EXPLICIT_ACCESS);
+  password_store_ = PasswordStoreFactory::GetForProfile(
+      profile(), Profile::EXPLICIT_ACCESS);
   if (!password_store_.get()) {
-    SyncError error(
+    syncer::SyncError error(
         FROM_HERE,
         "PasswordStore not initialized, password datatype controller aborting.",
         type());
-    StartDoneImpl(ABORTED, NOT_RUNNING, error);
+    StartDoneImpl(ASSOCIATION_FAILED, DISABLED, error);
     return false;
   }
-  return true;
-}
-
-bool PasswordDataTypeController::StartAssociationAsync() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(state(), ASSOCIATING);
-  DCHECK(password_store_.get());
-  password_store_->ScheduleTask(
-      base::Bind(&PasswordDataTypeController::StartAssociation, this));
   return true;
 }
 
@@ -64,43 +73,6 @@ void PasswordDataTypeController::CreateSyncComponents() {
           this);
   set_model_associator(sync_components.model_associator);
   set_change_processor(sync_components.change_processor);
-}
-
-bool PasswordDataTypeController::StopAssociationAsync() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(state(), STOPPING);
-  DCHECK(password_store_.get());
-  password_store_->ScheduleTask(
-      base::Bind(&PasswordDataTypeController::StopAssociation, this));
-  return true;
-}
-
-syncable::ModelType PasswordDataTypeController::type() const {
-  return syncable::PASSWORDS;
-}
-
-browser_sync::ModelSafeGroup PasswordDataTypeController::model_safe_group()
-    const {
-  return browser_sync::GROUP_PASSWORD;
-}
-
-void PasswordDataTypeController::RecordUnrecoverableError(
-    const tracked_objects::Location& from_here,
-    const std::string& message) {
-  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
-  UMA_HISTOGRAM_COUNTS("Sync.PasswordRunFailures", 1);
-}
-
-void PasswordDataTypeController::RecordAssociationTime(base::TimeDelta time) {
-  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
-  UMA_HISTOGRAM_TIMES("Sync.PasswordAssociationTime", time);
-}
-
-void PasswordDataTypeController::RecordStartFailure(StartResult result) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  UMA_HISTOGRAM_ENUMERATION("Sync.PasswordStartFailures",
-                            result,
-                            MAX_START_RESULT);
 }
 
 }  // namespace browser_sync

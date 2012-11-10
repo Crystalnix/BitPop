@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,10 +16,12 @@
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "third_party/ocmock/gtest_support.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
 #include "webkit/glue/image_decoder.h"
+
+using extensions::Extension;
 
 // ExtensionInstalledBubbleController with removePageActionPreview overridden
 // to a no-op, because pageActions are not yet hooked up in the test browser.
@@ -47,7 +49,7 @@ class ExtensionInstalledBubbleControllerTest : public CocoaProfileTest {
   virtual void SetUp() {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(browser());
-    window_ = CreateBrowserWindow()->GetNativeHandle();
+    window_ = browser()->window()->GetNativeWindow();
     icon_ = LoadTestIcon();
   }
 
@@ -98,7 +100,7 @@ class ExtensionInstalledBubbleControllerTest : public CocoaProfileTest {
 
     std::string error;
     return Extension::Create(path, Extension::INVALID, extension_input_value,
-                             Extension::STRICT_ERROR_CHECKS, &error);
+                             Extension::NO_FLAGS, &error);
   }
 
   // Required to initialize the extension installed bubble.
@@ -118,6 +120,7 @@ TEST_F(ExtensionInstalledBubbleControllerTest, PageActionTest) {
       [[ExtensionInstalledBubbleControllerForTest alloc]
           initWithParentWindow:window_
                      extension:extension_.get()
+                        bundle:NULL
                        browser:browser()
                           icon:icon_];
   EXPECT_TRUE(controller);
@@ -161,6 +164,7 @@ TEST_F(ExtensionInstalledBubbleControllerTest, BrowserActionTest) {
       [[ExtensionInstalledBubbleControllerForTest alloc]
           initWithParentWindow:window_
                      extension:extension_.get()
+                        bundle:NULL
                        browser:browser()
                           icon:icon_];
   EXPECT_TRUE(controller);
@@ -198,6 +202,7 @@ TEST_F(ExtensionInstalledBubbleControllerTest, ParentClose) {
       [[ExtensionInstalledBubbleControllerForTest alloc]
           initWithParentWindow:window_
                      extension:extension_.get()
+                        bundle:NULL
                        browser:browser()
                           icon:icon_];
   EXPECT_TRUE(controller);

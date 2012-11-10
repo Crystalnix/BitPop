@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,12 +7,12 @@
  */
 
 cr.define('cr.ui', function() {
-  const ListSelectionModel = cr.ui.ListSelectionModel;
-  const ListSelectionController = cr.ui.ListSelectionController;
-  const ArrayDataModel = cr.ui.ArrayDataModel;
-  const TableColumnModel = cr.ui.table.TableColumnModel;
-  const TableList = cr.ui.table.TableList;
-  const TableHeader = cr.ui.table.TableHeader;
+  /** @const */ var ListSelectionModel = cr.ui.ListSelectionModel;
+  /** @const */ var ListSelectionController = cr.ui.ListSelectionController;
+  /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
+  /** @const */ var TableColumnModel = cr.ui.table.TableColumnModel;
+  /** @const */ var TableList = cr.ui.table.TableList;
+  /** @const */ var TableHeader = cr.ui.table.TableHeader;
 
   /**
    * Creates a new table element.
@@ -40,11 +40,19 @@ cr.define('cr.ui', function() {
         if (this.list_.dataModel) {
           this.list_.dataModel.removeEventListener('sorted',
                                                    this.boundHandleSorted_);
+          this.list_.dataModel.removeEventListener('change',
+                                                   this.boundHandleChangeList_);
+          this.list_.dataModel.removeEventListener('splice',
+                                                   this.boundHandleChangeList_);
         }
         this.list_.dataModel = dataModel;
         if (this.list_.dataModel) {
           this.list_.dataModel.addEventListener('sorted',
                                                 this.boundHandleSorted_);
+          this.list_.dataModel.addEventListener('change',
+                                                this.boundHandleChangeList_);
+          this.list_.dataModel.addEventListener('splice',
+                                                this.boundHandleChangeList_);
         }
         this.header_.redraw();
       }
@@ -176,6 +184,7 @@ cr.define('cr.ui', function() {
 
       this.boundResize_ = this.resize.bind(this);
       this.boundHandleSorted_ = this.handleSorted_.bind(this);
+      this.boundHandleChangeList_ = this.handleChangeList_.bind(this);
 
       // The contained list should be focusable, not the table itself.
       if (this.hasAttribute('tabindex')) {
@@ -193,6 +202,16 @@ cr.define('cr.ui', function() {
     redraw: function(index) {
       this.list_.redraw();
       this.header_.redraw();
+    },
+
+    startBatchUpdates: function() {
+      this.list_.startBatchUpdates();
+      this.header_.startBatchUpdates();
+    },
+
+    endBatchUpdates: function() {
+      this.list_.endBatchUpdates();
+      this.header_.endBatchUpdates();
     },
 
     /**
@@ -232,6 +251,16 @@ cr.define('cr.ui', function() {
     },
 
     /**
+     * This handles data model 'change' and 'splice' events.
+     * Since they may change the visibility of scrollbar, table may need to
+     * re-calculation the width of column headers.
+     * @param {Event} e The 'change' or 'splice' event.
+     */
+    handleChangeList_: function(e) {
+      webkitRequestAnimationFrame(this.header_.updateWidth.bind(this.header_));
+    },
+
+    /**
      * Sort data by the given column.
      * @param {number} index The index of the column to sort by.
      */
@@ -242,8 +271,10 @@ cr.define('cr.ui', function() {
         var sortDirection = sortStatus.direction == 'desc' ? 'asc' : 'desc';
         this.list_.dataModel.sort(sortStatus.field, sortDirection);
       } else {
-        this.list_.dataModel.sort(cm.getId(i), 'asc');
+        this.list_.dataModel.sort(cm.getId(i), cm.getDefaultOrder(i));
       }
+      if (this.selectionModel.selectedIndex == -1)
+        this.list_.scrollTop = 0;
     },
 
     /**

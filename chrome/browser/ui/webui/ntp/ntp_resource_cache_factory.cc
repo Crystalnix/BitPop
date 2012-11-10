@@ -6,6 +6,7 @@
 
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/webui/ntp/ntp_resource_cache.h"
 
 // static
@@ -21,8 +22,11 @@ NTPResourceCacheFactory* NTPResourceCacheFactory::GetInstance() {
 
 NTPResourceCacheFactory::NTPResourceCacheFactory()
     : ProfileKeyedServiceFactory("NTPResourceCache",
-                                 ProfileDependencyManager::GetInstance())
-{}
+                                 ProfileDependencyManager::GetInstance()) {
+#if defined(ENABLE_THEMES)
+  DependsOn(ThemeServiceFactory::GetInstance());
+#endif
+}
 
 NTPResourceCacheFactory::~NTPResourceCacheFactory() {}
 

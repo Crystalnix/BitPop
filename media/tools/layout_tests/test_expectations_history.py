@@ -1,25 +1,27 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 """A module for the history of the test expectation file."""
+
+from datetime import datetime
+from datetime import timedelta
 
 import re
 import sys
 import time
 import pysvn
 
-from datetime import datetime
-from datetime import timedelta
-
 # Default Webkit SVN location for chromium test expectation file.
 # TODO(imasaki): support multiple test expectation files.
 DEFAULT_TEST_EXPECTATION_LOCATION = (
     'http://svn.webkit.org/repository/webkit/trunk/'
+    'LayoutTests/platform/chromium/TestExpectations')
+LEGACY_TEST_EXPECTATION_LOCATION = (
+    'http://svn.webkit.org/repository/webkit/trunk/'
     'LayoutTests/platform/chromium/test_expectations.txt')
 
-
-class TestExpectationsHistory:
+class TestExpectationsHistory(object):
   """A class to represent history of the test expectation file.
 
   The history is obtained by calling PySVN.log()/diff() APIs.
@@ -57,7 +59,7 @@ class TestExpectationsHistory:
     # PySVN.log() (http://pysvn.tigris.org/docs/pysvn_prog_ref.html
     # #pysvn_client_log) returns the log messages (including revision
     # number in chronological order).
-    logs = client.log('tmp/test_expectations.txt',
+    logs = client.log('tmp/TestExpectations',
                       revision_start=pysvn.Revision(
                           pysvn.opt_revision_kind.date, start),
                       revision_end=pysvn.Revision(
@@ -69,7 +71,7 @@ class TestExpectationsHistory:
           (datetime.fromtimestamp(start) - (
               timedelta(days=gobackdays))).timetuple())
       logs_before_time_period = (
-          client.log('tmp/test_expectations.txt',
+          client.log('tmp/TestExpectations',
                      revision_start=pysvn.Revision(
                          pysvn.opt_revision_kind.date, goback_start),
                      revision_end=pysvn.Revision(
@@ -84,9 +86,20 @@ class TestExpectationsHistory:
       old_rev = logs[i].revision.number
       new_rev = logs[i + 1].revision.number
       # Parsing the actual diff.
-      text = client.diff('/tmp', 'tmp/test_expectations.txt',
+
+      # test_expectations.txt was renamed to TestExpectations at r119317.
+      new_path = DEFAULT_TEST_EXPECTATION_LOCATION
+      if new_rev < 119317:
+        new_path = LEGACY_TEST_EXPECTATION_LOCATION
+      old_path = DEFAULT_TEST_EXPECTATION_LOCATION
+      if old_rev < 119317:
+        old_path = LEGACY_TEST_EXPECTATION_LOCATION
+
+      text = client.diff('/tmp',
+                         url_or_path=old_path,
                          revision1=pysvn.Revision(
                              pysvn.opt_revision_kind.number, old_rev),
+                         url_or_path2=new_path,
                          revision2=pysvn.Revision(
                              pysvn.opt_revision_kind.number, new_rev))
       lines = text.split('\n')

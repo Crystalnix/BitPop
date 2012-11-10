@@ -1,13 +1,15 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_AUTOCOMPLETE_HISTORY_PROVIDER_H_
 #define CHROME_BROWSER_AUTOCOMPLETE_HISTORY_PROVIDER_H_
-#pragma once
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/autocomplete/autocomplete.h"
+#include "chrome/browser/autocomplete/autocomplete_provider.h"
+
+class AutocompleteInput;
+struct AutocompleteMatch;
 
 // This class is a base class for the history autocomplete providers and
 // provides functions useful to all derived classes.
@@ -16,9 +18,10 @@ class HistoryProvider : public AutocompleteProvider {
   virtual void DeleteMatch(const AutocompleteMatch& match) OVERRIDE;
 
  protected:
-  HistoryProvider(ACProviderListener* listener,
+  HistoryProvider(AutocompleteProviderListener* listener,
                   Profile* profile,
                   const char* name);
+  virtual ~HistoryProvider();
 
   // Fixes up user URL input to make it more possible to match against.  Among
   // many other things, this takes care of the following:
@@ -44,8 +47,11 @@ class HistoryProvider : public AutocompleteProvider {
   // of |input.prevent_inline_autocomplete| if the input is passed through
   // FixupUserInput(). This method returns true if
   // |input.prevent_inline_autocomplete()| is true, or the input text contains
-  // trailing whitespace.
+  // trailing whitespace, or if always_prevent_inline_autocomplete is true.
   bool PreventInlineAutocomplete(const AutocompleteInput& input);
+
+  // If true, we always prevent inline autocompletions.
+  bool always_prevent_inline_autocomplete_;
 };
 
 #endif  // CHROME_BROWSER_AUTOCOMPLETE_HISTORY_PROVIDER_H_

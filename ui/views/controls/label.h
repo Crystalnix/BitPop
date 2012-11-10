@@ -1,17 +1,15 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_VIEWS_CONTROLS_LABEL_H_
 #define UI_VIEWS_CONTROLS_LABEL_H_
-#pragma once
 
 #include <string>
 
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/string16.h"
-#include "googleurl/src/gurl.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/font.h"
 #include "ui/views/view.h"
@@ -32,19 +30,24 @@ class VIEWS_EXPORT Label : public View {
                    ALIGN_RIGHT };
 
   // The following enum is used to indicate whether using the Chrome UI's
-  // alignment as the label's alignment, or autodetecting the label's
-  // alignment.
+  // directionality as the label's directionality, or auto-detecting the label's
+  // directionality.
   //
   // If the label text originates from the Chrome UI, we should use the Chrome
-  // UI's alignment as the label's alignment.
+  // UI's directionality as the label's directionality.
   //
-  // If the text originates from a web page, the text's alignment is determined
-  // based on the first character with strong directionality, disregarding what
-  // directionality the Chrome UI is. And its alignment will not be flipped
-  // around in RTL locales.
-  enum RTLAlignmentMode {
-    USE_UI_ALIGNMENT = 0,
-    AUTO_DETECT_ALIGNMENT
+  // If the text originates from a web page, its directionality is determined
+  // based on its first character with strong directionality, disregarding what
+  // directionality the Chrome UI is.
+  enum DirectionalityMode {
+    USE_UI_DIRECTIONALITY = 0,
+    AUTO_DETECT_DIRECTIONALITY
+  };
+
+  enum ElideBehavior {
+    NO_ELIDE,
+    ELIDE_IN_MIDDLE,
+    ELIDE_AT_END,
   };
 
   // The view class name.
@@ -58,23 +61,20 @@ class VIEWS_EXPORT Label : public View {
   Label(const string16& text, const gfx::Font& font);
   virtual ~Label();
 
-  // Set the font.
+  // Sets the font.
   virtual void SetFont(const gfx::Font& font);
 
-  // Set the label text.
+  // Sets the label text.
   void SetText(const string16& text);
 
-  // Return the font used by this label.
+  // Sets the label text to |email|.  Emails have a custom eliding algorithm.
+  void SetEmail(const string16& email);
+
+  // Returns the font used by this label.
   gfx::Font font() const { return font_; }
 
-  // Return the label text.
-  const string16 GetText() const;
-
-  // Set URL Value - text_ is set to spec().
-  void SetURL(const GURL& url);
-
-  // Return the label URL.
-  const GURL GetURL() const;
+  // Returns the label text.
+  string16 text() const { return text_; };
 
   // Enables or disables auto-color-readability (enabled by default).  If this
   // is enabled, then calls to set any foreground or background color will
@@ -82,56 +82,64 @@ class VIEWS_EXPORT Label : public View {
   // ensure that the foreground colors are readable over the background color.
   void SetAutoColorReadabilityEnabled(bool enabled);
 
-  // Set the color.  This will automatically force the color to be readable
+  // Sets the color.  This will automatically force the color to be readable
   // over the current background color.
-  virtual void SetEnabledColor(const SkColor& color);
-  void SetDisabledColor(const SkColor& color);
+  virtual void SetEnabledColor(SkColor color);
+  void SetDisabledColor(SkColor color);
 
   SkColor enabled_color() const { return actual_enabled_color_; }
 
-  // Set the background color.  This won't be explicitly drawn, but the label
+  // Sets the background color.  This won't be explicitly drawn, but the label
   // will force the text color to be readable over it.
-  void SetBackgroundColor(const SkColor& color);
+  void SetBackgroundColor(SkColor color);
 
-  // Set horizontal alignment. If the locale is RTL, and the RTL alignment
-  // setting is set as USE_UI_ALIGNMENT, the alignment is flipped around.
+  // Enables a drop shadow underneath the text.
+  void SetShadowColors(SkColor enabled_color, SkColor disabled_color);
+
+  // Sets the drop shadow's offset from the text.
+  void SetShadowOffset(int x, int y);
+
+  // Disables shadows.
+  void ClearEmbellishing();
+
+  // Sets horizontal alignment. If the locale is RTL, and the directionality
+  // mode is USE_UI_DIRECTIONALITY, the alignment is flipped around.
   //
-  // Caveat: for labels originating from a web page, the RTL alignment mode
-  // should be reset to AUTO_DETECT_ALIGNMENT before the horizontal alignment
-  // is set. Otherwise, the label's alignment specified as a parameter will be
-  // flipped in RTL locales. Please see the comments in SetRTLAlignmentMode for
-  // more information.
+  // Caveat: for labels originating from a web page, the directionality mode
+  // should be reset to AUTO_DETECT_DIRECTIONALITY before the horizontal
+  // alignment is set. Otherwise, the label's alignment specified as a parameter
+  // will be flipped in RTL locales.
   void SetHorizontalAlignment(Alignment alignment);
 
   Alignment horizontal_alignment() const { return horiz_alignment_; }
 
-  // Set the RTL alignment mode. The RTL alignment mode is initialized to
-  // USE_UI_ALIGNMENT when the label is constructed. USE_UI_ALIGNMENT applies
-  // to every label that originates from the Chrome UI. However, if the label
-  // originates from a web page, its alignment should not be flipped around for
-  // RTL locales. For such labels, we need to set the RTL alignment mode to
-  // AUTO_DETECT_ALIGNMENT so that subsequent SetHorizontalAlignment() calls
-  // will not flip the label's alignment around.
-  void set_rtl_alignment_mode(RTLAlignmentMode mode) {
-    rtl_alignment_mode_ = mode;
+  // Sets the directionality mode. The directionality mode is initialized to
+  // USE_UI_DIRECTIONALITY when the label is constructed. USE_UI_DIRECTIONALITY
+  // applies to every label that originates from the Chrome UI. However, if the
+  // label originates from a web page, its directionality is auto-detected.
+  void set_directionality_mode(DirectionalityMode mode) {
+    directionality_mode_ = mode;
   }
-  RTLAlignmentMode rtl_alignment_mode() const { return rtl_alignment_mode_; }
 
-  // Set whether the label text can wrap on multiple lines.
+  DirectionalityMode directionality_mode() const {
+    return directionality_mode_;
+  }
+
+  // Sets whether the label text can wrap on multiple lines.
   // Default is false.
   void SetMultiLine(bool multi_line);
 
-  // Return whether the label text can wrap on multiple lines.
+  // Returns whether the label text can wrap on multiple lines.
   bool is_multi_line() const { return is_multi_line_; }
 
-  // Set whether the label text can be split on words.
+  // Sets whether the label text can be split on words.
   // Default is false. This only works when is_multi_line is true.
   void SetAllowCharacterBreak(bool allow_character_break);
 
-  // Set whether the label text should be elided in the middle (if necessary).
-  // The default is to elide at the end.
-  // NOTE: This is not supported for multi-line strings.
-  void SetElideInMiddle(bool elide_in_middle);
+  // Sets whether the label text should be elided in the middle or end (if
+  // necessary). The default is to not elide at all.
+  // NOTE: Eliding in the middle is not supported for multi-line strings.
+  void SetElideBehavior(ElideBehavior elide_behavior);
 
   // Sets the tooltip text.  Default behavior for a label (single-line) is to
   // show the full text if it is wider than its bounds.  Calling this overrides
@@ -171,7 +179,7 @@ class VIEWS_EXPORT Label : public View {
   virtual int GetBaseline() const OVERRIDE;
   // Overridden to compute the size required to display this label.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
-  // Return the height necessary to display this label with the provided width.
+  // Returns the height necessary to display this label with the provided width.
   // This method is used to layout multi-line labels. It is equivalent to
   // GetPreferredSize().height() if the receiver is not multi-line.
   virtual int GetHeightForWidth(int w) OVERRIDE;
@@ -219,6 +227,10 @@ class VIEWS_EXPORT Label : public View {
   FRIEND_TEST_ALL_PREFIXES(LabelTest, DrawMultiLineString);
   FRIEND_TEST_ALL_PREFIXES(LabelTest, DrawSingleLineStringInRTL);
   FRIEND_TEST_ALL_PREFIXES(LabelTest, DrawMultiLineStringInRTL);
+  FRIEND_TEST_ALL_PREFIXES(LabelTest, AutoDetectDirectionality);
+
+  // Calls ComputeDrawStringFlags().
+  FRIEND_TEST_ALL_PREFIXES(LabelTest, DisableSubpixelRendering);
 
   static gfx::Font GetDefaultFont();
 
@@ -238,7 +250,7 @@ class VIEWS_EXPORT Label : public View {
   // Returns where the text is drawn, in the receivers coordinate system.
   gfx::Rect GetTextBounds() const;
 
-  int ComputeMultiLineFlags() const;
+  int ComputeDrawStringFlags() const;
 
   gfx::Rect GetAvailableRect() const;
 
@@ -248,7 +260,6 @@ class VIEWS_EXPORT Label : public View {
                                  int* flags) const;
 
   string16 text_;
-  GURL url_;
   gfx::Font font_;
   SkColor requested_enabled_color_;
   SkColor actual_enabled_color_;
@@ -260,8 +271,8 @@ class VIEWS_EXPORT Label : public View {
   mutable bool text_size_valid_;
   bool is_multi_line_;
   bool allow_character_break_;
-  bool elide_in_middle_;
-  bool url_set_;
+  ElideBehavior elide_behavior_;
+  bool is_email_;
   Alignment horiz_alignment_;
   string16 tooltip_text_;
   // Whether the mouse is over this label.
@@ -269,10 +280,10 @@ class VIEWS_EXPORT Label : public View {
   scoped_ptr<Background> mouse_over_background_;
   // Whether to collapse the label when it's not visible.
   bool collapse_when_hidden_;
-  // The following member variable is used to control whether the alignment
-  // needs to be flipped around for RTL locales. Please refer to the definition
-  // of RTLAlignmentMode for more information.
-  RTLAlignmentMode rtl_alignment_mode_;
+  // The following member variable is used to control whether the
+  // directionality is auto-detected based on first strong directionality
+  // character or is determined by chrome UI's locale.
+  DirectionalityMode directionality_mode_;
   // When embedded in a larger control that is focusable, setting this flag
   // allows this view to be painted as focused even when it is itself not.
   bool paint_as_focused_;
@@ -280,6 +291,17 @@ class VIEWS_EXPORT Label : public View {
   // allows this view to reserve space for a focus border that it otherwise
   // might not have because it is not itself focusable.
   bool has_focus_border_;
+
+  // Colors for shadow.
+  SkColor enabled_shadow_color_;
+  SkColor disabled_shadow_color_;
+
+  // Space between text and shadow.
+  gfx::Point shadow_offset_;
+
+  // Should a shadow be drawn behind the text?
+  bool has_shadow_;
+
 
   DISALLOW_COPY_AND_ASSIGN(Label);
 };

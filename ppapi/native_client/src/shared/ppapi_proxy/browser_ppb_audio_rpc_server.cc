@@ -6,6 +6,7 @@
 
 #include "native_client/src/include/nacl_scoped_ptr.h"
 #include "native_client/src/include/portability.h"
+#include "native_client/src/shared/imc/nacl_imc.h"
 #include "native_client/src/shared/ppapi_proxy/browser_globals.h"
 #include "native_client/src/shared/ppapi_proxy/browser_ppp.h"
 #include "native_client/src/shared/ppapi_proxy/plugin_globals.h"
@@ -67,32 +68,53 @@ void StreamCreatedCallback(void* user_data, int32_t result) {
   if (NULL == audioTrusted) {
     return;
   }
-  int sync_socket_handle;
-  int shared_memory_handle;
-  uint32_t shared_memory_size;
+  const int kInvalidIntHandle = int(nacl::kInvalidHandle);
+  int sync_socket_handle = kInvalidIntHandle;
+  int shared_memory_handle = kInvalidIntHandle;
+  uint32_t audio_buffer_size = 0;
   if (PP_OK != audioTrusted->GetSyncSocket(data->audio_id,
                                            &sync_socket_handle)) {
     return;
   }
-  if (PP_OK != audioTrusted->GetSharedMemory(data->audio_id,
-                                             &shared_memory_handle,
-                                             &shared_memory_size)) {
+  if (kInvalidIntHandle == sync_socket_handle) {
     return;
   }
+  if (PP_OK != audioTrusted->GetSharedMemory(data->audio_id,
+                                             &shared_memory_handle,
+                                             &audio_buffer_size)) {
+    return;
+  }
+  if (kInvalidIntHandle == shared_memory_handle) {
+    return;
+  }
+  size_t total_shared_memory_size =
+      ppapi_proxy::TotalAudioSharedMemorySizeInBytes(audio_buffer_size);
   nacl::DescWrapperFactory factory;
-  NaClHandle nacl_shm_handle = (NaClHandle)shared_memory_handle;
-  NaClHandle nacl_sync_handle = (NaClHandle)sync_socket_handle;
+  NaClHandle nacl_shm_handle = NaClHandle(shared_memory_handle);
+  NaClHandle nacl_sync_handle = NaClHandle(sync_socket_handle);
+  NaClHandle nacl_shm_dup_handle = NaClDuplicateNaClHandle(nacl_shm_handle);
+  if (nacl::kInvalidHandle == nacl_shm_dup_handle) {
+    return;
+  }
   nacl::scoped_ptr<nacl::DescWrapper> shm_wrapper(factory.ImportShmHandle(
-      nacl_shm_handle, shared_memory_size));
+      nacl_shm_dup_handle, total_shared_memory_size));
+  NaClHandle nacl_sync_dup_handle = NaClDuplicateNaClHandle(nacl_sync_handle);
+  if (nacl::kInvalidHandle == nacl_sync_dup_handle) {
+    return;
+  }
   nacl::scoped_ptr<nacl::DescWrapper> socket_wrapper(
-      factory.ImportSyncSocketHandle(nacl_sync_handle));
-  NaClDesc *nacl_shm = NaClDescRef(shm_wrapper->desc());
-  NaClDesc *nacl_socket = NaClDescRef(socket_wrapper->desc());
+      factory.ImportSyncSocketHandle(nacl_sync_dup_handle));
+  NaClDesc *nacl_shm = shm_wrapper->desc();
+  NaClDesc *nacl_socket = socket_wrapper->desc();
+  NaClSrpcChannel* nacl_srpc_channel = ppapi_proxy::GetMainSrpcChannel(
+      data->instance_id);
+  if (NULL == nacl_srpc_channel)
+    return;
   static_cast<void>(PppAudioRpcClient::PPP_Audio_StreamCreated(
-      ppapi_proxy::GetMainSrpcChannel(data->instance_id),
+      nacl_srpc_channel,
       data->audio_id,
       nacl_shm,
-      shared_memory_size,
+      audio_buffer_size,
       nacl_socket));
 }
 

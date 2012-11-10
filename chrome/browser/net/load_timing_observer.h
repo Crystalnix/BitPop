@@ -1,15 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_NET_LOAD_TIMING_OBSERVER_H_
 #define CHROME_BROWSER_NET_LOAD_TIMING_OBSERVER_H_
-#pragma once
 
 #include "base/gtest_prod_util.h"
 #include "base/hash_tables.h"
 #include "base/time.h"
-#include "chrome/browser/net/chrome_net_log.h"
 #include "net/base/net_log.h"
 #include "webkit/glue/resource_loader_bridge.h"
 
@@ -26,7 +24,7 @@ class URLRequest;
 //
 // LoadTimingObserver lives completely on the IOThread and ignores events from
 // other threads.  It is not safe to use from other threads.
-class LoadTimingObserver : public ChromeNetLog::ThreadSafeObserverImpl {
+class LoadTimingObserver : public net::NetLog::ThreadSafeObserver {
  public:
   struct URLRequestRecord {
     URLRequestRecord();
@@ -64,14 +62,14 @@ class LoadTimingObserver : public ChromeNetLog::ThreadSafeObserverImpl {
   LoadTimingObserver();
   virtual ~LoadTimingObserver();
 
+  // Starts observing specified NetLog.  Must not already be watching a NetLog.
+  // Separate from constructor to enforce thread safety.
+  void StartObserving(net::NetLog* net_log);
+
   URLRequestRecord* GetURLRequestRecord(uint32 source_id);
 
-  // ThreadSafeObserver implementation:
-  virtual void OnAddEntry(net::NetLog::EventType type,
-                          const base::TimeTicks& time,
-                          const net::NetLog::Source& source,
-                          net::NetLog::EventPhase phase,
-                          net::NetLog::EventParameters* params) OVERRIDE;
+  // net::NetLog::ThreadSafeObserver implementation:
+  virtual void OnAddEntry(const net::NetLog::Entry& entry) OVERRIDE;
 
   static void PopulateTimingInfo(net::URLRequest* request,
                                  content::ResourceResponse* response);
@@ -84,32 +82,16 @@ class LoadTimingObserver : public ChromeNetLog::ThreadSafeObserverImpl {
   FRIEND_TEST_ALL_PREFIXES(LoadTimingObserverTest,
                            SocketRecord);
 
-  void OnAddURLRequestEntry(net::NetLog::EventType type,
-                            const base::TimeTicks& time,
-                            const net::NetLog::Source& source,
-                            net::NetLog::EventPhase phase,
-                            net::NetLog::EventParameters* params);
-
-  void OnAddHTTPStreamJobEntry(net::NetLog::EventType type,
-                               const base::TimeTicks& time,
-                               const net::NetLog::Source& source,
-                               net::NetLog::EventPhase phase,
-                               net::NetLog::EventParameters* params);
-
-  void OnAddConnectJobEntry(net::NetLog::EventType type,
-                            const base::TimeTicks& time,
-                            const net::NetLog::Source& source,
-                            net::NetLog::EventPhase phase,
-                            net::NetLog::EventParameters* params);
-
-  void OnAddSocketEntry(net::NetLog::EventType type,
-                        const base::TimeTicks& time,
-                        const net::NetLog::Source& source,
-                        net::NetLog::EventPhase phase,
-                        net::NetLog::EventParameters* params);
+  void OnAddURLRequestEntry(const net::NetLog::Entry& entry);
+  void OnAddHTTPStreamJobEntry(const net::NetLog::Entry& entry);
+  void OnAddConnectJobEntry(const net::NetLog::Entry& entry);
+  void OnAddSocketEntry(const net::NetLog::Entry& entry);
 
   URLRequestRecord* CreateURLRequestRecord(uint32 source_id);
   void DeleteURLRequestRecord(uint32 source_id);
+
+  // Returns current time.  Virtual for unit tests.
+  virtual base::TimeTicks GetCurrentTime() const;
 
   typedef base::hash_map<uint32, URLRequestRecord> URLRequestToRecordMap;
   typedef base::hash_map<uint32, HTTPStreamJobRecord> HTTPStreamJobToRecordMap;

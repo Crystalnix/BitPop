@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,7 +26,7 @@ cr.define('options.internet', function() {
       this.textContent = '';
       if (!plans || !plans.length) {
         var noplansDiv = this.ownerDocument.createElement('div');
-        noplansDiv.textContent = localStrings.getString('noPlansFound');
+        noplansDiv.textContent = loadTimeData.getString('noPlansFound');
         this.appendChild(detailsTable);
       } else {
         for (var i = 0; i < plans.length; ++i) {
@@ -78,15 +78,15 @@ cr.define('options.internet', function() {
       this.addRow_(detailsTable, 'plan-details-info',
           'option-name', 'planSummary', this.data.planSummary);
       this.addRow_(detailsTable, 'plan-details-info',
-          'option-name', null, localStrings.getString('planName'),
+          'option-name', null, loadTimeData.getString('planName'),
           'option-value', 'planName', this.data.name);
       this.addRow_(detailsTable, 'plan-details-info',
-        'option-name', null, localStrings.getString('dataRemaining'),
+        'option-name', null, loadTimeData.getString('dataRemaining'),
         'option-value', 'dataRemaining', this.data.dataRemaining);
       this.addRow_(detailsTable, 'plan-details-info',
-        'option-name', null, localStrings.getString('planExpires'),
+        'option-name', null, loadTimeData.getString('planExpires'),
         'option-value', 'dataRemaining', this.data.planExpires);
-      if (this.data.warning && this.data.warning != "") {
+      if (this.data.warning && this.data.warning != '') {
         this.addRow_(detailsTable, 'plan-details-info',
             'option-name', 'planWarning', this.data.warning);
       }
@@ -112,7 +112,7 @@ cr.define('options.internet', function() {
         col1.id = col1Id;
       col1.textContent = col1Value;
       if (!col2Class)
-        col1.setAttribute('colspan','2');
+        col1.setAttribute('colspan', '2');
       row.appendChild(col1);
       if (col2Class) {
         var col2 = this.ownerDocument.createElement('td');

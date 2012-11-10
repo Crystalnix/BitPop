@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,7 @@
 #include "ui/base/models/table_model_observer.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/image/image_skia.h"
 
 // Group IDs used by TemplateURLTableModel.
 static const int kMainGroupID = 0;
@@ -31,25 +32,25 @@ static const int kOtherGroupID = 1;
 // ModelEntry also tracks state information about the URL.
 
 // Icon used while loading, or if a specific favicon can't be found.
-static SkBitmap* default_icon = NULL;
+static gfx::ImageSkia* default_icon = NULL;
 
 class ModelEntry {
  public:
-  ModelEntry(TemplateURLTableModel* model, const TemplateURL& template_url)
+  ModelEntry(TemplateURLTableModel* model, TemplateURL* template_url)
       : template_url_(template_url),
         load_state_(NOT_LOADED),
         model_(model) {
     if (!default_icon) {
       default_icon = ResourceBundle::GetSharedInstance().
-          GetBitmapNamed(IDR_DEFAULT_FAVICON);
+          GetImageSkiaNamed(IDR_DEFAULT_FAVICON);
     }
   }
 
-  const TemplateURL& template_url() {
+  TemplateURL* template_url() {
     return template_url_;
   }
 
-  SkBitmap GetIcon() {
+  gfx::ImageSkia GetIcon() {
     if (load_state_ == NOT_LOADED)
       LoadFavicon();
     if (!favicon_.isNull())
@@ -79,11 +80,11 @@ class ModelEntry {
             Profile::EXPLICIT_ACCESS);
     if (!favicon_service)
       return;
-    GURL favicon_url = template_url().GetFaviconURL();
+    GURL favicon_url = template_url()->favicon_url();
     if (!favicon_url.is_valid()) {
       // The favicon url isn't always set. Guess at one here.
-      if (template_url_.url() && template_url_.url()->IsValid()) {
-        GURL url = GURL(template_url_.url()->url());
+      if (template_url_->url_ref().IsValid()) {
+        GURL url(template_url_->url());
         if (url.is_valid())
           favicon_url = TemplateURL::GenerateFaviconURL(url);
       }
@@ -108,7 +109,7 @@ class ModelEntry {
     }
   }
 
-  const TemplateURL& template_url_;
+  TemplateURL* template_url_;
   SkBitmap favicon_;
   LoadState load_state_;
   TemplateURLTableModel* model_;
@@ -139,30 +140,30 @@ void TemplateURLTableModel::Reload() {
   STLDeleteElements(&entries_);
   entries_.clear();
 
-  std::vector<const TemplateURL*> urls =
+  TemplateURLService::TemplateURLVector urls =
       template_url_service_->GetTemplateURLs();
 
   // Keywords that can be made the default first.
-  for (std::vector<const TemplateURL*>::iterator i = urls.begin();
+  for (TemplateURLService::TemplateURLVector::iterator i = urls.begin();
        i != urls.end(); ++i) {
-    const TemplateURL& template_url = *(*i);
+    TemplateURL* template_url = *i;
     // NOTE: we don't use ShowInDefaultList here to avoid items bouncing around
     // the lists while editing.
-    if (template_url.show_in_default_list())
+    if (template_url->show_in_default_list())
       entries_.push_back(new ModelEntry(this, template_url));
   }
 
   last_search_engine_index_ = static_cast<int>(entries_.size());
 
   // Then the rest.
-  for (std::vector<const TemplateURL*>::iterator i = urls.begin();
+  for (TemplateURLService::TemplateURLVector::iterator i = urls.begin();
        i != urls.end(); ++i) {
-    const TemplateURL* template_url = *i;
+    TemplateURL* template_url = *i;
     // NOTE: we don't use ShowInDefaultList here to avoid things bouncing
     // the lists while editing.
     if (!template_url->show_in_default_list() &&
         !template_url->IsExtensionKeyword()) {
-      entries_.push_back(new ModelEntry(this, *template_url));
+      entries_.push_back(new ModelEntry(this, template_url));
     }
   }
 
@@ -176,31 +177,24 @@ int TemplateURLTableModel::RowCount() {
 
 string16 TemplateURLTableModel::GetText(int row, int col_id) {
   DCHECK(row >= 0 && row < RowCount());
-  const TemplateURL& url = entries_[row]->template_url();
+  const TemplateURL* url = entries_[row]->template_url();
   if (col_id == IDS_SEARCH_ENGINES_EDITOR_DESCRIPTION_COLUMN) {
-    string16 url_short_name = url.short_name();
+    string16 url_short_name = url->short_name();
     // TODO(xji): Consider adding a special case if the short name is a URL,
     // since those should always be displayed LTR. Please refer to
     // http://crbug.com/6726 for more information.
     base::i18n::AdjustStringForLocaleDirection(&url_short_name);
-    if (template_url_service_->GetDefaultSearchProvider() == &url) {
-      return l10n_util::GetStringFUTF16(
-          IDS_SEARCH_ENGINES_EDITOR_DEFAULT_ENGINE,
-          url_short_name);
-    }
-    return url_short_name;
-  } else if (col_id == IDS_SEARCH_ENGINES_EDITOR_KEYWORD_COLUMN) {
-    // Keyword should be domain name. Force it to have LTR directionality.
-    string16 keyword = url.keyword();
-    keyword = base::i18n::GetDisplayStringInLTRDirectionality(keyword);
-    return keyword;
-  } else {
-    NOTREACHED();
-    return string16();
+    return (template_url_service_->GetDefaultSearchProvider() == url) ?
+        l10n_util::GetStringFUTF16(IDS_SEARCH_ENGINES_EDITOR_DEFAULT_ENGINE,
+                                   url_short_name) : url_short_name;
   }
+
+  DCHECK_EQ(IDS_SEARCH_ENGINES_EDITOR_KEYWORD_COLUMN, col_id);
+  // Keyword should be domain name. Force it to have LTR directionality.
+  return base::i18n::GetDisplayStringInLTRDirectionality(url->keyword());
 }
 
-SkBitmap TemplateURLTableModel::GetIcon(int row) {
+gfx::ImageSkia TemplateURLTableModel::GetIcon(int row) {
   DCHECK(row >= 0 && row < RowCount());
   return entries_[row]->GetIcon();
 }
@@ -240,7 +234,7 @@ void TemplateURLTableModel::Remove(int index) {
   // Remove the observer while we modify the model, that way we don't need to
   // worry about the model calling us back when we mutate it.
   template_url_service_->RemoveObserver(this);
-  const TemplateURL* template_url = &GetTemplateURL(index);
+  TemplateURL* template_url = GetTemplateURL(index);
 
   scoped_ptr<ModelEntry> entry(entries_[index]);
   entries_.erase(entries_.begin() + index);
@@ -255,15 +249,24 @@ void TemplateURLTableModel::Remove(int index) {
   template_url_service_->AddObserver(this);
 }
 
-void TemplateURLTableModel::Add(int index, TemplateURL* template_url) {
+void TemplateURLTableModel::Add(int index,
+                                const string16& short_name,
+                                const string16& keyword,
+                                const std::string& url) {
   DCHECK(index >= 0 && index <= RowCount());
-  ModelEntry* entry = new ModelEntry(this, *template_url);
+  DCHECK(!url.empty());
+  template_url_service_->RemoveObserver(this);
+  TemplateURLData data;
+  data.short_name = short_name;
+  data.SetKeyword(keyword);
+  data.SetURL(url);
+  TemplateURL* turl = new TemplateURL(template_url_service_->profile(), data);
+  template_url_service_->Add(turl);
+  ModelEntry* entry = new ModelEntry(this, turl);
+  template_url_service_->AddObserver(this);
   entries_.insert(entries_.begin() + index, entry);
   if (observer_)
     observer_->OnItemsAdded(index, 1);
-  template_url_service_->RemoveObserver(this);
-  template_url_service_->Add(template_url);
-  template_url_service_->AddObserver(this);
 }
 
 void TemplateURLTableModel::ModifyTemplateURL(int index,
@@ -271,16 +274,13 @@ void TemplateURLTableModel::ModifyTemplateURL(int index,
                                               const string16& keyword,
                                               const std::string& url) {
   DCHECK(index >= 0 && index <= RowCount());
-  const TemplateURL* template_url = &GetTemplateURL(index);
+  DCHECK(!url.empty());
+  TemplateURL* template_url = GetTemplateURL(index);
+  // The default search provider should support replacement.
+  DCHECK(template_url_service_->GetDefaultSearchProvider() != template_url ||
+         template_url->SupportsReplacement());
   template_url_service_->RemoveObserver(this);
   template_url_service_->ResetTemplateURL(template_url, title, keyword, url);
-  if (template_url_service_->GetDefaultSearchProvider() == template_url &&
-      !TemplateURL::SupportsReplacement(template_url)) {
-    // The entry was the default search provider, but the url has been modified
-    // so that it no longer supports replacement. Reset the default search
-    // provider so that it doesn't point to a bogus entry.
-    template_url_service_->SetDefaultSearchProvider(NULL);
-  }
   template_url_service_->AddObserver(this);
   ReloadIcon(index);  // Also calls NotifyChanged().
 }
@@ -293,7 +293,7 @@ void TemplateURLTableModel::ReloadIcon(int index) {
   NotifyChanged(index);
 }
 
-const TemplateURL& TemplateURLTableModel::GetTemplateURL(int index) {
+TemplateURL* TemplateURLTableModel::GetTemplateURL(int index) {
   return entries_[index]->template_url();
 }
 
@@ -302,7 +302,7 @@ int TemplateURLTableModel::IndexOfTemplateURL(
   for (std::vector<ModelEntry*>::iterator i = entries_.begin();
        i != entries_.end(); ++i) {
     ModelEntry* entry = *i;
-    if (&(entry->template_url()) == template_url)
+    if (entry->template_url() == template_url)
       return static_cast<int>(i - entries_.begin());
   }
   return -1;
@@ -330,7 +330,7 @@ int TemplateURLTableModel::MakeDefaultTemplateURL(int index) {
     return -1;
   }
 
-  const TemplateURL* keyword = &GetTemplateURL(index);
+  TemplateURL* keyword = GetTemplateURL(index);
   const TemplateURL* current_default =
       template_url_service_->GetDefaultSearchProvider();
   if (current_default == keyword)
@@ -365,7 +365,7 @@ void TemplateURLTableModel::NotifyChanged(int index) {
 
 void TemplateURLTableModel::FaviconAvailable(ModelEntry* entry) {
   std::vector<ModelEntry*>::iterator i =
-      find(entries_.begin(), entries_.end(), entry);
+      std::find(entries_.begin(), entries_.end(), entry);
   DCHECK(i != entries_.end());
   NotifyChanged(static_cast<int>(i - entries_.begin()));
 }

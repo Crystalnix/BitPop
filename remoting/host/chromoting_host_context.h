@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,17 @@
 #include <string>
 
 #include "base/gtest_prod_util.h"
+#include "base/memory/ref_counted.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
-#include "remoting/jingle_glue/jingle_thread.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}  // namespace base
+
+namespace net {
+class URLRequestContextGetter;
+}  // namespace net
 
 namespace remoting {
 
@@ -19,41 +27,68 @@ namespace remoting {
 class ChromotingHostContext {
  public:
   // Create a context.
-  explicit ChromotingHostContext(base::MessageLoopProxy* ui_message_loop);
+  ChromotingHostContext(
+      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner);
   virtual ~ChromotingHostContext();
 
-  // TODO(ajwong): Move the Start/Stop methods out of this class. Then
+  // TODO(ajwong): Move the Start method out of this class. Then
   // create a static factory for construction, and destruction.  We
-  // should be able to remove the need for virtual functions below with that
-  // design, while preserving the relative simplicity of this API.
-  virtual void Start();
-  virtual void Stop();
+  // should be able to remove the need for virtual functions below
+  // with that design, while preserving the relative simplicity of
+  // this API.
+  virtual bool Start();
 
-  virtual JingleThread* jingle_thread();
+  // Task runner for the thread that is used for the UI. In the NPAPI
+  // plugin this corresponds to the main plugin thread.
+  virtual base::SingleThreadTaskRunner* ui_task_runner();
 
-  virtual base::MessageLoopProxy* ui_message_loop();
-  virtual MessageLoop* main_message_loop();
-  virtual MessageLoop* encode_message_loop();
-  virtual base::MessageLoopProxy* network_message_loop();
-  virtual MessageLoop* desktop_message_loop();
+  // Task runner for the thread used by the ScreenRecorder to capture
+  // the screen.
+  virtual base::SingleThreadTaskRunner* capture_task_runner();
+
+  // Task runner for the thread used to encode video streams.
+  virtual base::SingleThreadTaskRunner* encode_task_runner();
+
+  // Task runner for the thread used for network IO. This thread runs
+  // a libjingle message loop, and is the only thread on which
+  // libjingle code may be run.
+  virtual base::SingleThreadTaskRunner* network_task_runner();
+
+  // Task runner for the thread that is used by the EventExecutor.
+  //
+  // TODO(sergeyu): Do we need a separate thread for EventExecutor?
+  // Can we use some other thread instead?
+  virtual base::SingleThreadTaskRunner* desktop_task_runner();
+
+  // Task runner for the thread that is used for blocking file
+  // IO. This thread is used by the URLRequestContext to read proxy
+  // configuration and by NatConfig to read policy configs.
+  virtual base::SingleThreadTaskRunner* file_task_runner();
+
+  const scoped_refptr<net::URLRequestContextGetter>&
+      url_request_context_getter();
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ChromotingHostContextTest, StartAndStop);
 
   // A thread that hosts all network operations.
-  JingleThread jingle_thread_;
+  base::Thread network_thread_;
 
-  // A thread that hosts ChromotingHost and performs rate control.
-  base::Thread main_thread_;
+  // A thread that hosts screen capture.
+  base::Thread capture_thread_;
 
   // A thread that hosts all encode operations.
   base::Thread encode_thread_;
 
-  // A thread that hosts desktop integration (capture, input injection, etc)
-  // This is NOT a Chrome-style UI thread.
+  // A thread that hosts input injection.
   base::Thread desktop_thread_;
 
-  scoped_refptr<base::MessageLoopProxy> ui_message_loop_;
+  // Thread for blocking IO operations.
+  base::Thread file_thread_;
+
+  scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
+
+  scoped_refptr<net::URLRequestContextGetter> url_request_context_getter_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromotingHostContext);
 };

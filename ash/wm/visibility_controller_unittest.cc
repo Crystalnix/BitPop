@@ -4,19 +4,24 @@
 
 #include "ash/wm/visibility_controller.h"
 
-#include "ash/test/aura_shell_test_base.h"
-#include "ui/aura/test/test_windows.h"
+#include "ash/test/ash_test_base.h"
 #include "ui/aura/test/test_window_delegate.h"
+#include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/compositor/layer.h"
+#include "ui/compositor/layer_animator.h"
 
 namespace ash {
 namespace internal {
 
-typedef test::AuraShellTestBase VisibilityControllerTest;
+typedef test::AshTestBase VisibilityControllerTest;
 
 // Hiding a window in an animatable container should not hide the window's layer
 // immediately.
 TEST_F(VisibilityControllerTest, AnimateHideDoesntHideWindowLayer) {
+  // We cannot disable animations for this test.
+  ui::LayerAnimator::set_disable_animations_for_test(false);
+
   scoped_ptr<aura::Window> container(
       aura::test::CreateTestWindowWithId(-1, NULL));
   SetChildWindowVisibilityChangesAnimated(container.get());

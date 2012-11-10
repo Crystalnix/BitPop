@@ -4,10 +4,12 @@
 
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "base/bits.h"
-#include "base/debug/trace_event.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
+#include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/memory_tracking.h"
+#include "gpu/command_buffer/service/texture_definition.h"
 
 namespace gpu {
 namespace gles2 {
@@ -62,40 +64,63 @@ TextureManager::~TextureManager() {
   // If this triggers, that means something is keeping a reference to
   // a TextureInfo belonging to this.
   CHECK_EQ(texture_info_count_, 0u);
+
+  DCHECK_EQ(0, num_unrenderable_textures_);
+  DCHECK_EQ(0, num_unsafe_textures_);
+  DCHECK_EQ(0, num_uncleared_mips_);
 }
 
 void TextureManager::Destroy(bool have_context) {
-  while (!texture_infos_.empty()) {
-    TextureInfo* info = texture_infos_.begin()->second;
-    if (have_context) {
-      if (!info->IsDeleted() && info->owned_) {
-        GLuint service_id = info->service_id();
-        glDeleteTextures(1, &service_id);
-        info->MarkAsDeleted();
-      }
-    }
-    texture_infos_.erase(texture_infos_.begin());
-  }
-  GLuint ids[kNumDefaultTextures * 2];
+  have_context_ = have_context;
+  texture_infos_.clear();
   for (int ii = 0; ii < kNumDefaultTextures; ++ii) {
-    TextureInfo* texture = default_textures_[ii].get();
-    mem_represented_ -= texture ? texture->estimated_size() : 0;
-    ids[ii * 2 + 0] = texture ? texture->service_id() : 0;
-    ids[ii * 2 + 1] = black_texture_ids_[ii];
+    default_textures_[ii] = NULL;
   }
 
   if (have_context) {
-    glDeleteTextures(arraysize(ids), ids);
+    glDeleteTextures(arraysize(black_texture_ids_), black_texture_ids_);
   }
 
   DCHECK_EQ(0u, mem_represented_);
   UpdateMemRepresented();
 }
 
+TextureManager::TextureInfo::TextureInfo(TextureManager* manager,
+                                         GLuint service_id)
+    : manager_(manager),
+      service_id_(service_id),
+      deleted_(false),
+      cleared_(true),
+      num_uncleared_mips_(0),
+      target_(0),
+      min_filter_(GL_NEAREST_MIPMAP_LINEAR),
+      mag_filter_(GL_LINEAR),
+      wrap_s_(GL_REPEAT),
+      wrap_t_(GL_REPEAT),
+      usage_(GL_NONE),
+      max_level_set_(-1),
+      texture_complete_(false),
+      cube_complete_(false),
+      npot_(false),
+      has_been_bound_(false),
+      framebuffer_attachment_count_(0),
+      owned_(true),
+      stream_texture_(false),
+      immutable_(false),
+      estimated_size_(0) {
+  if (manager_) {
+    manager_->StartTracking(this);
+  }
+}
+
 TextureManager::TextureInfo::~TextureInfo() {
   if (manager_) {
+    if (owned_ && manager_->have_context_) {
+      GLuint id = service_id();
+      glDeleteTextures(1, &id);
+    }
+    MarkAsDeleted();
     manager_->StopTracking(this);
-    --manager_->texture_info_count_;
     manager_ = NULL;
   }
 }
@@ -180,7 +205,14 @@ bool TextureManager::TextureInfo::CanGenerateMipmaps(
       target_ == GL_TEXTURE_RECTANGLE_ARB) {
     return false;
   }
+
+  // Can't generate mips for depth or stencil textures.
   const TextureInfo::LevelInfo& first = level_infos_[0][0];
+  uint32 channels = GLES2Util::GetChannelsForFormat(first.format);
+  if (channels & (GLES2Util::kDepth | GLES2Util::kStencil)) {
+    return false;
+  }
+
   // TODO(gman): Check internal_format, format and type.
   for (size_t ii = 0; ii < level_infos_.size(); ++ii) {
     const LevelInfo& info = level_infos_[ii][0];
@@ -190,7 +222,9 @@ bool TextureManager::TextureInfo::CanGenerateMipmaps(
         (info.depth != 1) ||
         (info.format != first.format) ||
         (info.internal_format != first.internal_format) ||
-        (info.type != first.type)) {
+        (info.type != first.type) ||
+        feature_info->validators()->compressed_texture_format.IsValid(
+            info.internal_format)) {
         return false;
     }
   }
@@ -267,8 +301,8 @@ void TextureManager::TextureInfo::SetLevelInfo(
   info.type = type;
 
   estimated_size_ -= info.estimated_size;
-  GLES2Util::ComputeImageDataSize(
-      width, height, format, type, 4, &info.estimated_size);
+  GLES2Util::ComputeImageDataSizes(
+      width, height, format, type, 4, &info.estimated_size, NULL, NULL);
   estimated_size_ += info.estimated_size;
 
   if (!info.cleared) {
@@ -297,10 +331,10 @@ bool TextureManager::TextureInfo::ValidForTexture(
   if (level >= 0 && face_index < level_infos_.size() &&
       static_cast<size_t>(level) < level_infos_[face_index].size()) {
     const LevelInfo& info = level_infos_[GLTargetToFaceIndex(face)][level];
-    GLint right;
-    GLint top;
-    return SafeAdd(xoffset, width, &right) &&
-           SafeAdd(yoffset, height, &top) &&
+    int32 right;
+    int32 top;
+    return SafeAddInt32(xoffset, width, &right) &&
+           SafeAddInt32(yoffset, height, &top) &&
            xoffset >= 0 &&
            yoffset >= 0 &&
            right <= info.width &&
@@ -555,10 +589,15 @@ bool TextureManager::TextureInfo::ClearLevel(
 }
 
 TextureManager::TextureManager(
+    MemoryTracker* memory_tracker,
     FeatureInfo* feature_info,
     GLint max_texture_size,
     GLint max_cube_map_texture_size)
-    : feature_info_(feature_info),
+    : texture_memory_tracker_(new MemoryTypeTracker(
+        memory_tracker,
+        "TextureManager",
+        "TextureMemory")),
+      feature_info_(feature_info),
       max_texture_size_(max_texture_size),
       max_cube_map_texture_size_(max_cube_map_texture_size),
       max_levels_(ComputeMipMapCount(max_texture_size,
@@ -572,18 +611,14 @@ TextureManager::TextureManager(
       num_uncleared_mips_(0),
       texture_info_count_(0),
       mem_represented_(0),
-      last_reported_mem_represented_(1) {
+      have_context_(true) {
   for (int ii = 0; ii < kNumDefaultTextures; ++ii) {
     black_texture_ids_[ii] = 0;
   }
 }
 
 void TextureManager::UpdateMemRepresented() {
-  if (mem_represented_ != last_reported_mem_represented_) {
-    last_reported_mem_represented_ = mem_represented_;
-    TRACE_COUNTER_ID1(
-        "TextureManager", "TextureMemory", this, mem_represented_);
-  }
+  texture_memory_tracker_->UpdateMemRepresented(mem_represented_);
 }
 
 bool TextureManager::Initialize() {
@@ -644,7 +679,7 @@ TextureManager::TextureInfo::Ref TextureManager::CreateDefaultAndBlackTextures(
   // we need to manually manipulate some of the their bookkeeping.
   ++num_unrenderable_textures_;
   TextureInfo::Ref default_texture = TextureInfo::Ref(
-      new TextureInfo(NULL, ids[1]));
+      new TextureInfo(this, ids[1]));
   SetInfoTarget(default_texture, target);
   if (needs_faces) {
     for (int ii = 0; ii < GLES2Util::kNumFaces; ++ii) {
@@ -795,6 +830,106 @@ void TextureManager::SetLevelInfo(
   }
 }
 
+TextureDefinition* TextureManager::Save(TextureInfo* info) {
+  DCHECK(info->owned_);
+
+  if (info->IsAttachedToFramebuffer())
+    return NULL;
+
+  if (info->IsImmutable())
+    return NULL;
+
+  TextureDefinition::LevelInfos level_infos(info->level_infos_.size());
+  for (size_t face = 0; face < level_infos.size(); ++face) {
+    GLenum target = info->target() == GL_TEXTURE_2D ?
+        GL_TEXTURE_2D : FaceIndexToGLTarget(face);
+    for (size_t level = 0; level < info->level_infos_[face].size(); ++level) {
+      const TextureInfo::LevelInfo& level_info =
+          info->level_infos_[face][level];
+      level_infos[face].push_back(
+          TextureDefinition::LevelInfo(target,
+                                       level_info.internal_format,
+                                       level_info.width,
+                                       level_info.height,
+                                       level_info.depth,
+                                       level_info.border,
+                                       level_info.format,
+                                       level_info.type,
+                                       level_info.cleared));
+
+      SetLevelInfo(info,
+                   target,
+                   level,
+                   GL_RGBA,
+                   0,
+                   0,
+                   0,
+                   0,
+                   GL_RGBA,
+                   GL_UNSIGNED_BYTE,
+                   true);
+    }
+  }
+
+  GLuint old_service_id = info->service_id();
+
+  GLuint new_service_id = 0;
+  glGenTextures(1, &new_service_id);
+  info->SetServiceId(new_service_id);
+
+  return new TextureDefinition(info->target(),
+                               old_service_id,
+                               level_infos);
+}
+
+bool TextureManager::Restore(TextureInfo* info,
+                             TextureDefinition* definition) {
+  DCHECK(info->owned_);
+
+  scoped_ptr<TextureDefinition> scoped_definition(definition);
+
+  if (info->IsAttachedToFramebuffer())
+    return false;
+
+  if (info->IsImmutable())
+    return false;
+
+  if (info->target() != definition->target())
+    return false;
+
+  if (info->level_infos_.size() != definition->level_infos().size())
+    return false;
+
+  if (info->level_infos_[0].size() != definition->level_infos()[0].size())
+    return false;
+
+  for (size_t face = 0; face < info->level_infos_.size(); ++face) {
+    GLenum target = info->target() == GL_TEXTURE_2D ?
+        GL_TEXTURE_2D : FaceIndexToGLTarget(face);
+    for (size_t level = 0; level < info->level_infos_[face].size(); ++level) {
+      const TextureDefinition::LevelInfo& level_info =
+          definition->level_infos()[face][level];
+      SetLevelInfo(info,
+                   target,
+                   level,
+                   level_info.internal_format,
+                   level_info.width,
+                   level_info.height,
+                   level_info.depth,
+                   level_info.border,
+                   level_info.format,
+                   level_info.type,
+                   level_info.cleared);
+    }
+  }
+
+  GLuint old_service_id = info->service_id();
+  glDeleteTextures(1, &old_service_id);
+  info->SetServiceId(definition->ReleaseServiceId());
+
+  return true;
+}
+
 bool TextureManager::SetParameter(
     TextureManager::TextureInfo* info, GLenum pname, GLint param) {
   DCHECK(info);
@@ -875,7 +1010,12 @@ void TextureManager::RemoveTextureInfo(GLuint client_id) {
   }
 }
 
+void TextureManager::StartTracking(TextureManager::TextureInfo* /* texture */) {
+  ++texture_info_count_;
+}
+
 void TextureManager::StopTracking(TextureManager::TextureInfo* texture) {
+  --texture_info_count_;
   if (!texture->CanRender(feature_info_)) {
     DCHECK_NE(0, num_unrenderable_textures_);
     --num_unrenderable_textures_;
@@ -906,7 +1046,6 @@ GLsizei TextureManager::ComputeMipMapCount(
     GLsizei width, GLsizei height, GLsizei depth) {
   return 1 + base::bits::Log2Floor(std::max(std::max(width, height), depth));
 }
-
 
 }  // namespace gles2
 }  // namespace gpu

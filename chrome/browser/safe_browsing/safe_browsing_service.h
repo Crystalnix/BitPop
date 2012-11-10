@@ -7,7 +7,6 @@
 
 #ifndef CHROME_BROWSER_SAFE_BROWSING_SAFE_BROWSING_SERVICE_H_
 #define CHROME_BROWSER_SAFE_BROWSING_SAFE_BROWSING_SERVICE_H_
-#pragma once
 
 #include <deque>
 #include <map>
@@ -16,11 +15,12 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "base/file_path.h"
 #include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop_helpers.h"
 #include "base/observer_list.h"
+#include "base/sequenced_task_runner_helpers.h"
 #include "base/synchronization/lock.h"
 #include "base/time.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
@@ -35,12 +35,14 @@ class PrefService;
 class SafeBrowsingDatabase;
 class SafeBrowsingProtocolManager;
 class SafeBrowsingServiceFactory;
+class SafeBrowsingURLRequestContextGetter;
 
 namespace base {
 class Thread;
 }
 
 namespace net {
+class URLRequestContext;
 class URLRequestContextGetter;
 }
 
@@ -137,11 +139,11 @@ class SafeBrowsingService
 
   class Client {
    public:
-    virtual ~Client() {}
-
     void OnSafeBrowsingResult(const SafeBrowsingCheck& check);
 
    protected:
+    virtual ~Client() {}
+
     // Called when the result of checking a browse URL is known.
     virtual void OnBrowseUrlCheckResult(const GURL& url,
                                         UrlCheckResult result) {}
@@ -160,6 +162,8 @@ class SafeBrowsingService
   static void RegisterFactory(SafeBrowsingServiceFactory* factory) {
     factory_ = factory;
   }
+
+  static FilePath GetCookieFilePathForTesting();
 
   // Create an instance of the safe browsing service.
   static SafeBrowsingService* CreateSafeBrowsingService();
@@ -261,11 +265,6 @@ class SafeBrowsingService
   void OnBlockingPageDone(const std::vector<UnsafeResource>& resources,
                           bool proceed);
 
-  // Called on the UI thread when the SafeBrowsingProtocolManager has received
-  // updated MAC keys.
-  void OnNewMacKeys(const std::string& client_key,
-                    const std::string& wrapped_key);
-
   bool enabled() const { return enabled_; }
 
   bool download_protection_enabled() const {
@@ -284,11 +283,13 @@ class SafeBrowsingService
     return download_service_.get();
   }
 
-  // Preference handling.
-  static void RegisterPrefs(PrefService* prefs);
+  net::URLRequestContextGetter* url_request_context();
 
   // Called on the IO thread to reset the database.
   void ResetDatabase();
+
+  // Called on the IO thread to release memory.
+  void PurgeMemory();
 
   // Log the user perceived delay caused by SafeBrowsing. This delay is the time
   // delta starting from when we would have started reading data from the
@@ -341,14 +342,21 @@ class SafeBrowsingService
       content::BrowserThread::UI>;
   friend class base::DeleteHelper<SafeBrowsingService>;
   friend class SafeBrowsingServiceTest;
+  friend class SafeBrowsingServiceCookieTest;
+  friend class SafeBrowsingURLRequestContextGetter;
 
-  // Called to initialize objects that are used on the io_thread.
-  void OnIOInitialize(const std::string& client_key,
-                      const std::string& wrapped_key,
-                      net::URLRequestContextGetter* request_context_getter);
+  void InitURLRequestContextOnIOThread(
+      net::URLRequestContextGetter* system_url_request_context_getter);
 
-  // Called to shutdown operations on the io_thread.
-  void OnIOShutdown();
+  void DestroyURLRequestContextOnIOThread();
+
+  // Called to initialize objects that are used on the io_thread.  This may be
+  // called multiple times during the life of the SafeBrowsingService.
+  void StartOnIOThread();
+
+  // Called to shutdown operations on the io_thread. This may be called multiple
+  // times during the life of the SafeBrowsingService.
+  void StopOnIOThread();
 
   // Returns whether |database_| exists and is accessible.
   bool DatabaseAvailable() const;
@@ -402,6 +410,8 @@ class SafeBrowsingService
   void NotifyClientBlockingComplete(Client* client, bool proceed);
 
   void DatabaseUpdateFinished(bool update_succeeded);
+
+  void NotifyDatabaseUpdateFinished(bool update_succeeded);
 
   // Start up SafeBrowsing objects. This can be called at browser start, or when
   // the user checks the "Enable SafeBrowsing" option in the Advanced options
@@ -502,6 +512,14 @@ class SafeBrowsingService
 
   // Lock used to prevent possible data races due to compiler optimizations.
   mutable base::Lock database_lock_;
+
+  // The SafeBrowsingURLRequestContextGetter used to access
+  // |url_request_context_|.
+  scoped_refptr<net::URLRequestContextGetter>
+      url_request_context_getter_;
+
+  // The SafeBrowsingURLRequestContext.
+  scoped_ptr<net::URLRequestContext> url_request_context_;
 
   // Handles interaction with SafeBrowsing servers.
   SafeBrowsingProtocolManager* protocol_manager_;

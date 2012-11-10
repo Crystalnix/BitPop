@@ -24,7 +24,6 @@
 #include "chrome/browser/importer/mork_reader.h"
 #include "chrome/browser/importer/nss_decryptor.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_parser.h"
 #include "chrome/common/time_format.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/gurl.h"
@@ -132,17 +131,16 @@ TemplateURL* Firefox2Importer::CreateTemplateURL(const string16& title,
                                                  const string16& keyword,
                                                  const GURL& url) {
   // Skip if the keyword or url is invalid.
-  if (keyword.empty() && url.is_valid())
+  if (keyword.empty() || !url.is_valid())
     return NULL;
 
-  TemplateURL* t_url = new TemplateURL();
+  TemplateURLData data;
   // We set short name by using the title if it exists.
   // Otherwise, we use the shortcut.
-  t_url->set_short_name(!title.empty() ? title : keyword);
-  t_url->set_keyword(keyword);
-  t_url->SetURL(TemplateURLRef::DisplayURLToURLRef(UTF8ToUTF16(url.spec())),
-                0, 0);
-  return t_url;
+  data.short_name = title.empty() ? keyword : title;
+  data.SetKeyword(keyword);
+  data.SetURL(TemplateURLRef::DisplayURLToURLRef(UTF8ToUTF16(url.spec())));
+  return new TemplateURL(NULL, data);
 }
 
 // static
@@ -315,12 +313,10 @@ void Firefox2Importer::ImportBookmarks() {
                                        IDS_BOOKMARK_GROUP_FROM_FIREFOX);
     bridge_->AddBookmarks(bookmarks, first_folder_name);
   }
-  if (!parsing_bookmarks_html_file_ && !template_urls.empty() &&
-      !cancelled()) {
-    bridge_->SetKeywords(template_urls, -1, false);
-  } else {
-    STLDeleteContainerPointers(template_urls.begin(), template_urls.end());
-  }
+  if (!parsing_bookmarks_html_file_ && !template_urls.empty() && !cancelled())
+    bridge_->SetKeywords(template_urls, false);
+  else
+    STLDeleteElements(&template_urls);
   if (!favicons.empty())
     bridge_->SetFavicons(favicons);
 }
@@ -364,8 +360,7 @@ void Firefox2Importer::ImportSearchEngines() {
   std::vector<TemplateURL*> search_engines;
   ParseSearchEnginesFromXMLFiles(files, &search_engines);
 
-  // Import the list of search engines, but do not override the default.
-  bridge_->SetKeywords(search_engines, -1 /*default_keyword_index*/, true);
+  bridge_->SetKeywords(search_engines, true);
 }
 
 void Firefox2Importer::ImportHomepage() {

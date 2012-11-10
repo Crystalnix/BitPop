@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #ifndef CHROME_BROWSER_DEFAULTS_H_
 #define CHROME_BROWSER_DEFAULTS_H_
-#pragma once
 
 #include "build/build_config.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
@@ -27,9 +26,6 @@ extern const bool kCanToggleSystemTitleBar;
 
 #endif
 
-// The default value for session startup.
-extern const SessionStartupPref::Type kDefaultSessionStartupType;
-
 // Width of mini-tabs.
 extern const int kMiniTabWidth;
 
@@ -43,8 +39,12 @@ extern const bool kBrowserAliveWithNoWindows;
 // bookmarks?
 extern const bool kShowImportOnBookmarkBar;
 
-// Should the exit menu item be shown in the toolbar menu?
+// Whether various menu items are shown.
 extern const bool kShowExitMenuItem;
+extern const bool kShowFeedbackMenuItem;
+extern const bool kShowHelpMenuItemIcon;
+extern const bool kShowSyncSetupMenuItem;
+extern const bool kShowUpgradeMenuItem;
 
 // Does the OS support other browsers? If not, operations such as default
 // browser check are not done.
@@ -81,6 +81,14 @@ extern const ui::ResourceBundle::FontStyle kAssociatedNetworkFontStyle;
 
 // Preferred infobar border padding in pixels.
 extern const int kInfoBarBorderPaddingVertical;
+
+// Last character display for passwords.
+extern const bool kPasswordEchoEnabled;
+
+// Changes how browser is initialized when executed in app mode.
+// If true after app window is opened continue with regular startup path
+// i.e. session restore, load URLs from cmd line plus focus app window.
+extern const bool kAppRestoreSession;
 
 //=============================================================================
 // Runtime "const" - set only once after parsing command line option and should

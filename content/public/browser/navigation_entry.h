@@ -1,13 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_PUBLIC_BROWSER_NAVIGATION_ENTRY_H_
 #define CONTENT_PUBLIC_BROWSER_NAVIGATION_ENTRY_H_
-#pragma once
 
 #include <string>
 
+#include "base/memory/ref_counted_memory.h"
 #include "base/string16.h"
 #include "content/common/content_export.h"
 #include "content/public/common/page_transition_types.h"
@@ -23,7 +23,7 @@ struct SSLStatus;
 
 // A NavigationEntry is a data structure that captures all the information
 // required to recreate a browsing state. This includes some opaque binary
-// state as provided by the TabContents as well as some clear text title and
+// state as provided by the WebContentsImpl as well as some clear text title and
 // URL which is used for our user interface.
 class NavigationEntry {
  public:
@@ -48,6 +48,10 @@ class NavigationEntry {
   // the user.
   virtual void SetURL(const GURL& url) = 0;
   virtual const GURL& GetURL() const = 0;
+
+  // Used for specifying a base URL for pages loaded via data URLs.
+  virtual void SetBaseURLForDataURL(const GURL& url) = 0;
+  virtual const GURL& GetBaseURLForDataURL() const = 0;
 
   // The referring URL. Can be empty.
   virtual void SetReferrer(const content::Referrer& referrer) = 0;
@@ -81,9 +85,9 @@ class NavigationEntry {
   virtual void SetContentState(const std::string& state) = 0;
   virtual const std::string& GetContentState() const = 0;
 
-  // Describes the current page that the tab represents. For web pages
-  // (TAB_CONTENTS_WEB) this is the ID that the renderer generated for the page
-  // and is how we can tell new versus renavigations.
+  // Describes the current page that the tab represents. This is the ID that the
+  // renderer generated for the page and is how we can tell new versus
+  // renavigations.
   virtual void SetPageID(int page_id) = 0;
   virtual int32 GetPageID() const = 0;
 
@@ -122,10 +126,27 @@ class NavigationEntry {
   // have to be reposted to reload the page properly. This flag indicates
   // whether the page had post data.
   //
-  // The actual post data is stored in the content_state and is extracted by
-  // WebKit to actually make the request.
+  // The actual post data is stored either in
+  // 1) browser_initiated_post_data when a new post data request is started.
+  // 2) content_state when a post request has started and is extracted by
+  //    WebKit to actually make the request.
   virtual void SetHasPostData(bool has_post_data) = 0;
   virtual bool GetHasPostData() const = 0;
+
+  // The Post identifier associated with the page.
+  virtual void SetPostID(int64 post_id) = 0;
+  virtual int64 GetPostID() const = 0;
+
+  // Holds the raw post data of a browser initiated post request.
+  // For efficiency, this should be cleared when content_state is populated
+  // since the data is duplicated.
+  // Note, this field:
+  // 1) is not persisted in session restore.
+  // 2) is shallow copied with the static copy Create method above.
+  // 3) may be NULL so check before use.
+  virtual void SetBrowserInitiatedPostData(
+      const base::RefCountedMemory* data) = 0;
+  virtual const base::RefCountedMemory* GetBrowserInitiatedPostData() const = 0;
 
   // The favicon data and tracking information. See content::FaviconStatus.
   virtual const FaviconStatus& GetFavicon() const = 0;
@@ -134,6 +155,14 @@ class NavigationEntry {
   // All the SSL flags and state. See content::SSLStatus.
   virtual const SSLStatus& GetSSL() const = 0;
   virtual SSLStatus& GetSSL() = 0;
+
+  // Store the URL that caused this NavigationEntry to be created.
+  virtual void SetOriginalRequestURL(const GURL& original_url) = 0;
+  virtual const GURL& GetOriginalRequestURL() const = 0;
+
+  // Store whether or not we're overriding the user agent.
+  virtual void SetIsOverridingUserAgent(bool override) = 0;
+  virtual bool GetIsOverridingUserAgent() const = 0;
 };
 
 }  // namespace content

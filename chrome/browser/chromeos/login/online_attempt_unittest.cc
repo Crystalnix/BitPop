@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,25 +8,24 @@
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/mock_library_loader.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state.h"
 #include "chrome/browser/chromeos/login/mock_auth_attempt_state_resolver.h"
 #include "chrome/browser/chromeos/login/mock_url_fetchers.h"
 #include "chrome/browser/chromeos/login/online_attempt.h"
 #include "chrome/browser/chromeos/login/test_attempt_state.h"
 #include "chrome/common/net/gaia/gaia_auth_consumer.h"
-#include "chrome/common/net/gaia/gaia_auth_fetcher_unittest.h"
+#include "chrome/common/net/gaia/mock_url_fetcher_factory.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using content::BrowserThread;
 using ::testing::AnyNumber;
 using ::testing::Invoke;
 using ::testing::Return;
 using ::testing::_;
+using content::BrowserThread;
 
 namespace chromeos {
 
@@ -35,7 +34,6 @@ class OnlineAttemptTest : public testing::Test {
   OnlineAttemptTest()
       : message_loop_(MessageLoop::TYPE_UI),
         ui_thread_(BrowserThread::UI, &message_loop_),
-        io_thread_(BrowserThread::IO),
         state_("", "", "", "", "", false),
         resolver_(new MockAuthAttemptStateResolver) {
   }
@@ -43,27 +41,10 @@ class OnlineAttemptTest : public testing::Test {
   virtual ~OnlineAttemptTest() {}
 
   virtual void SetUp() {
-    CrosLibrary::TestApi* test_api = CrosLibrary::Get()->GetTestApi();
-
-    MockLibraryLoader* loader = new MockLibraryLoader();
-    ON_CALL(*loader, Load(_))
-        .WillByDefault(Return(true));
-    EXPECT_CALL(*loader, Load(_))
-        .Times(AnyNumber());
-
-    // Passes ownership of |loader| to CrosLibrary.
-    test_api->SetLibraryLoader(loader, true);
-
-    attempt_ = new OnlineAttempt(false, &state_, resolver_.get());
-
-    io_thread_.Start();
+    attempt_.reset(new OnlineAttempt(false, &state_, resolver_.get()));
   }
 
   virtual void TearDown() {
-    // Prevent bogus gMock leak check from firing.
-    chromeos::CrosLibrary::TestApi* test_api =
-        chromeos::CrosLibrary::Get()->GetTestApi();
-    test_api->SetLibraryLoader(NULL, false);
   }
 
   void RunFailureTest(const GoogleServiceAuthError& error) {
@@ -72,18 +53,20 @@ class OnlineAttemptTest : public testing::Test {
         .RetiresOnSaturation();
 
     BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&OnlineAttempt::OnClientLoginFailure, attempt_.get(),
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&OnlineAttempt::OnClientLoginFailure,
+                   attempt_->weak_factory_.GetWeakPtr(),
                    error));
-    // Force IO thread to finish tasks so I can verify |state_|.
-    io_thread_.Stop();
+    // Force UI thread to finish tasks so I can verify |state_|.
+    message_loop_.RunAllPending();
     EXPECT_TRUE(error == state_.online_outcome().error());
   }
 
   void CancelLogin(OnlineAttempt* auth) {
     BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&OnlineAttempt::CancelClientLogin, auth));
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&OnlineAttempt::CancelClientLogin,
+                   auth->weak_factory_.GetWeakPtr()));
   }
 
   static void Quit() {
@@ -97,27 +80,26 @@ class OnlineAttemptTest : public testing::Test {
 
   MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread io_thread_;
   TestAttemptState state_;
   scoped_ptr<MockAuthAttemptStateResolver> resolver_;
-  scoped_refptr<OnlineAttempt> attempt_;
+  scoped_ptr<OnlineAttempt> attempt_;
 
   // Initializes / shuts down a stub CrosLibrary.
   chromeos::ScopedStubCrosEnabler stub_cros_enabler_;
 };
 
 TEST_F(OnlineAttemptTest, LoginSuccess) {
-  GaiaAuthConsumer::ClientLoginResult result;
   EXPECT_CALL(*(resolver_.get()), Resolve())
       .Times(1)
       .RetiresOnSaturation();
 
   BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&OnlineAttempt::OnClientLoginSuccess, attempt_.get(), result));
-  // Force IO thread to finish tasks so I can verify |state_|.
-  io_thread_.Stop();
-  EXPECT_TRUE(result == state_.credentials());
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&OnlineAttempt::OnClientLoginSuccess,
+                 attempt_->weak_factory_.GetWeakPtr(),
+                 GaiaAuthConsumer::ClientLoginResult()));
+  // Force UI thread to finish tasks so I can verify |state_|.
+  message_loop_.RunAllPending();
 }
 
 TEST_F(OnlineAttemptTest, LoginCancelRetry) {
@@ -130,12 +112,12 @@ TEST_F(OnlineAttemptTest, LoginCancelRetry) {
 
   // This is how we inject fake URLFetcher objects, with a factory.
   // This factory creates fake URLFetchers that Start() a fake fetch attempt
-  // and then come back on the IO thread saying they've been canceled.
-  MockFactory<GotCanceledFetcher> factory;
+  // and then come back on the UI thread saying they've been canceled.
+  MockURLFetcherFactory<GotCanceledFetcher> factory;
 
   attempt_->Initiate(&profile);
   BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
+      BrowserThread::UI, FROM_HERE,
       base::Bind(&OnlineAttemptTest::RunThreadTest));
 
   MessageLoop::current()->Run();
@@ -155,12 +137,12 @@ TEST_F(OnlineAttemptTest, LoginTimeout) {
 
   // This is how we inject fake URLFetcher objects, with a factory.
   // This factory creates fake URLFetchers that Start() a fake fetch attempt
-  // and then come back on the IO thread saying they've been canceled.
-  MockFactory<ExpectCanceledFetcher> factory;
+  // and then come back on the UI thread saying they've been canceled.
+  MockURLFetcherFactory<ExpectCanceledFetcher> factory;
 
   attempt_->Initiate(&profile);
   BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
+      BrowserThread::UI, FROM_HERE,
       base::Bind(&OnlineAttemptTest::RunThreadTest));
 
   // Post a task to cancel the login attempt.
@@ -183,13 +165,13 @@ TEST_F(OnlineAttemptTest, HostedLoginRejected) {
       .RetiresOnSaturation();
 
   // This is how we inject fake URLFetcher objects, with a factory.
-  MockFactory<HostedFetcher> factory;
+  MockURLFetcherFactory<HostedFetcher> factory;
 
   TestAttemptState local_state("", "", "", "", "", true);
-  attempt_ = new OnlineAttempt(false, &local_state, resolver_.get());
+  attempt_.reset(new OnlineAttempt(false, &local_state, resolver_.get()));
   attempt_->Initiate(&profile);
   BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
+      BrowserThread::UI, FROM_HERE,
       base::Bind(&OnlineAttemptTest::RunThreadTest));
 
   MessageLoop::current()->Run();
@@ -207,13 +189,13 @@ TEST_F(OnlineAttemptTest, FullLogin) {
       .RetiresOnSaturation();
 
   // This is how we inject fake URLFetcher objects, with a factory.
-  MockFactory<SuccessFetcher> factory;
+  MockURLFetcherFactory<SuccessFetcher> factory;
 
   TestAttemptState local_state("", "", "", "", "", true);
-  attempt_ = new OnlineAttempt(false, &local_state, resolver_.get());
+  attempt_.reset(new OnlineAttempt(false, &local_state, resolver_.get()));
   attempt_->Initiate(&profile);
   BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
+      BrowserThread::UI, FROM_HERE,
       base::Bind(&OnlineAttemptTest::RunThreadTest));
 
   MessageLoop::current()->Run();
@@ -248,9 +230,9 @@ TEST_F(OnlineAttemptTest, LoginServiceUnavailable) {
 
 TEST_F(OnlineAttemptTest, CaptchaErrorOutputted) {
   GoogleServiceAuthError auth_error =
-      GoogleServiceAuthError::FromCaptchaChallenge(
+      GoogleServiceAuthError::FromClientLoginCaptchaChallenge(
           "CCTOKEN",
-          GURL("http://www.google.com/accounts/Captcha?ctoken=CCTOKEN"),
+          GURL("http://accounts.google.com/Captcha?ctoken=CCTOKEN"),
           GURL("http://www.google.com/login/captcha"));
   RunFailureTest(auth_error);
 }
@@ -261,14 +243,15 @@ TEST_F(OnlineAttemptTest, TwoFactorSuccess) {
       .RetiresOnSaturation();
   GoogleServiceAuthError error(GoogleServiceAuthError::TWO_FACTOR);
   BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&OnlineAttempt::OnClientLoginFailure, attempt_.get(), error));
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&OnlineAttempt::OnClientLoginFailure,
+                 attempt_->weak_factory_.GetWeakPtr(),
+                 error));
 
-  // Force IO thread to finish tasks so I can verify |state_|.
-  io_thread_.Stop();
+  // Force UI thread to finish tasks so I can verify |state_|.
+  message_loop_.RunAllPending();
   EXPECT_TRUE(GoogleServiceAuthError::None() ==
               state_.online_outcome().error());
-  EXPECT_TRUE(GaiaAuthConsumer::ClientLoginResult() == state_.credentials());
 }
 
 }  // namespace chromeos

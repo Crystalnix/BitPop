@@ -10,13 +10,14 @@
 #include "base/debug/alias.h"
 #include "base/hash_tables.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/shared_memory.h"
 #include "content/browser/debugger/devtools_netlog_observer.h"
 #include "content/browser/host_zoom_map_impl.h"
-#include "content/browser/renderer_host/resource_dispatcher_host.h"
-#include "content/browser/renderer_host/resource_dispatcher_host_request_info.h"
+#include "content/browser/renderer_host/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/resource_message_filter.h"
-#include "content/browser/resource_context.h"
+#include "content/browser/renderer_host/resource_request_info_impl.h"
+#include "content/browser/resource_context_impl.h"
 #include "content/common/resource_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/global_request_id.h"
@@ -28,8 +29,8 @@
 #include "webkit/glue/resource_loader_bridge.h"
 
 using base::TimeTicks;
-using content::GlobalRequestID;
 
+namespace content {
 namespace {
 
 // When reading, we don't know if we are going to get EOF (0 bytes read), so
@@ -42,6 +43,15 @@ const int kInitialReadBufSize = 32768;
 
 // The maximum size of the shared memory buffer. (512 kilobytes).
 const int kMaxReadBufSize = 524288;
+
+// Maximum number of pending data messages sent to the renderer at any
+// given time for a given request.
+const int kMaxPendingDataMessages = 20;
+
+int CalcUsedPercentage(int bytes_read, int buffer_size) {
+  double ratio = static_cast<double>(bytes_read) / buffer_size;
+  return static_cast<int>(ratio * 100.0 + 0.5);  // Round to nearest integer.
+}
 
 }  // namespace
 
@@ -80,16 +90,44 @@ class SharedIOBuffer : public net::IOBuffer {
 AsyncResourceHandler::AsyncResourceHandler(
     ResourceMessageFilter* filter,
     int routing_id,
-    const GURL& url,
-    ResourceDispatcherHost* resource_dispatcher_host)
+    net::URLRequest* request,
+    ResourceDispatcherHostImpl* rdh)
     : filter_(filter),
       routing_id_(routing_id),
-      rdh_(resource_dispatcher_host),
+      request_(request),
+      rdh_(rdh),
       next_buffer_size_(kInitialReadBufSize),
-      url_(url) {
+      pending_data_count_(0),
+      did_defer_(false),
+      sent_received_response_msg_(false) {
+  // Set a back-pointer from ResourceRequestInfoImpl to |this|, so that the
+  // ResourceDispatcherHostImpl can send us IPC messages.
+  // TODO(darin): Implement an IPC message filter instead?
+  ResourceRequestInfoImpl::ForRequest(request_)->set_async_handler(this);
 }
 
 AsyncResourceHandler::~AsyncResourceHandler() {
+  // Cleanup back-pointer stored on the request info.
+  ResourceRequestInfoImpl::ForRequest(request_)->set_async_handler(NULL);
+}
+
+void AsyncResourceHandler::OnFollowRedirect(
+    bool has_new_first_party_for_cookies,
+    const GURL& new_first_party_for_cookies) {
+  if (!request_->status().is_success()) {
+    DVLOG(1) << "OnFollowRedirect for invalid request";
+    return;
+  }
+
+  if (has_new_first_party_for_cookies)
+    request_->set_first_party_for_cookies(new_first_party_for_cookies);
+
+  ResumeIfDeferred();
+}
+
+void AsyncResourceHandler::OnDataReceivedACK() {
+  if (pending_data_count_-- == kMaxPendingDataMessages)
+    ResumeIfDeferred();
 }
 
 bool AsyncResourceHandler::OnUploadProgress(int request_id,
@@ -99,62 +137,64 @@ bool AsyncResourceHandler::OnUploadProgress(int request_id,
                                                       position, size));
 }
 
-bool AsyncResourceHandler::OnRequestRedirected(
-    int request_id,
-    const GURL& new_url,
-    content::ResourceResponse* response,
-    bool* defer) {
-  *defer = true;
-  net::URLRequest* request = rdh_->GetURLRequest(
-      GlobalRequestID(filter_->child_id(), request_id));
-  if (rdh_->delegate())
-    rdh_->delegate()->OnRequestRedirected(request, response);
+bool AsyncResourceHandler::OnRequestRedirected(int request_id,
+                                               const GURL& new_url,
+                                               ResourceResponse* response,
+                                               bool* defer) {
+  *defer = did_defer_ = true;
 
-  DevToolsNetLogObserver::PopulateResponseInfo(request, response);
-  response->request_start = request->creation_time();
-  response->response_start = TimeTicks::Now();
+  if (rdh_->delegate()) {
+    rdh_->delegate()->OnRequestRedirected(new_url, request_,
+                                          filter_->resource_context(),
+                                          response);
+  }
+
+  DevToolsNetLogObserver::PopulateResponseInfo(request_, response);
+  response->head.request_start = request_->creation_time();
+  response->head.response_start = TimeTicks::Now();
   return filter_->Send(new ResourceMsg_ReceivedRedirect(
-      routing_id_, request_id, new_url, *response));
+      routing_id_, request_id, new_url, response->head));
 }
 
-bool AsyncResourceHandler::OnResponseStarted(
-    int request_id,
-    content::ResourceResponse* response) {
+bool AsyncResourceHandler::OnResponseStarted(int request_id,
+                                             ResourceResponse* response,
+                                             bool* defer) {
   // For changes to the main frame, inform the renderer of the new URL's
   // per-host settings before the request actually commits.  This way the
   // renderer will be able to set these precisely at the time the
   // request commits, avoiding the possibility of e.g. zooming the old content
   // or of having to layout the new content twice.
-  net::URLRequest* request = rdh_->GetURLRequest(
-      GlobalRequestID(filter_->child_id(), request_id));
 
-  if (rdh_->delegate())
-    rdh_->delegate()->OnResponseStarted(request, response, filter_);
+  ResourceContext* resource_context = filter_->resource_context();
+  if (rdh_->delegate()) {
+    rdh_->delegate()->OnResponseStarted(request_, resource_context, response,
+                                        filter_);
+  }
 
-  DevToolsNetLogObserver::PopulateResponseInfo(request, response);
+  DevToolsNetLogObserver::PopulateResponseInfo(request_, response);
 
-  const content::ResourceContext& resource_context =
-      filter_->resource_context();
-  content::HostZoomMap* host_zoom_map = resource_context.host_zoom_map();
+  HostZoomMap* host_zoom_map =
+      GetHostZoomMapForResourceContext(resource_context);
 
-  ResourceDispatcherHostRequestInfo* info = rdh_->InfoForRequest(request);
-  if (info->resource_type() == ResourceType::MAIN_FRAME && host_zoom_map) {
-    GURL request_url(request->url());
+  const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request_);
+  if (info->GetResourceType() == ResourceType::MAIN_FRAME && host_zoom_map) {
+    const GURL& request_url = request_->url();
     filter_->Send(new ViewMsg_SetZoomLevelForLoadingURL(
-        info->route_id(),
+        info->GetRouteID(),
         request_url, host_zoom_map->GetZoomLevel(net::GetHostOrSpecFromURL(
             request_url))));
   }
 
-  response->request_start = request->creation_time();
-  response->response_start = TimeTicks::Now();
+  response->head.request_start = request_->creation_time();
+  response->head.response_start = TimeTicks::Now();
   filter_->Send(new ResourceMsg_ReceivedResponse(
-      routing_id_, request_id, *response));
+      routing_id_, request_id, response->head));
+  sent_received_response_msg_ = true;
 
-  if (request->response_info().metadata) {
-    std::vector<char> copy(request->response_info().metadata->data(),
-                           request->response_info().metadata->data() +
-                           request->response_info().metadata->size());
+  if (request_->response_info().metadata) {
+    std::vector<char> copy(request_->response_info().metadata->data(),
+                           request_->response_info().metadata->data() +
+                           request_->response_info().metadata->size());
     filter_->Send(new ResourceMsg_ReceivedCachedMetadata(
         routing_id_, request_id, copy));
   }
@@ -189,27 +229,36 @@ bool AsyncResourceHandler::OnWillRead(int request_id, net::IOBuffer** buf,
     DCHECK(read_buffer_->data());
     *buf = read_buffer_.get();
     *buf_size = next_buffer_size_;
+
+    UMA_HISTOGRAM_CUSTOM_COUNTS(
+        "Net.AsyncResourceHandler_SharedIOBuffer_Alloc",
+        next_buffer_size_, kInitialReadBufSize, kMaxReadBufSize, 16);
   }
 
   return true;
 }
 
-bool AsyncResourceHandler::OnReadCompleted(int request_id, int* bytes_read) {
-  if (!*bytes_read)
+bool AsyncResourceHandler::OnReadCompleted(int request_id, int bytes_read,
+                                           bool* defer) {
+  if (!bytes_read)
     return true;
   DCHECK(read_buffer_.get());
 
-  if (read_buffer_->buffer_size() == *bytes_read) {
+  UMA_HISTOGRAM_CUSTOM_COUNTS(
+      "Net.AsyncResourceHandler_SharedIOBuffer_Used",
+      bytes_read, 0, kMaxReadBufSize, 100);
+  UMA_HISTOGRAM_PERCENTAGE(
+      "Net.AsyncResourceHandler_SharedIOBuffer_UsedPercentage",
+      CalcUsedPercentage(bytes_read, read_buffer_->buffer_size()));
+
+  if (read_buffer_->buffer_size() == bytes_read) {
     // The network layer has saturated our buffer. Next time, we should give it
     // a bigger buffer for it to fill, to minimize the number of round trips we
     // do with the renderer process.
     next_buffer_size_ = std::min(next_buffer_size_ * 2, kMaxReadBufSize);
   }
 
-  if (!rdh_->WillSendData(filter_->child_id(), request_id)) {
-    // We should not send this data now, we have too many pending requests.
-    return true;
-  }
+  WillSendData(defer);
 
   base::SharedMemoryHandle handle;
   if (!read_buffer_->shared_memory()->GiveToProcess(
@@ -218,7 +267,8 @@ bool AsyncResourceHandler::OnReadCompleted(int request_id, int* bytes_read) {
     // to fix this. We can't move this call above the WillSendData because
     // it's killing our read_buffer_, and we don't want that when we pause
     // the request.
-    rdh_->DataReceivedACK(filter_->child_id(), request_id);
+    OnDataReceivedACK();
+
     // We just unmapped the memory.
     read_buffer_ = NULL;
     return false;
@@ -226,12 +276,10 @@ bool AsyncResourceHandler::OnReadCompleted(int request_id, int* bytes_read) {
   // We just unmapped the memory.
   read_buffer_ = NULL;
 
-  net::URLRequest* request = rdh_->GetURLRequest(
-      GlobalRequestID(filter_->child_id(), request_id));
   int encoded_data_length =
-      DevToolsNetLogObserver::GetAndResetEncodedDataLength(request);
+      DevToolsNetLogObserver::GetAndResetEncodedDataLength(request_);
   filter_->Send(new ResourceMsg_DataReceived(
-      routing_id_, request_id, handle, *bytes_read, encoded_data_length));
+      routing_id_, request_id, handle, bytes_read, encoded_data_length));
 
   return true;
 }
@@ -249,8 +297,16 @@ bool AsyncResourceHandler::OnResponseCompleted(
   // If we crash here, figure out what URL the renderer was requesting.
   // http://crbug.com/107692
   char url_buf[128];
-  base::strlcpy(url_buf, url_.spec().c_str(), arraysize(url_buf));
+  base::strlcpy(url_buf, request_->url().spec().c_str(), arraysize(url_buf));
   base::debug::Alias(url_buf);
+
+  // TODO(gavinp): Remove this CHECK when we figure out the cause of
+  // http://crbug.com/124680 . This check mirrors closely check in
+  // WebURLLoaderImpl::OnCompletedRequest that routes this message to a WebCore
+  // ResourceHandleInternal which asserts on its state and crashes. By crashing
+  // when the message is sent, we should get better crash reports.
+  CHECK(status.status() != net::URLRequestStatus::SUCCESS ||
+        sent_received_response_msg_);
 
   TimeTicks completion_time = TimeTicks::Now();
   filter_->Send(new ResourceMsg_RequestComplete(routing_id_,
@@ -272,9 +328,6 @@ bool AsyncResourceHandler::OnResponseCompleted(
   return true;
 }
 
-void AsyncResourceHandler::OnRequestClosed() {
-}
-
 // static
 void AsyncResourceHandler::GlobalCleanup() {
   if (g_spare_read_buffer) {
@@ -284,3 +337,25 @@ void AsyncResourceHandler::GlobalCleanup() {
     tmp->Release();
   }
 }
+
+void AsyncResourceHandler::WillSendData(bool* defer) {
+  if (++pending_data_count_ >= kMaxPendingDataMessages) {
+    // We reached the max number of data messages that can be sent to
+    // the renderer for a given request. Pause the request and wait for
+    // the renderer to start processing them before resuming it.
+    *defer = did_defer_ = true;
+  }
+
+  UMA_HISTOGRAM_CUSTOM_COUNTS(
+      "Net.AsyncResourceHandler_PendingDataCount",
+      pending_data_count_, 0, kMaxPendingDataMessages, kMaxPendingDataMessages);
+}
+
+void AsyncResourceHandler::ResumeIfDeferred() {
+  if (did_defer_) {
+    did_defer_ = false;
+    controller()->Resume();
+  }
+}
+
+}  // namespace content

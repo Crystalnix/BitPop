@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -448,26 +448,6 @@ class VectorCanvasTest : public ImageTest {
 ////////////////////////////////////////////////////////////////////////////////
 // Actual tests
 
-TEST_F(VectorCanvasTest, Uninitialized) {
-  // Do a little mubadumba do get uninitialized stuff.
-  VectorCanvasTest::TearDown();
-
-  // The goal is not to verify that have the same uninitialized data.
-  compare_canvas_ = false;
-
-  context_ = new Context();
-  bitmap_ = new Bitmap(*context_, size_, size_);
-  vcanvas_ = new VectorCanvas(VectorPlatformDeviceEmf::CreateDevice(
-      size_, size_, true, context_->context()));
-  pcanvas_ = new PlatformCanvas(size_, size_, false);
-
-  // VectorCanvas default initialization is black.
-  // PlatformCanvas default initialization is almost white 0x01FFFEFD (invalid
-  // Skia color) in both Debug and Release. See magicTransparencyColor in
-  // platform_device.cc
-  EXPECT_EQ(0., ProcessImage(FILE_PATH_LITERAL("empty")));
-}
-
 TEST_F(VectorCanvasTest, BasicDrawing) {
   EXPECT_EQ(Image(*vcanvas_).PercentageDifferent(Image(*pcanvas_)), 0.)
       << L"clean";
@@ -738,7 +718,12 @@ TEST_F(VectorCanvasTest, DiagonalLines) {
   EXPECT_EQ(0., ProcessImage(FILE_PATH_LITERAL("se-nw")));
 }
 
-TEST_F(VectorCanvasTest, PathEffects) {
+#if defined(OS_WIN)
+#define MAYBE_PathEffects DISABLED_PathEffects
+#else
+#define MAYBE_PathEffects PathEffects
+#endif
+TEST_F(VectorCanvasTest, MAYBE_PathEffects) {
   {
     SkPaint paint;
     SkScalar intervals[] = { 1, 1 };
@@ -908,7 +893,8 @@ TEST_F(VectorCanvasTest, ClippingClean) {
   LoadPngFileToSkBitmap(test_file(L"..\\bitmaps\\bitmap_opaque.png"), &bitmap,
                         true);
   {
-    SkRegion old_region(pcanvas_->getTotalClip());
+    SkAutoCanvasRestore acrv(vcanvas_, true);
+    SkAutoCanvasRestore acrp(pcanvas_, true);
     SkRect rect;
     rect.fLeft = 2;
     rect.fTop = 2;
@@ -920,8 +906,6 @@ TEST_F(VectorCanvasTest, ClippingClean) {
     vcanvas_->drawBitmap(bitmap, 15, 3, NULL);
     pcanvas_->drawBitmap(bitmap, 15, 3, NULL);
     EXPECT_EQ(0., ProcessImage(FILE_PATH_LITERAL("clipped")));
-    vcanvas_->clipRegion(old_region, SkRegion::kReplace_Op);
-    pcanvas_->clipRegion(old_region, SkRegion::kReplace_Op);
   }
   {
     // Verify that the clipping region has been fixed back.

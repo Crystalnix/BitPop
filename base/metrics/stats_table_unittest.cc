@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -76,8 +76,10 @@ class StatsTableThread : public SimpleThread {
  public:
   StatsTableThread(std::string name, int id)
       : SimpleThread(name),
-      id_(id) {}
-  virtual void Run();
+        id_(id) {}
+
+  virtual void Run() OVERRIDE;
+
  private:
   int id_;
 };
@@ -106,8 +108,13 @@ void StatsTableThread::Run() {
 }
 
 // Create a few threads and have them poke on their counters.
-// Flaky, http://crbug.com/10611.
-TEST_F(StatsTableTest, FLAKY_MultipleThreads) {
+// See http://crbug.com/10611 for more information.
+#if defined(OS_MACOSX)
+#define MAYBE_MultipleThreads DISABLED_MultipleThreads
+#else
+#define MAYBE_MultipleThreads MultipleThreads
+#endif
+TEST_F(StatsTableTest, MAYBE_MultipleThreads) {
   // Create a stats table.
   const std::string kTableName = "MultipleThreadStatTable";
   const int kMaxThreads = 20;
@@ -187,7 +194,7 @@ MULTIPROCESS_TEST_MAIN(StatsTableMultipleProcessMain) {
 
 // Create a few processes and have them poke on their counters.
 // This test is slow and flaky http://crbug.com/10611
-TEST_F(StatsTableTest, FLAKY_MultipleProcesses) {
+TEST_F(StatsTableTest, DISABLED_MultipleProcesses) {
   // Create a stats table.
   const int kMaxProcs = 20;
   const int kMaxCounter = 5;
@@ -209,7 +216,8 @@ TEST_F(StatsTableTest, FLAKY_MultipleProcesses) {
 
   // Wait for the processes to finish.
   for (int index = 0; index < kMaxProcs; index++) {
-    EXPECT_TRUE(WaitForSingleProcess(procs[index], 60 * 1000));
+    EXPECT_TRUE(WaitForSingleProcess(
+        procs[index], base::TimeDelta::FromMinutes(1)));
     CloseProcessHandle(procs[index]);
   }
 
@@ -305,6 +313,7 @@ TEST_F(StatsTableTest, StatsCounterTimer) {
   const std::string kTableName = "StatTable";
   const int kMaxThreads = 20;
   const int kMaxCounter = 5;
+  DeleteShmem(kTableName);
   StatsTable table(kTableName, kMaxThreads, kMaxCounter);
   StatsTable::set_current(&table);
 
@@ -330,6 +339,7 @@ TEST_F(StatsTableTest, StatsCounterTimer) {
   bar.Stop();
   EXPECT_GT(table.GetCounterValue("t:bar"), 0);
   EXPECT_LE(kDuration.InMilliseconds() * 2, table.GetCounterValue("t:bar"));
+  DeleteShmem(kTableName);
 }
 
 // Test some basic StatsRate operations
@@ -338,6 +348,7 @@ TEST_F(StatsTableTest, StatsRate) {
   const std::string kTableName = "StatTable";
   const int kMaxThreads = 20;
   const int kMaxCounter = 5;
+  DeleteShmem(kTableName);
   StatsTable table(kTableName, kMaxThreads, kMaxCounter);
   StatsTable::set_current(&table);
 
@@ -363,6 +374,7 @@ TEST_F(StatsTableTest, StatsRate) {
   baz.Stop();
   EXPECT_EQ(2, table.GetCounterValue("c:baz"));
   EXPECT_LE(kDuration.InMilliseconds() * 2, table.GetCounterValue("t:baz"));
+  DeleteShmem(kTableName);
 }
 
 // Test some basic StatsScope operations

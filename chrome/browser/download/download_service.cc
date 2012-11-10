@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,11 +8,15 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_service_factory.h"
+#include "chrome/browser/download/download_status_updater.h"
+#include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "content/public/browser/download_manager.h"
 
+using content::BrowserContext;
 using content::DownloadManager;
+using content::DownloadManagerDelegate;
 
 DownloadService::DownloadService(Profile* profile)
     : download_manager_created_(false),
@@ -24,31 +28,43 @@ DownloadService::~DownloadService() {}
 void DownloadService::OnManagerCreated(
     const DownloadService::OnManagerCreatedCallback& cb) {
   if (download_manager_created_) {
-    cb.Run(manager_.get());
+    DownloadManager* dm = BrowserContext::GetDownloadManager(profile_);
+    cb.Run(dm);
   } else {
     on_manager_created_callbacks_.push_back(cb);
   }
 }
 
-DownloadManager* DownloadService::GetDownloadManager() {
-  if (!download_manager_created_) {
-    // In case the delegate has already been set by
-    // SetDownloadManagerDelegateForTesting.
-    if (!manager_delegate_.get())
-      manager_delegate_ = new ChromeDownloadManagerDelegate(profile_);
-    manager_ = DownloadManager::Create(
-        manager_delegate_.get(), g_browser_process->download_status_updater());
-    manager_->Init(profile_);
-    manager_delegate_->SetDownloadManager(manager_);
-    download_manager_created_ = true;
-    for (std::vector<OnManagerCreatedCallback>::iterator cb
-         = on_manager_created_callbacks_.begin();
-         cb != on_manager_created_callbacks_.end(); ++cb) {
-      cb->Run(manager_.get());
-    }
-    on_manager_created_callbacks_.clear();
+ChromeDownloadManagerDelegate* DownloadService::GetDownloadManagerDelegate() {
+  DownloadManager* manager = BrowserContext::GetDownloadManager(profile_);
+  // If we've already created the delegate, just return it.
+  if (download_manager_created_) {
+    DCHECK(static_cast<DownloadManagerDelegate*>(manager_delegate_.get()) ==
+           manager->GetDelegate());
+    return manager_delegate_.get();
   }
-  return manager_.get();
+  download_manager_created_ = true;
+
+  // In case the delegate has already been set by
+  // SetDownloadManagerDelegateForTesting.
+  if (!manager_delegate_.get())
+    manager_delegate_ = new ChromeDownloadManagerDelegate(profile_);
+
+  manager_delegate_->SetDownloadManager(manager);
+
+  // Include this download manager in the set monitored by the
+  // global status updater.
+  g_browser_process->download_status_updater()->AddManager(manager);
+
+  download_manager_created_ = true;
+  for (std::vector<OnManagerCreatedCallback>::iterator cb =
+           on_manager_created_callbacks_.begin();
+       cb != on_manager_created_callbacks_.end(); ++cb) {
+    cb->Run(manager);
+  }
+  on_manager_created_callbacks_.clear();
+
+  return manager_delegate_.get();
 }
 
 bool DownloadService::HasCreatedDownloadManager() {
@@ -56,7 +72,9 @@ bool DownloadService::HasCreatedDownloadManager() {
 }
 
 int DownloadService::DownloadCount() const {
-  return download_manager_created_ ? manager_->InProgressCount() : 0;
+  if (!download_manager_created_)
+    return 0;
+  return BrowserContext::GetDownloadManager(profile_)->InProgressCount();
 }
 
 // static
@@ -78,28 +96,26 @@ int DownloadService::DownloadCountAllProfiles() {
 
 void DownloadService::SetDownloadManagerDelegateForTesting(
     ChromeDownloadManagerDelegate* new_delegate) {
-  // Guarantee everything is properly initialized.
-  GetDownloadManager();
-
-  manager_->SetDownloadManagerDelegate(new_delegate);
-  new_delegate->SetDownloadManager(manager_);
+  // Set the new delegate first so that if BrowserContext::GetDownloadManager()
+  // causes a new download manager to be created, we won't create a redundant
+  // ChromeDownloadManagerDelegate().
   manager_delegate_ = new_delegate;
+  // Guarantee everything is properly initialized.
+  DownloadManager* dm = BrowserContext::GetDownloadManager(profile_);
+  if (dm->GetDelegate() != new_delegate) {
+    dm->SetDelegate(new_delegate);
+    new_delegate->SetDownloadManager(dm);
+  }
 }
 
 void DownloadService::Shutdown() {
-  if (manager_.get()) {
-    manager_->Shutdown();
-
-    // The manager reference can be released any time after shutdown;
-    // it will be destroyed when the last reference is released on the
-    // FILE thread.
-    // Resetting here will guarantee that any attempts to get the
-    // DownloadManager after shutdown will return null.
-    //
-    // TODO(rdsmith): Figure out how to guarantee when the last reference
-    // will be released and make DownloadManager not RefCountedThreadSafe<>.
-    manager_.release();
+  if (download_manager_created_) {
+    // Normally the DownloadManager would be shutdown later, after the Profile
+    // goes away and BrowserContext's destructor runs. But that would be too
+    // late for us since we need to use the profile (indirectly through history
+    // code) when the DownloadManager is shutting down. So we shut it down
+    // manually earlier. See http://crbug.com/131692
+    BrowserContext::GetDownloadManager(profile_)->Shutdown();
   }
-  if (manager_delegate_.get())
-    manager_delegate_.release();
+  manager_delegate_ = NULL;
 }

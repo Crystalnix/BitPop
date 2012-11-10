@@ -47,10 +47,23 @@ const int64 Time::kTimeTToMicrosecondsOffset = kWindowsEpochDeltaMicroseconds;
 
 // static
 Time Time::Now() {
-  CFAbsoluteTime now =
-      CFAbsoluteTimeGetCurrent() + kCFAbsoluteTimeIntervalSince1970;
-  return Time(static_cast<int64>(now * kMicrosecondsPerSecond) +
+  return FromCFAbsoluteTime(CFAbsoluteTimeGetCurrent());
+}
+
+// static
+Time Time::FromCFAbsoluteTime(CFAbsoluteTime t) {
+  if (t == 0)
+    return Time();  // Consider 0 as a null Time.
+  return Time(static_cast<int64>(
+      (t + kCFAbsoluteTimeIntervalSince1970) * kMicrosecondsPerSecond) +
       kWindowsEpochDeltaMicroseconds);
+}
+
+CFAbsoluteTime Time::ToCFAbsoluteTime() const {
+  if (is_null())
+    return 0;  // Consider 0 as a null Time.
+  return (static_cast<CFAbsoluteTime>(us_ - kWindowsEpochDeltaMicroseconds) /
+      kMicrosecondsPerSecond) - kCFAbsoluteTimeIntervalSince1970;
 }
 
 // static
@@ -96,7 +109,7 @@ void Time::Explode(bool is_local, Exploded* exploded) const {
 
   exploded->year = date.year;
   exploded->month = date.month;
-  exploded->day_of_week = (cf_day_of_week == 7) ? 0 : cf_day_of_week - 1;
+  exploded->day_of_week = cf_day_of_week % 7;
   exploded->day_of_month = date.day;
   exploded->hour = date.hour;
   exploded->minute = date.minute;
@@ -146,6 +159,11 @@ TimeTicks TimeTicks::Now() {
 // static
 TimeTicks TimeTicks::HighResNow() {
   return Now();
+}
+
+// static
+TimeTicks TimeTicks::NowFromSystemTraceTime() {
+  return HighResNow();
 }
 
 }  // namespace base

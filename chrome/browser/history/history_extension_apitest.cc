@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,19 +19,19 @@ class HistoryExtensionApiTest : public ExtensionApiTest {
   }
 };
 
-// Full text search indexing sometimes exceeds a timeout.
-// Fix this as part of crbug/76170.
+// Full text search indexing sometimes exceeds a timeout. (http://crbug/119505)
 IN_PROC_BROWSER_TEST_F(HistoryExtensionApiTest, DISABLED_MiscSearch) {
   ASSERT_TRUE(RunExtensionSubtest("history", "misc_search.html")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(HistoryExtensionApiTest, TimedSearch) {
+// Same could happen here without the FTS (http://crbug/119505)
+IN_PROC_BROWSER_TEST_F(HistoryExtensionApiTest, DISABLED_TimedSearch) {
   ASSERT_TRUE(RunExtensionSubtest("history", "timed_search.html")) << message_;
 }
 
 #if defined(OS_WIN)
-// Flakily times out on Win - See http://crbug.com/88318
-#define MAYBE_Delete FLAKY_Delete
+// Flaky on Windows: crbug.com/88318
+#define MAYBE_Delete DISABLED_Delete
 #else
 #define MAYBE_Delete Delete
 #endif
@@ -40,14 +40,14 @@ IN_PROC_BROWSER_TEST_F(HistoryExtensionApiTest, MAYBE_Delete) {
 }
 
 // See crbug.com/79074
-IN_PROC_BROWSER_TEST_F(HistoryExtensionApiTest, FLAKY_GetVisits) {
+IN_PROC_BROWSER_TEST_F(HistoryExtensionApiTest, DISABLED_GetVisits) {
   ASSERT_TRUE(RunExtensionSubtest("history", "get_visits.html")) << message_;
 }
 
 #if defined(OS_WIN)
 // Searching for a URL right after adding it fails on win XP.
 // Fix this as part of crbug/76170.
-#define MAYBE_SearchAfterAdd FLAKY_SearchAfterAdd
+#define MAYBE_SearchAfterAdd DISABLED_SearchAfterAdd
 #else
 #define MAYBE_SearchAfterAdd SearchAfterAdd
 #endif

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  const OptionsPage = options.OptionsPage;
+  /** @const */ var OptionsPage = options.OptionsPage;
 
   // The GUID of the loaded credit card.
   var guid_;
@@ -15,7 +15,7 @@ cr.define('options', function() {
    */
   function AutofillEditCreditCardOverlay() {
     OptionsPage.call(this, 'autofillEditCreditCard',
-                     templateData.autofillEditCreditCardTitle,
+                     loadTimeData.getString('autofillEditCreditCardTitle'),
                      'autofill-edit-credit-card-overlay');
   }
 

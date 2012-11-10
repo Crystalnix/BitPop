@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,11 +7,15 @@
 #include "base/command_line.h"
 #include "base/metrics/field_trial.h"
 #include "chrome/browser/browser_process.h"
+#if !defined(OS_ANDROID)
 #include "chrome/browser/first_run/first_run.h"
+#endif
 #include "chrome/browser/extensions/default_apps_trial.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_version_info.h"
+#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -36,14 +40,21 @@ static bool ShouldInstallInProfile(Profile* profile) {
           prefs::kDefaultAppsInstallState));
   switch (state) {
     case default_apps::kUnknown: {
-      // This is the first time the default apps feature runs on this profile.
-      // Determine if we want to install them or not. The best check would be
-      // to see if this is a newly created profile, but its not possible to do
-      // that.  The next best thing is to see if this is a chrome first run.
-      // However, this means that multi-profile support is broken: secondary
-      // profiles will not get default apps.
-      // TODO(rogerta): add support for multiple profiles.
-      if (!first_run::IsChromeFirstRun())
+      // Only new installations and profiles get default apps. In theory the
+      // new profile checks should catch new installations, but that is not
+      // always the case (http:/crbug.com/145351).
+      chrome::VersionInfo version_info;
+      bool is_new_profile =
+          profile->WasCreatedByVersionOrLater(version_info.Version().c_str());
+      // Android excludes most of the first run code, so it can't determine
+      // if this is a first run. That's OK though, because Android doesn't
+      // use default apps in general.
+#if defined(OS_ANDROID)
+      bool is_first_run = false;
+#else
+      bool is_first_run = first_run::IsChromeFirstRun();
+#endif
+      if (!is_first_run && !is_new_profile)
         install_apps = false;
       break;
     }
@@ -116,12 +127,12 @@ void RegisterUserPrefs(PrefService* prefs) {
 
 Provider::Provider(Profile* profile,
                    VisitorInterface* service,
-                   ExternalExtensionLoader* loader,
-                   Extension::Location crx_location,
-                   Extension::Location download_location,
+                   extensions::ExternalLoader* loader,
+                   extensions::Extension::Location crx_location,
+                   extensions::Extension::Location download_location,
                    int creation_flags)
-    : ExternalExtensionProviderImpl(service, loader, crx_location,
-                                    download_location, creation_flags),
+    : extensions::ExternalProviderImpl(service, loader, crx_location,
+                                       download_location, creation_flags),
       profile_(profile) {
   DCHECK(profile);
   set_auto_acknowledge(true);
@@ -134,7 +145,7 @@ void Provider::VisitRegisteredExtension() {
     return;
   }
 
-  ExternalExtensionProviderImpl::VisitRegisteredExtension();
+  extensions::ExternalProviderImpl::VisitRegisteredExtension();
 }
 
 }  // namespace default_apps

@@ -4,7 +4,6 @@
 
 #include "chrome/browser/ui/views/importer/import_progress_dialog_view.h"
 
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/importer/importer_host.h"
 #include "chrome/browser/importer/importer_observer.h"
 #include "chrome/browser/importer/importer_progress_dialog.h"
@@ -19,7 +18,6 @@
 #include "ui/views/widget/widget.h"
 
 ImportProgressDialogView::ImportProgressDialogView(
-    HWND parent_window,
     uint16 items,
     ImporterHost* importer_host,
     ImporterObserver* importer_observer,
@@ -40,18 +38,15 @@ ImportProgressDialogView::ImportProgressDialogView(
           l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_HISTORY))),
       label_cookies_(new views::Label(
           l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_COOKIES))),
-      parent_window_(parent_window),
       items_(items),
       importer_host_(importer_host),
       importer_observer_(importer_observer),
       importing_(true),
       bookmarks_import_(bookmarks_import) {
-  std::wstring info_text = bookmarks_import ?
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_IMPORT_BOOKMARKS)) :
-      UTF16ToWide(l10n_util::GetStringFUTF16(
-          IDS_IMPORT_PROGRESS_INFO, importer_name));
+  const string16 info_text = bookmarks_import ?
+      l10n_util::GetStringUTF16(IDS_IMPORT_BOOKMARKS) :
+      l10n_util::GetStringFUTF16(IDS_IMPORT_PROGRESS_INFO, importer_name);
   label_info_ = new views::Label(info_text);
-  importer_host_->SetObserver(this);
   label_info_->SetMultiLine(true);
   label_info_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
   label_bookmarks_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
@@ -60,17 +55,19 @@ ImportProgressDialogView::ImportProgressDialogView(
   label_history_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
   label_cookies_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
 
+  importer_host_->SetObserver(this);
+
   // These are scoped pointers, so we don't need the parent to delete them.
-  state_bookmarks_->set_parent_owned(false);
-  state_searches_->set_parent_owned(false);
-  state_passwords_->set_parent_owned(false);
-  state_history_->set_parent_owned(false);
-  state_cookies_->set_parent_owned(false);
-  label_bookmarks_->set_parent_owned(false);
-  label_searches_->set_parent_owned(false);
-  label_passwords_->set_parent_owned(false);
-  label_history_->set_parent_owned(false);
-  label_cookies_->set_parent_owned(false);
+  state_bookmarks_->set_owned_by_client();
+  state_searches_->set_owned_by_client();
+  state_passwords_->set_owned_by_client();
+  state_history_->set_owned_by_client();
+  state_cookies_->set_owned_by_client();
+  label_bookmarks_->set_owned_by_client();
+  label_searches_->set_owned_by_client();
+  label_passwords_->set_owned_by_client();
+  label_history_->set_owned_by_client();
+  label_cookies_->set_owned_by_client();
 }
 
 ImportProgressDialogView::~ImportProgressDialogView() {
@@ -118,10 +115,6 @@ string16 ImportProgressDialogView::GetDialogButtonLabel(
     ui::DialogButton button) const {
   DCHECK_EQ(button, ui::DIALOG_BUTTON_CANCEL);
   return l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_CANCEL);
-}
-
-ui::ModalType ImportProgressDialogView::GetModalType() const {
-  return parent_window_ ? ui::MODAL_TYPE_WINDOW : ui::MODAL_TYPE_NONE;
 }
 
 string16 ImportProgressDialogView::GetWindowTitle() const {
@@ -281,8 +274,7 @@ void ImportProgressDialogView::ImportEnded() {
 
 namespace importer {
 
-void ShowImportProgressDialog(HWND parent_window,
-                              uint16 items,
+void ShowImportProgressDialog(uint16 items,
                               ImporterHost* importer_host,
                               ImporterObserver* importer_observer,
                               const SourceProfile& source_profile,
@@ -290,22 +282,19 @@ void ShowImportProgressDialog(HWND parent_window,
                               bool first_run) {
   DCHECK_NE(items, 0u);
   ImportProgressDialogView* progress_view = new ImportProgressDialogView(
-      parent_window,
       items,
       importer_host,
       importer_observer,
       source_profile.importer_name,
       source_profile.importer_type == importer::TYPE_BOOKMARKS_FILE);
 
-  views::Widget* window =
-      views::Widget::CreateWindowWithParent(progress_view, parent_window);
+  views::Widget* window = views::Widget::CreateWindow(progress_view);
 
   if (!importer_host->is_headless() && !first_run)
     window->Show();
 
-  importer_host->StartImportSettings(
-      source_profile, target_profile, items, new ProfileWriter(target_profile),
-      first_run);
+  importer_host->StartImportSettings(source_profile, target_profile, items,
+      new ProfileWriter(target_profile), first_run);
 }
 
 }  // namespace importer

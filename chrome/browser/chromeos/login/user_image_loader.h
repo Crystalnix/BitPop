@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_USER_IMAGE_LOADER_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_USER_IMAGE_LOADER_H_
-#pragma once
 
 #include <map>
 #include <string>
@@ -19,19 +18,22 @@ class SkBitmap;
 
 namespace chromeos {
 
+class UserImage;
+
 // A facility to read a file containing user image asynchronously in the IO
 // thread. Returns the image in the form of an SkBitmap.
 class UserImageLoader : public base::RefCountedThreadSafe<UserImageLoader>,
                         public ImageDecoder::Delegate {
  public:
-  // Callback used to inidicate that image has been loaded.
-  typedef base::Callback<void(const SkBitmap& image)> LoadedCallback;
+  // Callback used to indicate that image has been loaded.
+  typedef base::Callback<void(const UserImage& user_image)> LoadedCallback;
 
   UserImageLoader();
 
   // Start reading the image from |filepath| on the file thread. Calls
   // |loaded_cb| when image has been successfully loaded.
-  // If |size| is positive, image is resized to |size|x|size| pixels.
+  // If |size| is positive, image is cropped and (if needed) downsized to
+  // |size|x|size| pixels.
   void Start(const std::string& filepath, int size,
              const LoadedCallback& loaded_cb);
 
@@ -43,8 +45,8 @@ class UserImageLoader : public base::RefCountedThreadSafe<UserImageLoader>,
     ImageInfo(int size, const LoadedCallback& loaded_cb);
     ~ImageInfo();
 
-    int size;
-    LoadedCallback loaded_cb;
+    const int size;
+    const LoadedCallback loaded_cb;
   };
 
   typedef std::map<const ImageDecoder*, ImageInfo> ImageInfoMap;

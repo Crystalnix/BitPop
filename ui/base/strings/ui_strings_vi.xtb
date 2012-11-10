@@ -22,11 +22,13 @@
 <translation id="3234408098842461169">Phím mũi tên Xuống</translation>
 <translation id="3087734570205094154">Bên dưới</translation>
 <translation id="6364916375976753737">Cuộn qua Trái</translation>
+<translation id="6945221475159498467">Chọn</translation>
+<translation id="6620110761915583480">Lưu Tệp</translation>
 <translation id="8210608804940886430">Trang Dưới</translation>
 <translation id="5329858601952122676">&amp;Xoá</translation>
+<translation id="8901569739625249689"><ph name="QUANTITY"/> KB</translation>
 <translation id="6659594942844771486">Tab</translation>
 <translation id="3049748772180311791"><ph name="QUANTITY"/> MB</translation>
-<translation id="3806858430610674159"><ph name="QUANTITY"/> kB</translation>
 <translation id="2497284189126895209">Tất cả Tệp tin</translation>
 <translation id="7814458197256864873">Sao &amp;chép</translation>
 <translation id="3889424535448813030">Phím mũi tên Phải</translation>
@@ -37,19 +39,21 @@
 <translation id="3183922693828471536">Cuộn tới Đây</translation>
 <translation id="4552416320897244156">Trang Dưới</translation>
 <translation id="7052633198403197513">F1</translation>
+<translation id="8677655579646609597"><ph name="QUANTITY"/> KB/s</translation>
 <translation id="2190355936436201913">(trống)</translation>
 <translation id="8447116497070723931">Trang Trên</translation>
 <translation id="4588090240171750605">Cuộn qua Phải</translation>
 <translation id="2666092431469916601">Hàng đầu</translation>
 <translation id="8331626408530291785">Cuộn Lên</translation>
+<translation id="7907591526440419938">Mở Tệp</translation>
 <translation id="1293699935367580298">Thoát</translation>
 <translation id="815598010540052116">Cuộn Xuống</translation>
 <translation id="3157931365184549694">Khôi phục</translation>
-<translation id="8179976553408161302">Enter</translation>
+<translation id="8179976553408161302">Vào</translation>
 <translation id="9170848237812810038">H&amp;oàn tác</translation>
 <translation id="520299402983819650"><ph name="QUANTITY"/> PB</translation>
+<translation id="6845383723252244143">Chọn Thư mục</translation>
 <translation id="5583640892426849032">Backspace</translation>
-<translation id="2619528525756897123"><ph name="QUANTITY"/> kB/giây</translation>
 <translation id="3740362395218339114"><ph name="QUANTITY"/> GB/giây</translation>
 <translation id="436869212180315161">Nhấp vào</translation>
 <translation id="2297836609126180313"><ph name="QUANTITY"/> TB/giây</translation>
@@ -59,5 +63,6 @@
 <translation id="6907759265145635167"><ph name="QUANTITY"/> PB/giây</translation>
 <translation id="6965382102122355670">OK</translation>
 <translation id="5941711191222866238">Thu nhỏ</translation>
+<translation id="3036649622769666520">Mở Tệp</translation>
 <translation id="8328145009876646418">Cạnh Bên trái</translation>
 </translationbundle>

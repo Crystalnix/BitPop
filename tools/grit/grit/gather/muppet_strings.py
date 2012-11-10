@@ -1,24 +1,24 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 '''Support for "strings.xml" format used by Muppet plug-ins in Google Desktop.'''
 
 import StringIO
-import types
-import re
 import xml.sax
 import xml.sax.handler
 import xml.sax.saxutils
 
-from grit.gather import regexp
-from grit import util
+from grit import lazy_re
 from grit import tclib
+from grit import util
+from grit.gather import regexp
+
 
 # Placeholders can be defined in strings.xml files by putting the name of the
 # placeholder between [![ and ]!] e.g. <MSG>Hello [![USER]!] how are you<MSG>
-PLACEHOLDER_RE = re.compile('(\[!\[|\]!\])')
+PLACEHOLDER_RE = lazy_re.compile('(\[!\[|\]!\])')
 
 
 class MuppetStringsContentHandler(xml.sax.handler.ContentHandler):
@@ -79,11 +79,6 @@ class MuppetStringsContentHandler(xml.sax.handler.ContentHandler):
 class MuppetStrings(regexp.RegexpGatherer):
   '''Supports the strings.xml format used by Muppet gadgets.'''
 
-  def __init__(self, text):
-    if util.IsExtraVerbose():
-      print text
-    regexp.RegexpGatherer.__init__(self, text)
-
   def AddMessage(self, msgtext, description, meaning, translateable):
     if msgtext == '':
       return
@@ -119,9 +114,15 @@ class MuppetStrings(regexp.RegexpGatherer):
   # _RegExpParse method of that class to implement Parse().  Instead, we
   # parse using a SAX parser.
   def Parse(self):
-    if (self.have_parsed_):
+    if self.have_parsed_:
       return
     self.have_parsed_ = True
+
+    text = self._LoadInputFile().encode(self.encoding)
+    if util.IsExtraVerbose():
+      print text
+    self.text_ = text.strip()
+
     self._AddNontranslateableChunk(u'<strings>\n')
     stream = StringIO.StringIO(self.text_)
     handler = MuppetStringsContentHandler(self)
@@ -130,13 +131,3 @@ class MuppetStrings(regexp.RegexpGatherer):
 
   def Escape(self, text):
     return util.EncodeCdata(text)
-
-  def FromFile(filename_or_stream, extkey=None, encoding='cp1252'):
-    if isinstance(filename_or_stream, types.StringTypes):
-      if util.IsVerbose():
-        print "MuppetStrings reading file %s, encoding %s" % (
-          filename_or_stream, encoding)
-      filename_or_stream = util.WrapInputStream(file(filename_or_stream, 'r'), encoding)
-    return MuppetStrings(filename_or_stream.read())
-  FromFile = staticmethod(FromFile)
-

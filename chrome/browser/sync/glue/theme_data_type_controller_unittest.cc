@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,12 +16,13 @@
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
 #include "chrome/test/base/profile_mock.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 
 using browser_sync::ThemeDataTypeController;
 using browser_sync::ChangeProcessorMock;
 using browser_sync::DataTypeController;
 using browser_sync::ModelAssociatorMock;
+using browser_sync::ModelLoadCallbackMock;
 using browser_sync::StartCallbackMock;
 using content::BrowserThread;
 using testing::_;
@@ -30,9 +31,9 @@ using testing::InvokeWithoutArgs;
 using testing::Return;
 using testing::SetArgumentPointee;
 
-class ThemeDataTypeControllerTest : public testing::Test {
+class SyncThemeDataTypeControllerTest : public testing::Test {
  public:
-  ThemeDataTypeControllerTest()
+  SyncThemeDataTypeControllerTest()
       : ui_thread_(BrowserThread::UI, &message_loop_) {}
 
   virtual void SetUp() {
@@ -46,6 +47,7 @@ class ThemeDataTypeControllerTest : public testing::Test {
   void SetStartExpectations() {
     model_associator_ = new ModelAssociatorMock();
     change_processor_ = new ChangeProcessorMock();
+    EXPECT_CALL(model_load_callback_, Run(_, _));
     EXPECT_CALL(*profile_sync_factory_, CreateThemeSyncComponents(_, _)).
         WillOnce(Return(ProfileSyncComponentsFactory::SyncComponents(
             model_associator_, change_processor_)));
@@ -56,8 +58,8 @@ class ThemeDataTypeControllerTest : public testing::Test {
         WillRepeatedly(Return(true));
     EXPECT_CALL(*model_associator_, SyncModelHasUserCreatedNodes(_)).
         WillRepeatedly(DoAll(SetArgumentPointee<0>(true), Return(true)));
-    EXPECT_CALL(*model_associator_, AssociateModels(_)).
-        WillRepeatedly(Return(true));
+    EXPECT_CALL(*model_associator_, AssociateModels()).
+        WillRepeatedly(Return(syncer::SyncError()));
   }
 
   void SetActivateExpectations() {
@@ -66,11 +68,21 @@ class ThemeDataTypeControllerTest : public testing::Test {
 
   void SetStopExpectations() {
     EXPECT_CALL(service_, DeactivateDataType(_));
-    EXPECT_CALL(*model_associator_, DisassociateModels(_));
+    EXPECT_CALL(*model_associator_, DisassociateModels()).
+                WillOnce(Return(syncer::SyncError()));
   }
 
   void PumpLoop() {
     message_loop_.RunAllPending();
+  }
+
+  void Start() {
+    theme_dtc_->LoadModels(
+        base::Bind(&ModelLoadCallbackMock::Run,
+                   base::Unretained(&model_load_callback_)));
+    theme_dtc_->StartAssociating(
+        base::Bind(&StartCallbackMock::Run,
+                   base::Unretained(&start_callback_)));
   }
 
   MessageLoopForUI message_loop_;
@@ -82,31 +94,30 @@ class ThemeDataTypeControllerTest : public testing::Test {
   ModelAssociatorMock* model_associator_;
   ChangeProcessorMock* change_processor_;
   StartCallbackMock start_callback_;
+  ModelLoadCallbackMock model_load_callback_;
 };
 
-TEST_F(ThemeDataTypeControllerTest, Start) {
+TEST_F(SyncThemeDataTypeControllerTest, Start) {
   SetStartExpectations();
   SetAssociateExpectations();
   SetActivateExpectations();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, theme_dtc_->state());
   EXPECT_CALL(start_callback_, Run(DataTypeController::OK, _));
-  theme_dtc_->Start(
-      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
+  Start();
   EXPECT_EQ(DataTypeController::RUNNING, theme_dtc_->state());
 }
 
-TEST_F(ThemeDataTypeControllerTest, StartFirstRun) {
+TEST_F(SyncThemeDataTypeControllerTest, StartFirstRun) {
   SetStartExpectations();
   SetAssociateExpectations();
   SetActivateExpectations();
   EXPECT_CALL(*model_associator_, SyncModelHasUserCreatedNodes(_)).
       WillRepeatedly(DoAll(SetArgumentPointee<0>(false), Return(true)));
   EXPECT_CALL(start_callback_, Run(DataTypeController::OK_FIRST_RUN, _));
-  theme_dtc_->Start(
-      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
+  Start();
 }
 
-TEST_F(ThemeDataTypeControllerTest, StartOk) {
+TEST_F(SyncThemeDataTypeControllerTest, StartOk) {
   SetStartExpectations();
   SetAssociateExpectations();
   SetActivateExpectations();
@@ -114,25 +125,23 @@ TEST_F(ThemeDataTypeControllerTest, StartOk) {
       WillRepeatedly(DoAll(SetArgumentPointee<0>(true), Return(true)));
 
   EXPECT_CALL(start_callback_, Run(DataTypeController::OK, _));
-  theme_dtc_->Start(
-      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
+  Start();
 }
 
-TEST_F(ThemeDataTypeControllerTest, StartAssociationFailed) {
+TEST_F(SyncThemeDataTypeControllerTest, StartAssociationFailed) {
   SetStartExpectations();
   SetAssociateExpectations();
-  EXPECT_CALL(*model_associator_, AssociateModels(_)).
-      WillRepeatedly(DoAll(browser_sync::SetSyncError(syncable::THEMES),
-                           Return(false)));
+  EXPECT_CALL(*model_associator_, AssociateModels()).
+      WillRepeatedly(
+          Return(syncer::SyncError(FROM_HERE, "Error", syncer::THEMES)));
 
   EXPECT_CALL(start_callback_,
               Run(DataTypeController::ASSOCIATION_FAILED, _));
-  theme_dtc_->Start(
-      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
+  Start();
   EXPECT_EQ(DataTypeController::DISABLED, theme_dtc_->state());
 }
 
-TEST_F(ThemeDataTypeControllerTest,
+TEST_F(SyncThemeDataTypeControllerTest,
        StartAssociationTriggersUnrecoverableError) {
   SetStartExpectations();
   // Set up association to fail with an unrecoverable error.
@@ -142,12 +151,11 @@ TEST_F(ThemeDataTypeControllerTest,
       WillRepeatedly(DoAll(SetArgumentPointee<0>(false), Return(false)));
   EXPECT_CALL(start_callback_,
               Run(DataTypeController::UNRECOVERABLE_ERROR, _));
-  theme_dtc_->Start(
-      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
+  Start();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, theme_dtc_->state());
 }
 
-TEST_F(ThemeDataTypeControllerTest, Stop) {
+TEST_F(SyncThemeDataTypeControllerTest, Stop) {
   SetStartExpectations();
   SetAssociateExpectations();
   SetActivateExpectations();
@@ -156,29 +164,27 @@ TEST_F(ThemeDataTypeControllerTest, Stop) {
   EXPECT_EQ(DataTypeController::NOT_RUNNING, theme_dtc_->state());
 
   EXPECT_CALL(start_callback_, Run(DataTypeController::OK, _));
-  theme_dtc_->Start(
-      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
+  Start();
   EXPECT_EQ(DataTypeController::RUNNING, theme_dtc_->state());
   theme_dtc_->Stop();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, theme_dtc_->state());
 }
 
 // TODO(akalin): Add this test to all the other DTCs.
-TEST_F(ThemeDataTypeControllerTest, OnUnrecoverableError) {
+TEST_F(SyncThemeDataTypeControllerTest, OnSingleDatatypeUnrecoverableError) {
   SetStartExpectations();
   SetAssociateExpectations();
   SetActivateExpectations();
   EXPECT_CALL(*model_associator_, SyncModelHasUserCreatedNodes(_)).
       WillRepeatedly(DoAll(SetArgumentPointee<0>(true), Return(true)));
-  EXPECT_CALL(service_, OnUnrecoverableError(_,_)).
+  EXPECT_CALL(service_, DisableBrokenDatatype(_,_,_)).
       WillOnce(InvokeWithoutArgs(theme_dtc_.get(),
       &ThemeDataTypeController::Stop));
   SetStopExpectations();
 
   EXPECT_CALL(start_callback_, Run(DataTypeController::OK, _));
-  theme_dtc_->Start(
-      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
+  Start();
   // This should cause theme_dtc_->Stop() to be called.
-  theme_dtc_->OnUnrecoverableError(FROM_HERE, "Test");
+  theme_dtc_->OnSingleDatatypeUnrecoverableError(FROM_HERE, "Test");
   PumpLoop();
 }

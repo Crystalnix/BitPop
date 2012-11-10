@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_PASSWORD_MANAGER_PASSWORD_STORE_WIN_H_
 #define CHROME_BROWSER_PASSWORD_MANAGER_PASSWORD_STORE_WIN_H_
-#pragma once
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/password_manager/password_store_default.h"
@@ -23,10 +22,13 @@ struct PasswordForm;
 // but also uses IE7 passwords if no others found.
 class PasswordStoreWin : public PasswordStoreDefault {
  public:
-  // FilePath specifies path to WebDatabase.
+  // WebDataService is only used for IE7 password fetching.
   PasswordStoreWin(LoginDatabase* login_database,
                    Profile* profile,
                    WebDataService* web_data_service);
+
+  // RefcountedProfileKeyedService:
+  virtual void ShutdownOnUIThread() OVERRIDE;
 
  private:
   class DBHandler;
@@ -40,7 +42,6 @@ class PasswordStoreWin : public PasswordStoreDefault {
       const GetLoginsCallback& callback) OVERRIDE;
 
   // See PasswordStoreDefault.
-  virtual void Shutdown() OVERRIDE;
   virtual void ForwardLoginsResult(GetLoginsRequest* request) OVERRIDE;
 
   // Overridden so that we can save the form for later use.

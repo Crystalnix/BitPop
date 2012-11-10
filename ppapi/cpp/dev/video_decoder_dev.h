@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,7 @@
 namespace pp {
 
 class Graphics3D;
-class Instance;
+class InstanceHandle;
 
 // C++ wrapper for the Pepper Video Decoder interface. For more detailed
 // documentation refer to the C interfaces.
@@ -24,7 +24,7 @@ class Instance;
 class VideoDecoder_Dev : public Resource {
  public:
   // See PPB_VideoDecoder_Dev::Create.
-  VideoDecoder_Dev(const Instance* instance,
+  VideoDecoder_Dev(const InstanceHandle& instance,
                    const Graphics3D& context,
                    PP_VideoDecoder_Profile profile);
 
@@ -34,9 +34,9 @@ class VideoDecoder_Dev : public Resource {
   // PPB_VideoDecoder_Dev implementation.
   void AssignPictureBuffers(const std::vector<PP_PictureBuffer_Dev>& buffers);
   int32_t Decode(const PP_VideoBitstreamBuffer_Dev& bitstream_buffer,
-                 CompletionCallback callback);
+                 const CompletionCallback& callback);
   void ReusePictureBuffer(int32_t picture_buffer_id);
-  int32_t Flush(CompletionCallback callback);
+  int32_t Flush(const CompletionCallback& callback);
   int32_t Reset(const CompletionCallback& callback);
 
  private:

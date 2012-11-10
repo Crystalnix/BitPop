@@ -4,7 +4,6 @@
 
 #ifndef UI_AURA_WINDOW_OBSERVER_H_
 #define UI_AURA_WINDOW_OBSERVER_H_
-#pragma once
 
 #include "ui/aura/aura_export.h"
 
@@ -27,20 +26,26 @@ class AURA_EXPORT WindowObserver {
   // Invoked when this window's parent window changes.  |parent| may be NULL.
   virtual void OnWindowParentChanged(Window* window, Window* parent) {}
 
-  // Invoked when SetProperty() or SetIntProperty() is called on |window|.
-  // |old| is the old property value.
+  // Invoked when SetProperty(), ClearProperty(), or
+  // NativeWidgetAura::SetNativeWindowProperty() is called on the window.
+  // |key| is either a WindowProperty<T>* (SetProperty, ClearProperty)
+  // or a const char* (SetNativeWindowProperty). Either way, it can simply be
+  // compared for equality with the property constant. |old| is the old property
+  // value, which must be cast to the appropriate type before use.
   virtual void OnWindowPropertyChanged(Window* window,
-                                       const char* key,
-                                       void* old) {}
+                                       const void* key,
+                                       intptr_t old) {}
 
   // Invoked when SetVisible() is invoked on a window. |visible| is the
   // value supplied to SetVisible(). If |visible| is true, window->IsVisible()
   // may still return false. See description in Window::IsVisible() for details.
   virtual void OnWindowVisibilityChanged(Window* window, bool visible) {}
 
-  // Invoked when SetBounds() is invoked on |window|. |bounds| contains the
-  // window's new bounds.
-  virtual void OnWindowBoundsChanged(Window* window, const gfx::Rect& bounds) {}
+  // Invoked when SetBounds() is invoked on |window|. |old_bounds| and
+  // |new_bounds| are in parent coordinates.
+  virtual void OnWindowBoundsChanged(Window* window,
+                                     const gfx::Rect& old_bounds,
+                                     const gfx::Rect& new_bounds) {}
 
   // Invoked when |window|'s position among its siblings in the stacking order
   // has changed.
@@ -57,6 +62,12 @@ class AURA_EXPORT WindowObserver {
   // Invoked when the Window has been destroyed (i.e. at the end of its
   // destructor). This is called after the window is removed from its parent.
   virtual void OnWindowDestroyed(Window* window) {}
+
+  // Called when a Window has been added to a RootWindow.
+  virtual void OnWindowAddedToRootWindow(Window* window) {}
+
+  // Called when a Window is about to be removed from a RootWindow.
+  virtual void OnWindowRemovingFromRootWindow(Window* window) {}
 
  protected:
   virtual ~WindowObserver() {}

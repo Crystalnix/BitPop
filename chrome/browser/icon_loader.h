@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_ICON_LOADER_H_
 #define CHROME_BROWSER_ICON_LOADER_H_
-#pragma once
 
 #include "build/build_config.h"
 
@@ -15,10 +14,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop_proxy.h"
 #include "ui/gfx/image/image.h"
-
-#if defined(TOOLKIT_USES_GTK)
-#include "base/file_path.h"
-#endif
 
 #if defined(OS_WIN)
 // On Windows, we group files by their extension, with several exceptions:
@@ -32,7 +27,7 @@ typedef std::string IconGroupID;
 ////////////////////////////////////////////////////////////////////////////////
 //
 // A facility to read a file containing an icon asynchronously in the IO
-// thread. Returns the icon in the form of an SkBitmap.
+// thread. Returns the icon in the form of an ImageSkia.
 //
 ////////////////////////////////////////////////////////////////////////////////
 class IconLoader : public base::RefCountedThreadSafe<IconLoader> {
@@ -48,7 +43,7 @@ class IconLoader : public base::RefCountedThreadSafe<IconLoader> {
    public:
     // Invoked when an icon has been read. |source| is the IconLoader. If the
     // icon has been successfully loaded, result is non-null. This method must
-    // return true if it is taking ownership of the returned bitmap.
+    // return true if it is taking ownership of the returned image.
     virtual bool OnImageLoaded(IconLoader* source, gfx::Image* result) = 0;
 
    protected:

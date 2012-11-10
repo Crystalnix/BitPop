@@ -1,39 +1,33 @@
 // This file should almost always be empty. Normally Chromium test expectations
-// are found in
-// src/third_party/WebKit/LayoutTests/platform/chromium/test_expectations.txt
+// are only put here temporarily, and moved to
+// src/third_party/WebKit/LayoutTests/platform/chromium/TestExpectations
+// where they will remain until they are rebaselined.
 //
-// Only add expectations here to temporarily suppress messages on the bots
-// until the changes can be landed upstream.
-
-// PLEASE DO NOT LEAVE ENTRIES IN THIS FILE FOR MORE THAN 24 HRS.
-
-// To be rebaselined after skia rev. 3039 lands
-BUGCR110493 CPU : fast/borders/border-image-rotate-transform.html = IMAGE
-BUGCR110493 CPU : svg/custom/focus-ring.svg = IMAGE
-
-// EPOGER: To be rebaselined after Skia rev. 3071 propagates to webkit.
-BUGWK71820 : svg/custom/path-moveto-only-rendering.svg = PASS IMAGE+TEXT
-BUGWK71820 : svg/custom/subpaths-moveto-only-rendering.svg = PASS TEXT
-BUGWK64675 : svg/custom/zero-path-square-cap-rendering.svg = PASS IMAGE+TEXT
-
-// EPOGER: To be rebaselined after Skia rev. 3077 propagates to webkit.
-BUGCR110926 : fast/backgrounds/repeat/negative-offset-repeat-transformed.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/canvas/fillrect_gradient.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/canvas/gradient-add-second-start-end-stop.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/dom/HTMLMeterElement/meter-appearances-capacity.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/dom/HTMLMeterElement/meter-appearances-rating-relevancy.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/dom/HTMLMeterElement/meter-element.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/dom/HTMLMeterElement/meter-styles.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/dom/HTMLMeterElement/meter-writing-mode.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/gradients/border-image-gradient.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/gradients/border-image-gradient-sides-and-corners.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/gradients/css3-color-stops.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/gradients/css3-repeating-linear-gradients.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/gradients/generated-gradients.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/gradients/simple-gradients.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : fast/reflections/reflection-masks.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : svg/as-background-image/svg-as-background-2.html = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : svg/custom/animate-target-id-changed.svg = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : svg/filters/big-sized-filter.svg = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : svg/transforms/animated-path-inside-transformed-html.xhtml = PASS IMAGE TEXT IMAGE+TEXT
-BUGCR110926 : svg/wicd/test-scalable-background-image1.xhtml = PASS IMAGE TEXT IMAGE+TEXT
+//
+// If you are landing a Chromium CL that would break webkit layout tests,
+// please follow these steps:
+//
+// 1. Add expected failures to the bottom of this file, and run your CL through
+// various *_layout trybots.  Confirm that the trybot results are green (any
+// failures are masked by the expectations you added to this file).
+//
+// 2. BEFORE landing your Chromium CL, land a WebKit CL adding those same
+// expected failures to
+// src/third_party/WebKit/LayoutTests/platform/chromium/TestExpectations .
+// If you are unable to do this yourself, please get a WebKit Committer to do
+// it for you, or at least coordinate with a current WebKit Gardener to make
+// sure she is aware of the pending breakages.
+//
+// 3. AFTER you have landed the WebKit test_expectations CL, you can land your
+// Chromium CL.  Be sure to include your expected failures in this file, so
+// that other tip-of-tree Chromium developers will not be disturbed by your
+// change.
+//
+//
+// Every time Chromium's "WebKit Gardener" rolls the WebKit DEPS within
+// Chromium, he will delete ALL expectations within this file.  (By then, they
+// will be redundant, because you already landed those same expectations in
+// src/third_party/WebKit/LayoutTests/platform/chromium/TestExpectations .
+// Right?)
+//
+// EVERYTHING BELOW THIS LINE WILL BE DELETED AT EVERY WEBKIT DEPS ROLL

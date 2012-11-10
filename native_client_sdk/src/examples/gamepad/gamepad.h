@@ -7,7 +7,7 @@
 
 #include <map>
 #include <vector>
-#include "ppapi/c/dev/ppb_gamepad_dev.h"
+#include "ppapi/c/ppb_gamepad.h"
 #include "ppapi/cpp/graphics_2d.h"
 #include "ppapi/cpp/image_data.h"
 #include "ppapi/cpp/instance.h"
@@ -29,7 +29,7 @@ class Gamepad : public pp::Instance {
 
   // Update the graphics context to the new size, and regenerate |pixel_buffer_|
   // to fit the new size as well.
-  virtual void DidChangeView(const pp::Rect& position, const pp::Rect& clip);
+  virtual void DidChangeView(const pp::View& view);
 
   // Flushes its contents of |pixel_buffer_| to the 2D graphics context.
   void Paint();
@@ -70,7 +70,7 @@ class Gamepad : public pp::Instance {
 
   pp::Graphics2D* graphics_2d_context_;
   pp::ImageData* pixel_buffer_;
-  const PPB_Gamepad_Dev* gamepad_;
+  const PPB_Gamepad* gamepad_;
   bool flush_pending_;
   bool quit_;
 };

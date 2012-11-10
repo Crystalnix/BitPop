@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -142,8 +142,6 @@ void SafariImporter::ImportFaviconURLs(sql::Connection* db,
                                        FaviconMap* favicon_map) {
   const char* query = "SELECT iconID, url FROM PageURL;";
   sql::Statement s(db->GetUniqueStatement(query));
-  if (!s)
-    return;
 
   while (s.Step() && !cancelled()) {
     int64 icon_id = s.ColumnInt64(0);
@@ -161,12 +159,10 @@ void SafariImporter::LoadFaviconData(
                       "ON i.iconID = d.iconID "
                       "WHERE i.iconID = ?;";
   sql::Statement s(db->GetUniqueStatement(query));
-  if (!s)
-    return;
 
   for (FaviconMap::const_iterator i = favicon_map.begin();
        i != favicon_map.end(); ++i) {
-    s.Reset();
+    s.Reset(true);
     s.BindInt64(0, i->first);
     if (s.Step()) {
       history::ImportedFaviconUsage usage;
@@ -322,7 +318,7 @@ void SafariImporter::ImportPasswords() {
 }
 
 void SafariImporter::ImportHistory() {
-  std::vector<history::URLRow> rows;
+  history::URLRows rows;
   ParseHistoryItems(&rows);
 
   if (!rows.empty() && !cancelled()) {
@@ -339,8 +335,7 @@ double SafariImporter::HistoryTimeToEpochTime(NSString* history_time) {
       kCFAbsoluteTimeIntervalSince1970;
 }
 
-void SafariImporter::ParseHistoryItems(
-    std::vector<history::URLRow>* history_items) {
+void SafariImporter::ParseHistoryItems(history::URLRows* history_items) {
   DCHECK(history_items);
 
   // Construct ~/Library/Safari/History.plist path

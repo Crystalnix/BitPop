@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,24 +15,28 @@
 #include "ppapi/cpp/private/instance_private.h"
 #endif
 
+// Windows defines 'PostMessage', so we have to undef it.
+#ifdef PostMessage
+#undef PostMessage
+#endif
+
 class TestCase;
 
 // How signaling works:
 //
-// We want to signal to the Chrome UI test harness
+// We want to signal to the Chrome browser test harness
 // (chrome/test/ui/ppapi_uitest.cc) that we're making progress and when we're
-// done. The easiest thing in the UI test infrastructure is to wait for a
-// cookie to become nonempty. We don't want to have a big wait for all tests in
-// a TestCase since they can take a while and it might timeout.  So we set a
-// series of cookies with an incrementing number in the name.
+// done. This is done using the DOM controlller. The browser test waits for a
+// message from it. We don't want to have a big wait for all tests in a TestCase
+// since they can take a while and it might timeout.  So we send it pings
+// between each test to tell it that we're still running tests and aren't stuck.
 //
-// If the value of the cookie is "..." then that tells the test runner that
-// the test is progressing. It then waits for the next numbered cookie until
-// it either times out or the value is something other than "...". In this
-// case, the value will be either "PASS" or "FAIL [optional message]"
-// corresponding to the outcome of the entire test case. Timeout will be
-// treated just like a failure of the entire test case and the test will be
-// terminated.
+// If the value of the message is "..." then that tells the test runner that
+// the test is progressing. It then waits for the next message until it either
+// times out or the value is something other than "...". In this case, the value
+// will be either "PASS" or "FAIL [optional message]" corresponding to the
+// outcome of the entire test case. Timeout will be treated just like a failure
+// of the entire test case and the test will be terminated.
 //
 // In trusted builds, we use InstancePrivate and allow tests that use
 // synchronous scripting. NaCl does not support synchronous scripting.
@@ -83,11 +87,25 @@ pp::InstancePrivate {
     return protocol_;
   }
 
+  int ssl_server_port() { return ssl_server_port_; }
+
+  int websocket_port() { return websocket_port_; }
+
   // Posts a message to the test page to eval() the script.
   void EvalScript(const std::string& script);
 
   // Sets the given cookie in the current document.
   void SetCookie(const std::string& name, const std::string& value);
+
+  void ReportProgress(const std::string& progress_value);
+
+  // Add a post-condition to the JavaScript on the test_case.html page. This
+  // JavaScript code will be run after the instance is shut down and must
+  // evaluate to |true| or the test will fail.
+  void AddPostCondition(const std::string& script);
+
+  // See doc for |remove_plugin_|.
+  void set_remove_plugin(bool remove) { remove_plugin_ = remove; }
 
  private:
   void ExecuteTests(int32_t unused);
@@ -106,6 +124,10 @@ pp::InstancePrivate {
   // Runs 'PostMessage_SendingData.
   std::string FilterForTestName(const std::string& name);
 
+  // Sends a test command to the page using PostMessage.
+  void SendTestCommand(const std::string& command);
+  void SendTestCommand(const std::string& command, const std::string& params);
+
   // Appends a list of available tests to the console in the document.
   void LogAvailableTests();
 
@@ -114,8 +136,6 @@ pp::InstancePrivate {
 
   // Appends the given HTML string to the console in the document.
   void LogHTML(const std::string& html);
-
-  void ReportProgress(const std::string& progress_value);
 
   pp::CompletionCallbackFactory<TestingInstance> callback_factory_;
 
@@ -126,12 +146,11 @@ pp::InstancePrivate {
   // runs only tests whose name contains test_filter_ as a substring.
   std::string test_filter_;
 
-  // The current step we're on starting at 0. This is incremented every time we
-  // report progress via a cookie. See comment above the class.
-  int progress_cookie_number_;
-
   // Set once the tests are run so we know not to re-run when the view is sized.
   bool executed_tests_;
+
+  // The number of tests executed so far.
+  int32_t number_tests_executed_;
 
   // Collects all errors to send the the browser. Empty indicates no error yet.
   std::string errors_;
@@ -142,6 +161,17 @@ pp::InstancePrivate {
   // String representing the protocol.  Used for detecting whether we're running
   // with http.
   std::string protocol_;
+
+  // SSL server port.
+  int ssl_server_port_;
+
+  // WebSocket port.
+  int websocket_port_;
+
+  // At the end of each set of tests, the plugin is removed from the web-page.
+  // However, for some tests, it is desirable to not remove the plguin from the
+  // page.
+  bool remove_plugin_;
 };
 
 #endif  // PPAPI_TESTS_TESTING_INSTANCE_H_

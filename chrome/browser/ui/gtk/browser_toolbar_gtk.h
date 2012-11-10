@@ -1,17 +1,16 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_GTK_BROWSER_TOOLBAR_GTK_H_
 #define CHROME_BROWSER_UI_GTK_BROWSER_TOOLBAR_GTK_H_
-#pragma once
 
 #include <gtk/gtk.h>
 #include <string>
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/command_updater.h"
+#include "chrome/browser/command_observer.h"
 #include "chrome/browser/prefs/pref_member.h"
 #include "chrome/browser/ui/gtk/custom_button.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
@@ -41,7 +40,7 @@ class WebContents;
 
 // View class that displays the GTK version of the toolbar and routes gtk
 // events back to the Browser.
-class BrowserToolbarGtk : public CommandUpdater::CommandObserver,
+class BrowserToolbarGtk : public CommandObserver,
                           public ui::AcceleratorProvider,
                           public MenuGtk::Delegate,
                           public content::NotificationObserver {
@@ -87,7 +86,7 @@ class BrowserToolbarGtk : public CommandUpdater::CommandObserver,
 
   void ShowAppMenu();
 
-  // Overridden from CommandUpdater::CommandObserver:
+  // Overridden from CommandObserver:
   virtual void EnabledStateChangedForCommand(int id, bool enabled) OVERRIDE;
 
   // Overridden from MenuGtk::Delegate:

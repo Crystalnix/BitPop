@@ -1,14 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef NET_CURVECP_CLIENT_PACKETIZER_H_
 #define NET_CURVECP_CLIENT_PACKETIZER_H_
-#pragma once
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time.h"
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/curvecp/packetizer.h"
@@ -66,7 +66,7 @@ class ClientPacketizer : public Packetizer {
   int ConnectNextAddress();
 
   // We set a timeout for responses to the Hello message.
-  void StartHelloTimer(int milliseconds);
+  void StartHelloTimer(base::TimeDelta delay);
   void RevokeHelloTimer();
   void OnHelloTimeout();   // Called when the Hello Timer fires.
 
@@ -84,7 +84,7 @@ class ClientPacketizer : public Packetizer {
   Packetizer::Listener* listener_;
   CompletionCallback user_callback_;
   AddressList addresses_;
-  const struct addrinfo* current_address_;
+  int current_address_index_;
   int hello_attempts_;  // Number of attempts to send a Hello Packet.
   bool initiate_sent_;  // Indicates whether the Initiate Packet was sent.
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "chrome_frame/chrome_frame_plugin.h"
 #include "chrome_frame/navigation_constraints.h"
 #include "chrome_frame/test/chrome_frame_test_utils.h"
+#include "chrome_frame/test/test_scrubber.h"
 #include "chrome_frame/test/test_with_web_server.h"
 #include "chrome_frame/utils.h"
 
@@ -40,14 +41,15 @@ class AutomationMockDelegate
 
     mock_server_.ExpectAndServeAnyRequests(CFInvocation(CFInvocation::NONE));
 
-    FilePath profile_path(
-        chrome_frame_test::GetProfilePath(profile_name));
+    FilePath profile_path;
+    GetChromeFrameProfilePath(profile_name, &profile_path);
+    chrome_frame_test::OverrideDataDirectoryForThisTest(profile_path.value());
 
     automation_client_ = new ChromeFrameAutomationClient;
     GURL empty;
     scoped_refptr<ChromeFrameLaunchParams> clp(
         new ChromeFrameLaunchParams(empty, empty, profile_path, profile_name,
-            language, incognito, is_widget_mode, false));
+            language, incognito, is_widget_mode, false, false));
     clp->set_launch_timeout(launch_timeout);
     clp->set_version_check(perform_version_check);
     automation_client_->Initialize(this, clp);

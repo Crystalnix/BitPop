@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "ash/desktop_background/desktop_background_controller.h"
+#include "ash/shell.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
@@ -16,13 +18,6 @@
 #include "base/string_util.h"
 #include "base/timer.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/chromeos/dbus/dbus_thread_manager.h"
-#include "chrome/browser/chromeos/dbus/power_manager_client.h"
-#include "chrome/browser/chromeos/dbus/session_manager_client.h"
-#include "chrome/browser/chromeos/input_method/input_method_manager.h"
-#include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chrome/browser/chromeos/input_method/xkeyboard.h"
-#include "chrome/browser/chromeos/language_preferences.h"
 #include "chrome/browser/chromeos/login/authenticator.h"
 #include "chrome/browser/chromeos/login/login_performer.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
@@ -31,13 +26,18 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/power_manager_client.h"
+#include "chromeos/dbus/session_manager_client.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
@@ -46,17 +46,13 @@
 #include "third_party/cros_system_api/window_manager/chromeos_wm_ipc_enums.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if defined(TOOLKIT_USES_GTK)
-#include "chrome/browser/chromeos/legacy_window_manager/wm_ipc.h"
-#endif
-
 using content::BrowserThread;
 using content::UserMetricsAction;
 
 namespace {
 
 // Observer to start ScreenLocker when the screen lock
-class ScreenLockObserver : public chromeos::PowerManagerClient::Observer,
+class ScreenLockObserver : public chromeos::SessionManagerClient::Observer,
                            public content::NotificationObserver {
  public:
   ScreenLockObserver() : session_started_(false) {
@@ -75,10 +71,10 @@ class ScreenLockObserver : public chromeos::PowerManagerClient::Observer,
     switch (type) {
       case chrome::NOTIFICATION_LOGIN_USER_CHANGED: {
         // Register Screen Lock only after a user has logged in.
-        chromeos::PowerManagerClient* power_manager =
-            chromeos::DBusThreadManager::Get()->GetPowerManagerClient();
-        if (!power_manager->HasObserver(this))
-          power_manager->AddObserver(this);
+        chromeos::SessionManagerClient* session_manager =
+            chromeos::DBusThreadManager::Get()->GetSessionManagerClient();
+        if (!session_manager->HasObserver(this))
+          session_manager->AddObserver(this);
         break;
       }
 
@@ -95,7 +91,6 @@ class ScreenLockObserver : public chromeos::PowerManagerClient::Observer,
   virtual void LockScreen() OVERRIDE {
     VLOG(1) << "In: ScreenLockObserver::LockScreen";
     if (session_started_) {
-      SetupInputMethodsForScreenLocker();
       chromeos::ScreenLocker::Show();
     } else {
       // If the user has not completed the sign in we will log them out. This
@@ -108,91 +103,10 @@ class ScreenLockObserver : public chromeos::PowerManagerClient::Observer,
   }
 
   virtual void UnlockScreen() OVERRIDE {
-    RestoreInputMethods();
     chromeos::ScreenLocker::Hide();
   }
 
-  virtual void UnlockScreenFailed() OVERRIDE {
-    chromeos::ScreenLocker::UnlockScreenFailed();
-  }
-
  private:
-  // Temporarily deactivates all input methods (e.g. Chinese, Japanese, Arabic)
-  // since they are not necessary to input a login password. Users are still
-  // able to use/switch active keyboard layouts (e.g. US qwerty, US dvorak,
-  // French).
-  void SetupInputMethodsForScreenLocker() {
-    if (// The LockScreen function is also called when the OS is suspended, and
-        // in that case |saved_active_input_method_list_| might be non-empty.
-        saved_active_input_method_list_.empty()) {
-      chromeos::input_method::InputMethodManager* manager =
-          chromeos::input_method::InputMethodManager::GetInstance();
-
-      saved_previous_input_method_id_ = manager->previous_input_method().id();
-      saved_current_input_method_id_ = manager->current_input_method().id();
-      scoped_ptr<chromeos::input_method::InputMethodDescriptors>
-          active_input_method_list(manager->GetActiveInputMethods());
-
-      const std::string hardware_keyboard_id =
-          manager->GetInputMethodUtil()->GetHardwareInputMethodId();
-      // We'll add the hardware keyboard if it's not included in
-      // |active_input_method_list| so that the user can always use the hardware
-      // keyboard on the screen locker.
-      bool should_add_hardware_keyboard = true;
-
-      chromeos::input_method::ImeConfigValue value;
-      value.type = chromeos::input_method::ImeConfigValue::kValueTypeStringList;
-      for (size_t i = 0; i < active_input_method_list->size(); ++i) {
-        const std::string& input_method_id =
-            active_input_method_list->at(i).id();
-        saved_active_input_method_list_.push_back(input_method_id);
-        // Skip if it's not a keyboard layout.
-        if (!chromeos::input_method::InputMethodUtil::IsKeyboardLayout(
-                input_method_id))
-          continue;
-        value.string_list_value.push_back(input_method_id);
-        if (input_method_id == hardware_keyboard_id) {
-          should_add_hardware_keyboard = false;
-        }
-      }
-      if (should_add_hardware_keyboard) {
-        value.string_list_value.push_back(hardware_keyboard_id);
-      }
-      // We don't want to shut down the IME, even if the hardware layout is the
-      // only IME left.
-      manager->SetEnableAutoImeShutdown(false);
-      manager->SetImeConfig(
-          chromeos::language_prefs::kGeneralSectionName,
-          chromeos::language_prefs::kPreloadEnginesConfigName,
-          value);
-    }
-  }
-
-  void RestoreInputMethods() {
-    if (!saved_active_input_method_list_.empty()) {
-      chromeos::input_method::InputMethodManager* manager =
-          chromeos::input_method::InputMethodManager::GetInstance();
-
-      chromeos::input_method::ImeConfigValue value;
-      value.type = chromeos::input_method::ImeConfigValue::kValueTypeStringList;
-      value.string_list_value = saved_active_input_method_list_;
-      manager->SetEnableAutoImeShutdown(true);
-      manager->SetImeConfig(
-          chromeos::language_prefs::kGeneralSectionName,
-          chromeos::language_prefs::kPreloadEnginesConfigName,
-          value);
-      // Send previous input method id first so Ctrl+space would work fine.
-      if (!saved_previous_input_method_id_.empty())
-        manager->ChangeInputMethod(saved_previous_input_method_id_);
-      if (!saved_current_input_method_id_.empty())
-        manager->ChangeInputMethod(saved_current_input_method_id_);
-
-      saved_previous_input_method_id_.clear();
-      saved_current_input_method_id_.clear();
-      saved_active_input_method_list_.clear();
-    }
-  }
-
   bool session_started_;
   content::NotificationRegistrar registrar_;
   std::string saved_previous_input_method_id_;
@@ -222,7 +136,8 @@ ScreenLocker::ScreenLocker(const User& user)
       unlock_on_input_(user_.email().empty()),
       locked_(false),
       start_time_(base::Time::Now()),
-      login_status_consumer_(NULL) {
+      login_status_consumer_(NULL),
+      incorrect_passwords_count_(0) {
   DCHECK(!screen_locker_);
   screen_locker_ = this;
 }
@@ -248,24 +163,10 @@ void ScreenLocker::OnLoginFailure(const LoginFailure& error) {
   // Don't enable signout button here as we're showing
   // MessageBubble.
 
-  string16 msg = l10n_util::GetStringUTF16(IDS_LOGIN_ERROR_AUTHENTICATING);
-
-  // TODO(ivankr): use a format string instead of concatenation.
-  // Display a warning if Caps Lock is on.
-  input_method::InputMethodManager* ime_manager =
-      input_method::InputMethodManager::GetInstance();
-  if (ime_manager->GetXKeyboard()->CapsLockIsEnabled()) {
-    msg += ASCIIToUTF16("\n") +
-        l10n_util::GetStringUTF16(IDS_LOGIN_ERROR_CAPS_LOCK_HINT);
-  }
-
-  input_method::InputMethodManager* input_method_manager =
-      input_method::InputMethodManager::GetInstance();
-  if (input_method_manager->GetNumActiveInputMethods() > 1)
-    msg += ASCIIToUTF16("\n") +
-        l10n_util::GetStringUTF16(IDS_LOGIN_ERROR_KEYBOARD_SWITCH_HINT);
-
-  delegate_->ShowErrorMessage(msg, false);
+  delegate_->ShowErrorMessage(incorrect_passwords_count_++ ?
+                                  IDS_LOGIN_ERROR_AUTHENTICATING_2ND_TIME :
+                                  IDS_LOGIN_ERROR_AUTHENTICATING,
+                              HelpAppLauncher::HELP_CANT_ACCESS_ACCOUNT);
 
   if (login_status_consumer_)
     login_status_consumer_->OnLoginFailure(error);
@@ -274,10 +175,10 @@ void ScreenLocker::OnLoginFailure(const LoginFailure& error) {
 void ScreenLocker::OnLoginSuccess(
     const std::string& username,
     const std::string& password,
-    const GaiaAuthConsumer::ClientLoginResult& unused,
     bool pending_requests,
     bool using_oauth) {
   VLOG(1) << "OnLoginSuccess: Sending Unlock request.";
+  incorrect_passwords_count_ = 0;
   if (authentication_start_time_.is_null()) {
     if (!username.empty())
       LOG(WARNING) << "authentication_start_time_ is not set";
@@ -288,29 +189,29 @@ void ScreenLocker::OnLoginSuccess(
   }
 
   Profile* profile = ProfileManager::GetDefaultProfile();
-  if (profile) {
-    ProfileSyncService* service(
-        ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile));
-    if (service && !service->HasSyncSetupCompleted()) {
-      // If sync has failed somehow, try setting the sync passphrase here.
-      service->SetPassphrase(password,
-                             ProfileSyncService::IMPLICIT,
-                             ProfileSyncService::INTERNAL);
-    }
+  if (profile && !password.empty()) {
+    // We have a non-empty password, so notify listeners (such as the sync
+    // engine).
+    SigninManager* signin = SigninManagerFactory::GetForProfile(profile);
+    DCHECK(signin);
+    GoogleServiceSigninSuccessDetails details(
+        signin->GetAuthenticatedUsername(),
+        password);
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
+        content::Source<Profile>(profile),
+        content::Details<const GoogleServiceSigninSuccessDetails>(&details));
   }
-  DBusThreadManager::Get()->GetPowerManagerClient()->
-      NotifyScreenUnlockRequested();
+  DBusThreadManager::Get()->GetSessionManagerClient()->RequestUnlockScreen();
 
   if (login_status_consumer_)
-    login_status_consumer_->OnLoginSuccess(username, password,
-                                           unused, pending_requests,
+    login_status_consumer_->OnLoginSuccess(username, password, pending_requests,
                                            using_oauth);
 }
 
 void ScreenLocker::Authenticate(const string16& password) {
   authentication_start_time_ = base::Time::Now();
   delegate_->SetInputEnabled(false);
-  delegate_->SetSignoutEnabled(false);
   delegate_->OnAuthenticate();
 
   // If LoginPerformer instance exists,
@@ -327,11 +228,6 @@ void ScreenLocker::Authenticate(const string16& password) {
   }
 }
 
-void ScreenLocker::ShowCaptchaAndErrorMessage(const GURL& captcha_url,
-                                              const string16& message) {
-  delegate_->ShowCaptchaAndErrorMessage(captcha_url, message);
-}
-
 void ScreenLocker::ClearErrors() {
   delegate_->ClearErrors();
 }
@@ -341,8 +237,6 @@ void ScreenLocker::EnableInput() {
 }
 
 void ScreenLocker::Signout() {
-  // TODO(flackr): For proper functionality, check if (error_info) is NULL
-  // (crbug.com/105267).
   delegate_->ClearErrors();
   content::RecordAction(UserMetricsAction("ScreenLocker_Signout"));
   DBusThreadManager::Get()->GetSessionManagerClient()->StopSession();
@@ -351,11 +245,11 @@ void ScreenLocker::Signout() {
   // briefly.
 }
 
-void ScreenLocker::ShowErrorMessage(const string16& message,
+void ScreenLocker::ShowErrorMessage(int error_msg_id,
+                                    HelpAppLauncher::HelpTopic help_topic_id,
                                     bool sign_out_only) {
   delegate_->SetInputEnabled(!sign_out_only);
-  delegate_->SetSignoutEnabled(sign_out_only);
-  delegate_->ShowErrorMessage(message, sign_out_only);
+  delegate_->ShowErrorMessage(error_msg_id, help_topic_id);
 }
 
 void ScreenLocker::SetLoginStatusConsumer(
@@ -371,10 +265,12 @@ void ScreenLocker::Show() {
 
   // Check whether the currently logged in user is a guest account and if so,
   // refuse to lock the screen (crosbug.com/23764).
+  // For a demo user, we should never show the lock screen (crosbug.com/27647).
   // TODO(flackr): We can allow lock screen for guest accounts when
   // unlock_on_input is supported by the WebUI screen locker.
-  if (UserManager::Get()->logged_in_user().email().empty()) {
-    DVLOG(1) << "Show: Refusing to lock screen for guest account.";
+  if (UserManager::Get()->IsLoggedInAsGuest() ||
+      UserManager::Get()->IsLoggedInAsDemoUser()) {
+    DVLOG(1) << "Show: Refusing to lock screen for guest/demo account.";
     return;
   }
 
@@ -383,18 +279,15 @@ void ScreenLocker::Show() {
   // browser can be NULL if we receive a lock request before the first browser
   // window is shown.
   if (browser && browser->window()->IsFullscreen()) {
-    browser->ToggleFullscreenMode(false);
+    chrome::ToggleFullscreenMode(browser);
   }
 
   if (!screen_locker_) {
     DVLOG(1) << "Show: Locking screen";
     ScreenLocker* locker =
-        new ScreenLocker(UserManager::Get()->logged_in_user());
+        new ScreenLocker(UserManager::Get()->GetLoggedInUser());
     locker->Init();
   } else {
-    // PowerManager re-sends lock screen signal if it doesn't
-    // receive the response within timeout. Just send complete
-    // signal.
     DVLOG(1) << "Show: locker already exists. Just sending completion event.";
     DBusThreadManager::Get()->GetPowerManagerClient()->
         NotifyScreenLockCompleted();
@@ -404,27 +297,16 @@ void ScreenLocker::Show() {
 // static
 void ScreenLocker::Hide() {
   DCHECK(MessageLoop::current()->type() == MessageLoop::TYPE_UI);
+  // For a guest/demo user, screen_locker_ would have never been initialized.
+  if (UserManager::Get()->IsLoggedInAsGuest() ||
+      UserManager::Get()->IsLoggedInAsDemoUser()) {
+    DVLOG(1) << "Hide: Nothing to do for guest/demo account.";
+    return;
+  }
+
   DCHECK(screen_locker_);
   VLOG(1) << "Hide: Deleting ScreenLocker: " << screen_locker_;
   MessageLoopForUI::current()->DeleteSoon(FROM_HERE, screen_locker_);
-}
-
-// static
-void ScreenLocker::UnlockScreenFailed() {
-  DCHECK(MessageLoop::current()->type() == MessageLoop::TYPE_UI);
-  if (screen_locker_) {
-    // Power manager decided no to unlock the screen even if a user
-    // typed in password, for example, when a user closed the lid
-    // immediately after typing in the password.
-    VLOG(1) << "UnlockScreenFailed: re-enabling screen locker.";
-    screen_locker_->EnableInput();
-  } else {
-    // This can happen when a user requested unlock, but PowerManager
-    // rejected because the computer is closed, then PowerManager unlocked
-    // because it's open again and the above failure message arrives.
-    // This'd be extremely rare, but may still happen.
-    VLOG(1) << "UnlockScreenFailed: screen is already unlocked.";
-  }
 }
 
 // static
@@ -438,6 +320,8 @@ void ScreenLocker::InitClass() {
 ScreenLocker::~ScreenLocker() {
   DCHECK(MessageLoop::current()->type() == MessageLoop::TYPE_UI);
   ClearErrors();
+  ash::Shell::GetInstance()->
+      desktop_background_controller()->MoveDesktopToUnlockedContainer();
 
   screen_locker_ = NULL;
   bool state = false;
@@ -459,6 +343,9 @@ void ScreenLocker::ScreenLockReady() {
   base::TimeDelta delta = base::Time::Now() - start_time_;
   VLOG(1) << "Screen lock time: " << delta.InSecondsF();
   UMA_HISTOGRAM_TIMES("ScreenLocker.ScreenLockTime", delta);
+
+  ash::Shell::GetInstance()->
+      desktop_background_controller()->MoveDesktopToLockedContainer();
 
   bool state = true;
   content::NotificationService::current()->Notify(

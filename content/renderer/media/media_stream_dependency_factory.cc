@@ -6,25 +6,14 @@
 
 #include <vector>
 
+#include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/video_capture_module_impl.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "content/renderer/p2p/ipc_network_manager.h"
 #include "content/renderer/p2p/ipc_socket_factory.h"
 #include "content/renderer/p2p/port_allocator.h"
 #include "jingle/glue/thread_wrapper.h"
-#include "third_party/libjingle/source/talk/app/webrtc/peerconnection.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-
-static std::string ParseHostName(const std::string& hostname) {
-  std::string address;
-  size_t pos = hostname.find(':');
-  if (pos == std::string::npos) {
-    DVLOG(1) << "No port specified.";
-  } else {
-    address = hostname.substr(0, pos);
-  }
-  return address;
-}
 
 class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
  public:
@@ -47,12 +36,11 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
     }
     webkit_glue::P2PTransport::Config config;
     if (stun_servers.size() > 0) {
-      config.stun_server = ParseHostName(stun_servers[0].server.hostname());
+      config.stun_server = stun_servers[0].server.hostname();
       config.stun_server_port = stun_servers[0].server.port();
     }
     if (turn_configurations.size() > 0) {
-      config.relay_server = ParseHostName(
-          turn_configurations[0].server.hostname());
+      config.relay_server = turn_configurations[0].server.hostname();
       config.relay_server_port = turn_configurations[0].server.port();
       config.relay_username = turn_configurations[0].username;
       config.relay_password = turn_configurations[0].password;
@@ -78,8 +66,10 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
   talk_base::PacketSocketFactory* socket_factory_;
 };
 
-
-MediaStreamDependencyFactory::MediaStreamDependencyFactory() {}
+MediaStreamDependencyFactory::MediaStreamDependencyFactory(
+    VideoCaptureImplManager* vc_manager)
+    : vc_manager_(vc_manager) {
+}
 
 MediaStreamDependencyFactory::~MediaStreamDependencyFactory() {}
 
@@ -132,8 +122,14 @@ MediaStreamDependencyFactory::CreateLocalMediaStream(
 talk_base::scoped_refptr<webrtc::LocalVideoTrackInterface>
 MediaStreamDependencyFactory::CreateLocalVideoTrack(
     const std::string& label,
-    cricket::VideoCapturer* video_device) {
-  return pc_factory_->CreateLocalVideoTrack(label, video_device);
+    int video_session_id) {
+  webrtc::VideoCaptureModule* vcm = new VideoCaptureModuleImpl(
+      video_session_id,
+      vc_manager_.get());
+
+  // The video capturer takes ownership of |vcm|.
+  return pc_factory_->CreateLocalVideoTrack(label,
+                                            webrtc::CreateVideoCapturer(vcm));
 }
 
 talk_base::scoped_refptr<webrtc::LocalAudioTrackInterface>
@@ -141,4 +137,16 @@ MediaStreamDependencyFactory::CreateLocalAudioTrack(
     const std::string& label,
     webrtc::AudioDeviceModule* audio_device) {
   return pc_factory_->CreateLocalAudioTrack(label, audio_device);
+}
+
+webrtc::SessionDescriptionInterface*
+MediaStreamDependencyFactory::CreateSessionDescription(const std::string& sdp) {
+  return webrtc::CreateSessionDescription(sdp);
+}
+
+webrtc::IceCandidateInterface* MediaStreamDependencyFactory::CreateIceCandidate(
+    const std::string& sdp_mid,
+    int sdp_mline_index,
+    const std::string& sdp) {
+  return webrtc::CreateIceCandidate(sdp_mid, sdp_mline_index, sdp);
 }

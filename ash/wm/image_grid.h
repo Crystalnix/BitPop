@@ -4,14 +4,13 @@
 
 #ifndef ASH_WM_IMAGE_GRID_H_
 #define ASH_WM_IMAGE_GRID_H_
-#pragma once
 
+#include "ash/ash_export.h"
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "ash/ash_export.h"
-#include "ui/gfx/compositor/layer.h"
-#include "ui/gfx/compositor/layer_delegate.h"
+#include "ui/compositor/layer.h"
+#include "ui/compositor/layer_delegate.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
@@ -64,19 +63,6 @@ class ASH_EXPORT ImageGrid {
   class ASH_EXPORT TestAPI {
    public:
     TestAPI(ImageGrid* grid) : grid_(grid) {}
-    ui::Layer* top_left_layer() const { return grid_->top_left_layer_.get(); }
-    ui::Layer* top_layer() const { return grid_->top_layer_.get(); }
-    ui::Layer* top_right_layer() const { return grid_->top_right_layer_.get(); }
-    ui::Layer* left_layer() const { return grid_->left_layer_.get(); }
-    ui::Layer* center_layer() const { return grid_->center_layer_.get(); }
-    ui::Layer* right_layer() const { return grid_->right_layer_.get(); }
-    ui::Layer* bottom_left_layer() const {
-      return grid_->bottom_left_layer_.get();
-    }
-    ui::Layer* bottom_layer() const { return grid_->bottom_layer_.get(); }
-    ui::Layer* bottom_right_layer() const {
-      return grid_->bottom_right_layer_.get();
-    }
 
     gfx::Rect top_left_clip_rect() const {
       return grid_->top_left_painter_->clip_rect_;
@@ -109,19 +95,35 @@ class ASH_EXPORT ImageGrid {
   int left_image_width() const { return left_image_width_; }
   int right_image_width() const { return right_image_width_; }
 
-  // Initializes the grid to display the passed-in images (any of which can be
-  // NULL).  Ownership of the images remains with the caller.
-  void Init(const gfx::Image* top_left_image,
-            const gfx::Image* top_image,
-            const gfx::Image* top_right_image,
-            const gfx::Image* left_image,
-            const gfx::Image* center_image,
-            const gfx::Image* right_image,
-            const gfx::Image* bottom_left_image,
-            const gfx::Image* bottom_image,
-            const gfx::Image* bottom_right_image);
+  // Visible to allow independent layer animations and for testing.
+  ui::Layer* top_left_layer() const { return top_left_layer_.get(); }
+  ui::Layer* top_layer() const { return top_layer_.get(); }
+  ui::Layer* top_right_layer() const { return top_right_layer_.get(); }
+  ui::Layer* left_layer() const { return left_layer_.get(); }
+  ui::Layer* center_layer() const { return center_layer_.get(); }
+  ui::Layer* right_layer() const { return right_layer_.get(); }
+  ui::Layer* bottom_left_layer() const { return bottom_left_layer_.get(); }
+  ui::Layer* bottom_layer() const { return bottom_layer_.get(); }
+  ui::Layer* bottom_right_layer() const { return bottom_right_layer_.get(); }
+
+  // Sets the grid to display the passed-in images (any of which can be NULL).
+  // Ownership of the images remains with the caller.  May be called more than
+  // once to switch images.
+  void SetImages(const gfx::Image* top_left_image,
+                 const gfx::Image* top_image,
+                 const gfx::Image* top_right_image,
+                 const gfx::Image* left_image,
+                 const gfx::Image* center_image,
+                 const gfx::Image* right_image,
+                 const gfx::Image* bottom_left_image,
+                 const gfx::Image* bottom_image,
+                 const gfx::Image* bottom_right_image);
 
   void SetSize(const gfx::Size& size);
+
+  // Sets the grid to a position and size such that the inner edges of the top,
+  // bottom, left and right images will be flush with |content_bounds_in_dip|.
+  void SetContentBounds(const gfx::Rect& content_bounds_in_dip);
 
  private:
   // Delegate responsible for painting a specific image on a layer.
@@ -136,6 +138,8 @@ class ASH_EXPORT ImageGrid {
 
     // ui::LayerDelegate implementation:
     virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE;
+    virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
+    virtual base::Closure PrepareForLayerBoundsChange() OVERRIDE;
 
    private:
     friend class TestAPI;
@@ -153,11 +157,12 @@ class ASH_EXPORT ImageGrid {
   // Returns true if |layer|'s bounds don't fit within |size|.
   static bool LayerExceedsSize(const ui::Layer* layer, const gfx::Size& size);
 
-  // Initializes |layer_ptr| and |painter_ptr| to display |image|.
-  // Also adds the passed-in layer to |layer_|.
-  void InitImage(const gfx::Image* image,
-                 scoped_ptr<ui::Layer>* layer_ptr,
-                 scoped_ptr<ImagePainter>* painter_ptr);
+  // Sets |layer_ptr| and |painter_ptr| to display |image| and adds the
+  // passed-in layer to |layer_|.  If image is NULL resets |layer_ptr| and
+  // |painter_ptr| and removes any existing layer from |layer_|.
+  void SetImage(const gfx::Image* image,
+                scoped_ptr<ui::Layer>* layer_ptr,
+                scoped_ptr<ImagePainter>* painter_ptr);
 
   // Layer that contains all of the image layers.
   scoped_ptr<ui::Layer> layer_;
@@ -173,11 +178,12 @@ class ASH_EXPORT ImageGrid {
   int right_image_width_;
 
   // Heights of the tallest images in the top and bottom rows and the widest
-  // images in the left and right columns.
-  int top_row_height_;
-  int bottom_row_height_;
-  int left_column_width_;
-  int right_column_width_;
+  // images in the left and right columns.  Note that we may have less actual
+  // space than this available if the images are large and |size_| is small.
+  int base_top_row_height_;
+  int base_bottom_row_height_;
+  int base_left_column_width_;
+  int base_right_column_width_;
 
   // Layers used to display the various images.  Children of |layer_|.
   // Positions for which no images were supplied are NULL.

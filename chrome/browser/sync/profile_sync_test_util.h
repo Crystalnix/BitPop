@@ -1,15 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_SYNC_PROFILE_SYNC_TEST_UTIL_H_
 #define CHROME_BROWSER_SYNC_PROFILE_SYNC_TEST_UTIL_H_
-#pragma once
 
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
@@ -41,26 +39,6 @@ class ProfileSyncServiceObserverMock : public ProfileSyncServiceObserver {
   virtual ~ProfileSyncServiceObserverMock();
 
   MOCK_METHOD0(OnStateChanged, void());
-};
-
-class ThreadNotificationService
-    : public base::RefCountedThreadSafe<ThreadNotificationService> {
- public:
-  explicit ThreadNotificationService(base::Thread* notification_thread);
-
-  void Init();
-  void TearDown();
-
- private:
-  friend class base::RefCountedThreadSafe<ThreadNotificationService>;
-  virtual ~ThreadNotificationService();
-
-  void InitTask();
-  void TearDownTask();
-
-  base::WaitableEvent done_event_;
-  base::Thread* notification_thread_;
-  scoped_ptr<content::NotificationService> service_;
 };
 
 class ThreadNotifier :  // NOLINT

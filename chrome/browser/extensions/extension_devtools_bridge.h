@@ -1,16 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_EXTENSIONS_EXTENSION_DEVTOOLS_BRIDGE_H_
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_DEVTOOLS_BRIDGE_H_
-#pragma once
 
 #include <string>
 
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/extensions/extension_devtools_manager.h"
-#include "chrome/browser/extensions/extension_message_service.h"
 #include "content/public/browser/devtools_client_host.h"
 
 class Profile;
@@ -26,12 +24,12 @@ class ExtensionDevToolsBridge : public content::DevToolsClientHost {
 
   // DevToolsClientHost, called when the tab inspected by this client is
   // closing.
-  virtual void InspectedTabClosing() OVERRIDE;
+  virtual void InspectedContentsClosing() OVERRIDE;
 
   // DevToolsClientHost, called to dispatch a message on this client.
   virtual void DispatchOnInspectorFrontend(const std::string& message) OVERRIDE;
 
-  virtual void TabReplaced(content::WebContents* new_tab) OVERRIDE;
+  virtual void ContentsReplaced(content::WebContents* new_contents) OVERRIDE;
 
  private:
   virtual void FrameNavigating(const std::string& url) OVERRIDE {}

@@ -1,12 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/event_disposition.h"
-#include "content/browser/disposition_utils.h"
+
+#include "chrome/browser/disposition_utils.h"
 #include "ui/base/events.h"
 
-namespace browser {
+namespace chrome {
 
 WindowOpenDisposition DispositionFromEventFlags(int event_flags) {
   return disposition_utils::DispositionFromClick(
@@ -17,4 +18,4 @@ WindowOpenDisposition DispositionFromEventFlags(int event_flags) {
       (event_flags & ui::EF_SHIFT_DOWN) != 0);
 }
 
-}  // namespace browser
+}  // namespace chrome

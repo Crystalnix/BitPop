@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_VIEWS_CONTROLS_BUTTON_MENU_BUTTON_H_
 #define UI_VIEWS_CONTROLS_BUTTON_MENU_BUTTON_H_
-#pragma once
 
 #include <string>
 
@@ -17,7 +16,7 @@
 namespace views {
 
 class MouseEvent;
-class ViewMenuDelegate;
+class MenuButtonListener;
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -31,16 +30,22 @@ class VIEWS_EXPORT MenuButton : public TextButton {
  public:
   static const char kViewClassName[];
 
+  // How much padding to put on the left and right of the menu marker.
+  static const int kMenuMarkerPaddingLeft;
+  static const int kMenuMarkerPaddingRight;
+
   // Create a Button.
   MenuButton(ButtonListener* listener,
              const string16& text,
-             ViewMenuDelegate* menu_delegate,
+             MenuButtonListener* menu_button_listener,
              bool show_menu_marker);
   virtual ~MenuButton();
 
-  void set_menu_marker(const SkBitmap* menu_marker) {
+  bool show_menu_marker() const { return show_menu_marker_; }
+  void set_menu_marker(const gfx::ImageSkia* menu_marker) {
     menu_marker_ = menu_marker;
   }
+  const gfx::ImageSkia* menu_marker() const { return menu_marker_; }
 
   const gfx::Point& menu_offset() const { return menu_offset_; }
   void set_menu_offset(int x, int y) { menu_offset_.SetPoint(x, y); }
@@ -57,6 +62,7 @@ class VIEWS_EXPORT MenuButton : public TextButton {
   virtual bool OnMousePressed(const MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const MouseEvent& event) OVERRIDE;
+  virtual ui::GestureStatus OnGestureEvent(const GestureEvent& event) OVERRIDE;
   virtual bool OnKeyPressed(const KeyEvent& event) OVERRIDE;
   virtual bool OnKeyReleased(const KeyEvent& event) OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
@@ -83,15 +89,15 @@ class VIEWS_EXPORT MenuButton : public TextButton {
   // the button is not part of the displayed menu.
   base::Time menu_closed_time_;
 
-  // The associated menu's resource identifier.
-  ViewMenuDelegate* menu_delegate_;
+  // Our listener. Not owned.
+  MenuButtonListener* listener_;
 
   // Whether or not we're showing a drop marker.
   bool show_menu_marker_;
 
   // The down arrow used to differentiate the menu button from normal
   // text buttons.
-  const SkBitmap* menu_marker_;
+  const gfx::ImageSkia* menu_marker_;
 
   // If non-null the destuctor sets this to true. This is set while the menu is
   // showing and used to detect if the menu was deleted while running.

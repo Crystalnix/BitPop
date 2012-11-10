@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,11 +22,14 @@ class SocketStreamId : public net::SocketStream::UserData {
 
 SocketStreamHost::SocketStreamHost(
     net::SocketStream::Delegate* delegate,
+    int render_view_id,
     int socket_id)
     : delegate_(delegate),
+      render_view_id_(render_view_id),
       socket_id_(socket_id) {
-  DCHECK_NE(socket_id_, content_common::kNoSocketId);
-  VLOG(1) << "SocketStreamHost: socket_id=" << socket_id_;
+  DCHECK_NE(socket_id_, content::kNoSocketId);
+  VLOG(1) << "SocketStreamHost: render_view_id=" << render_view_id
+          << " socket_id=" << socket_id_;
 }
 
 /* static */
@@ -36,7 +39,7 @@ int SocketStreamHost::SocketIdFromSocketStream(net::SocketStream* socket) {
     SocketStreamId* socket_stream_id = static_cast<SocketStreamId*>(d);
     return socket_stream_id->socket_id();
   }
-  return content_common::kNoSocketId;
+  return content::kNoSocketId;
 }
 
 SocketStreamHost::~SocketStreamHost() {
@@ -65,4 +68,25 @@ void SocketStreamHost::Close() {
   if (!socket_)
     return;
   socket_->Close();
+}
+
+void SocketStreamHost::CancelWithError(int error) {
+  VLOG(1) << "SocketStreamHost::CancelWithError: error=" << error;
+  if (!socket_)
+    return;
+  socket_->CancelWithError(error);
+}
+
+void SocketStreamHost::CancelWithSSLError(const net::SSLInfo& ssl_info) {
+  VLOG(1) << "SocketStreamHost::CancelWithSSLError";
+  if (!socket_)
+    return;
+  socket_->CancelWithSSLError(ssl_info);
+}
+
+void SocketStreamHost::ContinueDespiteError() {
+  VLOG(1) << "SocketStreamHost::ContinueDespiteError";
+  if (!socket_)
+    return;
+  socket_->ContinueDespiteError();
 }

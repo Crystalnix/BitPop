@@ -1,13 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_WEBUI_CHROMEOS_LOGIN_CORE_OOBE_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_CHROMEOS_LOGIN_CORE_OOBE_HANDLER_H_
-#pragma once
 
-#include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 #include "chrome/browser/chromeos/login/version_info_updater.h"
+#include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 
 namespace base {
   class ListValue;
@@ -37,6 +36,9 @@ class CoreOobeHandler : public BaseScreenHandler,
       const std::string& os_version_label_text) OVERRIDE;
   virtual void OnBootTimesLabelTextUpdated(
       const std::string& boot_times_label_text) OVERRIDE;
+  virtual void OnEnterpriseInfoUpdated(
+      const std::string& message_text,
+      bool reporting_hint) OVERRIDE;
 
   // Show or hide OOBE UI.
   void ShowOobeUI(bool show);
@@ -47,8 +49,8 @@ class CoreOobeHandler : public BaseScreenHandler,
 
  private:
   // Handlers for JS WebUI messages.
-  void OnInitialized(const base::ListValue* args);
-  void OnToggleAccessibility(const base::ListValue* args);
+  void HandleInitialized(const base::ListValue* args);
+  void HandleSkipUpdateEnrollAfterEula(const base::ListValue* args);
 
   // Calls javascript to sync OOBE UI visibility with show_oobe_ui_.
   void UpdateOobeUIVisibility();

@@ -11,7 +11,6 @@
 #include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
-#include "chrome/test/automation/window_proxy.h"
 #include "chrome/test/perf/perf_test.h"
 #include "chrome/test/ui/ui_perf_test.h"
 #include "net/test/test_server.h"
@@ -26,6 +25,7 @@ class MachPortsTest : public UIPerfTest {
  public:
   MachPortsTest()
       : server_(net::TestServer::TYPE_HTTP,
+                net::TestServer::kLocalhost,
                 FilePath(FILE_PATH_LITERAL("data/mach_ports/moz"))) {
   }
 
@@ -72,10 +72,7 @@ TEST_F(MachPortsTest, GetCounts) {
   RecordPortCount();
 
   // Create a browser and open a few tabs.
-  scoped_refptr<WindowProxy> window(automation()->GetActiveWindow());
-  ASSERT_TRUE(window.get());
-
-  scoped_refptr<BrowserProxy> browser(automation()->FindTabbedBrowserWindow());
+  scoped_refptr<BrowserProxy> browser(automation()->GetBrowserWindow(0));
   ASSERT_TRUE(browser.get());
 
   EXPECT_TRUE(AddTab(browser, "www.google.com"));

@@ -29,7 +29,7 @@ const char* kSerialHash =
     "\x6f\x02\x4a\xd7\xeb\x92\x45\xfc\xd4\xe4\x37\xa1\x55\x2b\x13\x8a";
 
 using ::testing::InSequence;
-using ::testing::Invoke;
+using ::testing::SaveArg;
 using ::testing::_;
 
 class AutoEnrollmentClientTest : public testing::Test {
@@ -51,9 +51,8 @@ class AutoEnrollmentClientTest : public testing::Test {
                     int power_initial,
                     int power_limit) {
     service_ = new MockDeviceManagementService();
-    EXPECT_CALL(*service_, StartJob(_))
-        .WillRepeatedly(Invoke(this,
-                               &AutoEnrollmentClientTest::CaptureRequest));
+    EXPECT_CALL(*service_, StartJob(_, _, _, _, _, _, _))
+        .WillRepeatedly(SaveArg<6>(&last_request_));
     base::Closure callback =
         base::Bind(&AutoEnrollmentClientTest::CompletionCallback,
                    base::Unretained(this));
@@ -110,18 +109,18 @@ class AutoEnrollmentClientTest : public testing::Test {
         local_state_->GetUserPref(prefs::kAutoEnrollmentPowerLimit)));
   }
 
+  const em::DeviceAutoEnrollmentRequest& auto_enrollment_request() {
+    return last_request_.auto_enrollment_request();
+  }
+
   ScopedTestingLocalState scoped_testing_local_state_;
   TestingPrefService* local_state_;
   MockDeviceManagementService* service_;
   scoped_ptr<AutoEnrollmentClient> client_;
-  em::DeviceAutoEnrollmentRequest last_request_;
+  em::DeviceManagementRequest last_request_;
   int completion_callback_count_;
 
  private:
-  void CaptureRequest(DeviceManagementRequestJob* job) {
-    last_request_ = job->GetRequest()->auto_enrollment_request();
-  }
-
   DISALLOW_COPY_AND_ASSIGN(AutoEnrollmentClientTest);
 };
 
@@ -146,10 +145,11 @@ TEST_F(AutoEnrollmentClientTest, ClientUploadsRightBits) {
   client_->Start();
   EXPECT_FALSE(client_->should_auto_enroll());
   EXPECT_EQ(1, completion_callback_count_);
-  EXPECT_TRUE(last_request_.has_remainder());
-  EXPECT_TRUE(last_request_.has_modulus());
-  EXPECT_EQ(16, last_request_.modulus());
-  EXPECT_EQ(kSerialHash[31] & 0xf, last_request_.remainder());
+
+  EXPECT_TRUE(auto_enrollment_request().has_remainder());
+  EXPECT_TRUE(auto_enrollment_request().has_modulus());
+  EXPECT_EQ(16, auto_enrollment_request().modulus());
+  EXPECT_EQ(kSerialHash[31] & 0xf, auto_enrollment_request().remainder());
   VerifyCachedResult(false, 8);
 }
 
@@ -174,14 +174,28 @@ TEST_F(AutoEnrollmentClientTest, AskForMoreThenEvenMore) {
 }
 
 TEST_F(AutoEnrollmentClientTest, AskForLess) {
+  InSequence sequence;
   ServerWillReply(8, false, false);
+  ServerWillReply(-1, true, true);
   client_->Start();
-  EXPECT_FALSE(client_->should_auto_enroll());
+  EXPECT_TRUE(client_->should_auto_enroll());
   EXPECT_EQ(1, completion_callback_count_);
-  VerifyCachedResult(false, 8);
+  VerifyCachedResult(true, 8);
 }
 
 TEST_F(AutoEnrollmentClientTest, AskForSame) {
+  InSequence sequence;
+  ServerWillReply(16, false, false);
+  ServerWillReply(-1, true, true);
+  client_->Start();
+  EXPECT_TRUE(client_->should_auto_enroll());
+  EXPECT_EQ(1, completion_callback_count_);
+  VerifyCachedResult(true, 8);
+}
+
+TEST_F(AutoEnrollmentClientTest, AskForSameTwice) {
+  InSequence sequence;
+  ServerWillReply(16, false, false);
   ServerWillReply(16, false, false);
   client_->Start();
   EXPECT_FALSE(client_->should_auto_enroll());
@@ -204,10 +218,10 @@ TEST_F(AutoEnrollmentClientTest, AskNonPowerOf2) {
   client_->Start();
   EXPECT_FALSE(client_->should_auto_enroll());
   EXPECT_EQ(1, completion_callback_count_);
-  EXPECT_TRUE(last_request_.has_remainder());
-  EXPECT_TRUE(last_request_.has_modulus());
-  EXPECT_EQ(128, last_request_.modulus());
-  EXPECT_EQ(kSerialHash[31] & 0x7f, last_request_.remainder());
+  EXPECT_TRUE(auto_enrollment_request().has_remainder());
+  EXPECT_TRUE(auto_enrollment_request().has_modulus());
+  EXPECT_EQ(128, auto_enrollment_request().modulus());
+  EXPECT_EQ(kSerialHash[31] & 0x7f, auto_enrollment_request().remainder());
   VerifyCachedResult(false, 8);
 }
 
@@ -242,10 +256,10 @@ TEST_F(AutoEnrollmentClientTest, NoBitsUploaded) {
   client_->Start();
   EXPECT_FALSE(client_->should_auto_enroll());
   EXPECT_EQ(1, completion_callback_count_);
-  EXPECT_TRUE(last_request_.has_remainder());
-  EXPECT_TRUE(last_request_.has_modulus());
-  EXPECT_EQ(1, last_request_.modulus());
-  EXPECT_EQ(0, last_request_.remainder());
+  EXPECT_TRUE(auto_enrollment_request().has_remainder());
+  EXPECT_TRUE(auto_enrollment_request().has_modulus());
+  EXPECT_EQ(1, auto_enrollment_request().modulus());
+  EXPECT_EQ(0, auto_enrollment_request().remainder());
   VerifyCachedResult(false, 0);
 }
 
@@ -258,10 +272,11 @@ TEST_F(AutoEnrollmentClientTest, ManyBitsUploaded) {
     client_->Start();
     EXPECT_FALSE(client_->should_auto_enroll());
     EXPECT_EQ(1, completion_callback_count_);
-    EXPECT_TRUE(last_request_.has_remainder());
-    EXPECT_TRUE(last_request_.has_modulus());
-    EXPECT_EQ(GG_INT64_C(1) << i, last_request_.modulus());
-    EXPECT_EQ(bottom62 % (GG_INT64_C(1) << i), last_request_.remainder());
+    EXPECT_TRUE(auto_enrollment_request().has_remainder());
+    EXPECT_TRUE(auto_enrollment_request().has_modulus());
+    EXPECT_EQ(GG_INT64_C(1) << i, auto_enrollment_request().modulus());
+    EXPECT_EQ(bottom62 % (GG_INT64_C(1) << i),
+              auto_enrollment_request().remainder());
     VerifyCachedResult(false, i);
   }
 }
@@ -286,8 +301,7 @@ TEST_F(AutoEnrollmentClientTest, ReuseCachedDecision) {
   client_->Start();
   EXPECT_TRUE(client_->should_auto_enroll());
   EXPECT_EQ(1, completion_callback_count_);
-  local_state_->SetUserPref(prefs::kShouldAutoEnroll,
-                            Value::CreateBooleanValue(false));
+  AutoEnrollmentClient::CancelAutoEnrollment();
   client_->Start();
   EXPECT_FALSE(client_->should_auto_enroll());
   EXPECT_EQ(2, completion_callback_count_);

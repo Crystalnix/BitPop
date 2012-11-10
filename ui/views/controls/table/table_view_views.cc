@@ -5,10 +5,10 @@
 #include "ui/views/controls/table/table_view_views.h"
 
 #include "base/i18n/rtl.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/models/table_model.h"
-#include "ui/gfx/canvas_skia.h"
-#include "ui/gfx/native_theme.h"
+#include "ui/base/native_theme/native_theme.h"
+#include "ui/gfx/canvas.h"
+#include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/scroll_view.h"
@@ -37,7 +37,7 @@ TableView::TableView(ui::TableModel* model,
                      bool single_selection,
                      bool resizable_columns,
                      bool autosize_columns)
-    : model_(model),
+    : model_(NULL),
       table_type_(table_type),
       table_view_observer_(NULL),
       selected_row_(-1),
@@ -48,6 +48,7 @@ TableView::TableView(ui::TableModel* model,
   DCHECK(table_type == TEXT_ONLY || table_type == ICON_AND_TEXT);
   set_focusable(true);
   set_background(Background::CreateSolidBackground(SK_ColorWHITE));
+  SetModel(model);
 }
 
 TableView::~TableView() {
@@ -72,8 +73,8 @@ View* TableView::CreateParentIfNecessary() {
   ScrollView* scroll_view = new ScrollView;
   scroll_view->SetContents(this);
   scroll_view->set_border(Border::CreateSolidBorder(
-      1, gfx::NativeTheme::instance()->GetSystemColor(
-          gfx::NativeTheme::kColorId_UnfocusedBorderColor)));
+      1, ui::NativeTheme::instance()->GetSystemColor(
+          ui::NativeTheme::kColorId_UnfocusedBorderColor)));
   return scroll_view;
 }
 
@@ -223,7 +224,7 @@ void TableView::OnPaint(gfx::Canvas* canvas) {
   int min_y, max_y;
   {
     SkRect sk_clip_rect;
-    if (canvas->GetSkCanvas()->getClipBounds(&sk_clip_rect)) {
+    if (canvas->sk_canvas()->getClipBounds(&sk_clip_rect)) {
       gfx::Rect clip_rect = gfx::SkRectToRect(sk_clip_rect);
       min_y = clip_rect.y();
       max_y = clip_rect.bottom();
@@ -242,16 +243,16 @@ void TableView::OnPaint(gfx::Canvas* canvas) {
   for (int i = min_row; i < max_row; ++i) {
     gfx::Rect row_bounds(GetRowBounds(i));
     if (i == selected_row_) {
-      canvas->FillRect(kSelectedBackgroundColor, row_bounds);
+      canvas->FillRect(row_bounds, kSelectedBackgroundColor);
       if (HasFocus())
         canvas->DrawFocusRect(row_bounds);
     }
     int text_x = kTextHorizontalPadding;
     if (table_type_ == ICON_AND_TEXT) {
-      SkBitmap image = model_->GetIcon(i);
+      gfx::ImageSkia image = model_->GetIcon(i);
       if (!image.isNull()) {
         int image_x = GetMirroredXWithWidthInView(text_x, image.width());
-        canvas->DrawBitmapInt(
+        canvas->DrawImageInt(
             image, 0, 0, image.width(), image.height(),
             image_x, row_bounds.y() + (row_bounds.height() - kImageSize) / 2,
             kImageSize, kImageSize, true);

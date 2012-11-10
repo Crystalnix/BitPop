@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "webkit/quota/mock_storage_client.h"
 
-#include "base/atomic_sequence_num.h"
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
@@ -14,42 +13,23 @@
 #include "net/base/net_util.h"
 #include "webkit/quota/quota_manager.h"
 
-using base::AtomicSequenceNumber;
-
 namespace quota {
-
-namespace {
 
 using std::make_pair;
 
-class MockStorageClientIDSequencer {
- public:
-  static MockStorageClientIDSequencer* GetInstance() {
-    return Singleton<MockStorageClientIDSequencer>::get();
-  }
-
-  QuotaClient::ID NextMockID() {
-    return static_cast<QuotaClient::ID>(
-        QuotaClient::kMockStart + seq_.GetNext());
-  }
-
- private:
-  MockStorageClientIDSequencer() { }
-  friend struct DefaultSingletonTraits<MockStorageClientIDSequencer>;
-  AtomicSequenceNumber seq_;
-
-  DISALLOW_COPY_AND_ASSIGN(MockStorageClientIDSequencer);
-};
-
-}  // anonymous namespace
-
 MockStorageClient::MockStorageClient(
     QuotaManagerProxy* quota_manager_proxy,
-    const MockOriginData* mock_data, size_t mock_data_size)
+    const MockOriginData* mock_data, QuotaClient::ID id, size_t mock_data_size)
     : quota_manager_proxy_(quota_manager_proxy),
-      id_(MockStorageClientIDSequencer::GetInstance()->NextMockID()),
+      id_(id),
       mock_time_counter_(0),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+  Populate(mock_data, mock_data_size);
+}
+
+void MockStorageClient::Populate(
+    const MockOriginData* mock_data,
+    size_t mock_data_size) {
   for (size_t i = 0; i < mock_data_size; ++i) {
     origin_data_[make_pair(GURL(mock_data[i].origin), mock_data[i].type)] =
         mock_data[i].usage;

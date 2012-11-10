@@ -31,6 +31,7 @@
 // Author: Sanjay Ghemawat <opensource@google.com>
 //
 // Common definitions for tcmalloc code.
+
 #ifndef TCMALLOC_COMMON_H_
 #define TCMALLOC_COMMON_H_
 
@@ -63,7 +64,8 @@ typedef uintptr_t Length;
 
 static const size_t kAlignment  = 8;
 
-// Constants dependant on tcmalloc configuration and archetecture.
+// Constants dependant on tcmalloc configuration and archetecture.  Chromium
+// tunes these constants.
 // We need to guarantee the smallest class size is big enough to hold the
 // pointers that form the free list.
 static const size_t kNumFreeListPointers =
@@ -75,15 +77,19 @@ static const size_t kSkippedClasses = (kAlignment < kMinClassSize ? 1 : 0);
 
 #if defined(TCMALLOC_LARGE_PAGES)
 static const size_t kPageShift  = 15;
-static const size_t kNumClasses = 95 - kSkippedClasses;
-static const size_t kMaxThreadCacheSize = 4 << 20;
+static const size_t kNumClasses = 78 - kSkippedClasses;
 #else
+// Original TCMalloc code used kPageShift == 13.  In Chromium, we changed
+// this to 12 (as was done in prior versions of TCMalloc).
 static const size_t kPageShift  = 12;
-static const size_t kNumClasses = 61 - kSkippedClasses;
-static const size_t kMaxThreadCacheSize = 2 << 20;
+static const size_t kNumClasses = 54 - kSkippedClasses;
 #endif
+static const size_t kMaxThreadCacheSize = 4 << 20;
 
 static const size_t kPageSize   = 1 << kPageShift;
+// Original TCMalloc code used kMaxSize == 256 * 1024.  In Chromium, we
+// changed this to 32K, and represent it in terms of page size (as was done
+// in prior versions of TCMalloc).
 static const size_t kMaxSize    = 8u * kPageSize;
 // For all span-lengths < kMaxPages we keep an exact-size list.
 static const size_t kMaxPages = 1 << (20 - kPageShift);
@@ -176,7 +182,7 @@ class SizeMap {
   //   32768      (32768 + 127 + (120<<7)) / 128  376
   static const int kMaxSmallSize = 1024;
   static const size_t kClassArraySize =
-      (((1 << kPageShift) * 8u + 127 + (120 << 7)) >> 7) + 1;
+      ((kMaxSize + 127 + (120 << 7)) >> 7) + 1;
   unsigned char class_array_[kClassArraySize];
 
   // Compute index of the class_array[] entry for a given size
@@ -232,9 +238,6 @@ class SizeMap {
   inline int num_objects_to_move(size_t cl) {
     return num_objects_to_move_[cl];
   }
-
-  // Dump contents of the computed size map
-  void Dump(TCMalloc_Printer* out);
 };
 
 // Allocates "bytes" worth of memory and returns it.  Increments
@@ -245,10 +248,12 @@ void* MetaDataAlloc(size_t bytes);
 // Returns the total number of bytes allocated from the system.
 // Requires pageheap_lock is held.
 uint64_t metadata_system_bytes();
+uint64_t metadata_unmapped_bytes();
 
 // Adjust metadata_system_bytes to indicate that bytes are actually committed.
 // Requires pageheap_lock is held.
-void increment_metadata_system_bytes(size_t bytes);
+void update_metadata_system_bytes(int diff);
+void update_metadata_unmapped_bytes(int diff);
 
 // size/depth are made the same size as a pointer so that some generic
 // code below can conveniently cast them back and forth to void*.

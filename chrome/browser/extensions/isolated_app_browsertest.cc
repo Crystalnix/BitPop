@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,20 +9,32 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/browser/renderer_host/render_view_host.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/browser_test_utils.h"
 #include "net/base/mock_host_resolver.h"
 
+using content::ExecuteJavaScript;
+using content::ExecuteJavaScriptAndExtractString;
 using content::NavigationController;
 using content::WebContents;
+using content::RenderViewHost;
 
 namespace {
+
+std::wstring WrapForJavascriptAndExtract(
+    const wchar_t* javascript_expression) {
+  return std::wstring(L"window.domAutomationController.send(") +
+      javascript_expression + L")";
+}
 
 class IsolatedAppTest : public ExtensionBrowserTest {
  public:
@@ -35,8 +47,8 @@ class IsolatedAppTest : public ExtensionBrowserTest {
     return actual_cookie.find(cookie) != std::string::npos;
   }
 
-  const Extension* GetInstalledApp(WebContents* contents) {
-    const Extension* installed_app = NULL;
+  const extensions::Extension* GetInstalledApp(WebContents* contents) {
+    const extensions::Extension* installed_app = NULL;
     Profile* profile =
         Profile::FromBrowserContext(contents->GetBrowserContext());
     ExtensionService* service = profile->GetExtensionService();
@@ -58,6 +70,16 @@ class IsolatedAppTest : public ExtensionBrowserTest {
 
 // Tests that cookies set within an isolated app are not visible to normal
 // pages or other apps.
+//
+// TODO(ajwong): Also test what happens if an app spans multiple sites in its
+// extent.  These origins should also be isolated, but still have origin-based
+// separation as you would expect.
+//
+// TODO(ajwong): Add test for session storage. In one tab, navigate to a
+// normal page and set X=ss_normal. Then navigate to an isolated URL in the
+// same origin and verify X does not exist.  Set X=ss_isolated. Navigate back to
+// a normal webpage, and verify X is still ss_normal. Navigate to the isolate
+// URL and verify that X is ss_isolated.
 IN_PROC_BROWSER_TEST_F(IsolatedAppTest, CookieIsolation) {
   host_resolver()->AddRule("*", "127.0.0.1");
   ASSERT_TRUE(test_server()->Start());
@@ -87,12 +109,41 @@ IN_PROC_BROWSER_TEST_F(IsolatedAppTest, CookieIsolation) {
   ASSERT_EQ(3, browser()->tab_count());
 
   // Ensure first two tabs have installed apps.
-  WebContents* tab1 = browser()->GetWebContentsAt(0);
-  WebContents* tab2 = browser()->GetWebContentsAt(1);
-  WebContents* tab3 = browser()->GetWebContentsAt(2);
+  WebContents* tab1 = chrome::GetWebContentsAt(browser(), 0);
+  WebContents* tab2 = chrome::GetWebContentsAt(browser(), 1);
+  WebContents* tab3 = chrome::GetWebContentsAt(browser(), 2);
   ASSERT_TRUE(GetInstalledApp(tab1));
   ASSERT_TRUE(GetInstalledApp(tab2));
   ASSERT_TRUE(!GetInstalledApp(tab3));
+
+  // Check that tabs see cannot each other's localStorage even though they are
+  // in the same origin.
+  RenderViewHost* app1_rvh = tab1->GetRenderViewHost();
+  RenderViewHost* app2_rvh = tab2->GetRenderViewHost();
+  RenderViewHost* non_app_rvh = tab3->GetRenderViewHost();
+  ASSERT_TRUE(ExecuteJavaScript(
+      app1_rvh, L"", L"window.localStorage.setItem('testdata', 'ls_app1');"));
+  ASSERT_TRUE(ExecuteJavaScript(
+      app2_rvh, L"", L"window.localStorage.setItem('testdata', 'ls_app2');"));
+  ASSERT_TRUE(ExecuteJavaScript(
+      non_app_rvh, L"",
+      L"window.localStorage.setItem('testdata', 'ls_normal');"));
+
+  ASSERT_TRUE(ExecuteJavaScript(
+      app1_rvh, L"", L"window.localStorage.getItem('testdata');"));
+
+  const std::wstring& kRetrieveLocalStorage =
+      WrapForJavascriptAndExtract(L"window.localStorage.getItem('testdata')");
+  std::string result;
+  ASSERT_TRUE(ExecuteJavaScriptAndExtractString(
+      app1_rvh, L"", kRetrieveLocalStorage.c_str(), &result));
+  EXPECT_EQ("ls_app1", result);
+  ASSERT_TRUE(ExecuteJavaScriptAndExtractString(
+      app2_rvh, L"", kRetrieveLocalStorage.c_str(), &result));
+  EXPECT_EQ("ls_app2", result);
+  ASSERT_TRUE(ExecuteJavaScriptAndExtractString(
+      non_app_rvh, L"", kRetrieveLocalStorage.c_str(), &result));
+  EXPECT_EQ("ls_normal", result);
 
   // Check that each tab sees its own cookie.
   EXPECT_TRUE(HasCookie(tab1, "app1=3"));
@@ -118,18 +169,18 @@ IN_PROC_BROWSER_TEST_F(IsolatedAppTest, CookieIsolation) {
   EXPECT_FALSE(HasCookie(tab3, "nonAppFrame"));
 
   // Check that isolation persists even if the tab crashes and is reloaded.
-  browser()->SelectNumberedTab(1);
-  ui_test_utils::CrashTab(tab1);
-  ui_test_utils::WindowedNotificationObserver observer(
+  chrome::SelectNumberedTab(browser(), 0);
+  content::CrashTab(tab1);
+  content::WindowedNotificationObserver observer(
       content::NOTIFICATION_LOAD_STOP,
       content::Source<NavigationController>(
-          &browser()->GetSelectedTabContentsWrapper()->web_contents()->
-              GetController()));
-  browser()->Reload(CURRENT_TAB);
+          &chrome::GetActiveWebContents(browser())->GetController()));
+  chrome::Reload(browser(), CURRENT_TAB);
   observer.Wait();
   EXPECT_TRUE(HasCookie(tab1, "app1=3"));
   EXPECT_FALSE(HasCookie(tab1, "app2"));
   EXPECT_FALSE(HasCookie(tab1, "normalPage"));
+
 }
 
 // Ensure that cookies are not isolated if the isolated apps are not installed.
@@ -158,146 +209,98 @@ IN_PROC_BROWSER_TEST_F(IsolatedAppTest, NoCookieIsolationWithoutApp) {
 
   ASSERT_EQ(3, browser()->tab_count());
 
-  // Check that tabs see each others' cookies.
-  EXPECT_TRUE(HasCookie(browser()->GetWebContentsAt(0), "app2=4"));
-  EXPECT_TRUE(HasCookie(browser()->GetWebContentsAt(0), "normalPage=5"));
-  EXPECT_TRUE(HasCookie(browser()->GetWebContentsAt(0), "nonAppFrame=6"));
-  EXPECT_TRUE(HasCookie(browser()->GetWebContentsAt(1), "app1=3"));
-  EXPECT_TRUE(HasCookie(browser()->GetWebContentsAt(1), "normalPage=5"));
-  EXPECT_TRUE(HasCookie(browser()->GetWebContentsAt(1), "nonAppFrame=6"));
-  EXPECT_TRUE(HasCookie(browser()->GetWebContentsAt(2), "app1=3"));
-  EXPECT_TRUE(HasCookie(browser()->GetWebContentsAt(2), "app2=4"));
-  EXPECT_TRUE(HasCookie(browser()->GetWebContentsAt(2), "nonAppFrame=6"));
+  // Check that tabs see each other's cookies.
+  EXPECT_TRUE(HasCookie(chrome::GetWebContentsAt(browser(), 0), "app2=4"));
+  EXPECT_TRUE(HasCookie(chrome::GetWebContentsAt(browser(), 0), "normalPage=5"));
+  EXPECT_TRUE(HasCookie(chrome::GetWebContentsAt(browser(), 0), "nonAppFrame=6"));
+  EXPECT_TRUE(HasCookie(chrome::GetWebContentsAt(browser(), 1), "app1=3"));
+  EXPECT_TRUE(HasCookie(chrome::GetWebContentsAt(browser(), 1), "normalPage=5"));
+  EXPECT_TRUE(HasCookie(chrome::GetWebContentsAt(browser(), 1), "nonAppFrame=6"));
+  EXPECT_TRUE(HasCookie(chrome::GetWebContentsAt(browser(), 2), "app1=3"));
+  EXPECT_TRUE(HasCookie(chrome::GetWebContentsAt(browser(), 2), "app2=4"));
+  EXPECT_TRUE(HasCookie(chrome::GetWebContentsAt(browser(), 2), "nonAppFrame=6"));
+
+  // Check that all tabs share the same localStorage if they have the same
+  // origin.
+  RenderViewHost* app1_rvh =
+      chrome::GetWebContentsAt(browser(), 0)->GetRenderViewHost();
+  RenderViewHost* app2_rvh =
+      chrome::GetWebContentsAt(browser(), 1)->GetRenderViewHost();
+  RenderViewHost* non_app_rvh =
+      chrome::GetWebContentsAt(browser(), 2)->GetRenderViewHost();
+  ASSERT_TRUE(ExecuteJavaScript(
+      app1_rvh, L"", L"window.localStorage.setItem('testdata', 'ls_app1');"));
+  ASSERT_TRUE(ExecuteJavaScript(
+      app2_rvh, L"", L"window.localStorage.setItem('testdata', 'ls_app2');"));
+  ASSERT_TRUE(ExecuteJavaScript(
+      non_app_rvh, L"",
+      L"window.localStorage.setItem('testdata', 'ls_normal');"));
+
+  const std::wstring& kRetrieveLocalStorage =
+      WrapForJavascriptAndExtract(L"window.localStorage.getItem('testdata')");
+  std::string result;
+  ASSERT_TRUE(ExecuteJavaScriptAndExtractString(
+      app1_rvh, L"", kRetrieveLocalStorage.c_str(), &result));
+  EXPECT_EQ("ls_normal", result);
+  ASSERT_TRUE(ExecuteJavaScriptAndExtractString(
+      app2_rvh, L"", kRetrieveLocalStorage.c_str(), &result));
+  EXPECT_EQ("ls_normal", result);
+  ASSERT_TRUE(ExecuteJavaScriptAndExtractString(
+      non_app_rvh, L"", kRetrieveLocalStorage.c_str(), &result));
+  EXPECT_EQ("ls_normal", result);
 }
 
-// Ensure that an isolated app never shares a process with WebUIs, non-isolated
-// extensions, and normal webpages.  None of these should ever comingle
-// RenderProcessHosts even if we hit the process limit.
-IN_PROC_BROWSER_TEST_F(IsolatedAppTest, ProcessOverflow) {
-  // Set max renderers to 1 to force running out of processes.
-  content::RenderProcessHost::SetMaxRendererProcessCountForTest(1);
-
+// Tests that isolated apps processes do not render top-level non-app pages.
+// This is true even in the case of the OAuth workaround for hosted apps,
+// where non-app popups may be kept in the hosted app process.
+IN_PROC_BROWSER_TEST_F(IsolatedAppTest, IsolatedAppProcessModel) {
   host_resolver()->AddRule("*", "127.0.0.1");
   ASSERT_TRUE(test_server()->Start());
 
   ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("isolated_apps/app1")));
-  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("isolated_apps/app2")));
-  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("hosted_app")));
-  ASSERT_TRUE(
-      LoadExtension(test_data_dir_.AppendASCII("api_test/app_process")));
 
   // The app under test acts on URLs whose host is "localhost",
   // so the URLs we navigate to must have host "localhost".
   GURL base_url = test_server()->GetURL(
-      "files/extensions/");
+      "files/extensions/isolated_apps/");
   GURL::Replacements replace_host;
   std::string host_str("localhost");  // Must stay in scope with replace_host.
   replace_host.SetHostStr(host_str);
   base_url = base_url.ReplaceComponents(replace_host);
 
-  // Load an extension before adding tabs.
-  const Extension* extension1 = LoadExtension(
-      test_data_dir_.AppendASCII("api_test/browser_action/basics"));
-  ASSERT_TRUE(extension1);
-  GURL extension1_url = extension1->url();
-
-  // Create multiple tabs for each type of renderer that might exist.
+  // Create three tabs in the isolated app in different ways.
   ui_test_utils::NavigateToURLWithDisposition(
-      browser(), base_url.Resolve("isolated_apps/app1/main.html"),
+      browser(), base_url.Resolve("app1/main.html"),
       CURRENT_TAB, ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
   ui_test_utils::NavigateToURLWithDisposition(
-      browser(), GURL(chrome::kChromeUINewTabURL),
+      browser(), base_url.Resolve("app1/main.html"),
       NEW_FOREGROUND_TAB, ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(), base_url.Resolve("hosted_app/main.html"),
-      NEW_FOREGROUND_TAB, ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(), base_url.Resolve("test_file.html"),
-      NEW_FOREGROUND_TAB, ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+  // For the third tab, use window.open to keep it in process with an opener.
+  OpenWindow(chrome::GetWebContentsAt(browser(), 0),
+             base_url.Resolve("app1/main.html"), true, NULL);
 
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(), base_url.Resolve("isolated_apps/app2/main.html"),
-      NEW_FOREGROUND_TAB, ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(), GURL(chrome::kChromeUINewTabURL),
-      NEW_FOREGROUND_TAB, ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(), base_url.Resolve("api_test/app_process/path1/empty.html"),
-      NEW_FOREGROUND_TAB, ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(), base_url.Resolve("test_file_with_body.html"),
-      NEW_FOREGROUND_TAB, ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+  // In a fourth tab, use window.open to a non-app URL.  It should open in a
+  // separate process, even though this would trigger the OAuth workaround
+  // for hosted apps (from http://crbug.com/59285).
+  OpenWindow(chrome::GetWebContentsAt(browser(), 0),
+             base_url.Resolve("non_app/main.html"), false, NULL);
 
-  // Load another copy of isolated app 1.
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(), base_url.Resolve("isolated_apps/app1/main.html"),
-      NEW_FOREGROUND_TAB, ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+  // We should now have four tabs, the first and third sharing a process.
+  // The second one is an independent instance in a separate process.
+  ASSERT_EQ(4, browser()->tab_count());
+  int process_id_0 =
+      chrome::GetWebContentsAt(browser(), 0)->GetRenderProcessHost()->GetID();
+  int process_id_1 =
+      chrome::GetWebContentsAt(browser(), 1)->GetRenderProcessHost()->GetID();
+  EXPECT_NE(process_id_0, process_id_1);
+  EXPECT_EQ(process_id_0,
+            chrome::GetWebContentsAt(browser(), 2)->GetRenderProcessHost()->GetID());
+  EXPECT_NE(process_id_0,
+            chrome::GetWebContentsAt(browser(), 3)->GetRenderProcessHost()->GetID());
 
-  // Load another extension.
-  const Extension* extension2 = LoadExtension(
-      test_data_dir_.AppendASCII("api_test/browser_action/close_background"));
-  ASSERT_TRUE(extension2);
-  GURL extension2_url = extension2->url();
-
-  // Get tab processes.
-  ASSERT_EQ(9, browser()->tab_count());
-  content::RenderProcessHost* isolated1_host =
-      browser()->GetWebContentsAt(0)->GetRenderProcessHost();
-  content::RenderProcessHost* ntp1_host =
-      browser()->GetWebContentsAt(1)->GetRenderProcessHost();
-  content::RenderProcessHost* hosted1_host =
-      browser()->GetWebContentsAt(2)->GetRenderProcessHost();
-  content::RenderProcessHost* web1_host =
-      browser()->GetWebContentsAt(3)->GetRenderProcessHost();
-
-  content::RenderProcessHost* isolated2_host =
-      browser()->GetWebContentsAt(4)->GetRenderProcessHost();
-  content::RenderProcessHost* ntp2_host =
-      browser()->GetWebContentsAt(5)->GetRenderProcessHost();
-  content::RenderProcessHost* hosted2_host =
-      browser()->GetWebContentsAt(6)->GetRenderProcessHost();
-  content::RenderProcessHost* web2_host =
-      browser()->GetWebContentsAt(7)->GetRenderProcessHost();
-
-  content::RenderProcessHost* second_isolated1_host =
-      browser()->GetWebContentsAt(8)->GetRenderProcessHost();
-
-  // Get extension processes.
-  ExtensionProcessManager* process_manager =
-    browser()->GetProfile()->GetExtensionProcessManager();
-  content::RenderProcessHost* extension1_host =
-      process_manager->GetSiteInstanceForURL(extension1_url)->GetProcess();
-  content::RenderProcessHost* extension2_host =
-      process_manager->GetSiteInstanceForURL(extension2_url)->GetProcess();
-
-  // An isolated app only shares with other instances of itself, not other
-  // isolated apps or anything else.
-  EXPECT_EQ(isolated1_host, second_isolated1_host);
-  EXPECT_NE(isolated1_host, isolated2_host);
-  EXPECT_NE(isolated1_host, ntp1_host);
-  EXPECT_NE(isolated1_host, hosted1_host);
-  EXPECT_NE(isolated1_host, web1_host);
-  EXPECT_NE(isolated1_host, extension1_host);
-  EXPECT_NE(isolated2_host, ntp1_host);
-  EXPECT_NE(isolated2_host, hosted1_host);
-  EXPECT_NE(isolated2_host, web1_host);
-  EXPECT_NE(isolated2_host, extension1_host);
-
-  // Everything else is clannish.  WebUI only shares with other WebUI.
-  EXPECT_EQ(ntp1_host, ntp2_host);
-  EXPECT_NE(ntp1_host, hosted1_host);
-  EXPECT_NE(ntp1_host, web1_host);
-  EXPECT_NE(ntp1_host, extension1_host);
-
-  // Hosted apps only share with each other.
-  EXPECT_EQ(hosted1_host, hosted2_host);
-  EXPECT_NE(hosted1_host, web1_host);
-  EXPECT_NE(hosted1_host, extension1_host);
-
-  // Web pages only share with each other.
-  EXPECT_EQ(web1_host, web2_host);
-  EXPECT_NE(web1_host, extension1_host);
-
-  // Extensions only share with each other.
-  EXPECT_EQ(extension1_host, extension2_host);
+  // Navigating the second tab out of the app should cause a process swap.
+  const GURL& non_app_url(base_url.Resolve("non_app/main.html"));
+  NavigateInRenderer(chrome::GetWebContentsAt(browser(), 1), non_app_url);
+  EXPECT_NE(process_id_1,
+            chrome::GetWebContentsAt(browser(), 1)->GetRenderProcessHost()->GetID());
 }

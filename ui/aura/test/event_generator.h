@@ -4,14 +4,18 @@
 
 #ifndef UI_AURA_TEST_EVENT_GENERATOR_H_
 #define UI_AURA_TEST_EVENT_GENERATOR_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/gfx/point.h"
 
+namespace base {
+class TimeDelta;
+}
+
 namespace aura {
 class Event;
+class RootWindow;
 class Window;
 
 namespace test {
@@ -20,19 +24,22 @@ namespace test {
 class EventGenerator {
  public:
   // Creates an EventGenerator with the mouse/touch location (0,0).
-  EventGenerator();
+  explicit EventGenerator(RootWindow* root_window);
 
   // Creates an EventGenerator with the mouse/touch location
   // at |initial_location|.
-  explicit EventGenerator(const gfx::Point& initial_location);
+  EventGenerator(RootWindow* root_window, const gfx::Point& initial_location);
 
   // Creates an EventGenerator with the mouse/touch location
   // centered over |window|.
-  explicit EventGenerator(Window* window);
+  EventGenerator(RootWindow* root_window, Window* window);
 
   virtual ~EventGenerator();
 
   const gfx::Point& current_location() const { return current_location_; }
+
+  // Resets the event flags bitmask.
+  void set_flags(int flags) { flags_ = flags; }
 
   // Generates a left button press event.
   void PressLeftButton();
@@ -102,6 +109,26 @@ class EventGenerator {
   // to the center of the window.
   void PressMoveAndReleaseTouchToCenterOf(Window* window);
 
+  // Generates and dispatches touch-events required to generate a TAP gesture.
+  // Note that this can generate a number of other gesture events at the same
+  // time (e.g. GESTURE_BEGIN, TAP_DOWN, END).
+  void GestureTapAt(const gfx::Point& point);
+
+  // Generates press and release touch-events to generate a TAP_DOWN event, but
+  // without generating any scroll or tap events. This can also generate a few
+  // other gesture events (e.g. GESTURE_BEGIN, END).
+  void GestureTapDownAndUp(const gfx::Point& point);
+
+  // Generates press, move, release touch-events to generate a sequence of
+  // scroll events. |duration| and |steps| affect the velocity of the scroll,
+  // and depending on these values, this may also generate FLING scroll
+  // gestures. If velocity/fling is irrelevant for the test, then any non-zero
+  // values for these should be sufficient.
+  void GestureScrollSequence(const gfx::Point& start,
+                             const gfx::Point& end,
+                             const base::TimeDelta& duration,
+                             int steps);
+
   // Generates a key press event. On platforms except Windows and X11, a key
   // event without native_event() is generated. Note that ui::EF_ flags should
   // be passed as |flags|, not the native ones like 'ShiftMask' in <X11/X.h>.
@@ -114,12 +141,14 @@ class EventGenerator {
   // TODO(yusukes): Support native_event() on all platforms.
   void ReleaseKey(ui::KeyboardCode key_code, int flags);
 
- private:
   // Dispatch the |event| to the RootWindow.
   void Dispatch(Event& event);
+
+ private:
   // Dispatch a key event to the RootWindow.
   void DispatchKeyEvent(bool is_press, ui::KeyboardCode key_code, int flags);
 
+  RootWindow* root_window_;
   int flags_;
   gfx::Point current_location_;
 

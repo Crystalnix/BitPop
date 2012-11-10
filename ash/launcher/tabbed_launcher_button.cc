@@ -7,7 +7,9 @@
 #include <algorithm>
 
 #include "ash/launcher/launcher_button_host.h"
+#include "ash/launcher/launcher_types.h"
 #include "grit/ui_resources.h"
+#include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/animation/multi_animation.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
@@ -17,162 +19,125 @@
 namespace ash {
 namespace internal {
 
-TabbedLauncherButton::AnimationDelegateImpl::AnimationDelegateImpl(
+TabbedLauncherButton::IconView::IconView(
     TabbedLauncherButton* host)
     : host_(host) {
+  if (!browser_image_) {
+    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+
+    browser_image_ = new SkBitmap(
+        *rb.GetImageNamed(IDR_AURA_LAUNCHER_BROWSER).ToSkBitmap());
+    incognito_browser_image_ = new SkBitmap(
+        *rb.GetImageNamed(IDR_AURA_LAUNCHER_INCOGNITO_BROWSER).ToSkBitmap());
+    browser_panel_image_ = new SkBitmap(
+        *rb.GetImageNamed(IDR_AURA_LAUNCHER_BROWSER_PANEL).ToSkBitmap());
+    incognito_browser_panel_image_ = new SkBitmap(
+        *rb.GetImageNamed(
+            IDR_AURA_LAUNCHER_INCOGNITO_BROWSER_PANEL).ToSkBitmap());
+  }
+  set_icon_size(0);
+  if (host->is_incognito() == STATE_NOT_INCOGNITO)
+    LauncherButton::IconView::SetImage(*browser_image_);
+  else
+    LauncherButton::IconView::SetImage(*incognito_browser_image_);
 }
 
-TabbedLauncherButton::AnimationDelegateImpl::~AnimationDelegateImpl() {
+TabbedLauncherButton::IconView::~IconView() {
 }
 
-void TabbedLauncherButton::AnimationDelegateImpl::AnimationEnded(
+void TabbedLauncherButton::IconView::AnimationEnded(
     const ui::Animation* animation) {
   AnimationProgressed(animation);
-  // Hide the image when the animation is done. We'll show it again the next
-  // time SetImages is invoked.
-  host_->show_image_ = false;
+  animating_image_ = SkBitmap();
 }
 
-void TabbedLauncherButton::AnimationDelegateImpl::AnimationProgressed(
+void TabbedLauncherButton::IconView::AnimationProgressed(
     const ui::Animation* animation) {
-  if (host_->animation_->current_part_index() == 1)
-    host_->SchedulePaint();
+  if (animation_->current_part_index() == 1)
+    SchedulePaint();
+}
+
+void TabbedLauncherButton::IconView::SetTabImage(const SkBitmap& image) {
+  if (image.empty()) {
+    if (!image_.empty()) {
+      // Pause for 500ms, then ease out for 200ms.
+      ui::MultiAnimation::Parts animation_parts;
+      animation_parts.push_back(ui::MultiAnimation::Part(500, ui::Tween::ZERO));
+      animation_parts.push_back(
+          ui::MultiAnimation::Part(200, ui::Tween::EASE_OUT));
+      animation_.reset(new ui::MultiAnimation(animation_parts));
+      animation_->set_continuous(false);
+      animation_->set_delegate(this);
+      animation_->Start();
+      animating_image_ = image_;
+      image_ = image;
+    }
+  } else {
+    animation_.reset();
+    SchedulePaint();
+    image_ = image;
+  }
+}
+
+void TabbedLauncherButton::IconView::OnPaint(gfx::Canvas* canvas) {
+  LauncherButton::IconView::OnPaint(canvas);
+
+  // Only non incognito icons show the tab image.
+  if (host_->is_incognito() != STATE_NOT_INCOGNITO)
+    return;
+
+  if ((animation_.get() && animation_->is_animating() &&
+      animation_->current_part_index() == 1)) {
+    int x = (width() - animating_image_.width()) / 2;
+    int y = (height() - animating_image_.height()) / 2;
+    canvas->SaveLayerAlpha(animation_->CurrentValueBetween(255, 0));
+    canvas->DrawImageInt(animating_image_, x, y);
+    canvas->Restore();
+  } else {
+    int x = (width() - image_.width()) / 2;
+    int y = (height() - image_.height()) / 2;
+    canvas->DrawImageInt(image_, x, y);
+  }
 }
 
 // static
-TabbedLauncherButton::ImageSet* TabbedLauncherButton::bg_image_1_ = NULL;
-TabbedLauncherButton::ImageSet* TabbedLauncherButton::bg_image_2_ = NULL;
-TabbedLauncherButton::ImageSet* TabbedLauncherButton::bg_image_3_ = NULL;
+SkBitmap* TabbedLauncherButton::IconView::browser_image_ = NULL;
+SkBitmap* TabbedLauncherButton::IconView::incognito_browser_image_ = NULL;
+SkBitmap* TabbedLauncherButton::IconView::browser_panel_image_ = NULL;
+SkBitmap* TabbedLauncherButton::IconView::incognito_browser_panel_image_ = NULL;
+
+TabbedLauncherButton* TabbedLauncherButton::Create(
+    views::ButtonListener* listener,
+    LauncherButtonHost* host,
+    IncognitoState is_incognito) {
+  TabbedLauncherButton* button =
+      new TabbedLauncherButton(listener, host, is_incognito);
+  button->Init();
+  return button;
+}
 
 TabbedLauncherButton::TabbedLauncherButton(views::ButtonListener* listener,
-                                           LauncherButtonHost* host)
-    : views::ImageButton(listener),
-      host_(host),
-      ALLOW_THIS_IN_INITIALIZER_LIST(animation_delegate_(this)),
-      show_image_(true),
-      ALLOW_THIS_IN_INITIALIZER_LIST(hover_controller_(this)) {
-  if (!bg_image_1_) {
-    bg_image_1_ = CreateImageSet(IDR_AURA_LAUNCHER_TABBED_BROWSER_1,
-                                 IDR_AURA_LAUNCHER_TABBED_BROWSER_1_PUSHED,
-                                 IDR_AURA_LAUNCHER_TABBED_BROWSER_1_HOT);
-    bg_image_2_ = CreateImageSet(IDR_AURA_LAUNCHER_TABBED_BROWSER_2,
-                                 IDR_AURA_LAUNCHER_TABBED_BROWSER_2_PUSHED,
-                                 IDR_AURA_LAUNCHER_TABBED_BROWSER_2_HOT);
-    bg_image_3_ = CreateImageSet(IDR_AURA_LAUNCHER_TABBED_BROWSER_3,
-                                 IDR_AURA_LAUNCHER_TABBED_BROWSER_3_PUSHED,
-                                 IDR_AURA_LAUNCHER_TABBED_BROWSER_3_HOT);
-  }
-  SetImageAlignment(views::ImageButton::ALIGN_CENTER,
-                    views::ImageButton::ALIGN_MIDDLE);
-  set_focusable(true);
+                                           LauncherButtonHost* host,
+                                           IncognitoState is_incognito)
+    : LauncherButton(listener, host),
+      is_incognito_(is_incognito) {
+  set_accessibility_focusable(true);
 }
 
 TabbedLauncherButton::~TabbedLauncherButton() {
 }
 
-void TabbedLauncherButton::PrepareForImageChange() {
-  if (!show_image_ || (animation_.get() && animation_->is_animating()))
-    return;
-
-  // Pause for 500ms, then ease out for 200ms.
-  ui::MultiAnimation::Parts animation_parts;
-  animation_parts.push_back(ui::MultiAnimation::Part(500, ui::Tween::ZERO));
-  animation_parts.push_back(ui::MultiAnimation::Part(200, ui::Tween::EASE_OUT));
-  animation_.reset(new ui::MultiAnimation(animation_parts));
-  animation_->set_continuous(false);
-  animation_->set_delegate(&animation_delegate_);
-  animation_->Start();
+void TabbedLauncherButton::SetTabImage(const SkBitmap& image) {
+  tabbed_icon_view()->SetTabImage(image);
 }
 
-void TabbedLauncherButton::SetTabImage(const SkBitmap& image, int count) {
-  animation_.reset();
-  show_image_ = true;
-  image_ = image;
-  ImageSet* set;
-  if (count <= 1)
-    set = bg_image_1_;
-  else if (count == 2)
-    set = bg_image_2_;
-  else
-    set = bg_image_3_;
-  SetImage(BS_NORMAL, set->normal_image);
-  SetImage(BS_HOT, set->hot_image);
-  SetImage(BS_PUSHED, set->pushed_image);
-  SchedulePaint();
+void TabbedLauncherButton::GetAccessibleState(ui::AccessibleViewState* state) {
+  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+  state->name = host()->GetAccessibleName(this);
 }
 
-void TabbedLauncherButton::OnPaint(gfx::Canvas* canvas) {
-  ImageButton::OnPaint(canvas);
-
-  hover_controller_.Draw(canvas, *bg_image_1_->normal_image);
-
-  if (image_.empty() || !show_image_)
-    return;
-
-  bool save_layer = (animation_.get() && animation_->is_animating() &&
-                     animation_->current_part_index() == 1);
-  if (save_layer)
-    canvas->SaveLayerAlpha(animation_->CurrentValueBetween(255, 0));
-
-  int x = (width() - image_.width()) / 2;
-  int y = (height() - image_.height()) / 2 + 1;
-  canvas->DrawBitmapInt(image_, x, y);
-
-  if (save_layer)
-    canvas->Restore();
-}
-
-bool TabbedLauncherButton::OnMousePressed(const views::MouseEvent& event) {
-  ImageButton::OnMousePressed(event);
-  host_->MousePressedOnButton(this, event);
-  hover_controller_.HideImmediately();
-  return true;
-}
-
-void TabbedLauncherButton::OnMouseReleased(const views::MouseEvent& event) {
-  host_->MouseReleasedOnButton(this, false);
-  ImageButton::OnMouseReleased(event);
-  hover_controller_.Show();
-}
-
-void TabbedLauncherButton::OnMouseCaptureLost() {
-  host_->MouseReleasedOnButton(this, true);
-  ImageButton::OnMouseCaptureLost();
-  hover_controller_.Hide();
-}
-
-bool TabbedLauncherButton::OnMouseDragged(const views::MouseEvent& event) {
-  ImageButton::OnMouseDragged(event);
-  host_->MouseDraggedOnButton(this, event);
-  return true;
-}
-
-void TabbedLauncherButton::OnMouseEntered(const views::MouseEvent& event) {
-  ImageButton::OnMouseEntered(event);
-  hover_controller_.Show();
-}
-
-void TabbedLauncherButton::OnMouseMoved(const views::MouseEvent& event) {
-  ImageButton::OnMouseMoved(event);
-  hover_controller_.SetLocation(event.location());
-}
-
-void TabbedLauncherButton::OnMouseExited(const views::MouseEvent& event) {
-  ImageButton::OnMouseExited(event);
-  hover_controller_.Hide();
-}
-
-// static
-TabbedLauncherButton::ImageSet* TabbedLauncherButton::CreateImageSet(
-    int normal_id,
-    int pushed_id,
-    int hot_id) {
-  ImageSet* set = new ImageSet;
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  set->normal_image = new SkBitmap(*rb.GetImageNamed(normal_id).ToSkBitmap());
-  set->pushed_image = new SkBitmap(*rb.GetImageNamed(pushed_id).ToSkBitmap());
-  set->hot_image = new SkBitmap(*rb.GetImageNamed(hot_id).ToSkBitmap());
-  return set;
+LauncherButton::IconView* TabbedLauncherButton::CreateIconView() {
+  return new IconView(this);
 }
 
 }  // namespace internal

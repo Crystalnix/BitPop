@@ -6,25 +6,32 @@
 
 #include <algorithm>
 
-#include "base/debug/trace_event.h"
 #include "base/i18n/break_iterator.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
+#include "ui/base/text/utf16_indexing.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/canvas_skia.h"
-#include "ui/gfx/native_theme.h"
-#include "unicode/uchar.h"
+#include "ui/gfx/insets.h"
+#include "ui/gfx/skia_util.h"
+#include "ui/gfx/text_constants.h"
 
 namespace {
 
-// Color settings for text, backgrounds and cursor.
-// These are tentative, and should be derived from theme, system
-// settings and current settings.
-// TODO(oshima): Change this to match the standard chrome
-// before dogfooding textfield views.
-const SkColor kCursorColor = SK_ColorBLACK;
+// All chars are replaced by this char when the password style is set.
+// TODO(benrg): GTK uses the first of U+25CF, U+2022, U+2731, U+273A, '*'
+// that's available in the font (find_invisible_char() in gtkentry.c).
+const char16 kPasswordReplacementChar = '*';
+
+// Default color used for the cursor.
+const SkColor kDefaultCursorColor = SK_ColorBLACK;
+
+// Default color used for drawing selection text.
+const SkColor kDefaultSelectionColor = SK_ColorBLACK;
+
+// Default color used for drawing selection background.
+const SkColor kDefaultSelectionBackgroundColor = SK_ColorGRAY;
 
 #ifndef NDEBUG
 // Check StyleRanges invariant conditions: sorted and non-overlapping ranges.
@@ -36,11 +43,14 @@ void CheckStyleRanges(const gfx::StyleRanges& style_ranges, size_t length) {
   for (gfx::StyleRanges::size_type i = 0; i < style_ranges.size() - 1; i++) {
     const ui::Range& former = style_ranges[i].range;
     const ui::Range& latter = style_ranges[i + 1].range;
-    DCHECK(!former.is_empty()) << "Empty range at " << i << ":" << former;
-    DCHECK(former.IsValid()) << "Invalid range at " << i << ":" << former;
-    DCHECK(!former.is_reversed()) << "Reversed range at " << i << ":" << former;
+    DCHECK(!former.is_empty()) << "Empty range at " << i << ":" <<
+        former.ToString();
+    DCHECK(former.IsValid()) << "Invalid range at " << i << ":" <<
+        former.ToString();
+    DCHECK(!former.is_reversed()) << "Reversed range at " << i << ":" <<
+        former.ToString();
     DCHECK(former.end() == latter.start()) << "Ranges gap/overlap/unsorted." <<
-        "former:" << former << ", latter:" << latter;
+        "former:" << former.ToString() << ", latter:" << latter.ToString();
   }
   const gfx::StyleRange& end_style = *style_ranges.rbegin();
   DCHECK(!end_style.range.is_empty()) << "Empty range at end.";
@@ -139,10 +149,6 @@ SkShader* CreateFadeShader(const gfx::Rect& text_rect,
                            SkColor color) {
   // Fade alpha of 51/255 corresponds to a fade of 0.2 of the original color.
   const SkColor fade_color = SkColorSetA(color, 51);
-  const SkPoint points[2] = {
-    SkPoint::Make(text_rect.x(), text_rect.y()),
-    SkPoint::Make(text_rect.right(), text_rect.y())
-  };
   std::vector<SkScalar> positions;
   std::vector<SkColor> colors;
 
@@ -160,11 +166,13 @@ SkShader* CreateFadeShader(const gfx::Rect& text_rect,
     colors.push_back(colors.back());
   }
 
-  return SkGradientShader::CreateLinear(&points[0], &colors[0], &positions[0],
-                                        colors.size(),
-                                        SkShader::kClamp_TileMode);
-}
+  SkPoint points[2];
+  points[0].iset(text_rect.x(), text_rect.y());
+  points[1].iset(text_rect.right(), text_rect.y());
 
+  return SkGradientShader::CreateLinear(&points[0], &colors[0], &positions[0],
+      colors.size(), SkShader::kClamp_TileMode);
+}
 
 }  // namespace
 
@@ -172,66 +180,115 @@ namespace gfx {
 
 namespace internal {
 
+// Value of |underline_thickness_| that indicates that underline metrics have
+// not been set explicitly.
+const SkScalar kUnderlineMetricsNotSet = -1.0f;
+
 SkiaTextRenderer::SkiaTextRenderer(Canvas* canvas)
-    : canvas_skia_(canvas->GetSkCanvas()) {
+    : canvas_skia_(canvas->sk_canvas()),
+      started_drawing_(false),
+      underline_thickness_(kUnderlineMetricsNotSet),
+      underline_position_(0.0f) {
   DCHECK(canvas_skia_);
   paint_.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
   paint_.setStyle(SkPaint::kFill_Style);
   paint_.setAntiAlias(true);
   paint_.setSubpixelText(true);
   paint_.setLCDRenderText(true);
+  bounds_.setEmpty();
 }
 
 SkiaTextRenderer::~SkiaTextRenderer() {
+  // Work-around for http://crbug.com/122743, where non-ClearType text is
+  // rendered with incorrect gamma when using the fade shader. Draw the text
+  // to a layer and restore it faded by drawing a rect in kDstIn_Mode mode.
+  //
+  // TODO(asvitkine): Remove this work-around once the Skia bug is fixed.
+  //                  http://code.google.com/p/skia/issues/detail?id=590
+  if (deferred_fade_shader_.get()) {
+    paint_.setShader(deferred_fade_shader_.get());
+    paint_.setXfermodeMode(SkXfermode::kDstIn_Mode);
+    canvas_skia_->drawRect(bounds_, paint_);
+    canvas_skia_->restore();
+  }
+}
+
+void SkiaTextRenderer::SetDrawLooper(SkDrawLooper* draw_looper) {
+  paint_.setLooper(draw_looper);
+}
+
+void SkiaTextRenderer::SetFontSmoothingSettings(bool enable_smoothing,
+                                                bool enable_lcd_text) {
+  paint_.setAntiAlias(enable_smoothing);
+  paint_.setSubpixelText(enable_smoothing);
+  paint_.setLCDRenderText(enable_lcd_text);
 }
 
 void SkiaTextRenderer::SetTypeface(SkTypeface* typeface) {
   paint_.setTypeface(typeface);
 }
 
-void SkiaTextRenderer::SetTextSize(int size) {
+void SkiaTextRenderer::SetTextSize(SkScalar size) {
   paint_.setTextSize(size);
 }
 
-void SkiaTextRenderer::SetFontStyle(int style) {
+void SkiaTextRenderer::SetFontFamilyWithStyle(const std::string& family,
+                                              int style) {
+  DCHECK(!family.empty());
+
   SkTypeface::Style skia_style = ConvertFontStyleToSkiaTypefaceStyle(style);
-  SkTypeface* current_typeface = paint_.getTypeface();
-
-  if (current_typeface->style() == skia_style)
-    return;
-
-  SkAutoTUnref<SkTypeface> typeface(
-      SkTypeface::CreateFromTypeface(current_typeface, skia_style));
-  if (typeface.get()) {
+  SkTypeface* typeface = SkTypeface::CreateFromName(family.c_str(), skia_style);
+  SkAutoUnref auto_unref(typeface);
+  if (typeface) {
     // |paint_| adds its own ref. So don't |release()| it from the ref ptr here.
-    SetTypeface(typeface.get());
-  }
-}
+    SetTypeface(typeface);
 
-void SkiaTextRenderer::SetFont(const gfx::Font& font) {
-  SkTypeface::Style skia_style =
-      ConvertFontStyleToSkiaTypefaceStyle(font.GetStyle());
-  SkAutoTUnref<SkTypeface> typeface(
-      SkTypeface::CreateFromName(font.GetFontName().c_str(), skia_style));
-  if (typeface.get()) {
-    // |paint_| adds its own ref. So don't |release()| it from the ref ptr here.
-    SetTypeface(typeface.get());
+    // Enable fake bold text if bold style is needed but new typeface does not
+    // have it.
+    paint_.setFakeBoldText((skia_style & SkTypeface::kBold) &&
+                           !typeface->isBold());
   }
-  SetTextSize(font.GetFontSize());
 }
 
 void SkiaTextRenderer::SetForegroundColor(SkColor foreground) {
   paint_.setColor(foreground);
 }
 
-void SkiaTextRenderer::SetShader(SkShader* shader) {
+void SkiaTextRenderer::SetShader(SkShader* shader, const Rect& bounds) {
+  bounds_ = RectToSkRect(bounds);
   paint_.setShader(shader);
+}
+
+void SkiaTextRenderer::SetUnderlineMetrics(SkScalar thickness,
+                                           SkScalar position) {
+  underline_thickness_ = thickness;
+  underline_position_ = position;
 }
 
 void SkiaTextRenderer::DrawPosText(const SkPoint* pos,
                                    const uint16* glyphs,
                                    size_t glyph_count) {
-  size_t byte_length = glyph_count * sizeof(glyphs[0]);
+  if (!started_drawing_) {
+    started_drawing_ = true;
+    // Work-around for http://crbug.com/122743, where non-ClearType text is
+    // rendered with incorrect gamma when using the fade shader. Draw the text
+    // to a layer and restore it faded by drawing a rect in kDstIn_Mode mode.
+    //
+    // Skip this when there is a looper which seems not working well with
+    // deferred paint. Currently a looper is only used for text shadows.
+    //
+    // TODO(asvitkine): Remove this work-around once the Skia bug is fixed.
+    //                  http://code.google.com/p/skia/issues/detail?id=590
+    if (!paint_.isLCDRenderText() &&
+        paint_.getShader() &&
+        !paint_.getLooper()) {
+      deferred_fade_shader_ = paint_.getShader();
+      paint_.setShader(NULL);
+      canvas_skia_->saveLayer(&bounds_, NULL);
+    }
+  }
+
+  const size_t byte_length = glyph_count * sizeof(glyphs[0]);
   canvas_skia_->drawPosText(&glyphs[0], byte_length, &pos[0], paint_);
 }
 
@@ -260,9 +317,13 @@ void SkiaTextRenderer::DrawDecorations(int x, int y, int width,
   r.fRight = x + width;
 
   if (style.underline) {
-    SkScalar offset = SkScalarMulAdd(text_size, kUnderlineOffset, y);
-    r.fTop = offset;
-    r.fBottom = offset + height;
+    if (underline_thickness_ == kUnderlineMetricsNotSet) {
+      r.fTop = SkScalarMulAdd(text_size, kUnderlineOffset, y);
+      r.fBottom = r.fTop + height;
+    } else {
+      r.fTop = y + underline_position_;
+      r.fBottom = r.fTop + underline_thickness_;
+    }
     canvas_skia_->drawRect(r, paint_);
   }
   if (style.strike) {
@@ -332,9 +393,13 @@ void RenderText::SetText(const string16& text) {
 
   // Reset selection model. SetText should always followed by SetSelectionModel
   // or SetCursorPosition in upper layer.
-  SetSelectionModel(SelectionModel(0, 0, SelectionModel::LEADING));
+  SetSelectionModel(SelectionModel());
 
-  UpdateLayout();
+  // Invalidate the cached text direction if it depends on the text contents.
+  if (directionality_mode_ == DIRECTIONALITY_FROM_TEXT)
+    text_direction_ = base::i18n::UNKNOWN_DIRECTION;
+
+  ResetLayout();
 }
 
 void RenderText::SetHorizontalAlignment(HorizontalAlignment alignment) {
@@ -348,13 +413,13 @@ void RenderText::SetHorizontalAlignment(HorizontalAlignment alignment) {
 void RenderText::SetFontList(const FontList& font_list) {
   font_list_ = font_list;
   cached_bounds_and_offset_valid_ = false;
-  UpdateLayout();
+  ResetLayout();
 }
 
 void RenderText::SetFontSize(int size) {
   font_list_ = font_list_.DeriveFontListWithSize(size);
   cached_bounds_and_offset_valid_ = false;
-  UpdateLayout();
+  ResetLayout();
 }
 
 void RenderText::SetCursorEnabled(bool cursor_enabled) {
@@ -371,14 +436,19 @@ void RenderText::ToggleInsertMode() {
   cached_bounds_and_offset_valid_ = false;
 }
 
-void RenderText::SetDisplayRect(const Rect& r) {
-  display_rect_ = r;
-  cached_bounds_and_offset_valid_ = false;
-  UpdateLayout();
+void RenderText::SetObscured(bool obscured) {
+  if (obscured != obscured_) {
+    obscured_ = obscured;
+    cached_bounds_and_offset_valid_ = false;
+    ResetLayout();
+  }
 }
 
-size_t RenderText::GetCursorPosition() const {
-  return selection_model_.selection_end();
+void RenderText::SetDisplayRect(const Rect& r) {
+  if (r.width() != display_rect_.width())
+    ResetLayout();
+  display_rect_ = r;
+  cached_bounds_and_offset_valid_ = false;
 }
 
 void RenderText::SetCursorPosition(size_t position) {
@@ -388,10 +458,9 @@ void RenderText::SetCursorPosition(size_t position) {
 void RenderText::MoveCursor(BreakType break_type,
                             VisualCursorDirection direction,
                             bool select) {
-  SelectionModel position(selection_model());
-  position.set_selection_start(GetCursorPosition());
+  SelectionModel position(cursor_position(), selection_model_.caret_affinity());
   // Cancelling a selection moves to the edge of the selection.
-  if (break_type != LINE_BREAK && !EmptySelection() && !select) {
+  if (break_type != LINE_BREAK && !selection().is_empty() && !select) {
     SelectionModel selection_start = GetSelectionModelForSelectionStart();
     int start_x = GetCursorBounds(selection_start, true).x();
     int cursor_x = GetCursorBounds(position, true).x();
@@ -407,94 +476,70 @@ void RenderText::MoveCursor(BreakType break_type,
     position = GetAdjacentSelectionModel(position, break_type, direction);
   }
   if (select)
-    position.set_selection_start(GetSelectionStart());
+    position.set_selection_start(selection().start());
   MoveCursorTo(position);
 }
 
 bool RenderText::MoveCursorTo(const SelectionModel& model) {
-  SelectionModel sel(model);
-  size_t text_length = text().length();
   // Enforce valid selection model components.
-  if (sel.selection_start() > text_length)
-    sel.set_selection_start(text_length);
-  if (sel.selection_end() > text_length)
-    sel.set_selection_end(text_length);
+  size_t text_length = text().length();
+  ui::Range range(std::min(model.selection().start(), text_length),
+                  std::min(model.caret_pos(), text_length));
   // The current model only supports caret positions at valid character indices.
-  if (text_length == 0) {
-    sel.set_caret_pos(0);
-    sel.set_caret_placement(SelectionModel::LEADING);
-  } else if (sel.caret_pos() >= text_length) {
-    SelectionModel end_selection =
-        EdgeSelectionModel(GetVisualDirectionOfLogicalEnd());
-    sel.set_caret_pos(end_selection.caret_pos());
-    sel.set_caret_placement(end_selection.caret_placement());
-  }
-
-  if (!IsCursorablePosition(sel.selection_start()) ||
-      !IsCursorablePosition(sel.selection_end()) ||
-      !IsCursorablePosition(sel.caret_pos()))
+  if (!IsCursorablePosition(range.start()) ||
+      !IsCursorablePosition(range.end()))
     return false;
-
-  bool changed = !sel.Equals(selection_model_);
+  SelectionModel sel(range, model.caret_affinity());
+  bool changed = sel != selection_model_;
   SetSelectionModel(sel);
   return changed;
 }
 
 bool RenderText::MoveCursorTo(const Point& point, bool select) {
-  SelectionModel selection = FindCursorPosition(point);
+  SelectionModel position = FindCursorPosition(point);
   if (select)
-    selection.set_selection_start(GetSelectionStart());
-  return MoveCursorTo(selection);
+    position.set_selection_start(selection().start());
+  return MoveCursorTo(position);
 }
 
 bool RenderText::SelectRange(const ui::Range& range) {
-  size_t text_length = text().length();
-  size_t start = std::min(range.start(), text_length);
-  size_t end = std::min(range.end(), text_length);
-
-  if (!IsCursorablePosition(start) || !IsCursorablePosition(end))
+  ui::Range sel(std::min(range.start(), text().length()),
+                std::min(range.end(), text().length()));
+  if (!IsCursorablePosition(sel.start()) || !IsCursorablePosition(sel.end()))
     return false;
-
-  size_t pos = end;
-  SelectionModel::CaretPlacement placement = SelectionModel::LEADING;
-  if (start < end) {
-    pos = IndexOfAdjacentGrapheme(end, CURSOR_BACKWARD);
-    DCHECK_LT(pos, end);
-    placement = SelectionModel::TRAILING;
-  } else if (end == text_length) {
-    SelectionModel end_selection =
-        EdgeSelectionModel(GetVisualDirectionOfLogicalEnd());
-    pos = end_selection.caret_pos();
-    placement = end_selection.caret_placement();
-  }
-  SetSelectionModel(SelectionModel(start, end, pos, placement));
+  LogicalCursorDirection affinity =
+      (sel.is_reversed() || sel.is_empty()) ? CURSOR_FORWARD : CURSOR_BACKWARD;
+  SetSelectionModel(SelectionModel(sel, affinity));
   return true;
 }
 
 bool RenderText::IsPointInSelection(const Point& point) {
-  if (EmptySelection())
+  if (selection().is_empty())
     return false;
-  // TODO(xji): should this check whether the point is inside the visual
-  // selection bounds? In case of "abcFED", if "ED" is selected, |point| points
-  // to the right half of 'c', is the point in selection?
-  size_t pos = FindCursorPosition(point).selection_end();
-  return (pos >= MinOfSelection() && pos < MaxOfSelection());
+  SelectionModel cursor = FindCursorPosition(point);
+  return RangeContainsCaret(
+      selection(), cursor.caret_pos(), cursor.caret_affinity());
 }
 
 void RenderText::ClearSelection() {
-  SelectionModel sel(selection_model());
-  sel.set_selection_start(GetCursorPosition());
-  SetSelectionModel(sel);
+  SetSelectionModel(SelectionModel(cursor_position(),
+                                   selection_model_.caret_affinity()));
 }
 
-void RenderText::SelectAll() {
-  SelectionModel sel = EdgeSelectionModel(CURSOR_RIGHT);
-  sel.set_selection_start(EdgeSelectionModel(CURSOR_LEFT).selection_start());
-  SetSelectionModel(sel);
+void RenderText::SelectAll(bool reversed) {
+  const size_t length = text().length();
+  const ui::Range all = reversed ? ui::Range(length, 0) : ui::Range(0, length);
+  const bool success = SelectRange(all);
+  DCHECK(success);
 }
 
 void RenderText::SelectWord() {
-  size_t cursor_position = GetCursorPosition();
+  if (obscured_) {
+    SelectAll(false);
+    return;
+  }
+
+  size_t cursor_pos = cursor_position();
 
   base::i18n::BreakIterator iter(text(), base::i18n::BreakIterator::BREAK_WORD);
   bool success = iter.Init();
@@ -502,24 +547,22 @@ void RenderText::SelectWord() {
   if (!success)
     return;
 
-  size_t selection_start = cursor_position;
+  size_t selection_start = cursor_pos;
   for (; selection_start != 0; --selection_start) {
     if (iter.IsStartOfWord(selection_start) ||
         iter.IsEndOfWord(selection_start))
       break;
   }
 
-  if (selection_start == cursor_position)
-    ++cursor_position;
+  if (selection_start == cursor_pos)
+    ++cursor_pos;
 
-  for (; cursor_position < text().length(); ++cursor_position) {
-    if (iter.IsEndOfWord(cursor_position) ||
-        iter.IsStartOfWord(cursor_position))
+  for (; cursor_pos < text().length(); ++cursor_pos)
+    if (iter.IsEndOfWord(cursor_pos) || iter.IsStartOfWord(cursor_pos))
       break;
-  }
 
   MoveCursorTo(selection_start, false);
-  MoveCursorTo(cursor_position, true);
+  MoveCursorTo(cursor_pos, true);
 }
 
 const ui::Range& RenderText::GetCompositionRange() const {
@@ -531,7 +574,7 @@ void RenderText::SetCompositionRange(const ui::Range& composition_range) {
         ui::Range(0, text_.length()).Contains(composition_range));
   composition_range_.set_end(composition_range.end());
   composition_range_.set_start(composition_range.start());
-  UpdateLayout();
+  ResetLayout();
 }
 
 void RenderText::ApplyStyleRange(const StyleRange& style_range) {
@@ -546,7 +589,7 @@ void RenderText::ApplyStyleRange(const StyleRange& style_range) {
 #endif
   // TODO(xji): only invalidate if font or underline changes.
   cached_bounds_and_offset_valid_ = false;
-  UpdateLayout();
+  ResetLayout();
 }
 
 void RenderText::ApplyDefaultStyle() {
@@ -555,7 +598,43 @@ void RenderText::ApplyDefaultStyle() {
   style.range.set_end(text_.length());
   style_ranges_.push_back(style);
   cached_bounds_and_offset_valid_ = false;
-  UpdateLayout();
+  ResetLayout();
+}
+
+void RenderText::SetDirectionalityMode(DirectionalityMode mode) {
+  if (mode == directionality_mode_)
+    return;
+
+  directionality_mode_ = mode;
+  text_direction_ = base::i18n::UNKNOWN_DIRECTION;
+  ResetLayout();
+}
+
+base::i18n::TextDirection RenderText::GetTextDirection() {
+  if (text_direction_ == base::i18n::UNKNOWN_DIRECTION) {
+    switch (directionality_mode_) {
+      case DIRECTIONALITY_FROM_TEXT:
+        // Derive the direction from the display text, which differs from text()
+        // in the case of obscured (password) textfields.
+        text_direction_ =
+            base::i18n::GetFirstStrongCharacterDirection(GetDisplayText());
+        break;
+      case DIRECTIONALITY_FROM_UI:
+        text_direction_ = base::i18n::IsRTL() ? base::i18n::RIGHT_TO_LEFT :
+                                                base::i18n::LEFT_TO_RIGHT;
+        break;
+      case DIRECTIONALITY_FORCE_LTR:
+        text_direction_ = base::i18n::LEFT_TO_RIGHT;
+        break;
+      case DIRECTIONALITY_FORCE_RTL:
+        text_direction_ = base::i18n::RIGHT_TO_LEFT;
+        break;
+      default:
+        NOTREACHED();
+    }
+  }
+
+  return text_direction_;
 }
 
 VisualCursorDirection RenderText::GetVisualDirectionOfLogicalEnd() {
@@ -564,25 +643,60 @@ VisualCursorDirection RenderText::GetVisualDirectionOfLogicalEnd() {
 }
 
 void RenderText::Draw(Canvas* canvas) {
-  TRACE_EVENT0("gfx", "RenderText::Draw");
-  {
-    TRACE_EVENT0("gfx", "RenderText::EnsureLayout");
-    EnsureLayout();
-  }
+  EnsureLayout();
 
-  canvas->Save();
-  canvas->ClipRect(display_rect());
+  if (clip_to_display_rect()) {
+    gfx::Rect clip_rect(display_rect());
+    clip_rect.Inset(ShadowValue::GetMargin(text_shadows_));
+
+    canvas->Save();
+    canvas->ClipRect(clip_rect);
+  }
 
   if (!text().empty())
     DrawSelection(canvas);
 
   DrawCursor(canvas);
 
-  if (!text().empty()) {
-    TRACE_EVENT0("gfx", "RenderText::Draw draw text");
+  if (!text().empty())
     DrawVisualText(canvas);
+
+  if (clip_to_display_rect())
+    canvas->Restore();
+}
+
+Rect RenderText::GetCursorBounds(const SelectionModel& caret,
+                                 bool insert_mode) {
+  EnsureLayout();
+
+  size_t caret_pos = caret.caret_pos();
+  // In overtype mode, ignore the affinity and always indicate that we will
+  // overtype the next character.
+  LogicalCursorDirection caret_affinity =
+      insert_mode ? caret.caret_affinity() : CURSOR_FORWARD;
+  int x = 0, width = 0, height = 0;
+  if (caret_pos == (caret_affinity == CURSOR_BACKWARD ? 0 : text().length())) {
+    // The caret is attached to the boundary. Always return a zero-width caret,
+    // since there is nothing to overtype.
+    Size size = GetStringSize();
+    if ((GetTextDirection() == base::i18n::RIGHT_TO_LEFT) == (caret_pos == 0))
+      x = size.width();
+    height = size.height();
+  } else {
+    size_t grapheme_start = (caret_affinity == CURSOR_FORWARD) ?
+        caret_pos : IndexOfAdjacentGrapheme(caret_pos, CURSOR_BACKWARD);
+    ui::Range xspan;
+    GetGlyphBounds(grapheme_start, &xspan, &height);
+    if (insert_mode) {
+      x = (caret_affinity == CURSOR_BACKWARD) ? xspan.end() : xspan.start();
+    } else {  // overtype mode
+      x = xspan.GetMin();
+      width = xspan.length();
+    }
   }
-  canvas->Restore();
+  height = std::min(height, display_rect().height());
+  int y = (display_rect().height() - height) / 2;
+  return Rect(ToViewPoint(Point(x, y)), Size(width, height));
 }
 
 const Rect& RenderText::GetUpdatedCursorBounds() {
@@ -590,30 +704,60 @@ const Rect& RenderText::GetUpdatedCursorBounds() {
   return cursor_bounds_;
 }
 
+size_t RenderText::IndexOfAdjacentGrapheme(size_t index,
+    LogicalCursorDirection direction) {
+  if (index > text().length())
+    return text().length();
+
+  EnsureLayout();
+
+  if (direction == CURSOR_FORWARD) {
+    while (index < text().length()) {
+      index++;
+      if (IsCursorablePosition(index))
+        return index;
+    }
+    return text().length();
+  }
+
+  while (index > 0) {
+    index--;
+    if (IsCursorablePosition(index))
+      return index;
+  }
+  return 0;
+}
+
 SelectionModel RenderText::GetSelectionModelForSelectionStart() {
-  size_t selection_start = GetSelectionStart();
-  size_t selection_end = GetCursorPosition();
-  if (selection_start < selection_end)
-    return SelectionModel(selection_start,
-                          selection_start,
-                          SelectionModel::LEADING);
-  else if (selection_start > selection_end)
-    return SelectionModel(
-        selection_start,
-        IndexOfAdjacentGrapheme(selection_start, CURSOR_BACKWARD),
-        SelectionModel::TRAILING);
-  return selection_model_;
+  const ui::Range& sel = selection();
+  if (sel.is_empty())
+    return selection_model_;
+  return SelectionModel(sel.start(),
+                        sel.is_reversed() ? CURSOR_BACKWARD : CURSOR_FORWARD);
+}
+
+void RenderText::SetTextShadows(const ShadowValues& shadows) {
+  text_shadows_ = shadows;
 }
 
 RenderText::RenderText()
     : horizontal_alignment_(base::i18n::IsRTL() ? ALIGN_RIGHT : ALIGN_LEFT),
+      directionality_mode_(DIRECTIONALITY_FROM_TEXT),
+      text_direction_(base::i18n::UNKNOWN_DIRECTION),
       cursor_enabled_(true),
       cursor_visible_(false),
       insert_mode_(true),
+      cursor_color_(kDefaultCursorColor),
+      selection_color_(kDefaultSelectionColor),
+      selection_background_focused_color_(kDefaultSelectionBackgroundColor),
+      selection_background_unfocused_color_(kDefaultSelectionBackgroundColor),
       focused_(false),
       composition_range_(ui::Range::InvalidRange()),
+      obscured_(false),
       fade_head_(false),
       fade_tail_(false),
+      background_is_transparent_(false),
+      clip_to_display_rect_(true),
       cached_bounds_and_offset_valid_(false) {
 }
 
@@ -636,16 +780,25 @@ SelectionModel RenderText::GetAdjacentSelectionModel(
   return AdjacentWordSelectionModel(current, direction);
 }
 
-void RenderText::SetSelectionModel(const SelectionModel& model) {
-  DCHECK_LE(model.selection_start(), text().length());
-  selection_model_.set_selection_start(model.selection_start());
-  DCHECK_LE(model.selection_end(), text().length());
-  selection_model_.set_selection_end(model.selection_end());
-  DCHECK_LT(model.caret_pos(), std::max<size_t>(text().length(), 1));
-  selection_model_.set_caret_pos(model.caret_pos());
-  selection_model_.set_caret_placement(model.caret_placement());
+SelectionModel RenderText::EdgeSelectionModel(
+    VisualCursorDirection direction) {
+  if (direction == GetVisualDirectionOfLogicalEnd())
+    return SelectionModel(text().length(), CURSOR_FORWARD);
+  return SelectionModel(0, CURSOR_BACKWARD);
+}
 
+void RenderText::SetSelectionModel(const SelectionModel& model) {
+  DCHECK_LE(model.selection().GetMax(), text().length());
+  selection_model_ = model;
   cached_bounds_and_offset_valid_ = false;
+}
+
+string16 RenderText::GetDisplayText() const {
+  if (!obscured_)
+    return text_;
+  size_t obscured_text_length =
+      static_cast<size_t>(ui::UTF16IndexToOffset(text_, 0, text_.length()));
+  return string16(obscured_text_length, kPasswordReplacementChar);
 }
 
 void RenderText::ApplyCompositionAndSelectionStyles(
@@ -656,17 +809,15 @@ void RenderText::ApplyCompositionAndSelectionStyles(
   if (composition_range_.IsValid() && !composition_range_.is_empty()) {
     StyleRange composition_style(default_style_);
     composition_style.underline = true;
-    composition_style.range.set_start(composition_range_.start());
-    composition_style.range.set_end(composition_range_.end());
+    composition_style.range = composition_range_;
     ApplyStyleRangeImpl(style_ranges, composition_style);
   }
   // Apply a selection style override to a copy of the style ranges.
-  if (!EmptySelection()) {
+  if (!selection().is_empty()) {
     StyleRange selection_style(default_style_);
-    selection_style.foreground = NativeTheme::instance()->GetSystemColor(
-        NativeTheme::kColorId_TextfieldSelectionColor);
-    selection_style.range.set_start(MinOfSelection());
-    selection_style.range.set_end(MaxOfSelection());
+    selection_style.foreground = selection_color_;
+    selection_style.range = ui::Range(selection().GetMin(),
+                                      selection().GetMax());
     ApplyStyleRangeImpl(style_ranges, selection_style);
   }
   // Apply replacement-mode style override to a copy of the style ranges.
@@ -679,9 +830,8 @@ void RenderText::ApplyCompositionAndSelectionStyles(
   // http://crbug.com/110109
   if (!insert_mode_ && cursor_visible() && focused()) {
     StyleRange replacement_mode_style(default_style_);
-    replacement_mode_style.foreground = NativeTheme::instance()->GetSystemColor(
-        NativeTheme::kColorId_TextfieldSelectionColor);
-    size_t cursor = GetCursorPosition();
+    replacement_mode_style.foreground = selection_color_;
+    size_t cursor = cursor_position();
     replacement_mode_style.range.set_start(cursor);
     replacement_mode_style.range.set_end(
         IndexOfAdjacentGrapheme(cursor, CURSOR_FORWARD));
@@ -705,7 +855,7 @@ Point RenderText::ToViewPoint(const Point& point) {
 }
 
 int RenderText::GetContentWidth() {
-  return GetStringWidth() + (cursor_enabled_ ? 1 : 0);
+  return GetStringSize().width() + (cursor_enabled_ ? 1 : 0);
 }
 
 Point RenderText::GetAlignmentOffset() {
@@ -718,16 +868,11 @@ Point RenderText::GetAlignmentOffset() {
   return Point();
 }
 
-Point RenderText::GetOriginForSkiaDrawing() {
+Point RenderText::GetOriginForDrawing() {
   Point origin(GetTextOrigin());
-  // TODO(msw): Establish a vertical baseline for strings of mixed font heights.
-  const Font& font = GetFont();
-  int height = font.GetHeight();
-  DCHECK_LE(height, display_rect().height());
+  const int height = GetStringSize().height();
   // Center the text vertically in the display area.
   origin.Offset(0, (display_rect().height() - height) / 2);
-  // Offset by the font size to account for Skia expecting y to be the bottom.
-  origin.Offset(0, font.GetFontSize());
   return origin;
 }
 
@@ -735,7 +880,7 @@ void RenderText::ApplyFadeEffects(internal::SkiaTextRenderer* renderer) {
   if (!fade_head() && !fade_tail())
     return;
 
-  const int text_width = GetStringWidth();
+  const int text_width = GetStringSize().width();
   const int display_width = display_rect().width();
 
   // If the text fits as-is, no need to fade.
@@ -749,7 +894,10 @@ void RenderText::ApplyFadeEffects(internal::SkiaTextRenderer* renderer) {
   bool fade_left = fade_head();
   bool fade_right = fade_tail();
   // Under RTL, |fade_right| == |fade_head|.
-  if (GetTextDirection() == base::i18n::RIGHT_TO_LEFT)
+  // TODO(asvitkine): This is currently not based on GetTextDirection() because
+  //                  RenderTextWin does not return a direction that's based on
+  //                  the text content.
+  if (horizontal_alignment() == ALIGN_RIGHT)
     std::swap(fade_left, fade_right);
 
   gfx::Rect solid_part = display_rect();
@@ -770,24 +918,36 @@ void RenderText::ApplyFadeEffects(internal::SkiaTextRenderer* renderer) {
   text_rect.Inset(GetAlignmentOffset().x(), 0, 0, 0);
 
   const SkColor color = default_style().foreground;
-  SkAutoTUnref<SkShader> shader(
-      CreateFadeShader(text_rect, left_part, right_part, color));
-  if (shader.get()) {
+  SkShader* shader = CreateFadeShader(text_rect, left_part, right_part, color);
+  SkAutoUnref auto_unref(shader);
+  if (shader) {
     // |renderer| adds its own ref. So don't |release()| it from the ref ptr.
-    renderer->SetShader(shader.get());
+    renderer->SetShader(shader, display_rect());
   }
+}
+
+void RenderText::ApplyTextShadows(internal::SkiaTextRenderer* renderer) {
+  SkDrawLooper* looper = gfx::CreateShadowDrawLooper(text_shadows_);
+  SkAutoUnref auto_unref(looper);
+  renderer->SetDrawLooper(looper);
+}
+
+// static
+bool RenderText::RangeContainsCaret(const ui::Range& range,
+                                    size_t caret_pos,
+                                    LogicalCursorDirection caret_affinity) {
+  // NB: exploits unsigned wraparound (WG14/N1124 section 6.2.5 paragraph 9).
+  size_t adjacent = (caret_affinity == CURSOR_BACKWARD) ?
+      caret_pos - 1 : caret_pos + 1;
+  return range.Contains(ui::Range(caret_pos, adjacent));
 }
 
 void RenderText::MoveCursorTo(size_t position, bool select) {
   size_t cursor = std::min(position, text().length());
-  size_t caret_pos = IndexOfAdjacentGrapheme(cursor, CURSOR_BACKWARD);
-  SelectionModel::CaretPlacement placement = (caret_pos == cursor) ?
-      SelectionModel::LEADING : SelectionModel::TRAILING;
-  size_t selection_start = select ? GetSelectionStart() : cursor;
-  if (IsCursorablePosition(cursor)) {
-    SelectionModel sel(selection_start, cursor, caret_pos, placement);
-    SetSelectionModel(sel);
-  }
+  if (IsCursorablePosition(cursor))
+    SetSelectionModel(SelectionModel(
+        ui::Range(select ? selection().start() : cursor, cursor),
+        (cursor == 0) ? CURSOR_FORWARD : CURSOR_BACKWARD));
 }
 
 void RenderText::UpdateCachedBoundsAndOffset() {
@@ -836,14 +996,11 @@ void RenderText::UpdateCachedBoundsAndOffset() {
 }
 
 void RenderText::DrawSelection(Canvas* canvas) {
-  std::vector<Rect> sel = GetSubstringBounds(
-      GetSelectionStart(), GetCursorPosition());
-  NativeTheme::ColorId color_id = focused() ?
-      NativeTheme::kColorId_TextfieldSelectionBackgroundFocused :
-      NativeTheme::kColorId_TextfieldSelectionBackgroundUnfocused;
-  SkColor color = NativeTheme::instance()->GetSystemColor(color_id);
+  const SkColor color = focused() ? selection_background_focused_color_ :
+                                    selection_background_unfocused_color_;
+  const std::vector<Rect> sel = GetSubstringBounds(selection());
   for (std::vector<Rect>::const_iterator i = sel.begin(); i < sel.end(); ++i)
-    canvas->FillRect(color, *i);
+    canvas->FillRect(*i, color);
 }
 
 void RenderText::DrawCursor(Canvas* canvas) {
@@ -852,9 +1009,9 @@ void RenderText::DrawCursor(Canvas* canvas) {
   if (cursor_enabled() && cursor_visible() && focused()) {
     const Rect& bounds = GetUpdatedCursorBounds();
     if (bounds.width() != 0)
-      canvas->FillRect(kCursorColor, bounds);
+      canvas->FillRect(bounds, cursor_color_);
     else
-      canvas->DrawRect(bounds, kCursorColor);
+      canvas->DrawRect(bounds, cursor_color_);
   }
 }
 

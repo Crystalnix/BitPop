@@ -4,7 +4,15 @@
 
 #include "chrome/browser/ui/views/collected_cookies_views.h"
 
+#include "chrome/browser/browsing_data/browsing_data_appcache_helper.h"
+#include "chrome/browser/browsing_data/browsing_data_cookie_helper.h"
+#include "chrome/browser/browsing_data/browsing_data_database_helper.h"
+#include "chrome/browser/browsing_data/browsing_data_file_system_helper.h"
+#include "chrome/browser/browsing_data/browsing_data_indexed_db_helper.h"
+#include "chrome/browser/browsing_data/browsing_data_local_storage_helper.h"
+#include "chrome/browser/browsing_data/browsing_data_server_bound_cert_helper.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
+#include "chrome/browser/content_settings/local_shared_objects_container.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/cookies_tree_model.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
@@ -12,7 +20,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/collected_cookies_infobar_delegate.h"
 #include "chrome/browser/ui/constrained_window.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/browser/ui/views/cookie_info_view.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -23,6 +31,7 @@
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
+#include "net/cookies/canonical_cookie.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/color_utils.h"
@@ -36,18 +45,24 @@
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
 
-namespace browser {
+// TODO(markusheintz): This should be removed once the native Windows tabbed
+// pane is not used anymore (http://crbug.com/138059)
+#if defined(OS_WIN) && !defined(USE_AURA)
+#include "ui/views/controls/tabbed_pane/native_tabbed_pane_win.h"
+#endif
+
+namespace chrome {
 
 // Declared in browser_dialogs.h so others don't have to depend on our header.
-void ShowCollectedCookiesDialog(gfx::NativeWindow parent_window,
-                                TabContentsWrapper* wrapper) {
+void ShowCollectedCookiesDialog(TabContents* tab_contents) {
   // Deletes itself on close.
-  new CollectedCookiesViews(wrapper);
+  new CollectedCookiesViews(tab_contents);
 }
 
-}  // namespace browser
+}  // namespace chrome
 
 namespace {
+
 // Spacing between the infobar frame and its contents.
 const int kInfobarVerticalPadding = 3;
 const int kInfobarHorizontalPadding = 8;
@@ -75,9 +90,9 @@ class InfobarView : public views::View {
         kInfobarBorderSize, border_color);
     content_->set_border(border);
 
-    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     info_image_ = new views::ImageView();
-    info_image_->SetImage(rb.GetBitmapNamed(IDR_INFO));
+    info_image_->SetImage(rb.GetImageSkiaNamed(IDR_INFO));
     label_ = new views::Label();
   }
   virtual ~InfobarView() {}
@@ -168,8 +183,8 @@ class InfobarView : public views::View {
 ///////////////////////////////////////////////////////////////////////////////
 // CollectedCookiesViews, public:
 
-CollectedCookiesViews::CollectedCookiesViews(TabContentsWrapper* wrapper)
-    : wrapper_(wrapper),
+CollectedCookiesViews::CollectedCookiesViews(TabContents* tab_contents)
+    : tab_contents_(tab_contents),
       allowed_label_(NULL),
       blocked_label_(NULL),
       allowed_cookies_tree_(NULL),
@@ -179,10 +194,11 @@ CollectedCookiesViews::CollectedCookiesViews(TabContentsWrapper* wrapper)
       for_session_blocked_button_(NULL),
       infobar_(NULL),
       status_changed_(false) {
-  TabSpecificContentSettings* content_settings = wrapper->content_settings();
+  TabSpecificContentSettings* content_settings =
+      tab_contents->content_settings();
   registrar_.Add(this, chrome::NOTIFICATION_COLLECTED_COOKIES_SHOWN,
                  content::Source<TabSpecificContentSettings>(content_settings));
-  window_ = new ConstrainedWindowViews(wrapper, this);
+  window_ = new ConstrainedWindowViews(tab_contents, this);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -207,7 +223,7 @@ void CollectedCookiesViews::DeleteDelegate() {
 
 bool CollectedCookiesViews::Cancel() {
   if (status_changed_) {
-    InfoBarTabHelper* infobar_helper = wrapper_->infobar_tab_helper();
+    InfoBarTabHelper* infobar_helper = tab_contents_->infobar_tab_helper();
     infobar_helper->AddInfoBar(
         new CollectedCookiesInfoBarDelegate(infobar_helper));
   }
@@ -287,6 +303,10 @@ void CollectedCookiesViews::Init() {
 
   layout->StartRow(0, single_column_layout_id);
   views::TabbedPane* tabbed_pane = new views::TabbedPane();
+#if defined(OS_WIN) && !defined(USE_AURA)
+  // "set_use_native_win_control" must be called before the first tab is added.
+  tabbed_pane->set_use_native_win_control(true);
+#endif
   layout->AddView(tabbed_pane);
   // NOTE: the panes need to be added after the tabbed_pane has been added to
   // its parent.
@@ -314,13 +334,16 @@ void CollectedCookiesViews::Init() {
 }
 
 views::View* CollectedCookiesViews::CreateAllowedPane() {
-  TabSpecificContentSettings* content_settings = wrapper_->content_settings();
+  TabSpecificContentSettings* content_settings =
+      tab_contents_->content_settings();
 
   // Create the controls that go into the pane.
   allowed_label_ = new views::Label(l10n_util::GetStringUTF16(
       IDS_COLLECTED_COOKIES_ALLOWED_COOKIES_LABEL));
-  allowed_cookies_tree_model_.reset(
-      content_settings->GetAllowedCookiesTreeModel());
+
+  const LocalSharedObjectsContainer& allowed_data =
+      content_settings->allowed_local_shared_objects();
+  allowed_cookies_tree_model_ = allowed_data.CreateCookiesTreeModel();
   allowed_cookies_tree_ = new views::TreeView();
   allowed_cookies_tree_->SetModel(allowed_cookies_tree_model_.get());
   allowed_cookies_tree_->SetRootShown(false);
@@ -363,9 +386,10 @@ views::View* CollectedCookiesViews::CreateAllowedPane() {
 }
 
 views::View* CollectedCookiesViews::CreateBlockedPane() {
-  TabSpecificContentSettings* content_settings = wrapper_->content_settings();
+  TabSpecificContentSettings* content_settings =
+      tab_contents_->content_settings();
 
-  PrefService* prefs = wrapper_->profile()->GetPrefs();
+  PrefService* prefs = tab_contents_->profile()->GetPrefs();
 
   // Create the controls that go into the pane.
   blocked_label_ = new views::Label(
@@ -375,8 +399,9 @@ views::View* CollectedCookiesViews::CreateBlockedPane() {
               IDS_COLLECTED_COOKIES_BLOCKED_COOKIES_LABEL));
   blocked_label_->SetMultiLine(true);
   blocked_label_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
-  blocked_cookies_tree_model_.reset(
-      content_settings->GetBlockedCookiesTreeModel());
+  const LocalSharedObjectsContainer& blocked_data =
+      content_settings->blocked_local_shared_objects();
+  blocked_cookies_tree_model_ = blocked_data.CreateCookiesTreeModel();
   blocked_cookies_tree_ = new views::TreeView();
   blocked_cookies_tree_->SetModel(blocked_cookies_tree_model_.get());
   blocked_cookies_tree_->SetRootShown(false);
@@ -434,8 +459,8 @@ void CollectedCookiesViews::EnableControls() {
   if (node) {
     CookieTreeNode* cookie_node = static_cast<CookieTreeNode*>(node);
     if (cookie_node->GetDetailedInfo().node_type ==
-        CookieTreeNode::DetailedInfo::TYPE_ORIGIN) {
-      enable_allowed_buttons = static_cast<CookieTreeOriginNode*>(
+        CookieTreeNode::DetailedInfo::TYPE_HOST) {
+      enable_allowed_buttons = static_cast<CookieTreeHostNode*>(
           cookie_node)->CanCreateContentException();
     }
   }
@@ -446,8 +471,8 @@ void CollectedCookiesViews::EnableControls() {
   if (node) {
     CookieTreeNode* cookie_node = static_cast<CookieTreeNode*>(node);
     if (cookie_node->GetDetailedInfo().node_type ==
-        CookieTreeNode::DetailedInfo::TYPE_ORIGIN) {
-      enable_blocked_buttons = static_cast<CookieTreeOriginNode*>(
+        CookieTreeNode::DetailedInfo::TYPE_HOST) {
+      enable_blocked_buttons = static_cast<CookieTreeHostNode*>(
           cookie_node)->CanCreateContentException();
     }
   }
@@ -478,12 +503,12 @@ void CollectedCookiesViews::ShowCookieInfo() {
 
 void CollectedCookiesViews::AddContentException(views::TreeView* tree_view,
                                                 ContentSetting setting) {
-  CookieTreeOriginNode* origin_node =
-      static_cast<CookieTreeOriginNode*>(tree_view->GetSelectedNode());
-  Profile* profile = wrapper_->profile();
-  origin_node->CreateContentException(CookieSettings::GetForProfile(profile),
-                                      setting);
-  infobar_->UpdateVisibility(true, setting, origin_node->GetTitle());
+  CookieTreeHostNode* host_node =
+      static_cast<CookieTreeHostNode*>(tree_view->GetSelectedNode());
+  Profile* profile = tab_contents_->profile();
+  host_node->CreateContentException(
+      CookieSettings::Factory::GetForProfile(profile), setting);
+  infobar_->UpdateVisibility(true, setting, host_node->GetTitle());
   status_changed_ = true;
 }
 

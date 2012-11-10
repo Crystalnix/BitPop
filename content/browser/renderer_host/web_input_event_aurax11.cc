@@ -38,7 +38,9 @@
 #include "content/browser/renderer_host/web_input_event_aura.h"
 
 #include <cstdlib>
+#include <X11/keysym.h>
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 
 #include "base/event_types.h"
 #include "base/logging.h"
@@ -56,6 +58,32 @@ namespace {
 
 // This matches Firefox behavior.
 const int kPixelsPerTick = 53;
+
+// Normalizes event.flags() to make it Windows/Mac compatible. Since the way
+// of setting modifier mask on X is very different than Windows/Mac as shown
+// in http://crbug.com/127142#c8, the normalization is necessary.
+int NormalizeEventFlags(const aura::KeyEvent& event) {
+  int mask = 0;
+  switch (event.key_code()) {
+    case ui::VKEY_CONTROL:
+      mask = ui::EF_CONTROL_DOWN;
+      break;
+    case ui::VKEY_SHIFT:
+      mask = ui::EF_SHIFT_DOWN;
+      break;
+    case ui::VKEY_MENU:
+      mask = ui::EF_ALT_DOWN;
+      break;
+    case ui::VKEY_CAPITAL:
+      mask = ui::EF_CAPS_LOCK_DOWN;
+      break;
+    default:
+      return event.flags();
+  }
+  if (event.type() == ui::ET_KEY_PRESSED)
+    return event.flags() | mask;
+  return event.flags() & ~mask;
+}
 
 int EventFlagsToWebEventModifiers(int flags) {
   int modifiers = 0;
@@ -77,30 +105,34 @@ int EventFlagsToWebEventModifiers(int flags) {
   return modifiers;
 }
 
-int XStateToWebEventModifiers(unsigned int state) {
-  int modifiers = 0;
-  if (state & ShiftMask)
-    modifiers |= WebKit::WebInputEvent::ShiftKey;
-  if (state & ControlMask)
-    modifiers |= WebKit::WebInputEvent::ControlKey;
-  if (state & Mod1Mask)
-    modifiers |= WebKit::WebInputEvent::AltKey;
-  // TODO(beng): MetaKey/META_MASK
-  if (state & Button1Mask)
-    modifiers |= WebKit::WebInputEvent::LeftButtonDown;
-  if (state & Button2Mask)
-    modifiers |= WebKit::WebInputEvent::MiddleButtonDown;
-  if (state & Button3Mask)
-    modifiers |= WebKit::WebInputEvent::RightButtonDown;
-  if (state & LockMask)
-    modifiers |= WebKit::WebInputEvent::CapsLockOn;
-  if (state & Mod2Mask)
-    modifiers |= WebKit::WebInputEvent::NumLockOn;
-  return modifiers;
-}
-
 int XKeyEventToWindowsKeyCode(XKeyEvent* event) {
-  return ui::KeyboardCodeFromXKeyEvent((XEvent*)event);
+  int windows_key_code =
+      ui::KeyboardCodeFromXKeyEvent(reinterpret_cast<XEvent*>(event));
+  if (windows_key_code == ui::VKEY_SHIFT ||
+      windows_key_code == ui::VKEY_CONTROL ||
+      windows_key_code == ui::VKEY_MENU) {
+    // To support DOM3 'location' attribute, we need to lookup an X KeySym and
+    // set ui::VKEY_[LR]XXX instead of ui::VKEY_XXX.
+    KeySym keysym = XK_VoidSymbol;
+    XLookupString(event, NULL, 0, &keysym, NULL);
+    switch (keysym) {
+      case XK_Shift_L:
+        return ui::VKEY_LSHIFT;
+      case XK_Shift_R:
+        return ui::VKEY_RSHIFT;
+      case XK_Control_L:
+        return ui::VKEY_LCONTROL;
+      case XK_Control_R:
+        return ui::VKEY_RCONTROL;
+      case XK_Meta_L:
+      case XK_Alt_L:
+        return ui::VKEY_LMENU;
+      case XK_Meta_R:
+      case XK_Alt_R:
+        return ui::VKEY_RMENU;
+    }
+  }
+  return windows_key_code;
 }
 
 // From
@@ -250,6 +282,32 @@ WebKit::WebMouseWheelEvent MakeWebMouseWheelEventFromAuraEvent(
   return webkit_event;
 }
 
+WebKit::WebGestureEvent MakeWebGestureEventFromAuraEvent(
+    aura::ScrollEvent* event) {
+  WebKit::WebGestureEvent webkit_event;
+
+  switch (event->type()) {
+    case ui::ET_SCROLL:
+      webkit_event.type = WebKit::WebInputEvent::GestureScrollUpdate;
+      break;
+    case ui::ET_SCROLL_FLING_START:
+      webkit_event.type = WebKit::WebInputEvent::GestureFlingStart;
+      break;
+    case ui::ET_SCROLL_FLING_CANCEL:
+      webkit_event.type = WebKit::WebInputEvent::GestureFlingCancel;
+      break;
+    default:
+      NOTREACHED() << "Unknown gesture type: " << event->type();
+  }
+
+  webkit_event.modifiers = EventFlagsToWebEventModifiers(event->flags());
+  webkit_event.timeStampSeconds = event->time_stamp().InSecondsF();
+  webkit_event.deltaX = event->x_offset();
+  webkit_event.deltaY = event->y_offset();
+
+  return webkit_event;
+}
+
 WebKit::WebKeyboardEvent MakeWebKeyboardEventFromAuraEvent(
     aura::KeyEvent* event) {
   base::NativeEvent native_event = event->native_event();
@@ -257,7 +315,8 @@ WebKit::WebKeyboardEvent MakeWebKeyboardEventFromAuraEvent(
   XKeyEvent* native_key_event = &native_event->xkey;
 
   webkit_event.timeStampSeconds = event->time_stamp().InSecondsF();
-  webkit_event.modifiers = XStateToWebEventModifiers(native_key_event->state);
+  webkit_event.modifiers =
+      EventFlagsToWebEventModifiers(NormalizeEventFlags(*event));
 
   switch (native_event->type) {
     case KeyPress:
@@ -305,6 +364,7 @@ WebKit::WebGestureEvent MakeWebGestureEventFromAuraEvent(
   switch (event->type()) {
     case ui::ET_GESTURE_TAP:
       gesture_event.type = WebKit::WebInputEvent::GestureTap;
+      gesture_event.deltaX = event->details().tap_count();
       break;
     case ui::ET_GESTURE_TAP_DOWN:
       gesture_event.type = WebKit::WebInputEvent::GestureTapDown;
@@ -317,16 +377,46 @@ WebKit::WebGestureEvent MakeWebGestureEventFromAuraEvent(
       break;
     case ui::ET_GESTURE_SCROLL_UPDATE:
       gesture_event.type = WebKit::WebInputEvent::GestureScrollUpdate;
+      gesture_event.deltaX = event->details().scroll_x();
+      gesture_event.deltaY = event->details().scroll_y();
       break;
     case ui::ET_GESTURE_SCROLL_END:
       gesture_event.type = WebKit::WebInputEvent::GestureScrollEnd;
+      break;
+    case ui::ET_GESTURE_PINCH_BEGIN:
+      gesture_event.type = WebKit::WebInputEvent::GesturePinchBegin;
+      break;
+    case ui::ET_GESTURE_PINCH_UPDATE:
+      gesture_event.type = WebKit::WebInputEvent::GesturePinchUpdate;
+      gesture_event.deltaX = event->details().scale();
+      break;
+    case ui::ET_GESTURE_PINCH_END:
+      gesture_event.type = WebKit::WebInputEvent::GesturePinchEnd;
+      break;
+    case ui::ET_SCROLL_FLING_START:
+      gesture_event.type = WebKit::WebInputEvent::GestureFlingStart;
+      gesture_event.deltaX = event->details().velocity_x();
+      gesture_event.deltaY = event->details().velocity_y();
+      break;
+    case ui::ET_SCROLL_FLING_CANCEL:
+      gesture_event.type = WebKit::WebInputEvent::GestureFlingCancel;
+      break;
+    case ui::ET_GESTURE_LONG_PRESS:
+      gesture_event.type = WebKit::WebInputEvent::GestureLongPress;
+      break;
+    case ui::ET_GESTURE_TWO_FINGER_TAP:
+      gesture_event.type = WebKit::WebInputEvent::GestureTwoFingerTap;
+      break;
+    case ui::ET_GESTURE_BEGIN:
+    case ui::ET_GESTURE_END:
+    case ui::ET_GESTURE_MULTIFINGER_SWIPE:
       break;
     default:
       NOTREACHED() << "Unknown gesture type: " << event->type();
   }
 
-  gesture_event.deltaX = event->delta_x();
-  gesture_event.deltaY = event->delta_y();
+  gesture_event.boundingBox = event->details().bounding_box();
+  gesture_event.modifiers = EventFlagsToWebEventModifiers(event->flags());
 
   return gesture_event;
 }
@@ -365,8 +455,9 @@ WebKit::WebTouchPoint* UpdateWebTouchEventFromAuraEvent(
   if (!point)
     return NULL;
 
-  point->radiusX = event->radius_x();
-  point->radiusY = event->radius_y();
+  // The spec requires the radii values to be positive (and 1 when unknown).
+  point->radiusX = std::max(1.f, event->radius_x());
+  point->radiusY = std::max(1.f, event->radius_y());
   point->rotationAngle = event->rotation_angle();
   point->force = event->force();
 
@@ -382,9 +473,9 @@ WebKit::WebTouchPoint* UpdateWebTouchEventFromAuraEvent(
   point->position.x = event->x();
   point->position.y = event->y();
 
-  // TODO(sad): Convert to screen coordinates.
-  point->screenPosition.x = point->position.x;
-  point->screenPosition.y = point->position.y;
+  const gfx::Point root_point = event->root_location();
+  point->screenPosition.x = root_point.x();
+  point->screenPosition.y = root_point.y();
 
   // Mark the rest of the points as stationary.
   for (unsigned i = 0; i < web_event->touchesLength; ++i) {

@@ -13,23 +13,28 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/extension_event_router_forwarder.h"
+#include "chrome/browser/extensions/event_router_forwarder.h"
+#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/test/base/test_browser_window.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_pref_service.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -93,7 +98,7 @@ class ProfileManagerTest : public testing::Test {
 
   ProfileManagerTest()
       : local_state_(static_cast<TestingBrowserProcess*>(g_browser_process)),
-        extension_event_router_forwarder_(new ExtensionEventRouterForwarder),
+        extension_event_router_forwarder_(new extensions::EventRouterForwarder),
         ui_thread_(BrowserThread::UI, &message_loop_),
         db_thread_(BrowserThread::DB, &message_loop_),
         file_thread_(BrowserThread::FILE, &message_loop_),
@@ -134,7 +139,7 @@ class ProfileManagerTest : public testing::Test {
   // The path to temporary directory used to contain the test operations.
   ScopedTempDir temp_dir_;
   ScopedTestingLocalState local_state_;
-  scoped_refptr<ExtensionEventRouterForwarder>
+  scoped_refptr<extensions::EventRouterForwarder>
       extension_event_router_forwarder_;
 
   MessageLoopForUI message_loop_;
@@ -215,13 +220,15 @@ TEST_F(ProfileManagerTest, CreateAndUseTwoProfiles) {
 
   // Force lazy-init of some profile services to simulate use.
   profile1->CreateHistoryService(true, false);
-  EXPECT_TRUE(profile1->GetHistoryService(Profile::EXPLICIT_ACCESS));
+  EXPECT_TRUE(HistoryServiceFactory::GetForProfile(profile1,
+                                                   Profile::EXPLICIT_ACCESS));
   profile1->CreateBookmarkModel(true);
-  EXPECT_TRUE(profile1->GetBookmarkModel());
+  EXPECT_TRUE(BookmarkModelFactory::GetForProfile(profile1));
   profile2->CreateBookmarkModel(true);
-  EXPECT_TRUE(profile2->GetBookmarkModel());
+  EXPECT_TRUE(BookmarkModelFactory::GetForProfile(profile2));
   profile2->CreateHistoryService(true, false);
-  EXPECT_TRUE(profile2->GetHistoryService(Profile::EXPLICIT_ACCESS));
+  EXPECT_TRUE(HistoryServiceFactory::GetForProfile(profile2,
+                                                   Profile::EXPLICIT_ACCESS));
 
   // Make sure any pending tasks run before we destroy the profiles.
   message_loop_.RunAllPending();
@@ -249,7 +256,7 @@ TEST_F(ProfileManagerTest, DISABLED_CreateProfileAsync) {
 
   g_browser_process->profile_manager()->CreateProfileAsync(dest_path,
       base::Bind(&MockObserver::OnProfileCreated,
-                 base::Unretained(&mock_observer)));
+                 base::Unretained(&mock_observer)), string16(), string16());
 
   message_loop_.RunAllPending();
 }
@@ -280,13 +287,13 @@ TEST_F(ProfileManagerTest, CreateProfileAsyncMultipleRequests) {
 
   profile_manager->CreateProfileAsync(dest_path,
       base::Bind(&MockObserver::OnProfileCreated,
-                 base::Unretained(&mock_observer1)));
+                 base::Unretained(&mock_observer1)), string16(), string16());
   profile_manager->CreateProfileAsync(dest_path,
       base::Bind(&MockObserver::OnProfileCreated,
-                 base::Unretained(&mock_observer2)));
+                 base::Unretained(&mock_observer2)), string16(), string16());
   profile_manager->CreateProfileAsync(dest_path,
       base::Bind(&MockObserver::OnProfileCreated,
-                 base::Unretained(&mock_observer3)));
+                 base::Unretained(&mock_observer3)), string16(), string16());
 
   message_loop_.RunAllPending();
 }
@@ -305,10 +312,10 @@ TEST_F(ProfileManagerTest, CreateProfilesAsync) {
 
   profile_manager->CreateProfileAsync(dest_path1,
       base::Bind(&MockObserver::OnProfileCreated,
-                 base::Unretained(&mock_observer)));
+                 base::Unretained(&mock_observer)), string16(), string16());
   profile_manager->CreateProfileAsync(dest_path2,
       base::Bind(&MockObserver::OnProfileCreated,
-                 base::Unretained(&mock_observer)));
+                 base::Unretained(&mock_observer)), string16(), string16());
 
   message_loop_.RunAllPending();
 }
@@ -384,6 +391,8 @@ TEST_F(ProfileManagerTest, InitProfileInfoCacheForAProfile) {
             cache.GetAvatarIconIndexOfProfileAtIndex(profile_index));
 }
 
+#if !defined(OS_ANDROID)
+// There's no Browser object on Android.
 TEST_F(ProfileManagerTest, LastOpenedProfiles) {
   FilePath dest_path1 = temp_dir_.path();
   dest_path1 = dest_path1.Append(FILE_PATH_LITERAL("New Profile 1"));
@@ -407,14 +416,16 @@ TEST_F(ProfileManagerTest, LastOpenedProfiles) {
   ASSERT_EQ(0U, last_opened_profiles.size());
 
   // Create a browser for profile1.
-  scoped_ptr<Browser> browser1a(new Browser(Browser::TYPE_TABBED, profile1));
+  scoped_ptr<Browser> browser1a(
+      chrome::CreateBrowserWithTestWindowForProfile(profile1));
 
   last_opened_profiles = profile_manager->GetLastOpenedProfiles();
   ASSERT_EQ(1U, last_opened_profiles.size());
   EXPECT_EQ(profile1, last_opened_profiles[0]);
 
   // And for profile2.
-  scoped_ptr<Browser> browser2(new Browser(Browser::TYPE_TABBED, profile2));
+  scoped_ptr<Browser> browser2(
+      chrome::CreateBrowserWithTestWindowForProfile(profile2));
 
   last_opened_profiles = profile_manager->GetLastOpenedProfiles();
   ASSERT_EQ(2U, last_opened_profiles.size());
@@ -422,7 +433,8 @@ TEST_F(ProfileManagerTest, LastOpenedProfiles) {
   EXPECT_EQ(profile2, last_opened_profiles[1]);
 
   // Adding more browsers doesn't change anything.
-  scoped_ptr<Browser> browser1b(new Browser(Browser::TYPE_TABBED, profile1));
+  scoped_ptr<Browser> browser1b(
+      chrome::CreateBrowserWithTestWindowForProfile(profile1));
   last_opened_profiles = profile_manager->GetLastOpenedProfiles();
   ASSERT_EQ(2U, last_opened_profiles.size());
   EXPECT_EQ(profile1, last_opened_profiles[0]);
@@ -464,10 +476,12 @@ TEST_F(ProfileManagerTest, LastOpenedProfilesAtShutdown) {
   ASSERT_TRUE(profile2);
 
   // Create a browser for profile1.
-  scoped_ptr<Browser> browser1(new Browser(Browser::TYPE_TABBED, profile1));
+  scoped_ptr<Browser> browser1(
+      chrome::CreateBrowserWithTestWindowForProfile(profile1));
 
   // And for profile2.
-  scoped_ptr<Browser> browser2(new Browser(Browser::TYPE_TABBED, profile2));
+  scoped_ptr<Browser> browser2(
+      chrome::CreateBrowserWithTestWindowForProfile(profile2));
 
   std::vector<Profile*> last_opened_profiles =
       profile_manager->GetLastOpenedProfiles();
@@ -477,7 +491,7 @@ TEST_F(ProfileManagerTest, LastOpenedProfilesAtShutdown) {
 
   // Simulate a shutdown.
   content::NotificationService::current()->Notify(
-      content::NOTIFICATION_APP_EXITING,
+      chrome::NOTIFICATION_CLOSE_ALL_BROWSERS_REQUEST,
       content::NotificationService::AllSources(),
       content::NotificationService::NoDetails());
 
@@ -501,34 +515,40 @@ TEST_F(ProfileManagerTest, LastOpenedProfilesDoesNotContainIncognito) {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
 
   // Successfully create the profiles.
-  Profile* profile1 = profile_manager->GetProfile(dest_path1);
+  TestingProfile* profile1 =
+      static_cast<TestingProfile*>(profile_manager->GetProfile(dest_path1));
   ASSERT_TRUE(profile1);
 
-  TestingProfile* profile2 =
-      static_cast<TestingProfile*>(profile_manager->GetProfile(dest_path2));
+  // incognito profiles should not be managed by the profile manager but by the
+  // original profile.
+  TestingProfile* profile2 = new TestingProfile();
   ASSERT_TRUE(profile2);
   profile2->set_incognito(true);
+  profile1->SetOffTheRecordProfile(profile2);
 
   std::vector<Profile*> last_opened_profiles =
       profile_manager->GetLastOpenedProfiles();
   ASSERT_EQ(0U, last_opened_profiles.size());
 
   // Create a browser for profile1.
-  scoped_ptr<Browser> browser1(new Browser(Browser::TYPE_TABBED, profile1));
+  scoped_ptr<Browser> browser1(
+      chrome::CreateBrowserWithTestWindowForProfile(profile1));
 
   last_opened_profiles = profile_manager->GetLastOpenedProfiles();
   ASSERT_EQ(1U, last_opened_profiles.size());
   EXPECT_EQ(profile1, last_opened_profiles[0]);
 
   // And for profile2.
-  scoped_ptr<Browser> browser2a(new Browser(Browser::TYPE_TABBED, profile2));
+  scoped_ptr<Browser> browser2a(
+      chrome::CreateBrowserWithTestWindowForProfile(profile2));
 
   last_opened_profiles = profile_manager->GetLastOpenedProfiles();
   ASSERT_EQ(1U, last_opened_profiles.size());
   EXPECT_EQ(profile1, last_opened_profiles[0]);
 
   // Adding more browsers doesn't change anything.
-  scoped_ptr<Browser> browser2b(new Browser(Browser::TYPE_TABBED, profile1));
+  scoped_ptr<Browser> browser2b(
+      chrome::CreateBrowserWithTestWindowForProfile(profile1));
   last_opened_profiles = profile_manager->GetLastOpenedProfiles();
   ASSERT_EQ(1U, last_opened_profiles.size());
   EXPECT_EQ(profile1, last_opened_profiles[0]);
@@ -548,3 +568,4 @@ TEST_F(ProfileManagerTest, LastOpenedProfilesDoesNotContainIncognito) {
   last_opened_profiles = profile_manager->GetLastOpenedProfiles();
   ASSERT_EQ(0U, last_opened_profiles.size());
 }
+#endif  // !defined(OS_ANDROID)

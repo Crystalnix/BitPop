@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,13 +10,14 @@
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/resource.h"
 #include "ppapi/shared_impl/resource_tracker.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_input_event_api.h"
 
 using ppapi::thunk::EnterInstance;
-using ppapi::thunk::EnterResource;
+using ppapi::thunk::EnterResourceNoLock;
 using ppapi::thunk::PPB_InputEvent_API;
 
 namespace ppapi {
@@ -27,6 +28,7 @@ namespace {
 PP_Bool ReadImageData(PP_Resource graphics_2d,
                       PP_Resource image,
                       const PP_Point* top_left) {
+  ProxyAutoLock lock;
   Resource* image_object =
       PpapiGlobals::Get()->GetResourceTracker()->GetResource(image);
   if (!image_object)
@@ -50,17 +52,18 @@ PP_Bool ReadImageData(PP_Resource graphics_2d,
 }
 
 void RunMessageLoop(PP_Instance instance) {
-  bool old_state = MessageLoop::current()->NestableTasksAllowed();
-  MessageLoop::current()->SetNestableTasksAllowed(true);
+  MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
+  // TODO(dmichael): We should probably assert that this is the main thread.
   MessageLoop::current()->Run();
-  MessageLoop::current()->SetNestableTasksAllowed(old_state);
 }
 
 void QuitMessageLoop(PP_Instance instance) {
+  // TODO(dmichael): We should probably assert that this is the main thread.
   MessageLoop::current()->QuitNow();
 }
 
 uint32_t GetLiveObjectsForInstance(PP_Instance instance_id) {
+  ProxyAutoLock lock;
   PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance_id);
   if (!dispatcher)
     return static_cast<uint32_t>(-1);
@@ -76,10 +79,11 @@ PP_Bool IsOutOfProcess() {
 }
 
 void SimulateInputEvent(PP_Instance instance_id, PP_Resource input_event) {
+  ProxyAutoLock lock;
   PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance_id);
   if (!dispatcher)
     return;
-  EnterResource<PPB_InputEvent_API> enter(input_event, false);
+  EnterResourceNoLock<PPB_InputEvent_API> enter(input_event, false);
   if (enter.failed())
     return;
 
@@ -99,6 +103,7 @@ PP_Var GetDocumentURL(PP_Instance instance, PP_URLComponents_Dev* components) {
 // host-side tracker when running out-of-process, to make sure the proxy does
 // not leak host-side vars.
 uint32_t GetLiveVars(PP_Var live_vars[], uint32_t array_size) {
+  ProxyAutoLock lock;
   std::vector<PP_Var> vars =
       PpapiGlobals::Get()->GetVarTracker()->GetLiveVars();
   for (size_t i = 0u;
@@ -189,9 +194,7 @@ void PPB_Testing_Proxy::OnMsgSimulateInputEvent(
     PP_Instance instance,
     const InputEventData& input_event) {
   scoped_refptr<PPB_InputEvent_Shared> input_event_impl(
-      new PPB_InputEvent_Shared(PPB_InputEvent_Shared::InitAsProxy(),
-                                instance,
-                                input_event));
+      new PPB_InputEvent_Shared(OBJECT_IS_PROXY, instance, input_event));
   ppb_testing_impl_->SimulateInputEvent(instance,
                                         input_event_impl->pp_resource());
 }

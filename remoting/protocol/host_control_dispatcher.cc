@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 #include "remoting/base/constants.h"
 #include "remoting/proto/control.pb.h"
 #include "remoting/proto/internal.pb.h"
-#include "remoting/protocol/buffered_socket_writer.h"
+#include "remoting/protocol/clipboard_stub.h"
 #include "remoting/protocol/host_stub.h"
 #include "remoting/protocol/util.h"
 
@@ -18,32 +18,49 @@ namespace protocol {
 
 HostControlDispatcher::HostControlDispatcher()
     : ChannelDispatcherBase(kControlChannelName),
-      host_stub_(NULL),
-      writer_(new BufferedSocketWriter(base::MessageLoopProxy::current())) {
+      clipboard_stub_(NULL),
+      host_stub_(NULL) {
 }
 
 HostControlDispatcher::~HostControlDispatcher() {
-  writer_->Close();
+  writer_.Close();
 }
 
 void HostControlDispatcher::OnInitialized() {
   reader_.Init(channel(), base::Bind(
       &HostControlDispatcher::OnMessageReceived, base::Unretained(this)));
-  writer_->Init(channel(), BufferedSocketWriter::WriteFailedCallback());
+  writer_.Init(channel(), BufferedSocketWriter::WriteFailedCallback());
+}
 
-  // Write legacy BeginSession message.
-  // TODO(sergeyu): Remove it. See http://crbug.com/104670 .
-  protocol::ControlMessage message;
-  message.mutable_begin_session_deprecated()->mutable_login_status()->
-      set_success(true);
-  writer_->Write(SerializeAndFrameMessage(message), base::Closure());
+void HostControlDispatcher::InjectClipboardEvent(const ClipboardEvent& event) {
+  ControlMessage message;
+  message.mutable_clipboard_event()->CopyFrom(event);
+  writer_.Write(SerializeAndFrameMessage(message), base::Closure());
+}
+
+void HostControlDispatcher::SetCursorShape(
+    const CursorShapeInfo& cursor_shape) {
+  ControlMessage message;
+  message.mutable_cursor_shape()->CopyFrom(cursor_shape);
+  writer_.Write(SerializeAndFrameMessage(message), base::Closure());
 }
 
 void HostControlDispatcher::OnMessageReceived(
-    ControlMessage* message, const base::Closure& done_task) {
+    scoped_ptr<ControlMessage> message, const base::Closure& done_task) {
+  DCHECK(clipboard_stub_);
   DCHECK(host_stub_);
-  LOG(WARNING) << "Unknown control message received.";
-  done_task.Run();
+
+  base::ScopedClosureRunner done_runner(done_task);
+
+  if (message->has_clipboard_event()) {
+    clipboard_stub_->InjectClipboardEvent(message->clipboard_event());
+  } else if (message->has_client_dimensions()) {
+    host_stub_->NotifyClientDimensions(message->client_dimensions());
+  } else if (message->has_video_control()) {
+    host_stub_->ControlVideo(message->video_control());
+  } else {
+    LOG(WARNING) << "Unknown control message received.";
+  }
 }
 
 }  // namespace protocol

@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_RENDERER_HOST_GTK_IM_CONTEXT_WRAPPER_H_
 #define CONTENT_BROWSER_RENDERER_HOST_GTK_IM_CONTEXT_WRAPPER_H_
-#pragma once
 
 #include <gdk/gdk.h>
 #include <pango/pango-attributes.h>
@@ -17,14 +16,16 @@
 #include "ui/base/ime/composition_text.h"
 #include "ui/base/ime/text_input_type.h"
 
+typedef struct _GtkIMContext GtkIMContext;
+typedef struct _GtkWidget GtkWidget;
+
 namespace gfx {
 class Rect;
 }
 
+namespace content {
 class RenderWidgetHostViewGtk;
 struct NativeWebKeyboardEvent;
-typedef struct _GtkIMContext GtkIMContext;
-typedef struct _GtkWidget GtkWidget;
 
 // This class is a convenience wrapper for GtkIMContext.
 // It creates and manages two GtkIMContext instances, one is GtkIMMulticontext,
@@ -52,11 +53,7 @@ class GtkIMContextWrapper {
   void OnFocusOut();
   bool is_focused() const { return is_focused_; }
 
-#if !defined(TOOLKIT_VIEWS)
-  // Not defined for views because the views context menu doesn't
-  // implement input methods yet.
   GtkWidget* BuildInputMethodsGtkMenu();
-#endif
 
   void CancelComposition();
 
@@ -198,5 +195,7 @@ class GtkIMContextWrapper {
 
   DISALLOW_COPY_AND_ASSIGN(GtkIMContextWrapper);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_GTK_IM_CONTEXT_WRAPPER_H_

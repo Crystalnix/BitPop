@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,14 +20,15 @@
 #include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/plugin_var_serialization_rules.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "ppapi/proxy/ppb_cursor_control_proxy.h"
-#include "ppapi/proxy/ppb_font_proxy.h"
 #include "ppapi/proxy/ppb_instance_proxy.h"
 #include "ppapi/proxy/ppp_class_proxy.h"
 #include "ppapi/proxy/resource_creation_proxy.h"
+#include "ppapi/proxy/resource_message_params.h"
+#include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/resource.h"
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && !defined(OS_NACL)
 #include "base/eintr_wrapper.h"
 #include "ipc/ipc_channel_posix.h"
 #endif
@@ -46,23 +47,23 @@ DispatcherSet* g_live_dispatchers = NULL;
 }  // namespace
 
 InstanceData::InstanceData()
-    : flash_fullscreen(PP_FALSE),
-      mouse_lock_callback(PP_BlockUntilComplete()) {
+    : flash_fullscreen(PP_FALSE) {
 }
 
 InstanceData::~InstanceData() {
   // Run any pending mouse lock callback to prevent leaks.
-  if (mouse_lock_callback.func)
-    PP_RunAndClearCompletionCallback(&mouse_lock_callback, PP_ERROR_ABORTED);
+  if (mouse_lock_callback)
+    mouse_lock_callback->Abort();
 }
 
-PluginDispatcher::PluginDispatcher(base::ProcessHandle remote_process_handle,
-                                   GetInterfaceFunc get_interface)
-    : Dispatcher(remote_process_handle, get_interface),
+PluginDispatcher::PluginDispatcher(PP_GetInterface_Func get_interface,
+                                   bool incognito)
+    : Dispatcher(get_interface),
       plugin_delegate_(NULL),
       received_preferences_(false),
-      plugin_dispatcher_id_(0) {
-  SetSerializationRules(new PluginVarSerializationRules);
+      plugin_dispatcher_id_(0),
+      incognito_(incognito) {
+  SetSerializationRules(new PluginVarSerializationRules(AsWeakPtr()));
 
   if (!g_live_dispatchers)
     g_live_dispatchers = new DispatcherSet;
@@ -164,24 +165,38 @@ bool PluginDispatcher::Send(IPC::Message* msg) {
                "Class", IPC_MESSAGE_ID_CLASS(msg->type()),
                "Line", IPC_MESSAGE_ID_LINE(msg->type()));
   // We always want plugin->renderer messages to arrive in-order. If some sync
-  // and some async messages are send in response to a synchronous
+  // and some async messages are sent in response to a synchronous
   // renderer->plugin call, the sync reply will be processed before the async
   // reply, and everything will be confused.
   //
   // Allowing all async messages to unblock the renderer means more reentrancy
   // there but gives correct ordering.
-  msg->set_unblock(true);
+  //
+  // We don't want reply messages to unblock however, as they will potentially
+  // end up on the wrong queue - see crbug.com/122443
+  if (!msg->is_reply())
+    msg->set_unblock(true);
+  if (msg->is_sync()) {
+    // Synchronous messages might be re-entrant, so we need to drop the lock.
+    ProxyAutoUnlock unlock;
+    return Dispatcher::Send(msg);
+  }
   return Dispatcher::Send(msg);
 }
 
 bool PluginDispatcher::OnMessageReceived(const IPC::Message& msg) {
+  // We need to grab the proxy lock to ensure that we don't collide with the
+  // plugin making pepper calls on a different thread.
+  ProxyAutoLock lock;
   TRACE_EVENT2("ppapi proxy", "PluginDispatcher::OnMessageReceived",
                "Class", IPC_MESSAGE_ID_CLASS(msg.type()),
                "Line", IPC_MESSAGE_ID_LINE(msg.type()));
+
   if (msg.routing_id() == MSG_ROUTING_CONTROL) {
     // Handle some plugin-specific control messages.
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(PluginDispatcher, msg)
+      IPC_MESSAGE_HANDLER(PpapiPluginMsg_ResourceReply, OnMsgResourceReply)
       IPC_MESSAGE_HANDLER(PpapiMsg_SupportsInterface, OnMsgSupportsInterface)
       IPC_MESSAGE_HANDLER(PpapiMsg_SetPreferences, OnMsgSetPreferences)
       IPC_MESSAGE_UNHANDLED(handled = false);
@@ -232,8 +247,14 @@ InstanceData* PluginDispatcher::GetInstanceData(PP_Instance instance) {
   return (it == instance_map_.end()) ? NULL : &it->second;
 }
 
-FunctionGroupBase* PluginDispatcher::GetFunctionAPI(ApiID id) {
-  return GetInterfaceProxy(id);
+thunk::PPB_Instance_API* PluginDispatcher::GetInstanceAPI() {
+  return static_cast<PPB_Instance_Proxy*>(
+      GetInterfaceProxy(API_ID_PPB_INSTANCE));
+}
+
+thunk::ResourceCreationAPI* PluginDispatcher::GetResourceCreationAPI() {
+  return static_cast<ResourceCreationProxy*>(
+      GetInterfaceProxy(API_ID_RESOURCE_CREATION));
 }
 
 void PluginDispatcher::ForceFreeAllInstances() {
@@ -252,6 +273,19 @@ void PluginDispatcher::ForceFreeAllInstances() {
       OnMessageReceived(msg);
     }
   }
+}
+
+void PluginDispatcher::OnMsgResourceReply(
+    const ppapi::proxy::ResourceMessageReplyParams& reply_params,
+    const IPC::Message& nested_msg) {
+  Resource* resource = PpapiGlobals::Get()->GetResourceTracker()->GetResource(
+      reply_params.pp_resource());
+  if (!resource) {
+    NOTREACHED();
+    return;
+  }
+  resource->OnReplyReceived(reply_params.sequence(), reply_params.result(),
+                            nested_msg);
 }
 
 void PluginDispatcher::OnMsgSupportsInterface(

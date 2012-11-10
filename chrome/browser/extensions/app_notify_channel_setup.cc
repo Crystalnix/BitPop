@@ -11,26 +11,32 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
+#include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stringprintf.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service.h"
+#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/net/gaia/gaia_constants.h"
 #include "chrome/common/net/gaia/gaia_urls.h"
-#include "chrome/common/net/http_return.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/url_fetcher.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
+#include "net/http/http_status_code.h"
+#include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
 
 using base::StringPrintf;
 using content::BrowserThread;
-using content::URLFetcher;
+using net::URLFetcher;
+
+namespace extensions {
 
 namespace {
 
@@ -52,8 +58,8 @@ static const char kOAuth2IssueTokenScope[] =
 static const char kCWSChannelServiceURL[] =
     "https://www.googleapis.com/chromewebstore/v1.1/channels/id";
 
-static AppNotifyChannelSetup::InterceptorForTests* g_interceptor_for_tests =
-    NULL;
+static AppNotifyChannelSetup::InterceptorForTests*
+    g_interceptor_for_tests = NULL;
 
 }  // namespace.
 
@@ -74,7 +80,7 @@ AppNotifyChannelSetup::AppNotifyChannelSetup(
     int callback_id,
     AppNotifyChannelUI* ui,
     base::WeakPtr<AppNotifyChannelSetup::Delegate> delegate)
-    : profile_(profile),
+    : profile_(profile->GetOriginalProfile()),
       extension_id_(extension_id),
       client_id_(client_id),
       requestor_url_(requestor_url),
@@ -88,19 +94,29 @@ AppNotifyChannelSetup::AppNotifyChannelSetup(
 AppNotifyChannelSetup::~AppNotifyChannelSetup() {}
 
 void AppNotifyChannelSetup::Start() {
+  AddRef();  // Balanced in ReportResult.
+
   if (g_interceptor_for_tests) {
     std::string channel_id;
-    std::string error;
+    SetupError error;
     g_interceptor_for_tests->DoIntercept(this, &channel_id, &error);
-    delegate_->AppNotifyChannelSetupComplete(channel_id, error, this);
+    state_ = error == NONE ? CHANNEL_ID_SETUP_DONE : ERROR_STATE;
+
+    // Use PostTask so the message loop runs before notifying the delegate, like
+    // in the real implementation.
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&AppNotifyChannelSetup::ReportResult,
+                   base::Unretained(this), channel_id, error));
     return;
   }
-  AddRef();  // Balanced in ReportResult.
+
   BeginLogin();
 }
 
 void AppNotifyChannelSetup::OnGetTokenSuccess(
-    const std::string& access_token) {
+    const std::string& access_token,
+    const base::Time& expiration_time) {
   oauth2_access_token_ = access_token;
   EndGetAccessToken(true);
 }
@@ -113,7 +129,7 @@ void AppNotifyChannelSetup::OnSyncSetupResult(bool enabled) {
   EndLogin(enabled);
 }
 
-void AppNotifyChannelSetup::OnURLFetchComplete(const URLFetcher* source) {
+void AppNotifyChannelSetup::OnURLFetchComplete(const net::URLFetcher* source) {
   CHECK(source);
   switch (state_) {
     case RECORD_GRANT_STARTED:
@@ -134,7 +150,7 @@ URLFetcher* AppNotifyChannelSetup::CreateURLFetcher(
   CHECK(url.is_valid());
   URLFetcher::RequestType type =
       body.empty() ? URLFetcher::GET : URLFetcher::POST;
-  URLFetcher* fetcher = URLFetcher::Create(0, url, type, this);
+  URLFetcher* fetcher = net::URLFetcher::Create(0, url, type, this);
   fetcher->SetRequestContext(profile_->GetRequestContext());
   // Always set flags to neither send nor save cookies.
   fetcher->SetLoadFlags(
@@ -147,8 +163,8 @@ URLFetcher* AppNotifyChannelSetup::CreateURLFetcher(
 }
 
 bool AppNotifyChannelSetup::ShouldPromptForLogin() const {
-  std::string username = profile_->GetPrefs()->GetString(
-      prefs::kGoogleServicesUsername);
+  std::string username =
+      SigninManagerFactory::GetForProfile(profile_)->GetAuthenticatedUsername();
   // Prompt for login if either:
   // 1. the user has not logged in at all or
   // 2. if the user is logged in but there is no OAuth2 login token.
@@ -158,7 +174,7 @@ bool AppNotifyChannelSetup::ShouldPromptForLogin() const {
   //    This can happen if the user explicitly revoked access to Google Chrome
   //    from Google Accounts page.
   return username.empty() ||
-         !profile_->GetTokenService()->HasOAuthLoginToken() ||
+         !TokenServiceFactory::GetForProfile(profile_)->HasOAuthLoginToken() ||
          oauth2_access_token_failure_;
 }
 
@@ -216,10 +232,11 @@ void AppNotifyChannelSetup::BeginGetAccessToken() {
   std::vector<std::string> scopes;
   scopes.push_back(GaiaUrls::GetInstance()->oauth1_login_scope());
   scopes.push_back(kOAuth2IssueTokenScope);
+  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
   oauth2_fetcher_->Start(
       GaiaUrls::GetInstance()->oauth2_chrome_client_id(),
       GaiaUrls::GetInstance()->oauth2_chrome_client_secret(),
-      profile_->GetTokenService()->GetOAuth2LoginRefreshToken(),
+      token_service->GetOAuth2LoginRefreshToken(),
       scopes);
 }
 
@@ -255,13 +272,13 @@ void AppNotifyChannelSetup::BeginRecordGrant() {
   url_fetcher_->Start();
 }
 
-void AppNotifyChannelSetup::EndRecordGrant(const URLFetcher* source) {
+void AppNotifyChannelSetup::EndRecordGrant(const net::URLFetcher* source) {
   CHECK_EQ(RECORD_GRANT_STARTED, state_);
 
   net::URLRequestStatus status = source->GetStatus();
 
   if (status.status() == net::URLRequestStatus::SUCCESS) {
-    if (source->GetResponseCode() == RC_REQUEST_OK) {
+    if (source->GetResponseCode() == net::HTTP_OK) {
       state_ = RECORD_GRANT_DONE;
       BeginGetChannelId();
     } else {
@@ -286,12 +303,12 @@ void AppNotifyChannelSetup::BeginGetChannelId() {
   url_fetcher_->Start();
 }
 
-void AppNotifyChannelSetup::EndGetChannelId(const URLFetcher* source) {
+void AppNotifyChannelSetup::EndGetChannelId(const net::URLFetcher* source) {
   CHECK_EQ(CHANNEL_ID_SETUP_STARTED, state_);
   net::URLRequestStatus status = source->GetStatus();
 
   if (status.status() == net::URLRequestStatus::SUCCESS) {
-    if (source->GetResponseCode() == RC_REQUEST_OK) {
+    if (source->GetResponseCode() == net::HTTP_OK) {
       std::string data;
       source->GetResponseAsString(&data);
       std::string channel_id;
@@ -388,19 +405,12 @@ std::string AppNotifyChannelSetup::MakeAuthorizationHeader(
 // static
 bool AppNotifyChannelSetup::ParseCWSChannelServiceResponse(
     const std::string& data, std::string* result) {
-  base::JSONReader reader;
-  scoped_ptr<base::Value> value(reader.Read(data, false));
+  scoped_ptr<base::Value> value(base::JSONReader::Read(data));
   if (!value.get() || value->GetType() != base::Value::TYPE_DICTIONARY)
     return false;
 
-  Value* channel_id_value;
   DictionaryValue* dict = static_cast<DictionaryValue*>(value.get());
-  if (!dict->Get("id", &channel_id_value))
-    return false;
-  if (channel_id_value->GetType() != base::Value::TYPE_STRING)
-    return false;
-
-  StringValue* channel_id = static_cast<StringValue*>(channel_id_value);
-  channel_id->GetAsString(result);
-  return true;
+  return dict->GetString("id", result);
 }
+
+}  // namespace extensions

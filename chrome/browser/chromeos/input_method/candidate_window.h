@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -6,7 +6,6 @@
 
 #ifndef CHROME_BROWSER_CHROMEOS_INPUT_METHOD_CANDIDATE_WINDOW_H_
 #define CHROME_BROWSER_CHROMEOS_INPUT_METHOD_CANDIDATE_WINDOW_H_
-#pragma once
 
 #include "base/basictypes.h"
 
@@ -29,19 +28,16 @@ class CandidateWindowController {
     virtual void CandidateWindowClosed() = 0;
   };
 
-  CandidateWindowController();
-  virtual ~CandidateWindowController();
+  virtual ~CandidateWindowController() {}
 
   // Initializes the candidate window. Returns true on success.
-  bool Init();
+  virtual bool Init() = 0;
+  virtual void AddObserver(Observer* observer) = 0;
+  virtual void RemoveObserver(Observer* observer) = 0;
 
-  void AddObserver(Observer* observer);
-  void RemoveObserver(Observer* observer);
-
- private:
-  class Impl;
-  Impl* impl_;
-  DISALLOW_COPY_AND_ASSIGN(CandidateWindowController);
+  // Gets an instance of CandidateWindowController. Caller has to delete the
+  // returned object.
+  static CandidateWindowController* CreateCandidateWindowController();
 };
 
 }  // namespace input_method

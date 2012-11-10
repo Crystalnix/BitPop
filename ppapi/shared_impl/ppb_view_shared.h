@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,21 +25,15 @@ struct PPAPI_SHARED_EXPORT ViewData {
   bool is_fullscreen;
   bool is_page_visible;
   PP_Rect clip_rect;
+  float device_scale;
+  float css_scale;
 };
 
 class PPAPI_SHARED_EXPORT PPB_View_Shared
     : public Resource,
       public thunk::PPB_View_API {
  public:
-  struct InitAsImpl {};
-  struct InitAsProxy {};
-
-  // The dummy arguments control which version of Resource's constructor is
-  // called for this base class.
-  PPB_View_Shared(const InitAsImpl&,
-                  PP_Instance instance,
-                  const ViewData& data);
-  PPB_View_Shared(const InitAsProxy&,
+  PPB_View_Shared(ResourceObjectType type,
                   PP_Instance instance,
                   const ViewData& data);
   virtual ~PPB_View_Shared();

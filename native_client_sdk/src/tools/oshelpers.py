@@ -7,9 +7,11 @@ import fnmatch
 import glob
 import optparse
 import os
+import posixpath
 import shutil
 import sys
 import time
+import zipfile
 
 
 def IncludeFiles(filters, files):
@@ -69,7 +71,7 @@ def CopyPath(options, src, dst):
       os.remove(dst)
 
     # Now copy to the non-existent fully qualified target
-    shutil.copyfile(src, dst)
+    shutil.copy(src, dst)
     return
 
   # Otherwise it's a directory, ignore it unless allowed
@@ -126,12 +128,12 @@ def Copy(args):
   src_list = []
   for src in srcs:
     files = glob.glob(src)
+    if len(files) == 0:
+      raise OSError('cp: no such file or directory: ' + src)
     if files:
       src_list.extend(files)
 
   for src in src_list:
-    if options.verbose:
-      print 'cp %s %s' % (src, dst)
     # If the destination is a directory, then append the basename of the src
     # to the destination.
     if os.path.isdir(dst):
@@ -249,48 +251,198 @@ def Remove(args):
     parser.error('ERROR: expecting FILE...')
 
   try:
-    for dst in files:
-      if options.verbose:
-        print 'rm ' + dst
-
+    for pattern in files:
+      dst_files = glob.glob(pattern)
       # Ignore non existing files when using force
-      if not os.path.exists(dst) and options.force:
-        print "rm: Skipping " + dst
+      if len(dst_files) == 0 and options.force:
+        print "rm: Skipping " + pattern
         continue
+      elif len(dst_files) == 0:
+        raise OSError('rm: no such file or directory: ' + pattern)
 
-      if os.path.isfile(dst) or os.path.islink(dst):
-        for i in range(5):
-          try:
-            # Check every time, since it may have been deleted after the
-            # previsou failed attempt.
-            if os.path.isfile(dst) or os.path.islink(dst):
-              os.remove(dst)
-            break
-          except OSError as error:
-            if i == 5:
-              print 'Gave up.'
-              raise OSError('rm: ' + str(error))
-            print 'Failed remove with %s, retrying' % error
-            time.sleep(5)
+      for dst in dst_files:
+        if options.verbose:
+          print 'rm ' + dst
 
-      if options.recursive:
-        for i in range(5):
-          try:
-            if os.path.isdir(dst):
-              shutil.rmtree(dst)
-            break
-          except OSError as error:
-            if i == 5:
-              print 'Gave up.'
-              raise OSError('rm: ' + str(error))
-            print 'Failed rmtree with %s, retrying' % error
-            time.sleep(5)
+        if os.path.isfile(dst) or os.path.islink(dst):
+          for i in range(5):
+            try:
+              # Check every time, since it may have been deleted after the
+              # previous failed attempt.
+              if os.path.isfile(dst) or os.path.islink(dst):
+                os.remove(dst)
+              break
+            except OSError as error:
+              if i == 5:
+                print 'Gave up.'
+                raise OSError('rm: ' + str(error))
+              print 'Failed remove with %s, retrying' % error
+              time.sleep(5)
 
-      print 'rm: %s is a directory.' % dst
-      return 1
+        if options.recursive:
+          for i in range(5):
+            try:
+              if os.path.isdir(dst):
+                shutil.rmtree(dst)
+              break
+            except OSError as error:
+              if i == 5:
+                print 'Gave up.'
+                raise OSError('rm: ' + str(error))
+              print 'Failed rmtree with %s, retrying' % error
+              time.sleep(5)
 
   except OSError as error:
     print error
+  return 0
+
+
+def MakeZipPath(os_path, isdir, iswindows):
+  """Changes a path into zipfile format.
+
+  # doctest doesn't seem to honor r'' strings, so the backslashes need to be
+  # escaped.
+  >>> MakeZipPath(r'C:\\users\\foobar\\blah', False, True)
+  'users/foobar/blah'
+  >>> MakeZipPath('/tmp/tmpfoobar/something', False, False)
+  'tmp/tmpfoobar/something'
+  >>> MakeZipPath('./somefile.txt', False, False)
+  'somefile.txt'
+  >>> MakeZipPath('somedir', True, False)
+  'somedir/'
+  >>> MakeZipPath('../dir/filename.txt', False, False)
+  '../dir/filename.txt'
+  >>> MakeZipPath('dir/../filename.txt', False, False)
+  'filename.txt'
+  """
+  zip_path = os_path
+  if iswindows:
+    import ntpath
+    # zipfile paths are always posix-style. They also have the drive
+    # letter and leading slashes removed.
+    zip_path = ntpath.splitdrive(os_path)[1].replace('\\', '/')
+  if zip_path.startswith('/'):
+    zip_path = zip_path[1:]
+  zip_path = posixpath.normpath(zip_path)
+  # zipfile also always appends a slash to a directory name.
+  if isdir:
+    zip_path += '/'
+  return zip_path
+
+
+def OSMakeZipPath(os_path):
+  return MakeZipPath(os_path, os.path.isdir(os_path), sys.platform == 'win32')
+
+
+def Zip(args):
+  """A Unix style zip.
+
+  Compresses the listed files."""
+  parser = optparse.OptionParser(usage='usage: zip [Options] zipfile list')
+  parser.add_option(
+      '-r', dest='recursive', action='store_true',
+      default=False,
+      help='recurse into directories')
+  parser.add_option(
+      '-q', dest='quiet', action='store_true',
+      default=False,
+      help='quiet operation')
+  options, files = parser.parse_args(args)
+  if len(files) < 2:
+    parser.error('ERROR: expecting ZIPFILE and LIST.')
+
+  dest_zip = files[0]
+  src_args = files[1:]
+
+  src_files = []
+  for src_arg in src_args:
+    globbed_src_args = glob.glob(src_arg)
+    if len(globbed_src_args) == 0:
+      if not options.quiet:
+        print 'zip warning: name not matched: %s' % (src_arg,)
+
+    for src_file in globbed_src_args:
+      src_file = os.path.normpath(src_file)
+      src_files.append(src_file)
+      if options.recursive and os.path.isdir(src_file):
+        for root, dirs, files in os.walk(src_file):
+          for dir in dirs:
+            src_files.append(os.path.join(root, dir))
+          for file in files:
+            src_files.append(os.path.join(root, file))
+
+  zip_stream = None
+  # zip_data represents a list of the data to be written or appended to the
+  # zip_stream. It is a list of tuples:
+  #   (OS file path, zip path/zip file info, and file data)
+  # In all cases one of the |os path| or the |file data| will be None.
+  # |os path| is None when there is no OS file to write to the archive (i.e.
+  # the file data already existed in the archive). |file data| is None when the
+  # file is new (never existed in the archive) or being updated.
+  zip_data = []
+  new_files_to_add = [OSMakeZipPath(src_file) for src_file in src_files]
+  zip_path_to_os_path_dict = dict((new_files_to_add[i], src_files[i])
+                                  for i in range(len(src_files)))
+  write_mode = 'a'
+  try:
+    zip_stream = zipfile.ZipFile(dest_zip, 'r')
+    files_to_update = set(new_files_to_add).intersection(
+        set(zip_stream.namelist()))
+    if files_to_update:
+      # As far as I can tell, there is no way to update a zip entry using
+      # zipfile; the best you can do is rewrite the archive.
+      # Iterate through the zipfile to maintain file order.
+      write_mode = 'w'
+      for zip_path in zip_stream.namelist():
+        if zip_path in files_to_update:
+          os_path = zip_path_to_os_path_dict[zip_path]
+          zip_data.append((os_path, zip_path, None))
+          new_files_to_add.remove(zip_path)
+        else:
+          file_bytes = zip_stream.read(zip_path)
+          file_info = zip_stream.getinfo(zip_path)
+          zip_data.append((None, file_info, file_bytes))
+  except IOError:
+    pass
+  finally:
+    if zip_stream:
+      zip_stream.close()
+
+  for zip_path in new_files_to_add:
+    zip_data.append((zip_path_to_os_path_dict[zip_path], zip_path, None))
+
+  if not zip_data:
+    print 'zip error: Nothing to do! (%s)' % (dest_zip,)
+    return 1
+
+  try:
+    zip_stream = zipfile.ZipFile(dest_zip, write_mode, zipfile.ZIP_DEFLATED)
+    for os_path, file_info_or_zip_path, file_bytes in zip_data:
+      if isinstance(file_info_or_zip_path, zipfile.ZipInfo):
+        zip_path = file_info_or_zip_path.filename
+      else:
+        zip_path = file_info_or_zip_path
+
+      if os_path:
+        zip_stream.write(os_path, zip_path)
+      else:
+        zip_stream.writestr(file_info_or_zip_path, file_bytes)
+
+      if not options.quiet:
+        if zip_path in new_files_to_add:
+          operation = 'adding'
+        else:
+          operation = 'updating'
+        zip_info = zip_stream.getinfo(zip_path)
+        if (zip_info.compress_type == zipfile.ZIP_STORED or
+            zip_info.file_size == 0):
+          print '  %s: %s (stored 0%%)' % (operation, zip_path)
+        elif zip_info.compress_type == zipfile.ZIP_DEFLATED:
+          print '  %s: %s (deflated %d%%)' % (operation, zip_path,
+              100 - zip_info.compress_size * 100 / zip_info.file_size)
+  finally:
+    zip_stream.close()
+
   return 0
 
 
@@ -299,6 +451,7 @@ FuncMap = {
   'mkdir': Mkdir,
   'mv': Move,
   'rm': Remove,
+  'zip': Zip,
 }
 
 

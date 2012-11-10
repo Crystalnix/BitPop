@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,7 +32,8 @@ class WEBKIT_PLUGINS_EXPORT PPB_Broker_Impl
   virtual ::ppapi::thunk::PPB_Broker_API* AsPPB_Broker_API() OVERRIDE;
 
   // PPB_BrokerTrusted implementation.
-  virtual int32_t Connect(PP_CompletionCallback connect_callback) OVERRIDE;
+  virtual int32_t Connect(
+      scoped_refptr< ::ppapi::TrackedCallback> connect_callback) OVERRIDE;
   virtual int32_t GetHandle(int32_t* handle) OVERRIDE;
 
   void BrokerConnected(int32_t handle, int32_t result);
@@ -40,7 +41,7 @@ class WEBKIT_PLUGINS_EXPORT PPB_Broker_Impl
  private:
   // PluginDelegate ppapi broker object.
   // We don't own this pointer but are responsible for calling Disconnect on it.
-  PluginDelegate::PpapiBroker* broker_;
+  PluginDelegate::Broker* broker_;
 
   // Callback invoked from BrokerConnected.
   scoped_refptr< ::ppapi::TrackedCallback> connect_callback_;

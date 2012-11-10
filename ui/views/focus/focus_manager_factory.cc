@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,29 +7,27 @@
 #include "base/compiler_specific.h"
 #include "ui/views/focus/focus_manager.h"
 
+namespace views {
+
 namespace {
 
-using views::FocusManager;
-
-class DefaultFocusManagerFactory : public views::FocusManagerFactory {
+class DefaultFocusManagerFactory : public FocusManagerFactory {
  public:
-  DefaultFocusManagerFactory() : views::FocusManagerFactory() {}
+  DefaultFocusManagerFactory() : FocusManagerFactory() {}
   virtual ~DefaultFocusManagerFactory() {}
 
  protected:
-  virtual FocusManager* CreateFocusManager(views::Widget* widget) OVERRIDE {
-    return new FocusManager(widget);
+  virtual FocusManager* CreateFocusManager(Widget* widget) OVERRIDE {
+    return new FocusManager(widget, NULL /* delegate */);
   }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DefaultFocusManagerFactory);
 };
 
-views::FocusManagerFactory* focus_manager_factory = NULL;
+FocusManagerFactory* focus_manager_factory = NULL;
 
 }  // namespace
-
-namespace views {
 
 FocusManagerFactory::FocusManagerFactory() {
 }

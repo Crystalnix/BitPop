@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
+#include "dbus/object_path.h"
 #include "dbus/object_proxy.h"
 #include "dbus/test_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -31,8 +32,9 @@ class EndToEndSyncTest : public testing::Test {
     client_bus_options.bus_type = dbus::Bus::SESSION;
     client_bus_options.connection_type = dbus::Bus::PRIVATE;
     client_bus_ = new dbus::Bus(client_bus_options);
-    object_proxy_ = client_bus_->GetObjectProxy("org.chromium.TestService",
-                                                "/org/chromium/TestObject");
+    object_proxy_ = client_bus_->GetObjectProxy(
+        "org.chromium.TestService",
+        dbus::ObjectPath("/org/chromium/TestObject"));
     ASSERT_FALSE(client_bus_->HasDBusThread());
   }
 
@@ -96,6 +98,38 @@ TEST_F(EndToEndSyncTest, NonexistentMethod) {
 
 TEST_F(EndToEndSyncTest, BrokenMethod) {
   dbus::MethodCall method_call("org.chromium.TestInterface", "BrokenMethod");
+
+  const int timeout_ms = dbus::ObjectProxy::TIMEOUT_USE_DEFAULT;
+  scoped_ptr<dbus::Response> response(
+      object_proxy_->CallMethodAndBlock(&method_call, timeout_ms));
+  ASSERT_FALSE(response.get());
+}
+
+TEST_F(EndToEndSyncTest, InvalidObjectPath) {
+  // Trailing '/' is only allowed for the root path.
+  const dbus::ObjectPath invalid_object_path("/org/chromium/TestObject/");
+
+  // Replace object proxy with new one.
+  object_proxy_ = client_bus_->GetObjectProxy("org.chromium.TestService",
+                                              invalid_object_path);
+
+  dbus::MethodCall method_call("org.chromium.TestInterface", "Echo");
+
+  const int timeout_ms = dbus::ObjectProxy::TIMEOUT_USE_DEFAULT;
+  scoped_ptr<dbus::Response> response(
+      object_proxy_->CallMethodAndBlock(&method_call, timeout_ms));
+  ASSERT_FALSE(response.get());
+}
+
+TEST_F(EndToEndSyncTest, InvalidServiceName) {
+  // Bus name cannot contain '/'.
+  const std::string invalid_service_name = ":1/2";
+
+  // Replace object proxy with new one.
+  object_proxy_ = client_bus_->GetObjectProxy(
+      invalid_service_name, dbus::ObjectPath("org.chromium.TestObject"));
+
+  dbus::MethodCall method_call("org.chromium.TestInterface", "Echo");
 
   const int timeout_ms = dbus::ObjectProxy::TIMEOUT_USE_DEFAULT;
   scoped_ptr<dbus::Response> response(

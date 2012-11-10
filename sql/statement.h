@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef SQL_STATEMENT_H_
 #define SQL_STATEMENT_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -66,12 +65,6 @@ class SQL_EXPORT Statement {
   // has to be reset.
   bool is_valid() const { return ref_->is_valid(); }
 
-  // These operators allow conveniently checking if the statement is valid
-  // or not. See the pattern above for an example.
-  // TODO(shess,gbillock): Remove these once clients are converted.
-  operator bool() const { return is_valid(); }
-  bool operator!() const { return !is_valid(); }
-
   // Running -------------------------------------------------------------------
 
   // Executes the statement, returning true on success. This is like Step but
@@ -93,9 +86,9 @@ class SQL_EXPORT Statement {
   //   return s.Succeeded();
   bool Step();
 
-  // Resets the statement to its initial condition. This includes clearing all
-  // the bound variables and any current result row.
-  void Reset();
+  // Resets the statement to its initial condition. This includes any current
+  // result row, and also the bound variables if the |clear_bound_vars| is true.
+  void Reset(bool clear_bound_vars);
 
   // Returns true if the last executed thing in this statement succeeded. If
   // there was no last executed thing or the statement is invalid, this will
@@ -130,6 +123,7 @@ class SQL_EXPORT Statement {
   // where that type is not the native type. For safety, call ColumnType only
   // on a column before getting the value out in any way.
   ColType ColumnType(int col) const;
+  ColType DeclaredColumnType(int col) const;
 
   // These all take a 0-based argument index.
   bool ColumnBool(int col) const;
@@ -145,6 +139,7 @@ class SQL_EXPORT Statement {
   int ColumnByteLength(int col) const;
   const void* ColumnBlob(int col) const;
   bool ColumnBlobAsString(int col, std::string* blob);
+  bool ColumnBlobAsString16(int col, string16* val) const;
   bool ColumnBlobAsVector(int col, std::vector<char>* val) const;
   bool ColumnBlobAsVector(int col, std::vector<unsigned char>* val) const;
 

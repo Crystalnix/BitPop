@@ -26,13 +26,12 @@
       'debugger',
       'plugin',
       'renderer',
-      'syncapi_core',
       'utility',
-      'service',
       '../content/content.gyp:content_app',
       '../content/content.gyp:content_gpu',
       '../content/content.gyp:content_ppapi_plugin',
       '../content/content.gyp:content_worker',
+      '../sync/sync.gyp:syncapi_core',
       '../printing/printing.gyp:printing',
       '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:inspector_resources',
     ],
@@ -52,6 +51,12 @@
         'platform_locale_settings_grd':
             'app/resources/locale_settings_win.grd',
       },],
+      ['OS!="android"', {
+        'chromium_dependencies': [
+          # Android doesn't use the service process (only needed for print).
+          'service',
+        ],
+      }],
       ['OS=="linux"', {
         'nacl_defines': [
           'NACL_WINDOWS=0',
@@ -74,7 +79,7 @@
             'app/resources/locale_settings_linux.grd',
       },],
       ['OS=="mac"', {
-        'tweak_info_plist_path': 'tools/build/mac/tweak_info_plist',
+        'tweak_info_plist_path': '../build/mac/tweak_info_plist.py',
         'nacl_defines': [
           'NACL_WINDOWS=0',
           'NACL_LINUX=0',
@@ -133,6 +138,7 @@
     '../build/win_precompile.gypi',
     'app/policy/policy_templates.gypi',
     'chrome_browser.gypi',
+    'chrome_browser_extensions.gypi',
     'chrome_common.gypi',
     'chrome_dll.gypi',
     'chrome_exe.gypi',
@@ -171,7 +177,6 @@
       ],
     },
     {
-      # TODO(joi): Move debugger-related build rules to content/
       'target_name': 'debugger',
       'type': 'static_library',
       'variables': { 'enable_wexit_time_destructors': 1, },
@@ -195,8 +200,8 @@
       'sources': [
         'browser/debugger/browser_list_tabcontents_provider.cc',
         'browser/debugger/browser_list_tabcontents_provider.h',
-        'browser/debugger/devtools_file_util.cc',
-        'browser/debugger/devtools_file_util.h',
+        'browser/debugger/devtools_file_helper.cc',
+        'browser/debugger/devtools_file_helper.h',
         'browser/debugger/devtools_toggle_action.h',
         'browser/debugger/devtools_window.cc',
         'browser/debugger/devtools_window.h',
@@ -207,6 +212,11 @@
         ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
+          ],
+        }],
+        ['OS=="android"', {
+          'sources!': [
+            'browser/debugger/devtools_window.cc',
           ],
         }],
       ],
@@ -241,6 +251,8 @@
       'sources': [
         'utility/chrome_content_utility_client.cc',
         'utility/chrome_content_utility_client.h',
+        'utility/profile_import_handler.cc',
+        'utility/profile_import_handler.h',
       ],
       'include_dirs': [
         '..',
@@ -251,351 +263,11 @@
             '../build/linux/system.gyp:gtk',
           ],
         }],
-      ],
-    },
-    {
-      # Provides a syncapi dynamic library target from checked-in binaries,
-      # or from compiling a stub implementation.
-      'target_name': 'syncapi_core',
-      'type': 'static_library',
-      'variables': { 'enable_wexit_time_destructors': 1, },
-      'sources': [
-        'browser/sync/engine/syncapi_internal.cc',
-        'browser/sync/engine/syncapi_internal.h',
-        'browser/sync/internal_api/includes/syncer_error.cc',
-        'browser/sync/internal_api/includes/syncer_error.h',
-        'browser/sync/internal_api/includes/unrecoverable_error_handler.h',
-        'browser/sync/internal_api/base_node.cc',
-        'browser/sync/internal_api/base_node.h',
-        'browser/sync/internal_api/base_transaction.cc',
-        'browser/sync/internal_api/base_transaction.h',
-        'browser/sync/internal_api/change_record.cc',
-        'browser/sync/internal_api/change_record.h',
-        'browser/sync/internal_api/change_reorder_buffer.cc',
-        'browser/sync/internal_api/change_reorder_buffer.h',
-        'browser/sync/internal_api/configure_reason.h',
-        'browser/sync/internal_api/debug_info_event_listener.cc',
-        'browser/sync/internal_api/debug_info_event_listener.h',
-        'browser/sync/internal_api/http_post_provider_factory.h',
-        'browser/sync/internal_api/http_post_provider_interface.h',
-        'browser/sync/internal_api/read_node.cc',
-        'browser/sync/internal_api/read_node.h',
-        'browser/sync/internal_api/read_transaction.cc',
-        'browser/sync/internal_api/read_transaction.h',
-        'browser/sync/internal_api/syncapi_server_connection_manager.cc',
-        'browser/sync/internal_api/syncapi_server_connection_manager.h',
-        'browser/sync/internal_api/sync_manager.cc',
-        'browser/sync/internal_api/sync_manager.h',
-        'browser/sync/internal_api/user_share.cc',
-        'browser/sync/internal_api/user_share.h',
-        'browser/sync/internal_api/write_node.cc',
-        'browser/sync/internal_api/write_node.h',
-        'browser/sync/internal_api/write_transaction.cc',
-        'browser/sync/internal_api/write_transaction.h',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-      'defines' : [
-        '_CRT_SECURE_NO_WARNINGS',
-        '_USE_32BIT_TIME_T',
-      ],
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
-        '../jingle/jingle.gyp:notifier',
-        '../net/net.gyp:net',
-        '../third_party/icu/icu.gyp:icuuc',
-        '../third_party/sqlite/sqlite.gyp:sqlite',
-        'app/policy/cloud_policy_codegen.gyp:policy',
-        'browser/sync/protocol/sync_proto.gyp:sync_proto',
-        'common_constants',
-        'common_net',
-        'sync',
-        'sync_notifier',
-      ],
-      'export_dependent_settings': [
-        'browser/sync/protocol/sync_proto.gyp:sync_proto',
-        'sync',
-      ],
-      # This target exports a hard dependency because syncapi.h includes
-      # generated proto header files from sync_proto.
-      'hard_dependency': 1,
-    },
-    {
-      # Provides the API that Chrome services use to talk to sync.
-      'target_name': 'syncapi_service',
-      'type': 'static_library',
-      'variables': { 'enable_wexit_time_destructors': 1, },
-      'sources': [
-        'browser/sync/api/syncable_service.cc',
-        'browser/sync/api/syncable_service.h',
-        'browser/sync/api/sync_data.h',
-        'browser/sync/api/sync_data.cc',
-        'browser/sync/api/sync_change.h',
-        'browser/sync/api/sync_change.cc',
-        'browser/sync/api/sync_change_processor.h',
-        'browser/sync/api/sync_change_processor.cc',
-        'browser/sync/api/sync_error.h',
-        'browser/sync/api/sync_error.cc',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-      'dependencies': [
-        '../base/base.gyp:base',
-        'browser/sync/protocol/sync_proto.gyp:sync_proto',
-        'sync',
-      ],
-      'export_dependent_settings': [
-        '../base/base.gyp:base',
-        'browser/sync/protocol/sync_proto.gyp:sync_proto',
-        'sync',
-      ],
-      # Even though this target depends on sync_proto, it doesn't
-      # need to export a hard dependency since we explicitly avoid
-      # including the generated proto header files from this target's
-      # header files.
-    },
-    {
-      'target_name': 'sync',
-      'type': 'static_library',
-      'variables': { 'enable_wexit_time_destructors': 1, },
-      'sources': [
-        'browser/sync/engine/all_status.cc',
-        'browser/sync/engine/all_status.h',
-        'browser/sync/engine/apply_updates_command.cc',
-        'browser/sync/engine/apply_updates_command.h',
-        'browser/sync/engine/build_and_process_conflict_sets_command.cc',
-        'browser/sync/engine/build_and_process_conflict_sets_command.h',
-        'browser/sync/engine/build_commit_command.cc',
-        'browser/sync/engine/build_commit_command.h',
-        'browser/sync/engine/cleanup_disabled_types_command.cc',
-        'browser/sync/engine/cleanup_disabled_types_command.h',
-        'browser/sync/engine/clear_data_command.cc',
-        'browser/sync/engine/clear_data_command.h',
-        'browser/sync/engine/conflict_resolver.cc',
-        'browser/sync/engine/conflict_resolver.h',
-        'browser/sync/engine/download_updates_command.cc',
-        'browser/sync/engine/download_updates_command.h',
-        'browser/sync/engine/get_commit_ids_command.cc',
-        'browser/sync/engine/get_commit_ids_command.h',
-        'browser/sync/engine/model_changing_syncer_command.cc',
-        'browser/sync/engine/model_changing_syncer_command.h',
-        'browser/sync/engine/model_safe_worker.cc',
-        'browser/sync/engine/model_safe_worker.h',
-        'browser/sync/engine/passive_model_worker.cc',
-        'browser/sync/engine/passive_model_worker.h',
-        'browser/sync/engine/net/server_connection_manager.cc',
-        'browser/sync/engine/net/server_connection_manager.h',
-        'browser/sync/engine/net/url_translator.cc',
-        'browser/sync/engine/net/url_translator.h',
-        'browser/sync/engine/nigori_util.cc',
-        'browser/sync/engine/nigori_util.h',
-        'browser/sync/engine/nudge_source.cc',
-        'browser/sync/engine/nudge_source.h',
-        'browser/sync/engine/polling_constants.cc',
-        'browser/sync/engine/polling_constants.h',
-        'browser/sync/engine/post_commit_message_command.cc',
-        'browser/sync/engine/post_commit_message_command.h',
-        'browser/sync/engine/process_commit_response_command.cc',
-        'browser/sync/engine/process_commit_response_command.h',
-        'browser/sync/engine/process_updates_command.cc',
-        'browser/sync/engine/process_updates_command.h',
-        'browser/sync/engine/resolve_conflicts_command.cc',
-        'browser/sync/engine/resolve_conflicts_command.h',
-        'browser/sync/engine/store_timestamps_command.cc',
-        'browser/sync/engine/store_timestamps_command.h',
-        'browser/sync/engine/syncer.cc',
-        'browser/sync/engine/syncer.h',
-        'browser/sync/engine/syncer_command.cc',
-        'browser/sync/engine/syncer_command.h',
-        'browser/sync/engine/syncer_proto_util.cc',
-        'browser/sync/engine/syncer_proto_util.h',
-        'browser/sync/engine/sync_scheduler.cc',
-        'browser/sync/engine/sync_scheduler.h',
-        'browser/sync/engine/syncer_types.cc',
-        'browser/sync/engine/syncer_types.h',
-        'browser/sync/engine/syncer_util.cc',
-        'browser/sync/engine/syncer_util.h',
-        'browser/sync/engine/syncproto.h',
-        'browser/sync/engine/update_applicator.cc',
-        'browser/sync/engine/update_applicator.h',
-        'browser/sync/engine/verify_updates_command.cc',
-        'browser/sync/engine/verify_updates_command.h',
-        'browser/sync/js/js_arg_list.cc',
-        'browser/sync/js/js_arg_list.h',
-        'browser/sync/js/js_backend.h',
-        'browser/sync/js/js_controller.h',
-        'browser/sync/js/js_event_details.cc',
-        'browser/sync/js/js_event_details.h',
-        'browser/sync/js/js_event_handler.h',
-        'browser/sync/js/js_reply_handler.h',
-        'browser/sync/js/js_mutation_event_observer.cc',
-        'browser/sync/js/js_mutation_event_observer.h',
-        'browser/sync/js/js_sync_manager_observer.cc',
-        'browser/sync/js/js_sync_manager_observer.h',
-        'browser/sync/protocol/proto_enum_conversions.cc',
-        'browser/sync/protocol/proto_enum_conversions.h',
-        'browser/sync/protocol/proto_value_conversions.cc',
-        'browser/sync/protocol/proto_value_conversions.h',
-        'browser/sync/protocol/service_constants.h',
-        'browser/sync/protocol/sync_protocol_error.cc',
-        'browser/sync/protocol/sync_protocol_error.h',
-        'browser/sync/sessions/debug_info_getter.h',
-        'browser/sync/sessions/ordered_commit_set.cc',
-        'browser/sync/sessions/ordered_commit_set.h',
-        'browser/sync/sessions/session_state.cc',
-        'browser/sync/sessions/session_state.h',
-        'browser/sync/sessions/status_controller.cc',
-        'browser/sync/sessions/status_controller.h',
-        'browser/sync/sessions/sync_session.cc',
-        'browser/sync/sessions/sync_session.h',
-        'browser/sync/sessions/sync_session_context.cc',
-        'browser/sync/sessions/sync_session_context.h',
-        'browser/sync/sync_js_controller.cc',
-        'browser/sync/sync_js_controller.h',
-        'browser/sync/syncable/blob.h',
-        'browser/sync/syncable/dir_open_result.h',
-        'browser/sync/syncable/directory_backing_store.cc',
-        'browser/sync/syncable/directory_backing_store.h',
-        'browser/sync/syncable/directory_change_delegate.h',
-        'browser/sync/syncable/directory_event.h',
-        'browser/sync/syncable/directory_manager.cc',
-        'browser/sync/syncable/directory_manager.h',
-        'browser/sync/syncable/model_type.cc',
-        'browser/sync/syncable/model_type.h',
-        'browser/sync/syncable/model_type_payload_map.cc',
-        'browser/sync/syncable/model_type_payload_map.h',
-        'browser/sync/syncable/syncable-inl.h',
-        'browser/sync/syncable/syncable.cc',
-        'browser/sync/syncable/syncable.h',
-        'browser/sync/syncable/syncable_changes_version.h',
-        'browser/sync/syncable/syncable_columns.h',
-        'browser/sync/syncable/syncable_id.cc',
-        'browser/sync/syncable/syncable_id.h',
-        'browser/sync/syncable/syncable_enum_conversions.cc',
-        'browser/sync/syncable/syncable_enum_conversions.h',
-        'browser/sync/syncable/transaction_observer.h',
-        'browser/sync/util/cryptographer.cc',
-        'browser/sync/util/cryptographer.h',
-        'browser/sync/util/enum_set.h',
-        'browser/sync/util/extensions_activity_monitor.cc',
-        'browser/sync/util/extensions_activity_monitor.h',
-        'browser/sync/util/get_session_name_task.cc',
-        'browser/sync/util/get_session_name_task.h',
-        'browser/sync/util/get_session_name_task_mac.mm',
-        'browser/sync/util/immutable.h',
-        'browser/sync/util/logging.cc',
-        'browser/sync/util/logging.h',
-        'browser/sync/util/nigori.cc',
-        'browser/sync/util/nigori.h',
-        'browser/sync/util/oauth.cc',
-        'browser/sync/util/oauth.h',
-        'browser/sync/util/time.cc',
-        'browser/sync/util/time.h',
-        'browser/sync/util/unrecoverable_error_info.h',
-        'browser/sync/util/unrecoverable_error_info.cc',
-        'browser/sync/util/weak_handle.cc',
-        'browser/sync/util/weak_handle.h',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-      'defines' : [
-        'SYNC_ENGINE_VERSION_STRING="Unknown"',
-        '_CRT_SECURE_NO_WARNINGS',
-        '_USE_32BIT_TIME_T',
-      ],
-      'dependencies': [
-        'common',
-        '../base/base.gyp:base',
-        '../crypto/crypto.gyp:crypto',
-        '../skia/skia.gyp:skia',
-        'browser/sync/protocol/sync_proto.gyp:sync_proto',
-      ],
-      'export_dependent_settings': [
-        '../base/base.gyp:base',
-        '../crypto/crypto.gyp:crypto',
-        'browser/sync/protocol/sync_proto.gyp:sync_proto',
-      ],
-      # This target exports a hard dependency because its header files include
-      # protobuf header files from sync_proto.
-      'hard_dependency': 1,
-      'conditions': [
-        ['OS=="win"', {
-          'sources' : [
-            'browser/sync/util/data_encryption.cc',
-            'browser/sync/util/data_encryption.h',
+        ['OS=="android"', {
+          'sources!': [
+            'utility/profile_import_handler.cc',
           ],
         }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
-          ],
-          'link_settings': {
-            'libraries': [
-              '-lXss',
-            ],
-          },
-        }],
-        ['OS=="linux" and chromeos==1', {
-          'include_dirs': [
-            '<(grit_out_dir)',
-          ],
-        }],
-        ['OS=="mac"', {
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/IOKit.framework',
-            ],
-          },
-        }],
-      ],
-    },
-    # A library for sending and receiving server-issued notifications.
-    {
-      'target_name': 'sync_notifier',
-      'type': 'static_library',
-      'variables': { 'enable_wexit_time_destructors': 1, },
-      'sources': [
-        'browser/sync/notifier/cache_invalidation_packet_handler.cc',
-        'browser/sync/notifier/cache_invalidation_packet_handler.h',
-        'browser/sync/notifier/chrome_invalidation_client.cc',
-        'browser/sync/notifier/chrome_invalidation_client.h',
-        'browser/sync/notifier/chrome_system_resources.cc',
-        'browser/sync/notifier/chrome_system_resources.h',
-        'browser/sync/notifier/invalidation_notifier.h',
-        'browser/sync/notifier/invalidation_notifier.cc',
-        'browser/sync/notifier/invalidation_util.cc',
-        'browser/sync/notifier/invalidation_util.h',
-        'browser/sync/notifier/invalidation_version_tracker.h',
-        'browser/sync/notifier/non_blocking_invalidation_notifier.h',
-        'browser/sync/notifier/non_blocking_invalidation_notifier.cc',
-        'browser/sync/notifier/p2p_notifier.h',
-        'browser/sync/notifier/p2p_notifier.cc',
-        'browser/sync/notifier/registration_manager.cc',
-        'browser/sync/notifier/registration_manager.h',
-        'browser/sync/notifier/state_writer.h',
-        'browser/sync/notifier/sync_notifier.h',
-        'browser/sync/notifier/sync_notifier_factory.h',
-        'browser/sync/notifier/sync_notifier_factory.cc',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-      'dependencies': [
-        'sync',
-        '../jingle/jingle.gyp:notifier',
-        '../net/net.gyp:net',
-        '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation',
-      ],
-      # This target exports a hard dependency because it depends on
-      # cacheinvalidation (which itself has hard_dependency set).
-      'hard_dependency': 1,
-      'export_dependent_settings': [
-        '../jingle/jingle.gyp:notifier',
-        '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation',
       ],
     },
     {
@@ -641,6 +313,8 @@
         'service/cloud_print/cloud_print_token_store.h',
         'service/cloud_print/cloud_print_url_fetcher.cc',
         'service/cloud_print/cloud_print_url_fetcher.h',
+        'service/cloud_print/cloud_print_wipeout.cc',
+        'service/cloud_print/cloud_print_wipeout.h',
         'service/cloud_print/job_status_updater.cc',
         'service/cloud_print/job_status_updater.h',
         'service/cloud_print/print_system_dummy.cc',
@@ -746,6 +420,16 @@
             'CHROMIUM_STRIP_SAVE_FILE': 'app/app.saves',
             'INFOPLIST_FILE': 'app/helper-Info.plist',
           },
+          # Turn off -dead_strip in Release mode for the helper app. There's
+          # little here to strip, and doing so preserves symbols from
+          # crt1.10.6.o, which get removed incorrectly. http://crbug.com/139902
+          'configurations': {
+            'Release': {
+              'xcode_settings': {
+                'DEAD_CODE_STRIPPING': 'NO',
+              },
+            },
+          },
           'postbuilds': [
             {
               # The helper doesn't have real localizations, it just has
@@ -780,23 +464,21 @@
             {
               # Modify the Info.plist as needed.  The script explains why this
               # is needed.  This is also done in the chrome and chrome_dll
-              # targets.  In this case, --breakpad=0, -k0, and -s0 are used
-              # because Breakpad, Keystone, and Subersion keys are never
-              # placed into the helper.
+              # targets.  In this case, --breakpad=0, --keystone=0, and --svn=0
+              # are used because Breakpad, Keystone, and Subversion keys are
+              # never placed into the helper.
               'postbuild_name': 'Tweak Info.plist',
               'action': ['<(tweak_info_plist_path)',
                          '--breakpad=0',
-                         '-k0',
-                         '-s0',
-                         '<(branding)',
-                         '<(mac_bundle_id)'],
+                         '--keystone=0',
+                         '--svn=0'],
             },
             {
               # Make sure there isn't any Objective-C in the helper app's
               # executable.
               'postbuild_name': 'Verify No Objective-C',
               'action': [
-                'tools/build/mac/verify_no_objc.sh',
+                '../build/mac/verify_no_objc.sh',
               ],
             },
           ],
@@ -818,6 +500,15 @@
                 'CHROMIUM_STRIP_SAVE_FILE': 'app/app_asan.saves',
               },
             }],
+            ['component=="shared_library"', {
+              'xcode_settings': {
+                'LD_RUNPATH_SEARCH_PATHS': [
+                  # Get back from Chromium.app/Contents/Versions/V/
+                  #                                    Helper.app/Contents/MacOS
+                  '@loader_path/../../../../../../..',
+                ],
+              },
+            }],
           ],
         },  # target helper_app
         {
@@ -831,6 +522,8 @@
             '../base/base.gyp:base',
           ],
           'sources': [
+            'common/mac/app_mode_chrome_locator.h',
+            'common/mac/app_mode_chrome_locator.mm',
             'common/mac/app_mode_common.h',
             'common/mac/app_mode_common.mm',
           ],
@@ -839,17 +532,21 @@
           ],
         },  # target app_mode_app_support
         {
-          # This produces the app mode loader, but not as a bundle. Chromium
-          # itself is responsible for producing bundles.
+          # This produces the template for app mode loader bundles. It's a
+          # template in the sense that parts of it need to be "filled in" by
+          # Chrome before it can be executed.
           'target_name': 'app_mode_app',
           'type': 'executable',
+          'mac_bundle' : 1,
           'variables': { 'enable_wexit_time_destructors': 1, },
-          'product_name': '<(mac_product_name) App Mode Loader',
+          'product_name': 'app_mode_loader',
           'dependencies': [
             'app_mode_app_support',
+            'infoplist_strings_tool',
           ],
           'sources': [
             'app/app_mode_loader_mac.mm',
+            'app/app_mode-Info.plist',
           ],
           'include_dirs': [
             '..',
@@ -860,6 +557,30 @@
               '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
             ],
           },
+          'mac_bundle_resources!': [
+            'app/app_mode-Info.plist',
+          ],
+          'mac_bundle_resources/': [
+            ['exclude', '.*'],
+          ],
+          'xcode_settings': {
+            'INFOPLIST_FILE': 'app/app_mode-Info.plist',
+            'APP_MODE_APP_BUNDLE_ID': '<(mac_bundle_id).app.@APP_MODE_SHORTCUT_ID@',
+          },
+          'postbuilds' : [
+            {
+              # Modify the Info.plist as needed.  The script explains why this
+              # is needed.  This is also done in the chrome and chrome_dll
+              # targets.  In this case, --breakpad=0, --keystone=0, and --svn=0
+              # are used because Breakpad, Keystone, and Subversion keys are
+              # never placed into the app mode loader.
+              'postbuild_name': 'Tweak Info.plist',
+              'action': ['<(tweak_info_plist_path)',
+                         '--breakpad=0',
+                         '--keystone=0',
+                         '--svn=0'],
+            },
+          ],
         },  # target app_mode_app
         {
           # Convenience target to build a disk image.
@@ -873,15 +594,26 @@
           ],
           'variables': {
             'build_app_dmg_script_path': 'tools/build/mac/build_app_dmg',
+            'pkg_dmg_script_path': 'installer/mac/pkg-dmg',
+
+            'conditions': [
+              # This duplicates the output path from build_app_dmg.
+              ['branding=="Chrome"', {
+                'dmg_name': 'GoogleChrome.dmg',
+              }, { # else: branding!="Chrome"
+                'dmg_name': 'Chromium.dmg',
+              }],
+            ],
           },
           'actions': [
             {
               'inputs': [
                 '<(build_app_dmg_script_path)',
-                '<(PRODUCT_DIR)/<(branding).app',
+                '<(pkg_dmg_script_path)',
+                '<(PRODUCT_DIR)/<(mac_product_name).app',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/<(branding).dmg',
+                '<(PRODUCT_DIR)/<(dmg_name)',
               ],
               'action_name': 'build_app_dmg',
               'action': ['<(build_app_dmg_script_path)', '<@(branding)'],
@@ -918,8 +650,25 @@
           'target_name': 'plugin_carbon_interpose',
           'type': 'shared_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
+          # This target must not depend on static libraries, else the code in
+          # those libraries would appear twice in plugin processes: Once from
+          # Chromium Framework, and once from this dylib.
           'dependencies': [
             'chrome_dll',
+          ],
+          'conditions': [
+            ['component=="shared_library"', {
+              'dependencies': [
+                '../webkit/support/webkit_support.gyp:glue',
+                '../content/content.gyp:content_plugin',
+              ],
+              'xcode_settings': {
+                'LD_RUNPATH_SEARCH_PATHS': [
+                  # Get back from Chromium.app/Contents/Versions/V
+                  '@loader_path/../../../..',
+                ],
+              },
+            }],
           ],
           'sources': [
             '../content/plugin/plugin_carbon_interpose_mac.cc',
@@ -1096,43 +845,27 @@
     ['OS=="win"',
       { 'targets': [
         {
-          # This target pulls in other binary targets into chrome.sln.
-          'target_name': 'pull_in_all',
+          # For historical reasons, chrome/chrome.sln has been the entry point
+          # for new Chrome developers. To assist development, include several
+          # core unittests that are otherwise only accessible side-by-side with
+          # chrome via all/all.sln.
+          'target_name': 'test_targets',
           'type': 'none',
           'dependencies': [
-            'installer/mini_installer.gyp:*',
-            'installer/installer_tools.gyp:*',
-            'installer/upgrade_test.gyp:*',
-            '../base/base.gyp:*',
-            '../breakpad/breakpad.gyp:*',
-            '../build/temp_gyp/googleurl.gyp:*',
-            '../chrome_frame/chrome_frame.gyp:*',
-            '../content/content.gyp:*',
-            '../courgette/courgette.gyp:*',
-            '../ipc/ipc.gyp:*',
-            '../media/media.gyp:*',
-            '../net/net.gyp:*',
-            '../ppapi/ppapi.gyp:*',
-            '../ppapi/ppapi_internal.gyp:*',
-            '../printing/printing.gyp:*',
-            '../rlz/rlz.gyp:*',
-            '../sandbox/sandbox.gyp:*',
-            '../sdch/sdch.gyp:*',
-            '../skia/skia.gyp:*',
-            '../sql/sql.gyp:*',
-            '../testing/gmock.gyp:*',
-            '../testing/gtest.gyp:*',
-            '../tools/memory_watcher/memory_watcher.gyp:*',
-            '../ui/ui.gyp:*',
-            '../v8/tools/gyp/v8.gyp:v8_shell',
-            '../webkit/support/webkit_support.gyp:*',
-            '../webkit/webkit.gyp:*',
-            '<(libjpeg_gyp_path):*',
+            '../base/base.gyp:base_unittests',
+            '../chrome_frame/chrome_frame.gyp:chrome_frame_tests',
+            '../chrome_frame/chrome_frame.gyp:chrome_frame_net_tests',
+            '../content/content.gyp:content_browsertests',
+            '../content/content.gyp:content_shell',
+            '../content/content.gyp:content_unittests',
+            '../net/net.gyp:net_unittests',
+            '../ui/ui.gyp:ui_unittests',
           ],
           'conditions': [
-            ['win_use_allocator_shim==1', {
-              'dependencies': [
-                '../base/allocator/allocator.gyp:*',
+            ['use_aura==1', {
+              'dependencies!': [
+                '../chrome_frame/chrome_frame.gyp:chrome_frame_tests',
+                '../chrome_frame/chrome_frame.gyp:chrome_frame_net_tests',
               ],
             }],
           ],
@@ -1140,9 +873,6 @@
         {
           'target_name': 'chrome_version_resources',
           'type': 'none',
-          'dependencies': [
-            '../build/util/build_util.gyp:lastchange#target',
-          ],
           'direct_dependent_settings': {
             'include_dirs': [
               '<(SHARED_INTERMEDIATE_DIR)/chrome_version',
@@ -1160,11 +890,11 @@
               'extension': 'ver',
               'variables': {
                 'lastchange_path':
-                  '<(SHARED_INTERMEDIATE_DIR)/build/LASTCHANGE',
+                  '<(DEPTH)/build/util/LASTCHANGE',
                 'template_input_path': 'app/chrome_version.rc.version',
               },
               'conditions': [
-                [ 'branding == "Chrome"', {
+                ['branding == "Chrome"', {
                   'variables': {
                      'branding_path': 'app/theme/google_chrome/BRANDING',
                   },
@@ -1201,18 +931,15 @@
           'target_name': 'chrome_version_header',
           'type': 'none',
           'hard_dependency': 1,
-          'dependencies': [
-            '../build/util/build_util.gyp:lastchange#target',
-          ],
           'actions': [
             {
               'action_name': 'version_header',
               'variables': {
                 'lastchange_path':
-                  '<(SHARED_INTERMEDIATE_DIR)/build/LASTCHANGE',
+                  '<(DEPTH)/build/util/LASTCHANGE',
               },
               'conditions': [
-                [ 'branding == "Chrome"', {
+                ['branding == "Chrome"', {
                   'variables': {
                      'branding_path': 'app/theme/google_chrome/BRANDING',
                   },
@@ -1263,12 +990,6 @@
              'test/automation/automation_proxy.h',
              'test/automation/browser_proxy.cc',
              'test/automation/browser_proxy.h',
-             'test/automation/dom_element_proxy.cc',
-             'test/automation/dom_element_proxy.h',
-             'test/automation/extension_proxy.cc',
-             'test/automation/extension_proxy.h',
-             'test/automation/javascript_execution_controller.cc',
-             'test/automation/javascript_execution_controller.h',
              'test/automation/tab_proxy.cc',
              'test/automation/tab_proxy.h',
              'test/automation/value_conversion_traits.cc',
@@ -1321,6 +1042,10 @@
             'tools/crash_service/crash_service.cc',
             'tools/crash_service/crash_service.h',
             'tools/crash_service/main.cc',
+            '../content/public/common/content_switches.cc',
+          ],
+          'defines': [
+            'COMPILE_CONTENT_STATICALLY',
           ],
           'msvs_settings': {
             'VCLinkerTool': {
@@ -1348,5 +1073,24 @@
         },
       ]},  # 'targets'
     ],  # OS=="win"
+    ['OS=="android"',
+      {
+      'targets': [
+        {
+          'target_name': 'chrome_java',
+          'type': 'none',
+          'dependencies': [
+            '../base/base.gyp:base_java',
+            '../content/content.gyp:content_java',
+            '../net/net.gyp:net_java',
+          ],
+          'variables': {
+            'package_name': 'chrome',
+            'java_in_dir': '../chrome/android/java',
+          },
+          'includes': [ '../build/java.gypi' ],
+        },
+      ]}, # 'targets'
+    ],  # OS=="android"
   ],  # 'conditions'
 }

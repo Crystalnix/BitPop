@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,9 @@
  */
 
 cr.define('cr.ui.table', function() {
-  const List = cr.ui.List;
-  const TableRow = cr.ui.table.TableRow;
-  const ListItem = cr.ui.ListItem;
+  /** @const */ var List = cr.ui.List;
+  /** @const */ var TableRow = cr.ui.table.TableRow;
+  /** @const */ var ListItem = cr.ui.ListItem;
 
   /**
    * Creates a new table list element.
@@ -80,6 +80,8 @@ cr.define('cr.ui.table', function() {
         var cell = table.ownerDocument.createElement('div');
         cell.style.width = cm.getWidth(i) + '%';
         cell.className = 'table-row-cell';
+        if (cm.isEndAlign(i))
+          cell.style.textAlign = 'end';
         cell.appendChild(
             cm.getRenderFunction(i).call(null, dataItem, cm.getId(i), table));
 

@@ -1,8 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/download/download_prefs.h"
+
+#include <string>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -19,15 +22,23 @@
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/save_page_type.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/gdata/gdata_system_service.h"
+#include "chrome/browser/chromeos/gdata/gdata_util.h"
+#endif
+
+using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadManager;
 
-DownloadPrefs::DownloadPrefs(PrefService* prefs) : prefs_(prefs) {
+DownloadPrefs::DownloadPrefs(Profile* profile) : profile_(profile) {
+  PrefService* prefs = profile->GetPrefs();
   prompt_for_download_.Init(prefs::kPromptForDownload, prefs, NULL);
   download_path_.Init(prefs::kDownloadDefaultDirectory, prefs, NULL);
   save_file_type_.Init(prefs::kSaveFileType, prefs, NULL);
@@ -103,17 +114,27 @@ void DownloadPrefs::RegisterUserPrefs(PrefService* prefs) {
 DownloadPrefs* DownloadPrefs::FromDownloadManager(
     DownloadManager* download_manager) {
   ChromeDownloadManagerDelegate* delegate =
-      static_cast<ChromeDownloadManagerDelegate*>(download_manager->delegate());
+      static_cast<ChromeDownloadManagerDelegate*>(
+          download_manager->GetDelegate());
   return delegate->download_prefs();
 }
 
 // static
 DownloadPrefs* DownloadPrefs::FromBrowserContext(
-    content::BrowserContext* browser_context) {
-  Profile* profile = static_cast<Profile*>(browser_context);
-  DownloadService* download_service =
-      DownloadServiceFactory::GetForProfile(profile);
-  return FromDownloadManager(download_service->GetDownloadManager());
+    content::BrowserContext* context) {
+  return FromDownloadManager(BrowserContext::GetDownloadManager(context));
+}
+
+FilePath DownloadPrefs::DownloadPath() const {
+#if defined(OS_CHROMEOS)
+  // If the download path is under /drive, and GDataSystemService isn't
+  // available (which it isn't for incognito mode, for instance), use the
+  // default download directory (/Downloads).
+  if (gdata::util::IsUnderGDataMountPoint(*download_path_) &&
+      !gdata::GDataSystemServiceFactory::GetForProfile(profile_))
+    return download_util::GetDefaultDownloadDirectory();
+#endif
+  return *download_path_;
 }
 
 bool DownloadPrefs::PromptForDownload() const {
@@ -178,7 +199,7 @@ void DownloadPrefs::SaveAutoOpenState() {
   if (!extensions.empty())
     extensions.erase(extensions.size() - 1);
 
-  prefs_->SetString(prefs::kDownloadExtensionsToOpen, extensions);
+  profile_->GetPrefs()->SetString(prefs::kDownloadExtensionsToOpen, extensions);
 }
 
 bool DownloadPrefs::AutoOpenCompareFunctor::operator()(

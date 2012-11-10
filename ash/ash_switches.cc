@@ -4,17 +4,26 @@
 
 #include "ash/ash_switches.h"
 
-#include <string>
-
-#include "base/command_line.h"
-
 namespace ash {
 namespace switches {
 
-// Force the "compact" window mode regardless of the value of kAuraWindowMode.
-// This can be used to override a value set in chrome://flags.
-// TODO(derat): Remove this once the normal mode is usable on all platforms.
-const char kAuraForceCompactWindowMode[] = "aura-force-compact-window-mode";
+// Enable keyboard shortcuts useful for debugging.
+const char kAshDebugShortcuts[] = "ash-debug-shortcuts";
+
+// Enables the Oak tree viewer.
+const char kAshEnableOak[] = "ash-enable-oak";
+
+// Enable extended desktop.
+const char kAshExtendedDesktop[] = "ash-extended-desktop";
+
+// Use Ash notifications.
+const char kAshNotify[] = "ash-notify";
+
+// Enables the heads-up display for tracking touch points.
+const char kAshTouchHud[] = "ash-touch-hud";
+
+// If present animations are disabled.
+const char kAshWindowAnimationsDisabled[] = "ash-window-animations-disabled";
 
 // Use Google-style dialog box frames.
 const char kAuraGoogleDialogFrames[] = "aura-google-dialog-frames";
@@ -27,23 +36,6 @@ const char kAuraLegacyPowerButton[] = "aura-legacy-power-button";
 
 // Avoid drawing drop shadows under windows.
 const char kAuraNoShadows[] = "aura-no-shadows";
-
-// Use Aura-style translucent window frame.
-const char kAuraTranslucentFrames[] = "aura-translucent-frames";
-
-// Use a custom window style, e.g. --aura-window-mode=compact.
-// When this flag is not passed we default to "normal" mode.
-const char kAuraWindowMode[] = "aura-window-mode";
-
-// Show only a single maximized window, like traditional non-Aura builds.
-// Useful for low-resolution screens, such as on laptops.
-const char kAuraWindowModeCompact[] = "compact";
-
-// Default window management with multiple draggable windows.
-const char kAuraWindowModeNormal[] = "normal";
-
-// Use Aura-style workspace window dragging and sizing.
-const char kAuraWorkspaceManager[] = "aura-workspace-manager";
 
 }  // namespace switches
 }  // namespace ash

@@ -8,6 +8,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/media/media_internals.h"
+#include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/ui/webui/media/media_internals_handler.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -26,8 +27,7 @@ static const net::NetLog::EventType kNetEventTypeFilter[] = {
   net::NetLog::TYPE_HTTP_TRANSACTION_READ_RESPONSE_HEADERS,
 };
 
-MediaInternalsProxy::MediaInternalsProxy()
-    : ThreadSafeObserverImpl(net::NetLog::LOG_ALL_BUT_BYTES) {
+MediaInternalsProxy::MediaInternalsProxy() {
   io_thread_ = g_browser_process->io_thread();
   registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                  content::NotificationService::AllBrowserContextsAndSources());
@@ -80,14 +80,10 @@ void MediaInternalsProxy::OnUpdate(const string16& update) {
       base::Bind(&MediaInternalsProxy::UpdateUIOnUIThread, this, update));
 }
 
-void MediaInternalsProxy::OnAddEntry(net::NetLog::EventType type,
-                                     const base::TimeTicks& time,
-                                     const net::NetLog::Source& source,
-                                     net::NetLog::EventPhase phase,
-                                     net::NetLog::EventParameters* params) {
+void MediaInternalsProxy::OnAddEntry(const net::NetLog::Entry& entry) {
   bool is_event_interesting = false;
   for (size_t i = 0; i < arraysize(kNetEventTypeFilter); i++) {
-    if (type == kNetEventTypeFilter[i]) {
+    if (entry.type() == kNetEventTypeFilter[i]) {
       is_event_interesting = true;
       break;
     }
@@ -99,22 +95,12 @@ void MediaInternalsProxy::OnAddEntry(net::NetLog::EventType type,
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&MediaInternalsProxy::AddNetEventOnUIThread, this,
-          net::NetLog::EntryToDictionaryValue(type, time, source, phase,
-                                              params, false)));
+                 entry.ToValue()));
 }
 
 MediaInternalsProxy::~MediaInternalsProxy() {}
 
 Value* MediaInternalsProxy::GetConstants() {
-  DictionaryValue* event_types = new DictionaryValue();
-  std::vector<net::NetLog::EventType> types_vec =
-      net::NetLog::GetAllEventTypes();
-
-  for (size_t i = 0; i < types_vec.size(); ++i) {
-    const char* name = net::NetLog::EventTypeToString(types_vec[i]);
-    event_types->SetInteger(name, static_cast<int>(types_vec[i]));
-  }
-
   DictionaryValue* event_phases = new DictionaryValue();
   event_phases->SetInteger(
       net::NetLog::EventPhaseToString(net::NetLog::PHASE_NONE),
@@ -127,7 +113,7 @@ Value* MediaInternalsProxy::GetConstants() {
       net::NetLog::PHASE_END);
 
   DictionaryValue* constants = new DictionaryValue();
-  constants->Set("eventTypes", event_types);
+  constants->Set("eventTypes", net::NetLog::GetEventTypesAsValue());
   constants->Set("eventPhases", event_phases);
 
   return constants;
@@ -135,20 +121,20 @@ Value* MediaInternalsProxy::GetConstants() {
 
 void MediaInternalsProxy::ObserveMediaInternalsOnIOThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  io_thread_->globals()->media.media_internals->AddObserver(this);
-  // TODO(scottfr): Get the passive log data as well.
-  AddAsObserver(io_thread_->net_log());
+  MediaInternals::GetInstance()->AddObserver(this);
+  io_thread_->net_log()->AddThreadSafeObserver(this,
+                                               net::NetLog::LOG_ALL_BUT_BYTES);
 }
 
 void MediaInternalsProxy::StopObservingMediaInternalsOnIOThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  io_thread_->globals()->media.media_internals->RemoveObserver(this);
-  RemoveAsObserver();
+  MediaInternals::GetInstance()->RemoveObserver(this);
+  io_thread_->net_log()->RemoveThreadSafeObserver(this);
 }
 
 void MediaInternalsProxy::GetEverythingOnIOThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  io_thread_->globals()->media.media_internals->SendEverything();
+  MediaInternals::GetInstance()->SendEverything();
 }
 
 void MediaInternalsProxy::UpdateUIOnUIThread(const string16& update) {

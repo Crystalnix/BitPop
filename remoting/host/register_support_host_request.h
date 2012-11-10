@@ -41,7 +41,6 @@ class RegisterSupportHostRequest : public SignalStrategy::Listener {
   typedef base::Callback<void(bool, const std::string&,
                               const base::TimeDelta&)> RegisterCallback;
 
-  // Doesn't take ownership of |signal_strategy| or |key_pair|. Both
   // |signal_strategy| and |key_pair| must outlive this
   // object. |callback| is called when registration response is
   // received from the server. Callback is never called if the bot
@@ -63,11 +62,11 @@ class RegisterSupportHostRequest : public SignalStrategy::Listener {
  private:
   void DoSend();
 
-  // Caller owns the result.
-  buzz::XmlElement* CreateRegistrationRequest(const std::string& jid);
-  buzz::XmlElement* CreateSignature(const std::string& jid);
+  scoped_ptr<buzz::XmlElement> CreateRegistrationRequest(
+      const std::string& jid);
+  scoped_ptr<buzz::XmlElement> CreateSignature(const std::string& jid);
 
-  void ProcessResponse(const buzz::XmlElement* response);
+  void ProcessResponse(IqRequest* request, const buzz::XmlElement* response);
   bool ParseResponse(const buzz::XmlElement* response,
                      std::string* support_id, base::TimeDelta* lifetime);
 

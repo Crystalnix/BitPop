@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,8 @@
 IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseHead)
   IPC_STRUCT_TRAITS_PARENT(webkit_glue::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(status)
+  IPC_STRUCT_TRAITS_MEMBER(request_start)
+  IPC_STRUCT_TRAITS_MEMBER(response_start)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::SyncLoadResult)
@@ -46,6 +48,7 @@ IPC_STRUCT_TRAITS_BEGIN(webkit_glue::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(was_npn_negotiated)
   IPC_STRUCT_TRAITS_MEMBER(was_alternate_protocol_available)
   IPC_STRUCT_TRAITS_MEMBER(was_fetched_via_proxy)
+  IPC_STRUCT_TRAITS_MEMBER(npn_negotiated_protocol)
   IPC_STRUCT_TRAITS_MEMBER(socket_address)
 IPC_STRUCT_TRAITS_END()
 
@@ -121,6 +124,9 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
   // Unless this refers to a transferred navigation, these values are -1 and -1.
   IPC_STRUCT_MEMBER(int, transferred_request_child_id)
   IPC_STRUCT_MEMBER(int, transferred_request_request_id)
+
+  // Whether or not we should allow the URL to download.
+  IPC_STRUCT_MEMBER(bool, allow_download)
 IPC_STRUCT_END()
 
 // Resource messages sent from the browser to the renderer.
@@ -181,13 +187,6 @@ IPC_MESSAGE_ROUTED2(ResourceHostMsg_RequestResource,
 // Cancels a resource request with the ID given as the parameter.
 IPC_MESSAGE_ROUTED1(ResourceHostMsg_CancelRequest,
                     int /* request_id */)
-
-// Sets a new routing id for the resource request with the ID given as the
-// parameter. This happens when a pending request is transferred to another
-// page.
-IPC_MESSAGE_CONTROL2(ResourceHostMsg_TransferRequestToNewPage,
-                     int /* new routing_id */,
-                     int /* request_id */)
 
 // Follows a redirect that occured for the resource request with the ID given
 // as the parameter.

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,9 @@
 #include "chrome/browser/importer/in_process_importer_bridge.h"
 
 ExternalProcessImporterHost::ExternalProcessImporterHost()
-    : items_(0),
+    : client_(NULL),
+      source_profile_(NULL),
+      items_(0),
       cancelled_(false),
       import_process_launched_(false) {
 }
@@ -20,6 +22,8 @@ void ExternalProcessImporterHost::Cancel() {
     client_->Cancel();
   NotifyImportEnded();  // Tells the observer that we're done, and releases us.
 }
+
+ExternalProcessImporterHost::~ExternalProcessImporterHost() {}
 
 void ExternalProcessImporterHost::StartImportSettings(
     const importer::SourceProfile& source_profile,

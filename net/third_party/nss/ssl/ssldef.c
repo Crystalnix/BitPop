@@ -106,7 +106,7 @@ int ssl_DefRecv(sslSocket *ss, unsigned char *buf, int len, int flags)
 /* Default (unencrypted) send.
  * For blocking sockets, always returns len or SECFailure, no short writes.
  * For non-blocking sockets:
- *   Returns positive count if any data was written, else returns SECFailure. 
+ *   Returns positive count if any data was written, else returns SECFailure.
  *   Short writes may occur.  Does not return SECWouldBlock.
  */
 int ssl_DefSend(sslSocket *ss, const unsigned char *buf, int len, int flags)
@@ -115,7 +115,7 @@ int ssl_DefSend(sslSocket *ss, const unsigned char *buf, int len, int flags)
     int sent = 0;
 
 #if NSS_DISABLE_NAGLE_DELAYS
-    /* Although this is overkill, we disable Nagle delays completely for 
+    /* Although this is overkill, we disable Nagle delays completely for
     ** SSL sockets.
     */
     if (ss->opt.useSecurity && !ss->delayDisabled) {
@@ -124,7 +124,7 @@ int ssl_DefSend(sslSocket *ss, const unsigned char *buf, int len, int flags)
     }
 #endif
     do {
-	int rv = lower->methods->send(lower, (const void *)(buf + sent), 
+	int rv = lower->methods->send(lower, (const void *)(buf + sent),
 	                              len - sent, flags, ss->wTimeout);
 	if (rv < 0) {
 	    PRErrorCode err = PR_GetError();
@@ -138,6 +138,11 @@ int ssl_DefSend(sslSocket *ss, const unsigned char *buf, int len, int flags)
 	    return rv;
 	}
 	sent += rv;
+
+	if (IS_DTLS(ss) && (len > sent)) {
+	    /* We got a partial write so just return it */
+	    return sent;
+	}
     } while (len > sent);
     ss->lastWriteBlocked = 0;
     return sent;
@@ -162,7 +167,7 @@ int ssl_DefWrite(sslSocket *ss, const unsigned char *buf, int len)
     int sent = 0;
 
     do {
-	int rv = lower->methods->write(lower, (const void *)(buf + sent), 
+	int rv = lower->methods->write(lower, (const void *)(buf + sent),
 	                               len - sent);
 	if (rv < 0) {
 	    PRErrorCode err = PR_GetError();
@@ -207,7 +212,7 @@ int ssl_DefClose(sslSocket *ss)
 
     fd    = ss->fd;
 
-    /* First, remove the SSL layer PRFileDesc from the socket's stack, 
+    /* First, remove the SSL layer PRFileDesc from the socket's stack,
     ** then invoke the SSL layer's PRFileDesc destructor.
     ** This must happen before the next layer down is closed.
     */
@@ -222,11 +227,11 @@ int ssl_DefClose(sslSocket *ss)
     ** the stack, and then remove the second one.  This way, the address
     ** of the PRFileDesc on the top of the stack doesn't change.
     */
-    popped = PR_PopIOLayer(fd, PR_TOP_IO_LAYER); 
+    popped = PR_PopIOLayer(fd, PR_TOP_IO_LAYER);
     popped->dtor(popped);
 
     /* fd is now the PRFileDesc for the next layer down.
-    ** Now close the underlying socket. 
+    ** Now close the underlying socket.
     */
     rv = fd->methods->close(fd);
 

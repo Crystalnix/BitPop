@@ -13,6 +13,7 @@
 #include "base/message_loop.h"
 #include "content/common/child_thread.h"
 #include "content/common/socket_stream.h"
+#include "content/common/socket_stream_handle_data.h"
 #include "content/common/socket_stream_messages.h"
 #include "googleurl/src/gurl.h"
 #include "webkit/glue/websocketstreamhandle_bridge.h"
@@ -27,7 +28,7 @@ class IPCWebSocketStreamHandleBridge
       ChildThread* child_thread,
       WebKit::WebSocketStreamHandle* handle,
       webkit_glue::WebSocketStreamHandleDelegate* delegate)
-      : socket_id_(content_common::kNoSocketId),
+      : socket_id_(content::kNoSocketId),
         child_thread_(child_thread),
         handle_(handle),
         delegate_(delegate) {}
@@ -74,9 +75,9 @@ IPCWebSocketStreamHandleBridge* IPCWebSocketStreamHandleBridge::FromSocketId(
 IPCWebSocketStreamHandleBridge::~IPCWebSocketStreamHandleBridge() {
   DVLOG(1) << "IPCWebSocketStreamHandleBridge destructor socket_id="
            << socket_id_;
-  if (socket_id_ != content_common::kNoSocketId) {
+  if (socket_id_ != content::kNoSocketId) {
     child_thread_->Send(new SocketStreamHostMsg_Close(socket_id_));
-    socket_id_ = content_common::kNoSocketId;
+    socket_id_ = content::kNoSocketId;
   }
 }
 
@@ -128,9 +129,9 @@ void IPCWebSocketStreamHandleBridge::OnReceivedData(
 
 void IPCWebSocketStreamHandleBridge::OnClosed() {
   DVLOG(1) << "IPCWebSocketStreamHandleBridge::OnClosed";
-  if (socket_id_ != content_common::kNoSocketId) {
+  if (socket_id_ != content::kNoSocketId) {
     all_bridges.Get().Remove(socket_id_);
-    socket_id_ = content_common::kNoSocketId;
+    socket_id_ = content::kNoSocketId;
   }
   if (delegate_)
     delegate_->DidClose(handle_);
@@ -140,14 +141,20 @@ void IPCWebSocketStreamHandleBridge::OnClosed() {
 
 void IPCWebSocketStreamHandleBridge::DoConnect(const GURL& url) {
   DCHECK(child_thread_);
-  DCHECK_EQ(socket_id_, content_common::kNoSocketId);
+  DCHECK_EQ(socket_id_, content::kNoSocketId);
   if (delegate_)
     delegate_->WillOpenStream(handle_, url);
 
   socket_id_ = all_bridges.Get().Add(this);
-  DCHECK_NE(socket_id_, content_common::kNoSocketId);
+  DCHECK_NE(socket_id_, content::kNoSocketId);
+  int render_view_id = MSG_ROUTING_NONE;
+  const SocketStreamHandleData* data =
+      SocketStreamHandleData::ForHandle(handle_);
+  if (data)
+    render_view_id = data->render_view_id();
   AddRef();  // Released in OnClosed().
-  if (child_thread_->Send(new SocketStreamHostMsg_Connect(url, socket_id_))) {
+  if (child_thread_->Send(
+      new SocketStreamHostMsg_Connect(render_view_id, url, socket_id_))) {
     DVLOG(1) << "Connect socket_id=" << socket_id_;
     // TODO(ukai): timeout to OnConnected.
   } else {

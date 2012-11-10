@@ -12,6 +12,7 @@
 #include "base/values.h"
 #include "chrome/browser/chromeos/imageburner/burn_controller.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/common/time_format.h"
 #include "chrome/common/url_constants.h"
@@ -32,6 +33,7 @@ const char kPropertyDevicePath[] = "devicePath";
 const char kPropertyFilePath[] = "filePath";
 const char kPropertyLabel[] = "label";
 const char kPropertyPath[] = "path";
+const char kPropertyDeviceType[] = "type";
 
 // Link displayed on imageburner ui.
 const char kMoreInfoLink[] =
@@ -190,6 +192,8 @@ class WebUIHandler
     disk_value->SetString(std::string(kPropertyLabel), label);
     disk_value->SetString(std::string(kPropertyFilePath), disk.file_path());
     disk_value->SetString(std::string(kPropertyDevicePath), disk.device_path());
+    disk_value->SetString(std::string(kPropertyDeviceType),
+        disks::DiskMountManager::DeviceTypeToString(disk.device_type()));
   }
 
   // Callback for the "getDevices" message.
@@ -289,7 +293,7 @@ class WebUIHandler
   void ExtractTargetedDevicePath(const ListValue& list_value,
                                  int index,
                                  FilePath* device_path) {
-    Value* list_member;
+    const Value* list_member;
     if (list_value.Get(index, &list_member) &&
         list_member->GetType() == Value::TYPE_STRING) {
       const StringValue* string_value =
@@ -325,6 +329,6 @@ ImageBurnUI::ImageBurnUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   web_ui->AddMessageHandler(handler);
 
   Profile* profile = Profile::FromWebUI(web_ui);
-  profile->GetChromeURLDataManager()->AddDataSource(
+  ChromeURLDataManager::AddDataSource(profile,
       chromeos::imageburner::CreateImageburnerUIHTMLSource());
 }

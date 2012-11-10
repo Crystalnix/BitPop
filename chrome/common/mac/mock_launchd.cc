@@ -101,7 +101,6 @@ MockLaunchd::MockLaunchd(const FilePath& file, MessageLoop* loop,
       as_service_(as_service),
       restart_called_(false),
       remove_called_(false),
-      job_called_(false),
       checkin_called_(false),
       write_called_(false),
       delete_called_(false) {
@@ -214,7 +213,7 @@ CFDictionaryRef MockLaunchd::CopyDictionaryByCheckingIn(CFErrorRef* error) {
   signature.address = address;
 
   CFSocketRef socket =
-      CFSocketCreateWithSocketSignature(NULL, &signature, NULL, NULL, NULL);
+      CFSocketCreateWithSocketSignature(NULL, &signature, 0, NULL, NULL);
 
   local_pipe = CFSocketGetNative(socket);
   EXPECT_NE(-1, local_pipe);

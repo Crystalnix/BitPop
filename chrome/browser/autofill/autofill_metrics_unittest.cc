@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,12 +14,11 @@
 #include "chrome/browser/autofill/autofill_metrics.h"
 #include "chrome/browser/autofill/personal_data_manager.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "chrome/browser/ui/tab_contents/test_tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tab_contents/test_tab_contents.h"
 #include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/browser/tab_contents/test_tab_contents.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/rect.h"
@@ -83,11 +82,6 @@ class TestPersonalDataManager : public PersonalDataManager {
   TestPersonalDataManager() : autofill_enabled_(true) {
     set_metric_logger(new MockAutofillMetrics);
     CreateTestAutofillProfiles(&web_profiles_);
-  }
-
-  // Factory method for keyed service.  PersonalDataManager is NULL for testing.
-  static ProfileKeyedService* Build(Profile* profile) {
-    return NULL;
   }
 
   // Overridden to avoid a trip to the database. This should be a no-op except
@@ -177,7 +171,7 @@ class TestFormStructure : public FormStructure {
 
 class TestAutofillManager : public AutofillManager {
  public:
-  TestAutofillManager(TabContentsWrapper* tab_contents,
+  TestAutofillManager(TabContents* tab_contents,
                       TestPersonalDataManager* personal_manager)
       : AutofillManager(tab_contents, personal_manager),
         autofill_enabled_(true),
@@ -259,7 +253,7 @@ class TestAutofillManager : public AutofillManager {
 
 }  // namespace
 
-class AutofillMetricsTest : public TabContentsWrapperTestHarness {
+class AutofillMetricsTest : public TabContentsTestHarness {
  public:
   AutofillMetricsTest();
   virtual ~AutofillMetricsTest();
@@ -282,7 +276,7 @@ class AutofillMetricsTest : public TabContentsWrapperTestHarness {
 };
 
 AutofillMetricsTest::AutofillMetricsTest()
-  : TabContentsWrapperTestHarness(),
+  : TabContentsTestHarness(),
     ui_thread_(BrowserThread::UI, &message_loop_),
     file_thread_(BrowserThread::FILE) {
 }
@@ -297,10 +291,10 @@ void AutofillMetricsTest::SetUp() {
   Profile* profile = new TestingProfile();
   browser_context_.reset(profile);
   PersonalDataManagerFactory::GetInstance()->SetTestingFactory(
-      profile, TestPersonalDataManager::Build);
+      profile, NULL);
 
-  TabContentsWrapperTestHarness::SetUp();
-  autofill_manager_ = new TestAutofillManager(contents_wrapper(),
+  TabContentsTestHarness::SetUp();
+  autofill_manager_ = new TestAutofillManager(tab_contents(),
                                               &personal_data_);
 
   file_thread_.Start();
@@ -308,7 +302,7 @@ void AutofillMetricsTest::SetUp() {
 
 void AutofillMetricsTest::TearDown() {
   file_thread_.Stop();
-  TabContentsWrapperTestHarness::TearDown();
+  TabContentsTestHarness::TearDown();
 }
 
 AutofillCCInfoBarDelegate* AutofillMetricsTest::CreateDelegate(
@@ -320,7 +314,7 @@ AutofillCCInfoBarDelegate* AutofillMetricsTest::CreateDelegate(
   CreditCard* credit_card = new CreditCard();
   if (created_card)
     *created_card = credit_card;
-  return new AutofillCCInfoBarDelegate(contents_wrapper()->infobar_tab_helper(),
+  return new AutofillCCInfoBarDelegate(tab_contents()->infobar_tab_helper(),
                                        credit_card,
                                        &personal_data_,
                                        metric_logger);
@@ -936,6 +930,7 @@ TEST_F(AutofillMetricsTest, AutofillIsEnabledAtStartup) {
   EXPECT_CALL(*personal_data_.metric_logger(),
               LogIsAutofillEnabledAtStartup(true)).Times(1);
   personal_data_.Init(profile());
+  personal_data_.Shutdown();
 
   personal_data_.set_autofill_enabled(false);
   EXPECT_CALL(*personal_data_.metric_logger(),

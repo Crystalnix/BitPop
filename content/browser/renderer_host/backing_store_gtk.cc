@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,9 +16,9 @@
 #endif
 
 #include <algorithm>
-#include <utility>
 #include <limits>
 #include <queue>
+#include <utility>
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
@@ -28,12 +28,13 @@
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/base/x/x11_util_internal.h"
-#include "ui/base/gtk/gtk_signal.h"
 #include "ui/gfx/rect.h"
-#include "ui/gfx/surface/transport_dib.h"
+#include "ui/surface/transport_dib.h"
 
+namespace content {
 namespace {
 
 // Assume that somewhere along the line, someone will do width * height * 4
@@ -328,10 +329,11 @@ void BackingStoreGtk::PaintRectWithoutXrender(
 }
 
 void BackingStoreGtk::PaintToBackingStore(
-    content::RenderProcessHost* process,
+    RenderProcessHost* process,
     TransportDIB::Id bitmap,
     const gfx::Rect& bitmap_rect,
     const std::vector<gfx::Rect>& copy_rects,
+    float scale_factor,
     const base::Closure& completion_callback,
     bool* scheduled_completion_callback) {
   *scheduled_completion_callback = false;
@@ -561,6 +563,8 @@ bool BackingStoreGtk::CopyFromBackingStore(const gfx::Rect& rect,
   // using.  This code assumes a visual mode where a pixel is
   // represented using a 32-bit unsigned int, with a byte per component.
   SkBitmap bitmap = skia::GetTopDevice(*output)->accessBitmap(true);
+  SkAutoLockPixels alp(bitmap);
+
   for (int y = 0; y < height; y++) {
     const uint32* src_row = reinterpret_cast<uint32*>(
         &image->data[image->bytes_per_line * y]);
@@ -660,3 +664,5 @@ void BackingStoreGtk::PaintToRect(const gfx::Rect& rect, GdkDrawable* target) {
   cairo_destroy(cr);
 }
 #endif
+
+}  // namespace content

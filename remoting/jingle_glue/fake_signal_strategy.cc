@@ -1,14 +1,16 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "remoting/jingle_glue/fake_signal_strategy.h"
 
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/string_number_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
 #include "third_party/libjingle/source/talk/xmpp/constants.h"
 
@@ -30,9 +32,9 @@ FakeSignalStrategy::FakeSignalStrategy(const std::string& jid)
 }
 
 FakeSignalStrategy::~FakeSignalStrategy() {
-  while (!pending_messages_.empty()) {
-    delete pending_messages_.front();
-    pending_messages_.pop();
+  while (!received_messages_.empty()) {
+    delete received_messages_.front();
+    received_messages_.pop_front();
   }
 }
 
@@ -52,6 +54,10 @@ SignalStrategy::State FakeSignalStrategy::GetState() const {
   return CONNECTED;
 }
 
+SignalStrategy::Error FakeSignalStrategy::GetError() const {
+  return OK;
+}
+
 std::string FakeSignalStrategy::GetLocalJid() const {
   DCHECK(CalledOnValidThread());
   return jid_;
@@ -67,16 +73,15 @@ void FakeSignalStrategy::RemoveListener(Listener* listener) {
   listeners_.RemoveObserver(listener);
 }
 
-bool FakeSignalStrategy::SendStanza(buzz::XmlElement* stanza) {
+bool FakeSignalStrategy::SendStanza(scoped_ptr<buzz::XmlElement> stanza) {
   DCHECK(CalledOnValidThread());
 
   stanza->SetAttr(buzz::QN_FROM, jid_);
 
   if (peer_) {
-    peer_->OnIncomingMessage(stanza);
+    peer_->OnIncomingMessage(stanza.Pass());
     return true;
   } else {
-    delete stanza;
     return false;
   }
 }
@@ -86,9 +91,11 @@ std::string FakeSignalStrategy::GetNextId() {
   return base::IntToString(last_id_);
 }
 
-void FakeSignalStrategy::OnIncomingMessage(buzz::XmlElement* stanza) {
-  pending_messages_.push(stanza);
-  MessageLoop::current()->PostTask(
+void FakeSignalStrategy::OnIncomingMessage(
+    scoped_ptr<buzz::XmlElement> stanza) {
+  pending_messages_.push(stanza.get());
+  received_messages_.push_back(stanza.release());
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::Bind(&FakeSignalStrategy::DeliverIncomingMessages,
                             weak_factory_.GetWeakPtr()));
 }
@@ -112,7 +119,6 @@ void FakeSignalStrategy::DeliverIncomingMessages() {
     }
 
     pending_messages_.pop();
-    delete stanza;
   }
 }
 

@@ -56,28 +56,24 @@ bool DeleteInstallDirectory(bool system_level,
   if (version.empty())
     return false;
   FilePath path;
-  if (!GetInstallDirectory(system_level,
-                           ToBrowserDistributionType(type), &path) ||
-      !file_util::PathExists(path))
+  bool has_install_dir = GetInstallDirectory(system_level,
+                                             ToBrowserDistributionType(type),
+                                             &path);
+  if (!has_install_dir || !file_util::PathExists(path))
     return false;
   path = path.AppendASCII(version);
-  if (!file_util::Delete(path, true))
-    return false;
-  return true;
+  return file_util::Delete(path, true);
 }
 
 bool DeleteRegistryKey(bool system_level,
                        InstallationValidator::InstallationType type) {
-  FilePath::StringType key(google_update::kRegPathClients);
   BrowserDistribution* dist = BrowserDistribution::GetSpecificDistribution(
       ToBrowserDistributionType(type));
-  file_util::AppendToPath(&key, dist->GetAppGuid());
-  HKEY root = HKEY_CURRENT_USER;
-  if (system_level)
-    root = HKEY_LOCAL_MACHINE;
-  if (InstallUtil::DeleteRegistryKey(root, key))
-    return true;
-  return false;
+  FilePath::StringType key(google_update::kRegPathClients);
+  key.push_back(FilePath::kSeparators[0]);
+  key.append(dist->GetAppGuid());
+  HKEY root = system_level ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
+  return InstallUtil::DeleteRegistryKey(root, key);
 }
 
 bool GetChromeInstallDirectory(bool system_level, FilePath* path) {
@@ -116,11 +112,11 @@ bool GetInstalledProducts(
     if (type != InstallationValidator::NO_PRODUCTS) {
       current_dist = BrowserDistribution::GetSpecificDistribution(
           ToBrowserDistributionType(type));
-      scoped_ptr<Version> version(
-        InstallUtil::GetChromeVersion(current_dist, system_level));
-      if (version.get()) {
+      Version version;
+      InstallUtil::GetChromeVersion(current_dist, system_level, &version);
+      if (version.IsValid()) {
         current_prod.type = type;
-        current_prod.version = version->GetString();
+        current_prod.version = version.GetString();
         current_prod.system = system_level;
         products->push_back(current_prod);
       }
@@ -183,7 +179,7 @@ bool Install(const FilePath& installer, const SwitchBuilder& switches) {
 }
 
 bool LaunchChrome(bool close_after_launch, bool system_level) {
-  base::CleanupProcesses(installer::kChromeExe, 0,
+  base::CleanupProcesses(installer::kChromeExe, base::TimeDelta(),
                          content::RESULT_CODE_HUNG, NULL);
   FilePath install_path;
   if (!GetChromeInstallDirectory(
@@ -222,9 +218,9 @@ bool LaunchIE(const std::string& url) {
 }
 
 bool UninstallAll() {
-  base::CleanupProcesses(installer::kChromeExe, 0,
+  base::CleanupProcesses(installer::kChromeExe, base::TimeDelta(),
                          content::RESULT_CODE_HUNG, NULL);
-  base::CleanupProcesses(installer::kChromeFrameHelperExe, 0,
+  base::CleanupProcesses(installer::kChromeFrameHelperExe, base::TimeDelta(),
                          content::RESULT_CODE_HUNG, NULL);
   std::vector<installer_test::InstalledProduct> installed;
   if (!GetInstalledProducts(&installed)) {
@@ -277,7 +273,8 @@ bool Uninstall(bool system_level,
   LOG(INFO) << "Uninstall command: " << uninstall_cmd.GetCommandLineString();
   bool ret_val = RunAndWaitForCommandToFinish(uninstall_cmd);
   // Close IE notification when uninstalling Chrome Frame.
-  base::CleanupProcesses(mini_installer_constants::kIEProcessName, 0,
+  base::CleanupProcesses(mini_installer_constants::kIEProcessName,
+                         base::TimeDelta(),
                          content::RESULT_CODE_HUNG, NULL);
   return ret_val;
 }
@@ -295,7 +292,7 @@ bool RunAndWaitForCommandToFinish(CommandLine command) {
                << command.GetCommandLineString();
     return false;
   }
-  if (!base::WaitForSingleProcess(process, 60 * 1000)) {
+  if (!base::WaitForSingleProcess(process, base::TimeDelta::FromMinutes(1))) {
     LOG(ERROR) << "Launched process did not complete.";
     return false;
   }
@@ -303,4 +300,3 @@ bool RunAndWaitForCommandToFinish(CommandLine command) {
 }
 
 }  // namespace
-

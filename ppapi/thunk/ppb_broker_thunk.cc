@@ -4,7 +4,7 @@
 
 #include "ppapi/c/trusted/ppb_broker_trusted.h"
 #include "ppapi/c/pp_errors.h"
-#include "ppapi/thunk/common.h"
+#include "ppapi/shared_impl/tracked_callback.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/thunk.h"
 #include "ppapi/thunk/ppb_broker_api.h"
@@ -16,7 +16,7 @@ namespace thunk {
 namespace {
 
 PP_Resource CreateTrusted(PP_Instance instance) {
-  EnterFunction<ResourceCreationAPI> enter(instance, true);
+  EnterResourceCreation enter(instance);
   if (enter.failed())
     return 0;
   return enter.functions()->CreateBroker(instance);
@@ -28,18 +28,17 @@ PP_Bool IsBrokerTrusted(PP_Resource resource) {
 }
 
 int32_t Connect(PP_Resource resource,
-                PP_CompletionCallback connect_callback) {
-  EnterResource<PPB_Broker_API> enter(resource, true);
+                PP_CompletionCallback callback) {
+  EnterResource<PPB_Broker_API> enter(resource, callback, true);
   if (enter.failed())
-    return MayForceCallback(connect_callback, PP_ERROR_BADRESOURCE);
-  int32_t result = enter.object()->Connect(connect_callback);
-  return MayForceCallback(connect_callback, result);
+    return enter.retval();
+  return enter.SetResult(enter.object()->Connect(enter.callback()));
 }
 
 int32_t GetHandle(PP_Resource resource, int32_t* handle) {
   EnterResource<PPB_Broker_API> enter(resource, true);
   if (enter.failed())
-    return PP_ERROR_BADRESOURCE;
+    return enter.retval();
   return enter.object()->GetHandle(handle);
 }
 

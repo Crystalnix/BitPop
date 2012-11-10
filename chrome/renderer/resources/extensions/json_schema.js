@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,9 +38,21 @@
 //   additional properties will be validated.
 //==============================================================================
 
-(function() {
-native function GetChromeHidden();
-var chromeHidden = GetChromeHidden();
+var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
+
+function isInstanceOfClass(instance, className) {
+  if (!instance)
+    return false;
+
+  if (Object.prototype.toString.call(instance) == "[object " + className + "]")
+    return true;
+
+  return isInstanceOfClass(Object.getPrototypeOf(instance), className);
+}
+
+function isOptionalValue(value) {
+  return typeof(value) === 'undefined' || value === null;
+}
 
 /**
  * Validates an instance against a schema and accumulates errors. Usage:
@@ -112,6 +124,9 @@ chromeHidden.JSONSchemaValidator.getType = function(value) {
       return "null";
     } else if (Object.prototype.toString.call(value) == "[object Array]") {
       return "array";
+    } else if (typeof(ArrayBuffer) != "undefined" &&
+               value.constructor == ArrayBuffer) {
+      return "binary";
     }
   } else if (s == "number") {
     if (value % 1 == 0) {
@@ -129,8 +144,8 @@ chromeHidden.JSONSchemaValidator.getType = function(value) {
  */
 chromeHidden.JSONSchemaValidator.prototype.addTypes = function(typeOrTypeList) {
   function addType(validator, type) {
-    if(!type.id)
-      throw "Attempt to addType with missing 'id' property";
+    if (!type.id)
+      throw new Error("Attempt to addType with missing 'id' property");
     validator.types[type.id] = type;
   }
 
@@ -144,12 +159,68 @@ chromeHidden.JSONSchemaValidator.prototype.addTypes = function(typeOrTypeList) {
 }
 
 /**
+ * Returns a list of strings of the types that this schema accepts.
+ */
+chromeHidden.JSONSchemaValidator.prototype.getAllTypesForSchema =
+    function(schema) {
+  var schemaTypes = [];
+  if (schema.type)
+    schemaTypes.push(schema.type);
+  if (schema.choices) {
+    for (var i = 0; i < schema.choices.length; i++) {
+      var choiceTypes = this.getAllTypesForSchema(schema.choices[i]);
+      schemaTypes = schemaTypes.concat(choiceTypes);
+    }
+  }
+  if (schema['$ref']) {
+    var refTypes = this.getAllTypesForSchema(this.types[schema['$ref']]);
+    schemaTypes = schemaTypes.concat(refTypes);
+  }
+  return schemaTypes;
+};
+
+/**
+ * Returns true if |schema| would accept an argument of type |type|.
+ */
+chromeHidden.JSONSchemaValidator.prototype.isValidSchemaType =
+    function(type, schema) {
+  if (type == 'any')
+    return true;
+
+  // TODO(kalman): I don't understand this code. How can type be "null"?
+  if (schema.optional && (type == "null" || type == "undefined"))
+    return true;
+
+  schemaTypes = this.getAllTypesForSchema(schema);
+  for (var i = 0; i < schemaTypes.length; i++) {
+    if (schemaTypes[i] == "any" || type == schemaTypes[i])
+      return true;
+  }
+
+  return false;
+};
+
+/**
+ * Returns true if there is a non-null argument that both |schema1| and
+ * |schema2| would accept.
+ */
+chromeHidden.JSONSchemaValidator.prototype.checkSchemaOverlap =
+    function(schema1, schema2) {
+  var schema1Types = this.getAllTypesForSchema(schema1);
+  for (var i = 0; i < schema1Types.length; i++) {
+    if (this.isValidSchemaType(schema1Types[i], schema2))
+      return true;
+  }
+  return false;
+};
+
+/**
  * Validates an instance against a schema. The instance can be any JavaScript
  * value and will be validated recursively. When this method returns, the
  * |errors| property will contain a list of errors, if any.
  */
-chromeHidden.JSONSchemaValidator.prototype.validate = function(
-    instance, schema, opt_path) {
+chromeHidden.JSONSchemaValidator.prototype.validate =
+    function(instance, schema, opt_path) {
   var path = opt_path || "";
 
   if (!schema) {
@@ -216,8 +287,8 @@ chromeHidden.JSONSchemaValidator.prototype.validate = function(
  * Validates an instance against a choices schema. The instance must match at
  * least one of the provided choices.
  */
-chromeHidden.JSONSchemaValidator.prototype.validateChoices = function(
-    instance, schema, path) {
+chromeHidden.JSONSchemaValidator.prototype.validateChoices =
+    function(instance, schema, path) {
   var originalErrors = this.errors;
 
   for (var i = 0; i < schema.choices.length; i++) {
@@ -238,8 +309,8 @@ chromeHidden.JSONSchemaValidator.prototype.validateChoices = function(
  * |errors| property, and returns a boolean indicating whether the instance
  * validates.
  */
-chromeHidden.JSONSchemaValidator.prototype.validateEnum = function(
-    instance, schema, path) {
+chromeHidden.JSONSchemaValidator.prototype.validateEnum =
+    function(instance, schema, path) {
   for (var i = 0; i < schema.enum.length; i++) {
     if (instance === schema.enum[i])
       return true;
@@ -253,51 +324,34 @@ chromeHidden.JSONSchemaValidator.prototype.validateEnum = function(
  * Validates an instance against an object schema and populates the errors
  * property.
  */
-chromeHidden.JSONSchemaValidator.prototype.validateObject = function(
-    instance, schema, path) {
-  for (var prop in schema.properties) {
-    // It is common in JavaScript to add properties to Object.prototype. This
-    // check prevents such additions from being interpreted as required schema
-    // properties.
-    // TODO(aa): If it ever turns out that we actually want this to work, there
-    // are other checks we could put here, like requiring that schema properties
-    // be objects that have a 'type' property.
-    if (!schema.properties.hasOwnProperty(prop))
-      continue;
+chromeHidden.JSONSchemaValidator.prototype.validateObject =
+    function(instance, schema, path) {
+  if (schema.properties) {
+    for (var prop in schema.properties) {
+      // It is common in JavaScript to add properties to Object.prototype. This
+      // check prevents such additions from being interpreted as required
+      // schema properties.
+      // TODO(aa): If it ever turns out that we actually want this to work,
+      // there are other checks we could put here, like requiring that schema
+      // properties be objects that have a 'type' property.
+      if (!schema.properties.hasOwnProperty(prop))
+        continue;
 
-    var propPath = path ? path + "." + prop : prop;
-    if (schema.properties[prop] == undefined) {
-      this.addError(propPath, "invalidPropertyType");
-    } else if (prop in instance && instance[prop] !== undefined) {
-      this.validate(instance[prop], schema.properties[prop], propPath);
-    } else if (!schema.properties[prop].optional) {
-      this.addError(propPath, "propertyRequired");
+      var propPath = path ? path + "." + prop : prop;
+      if (schema.properties[prop] == undefined) {
+        this.addError(propPath, "invalidPropertyType");
+      } else if (prop in instance && !isOptionalValue(instance[prop])) {
+        this.validate(instance[prop], schema.properties[prop], propPath);
+      } else if (!schema.properties[prop].optional) {
+        this.addError(propPath, "propertyRequired");
+      }
     }
   }
 
   // If "instanceof" property is set, check that this object inherits from
   // the specified constructor (function).
   if (schema.isInstanceOf) {
-    var isInstance = function() {
-      var constructor = this[schema.isInstanceOf];
-      if (constructor) {
-        return (instance instanceof constructor);
-      }
-
-      // Special-case constructors that can not always be found on the global
-      // object, but for which we to allow validation.
-      var allowedNamedConstructors = {
-        "DOMWindow": true,
-        "ImageData": true
-      }
-      if (!allowedNamedConstructors[schema.isInstanceOf]) {
-        throw "Attempt to validate against an instance ctor that could not be" +
-              "found: " + schema.isInstanceOf;
-      }
-      return (schema.isInstanceOf == instance.constructor.name)
-    }();
-
-    if (!isInstance)
+    if (!isInstanceOfClass(instance, schema.isInstanceOf))
       this.addError(propPath, "notInstance", [schema.isInstanceOf]);
   }
 
@@ -312,7 +366,7 @@ chromeHidden.JSONSchemaValidator.prototype.validateObject = function(
   // can be overridden by setting the additionalProperties property to a schema
   // which any additional properties must validate against.
   for (var prop in instance) {
-    if (prop in schema.properties)
+    if (schema.properties && prop in schema.properties)
       continue;
 
     // Any properties inherited through the prototype are ignored.
@@ -331,8 +385,8 @@ chromeHidden.JSONSchemaValidator.prototype.validateObject = function(
  * Validates an instance against an array schema and populates the errors
  * property.
  */
-chromeHidden.JSONSchemaValidator.prototype.validateArray = function(
-    instance, schema, path) {
+chromeHidden.JSONSchemaValidator.prototype.validateArray =
+    function(instance, schema, path) {
   var typeOfItems = chromeHidden.JSONSchemaValidator.getType(schema.items);
 
   if (typeOfItems == 'object') {
@@ -355,7 +409,7 @@ chromeHidden.JSONSchemaValidator.prototype.validateArray = function(
     // validate against the corresponding schema.
     for (var i = 0; i < schema.items.length; i++) {
       var itemPath = path ? path + "." + i : String(i);
-      if (i in instance && instance[i] !== null && instance[i] !== undefined) {
+      if (i in instance && !isOptionalValue(instance[i])) {
         this.validate(instance[i], schema.items[i], itemPath);
       } else if (!schema.items[i].optional) {
         this.addError(itemPath, "itemRequired");
@@ -378,8 +432,8 @@ chromeHidden.JSONSchemaValidator.prototype.validateArray = function(
 /**
  * Validates a string and populates the errors property.
  */
-chromeHidden.JSONSchemaValidator.prototype.validateString = function(
-    instance, schema, path) {
+chromeHidden.JSONSchemaValidator.prototype.validateString =
+    function(instance, schema, path) {
   if (schema.minLength && instance.length < schema.minLength)
     this.addError(path, "stringMinLength", [schema.minLength]);
 
@@ -394,8 +448,8 @@ chromeHidden.JSONSchemaValidator.prototype.validateString = function(
  * Validates a number and populates the errors property. The instance is
  * assumed to be a number.
  */
-chromeHidden.JSONSchemaValidator.prototype.validateNumber = function(
-    instance, schema, path) {
+chromeHidden.JSONSchemaValidator.prototype.validateNumber =
+    function(instance, schema, path) {
 
   // Forbid NaN, +Infinity, and -Infinity.  Our APIs don't use them, and
   // JSON serialization encodes them as 'null'.  Re-evaluate supporting
@@ -423,8 +477,8 @@ chromeHidden.JSONSchemaValidator.prototype.validateNumber = function(
  * Validates the primitive type of an instance and populates the errors
  * property. Returns true if the instance validates, false otherwise.
  */
-chromeHidden.JSONSchemaValidator.prototype.validateType = function(
-    instance, schema, path) {
+chromeHidden.JSONSchemaValidator.prototype.validateType =
+    function(instance, schema, path) {
   var actualType = chromeHidden.JSONSchemaValidator.getType(instance);
   if (schema.type != actualType && !(schema.type == "number" &&
       actualType == "integer")) {
@@ -440,12 +494,17 @@ chromeHidden.JSONSchemaValidator.prototype.validateType = function(
  * |replacements| is an array of values to replace '*' characters in the
  * message.
  */
-chromeHidden.JSONSchemaValidator.prototype.addError = function(
-    path, key, replacements) {
+chromeHidden.JSONSchemaValidator.prototype.addError =
+    function(path, key, replacements) {
   this.errors.push({
     path: path,
     message: chromeHidden.JSONSchemaValidator.formatError(key, replacements)
   });
 };
 
-})();
+/**
+ * Resets errors to an empty list so you can call 'validate' again.
+ */
+chromeHidden.JSONSchemaValidator.prototype.resetErrors = function() {
+  this.errors = [];
+};

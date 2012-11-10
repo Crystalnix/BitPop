@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_SEARCH_ENGINES_TEMPLATE_URL_SERVICE_TEST_UTIL_H_
 #define CHROME_BROWSER_SEARCH_ENGINES_TEMPLATE_URL_SERVICE_TEST_UTIL_H_
-#pragma once
 
 #include <string>
 
@@ -15,8 +14,9 @@
 #include "base/string16.h"
 #include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 
+class GURL;
 class TemplateURLService;
 class TemplateURLServiceTestingProfile;
 class TestingTemplateURLService;
@@ -74,11 +74,22 @@ class TemplateURLServiceTestUtil : public TemplateURLServiceObserver {
   // TemplateURLService::SetKeywordSearchTermsForURL and clears the search term.
   string16 GetAndClearSearchTerm();
 
-  // Set the google base url.
-  void SetGoogleBaseURL(const std::string& base_url) const;
+  // Set the google base url.  |base_url| must be valid.
+  void SetGoogleBaseURL(const GURL& base_url) const;
 
-  // Returns the WebDataService.
-  WebDataService* GetWebDataService();
+  // Set the managed preferences for the default search provider and trigger
+  // notification.
+  void SetManagedDefaultSearchPreferences(bool enabled,
+                                          const std::string& name,
+                                          const std::string& keyword,
+                                          const std::string& search_url,
+                                          const std::string& suggest_url,
+                                          const std::string& icon_url,
+                                          const std::string& encodings);
+
+  // Remove all the managed preferences for the default search provider and
+  // trigger notification.
+  void RemoveManagedDefaultSearchPreferences();
 
   // Returns the TemplateURLService.
   TemplateURLService* model() const;
@@ -89,13 +100,15 @@ class TemplateURLServiceTestUtil : public TemplateURLServiceObserver {
   // Starts an I/O thread.
   void StartIOThread();
 
+  // Runs all pending tasks on the UI loop.
+  void PumpLoop();
+
  private:
   MessageLoopForUI message_loop_;
   // Needed to make the DeleteOnUIThread trait of WebDataService work
   // properly.
   content::TestBrowserThread ui_thread_;
   scoped_ptr<TemplateURLServiceTestingProfile> profile_;
-  scoped_ptr<TestingTemplateURLService> model_;
   int changed_count_;
 
   DISALLOW_COPY_AND_ASSIGN(TemplateURLServiceTestUtil);

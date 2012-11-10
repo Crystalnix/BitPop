@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,8 @@
 using base::JSONReader;
 using base::JSONWriter;
 using content::BrowserThread;
+
+namespace extensions {
 
 // A concrete implementation of the AppNotificationStorage interface, using
 // LevelDb for backing storage.
@@ -74,14 +76,13 @@ void AppNotificationListToJSON(const AppNotificationList& list,
     (*i)->ToDictionaryValue(dictionary);
     list_value.Append(dictionary);
   }
-  JSONWriter::Write(&list_value, false /* pretty_print */, result);
+  JSONWriter::Write(&list_value, result);
 }
 
 bool JSONToAppNotificationList(const std::string& json,
                                AppNotificationList* list) {
   CHECK(list);
-  scoped_ptr<Value> value(JSONReader::Read(json,
-                                           false /* allow_trailing_comma */));
+  scoped_ptr<Value> value(JSONReader::Read(json));
   if (!value.get() || value->GetType() != Value::TYPE_LIST)
     return false;
 
@@ -101,7 +102,7 @@ bool JSONToAppNotificationList(const std::string& json,
   return true;
 }
 
-void LogLevelDbError(tracked_objects::Location location,
+void LogLevelDbError(const tracked_objects::Location& location,
                      const leveldb::Status& status) {
   LOG(ERROR) << "AppNotificationStorage database error at "
              << location.ToString() << " status:" << status.ToString();
@@ -227,3 +228,5 @@ bool LevelDbAppNotificationStorage::OpenDbIfNeeded(bool create_if_missing) {
   db_.reset(db);
   return true;
 }
+
+}  // namespace extensions

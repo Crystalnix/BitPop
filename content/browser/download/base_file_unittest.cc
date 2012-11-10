@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,8 +51,14 @@ class BaseFileTest : public testing::Test {
   virtual void SetUp() {
     ResetHash();
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    base_file_.reset(
-        new BaseFile(FilePath(), GURL(), GURL(), 0, false, "", file_stream_));
+    base_file_.reset(new BaseFile(FilePath(),
+                                  GURL(),
+                                  GURL(),
+                                  0,
+                                  false,
+                                  "",
+                                  file_stream_,
+                                  net::BoundNetLog()));
   }
 
   virtual void TearDown() {
@@ -96,8 +102,14 @@ class BaseFileTest : public testing::Test {
   }
 
   void MakeFileWithHash() {
-    base_file_.reset(
-        new BaseFile(FilePath(), GURL(), GURL(), 0, true, "", file_stream_));
+    base_file_.reset(new BaseFile(FilePath(),
+                                  GURL(),
+                                  GURL(),
+                                  0,
+                                  true,
+                                  "",
+                                  file_stream_,
+                                  net::BoundNetLog()));
   }
 
   bool OpenMockFileStream() {
@@ -108,8 +120,8 @@ class BaseFileTest : public testing::Test {
       return false;
 
     // Create a new file stream.
-    mock_file_stream_.reset(new net::testing::MockFileStream);
-    if (mock_file_stream_->Open(
+    mock_file_stream_.reset(new net::testing::MockFileStream(NULL));
+    if (mock_file_stream_->OpenSync(
         path,
         base::PLATFORM_FILE_OPEN_ALWAYS | base::PLATFORM_FILE_WRITE) != 0) {
       mock_file_stream_.reset();
@@ -148,7 +160,14 @@ class BaseFileTest : public testing::Test {
   static FilePath CreateTestFile() {
     FilePath file_name;
     linked_ptr<net::FileStream> dummy_file_stream;
-    BaseFile file(FilePath(), GURL(), GURL(), 0, false, "", dummy_file_stream);
+    BaseFile file(FilePath(),
+                  GURL(),
+                  GURL(),
+                  0,
+                  false,
+                  "",
+                  dummy_file_stream,
+                  net::BoundNetLog());
 
     EXPECT_EQ(net::OK, file.Initialize());
     file_name = file.full_path();
@@ -166,8 +185,14 @@ class BaseFileTest : public testing::Test {
   static void CreateFileWithName(const FilePath& file_name) {
     EXPECT_NE(FilePath::StringType(), file_name.value());
     linked_ptr<net::FileStream> dummy_file_stream;
-    BaseFile duplicate_file(
-        file_name, GURL(), GURL(), 0, false, "", dummy_file_stream);
+    BaseFile duplicate_file(file_name,
+                            GURL(),
+                            GURL(),
+                            0,
+                            false,
+                            "",
+                            dummy_file_stream,
+                            net::BoundNetLog());
     EXPECT_EQ(net::OK, duplicate_file.Initialize());
     // Write something into it.
     duplicate_file.AppendDataToFile(kTestData4, kTestDataLength4);
@@ -387,7 +412,8 @@ TEST_F(BaseFileTest, MultipleWritesInterruptedWithHash) {
                        base_file_->bytes_so_far(),
                        true,
                        hash_state,
-                       second_stream);
+                       second_stream,
+                       net::BoundNetLog());
   ASSERT_EQ(net::OK, second_file.Initialize());
   std::string data(kTestData3);
   EXPECT_EQ(net::OK, second_file.AppendDataToFile(data.data(), data.size()));
@@ -439,6 +465,27 @@ TEST_F(BaseFileTest, RenameWhileInProgress) {
   base_file_->Finish();
 }
 
+// Test that a failed rename reports the correct error.
+TEST_F(BaseFileTest, RenameWithError) {
+  ASSERT_EQ(net::OK, base_file_->Initialize());
+
+  // TestDir is a subdirectory in |temp_dir_| that we will make read-only so
+  // that the rename will fail.
+  FilePath test_dir(temp_dir_.path().AppendASCII("TestDir"));
+  ASSERT_TRUE(file_util::CreateDirectory(test_dir));
+
+  FilePath new_path(test_dir.AppendASCII("TestFile"));
+  EXPECT_FALSE(file_util::PathExists(new_path));
+
+  {
+    file_util::PermissionRestorer restore_permissions_for(test_dir);
+    ASSERT_TRUE(file_util::MakeFileUnwritable(test_dir));
+    EXPECT_EQ(net::ERR_ACCESS_DENIED, base_file_->Rename(new_path));
+  }
+
+  base_file_->Finish();
+}
+
 // Write data to the file multiple times.
 TEST_F(BaseFileTest, MultipleWritesWithError) {
   ASSERT_TRUE(OpenMockFileStream());
@@ -448,7 +495,8 @@ TEST_F(BaseFileTest, MultipleWritesWithError) {
                                 0,
                                 false,
                                 "",
-                                mock_file_stream_));
+                                mock_file_stream_,
+                                net::BoundNetLog()));
   EXPECT_EQ(net::OK, base_file_->Initialize());
   ASSERT_EQ(net::OK, AppendDataToFile(kTestData1));
   ASSERT_EQ(net::OK, AppendDataToFile(kTestData2));
@@ -492,7 +540,8 @@ TEST_F(BaseFileTest, AppendToBaseFile) {
                                 kTestDataLength4,
                                 false,
                                 "",
-                                file_stream_));
+                                file_stream_,
+                                net::BoundNetLog()));
 
   EXPECT_EQ(net::OK, base_file_->Initialize());
 
@@ -512,6 +561,9 @@ TEST_F(BaseFileTest, ReadonlyBaseFile) {
   // Create a new file.
   FilePath readonly_file_name = CreateTestFile();
 
+  // Restore permissions to the file when we are done with this test.
+  file_util::PermissionRestorer restore_permissions(readonly_file_name);
+
   // Make it read-only.
   EXPECT_TRUE(file_util::MakeFileUnwritable(readonly_file_name));
 
@@ -522,7 +574,8 @@ TEST_F(BaseFileTest, ReadonlyBaseFile) {
                                 0,
                                 false,
                                 "",
-                                file_stream_));
+                                file_stream_,
+                                net::BoundNetLog()));
 
   expect_in_progress_ = false;
 

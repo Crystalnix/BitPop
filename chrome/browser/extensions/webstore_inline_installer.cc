@@ -12,6 +12,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_install_dialog.h"
+#include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_utility_messages.h"
@@ -19,16 +20,21 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/url_pattern.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/utility_process_host.h"
+#include "content/public/browser/utility_process_host.h"
+#include "content/public/browser/utility_process_host_client.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/url_fetcher.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
+#include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
 
 using content::BrowserThread;
 using content::OpenURLParams;
+using content::UtilityProcessHost;
+using content::UtilityProcessHostClient;
 using content::WebContents;
+
+namespace extensions {
 
 const char kManifestKey[] = "manifest";
 const char kIconUrlKey[] = "icon_url";
@@ -57,13 +63,12 @@ const char kInlineInstallSupportedError[] =
     "Inline installation is not supported for this item. The user will be "
     "redirected to the Chrome Web Store.";
 
-class SafeWebstoreResponseParser : public UtilityProcessHost::Client {
+class SafeWebstoreResponseParser : public UtilityProcessHostClient {
  public:
   SafeWebstoreResponseParser(WebstoreInlineInstaller *client,
                              const std::string& webstore_data)
       : client_(client),
-        webstore_data_(webstore_data),
-        utility_host_(NULL) {}
+        webstore_data_(webstore_data) {}
 
   void Start() {
     CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -75,12 +80,13 @@ class SafeWebstoreResponseParser : public UtilityProcessHost::Client {
 
   void StartWorkOnIOThread() {
     CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    utility_host_ = new UtilityProcessHost(this, BrowserThread::IO);
-    utility_host_->set_use_linux_zygote(true);
-    utility_host_->Send(new ChromeUtilityMsg_ParseJSON(webstore_data_));
+    UtilityProcessHost* host =
+        UtilityProcessHost::Create(this, BrowserThread::IO);
+    host->EnableZygote();
+    host->Send(new ChromeUtilityMsg_ParseJSON(webstore_data_));
   }
 
-  // Implementing pieces of the UtilityProcessHost::Client interface.
+  // Implementing pieces of the UtilityProcessHostClient interface.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(SafeWebstoreResponseParser, message)
@@ -95,11 +101,11 @@ class SafeWebstoreResponseParser : public UtilityProcessHost::Client {
 
   void OnJSONParseSucceeded(const ListValue& wrapper) {
     CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    Value* value = NULL;
+    const Value* value = NULL;
     CHECK(wrapper.Get(0, &value));
     if (value->IsType(Value::TYPE_DICTIONARY)) {
       parsed_webstore_data_.reset(
-          static_cast<DictionaryValue*>(value)->DeepCopy());
+          static_cast<const DictionaryValue*>(value)->DeepCopy());
     } else {
       error_ = kInvalidWebstoreResponseError;
     }
@@ -115,9 +121,6 @@ class SafeWebstoreResponseParser : public UtilityProcessHost::Client {
 
   void ReportResults() {
     CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-    // The utility_host_ will take care of deleting itself after this call.
-    utility_host_ = NULL;
 
     BrowserThread::PostTask(
         BrowserThread::UI,
@@ -140,27 +143,24 @@ class SafeWebstoreResponseParser : public UtilityProcessHost::Client {
   WebstoreInlineInstaller* client_;
 
   std::string webstore_data_;
-
-  UtilityProcessHost* utility_host_;
-
   std::string error_;
   scoped_ptr<DictionaryValue> parsed_webstore_data_;
 };
 
 WebstoreInlineInstaller::WebstoreInlineInstaller(WebContents* web_contents,
                                                  int install_id,
+                                                 int return_route_id,
                                                  std::string webstore_item_id,
                                                  GURL requestor_url,
                                                  Delegate* delegate)
     : content::WebContentsObserver(web_contents),
       install_id_(install_id),
+      return_route_id_(return_route_id),
       id_(webstore_item_id),
       requestor_url_(requestor_url),
       delegate_(delegate),
       average_rating_(0.0),
-      rating_count_(0) {}
-
-WebstoreInlineInstaller::~WebstoreInlineInstaller() {
+      rating_count_(0) {
 }
 
 void WebstoreInlineInstaller::BeginInstall() {
@@ -173,8 +173,8 @@ void WebstoreInlineInstaller::BeginInstall() {
 
   GURL webstore_data_url(extension_urls::GetWebstoreItemJsonDataURL(id_));
 
-  webstore_data_url_fetcher_.reset(content::URLFetcher::Create(
-      webstore_data_url, content::URLFetcher::GET, this));
+  webstore_data_url_fetcher_.reset(net::URLFetcher::Create(
+      webstore_data_url, net::URLFetcher::GET, this));
   Profile* profile = Profile::FromBrowserContext(
       web_contents()->GetBrowserContext());
   webstore_data_url_fetcher_->SetRequestContext(
@@ -183,14 +183,15 @@ void WebstoreInlineInstaller::BeginInstall() {
   // (it is the page that caused this request to happen) and so that we can
   // track top sites that trigger inline install requests.
   webstore_data_url_fetcher_->SetReferrer(requestor_url_.spec());
-  webstore_data_url_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
-                                           net::LOAD_DO_NOT_SAVE_COOKIES |
+  webstore_data_url_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SAVE_COOKIES |
                                            net::LOAD_DISABLE_CACHE);
   webstore_data_url_fetcher_->Start();
 }
 
+WebstoreInlineInstaller::~WebstoreInlineInstaller() {}
+
 void WebstoreInlineInstaller::OnURLFetchComplete(
-    const content::URLFetcher* source) {
+    const net::URLFetcher* source) {
   CHECK_EQ(webstore_data_url_fetcher_.get(), source);
   // We shouldn't be getting UrlFetcher callbacks if the WebContents has gone
   // away; we stop any in in-progress fetches in WebContentsDestroyed.
@@ -261,8 +262,8 @@ void WebstoreInlineInstaller::OnWebstoreResponseParseSuccess(
     return;
   }
 
-  if (average_rating_ < ExtensionInstallUI::kMinExtensionRating ||
-      average_rating_ >ExtensionInstallUI::kMaxExtensionRating) {
+  if (average_rating_ < ExtensionInstallPrompt::kMinExtensionRating ||
+      average_rating_ > ExtensionInstallPrompt::kMaxExtensionRating) {
     CompleteInstall(kInvalidWebstoreResponseError);
     return;
   }
@@ -323,31 +324,6 @@ void WebstoreInlineInstaller::OnWebstoreResponseParseSuccess(
   helper->Start();
 }
 
-// static
-bool WebstoreInlineInstaller::IsRequestorURLInVerifiedSite(
-    const GURL& requestor_url,
-    const std::string& verified_site) {
-  // Turn the verified site (which may be a bare domain, or have a port and/or a
-  // path) into a URL that can be parsed by URLPattern.
-  std::string verified_site_url =
-      StringPrintf("http://*.%s%s",
-          verified_site.c_str(),
-          verified_site.find('/') == std::string::npos ? "/*" : "*");
-
-  URLPattern verified_site_pattern(
-      URLPattern::SCHEME_HTTP | URLPattern::SCHEME_HTTPS);
-  URLPattern::ParseResult parse_result =
-      verified_site_pattern.Parse(verified_site_url);
-  if (parse_result != URLPattern::PARSE_SUCCESS) {
-    DLOG(WARNING) << "Could not parse " << verified_site_url <<
-        " as URL pattern " << parse_result;
-    return false;
-  }
-  verified_site_pattern.SetScheme("*");
-
-  return verified_site_pattern.MatchesURL(requestor_url);
-}
-
 void WebstoreInlineInstaller::OnWebstoreResponseParseFailure(
     const std::string& error) {
   CompleteInstall(error);
@@ -367,27 +343,28 @@ void WebstoreInlineInstaller::OnWebstoreParseSuccess(
   manifest_.reset(manifest);
   icon_ = icon;
 
-  Profile* profile = Profile::FromBrowserContext(
-      web_contents()->GetBrowserContext());
-
-  ExtensionInstallUI::Prompt prompt(ExtensionInstallUI::INLINE_INSTALL_PROMPT);
+  ExtensionInstallPrompt::Prompt prompt(
+      ExtensionInstallPrompt::INLINE_INSTALL_PROMPT);
   prompt.SetInlineInstallWebstoreData(localized_user_count_,
                                       average_rating_,
                                       rating_count_);
-
-  if (!ShowExtensionInstallDialogForManifest(profile,
-                                             this,
-                                             manifest,
-                                             id_,
-                                             localized_name_,
-                                             localized_description_,
-                                             &icon_,
-                                             prompt,
-                                             &dummy_extension_)) {
-    CompleteInstall(kInvalidManifestError);
+  std::string error;
+  dummy_extension_ = ExtensionInstallPrompt::GetLocalizedExtensionForDisplay(
+      manifest,
+      Extension::REQUIRE_KEY | Extension::FROM_WEBSTORE,
+      id_,
+      localized_name_,
+      localized_description_,
+      &error);
+  if (!dummy_extension_) {
+    OnWebstoreParseFailure(id_, WebstoreInstallHelper::Delegate::MANIFEST_ERROR,
+                           kInvalidManifestError);
     return;
   }
 
+  install_ui_.reset(
+      ExtensionInstallUI::CreateInstallPromptWithWebContents(web_contents()));
+  install_ui_->ConfirmInlineInstall(this, dummy_extension_, &icon_, prompt);
   // Control flow finishes up in InstallUIProceed or InstallUIAbort.
 }
 
@@ -405,18 +382,18 @@ void WebstoreInlineInstaller::InstallUIProceed() {
     return;
   }
 
-  CrxInstaller::WhitelistEntry* entry = new CrxInstaller::WhitelistEntry;
-
-  entry->parsed_manifest.reset(manifest_.get()->DeepCopy());
-  entry->localized_name = localized_name_;
-  entry->use_app_installed_bubble = true;
-  CrxInstaller::SetWhitelistEntry(id_, entry);
-
   Profile* profile = Profile::FromBrowserContext(
       web_contents()->GetBrowserContext());
 
+  scoped_ptr<WebstoreInstaller::Approval> approval(
+      WebstoreInstaller::Approval::CreateWithNoInstallPrompt(
+          profile,
+          id_,
+          scoped_ptr<base::DictionaryValue>(manifest_.get()->DeepCopy())));
+  approval->use_app_installed_bubble = true;
+
   scoped_refptr<WebstoreInstaller> installer = new WebstoreInstaller(
-      profile, this, &(web_contents()->GetController()), id_,
+      profile, this, &(web_contents()->GetController()), id_, approval.Pass(),
       WebstoreInstaller::FLAG_INLINE_INSTALL);
   installer->Start();
 }
@@ -449,11 +426,38 @@ void WebstoreInlineInstaller::CompleteInstall(const std::string& error) {
   // response to.
   if (web_contents()) {
     if (error.empty()) {
-      delegate_->OnInlineInstallSuccess(install_id_);
+      delegate_->OnInlineInstallSuccess(install_id_, return_route_id_);
     } else {
-      delegate_->OnInlineInstallFailure(install_id_, error);
+      delegate_->OnInlineInstallFailure(install_id_, return_route_id_, error);
     }
   }
 
   Release(); // Matches the AddRef in BeginInstall.
 }
+
+// static
+bool WebstoreInlineInstaller::IsRequestorURLInVerifiedSite(
+    const GURL& requestor_url,
+    const std::string& verified_site) {
+  // Turn the verified site (which may be a bare domain, or have a port and/or a
+  // path) into a URL that can be parsed by URLPattern.
+  std::string verified_site_url =
+      StringPrintf("http://*.%s%s",
+          verified_site.c_str(),
+          verified_site.find('/') == std::string::npos ? "/*" : "*");
+
+  URLPattern verified_site_pattern(
+      URLPattern::SCHEME_HTTP | URLPattern::SCHEME_HTTPS);
+  URLPattern::ParseResult parse_result =
+      verified_site_pattern.Parse(verified_site_url);
+  if (parse_result != URLPattern::PARSE_SUCCESS) {
+    DLOG(WARNING) << "Could not parse " << verified_site_url <<
+        " as URL pattern " << parse_result;
+    return false;
+  }
+  verified_site_pattern.SetScheme("*");
+
+  return verified_site_pattern.MatchesURL(requestor_url);
+}
+
+}  // namespace extensions

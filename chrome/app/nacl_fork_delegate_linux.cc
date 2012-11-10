@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,15 +9,17 @@
 #include <sys/resource.h>
 #include <sys/socket.h>
 
+#include <set>
+
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/eintr_wrapper.h"
 #include "base/logging.h"
 #include "base/file_path.h"
 #include "base/path_service.h"
+#include "base/posix/unix_domain_socket.h"
 #include "base/process_util.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
-#include "content/common/unix_domain_socket_posix.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/nacl_helper_linux.h"
@@ -31,7 +33,8 @@ NaClForkDelegate::NaClForkDelegate()
  * Note these need to match up with their counterparts in nacl_helper_linux.c
  * and nacl_helper_bootstrap_linux.c.
  */
-const char kNaClHelperAtZero[] = "--at-zero";
+const char kNaClHelperReservedAtZero[] =
+    "--reserved_at_zero=0xXXXXXXXXXXXXXXXX";
 const char kNaClHelperRDebug[] = "--r_debug=0xXXXXXXXXXXXXXXXX";
 
 void NaClForkDelegate::Init(const bool sandboxed,
@@ -47,7 +50,7 @@ void NaClForkDelegate::Init(const bool sandboxed,
   DCHECK(kNaClSandboxDescriptor == sandboxdesc);
 
   CHECK(socketpair(PF_UNIX, SOCK_SEQPACKET, 0, fds) == 0);
-  base::file_handle_mapping_vector fds_to_map;
+  base::FileHandleMappingVector fds_to_map;
   fds_to_map.push_back(std::make_pair(fds[1], kNaClZygoteDescriptor));
   fds_to_map.push_back(std::make_pair(sandboxdesc, kNaClSandboxDescriptor));
 
@@ -64,7 +67,7 @@ void NaClForkDelegate::Init(const bool sandboxed,
   } else {
     CommandLine cmd_line(helper_bootstrap_exe);
     cmd_line.AppendArgPath(helper_exe);
-    cmd_line.AppendArgNative(kNaClHelperAtZero);
+    cmd_line.AppendArgNative(kNaClHelperReservedAtZero);
     cmd_line.AppendArgNative(kNaClHelperRDebug);
     base::LaunchOptions options;
     options.fds_to_remap = &fds_to_map;

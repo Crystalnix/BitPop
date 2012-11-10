@@ -7,6 +7,7 @@
 
 #include "chrome/installer/util/google_chrome_distribution.h"
 
+#include <vector>
 #include <windows.h>
 #include <wtsapi32.h>
 #include <msi.h>
@@ -14,7 +15,7 @@
 
 #include "base/command_line.h"
 #include "base/file_path.h"
-#include "base/json/json_value_serializer.h"
+#include "base/json/json_file_value_serializer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
@@ -29,6 +30,7 @@
 #include "chrome/common/attrition_experiments.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/net/test_server_locations.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/channel_info.h"
 #include "chrome/installer/util/product.h"
@@ -48,35 +50,43 @@ namespace {
 
 const wchar_t kChromeGuid[] = L"{8A69D345-D564-463c-AFF1-A69D9E530F96}";
 const wchar_t kBrowserAppId[] = L"Chrome";
+const wchar_t kCommandExecuteImplUuid[] =
+    L"{5C65F4B0-3651-4514-B207-D10CB699B14B}";
+const wchar_t kDelegateExecuteLibUuid[] =
+    L"{4E805ED8-EBA0-4601-9681-12815A56EBFD}";
+const wchar_t kDelegateExecuteLibVersion[] = L"1.0";
+const wchar_t kICommandExecuteImplUuid[] =
+    L"{0BA0D4E9-2259-4963-B9AE-A839F7CB7544}";
 
 // The following strings are the possible outcomes of the toast experiment
 // as recorded in the |client| field.
-const wchar_t kToastExpControlGroup[] =      L"01";
-const wchar_t kToastExpCancelGroup[] =       L"02";
-const wchar_t kToastExpUninstallGroup[] =    L"04";
-const wchar_t kToastExpTriesOkGroup[] =      L"18";
-const wchar_t kToastExpTriesErrorGroup[] =   L"28";
-const wchar_t kToastActiveGroup[] =          L"40";
-const wchar_t kToastUDDirFailure[] =         L"40";
-const wchar_t kToastExpBaseGroup[] =         L"80";
+const wchar_t kToastExpControlGroup[] =        L"01";
+const wchar_t kToastExpCancelGroup[] =         L"02";
+const wchar_t kToastExpUninstallGroup[] =      L"04";
+const wchar_t kToastExpTriesOkGroup[] =        L"18";
+const wchar_t kToastExpTriesErrorGroup[] =     L"28";
+const wchar_t kToastExpTriesOkDefaultGroup[] = L"48";
+const wchar_t kToastActiveGroup[] =            L"40";
+const wchar_t kToastUDDirFailure[] =           L"40";
+const wchar_t kToastExpBaseGroup[] =           L"80";
 
 // Substitute the locale parameter in uninstall URL with whatever
 // Google Update tells us is the locale. In case we fail to find
 // the locale, we use US English.
-std::wstring LocalizeUrl(const wchar_t* url) {
-  std::wstring language;
+string16 LocalizeUrl(const wchar_t* url) {
+  string16 language;
   if (!GoogleUpdateSettings::GetLanguage(&language))
     language = L"en-US";  // Default to US English.
   return ReplaceStringPlaceholders(url, language.c_str(), NULL);
 }
 
-std::wstring GetUninstallSurveyUrl() {
+string16 GetUninstallSurveyUrl() {
   const wchar_t kSurveyUrl[] = L"http://www.google.com/support/chrome/bin/"
                                L"request.py?hl=$1&contact_type=uninstall";
   return LocalizeUrl(kSurveyUrl);
 }
 
-std::wstring GetWelcomeBackUrl() {
+string16 GetWelcomeBackUrl() {
   const wchar_t kWelcomeUrl[] = L"http://www.google.com/chrome/intl/$1/"
                                 L"welcomeback-new.html";
   return LocalizeUrl(kWelcomeUrl);
@@ -128,36 +138,48 @@ int GetDirectoryWriteAgeInHours(const wchar_t* path) {
 // If system_level_toast is true, appends --system-level-toast.
 // If handle to experiment result key was given at startup, re-add it.
 // Does not wait for the process to terminate.
-bool LaunchSetup(CommandLine cmd_line, bool system_level_toast) {
+// |cmd_line| may be modified as a result of this call.
+bool LaunchSetup(CommandLine* cmd_line,
+                 const installer::Product& product,
+                 bool system_level_toast) {
+  const CommandLine& current_cmd_line = *CommandLine::ForCurrentProcess();
+
+  // Propagate --verbose-logging to the invoked setup.exe.
+  if (current_cmd_line.HasSwitch(installer::switches::kVerboseLogging))
+    cmd_line->AppendSwitch(installer::switches::kVerboseLogging);
+
+  // Pass along product-specific options.
+  product.AppendProductFlags(cmd_line);
+
   // Re-add the system level toast flag.
   if (system_level_toast) {
-    cmd_line.AppendSwitch(installer::switches::kSystemLevelToast);
+    cmd_line->AppendSwitch(installer::switches::kSystemLevel);
+    cmd_line->AppendSwitch(installer::switches::kSystemLevelToast);
 
     // Re-add the toast result key. We need to do this because Setup running as
     // system passes the key to Setup running as user, but that child process
     // does not perform the actual toasting, it launches another Setup (as user)
     // to do so. That is the process that needs the key.
-    const CommandLine& current_cmd_line = *CommandLine::ForCurrentProcess();
     std::string key(installer::switches::kToastResultsKey);
     std::string toast_key = current_cmd_line.GetSwitchValueASCII(key);
     if (!toast_key.empty()) {
-      cmd_line.AppendSwitchASCII(key, toast_key);
+      cmd_line->AppendSwitchASCII(key, toast_key);
 
       // Use handle inheritance to make sure the duplicated toast results key
       // gets inherited by the child process.
       base::LaunchOptions options;
       options.inherit_handles = true;
-      return base::LaunchProcess(cmd_line, options, NULL);
+      return base::LaunchProcess(*cmd_line, options, NULL);
     }
   }
 
-  return base::LaunchProcess(cmd_line, base::LaunchOptions(), NULL);
+  return base::LaunchProcess(*cmd_line, base::LaunchOptions(), NULL);
 }
 
 // For System level installs, setup.exe lives in the system temp, which
 // is normally c:\windows\temp. In many cases files inside this folder
 // are not accessible for execution by regular user accounts.
-// This function changes the permisions so that any authenticated user
+// This function changes the permissions so that any authenticated user
 // can launch |exe| later on. This function should only be called if the
 // code is running at the system level.
 bool FixDACLsForExecute(const FilePath& exe) {
@@ -176,7 +198,7 @@ bool FixDACLsForExecute(const FilePath& exe) {
   if (!::ConvertSecurityDescriptorToStringSecurityDescriptorW(sd,
       SDDL_REVISION_1, DACL_SECURITY_INFORMATION, &sddl, NULL))
     return false;
-  std::wstring new_sddl(sddl);
+  string16 new_sddl(sddl);
   ::LocalFree(sddl);
   sd = NULL;
   // See MSDN for the  security descriptor definition language (SDDL) syntax,
@@ -185,12 +207,12 @@ bool FixDACLsForExecute(const FilePath& exe) {
   const wchar_t kAllowACE[] = L"(A;;GRGX;;;AU)";
   // We should check that there are no special ACES for the group we
   // are interested, which is nt\authenticated_users.
-  if (std::wstring::npos != new_sddl.find(L";AU)"))
+  if (string16::npos != new_sddl.find(L";AU)"))
     return false;
   // Specific ACEs (not inherited) need to go to the front. It is ok if we
   // are the very first one.
   size_t pos_insert = new_sddl.find(L"(");
-  if (std::wstring::npos == pos_insert)
+  if (string16::npos == pos_insert)
     return false;
   // All good, time to change the dacl.
   new_sddl.insert(pos_insert, kAllowACE);
@@ -212,9 +234,23 @@ bool FixDACLsForExecute(const FilePath& exe) {
 // Remote Desktop sessions do not count as interactive sessions; running this
 // method as a user logged in via remote desktop will do nothing.
 bool LaunchSetupAsConsoleUser(const FilePath& setup_path,
+                              const installer::Product& product,
                               const std::string& flag) {
   CommandLine cmd_line(setup_path);
   cmd_line.AppendSwitch(flag);
+
+  // Pass along product-specific options.
+  product.AppendProductFlags(&cmd_line);
+
+  // Convey to the invoked setup.exe that it's operating on a system-level
+  // installation.
+  cmd_line.AppendSwitch(installer::switches::kSystemLevel);
+
+  // Propagate --verbose-logging to the invoked setup.exe.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          installer::switches::kVerboseLogging)) {
+    cmd_line.AppendSwitch(installer::switches::kVerboseLogging);
+  }
 
   // Get the Google Update results key, and pass it on the command line to
   // the child process.
@@ -230,55 +266,29 @@ bool LaunchSetupAsConsoleUser(const FilePath& setup_path,
   }
 
   DWORD console_id = ::WTSGetActiveConsoleSessionId();
-  if (console_id == 0xFFFFFFFF)
+  if (console_id == 0xFFFFFFFF) {
+    PLOG(ERROR) << __FUNCTION__ << " failed to get active session id";
     return false;
+  }
   HANDLE user_token;
-  if (!::WTSQueryUserToken(console_id, &user_token))
+  if (!::WTSQueryUserToken(console_id, &user_token)) {
+    PLOG(ERROR) << __FUNCTION__ << " failed to get user token for console_id "
+                << console_id;
     return false;
+  }
   // Note: Handle inheritance must be true in order for the child process to be
   // able to use the duplicated handle above (Google Update results).
   base::LaunchOptions options;
   options.as_user = user_token;
   options.inherit_handles = true;
+  options.empty_desktop_name = true;
+  VLOG(1) << __FUNCTION__ << " launching " << cmd_line.GetCommandLineString();
   bool launched = base::LaunchProcess(cmd_line, options, NULL);
   ::CloseHandle(user_token);
+  VLOG(1) << __FUNCTION__ << "   result: " << launched;
   return launched;
 }
 
-// The plugin infobar experiment is just setting the client registry value
-// to one of four possible values from 10% of the elegible population, which
-// is defined as active users that have opted-in for sending stats.
-// Chrome reads this value and modifies the plugin blocking and infobar
-// behavior accordingly.
-bool DoInfobarPluginsExperiment(int dir_age_hours) {
-  std::wstring client;
-  if (!GoogleUpdateSettings::GetClient(&client))
-    return false;
-  // Make sure the user is not already in this experiment.
-  if ((client.size() > 3) && (client[0] == L'P') && (client[1] == L'I'))
-    return false;
-  if (!GoogleUpdateSettings::GetCollectStatsConsent())
-    return false;
-  if (dir_age_hours > (24 * 14))
-    return false;
-  if (base::RandInt(0, 9)) {
-    GoogleUpdateSettings::SetClient(
-        attrition_experiments::kNotInPluginExperiment);
-    return false;
-  }
-
-  const wchar_t* buckets[] = {
-    attrition_experiments::kPluginNoBlockNoOOD,
-    attrition_experiments::kPluginNoBlockDoOOD,
-    attrition_experiments::kPluginDoBlockNoOOD,
-    attrition_experiments::kPluginDoBlockDoOOD
-  };
-
-  size_t group = base::RandInt(0, arraysize(buckets)-1);
-  GoogleUpdateSettings::SetClient(buckets[group]);
-  VLOG(1) << "Plugin infobar experiment group: " << group;
-  return true;
-}
 }  // namespace
 
 GoogleChromeDistribution::GoogleChromeDistribution()
@@ -290,7 +300,7 @@ GoogleChromeDistribution::GoogleChromeDistribution()
 // see the comment in google_chrome_distribution_dummy.cc
 #ifndef _WIN64
 bool GoogleChromeDistribution::BuildUninstallMetricsString(
-    DictionaryValue* uninstall_metrics_dict, std::wstring* metrics) {
+    const DictionaryValue* uninstall_metrics_dict, string16* metrics) {
   DCHECK(NULL != metrics);
   bool has_values = false;
 
@@ -311,7 +321,7 @@ bool GoogleChromeDistribution::BuildUninstallMetricsString(
 
 bool GoogleChromeDistribution::ExtractUninstallMetricsFromFile(
     const FilePath& file_path,
-    std::wstring* uninstall_metrics_string) {
+    string16* uninstall_metrics_string) {
   JSONFileValueSerializer json_serializer(file_path);
 
   std::string json_error_string;
@@ -328,7 +338,8 @@ bool GoogleChromeDistribution::ExtractUninstallMetricsFromFile(
 }
 
 bool GoogleChromeDistribution::ExtractUninstallMetrics(
-    const DictionaryValue& root, std::wstring* uninstall_metrics_string) {
+    const DictionaryValue& root,
+    string16* uninstall_metrics_string) {
   // Make sure that the user wants us reporting metrics. If not, don't
   // add our uninstall metrics.
   bool metrics_reporting_enabled = false;
@@ -338,7 +349,7 @@ bool GoogleChromeDistribution::ExtractUninstallMetrics(
     return false;
   }
 
-  DictionaryValue* uninstall_metrics_dict;
+  const DictionaryValue* uninstall_metrics_dict;
   if (!root.HasKey(installer::kUninstallMetricsName) ||
       !root.GetDictionary(installer::kUninstallMetricsName,
                           &uninstall_metrics_dict)) {
@@ -357,7 +368,7 @@ bool GoogleChromeDistribution::ExtractUninstallMetrics(
 void GoogleChromeDistribution::DoPostUninstallOperations(
     const Version& version,
     const FilePath& local_data_path,
-    const std::wstring& distribution_data) {
+    const string16& distribution_data) {
   // Send the Chrome version and OS version as params to the form.
   // It would be nice to send the locale, too, but I don't see an
   // easy way to get that in the existing code. It's something we
@@ -365,11 +376,11 @@ void GoogleChromeDistribution::DoPostUninstallOperations(
   // We depend on installed_version.GetString() not having spaces or other
   // characters that need escaping: 0.2.13.4. Should that change, we will
   // need to escape the string before using it in a URL.
-  const std::wstring kVersionParam = L"crversion";
-  const std::wstring kOSParam = L"os";
+  const string16 kVersionParam = L"crversion";
+  const string16 kOSParam = L"os";
   base::win::OSInfo::VersionNumber version_number =
       base::win::OSInfo::GetInstance()->version_number();
-  std::wstring os_version = base::StringPrintf(L"%d.%d.%d",
+  string16 os_version = base::StringPrintf(L"%d.%d.%d",
       version_number.major, version_number.minor, version_number.build);
 
   FilePath iexplore;
@@ -379,11 +390,11 @@ void GoogleChromeDistribution::DoPostUninstallOperations(
   iexplore = iexplore.AppendASCII("Internet Explorer");
   iexplore = iexplore.AppendASCII("iexplore.exe");
 
-  std::wstring command = iexplore.value() + L" " + GetUninstallSurveyUrl() +
+  string16 command = iexplore.value() + L" " + GetUninstallSurveyUrl() +
       L"&" + kVersionParam + L"=" + UTF8ToWide(version.GetString()) + L"&" +
       kOSParam + L"=" + os_version;
 
-  std::wstring uninstall_metrics;
+  string16 uninstall_metrics;
   if (ExtractUninstallMetricsFromFile(local_data_path, &uninstall_metrics)) {
     // The user has opted into anonymous usage data collection, so append
     // metrics and distribution data.
@@ -402,42 +413,48 @@ void GoogleChromeDistribution::DoPostUninstallOperations(
   installer::WMIProcess::Launch(command, &pid);
 }
 
-std::wstring GoogleChromeDistribution::GetAppGuid() {
+string16 GoogleChromeDistribution::GetAppGuid() {
   return product_guid();
 }
 
-std::wstring GoogleChromeDistribution::GetApplicationName() {
+string16 GoogleChromeDistribution::GetBaseAppName() {
   // I'd really like to return L ## PRODUCT_FULLNAME_STRING; but that's no good
   // since it'd be "Chromium" in a non-Chrome build, which isn't at all what I
   // want.  Sigh.
   return L"Google Chrome";
 }
 
-std::wstring GoogleChromeDistribution::GetAlternateApplicationName() {
-  const std::wstring& alt_product_name =
+string16 GoogleChromeDistribution::GetAppShortCutName() {
+  const string16& app_shortcut_name =
+      installer::GetLocalizedString(IDS_PRODUCT_NAME_BASE);
+  return app_shortcut_name;
+}
+
+string16 GoogleChromeDistribution::GetAlternateApplicationName() {
+  const string16& alt_product_name =
       installer::GetLocalizedString(IDS_OEM_MAIN_SHORTCUT_NAME_BASE);
   return alt_product_name;
 }
 
-std::wstring GoogleChromeDistribution::GetBrowserAppId() {
+string16 GoogleChromeDistribution::GetBaseAppId() {
   return kBrowserAppId;
 }
 
-std::wstring GoogleChromeDistribution::GetInstallSubDir() {
-  std::wstring sub_dir(installer::kGoogleChromeInstallSubDir1);
+string16 GoogleChromeDistribution::GetInstallSubDir() {
+  string16 sub_dir(installer::kGoogleChromeInstallSubDir1);
   sub_dir.append(L"\\");
   sub_dir.append(installer::kGoogleChromeInstallSubDir2);
   return sub_dir;
 }
 
-std::wstring GoogleChromeDistribution::GetPublisherName() {
-  const std::wstring& publisher_name =
+string16 GoogleChromeDistribution::GetPublisherName() {
+  const string16& publisher_name =
       installer::GetLocalizedString(IDS_ABOUT_VERSION_COMPANY_NAME_BASE);
   return publisher_name;
 }
 
-std::wstring GoogleChromeDistribution::GetAppDescription() {
-  const std::wstring& app_description =
+string16 GoogleChromeDistribution::GetAppDescription() {
+  const string16& app_description =
       installer::GetLocalizedString(IDS_SHORTCUT_TOOLTIP_BASE);
   return app_description;
 }
@@ -446,36 +463,40 @@ std::string GoogleChromeDistribution::GetSafeBrowsingName() {
   return "googlechrome";
 }
 
-std::wstring GoogleChromeDistribution::GetStateKey() {
-  std::wstring key(google_update::kRegPathClientState);
+string16 GoogleChromeDistribution::GetStateKey() {
+  string16 key(google_update::kRegPathClientState);
   key.append(L"\\");
   key.append(product_guid());
   return key;
 }
 
-std::wstring GoogleChromeDistribution::GetStateMediumKey() {
-  std::wstring key(google_update::kRegPathClientStateMedium);
+string16 GoogleChromeDistribution::GetStateMediumKey() {
+  string16 key(google_update::kRegPathClientStateMedium);
   key.append(L"\\");
   key.append(product_guid());
   return key;
 }
 
-std::wstring GoogleChromeDistribution::GetStatsServerURL() {
+string16 GoogleChromeDistribution::GetStatsServerURL() {
   return L"https://clients4.google.com/firefox/metrics/collect";
 }
 
 std::string GoogleChromeDistribution::GetNetworkStatsServer() const {
-  return "chrome.googleechotest.com";
+  return chrome_common_net::kEchoTestServerLocation;
 }
 
-std::wstring GoogleChromeDistribution::GetDistributionData(HKEY root_key) {
-  std::wstring sub_key(google_update::kRegPathClientState);
+std::string GoogleChromeDistribution::GetHttpPipeliningTestServer() const {
+  return chrome_common_net::kPipelineTestServerBaseUrl;
+}
+
+string16 GoogleChromeDistribution::GetDistributionData(HKEY root_key) {
+  string16 sub_key(google_update::kRegPathClientState);
   sub_key.append(L"\\");
   sub_key.append(product_guid());
 
   base::win::RegKey client_state_key(root_key, sub_key.c_str(), KEY_READ);
-  std::wstring result;
-  std::wstring brand_value;
+  string16 result;
+  string16 brand_value;
   if (client_state_key.ReadValue(google_update::kRegRLZBrandField,
                                  &brand_value) == ERROR_SUCCESS) {
     result = google_update::kRegRLZBrandField;
@@ -484,7 +505,7 @@ std::wstring GoogleChromeDistribution::GetDistributionData(HKEY root_key) {
     result.append(L"&");
   }
 
-  std::wstring client_value;
+  string16 client_value;
   if (client_state_key.ReadValue(google_update::kRegClientField,
                                  &client_value) == ERROR_SUCCESS) {
     result.append(google_update::kRegClientField);
@@ -493,7 +514,7 @@ std::wstring GoogleChromeDistribution::GetDistributionData(HKEY root_key) {
     result.append(L"&");
   }
 
-  std::wstring ap_value;
+  string16 ap_value;
   // If we fail to read the ap key, send up "&ap=" anyway to indicate
   // that this was probably a stable channel release.
   client_state_key.ReadValue(google_update::kRegApField, &ap_value);
@@ -504,22 +525,38 @@ std::wstring GoogleChromeDistribution::GetDistributionData(HKEY root_key) {
   return result;
 }
 
-std::wstring GoogleChromeDistribution::GetUninstallLinkName() {
-  const std::wstring& link_name =
+string16 GoogleChromeDistribution::GetUninstallLinkName() {
+  const string16& link_name =
       installer::GetLocalizedString(IDS_UNINSTALL_CHROME_BASE);
   return link_name;
 }
 
-std::wstring GoogleChromeDistribution::GetUninstallRegPath() {
+string16 GoogleChromeDistribution::GetUninstallRegPath() {
   return L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"
          L"Google Chrome";
 }
 
-std::wstring GoogleChromeDistribution::GetVersionKey() {
-  std::wstring key(google_update::kRegPathClients);
+string16 GoogleChromeDistribution::GetVersionKey() {
+  string16 key(google_update::kRegPathClients);
   key.append(L"\\");
   key.append(product_guid());
   return key;
+}
+
+bool GoogleChromeDistribution::GetDelegateExecuteHandlerData(
+    string16* handler_class_uuid,
+    string16* type_lib_uuid,
+    string16* type_lib_version,
+    string16* interface_uuid) {
+  if (handler_class_uuid)
+    *handler_class_uuid = kCommandExecuteImplUuid;
+  if (type_lib_uuid)
+    *type_lib_uuid = kDelegateExecuteLibUuid;
+  if (type_lib_version)
+    *type_lib_version = kDelegateExecuteLibVersion;
+  if (interface_uuid)
+    *interface_uuid = kICommandExecuteImplUuid;
+  return true;
 }
 
 // This method checks if we need to change "ap" key in Google Update to try
@@ -545,7 +582,7 @@ void GoogleChromeDistribution::UpdateInstallStatus(bool system_install,
 // command line, but HKCU otherwise. |experiment_group| is the value to write
 // and |last_write| is used when writing to HKLM to determine whether to close
 // the handle when done.
-void SetClient(const std::wstring& experiment_group, bool last_write) {
+void SetClient(const string16& experiment_group, bool last_write) {
   static int reg_key_handle = -1;
   if (reg_key_handle == -1) {
     // If a specific Toast Results key handle (presumably to our HKLM key) was
@@ -576,8 +613,12 @@ void SetClient(const std::wstring& experiment_group, bool last_write) {
 
 bool GoogleChromeDistribution::GetExperimentDetails(
     UserExperiment* experiment, int flavor) {
+  struct FlavorDetails {
+    int heading_id;
+    int flags;
+  };
   // Maximum number of experiment flavors we support.
-  const int kMax = 4;
+  static const int kMax = 4;
   // This struct determines which experiment flavors we show for each locale and
   // brand.
   //
@@ -588,80 +629,77 @@ bool GoogleChromeDistribution::GetExperimentDetails(
   // The big experiment in Feb 2011 used SJxx SKxx SLxx SMxx.
   // Note: the plugin infobar experiment uses PIxx codes.
   using namespace attrition_experiments;
+
   static const struct UserExperimentDetails {
     const wchar_t* locale;  // Locale to show this experiment for (* for all).
     const wchar_t* brands;  // Brand codes show this experiment for (* for all).
     int control_group;      // Size of the control group, in percentages.
-    const wchar_t prefix1;  // The first letter for the experiment code.
-    const wchar_t prefix2;  // The second letter for the experiment code. This
-                            // will be incremented by one for each additional
-                            // experiment flavor beyond the first.
-    int flavors;            // Numbers of flavors for this experiment. Should
-                            // always be positive and never exceed the number
-                            // of headings (below).
-    int headings[kMax];     // A list of IDs per experiment. 0 == no heading.
-  } kExperimentFlavors[] = {
-    // This list should be ordered most-specific rule first (catch-all, like all
-    // brands or all locales should be last).
-
-    // The experiment with the more compact bubble. This one is a bit special
-    // because it is split into two: CAxx is regular style bubble and CBxx is
-    // compact style bubble. See |compact_bubble| below.
-    {L"en-US", kBrief, 1, L'C', L'A', 2, { kEnUs3, kEnUs3, 0, 0 } },
-
-    // Catch-all rules.
-    {kAll, kAll, 1, L'B', L'A', 1, {kEnUs3, 0, 0, 0} },
-  };
-
-  std::wstring locale;
-  std::wstring brand;
-
-  if (!GoogleUpdateSettings::GetLanguage(&locale))
-    locale = ASCIIToWide("en-US");
-  if (!GoogleUpdateSettings::GetBrand(&brand))
-    brand = ASCIIToWide("");  // Could still be viable for catch-all rules.
-  if (brand == kEnterprise)
-    return false;
-
-  for (int i = 0; i < arraysize(kExperimentFlavors); ++i) {
-    // A maximum of four flavors are supported at the moment.
-    DCHECK_LE(kExperimentFlavors[i].flavors, kMax);
-    DCHECK_GT(kExperimentFlavors[i].flavors, 0);
-    // Make sure each experiment has valid headings.
-    for (int f = 0; f < kMax; ++f) {
-      if (f < kExperimentFlavors[i].flavors) {
-        DCHECK_GT(kExperimentFlavors[i].headings[f], 0);
-      } else {
-        DCHECK_EQ(kExperimentFlavors[i].headings[f], 0);
+    const wchar_t* prefix;  // The two letter experiment code. The second letter
+                            // will be incremented with the flavor.
+    FlavorDetails flavors[kMax];
+  } kExperiments[] = {
+    // The first match from top to bottom is used so this list should be ordered
+    // most-specific rule first.
+    { L"*", L"CHMA",  // All locales, CHMA brand.
+      25,             // 25 percent control group.
+      L"ZA",          // Experiment is ZAxx, ZBxx, ZCxx, ZDxx etc.
+      // Three flavors.
+      { { IDS_TRY_TOAST_HEADING3, kDontBugMeAsButton | kUninstall | kWhyLink },
+        { IDS_TRY_TOAST_HEADING3, 0 },
+        { IDS_TRY_TOAST_HEADING3, kMakeDefault },
+        { 0, 0 },
+      }
+    },
+    { L"*", L"GGRV",  // All locales, GGRV is enterprise.
+      0,              // 0 percent control group.
+      L"EA",          // Experiment is EAxx, EBxx, etc.
+      // No flavors means no experiment.
+      { { 0, 0 },
+        { 0, 0 },
+        { 0, 0 },
+        { 0, 0 }
       }
     }
-    // Make sure we don't overflow on the second letter of the experiment code.
-    DCHECK(kExperimentFlavors[i].prefix2 +
-           kExperimentFlavors[i].flavors - 1 <= 'Z');
+  };
 
-    if (kExperimentFlavors[i].locale != locale &&
-        kExperimentFlavors[i].locale != ASCIIToWide("*"))
+  string16 locale;
+  GoogleUpdateSettings::GetLanguage(&locale);
+  if (locale.empty() || (locale == ASCIIToWide("en")))
+    locale = ASCIIToWide("en-US");
+
+  string16 brand;
+  if (!GoogleUpdateSettings::GetBrand(&brand))
+    brand = ASCIIToWide("");  // Could still be viable for catch-all rules.
+
+  for (int i = 0; i < arraysize(kExperiments); ++i) {
+    if (kExperiments[i].locale != locale &&
+        kExperiments[i].locale != ASCIIToWide("*"))
       continue;
 
-    std::vector<std::wstring> brand_codes;
-    base::SplitString(kExperimentFlavors[i].brands, L',', &brand_codes);
+    std::vector<string16> brand_codes;
+    base::SplitString(kExperiments[i].brands, L',', &brand_codes);
     if (brand_codes.empty())
       return false;
-    for (std::vector<std::wstring>::iterator it = brand_codes.begin();
+    for (std::vector<string16>::iterator it = brand_codes.begin();
          it != brand_codes.end(); ++it) {
       if (*it != brand && *it != L"*")
         continue;
-
       // We have found our match.
+      const UserExperimentDetails& match = kExperiments[i];
+      // Find out how many flavors we have. Zero means no experiment.
+      int num_flavors = 0;
+      while (match.flavors[num_flavors].heading_id) { ++num_flavors; }
+      if (!num_flavors)
+        return false;
+
       if (flavor < 0)
-        flavor = base::RandInt(0, kExperimentFlavors[i].flavors - 1);
+        flavor = base::RandInt(0, num_flavors - 1);
       experiment->flavor = flavor;
-      experiment->heading = kExperimentFlavors[i].headings[flavor];
-      experiment->control_group = kExperimentFlavors[i].control_group;
-      experiment->prefix.resize(2);
-      experiment->prefix[0] = kExperimentFlavors[i].prefix1;
-      experiment->prefix[1] = kExperimentFlavors[i].prefix2 + flavor;
-      experiment->compact_bubble = (brand == kBrief) && (flavor == 1);
+      experiment->heading = match.flavors[flavor].heading_id;
+      experiment->control_group = match.control_group;
+      const wchar_t prefix[] = { match.prefix[0], match.prefix[1] + flavor, 0 };
+      experiment->prefix = prefix;
+      experiment->flags = match.flavors[flavor].flags;
       return true;
     }
   }
@@ -669,9 +707,9 @@ bool GoogleChromeDistribution::GetExperimentDetails(
   return false;
 }
 
-// Currently we have two experiments: 1) The inactive user toast. Which only
-// applies to users doing upgrades, and 2) The plugin infobar experiment
-// which only applies for active users.
+// Currently we only have one experiment: the inactive user toast. Which only
+// applies for users doing upgrades.
+
 //
 // There are three scenarios when this function is called:
 // 1- Is a per-user-install and it updated: perform the experiment
@@ -680,12 +718,16 @@ bool GoogleChromeDistribution::GetExperimentDetails(
 //    this function with |system_install| true and a REENTRY_SYS_UPDATE status.
 void GoogleChromeDistribution::LaunchUserExperiment(
     const FilePath& setup_path, installer::InstallStatus status,
-    const Version& version, const installer::Product& installation,
+    const Version& version, const installer::Product& product,
     bool system_level) {
+  VLOG(1) << "LaunchUserExperiment status: " << status << " product: "
+          << product.distribution()->GetAppShortCutName()
+          << " system_level: " << system_level;
+
   if (system_level) {
     if (installer::NEW_VERSION_UPDATED == status) {
       // We need to relaunch as the interactive user.
-      LaunchSetupAsConsoleUser(setup_path,
+      LaunchSetupAsConsoleUser(setup_path, product,
                                installer::switches::kSystemLevelToast);
       return;
     }
@@ -705,27 +747,39 @@ void GoogleChromeDistribution::LaunchUserExperiment(
     return;
   }
   int flavor = experiment.flavor;
-  std::wstring base_group = experiment.prefix;
+  string16 base_group = experiment.prefix;
 
-  std::wstring brand;
+  string16 brand;
   if (GoogleUpdateSettings::GetBrand(&brand) && (brand == L"CHXX")) {
     // Testing only: the user automatically qualifies for the experiment.
     VLOG(1) << "Experiment qualification bypass";
   } else {
+    // Check that the user was not already drafted in this experiment.
+    string16 client;
+    GoogleUpdateSettings::GetClient(&client);
+    if (client.size() > 2) {
+      if (base_group == client.substr(0, 2)) {
+        VLOG(1) << "User already participated in this experiment";
+        return;
+      }
+    }
     // Check browser usage inactivity by the age of the last-write time of the
-    // chrome user data directory.
-    FilePath user_data_dir(installation.GetUserDataPath());
+    // most recently-used chrome user data directory.
+    std::vector<FilePath> user_data_dirs;
+    product.GetUserDataPaths(&user_data_dirs);
+    int dir_age_hours = -1;
+    for (size_t i = 0; i < user_data_dirs.size(); ++i) {
+      int this_age = GetDirectoryWriteAgeInHours(
+          user_data_dirs[i].value().c_str());
+      if (this_age >= 0 && (dir_age_hours < 0 || this_age < dir_age_hours))
+        dir_age_hours = this_age;
+    }
 
-    const bool toast_experiment_enabled = false;
+    const bool experiment_enabled = true;
     const int kThirtyDays = 30 * 24;
 
-    int dir_age_hours = GetDirectoryWriteAgeInHours(
-        user_data_dir.value().c_str());
-    if (!toast_experiment_enabled) {
-      // Ok, no toast, but what about the plugin infobar experiment?
-      if (!DoInfobarPluginsExperiment(dir_age_hours)) {
-        VLOG(1) << "No infobar experiment";
-      }
+    if (!experiment_enabled) {
+      VLOG(1) << "Toast experiment is disabled.";
       return;
     } else if (dir_age_hours < 0) {
       // This means that we failed to find the user data dir. The most likely
@@ -734,6 +788,7 @@ void GoogleChromeDistribution::LaunchUserExperiment(
       SetClient(base_group + kToastUDDirFailure, true);
       return;
     } else if (dir_age_hours < kThirtyDays) {
+      // An active user, so it does not qualify.
       VLOG(1) << "Chrome used in last " << dir_age_hours << " hours";
       SetClient(base_group + kToastActiveGroup, true);
       return;
@@ -758,30 +813,28 @@ void GoogleChromeDistribution::LaunchUserExperiment(
                              base::IntToString(flavor));
   cmd_line.AppendSwitchASCII(installer::switches::kExperimentGroup,
                              WideToASCII(base_group));
-  LaunchSetup(cmd_line, system_level);
+  LaunchSetup(&cmd_line, product, system_level);
 }
 
 // User qualifies for the experiment. To test, use --try-chrome-again=|flavor|
 // as a parameter to chrome.exe.
 void GoogleChromeDistribution::InactiveUserToastExperiment(int flavor,
-    const std::wstring& experiment_group,
+    const string16& experiment_group,
     const installer::Product& installation,
     const FilePath& application_path) {
-  bool has_welcome_url = (flavor == 0);
-  // Possibly add a url to launch depending on the experiment flavor.
+  // Add the 'welcome back' url for chrome to show.
   CommandLine options(CommandLine::NO_PROGRAM);
   options.AppendSwitchNative(switches::kTryChromeAgain,
       base::IntToString16(flavor));
-  if (has_welcome_url) {
-    // Prepend the url with a space.
-    std::wstring url(GetWelcomeBackUrl());
-    options.AppendArg("--");
-    options.AppendArgNative(url);
-    // The command line should now have the url added as:
-    // "chrome.exe -- <url>"
-    DCHECK_NE(std::wstring::npos,
-        options.GetCommandLineString().find(L" -- " + url));
-  }
+  // Prepend the url with a space.
+  string16 url(GetWelcomeBackUrl());
+  options.AppendArg("--");
+  options.AppendArgNative(url);
+  // The command line should now have the url added as:
+  // "chrome.exe -- <url>"
+  DCHECK_NE(string16::npos,
+      options.GetCommandLineString().find(L" -- " + url));
+
   // Launch chrome now. It will show the toast UI.
   int32 exit_code = 0;
   if (!installation.LaunchChromeAndWait(application_path, options, &exit_code))
@@ -802,6 +855,16 @@ void GoogleChromeDistribution::InactiveUserToastExperiment(int flavor,
     default:
       outcome = kToastExpTriesErrorGroup;
   };
+
+  if (outcome == kToastExpTriesOkGroup) {
+    // User tried chrome, but if it had the default group button it belongs
+    // to a different outcome group.
+    UserExperiment experiment;
+    if (GetExperimentDetails(&experiment, flavor)) {
+      outcome = experiment.flags & kMakeDefault ? kToastExpTriesOkDefaultGroup :
+                                                  kToastExpTriesOkGroup;
+    }
+  }
 
   // Write to the |client| key for the last time.
   SetClient(experiment_group + outcome, true);

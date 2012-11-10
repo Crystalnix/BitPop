@@ -18,14 +18,17 @@
 #include "chrome/renderer/visitedlink_slave.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/mock_render_process_host.h"
+#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_renderer_host.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
+using content::MockRenderProcessHost;
+using content::RenderViewHostTester;
 
 namespace {
 
@@ -260,11 +263,11 @@ TEST_F(VisitedLinkTest, BigDelete) {
 
   // Add more URLs than necessary to trigger this case.
   const int kTestDeleteCount = VisitedLinkMaster::kBigDeleteThreshold + 2;
-  std::set<GURL> urls_to_delete;
+  history::URLRows urls_to_delete;
   for (int32 i = g_test_count; i < g_test_count + kTestDeleteCount; i++) {
     GURL url(TestURL(i));
     master_->AddURL(url);
-    urls_to_delete.insert(url);
+    urls_to_delete.push_back(history::URLRow(url));
   }
 
   master_->DeleteURLs(urls_to_delete);
@@ -396,8 +399,8 @@ TEST_F(VisitedLinkTest, Rebuild) {
 
   // Add one more and then delete it.
   master_->AddURL(TestURL(g_test_count));
-  std::set<GURL> deleted_urls;
-  deleted_urls.insert(TestURL(g_test_count));
+  history::URLRows deleted_urls;
+  deleted_urls.push_back(history::URLRow(TestURL(g_test_count)));
   master_->DeleteURLs(deleted_urls);
 
   // Wait for the rebuild to complete. The task will terminate the message
@@ -444,8 +447,8 @@ TEST_F(VisitedLinkTest, Listener) {
     ASSERT_EQ(i + 1, master_->GetUsedCount());
   }
 
-  std::set<GURL> deleted_urls;
-  deleted_urls.insert(TestURL(0));
+  history::URLRows deleted_urls;
+  deleted_urls.push_back(history::URLRow(TestURL(0)));
   // Delete an URL.
   master_->DeleteURLs(deleted_urls);
   // ... and all of the remaining ones.
@@ -499,11 +502,11 @@ class VisitCountingProfile : public TestingProfile {
 };
 
 // Stub out as little as possible, borrowing from RenderProcessHost.
-class VisitRelayingRenderProcessHost : public RenderProcessHostImpl {
+class VisitRelayingRenderProcessHost : public MockRenderProcessHost {
  public:
   explicit VisitRelayingRenderProcessHost(
       content::BrowserContext* browser_context)
-          : RenderProcessHostImpl(browser_context) {
+          : MockRenderProcessHost(browser_context), widgets_(0) {
     content::NotificationService::current()->Notify(
         content::NOTIFICATION_RENDERER_PROCESS_CREATED,
         content::Source<RenderProcessHost>(this),
@@ -516,29 +519,17 @@ class VisitRelayingRenderProcessHost : public RenderProcessHostImpl {
         content::NotificationService::NoDetails());
   }
 
-  virtual bool Init(bool is_accessibility_enabled) {
-    return true;
-  }
+  virtual void WidgetRestored() OVERRIDE { widgets_++; }
+  virtual void WidgetHidden() OVERRIDE { widgets_--; }
+  virtual int VisibleWidgetCount() const OVERRIDE { return widgets_; }
 
-  virtual void CancelResourceRequests(int render_widget_id) {
-  }
-
-  virtual void CrossSiteSwapOutACK(const ViewMsg_SwapOut_Params& params) {
-  }
-
-  virtual bool WaitForPaintMsg(int render_widget_id,
-                               const base::TimeDelta& max_delay,
-                               IPC::Message* msg) {
-    return false;
-  }
-
-  virtual bool Send(IPC::Message* msg) {
+  virtual bool Send(IPC::Message* msg) OVERRIDE {
     VisitCountingProfile* counting_profile =
         static_cast<VisitCountingProfile*>(
             Profile::FromBrowserContext(GetBrowserContext()));
 
     if (msg->type() == ChromeViewMsg_VisitedLink_Add::ID) {
-      void* iter = NULL;
+      PickleIterator iter(*msg);
       std::vector<uint64> fingerprints;
       CHECK(IPC::ReadParam(msg, &iter, &fingerprints));
       counting_profile->CountAddEvent(fingerprints.size());
@@ -550,11 +541,9 @@ class VisitRelayingRenderProcessHost : public RenderProcessHostImpl {
     return true;
   }
 
-  virtual void SetBackgrounded(bool backgrounded) {
-    backgrounded_ = backgrounded;
-  }
-
  private:
+  int widgets_;
+
   DISALLOW_COPY_AND_ASSIGN(VisitRelayingRenderProcessHost);
 };
 
@@ -579,10 +568,8 @@ class VisitedLinkEventsTest : public ChromeRenderViewHostTestHarness {
       : ui_thread_(BrowserThread::UI, &message_loop_),
         file_thread_(BrowserThread::FILE, &message_loop_) {}
   virtual ~VisitedLinkEventsTest() {}
-  virtual void SetFactoryMode() {}
   virtual void SetUp() {
-    SetFactoryMode();
-    rvh_factory_.set_render_process_host_factory(&vc_rph_factory_);
+    SetRenderProcessHostFactory(&vc_rph_factory_);
     browser_context_.reset(new VisitCountingProfile());
     ChromeRenderViewHostTestHarness::SetUp();
   }
@@ -665,7 +652,11 @@ TEST_F(VisitedLinkEventsTest, Coalescense) {
 
 TEST_F(VisitedLinkEventsTest, Basics) {
   VisitedLinkMaster* master = profile()->GetVisitedLinkMaster();
-  rvh()->CreateRenderView(string16(), -1);
+  rvh_tester()->CreateRenderView(string16(),
+                                 MSG_ROUTING_NONE,
+                                 -1,
+                                 std::string(),
+                                 -1);
 
   // Add a few URLs.
   master->AddURL(GURL("http://acidtests.org/"));
@@ -689,10 +680,14 @@ TEST_F(VisitedLinkEventsTest, Basics) {
 
 TEST_F(VisitedLinkEventsTest, TabVisibility) {
   VisitedLinkMaster* master = profile()->GetVisitedLinkMaster();
-  rvh()->CreateRenderView(string16(), -1);
+  rvh_tester()->CreateRenderView(string16(),
+                                 MSG_ROUTING_NONE,
+                                 -1,
+                                 std::string(),
+                                 -1);
 
   // Simulate tab becoming inactive.
-  rvh()->WasHidden();
+  rvh_tester()->SimulateWasHidden();
 
   // Add a few URLs.
   master->AddURL(GURL("http://acidtests.org/"));
@@ -706,14 +701,14 @@ TEST_F(VisitedLinkEventsTest, TabVisibility) {
   EXPECT_EQ(0, profile()->reset_event_count());
 
   // Simulate the tab becoming active.
-  rvh()->WasRestored();
+  rvh_tester()->SimulateWasShown();
 
   // We should now have 3 add events, still no reset events.
   EXPECT_EQ(1, profile()->add_event_count());
   EXPECT_EQ(0, profile()->reset_event_count());
 
   // Deactivate the tab again.
-  rvh()->WasHidden();
+  rvh_tester()->SimulateWasHidden();
 
   // Add a bunch of URLs (over 50) to exhaust the link event buffer.
   for (int i = 0; i < 100; i++)
@@ -726,7 +721,7 @@ TEST_F(VisitedLinkEventsTest, TabVisibility) {
   EXPECT_EQ(0, profile()->reset_event_count());
 
   // Activate the tab.
-  rvh()->WasRestored();
+  rvh_tester()->SimulateWasShown();
 
   // We should have only one more reset event.
   EXPECT_EQ(1, profile()->add_event_count());

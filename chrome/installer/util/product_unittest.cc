@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/test/test_reg_util_win.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/installer/util/chrome_frame_distribution.h"
 #include "chrome/installer/util/google_update_constants.h"
 #include "chrome/installer/util/installation_state.h"
@@ -47,7 +48,7 @@ class ProductTest : public TestWithTempDirAndDeleteTempOverrideKeys {
 
 // This test is flaky on Win, see http://crbug.com/100567
 #if defined(OS_WIN)
-#define MAYBE_ProductInstallBasic FLAKY_ProductInstallBasic
+#define MAYBE_ProductInstallBasic DISABLED_ProductInstallBasic
 #else
 #define MAYBE_ProductInstallBasic ProductInstallBasic
 #endif
@@ -70,10 +71,19 @@ TEST_F(ProductTest, MAYBE_ProductInstallBasic) {
   BrowserDistribution* distribution = product->distribution();
   EXPECT_EQ(BrowserDistribution::CHROME_BROWSER, distribution->GetType());
 
-  FilePath user_data(product->GetUserDataPath());
-  EXPECT_FALSE(user_data.empty());
+  std::vector<FilePath> user_data_paths;
+  product->GetUserDataPaths(&user_data_paths);
+  EXPECT_LE(static_cast<size_t>(1), user_data_paths.size());
+  const FilePath& user_data = user_data_paths[0];
+  EXPECT_FALSE(user_data_paths[0].empty());
   EXPECT_NE(std::wstring::npos,
-            user_data.value().find(installer::kInstallUserDataDir));
+            user_data_paths[0].value().find(installer::kInstallUserDataDir));
+  if (user_data_paths.size() > 1) {
+    EXPECT_FALSE(user_data_paths[1].empty());
+    EXPECT_NE(
+        std::wstring::npos,
+        user_data_paths[1].value().find(chrome::kMetroChromeUserDataSubDir));
+  }
 
   FilePath program_files;
   PathService::Get(base::DIR_PROGRAM_FILES, &program_files);
@@ -98,10 +108,9 @@ TEST_F(ProductTest, MAYBE_ProductInstallBasic) {
     ASSERT_TRUE(version_key.Valid());
 
     const char kCurrentVersion[] = "1.2.3.4";
-    scoped_ptr<Version> current_version(
-        Version::GetVersionFromString(kCurrentVersion));
+    Version current_version(kCurrentVersion);
     version_key.WriteValue(google_update::kRegVersionField,
-                           UTF8ToWide(current_version->GetString()).c_str());
+                           UTF8ToWide(current_version.GetString()).c_str());
 
     // We started out with a non-msi product.
     machine_state.Initialize();
@@ -109,7 +118,7 @@ TEST_F(ProductTest, MAYBE_ProductInstallBasic) {
         machine_state.GetProductState(system_level, distribution->GetType());
     EXPECT_TRUE(chrome_state != NULL);
     if (chrome_state != NULL) {
-      EXPECT_TRUE(chrome_state->version().Equals(*current_version.get()));
+      EXPECT_TRUE(chrome_state->version().Equals(current_version));
       EXPECT_FALSE(chrome_state->is_msi());
     }
 

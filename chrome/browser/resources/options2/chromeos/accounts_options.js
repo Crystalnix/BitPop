@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,8 @@ cr.define('options', function() {
    * @constructor
    */
   function AccountsOptions(model) {
-    OptionsPage.call(this, 'accounts', templateData.accountsPageTabTitle,
+    OptionsPage.call(this, 'accounts',
+                     loadTimeData.getString('accountsPageTabTitle'),
                      'accountsPage');
     // Whether to show the whitelist.
     this.showWhitelist_ = false;
@@ -42,7 +43,7 @@ cr.define('options', function() {
 
       // If the current user is not the owner, show some warning,
       // and do not show the user list.
-      this.showWhitelist_ = AccountsOptions.currentUserIsOwner();
+      this.showWhitelist_ = UIAccountTweaks.currentUserIsOwner();
       if (this.showWhitelist_) {
         options.accounts.UserList.decorate(userList);
       } else {
@@ -61,6 +62,9 @@ cr.define('options', function() {
       Preferences.getInstance().addEventListener(
           $('useWhitelistCheck').pref,
           this.handleUseWhitelistPrefChange_.bind(this));
+
+      $('accounts-options-overlay-confirm').onclick =
+          OptionsPage.closeOverlay.bind(OptionsPage);
     },
 
     /**
@@ -94,7 +98,7 @@ cr.define('options', function() {
     handleUseWhitelistCheckChange_: function(e) {
       // Whitelist existing users when guest login is being disabled.
       if ($('useWhitelistCheck').checked) {
-        chrome.send('whitelistExistingUsers', []);
+        chrome.send('whitelistExistingUsers');
       }
 
       this.updateControls_();
@@ -127,25 +131,12 @@ cr.define('options', function() {
     }
   };
 
-  /**
-   * Returns whether the current user is owner or not.
-   */
-  AccountsOptions.currentUserIsOwner = function() {
-    return localStrings.getString('current_user_is_owner') == 'true';
-  };
-
-  /**
-   * Returns whether we're currently in guest mode.
-   */
-  AccountsOptions.loggedInAsGuest = function() {
-    return localStrings.getString('logged_in_as_guest') == 'true';
-  };
 
   /**
    * Returns whether the whitelist is managed by policy or not.
    */
   AccountsOptions.whitelistIsManaged = function() {
-    return localStrings.getString('whitelist_is_managed') == 'true';
+    return loadTimeData.getBoolean('whitelist_is_managed');
   };
 
   /**

@@ -4,10 +4,12 @@
 
 #include "content/browser/renderer_host/media/media_stream_dispatcher_host.h"
 
-#include "content/browser/resource_context.h"
+#include "content/browser/browser_main_loop.h"
 #include "content/common/media/media_stream_messages.h"
 #include "content/common/media/media_stream_options.h"
+#include "googleurl/src/gurl.h"
 
+using content::BrowserMainLoop;
 using content::BrowserMessageFilter;
 using content::BrowserThread;
 
@@ -24,124 +26,8 @@ struct MediaStreamDispatcherHost::StreamRequest {
   int page_request_id;
 };
 
-MediaStreamDispatcherHost::MediaStreamDispatcherHost(
-    const content::ResourceContext* resource_context, int render_process_id)
-    : resource_context_(resource_context),
-      render_process_id_(render_process_id) {
-}
-
-MediaStreamDispatcherHost::~MediaStreamDispatcherHost() {
-}
-
-MediaStreamManager* MediaStreamDispatcherHost::manager() {
-  return resource_context_->media_stream_manager();
-}
-
-bool MediaStreamDispatcherHost::OnMessageReceived(
-    const IPC::Message& message, bool* message_was_ok) {
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(MediaStreamDispatcherHost, message, *message_was_ok)
-    IPC_MESSAGE_HANDLER(MediaStreamHostMsg_GenerateStream, OnGenerateStream)
-    IPC_MESSAGE_HANDLER(MediaStreamHostMsg_StopGeneratedStream,
-                        OnStopGeneratedStream)
-    IPC_MESSAGE_HANDLER(MediaStreamHostMsg_EnumerateDevices,
-                        OnEnumerateDevices)
-    IPC_MESSAGE_HANDLER(MediaStreamHostMsg_OpenDevice,
-                        OnOpenDevice)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
-  return handled;
-}
-
-void MediaStreamDispatcherHost::OnChannelClosing() {
-  BrowserMessageFilter::OnChannelClosing();
-  DVLOG(1) << "MediaStreamDispatcherHost::OnChannelClosing";
-
-  // TODO(mflodman) Remove this temporary solution when shut-down issue is
-  // resolved, i.e. uncomment the code below.
-  // Since the IPC channel is gone, close all requested VideCaptureDevices and
-  // cancel pending requests.
-//  manager()->CancelRequests(this);
-//  for (StreamMap::iterator it = streams_.begin();
-//       it != streams_.end();
-//       it++) {
-//    std::string label = it->first;
-//    manager()->StopGeneratedStream(label);
-//  }
-}
-
-void MediaStreamDispatcherHost::OnGenerateStream(
-    int render_view_id,
-    int page_request_id,
-    const media_stream::StreamOptions& components,
-    const std::string& security_origin) {
-  DVLOG(1) << "MediaStreamDispatcherHost::OnGenerateStream("
-           << render_view_id << ", "
-           << page_request_id << ", [ "
-           << (components.audio ? "audio " : "")
-           << ((components.video_option &
-               StreamOptions::kFacingUser) ?
-               "video_facing_user " : "")
-           << ((components.video_option &
-                StreamOptions::kFacingEnvironment) ?
-               "video_facing_environment " : "")
-           << "], "
-           << security_origin << ")";
-
-  std::string label;
-  manager()->GenerateStream(this, render_process_id_, render_view_id,
-                            components, security_origin, &label);
-  DCHECK(!label.empty());
-  streams_[label] = StreamRequest(render_view_id, page_request_id);
-}
-
-void MediaStreamDispatcherHost::OnStopGeneratedStream(
-    int render_view_id, const std::string& label) {
-  DVLOG(1) << "MediaStreamDispatcherHost::OnStopGeneratedStream("
-           << ", {label = " << label <<  "})";
-
-  StreamMap::iterator it = streams_.find(label);
-  DCHECK(it != streams_.end());
-  manager()->StopGeneratedStream(label);
-  streams_.erase(it);
-}
-
-void MediaStreamDispatcherHost::OnEnumerateDevices(
-    int render_view_id,
-    int page_request_id,
-    media_stream::MediaStreamType type,
-    const std::string& security_origin) {
-  DVLOG(1) << "MediaStreamDispatcherHost::OnEnumerateDevices("
-           << render_view_id << ", "
-           << page_request_id << ", "
-           << type << ", "
-           << security_origin << ")";
-
-  std::string label;
-  manager()->EnumerateDevices(this, render_process_id_, render_view_id,
-                              type, security_origin, &label);
-  DCHECK(!label.empty());
-  streams_[label] = StreamRequest(render_view_id, page_request_id);
-}
-
-void MediaStreamDispatcherHost::OnOpenDevice(
-    int render_view_id,
-    int page_request_id,
-    const std::string& device_id,
-    media_stream::MediaStreamType type,
-    const std::string& security_origin) {
-  DVLOG(1) << "MediaStreamDispatcherHost::OnOpenDevice("
-           << render_view_id << ", "
-           << page_request_id << ", device_id: "
-           << device_id.c_str() << ", type: "
-           << type << ", "
-           << security_origin << ")";
-
-  std::string label;
-  manager()->OpenDevice(this, render_process_id_, render_view_id,
-                        device_id, type, security_origin, &label);
-  DCHECK(!label.empty());
-  streams_[label] = StreamRequest(render_view_id, page_request_id);
+MediaStreamDispatcherHost::MediaStreamDispatcherHost(int render_process_id)
+    : render_process_id_(render_process_id) {
 }
 
 void MediaStreamDispatcherHost::StreamGenerated(
@@ -220,21 +106,6 @@ void MediaStreamDispatcherHost::DevicesEnumerated(
       request.render_view_id, request.page_request_id, devices));
 }
 
-void MediaStreamDispatcherHost::DevicesEnumerationFailed(
-    const std::string& label) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  DVLOG(1) << "MediaStreamDispatcherHost::DevicesEnumerationFailed("
-           << ", {label = " << label <<  "})";
-
-  StreamMap::iterator it = streams_.find(label);
-  DCHECK(it != streams_.end());
-  StreamRequest request = it->second;
-  streams_.erase(it);
-
-  Send(new MediaStreamMsg_DevicesEnumerationFailed(
-      request.render_view_id, request.page_request_id));
-}
-
 void MediaStreamDispatcherHost::DeviceOpened(
     const std::string& label,
     const StreamDeviceInfo& video_device) {
@@ -250,19 +121,129 @@ void MediaStreamDispatcherHost::DeviceOpened(
       request.render_view_id, request.page_request_id, label, video_device));
 }
 
-void MediaStreamDispatcherHost::DeviceOpenFailed(
-    const std::string& label) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  DVLOG(1) << "MediaStreamDispatcherHost::DeviceOpenFailed("
+bool MediaStreamDispatcherHost::OnMessageReceived(
+    const IPC::Message& message, bool* message_was_ok) {
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP_EX(MediaStreamDispatcherHost, message, *message_was_ok)
+    IPC_MESSAGE_HANDLER(MediaStreamHostMsg_GenerateStream, OnGenerateStream)
+    IPC_MESSAGE_HANDLER(MediaStreamHostMsg_CancelGenerateStream,
+                        OnCancelGenerateStream)
+    IPC_MESSAGE_HANDLER(MediaStreamHostMsg_StopGeneratedStream,
+                        OnStopGeneratedStream)
+    IPC_MESSAGE_HANDLER(MediaStreamHostMsg_EnumerateDevices,
+                        OnEnumerateDevices)
+    IPC_MESSAGE_HANDLER(MediaStreamHostMsg_OpenDevice,
+                        OnOpenDevice)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP_EX()
+  return handled;
+}
+
+void MediaStreamDispatcherHost::OnChannelClosing() {
+  BrowserMessageFilter::OnChannelClosing();
+  DVLOG(1) << "MediaStreamDispatcherHost::OnChannelClosing";
+
+  // Since the IPC channel is gone, cancel pending requests and close all
+  // requested VideoCaptureDevices.
+  for (StreamMap::iterator it = streams_.begin();
+       it != streams_.end();
+       ++it) {
+    std::string label = it->first;
+    GetManager()->StopGeneratedStream(label);
+  }
+  // Clear the map after we have stopped all the streams.
+  streams_.clear();
+}
+
+MediaStreamDispatcherHost::~MediaStreamDispatcherHost() {
+  DCHECK(streams_.empty());
+}
+
+void MediaStreamDispatcherHost::OnGenerateStream(
+    int render_view_id,
+    int page_request_id,
+    const media_stream::StreamOptions& components,
+    const GURL& security_origin) {
+  DVLOG(1) << "MediaStreamDispatcherHost::OnGenerateStream("
+           << render_view_id << ", "
+           << page_request_id << ", [ "
+           << (components.audio ? "audio " : "")
+           << (components.video ? "video " : "")
+           << "], "
+           << security_origin.spec() << ")";
+
+  std::string label;
+  GetManager()->GenerateStream(this, render_process_id_, render_view_id,
+                            components, security_origin, &label);
+  DCHECK(!label.empty());
+  streams_[label] = StreamRequest(render_view_id, page_request_id);
+}
+
+void MediaStreamDispatcherHost::OnCancelGenerateStream(int render_view_id,
+                                                       int page_request_id) {
+  DVLOG(1) << "MediaStreamDispatcherHost::OnCancelGenerateStream("
+           << render_view_id << ", "
+           << page_request_id << ")";
+
+  for (StreamMap::iterator it = streams_.begin(); it != streams_.end(); ++it) {
+    if (it->second.render_view_id == render_view_id &&
+        it->second.page_request_id == page_request_id) {
+      GetManager()->CancelGenerateStream(it->first);
+    }
+  }
+}
+
+void MediaStreamDispatcherHost::OnStopGeneratedStream(
+    int render_view_id, const std::string& label) {
+  DVLOG(1) << "MediaStreamDispatcherHost::OnStopGeneratedStream("
            << ", {label = " << label <<  "})";
 
   StreamMap::iterator it = streams_.find(label);
   DCHECK(it != streams_.end());
-  StreamRequest request = it->second;
+  GetManager()->StopGeneratedStream(label);
   streams_.erase(it);
+}
 
-  Send(new MediaStreamMsg_DeviceOpenFailed(request.render_view_id,
-                                           request.page_request_id));
+void MediaStreamDispatcherHost::OnEnumerateDevices(
+    int render_view_id,
+    int page_request_id,
+    media_stream::MediaStreamType type,
+    const GURL& security_origin) {
+  DVLOG(1) << "MediaStreamDispatcherHost::OnEnumerateDevices("
+           << render_view_id << ", "
+           << page_request_id << ", "
+           << type << ", "
+           << security_origin.spec() << ")";
+
+  std::string label;
+  GetManager()->EnumerateDevices(this, render_process_id_, render_view_id,
+                              type, security_origin, &label);
+  DCHECK(!label.empty());
+  streams_[label] = StreamRequest(render_view_id, page_request_id);
+}
+
+void MediaStreamDispatcherHost::OnOpenDevice(
+    int render_view_id,
+    int page_request_id,
+    const std::string& device_id,
+    media_stream::MediaStreamType type,
+    const GURL& security_origin) {
+  DVLOG(1) << "MediaStreamDispatcherHost::OnOpenDevice("
+           << render_view_id << ", "
+           << page_request_id << ", device_id: "
+           << device_id.c_str() << ", type: "
+           << type << ", "
+           << security_origin.spec() << ")";
+
+  std::string label;
+  GetManager()->OpenDevice(this, render_process_id_, render_view_id,
+                        device_id, type, security_origin, &label);
+  DCHECK(!label.empty());
+  streams_[label] = StreamRequest(render_view_id, page_request_id);
+}
+
+MediaStreamManager* MediaStreamDispatcherHost::GetManager() {
+  return BrowserMainLoop::GetMediaStreamManager();
 }
 
 }  // namespace media_stream

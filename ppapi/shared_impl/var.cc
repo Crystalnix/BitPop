@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -113,6 +113,9 @@ void Var::AssignVarID(int32 id) {
 
 // StringVar -------------------------------------------------------------------
 
+StringVar::StringVar() {
+}
+
 StringVar::StringVar(const std::string& str)
     : value_(str) {
 }
@@ -154,6 +157,13 @@ StringVar* StringVar::FromPPVar(PP_Var var) {
   if (!var_object)
     return NULL;
   return var_object->AsStringVar();
+}
+
+// static
+PP_Var StringVar::SwapValidatedUTF8StringIntoPPVar(std::string* src) {
+  scoped_refptr<StringVar> str(new StringVar);
+  str->value_.swap(*src);
+  return str->GetPPVar();
 }
 
 // ArrayBufferVar --------------------------------------------------------------

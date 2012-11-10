@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,8 +26,9 @@ class BrowserTabRestoreServiceDelegate : public TabRestoreServiceDelegate {
   virtual const SessionID& GetSessionID() const OVERRIDE;
   virtual int GetTabCount() const OVERRIDE;
   virtual int GetSelectedIndex() const OVERRIDE;
+  virtual std::string GetAppName() const OVERRIDE;
   virtual content::WebContents* GetWebContentsAt(int index) const OVERRIDE;
-  virtual content::WebContents* GetSelectedWebContents() const OVERRIDE;
+  virtual content::WebContents* GetActiveWebContents() const OVERRIDE;
   virtual bool IsTabPinned(int index) const OVERRIDE;
   virtual content::WebContents* AddRestoredTab(
       const std::vector<TabNavigation>& navigations,
@@ -37,13 +38,13 @@ class BrowserTabRestoreServiceDelegate : public TabRestoreServiceDelegate {
       bool select,
       bool pin,
       bool from_last_session,
-      SessionStorageNamespace* storage_namespace) OVERRIDE;
+      content::SessionStorageNamespace* storage_namespace) OVERRIDE;
   virtual void ReplaceRestoredTab(
       const std::vector<TabNavigation>& navigations,
       int selected_navigation,
       bool from_last_session,
       const std::string& extension_app_id,
-      SessionStorageNamespace* session_storage_namespace) OVERRIDE;
+      content::SessionStorageNamespace* session_storage_namespace) OVERRIDE;
   virtual void CloseTab() OVERRIDE;
 
  private:

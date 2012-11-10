@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_IMPORTER_IMPORTER_LIST_H_
 #define CHROME_BROWSER_IMPORTER_IMPORTER_LIST_H_
-#pragma once
 
 #include <vector>
 
@@ -50,6 +49,9 @@ class ImporterList : public base::RefCountedThreadSafe<ImporterList> {
   // Returns the SourceProfile for the given |importer_type|.
   const importer::SourceProfile& GetSourceProfileForImporterType(
       int importer_type) const;
+
+  // Tells interested callers if class is done loading source profiles.
+  bool source_profiles_loaded() const { return source_profiles_loaded_; }
 
  private:
   friend class base::RefCountedThreadSafe<ImporterList>;

@@ -14,11 +14,11 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/icon_messages.h"
+#include "chrome/common/prerender_messages.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/thumbnail_score.h"
+#include "chrome/common/thumbnail_support.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/renderer/about_handler.h"
-#include "chrome/renderer/automation/dom_automation_controller.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
 #include "chrome/renderer/content_settings_observer.h"
 #include "chrome/renderer/extensions/extension_dispatcher.h"
@@ -51,13 +51,14 @@
 #include "ui/gfx/size.h"
 #include "ui/gfx/skbitmap_operations.h"
 #include "webkit/glue/image_decoder.h"
-#include "webkit/glue/image_resource_fetcher.h"
+#include "webkit/glue/multi_resolution_image_resource_fetcher.h"
 #include "webkit/glue/webkit_glue.h"
 #include "v8/include/v8-testing.h"
 
 using WebKit::WebAccessibilityObject;
 using WebKit::WebCString;
 using WebKit::WebDataSource;
+using WebKit::WebDocument;
 using WebKit::WebFrame;
 using WebKit::WebIconURL;
 using WebKit::WebRect;
@@ -69,7 +70,8 @@ using WebKit::WebURL;
 using WebKit::WebURLRequest;
 using WebKit::WebView;
 using WebKit::WebVector;
-using webkit_glue::ImageResourceFetcher;
+using extensions::APIPermission;
+using webkit_glue::MultiResolutionImageResourceFetcher;
 
 // Delay in milliseconds that we'll wait before capturing the page contents
 // and thumbnail.
@@ -154,8 +156,6 @@ enum {
 
 // Constants for mixed-content blocking.
 static const char kGoogleDotCom[] = "google.com";
-static const char kFacebookDotCom[] = "facebook.com";
-static const char kTwitterDotCom[] = "twitter.com";
 
 static bool PaintViewIntoCanvas(WebView* view,
                                 skia::PlatformCanvas& canvas) {
@@ -179,7 +179,7 @@ static bool PaintViewIntoCanvas(WebView* view,
 // bitmap are all the same brightness.
 static double CalculateBoringScore(SkBitmap* bitmap) {
   int histogram[256] = {0};
-  color_utils::BuildLumaHistogram(bitmap, histogram);
+  color_utils::BuildLumaHistogram(*bitmap, histogram);
 
   int color_count = *std::max_element(histogram, histogram + 256);
   int pixel_count = bitmap->width() * bitmap->height();
@@ -230,13 +230,8 @@ ChromeRenderViewObserver::ChromeRenderViewObserver(
       last_indexed_page_id_(-1),
       allow_displaying_insecure_content_(false),
       allow_running_insecure_content_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      capture_timer_(false, false) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kDomAutomationController)) {
-    int old_bindings = render_view->GetEnabledBindings();
-    render_view->SetEnabledBindings(
-        old_bindings |= content::BINDINGS_POLICY_DOM_AUTOMATION);
-  }
   render_view->GetWebView()->setPermissionClient(this);
   if (!command_line.HasSwitch(switches::kDisableClientSidePhishingDetection))
     OnSetClientSidePhishingDetection(true);
@@ -269,13 +264,12 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeViewMsg_GetFPS, OnGetFPS)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_AddStrictSecurityHost,
                         OnAddStrictSecurityHost)
-    IPC_MESSAGE_HANDLER(ChromeViewMsg_SetAsInterstitial, OnSetAsInterstitial)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
   // Filter only.
   IPC_BEGIN_MESSAGE_MAP(ChromeRenderViewObserver, message)
-    IPC_MESSAGE_HANDLER(ChromeViewMsg_SetIsPrerendering, OnSetIsPrerendering);
+    IPC_MESSAGE_HANDLER(PrerenderMsg_SetIsPrerendering, OnSetIsPrerendering);
   IPC_END_MESSAGE_MAP()
 
   return handled;
@@ -338,15 +332,17 @@ void ChromeRenderViewObserver::OnDownloadFavicon(int id,
     SkBitmap data_image = ImageFromDataUrl(image_url);
     data_image_failed = data_image.empty();
     if (!data_image_failed) {
+      std::vector<SkBitmap> images(1, data_image);
       Send(new IconHostMsg_DidDownloadFavicon(
-          routing_id(), id, image_url, false, data_image));
+          routing_id(), id, image_url, false, image_size, images));
     }
   }
 
   if (data_image_failed ||
       !DownloadFavicon(id, image_url, image_size)) {
     Send(new IconHostMsg_DidDownloadFavicon(
-        routing_id(), id, image_url, true, SkBitmap()));
+        routing_id(), id, image_url, true, image_size,
+        std::vector<SkBitmap>()));
   }
 }
 
@@ -367,16 +363,11 @@ void ChromeRenderViewObserver::OnAddStrictSecurityHost(
   strict_security_hosts_.insert(host);
 }
 
-void ChromeRenderViewObserver::OnSetAsInterstitial() {
-  content_settings_->SetAsInterstitial();
-}
-
 void ChromeRenderViewObserver::Navigate(const GURL& url) {
   // Execute cache clear operations that were postponed until a navigation
   // event (including tab reload).
   if (chrome_render_process_observer_)
     chrome_render_process_observer_->ExecutePendingClearCache();
-  AboutHandler::MaybeHandle(url);
 }
 
 void ChromeRenderViewObserver::OnSetClientSidePhishingDetection(
@@ -494,6 +485,48 @@ bool ChromeRenderViewObserver::allowWriteToClipboard(WebFrame* frame,
   return allowed;
 }
 
+bool ChromeRenderViewObserver::HasExtensionPermission(
+    const WebSecurityOrigin& origin, APIPermission::ID permission) const {
+  if (!EqualsASCII(origin.protocol(), chrome::kExtensionScheme))
+    return false;
+
+  const std::string extension_id = origin.host().utf8().data();
+  if (!extension_dispatcher_->IsExtensionActive(extension_id))
+    return false;
+
+  const extensions::Extension* extension =
+      extension_dispatcher_->extensions()->GetByID(extension_id);
+  if (!extension)
+    return false;
+
+  return extension->HasAPIPermission(permission);
+}
+
+bool ChromeRenderViewObserver::allowWebComponents(const WebDocument& document,
+                                                  bool defaultValue) {
+  if (defaultValue)
+    return true;
+
+  WebSecurityOrigin origin = document.securityOrigin();
+  if (EqualsASCII(origin.protocol(), chrome::kChromeUIScheme))
+    return true;
+
+  // The <browser> tag is implemented via Shadow DOM.
+  if (HasExtensionPermission(origin, APIPermission::kBrowserTag))
+    return true;
+
+  if (HasExtensionPermission(origin, APIPermission::kExperimental))
+    return true;
+
+  return false;
+}
+
+bool ChromeRenderViewObserver::allowHTMLNotifications(
+    const WebDocument& document) {
+  WebSecurityOrigin origin = document.securityOrigin();
+  return HasExtensionPermission(origin, APIPermission::kNotification);
+}
+
 static void SendInsecureContentSignal(int signal) {
   UMA_HISTOGRAM_ENUMERATION("SSL.InsecureContent", signal,
                             INSECURE_CONTENT_NUM_EVENTS);
@@ -550,7 +583,9 @@ bool ChromeRenderViewObserver::allowDisplayingInsecureContent(
   if (allowed_per_settings || allow_displaying_insecure_content_)
     return true;
 
-  Send(new ChromeViewHostMsg_DidBlockDisplayingInsecureContent(routing_id()));
+  if (!IsStrictSecurityHost(origin_host))
+    Send(new ChromeViewHostMsg_DidBlockDisplayingInsecureContent(routing_id()));
+
   return false;
 }
 
@@ -559,10 +594,6 @@ bool ChromeRenderViewObserver::allowRunningInsecureContent(
     bool allowed_per_settings,
     const WebKit::WebSecurityOrigin& origin,
     const WebKit::WebURL& resource_url) {
-  // Single value to control permissive mixed content behaviour.  We flip
-  // this at the present between beta / stable releases.
-  const bool block_insecure_content_on_all_domains = false;
-
   std::string origin_host(origin.host().utf8());
   GURL frame_gurl(frame->document().url());
   DCHECK_EQ(frame_gurl.host(), origin_host);
@@ -616,16 +647,9 @@ bool ChromeRenderViewObserver::allowRunningInsecureContent(
   else if (EndsWith(resource_gurl.path(), kDotSWF, false))
     SendInsecureContentSignal(INSECURE_CONTENT_RUN_SWF);
 
-  if (!allow_running_insecure_content_ &&
-      !allowed_per_settings &&
-      (block_insecure_content_on_all_domains ||
-       CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kNoRunningInsecureContent) ||
-       is_google ||
-       isHostInDomain(origin_host, kFacebookDotCom) ||
-       isHostInDomain(origin_host, kTwitterDotCom) ||
-       IsStrictSecurityHost(origin_host))) {
-    Send(new ChromeViewHostMsg_DidBlockRunningInsecureContent(routing_id()));
+  if (!allow_running_insecure_content_ && !allowed_per_settings) {
+    if (!IsStrictSecurityHost(origin_host))
+      content_settings_->DidNotAllowMixedScript();
     return false;
   }
 
@@ -633,11 +657,11 @@ bool ChromeRenderViewObserver::allowRunningInsecureContent(
 }
 
 void ChromeRenderViewObserver::didNotAllowPlugins(WebFrame* frame) {
-  content_settings_->DidNotAllowPlugins(frame);
+  content_settings_->DidNotAllowPlugins();
 }
 
 void ChromeRenderViewObserver::didNotAllowScript(WebFrame* frame) {
-  content_settings_->DidNotAllowScript(frame);
+  content_settings_->DidNotAllowScript();
 }
 
 void ChromeRenderViewObserver::OnSetIsPrerendering(bool is_prerendering) {
@@ -661,13 +685,11 @@ void ChromeRenderViewObserver::DidStartLoading() {
 }
 
 void ChromeRenderViewObserver::DidStopLoading() {
-  MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&ChromeRenderViewObserver::CapturePageInfo,
-                 weak_factory_.GetWeakPtr(), render_view()->GetPageId(), false),
+  CapturePageInfoLater(
+      false,  // preliminary_capture
       base::TimeDelta::FromMilliseconds(
           render_view()->GetContentStateImmediately() ?
-          0 : kDelayForCaptureMs));
+              0 : kDelayForCaptureMs));
 
   WebFrame* main_frame = render_view()->GetWebView()->mainFrame();
   GURL osd_url = main_frame->document().openSearchDescriptionURL();
@@ -719,19 +741,12 @@ void ChromeRenderViewObserver::DidCommitProvisionalLoad(
   if (!is_new_navigation)
     return;
 
-  MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&ChromeRenderViewObserver::CapturePageInfo,
-                 weak_factory_.GetWeakPtr(), render_view()->GetPageId(), true),
+  CapturePageInfoLater(
+      true,  // preliminary_capture
       base::TimeDelta::FromMilliseconds(kDelayForForcedCaptureMs));
 }
 
 void ChromeRenderViewObserver::DidClearWindowObject(WebFrame* frame) {
-  if (render_view()->GetEnabledBindings() &
-          content::BINDINGS_POLICY_DOM_AUTOMATION) {
-    BindDOMAutomationController(frame);
-  }
-
   if (render_view()->GetEnabledBindings() &
           content::BINDINGS_POLICY_EXTERNAL_HOST) {
     GetExternalHostBindings()->BindToJavascript(frame, "externalHost");
@@ -764,20 +779,21 @@ void ChromeRenderViewObserver::DidHandleTouchEvent(const WebTouchEvent& event) {
     return;
   if (accessibility.node() == node)
     render_view()->Send(new ChromeViewHostMsg_FocusedEditableNodeTouched(
-    render_view()->GetRoutingId()));
+    render_view()->GetRoutingID()));
 }
 
-void ChromeRenderViewObserver::CapturePageInfo(int load_id,
-                                               bool preliminary_capture) {
-  if (load_id != render_view()->GetPageId())
-    return;  // This capture call is no longer relevant due to navigation.
+void ChromeRenderViewObserver::CapturePageInfoLater(bool preliminary_capture,
+                                                    base::TimeDelta delay) {
+  capture_timer_.Start(
+      FROM_HERE,
+      delay,
+      base::Bind(&ChromeRenderViewObserver::CapturePageInfo,
+                 base::Unretained(this),
+                 preliminary_capture));
+}
 
-  // Skip indexing if this is not a new load.  Note that the case where
-  // load_id == last_indexed_page_id_ is more complicated, since we need to
-  // reindex if the toplevel URL has changed (such as from a redirect), even
-  // though this may not cause the page id to be incremented.
-  if (load_id < last_indexed_page_id_)
-    return;
+void ChromeRenderViewObserver::CapturePageInfo(bool preliminary_capture) {
+  int page_id = render_view()->GetPageId();
 
   if (!render_view()->GetWebView())
     return;
@@ -800,9 +816,23 @@ void ChromeRenderViewObserver::CapturePageInfo(int load_id,
   if (prerender::PrerenderHelper::IsPrerendering(render_view()))
     return;
 
-  bool same_page_id = last_indexed_page_id_ == load_id;
+  // Retrieve the frame's full text (up to kMaxIndexChars), and pass it to the
+  // translate helper for language detection and possible translation.
+  string16 contents;
+  CaptureText(main_frame, &contents);
+  if (translate_helper_)
+    translate_helper_->PageCaptured(contents);
+
+  // Skip indexing if this is not a new load.  Note that the case where
+  // page_id == last_indexed_page_id_ is more complicated, since we need to
+  // reindex if the toplevel URL has changed (such as from a redirect), even
+  // though this may not cause the page id to be incremented.
+  if (page_id < last_indexed_page_id_)
+    return;
+
+  bool same_page_id = last_indexed_page_id_ == page_id;
   if (!preliminary_capture)
-    last_indexed_page_id_ = load_id;
+    last_indexed_page_id_ = page_id;
 
   // Get the URL for this page.
   GURL url(main_frame->document().url());
@@ -826,25 +856,18 @@ void ChromeRenderViewObserver::CapturePageInfo(int load_id,
 
   TRACE_EVENT0("renderer", "ChromeRenderViewObserver::CapturePageInfo");
 
-  // Retrieve the frame's full text.
-  string16 contents;
-  CaptureText(main_frame, &contents);
-  if (translate_helper_)
-    translate_helper_->PageCaptured(contents);
   if (contents.size()) {
     // Send the text to the browser for indexing (the browser might decide not
-    // to index, if the URL is HTTPS for instance) and language discovery.
-    Send(new ChromeViewHostMsg_PageContents(routing_id(), url, load_id,
+    // to index, if the URL is HTTPS for instance).
+    Send(new ChromeViewHostMsg_PageContents(routing_id(), url, page_id,
                                             contents));
   }
 
   // Generate the thumbnail here if the in-browser thumbnailing isn't
-  // enabled. TODO(satorux): Remove this and related code once
-  // crbug.com/65936 is complete.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableInBrowserThumbnailing)) {
+  // enabled. TODO(mazda): Remove this and related code once in-browser
+  // thumbnailing is supported on all platforms (http://crbug.com/120003).
+  if (!ShouldEnableInBrowserThumbnailing())
     CaptureThumbnail();
-  }
 
 #if defined(ENABLE_SAFE_BROWSING)
   // Will swap out the string.
@@ -955,7 +978,8 @@ bool ChromeRenderViewObserver::CaptureFrameThumbnail(WebView* view,
       S16CPU new_width = static_cast<S16CPU>(src_bmp.height() * dest_aspect);
       S16CPU x_offset = (src_bmp_width - new_width) / 2;
       src_rect.set(x_offset, 0, new_width + x_offset, src_bmp.height());
-      score->good_clipping = false;
+      score->good_clipping =
+          (src_aspect >= ThumbnailScore::kTooWideAspectRatio) ? false : true;
     } else {
       src_rect.set(0, 0, src_bmp_width,
                    static_cast<S16CPU>(src_bmp_width / dest_aspect));
@@ -1011,16 +1035,6 @@ bool ChromeRenderViewObserver::CaptureSnapshot(WebView* view,
   return true;
 }
 
-void ChromeRenderViewObserver::BindDOMAutomationController(WebFrame* frame) {
-  if (!dom_automation_controller_.get()) {
-    dom_automation_controller_.reset(new DomAutomationController());
-  }
-  dom_automation_controller_->set_message_sender(this);
-  dom_automation_controller_->set_routing_id(routing_id());
-  dom_automation_controller_->BindToJavascript(frame,
-                                               "domAutomationController");
-}
-
 ExternalHostBindings* ChromeRenderViewObserver::GetExternalHostBindings() {
   if (!external_host_bindings_.get()) {
     external_host_bindings_.reset(new ExternalHostBindings(
@@ -1036,26 +1050,29 @@ bool ChromeRenderViewObserver::DownloadFavicon(int id,
   if (!render_view()->GetWebView())
     return false;
   // Create an image resource fetcher and assign it with a call back object.
-  image_fetchers_.push_back(linked_ptr<ImageResourceFetcher>(
-      new ImageResourceFetcher(
-          image_url, render_view()->GetWebView()->mainFrame(), id, image_size,
+  image_fetchers_.push_back(linked_ptr<MultiResolutionImageResourceFetcher>(
+      new MultiResolutionImageResourceFetcher(
+          image_url, render_view()->GetWebView()->mainFrame(), id,
           WebURLRequest::TargetIsFavicon,
           base::Bind(&ChromeRenderViewObserver::DidDownloadFavicon,
-                     base::Unretained(this)))));
+                     base::Unretained(this), image_size))));
   return true;
 }
 
 void ChromeRenderViewObserver::DidDownloadFavicon(
-    ImageResourceFetcher* fetcher, const SkBitmap& image) {
+    int requested_size,
+    MultiResolutionImageResourceFetcher* fetcher,
+    const std::vector<SkBitmap>& images) {
   // Notify requester of image download status.
   Send(new IconHostMsg_DidDownloadFavicon(routing_id(),
                                           fetcher->id(),
                                           fetcher->image_url(),
-                                          image.isNull(),
-                                          image));
+                                          images.empty(),
+                                          requested_size,
+                                          images));
 
   // Remove the image fetcher from our pending list. We're in the callback from
-  // ImageResourceFetcher, best to delay deletion.
+  // MultiResolutionImageResourceFetcher, best to delay deletion.
   ImageResourceFetcherList::iterator iter;
   for (iter = image_fetchers_.begin(); iter != image_fetchers_.end(); ++iter) {
     if (iter->get() == fetcher) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,19 +8,23 @@
 
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/url_util.h"
 
-HistoryProvider::HistoryProvider(ACProviderListener* listener,
+HistoryProvider::HistoryProvider(AutocompleteProviderListener* listener,
                                  Profile* profile,
                                  const char* name)
-    : AutocompleteProvider(listener, profile, name) {
+    : AutocompleteProvider(listener, profile, name),
+      always_prevent_inline_autocomplete_(false) {
 }
+
+HistoryProvider::~HistoryProvider() {}
 
 void HistoryProvider::DeleteMatch(const AutocompleteMatch& match) {
   DCHECK(done_);
@@ -28,7 +32,7 @@ void HistoryProvider::DeleteMatch(const AutocompleteMatch& match) {
   DCHECK(match.deletable);
 
   HistoryService* const history_service =
-      profile_->GetHistoryService(Profile::EXPLICIT_ACCESS);
+      HistoryServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
 
   // Delete the match from the history DB.
   DCHECK(history_service);
@@ -153,6 +157,7 @@ size_t HistoryProvider::TrimHttpPrefix(string16* url) {
 bool HistoryProvider::PreventInlineAutocomplete(
     const AutocompleteInput& input) {
   return input.prevent_inline_autocomplete() ||
-        (!input.text().empty() &&
-         IsWhitespace(input.text()[input.text().length() - 1]));
+      always_prevent_inline_autocomplete_ ||
+      (!input.text().empty() &&
+       IsWhitespace(input.text()[input.text().length() - 1]));
 }

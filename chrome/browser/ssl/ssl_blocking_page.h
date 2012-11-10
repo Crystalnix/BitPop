@@ -1,33 +1,41 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_SSL_SSL_BLOCKING_PAGE_H_
 #define CHROME_BROWSER_SSL_SSL_BLOCKING_PAGE_H_
-#pragma once
 
 #include <string>
 #include <vector>
 
 #include "base/callback.h"
 #include "base/string16.h"
-#include "chrome/browser/tab_contents/chrome_interstitial_page.h"
-
-class SSLCertErrorHandler;
+#include "net/base/ssl_info.h"
+#include "content/public/browser/interstitial_page_delegate.h"
+#include "googleurl/src/gurl.h"
 
 namespace base {
 class DictionaryValue;
 }
 
+namespace content {
+class InterstitialPage;
+class WebContents;
+}
+
 // This class is responsible for showing/hiding the interstitial page that is
 // shown when a certificate error happens.
 // It deletes itself when the interstitial page is closed.
-class SSLBlockingPage : public ChromeInterstitialPage {
+class SSLBlockingPage : public content::InterstitialPageDelegate {
  public:
   SSLBlockingPage(
-      SSLCertErrorHandler* handler,
+      content::WebContents* web_contents,
+      int cert_error,
+      const net::SSLInfo& ssl_info,
+      const GURL& request_url,
       bool overridable,
-      const base::Callback<void(SSLCertErrorHandler*, bool)>& callback);
+      bool strict_enforcement,
+      const base::Callback<void(bool)>& callback);
   virtual ~SSLBlockingPage();
 
   // A method that sets strings in the specified dictionary from the passed
@@ -38,25 +46,30 @@ class SSLBlockingPage : public ChromeInterstitialPage {
                            const std::vector<string16>& extra_info);
 
  protected:
-  // ChromeInterstitialPage implementation.
+  // InterstitialPageDelegate implementation.
   virtual std::string GetHTMLContents() OVERRIDE;
   virtual void CommandReceived(const std::string& command) OVERRIDE;
-  virtual void UpdateEntry(content::NavigationEntry* entry) OVERRIDE;
-  virtual void Proceed() OVERRIDE;
-  virtual void DontProceed() OVERRIDE;
+  virtual void OverrideEntry(content::NavigationEntry* entry) OVERRIDE;
+  virtual void OverrideRendererPrefs(
+      content::RendererPreferences* prefs) OVERRIDE;
+  virtual void OnProceed() OVERRIDE;
+  virtual void OnDontProceed() OVERRIDE;
 
  private:
   void NotifyDenyCertificate();
   void NotifyAllowCertificate();
 
-  // The error we represent.  We will either call CancelRequest() or
-  // ContinueRequest() on this object.
-  scoped_refptr<SSLCertErrorHandler> handler_;
+  base::Callback<void(bool)> callback_;
 
-  base::Callback<void(SSLCertErrorHandler*, bool)> callback_;
-
-  // Is the certificate error overridable or fatal?
+  content::WebContents* web_contents_;
+  int cert_error_;
+  net::SSLInfo ssl_info_;
+  GURL request_url_;
+  // Could the user successfully override the error?
   bool overridable_;
+  // Has the site requested strict enforcement of certificate errors?
+  bool strict_enforcement_;
+  content::InterstitialPage* interstitial_page_;  // Owns us.
 
   DISALLOW_COPY_AND_ASSIGN(SSLBlockingPage);
 };

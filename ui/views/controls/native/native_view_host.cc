@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,9 +14,10 @@ namespace views {
 // static
 const char NativeViewHost::kViewClassName[] = "views/NativeViewHost";
 
-#if defined(OS_LINUX)
-// GTK renders the focus.
-// static
+#if defined(USE_AURA)
+// Views implmenetatxion draws the focus.
+// TODO(oshima): Eliminate this flag and consolidate
+// the focus border code.
 const bool NativeViewHost::kRenderNativeControlFocus = false;
 #else
 // static
@@ -125,7 +126,7 @@ void NativeViewHost::OnPaint(gfx::Canvas* canvas) {
   // It would be nice if this used some approximation of the page's
   // current background color.
   if (native_wrapper_->HasInstalledClip())
-    canvas->FillRect(SK_ColorWHITE, GetLocalBounds());
+    canvas->FillRect(GetLocalBounds(), SK_ColorWHITE);
 }
 
 void NativeViewHost::VisibilityChanged(View* starting_from, bool is_visible) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/memory/linked_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/win/scoped_comptr.h"
 #include "content/common/content_export.h"
@@ -38,13 +39,13 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   };
 
   // Does not take ownership of |client| which must outlive |*this|.
-  DXVAVideoDecodeAccelerator(
+  explicit DXVAVideoDecodeAccelerator(
       media::VideoDecodeAccelerator::Client* client,
-      base::ProcessHandle renderer_process);
+      const base::Callback<bool(void)>& make_context_current);
   virtual ~DXVAVideoDecodeAccelerator();
 
   // media::VideoDecodeAccelerator implementation.
-  virtual bool Initialize(Profile) OVERRIDE;
+  virtual bool Initialize(media::VideoCodecProfile profile) OVERRIDE;
   virtual void Decode(const media::BitstreamBuffer& bitstream_buffer) OVERRIDE;
   virtual void AssignPictureBuffers(
       const std::vector<media::PictureBuffer>& buffers) OVERRIDE;
@@ -61,6 +62,8 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   static void PreSandboxInitialization();
 
  private:
+  typedef void* EGLConfig;
+  typedef void* EGLSurface;
   // Creates and initializes an instance of the D3D device and the
   // corresponding device manager. The device manager instance is eventually
   // passed to the IMFTransform interface implemented by the h.264 decoder.
@@ -99,12 +102,6 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // client when we have a picture buffer to copy the surface contents to.
   bool ProcessOutputSample(IMFSample* sample);
 
-  // Copies the output sample data to the picture buffer provided by the
-  // client.
-  bool CopyOutputSampleDataToPictureBuffer(IDirect3DSurface9* dest_surface,
-                                           media::PictureBuffer picture_buffer,
-                                           int32 input_buffer_id);
-
   // Processes pending output samples by copying them to available picture
   // slots.
   void ProcessPendingSamples();
@@ -118,10 +115,6 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // Transitions the decoder to the uninitialized state. The decoder will stop
   // accepting requests in this state.
   void Invalidate();
-
-  // Helper function to read the bitmap from the D3D surface passed in.
-  bool GetBitmapFromSurface(IDirect3DSurface9* surface,
-                            scoped_array<char>* bits);
 
   // Notifies the client that the input buffer identifed by input_buffer_id has
   // been processed.
@@ -155,6 +148,11 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // device manager.
   static IDirect3DDeviceManager9* device_manager_;
   static IDirect3DDevice9Ex* device_;
+  static IDirect3DQuery9* query_;
+  static IDirect3D9Ex* d3d9_;
+
+  // The EGL config to use for decoded frames.
+  EGLConfig egl_config_;
 
   // Current state of the decoder.
   State state_;
@@ -176,28 +174,15 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // List of decoded output samples.
   PendingOutputSamples pending_output_samples_;
 
-  // Maintains information about a DXVA picture buffer, i.e. whether it is
-  // available for rendering, the texture information, etc.
-  struct DXVAPictureBuffer {
-    explicit DXVAPictureBuffer(const media::PictureBuffer& buffer);
-
-    bool available;
-    media::PictureBuffer picture_buffer;
-  };
+  struct DXVAPictureBuffer;
 
   // This map maintains the picture buffers passed the client for decoding.
   // The key is the picture buffer id.
-  typedef std::map<int32, DXVAPictureBuffer> OutputBuffers;
+  typedef std::map<int32, linked_ptr<DXVAPictureBuffer> > OutputBuffers;
   OutputBuffers output_picture_buffers_;
 
   // Set to true if we requested picture slots from the client.
   bool pictures_requested_;
-
-  // Contains the id of the last input buffer received from the client.
-  int32 last_input_buffer_id_;
-
-  // Handle to the renderer process.
-  base::ProcessHandle renderer_process_;
 
   // Ideally the reset token would be a stack variable which is used while
   // creating the device manager. However it seems that the device manager
@@ -216,7 +201,9 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // 1. All required decoder dlls were successfully loaded.
   // 2. The device manager initialization completed.
   static bool pre_sandbox_init_done_;
+
+  // Callback to set the correct gl context.
+  base::Callback<bool(void)> make_context_current_;
 };
 
 #endif  // CONTENT_COMMON_GPU_MEDIA_DXVA_VIDEO_DECODE_ACCELERATOR_H_
-

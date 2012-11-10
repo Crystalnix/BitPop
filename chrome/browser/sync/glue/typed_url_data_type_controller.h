@@ -4,12 +4,11 @@
 
 #ifndef CHROME_BROWSER_SYNC_GLUE_TYPED_URL_DATA_TYPE_CONTROLLER_H__
 #define CHROME_BROWSER_SYNC_GLUE_TYPED_URL_DATA_TYPE_CONTROLLER_H__
-#pragma once
 
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "base/memory/scoped_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/browser/sync/glue/non_frontend_data_type_controller.h"
@@ -35,47 +34,32 @@ class TypedUrlDataTypeController : public NonFrontendDataTypeController,
       ProfileSyncComponentsFactory* profile_sync_factory,
       Profile* profile,
       ProfileSyncService* sync_service);
-  virtual ~TypedUrlDataTypeController();
 
   // NonFrontendDataTypeController implementation
-  virtual syncable::ModelType type() const OVERRIDE;
-  virtual browser_sync::ModelSafeGroup model_safe_group() const OVERRIDE;
+  virtual syncer::ModelType type() const OVERRIDE;
+  virtual syncer::ModelSafeGroup model_safe_group() const OVERRIDE;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // CancelableRequestConsumerBase implementation.
-  virtual void OnRequestAdded(CancelableRequestProvider* provider,
-                              CancelableRequestProvider::Handle handle) {}
-  virtual void OnRequestRemoved(CancelableRequestProvider* provider,
-                                CancelableRequestProvider::Handle handle) {}
-  virtual void WillExecute(CancelableRequestProvider* provider,
-                           CancelableRequestProvider::Handle handle) {}
-  virtual void DidExecute(CancelableRequestProvider* provider,
-                          CancelableRequestProvider::Handle handle) {}
+  // Invoked on the history thread to set our history backend - must be called
+  // before CreateSyncComponents() is invoked.
+  void SetBackend(history::HistoryBackend* backend);
 
  protected:
   // NonFrontendDataTypeController interface.
-  virtual bool StartAssociationAsync() OVERRIDE;
+  virtual bool PostTaskOnBackendThread(
+      const tracked_objects::Location& from_here,
+      const base::Closure& task) OVERRIDE;
   virtual void CreateSyncComponents() OVERRIDE;
   virtual void StopModels() OVERRIDE;
-  virtual bool StopAssociationAsync() OVERRIDE;
-  virtual void RecordUnrecoverableError(
-      const tracked_objects::Location& from_here,
-      const std::string& message) OVERRIDE;
-  virtual void RecordAssociationTime(base::TimeDelta time) OVERRIDE;
-  virtual void RecordStartFailure(StartResult result) OVERRIDE;
 
  private:
-  friend class ControlTask;
-
-  // Helper method to launch Associate() and Destroy() on the history thread.
-  void RunOnHistoryThread(bool start, history::HistoryBackend* backend);
+  virtual ~TypedUrlDataTypeController();
 
   history::HistoryBackend* backend_;
-  scoped_refptr<HistoryService> history_service_;
   content::NotificationRegistrar notification_registrar_;
   PrefChangeRegistrar pref_registrar_;
 

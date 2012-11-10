@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,16 +14,19 @@
 #include "base/time.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/history/history_backend.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/browser_features.h"
 #include "chrome/browser/safe_browsing/client_side_detection_service.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/browser/tab_contents/test_tab_contents.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/web_contents_tester.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -31,6 +34,7 @@
 using ::testing::Return;
 using ::testing::StrictMock;
 using content::BrowserThread;
+using content::WebContentsTester;
 
 namespace safe_browsing {
 namespace {
@@ -66,7 +70,8 @@ class BrowserFeatureExtractorTest : public ChromeRenderViewHostTestHarness {
   }
 
   HistoryService* history_service() {
-    return profile()->GetHistoryService(Profile::EXPLICIT_ACCESS);
+    return HistoryServiceFactory::GetForProfile(profile(),
+                                                Profile::EXPLICIT_ACCESS);
   }
 
   void SetRedirectChain(const std::vector<GURL>& redirect_chain,
@@ -96,12 +101,13 @@ class BrowserFeatureExtractorTest : public ChromeRenderViewHostTestHarness {
         type, std::string());
 
     static int page_id = 0;
-    RenderViewHost* rvh = contents()->pending_rvh();
+    content::RenderViewHost* rvh =
+        WebContentsTester::For(contents())->GetPendingRenderViewHost();
     if (!rvh) {
       rvh = contents()->GetRenderViewHost();
     }
-    contents()->ProceedWithCrossSiteNavigation();
-    contents()->TestDidNavigateWithReferrer(
+    WebContentsTester::For(contents())->ProceedWithCrossSiteNavigation();
+    WebContentsTester::For(contents())->TestDidNavigateWithReferrer(
         rvh, ++page_id, url,
         content::Referrer(referrer, WebKit::WebReferrerPolicyDefault), type);
   }

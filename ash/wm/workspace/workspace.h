@@ -7,9 +7,8 @@
 
 #include <vector>
 
-#include "base/basictypes.h"
-#include "base/gtest_prod_util.h"
 #include "ash/ash_export.h"
+#include "base/basictypes.h"
 #include "ui/gfx/rect.h"
 
 namespace aura {
@@ -20,7 +19,6 @@ namespace ash {
 namespace internal {
 
 class WorkspaceManager;
-class WorkspaceTest;
 
 // A workspace contains a number of windows. The number of windows a Workspace
 // may contain is dictated by the type. Typically only one workspace is visible
@@ -33,40 +31,22 @@ class ASH_EXPORT Workspace {
     // The workspace holds a single maximized or full screen window.
     TYPE_MAXIMIZED,
 
-    // Workspace contains multiple windows that are split (also known as
-    // co-maximized).
-    TYPE_SPLIT,
-
-    // Workspace contains non-maximized windows that can be moved in anyway.
-    TYPE_NORMAL,
+    // Workspace contains non-maximized windows.
+    TYPE_MANAGED,
   };
 
-  // Specifies the direction to shift windows in |ShiftWindows()|.
-  enum ShiftDirection {
-    SHIFT_TO_RIGHT,
-    SHIFT_TO_LEFT
-  };
-
-  explicit Workspace(WorkspaceManager* manager);
+  Workspace(WorkspaceManager* manager, Type type);
   virtual ~Workspace();
 
   // Returns the type of workspace that can contain |window|.
   static Type TypeForWindow(aura::Window* window);
 
-  // The type of this Workspace.
-  void SetType(Type type);
   Type type() const { return type_; }
 
   // Returns true if this workspace has no windows.
   bool is_empty() const { return windows_.empty(); }
   size_t num_windows() const { return windows_.size(); }
   const std::vector<aura::Window*>& windows() const { return windows_; }
-
-  // Invoked when the size of the workspace changes.
-  void WorkspaceSizeChanged();
-
-  // Returns the work area bounds of this workspace in viewport coordinates.
-  gfx::Rect GetWorkAreaBounds() const;
 
   // Adds the |window| at the position after the window |after|.  It
   // inserts at the end if |after| is NULL. Return true if the
@@ -83,23 +63,22 @@ class ASH_EXPORT Workspace {
   // Activates this workspace.
   void Activate();
 
-  // Returns true if the workspace contains a fullscreen window.
-  bool ContainsFullscreenWindow() const;
-
- private:
-  FRIEND_TEST_ALL_PREFIXES(WorkspaceTest, WorkspaceBasic);
-  FRIEND_TEST_ALL_PREFIXES(WorkspaceTest, RotateWindows);
-  FRIEND_TEST_ALL_PREFIXES(WorkspaceTest, ShiftWindowsSingle);
-  FRIEND_TEST_ALL_PREFIXES(WorkspaceTest, ShiftWindowsMultiple);
-  FRIEND_TEST_ALL_PREFIXES(WorkspaceManagerTest, RotateWindows);
-
-  // Returns the index in layout order of |window| in this workspace.
-  int GetIndexOf(aura::Window* window) const;
+ protected:
+  // Sets the bounds of the specified window.
+  void SetWindowBounds(aura::Window* window, const gfx::Rect& bounds);
 
   // Returns true if the given |window| can be added to this workspace.
-  bool CanAdd(aura::Window* window) const;
+  virtual bool CanAdd(aura::Window* window) const = 0;
 
-  Type type_;
+  // Invoked from AddWindowAfter().
+  virtual void OnWindowAddedAfter(aura::Window* window,
+                                  aura::Window* after) = 0;
+
+  // Invoked from RemoveWindow().
+  virtual void OnWindowRemoved(aura::Window* window) = 0;
+
+ private:
+  const Type type_;
 
   WorkspaceManager* workspace_manager_;
 

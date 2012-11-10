@@ -15,13 +15,18 @@
 #include "content/renderer/devtools_agent_filter.h"
 #include "content/renderer/devtools_client.h"
 #include "content/renderer/render_view_impl.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsAgent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebPoint.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
+using WebKit::WebConsoleMessage;
 using WebKit::WebDevToolsAgent;
 using WebKit::WebDevToolsAgentClient;
+using WebKit::WebFrame;
 using WebKit::WebPoint;
 using WebKit::WebString;
 using WebKit::WebCString;
@@ -38,10 +43,8 @@ class WebKitClientMessageLoopImpl
     message_loop_ = NULL;
   }
   virtual void run() {
-    bool old_state = message_loop_->NestableTasksAllowed();
-    message_loop_->SetNestableTasksAllowed(true);
+    MessageLoop::ScopedNestableTaskAllower allow(message_loop_);
     message_loop_->Run();
-    message_loop_->SetNestableTasksAllowed(old_state);
   }
   virtual void quitNow() {
     message_loop_->QuitNow();
@@ -80,12 +83,15 @@ bool DevToolsAgent::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(DevToolsAgentMsg_DispatchOnInspectorBackend,
                         OnDispatchOnInspectorBackend)
     IPC_MESSAGE_HANDLER(DevToolsAgentMsg_InspectElement, OnInspectElement)
+    IPC_MESSAGE_HANDLER(DevToolsAgentMsg_AddMessageToConsole,
+                        OnAddMessageToConsole)
     IPC_MESSAGE_HANDLER(DevToolsMsg_SetupDevToolsClient, OnSetupDevToolsClient)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
-  if (message.type() == ViewMsg_Navigate::ID)
-    OnNavigate();  // Don't want to swallow the message.
+  if (message.type() == ViewMsg_Navigate::ID ||
+      message.type() == ViewMsg_Close::ID)
+    ContinueProgram();  // Don't want to swallow the message.
 
   return handled;
 }
@@ -165,11 +171,41 @@ void DevToolsAgent::OnInspectElement(int x, int y) {
   }
 }
 
-void DevToolsAgent::OnNavigate() {
-  WebDevToolsAgent* web_agent = GetWebAgent();
-  if (web_agent) {
-    web_agent->didNavigate();
+void DevToolsAgent::OnAddMessageToConsole(content::ConsoleMessageLevel level,
+                                          const std::string& message) {
+  WebView* web_view = render_view()->GetWebView();
+  if (!web_view)
+    return;
+
+  WebFrame* main_frame = web_view-> mainFrame();
+  if (!main_frame)
+    return;
+
+  WebConsoleMessage::Level target_level = WebConsoleMessage::LevelLog;
+  switch (level) {
+    case content::CONSOLE_MESSAGE_LEVEL_TIP:
+      target_level = WebConsoleMessage::LevelTip;
+      break;
+    case content::CONSOLE_MESSAGE_LEVEL_LOG:
+      target_level = WebConsoleMessage::LevelLog;
+      break;
+    case content::CONSOLE_MESSAGE_LEVEL_WARNING:
+      target_level = WebConsoleMessage::LevelWarning;
+      break;
+    case content::CONSOLE_MESSAGE_LEVEL_ERROR:
+      target_level = WebConsoleMessage::LevelError;
+      break;
   }
+  main_frame->addMessageToConsole(
+      WebConsoleMessage(target_level, WebString::fromUTF8(message)));
+}
+
+void DevToolsAgent::ContinueProgram() {
+  WebDevToolsAgent* web_agent = GetWebAgent();
+  // TODO(pfeldman): rename didNavigate to continueProgram upstream.
+  // That is in fact the purpose of the signal.
+  if (web_agent)
+    web_agent->didNavigate();
 }
 
 void DevToolsAgent::OnSetupDevToolsClient() {

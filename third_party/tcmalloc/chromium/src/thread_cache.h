@@ -88,13 +88,23 @@ class ThreadCache {
   void Deallocate(void* ptr, size_t size_class);
 
   void Scavenge();
-  void Print(TCMalloc_Printer* out) const;
 
   int GetSamplePeriod();
 
   // Record allocation of "k" bytes.  Return true iff allocation
   // should be sampled
   bool SampleAllocation(size_t k);
+
+  // Record additional bytes allocated.
+  void AddToByteAllocatedTotal(size_t k) { total_bytes_allocated_ += k; }
+
+  // Return the total number of bytes allocated from this heap.  The value will
+  // wrap when there is an overflow, and so only the differences between two
+  // values should be relied on (and even then, modulo 2^32).
+  uint32 GetTotalBytesAllocated() const;
+
+  // On the current thread, return GetTotalBytesAllocated().
+  static uint32 GetBytesAllocatedOnCurrentThread();
 
   static void         InitModule();
   static void         InitTSD();
@@ -113,10 +123,6 @@ class ThreadCache {
   // The storage of both parameters must be zero intialized.
   // REQUIRES: Static::pageheap_lock is held.
   static void GetThreadStats(uint64_t* total_bytes, uint64_t* class_count);
-
-  // Write debugging statistics to 'out'.
-  // REQUIRES: Static::pageheap_lock is held.
-  static void PrintThreads(TCMalloc_Printer* out);
 
   // Sets the total thread cache size to new_size, recomputing the
   // individual thread cache sizes as necessary.
@@ -203,6 +209,11 @@ class ThreadCache {
       return FL_Pop(&list_);
     }
 
+    void* Next() {
+      if (list_ == NULL) return NULL;
+      return FL_Next(list_);
+    }
+
     void PushRange(int N, void *start, void *end) {
       FL_PushRange(&list_, start, end);
       length_ += N;
@@ -248,7 +259,16 @@ class ThreadCache {
   // a good tradeoff for us.
 #ifdef HAVE_TLS
   static __thread ThreadCache* threadlocal_heap_
-# ifdef HAVE___ATTRIBUTE__
+  // This code links against pyautolib.so, which causes dlopen() on that shared
+  // object to fail when -fprofile-generate is used with it. Ideally
+  // pyautolib.so should not link against this code. There is a bug filed for
+  // that:
+  // http://code.google.com/p/chromium/issues/detail?id=124489
+  // For now the workaround is to pass in -DPGO_GENERATE when building Chrome
+  // for instrumentation (-fprofile-generate).
+  // For all non-instrumentation builds, this define will not be set and the
+  // performance benefit of "intial-exec" will be achieved.
+#if defined(HAVE___ATTRIBUTE__) && !defined(PGO_GENERATE)
    __attribute__ ((tls_model ("initial-exec")))
 # endif
    ;
@@ -291,6 +311,14 @@ class ThreadCache {
   size_t        size_;                  // Combined size of data
   size_t        max_size_;              // size_ > max_size_ --> Scavenge()
 
+  // The following is the tally of bytes allocated on a thread as a response to
+  // any flavor of malloc() call.  The aggegated amount includes all padding to
+  // the smallest class that can hold the request, or to the nearest whole page
+  // when a large allocation is made without using a class.  This sum is
+  // currently used for Chromium profiling, where tallies are kept of the amount
+  // of memory allocated during the running of each task on each thread.
+  uint32        total_bytes_allocated_;  // Total, modulo 2^32.
+
   // We sample allocations, biased by the size of the allocation
   Sampler       sampler_;               // A sampler
 
@@ -327,6 +355,10 @@ inline bool ThreadCache::SampleAllocation(size_t k) {
   return sampler_.SampleAllocation(k);
 }
 
+inline uint32 ThreadCache::GetTotalBytesAllocated() const {
+  return total_bytes_allocated_;
+}
+
 inline void* ThreadCache::Allocate(size_t size, size_t cl) {
   ASSERT(size <= kMaxSize);
   ASSERT(size == Static::sizemap()->ByteSizeForClass(cl));
@@ -343,6 +375,12 @@ inline void ThreadCache::Deallocate(void* ptr, size_t cl) {
   FreeList* list = &list_[cl];
   size_ += Static::sizemap()->ByteSizeForClass(cl);
   ssize_t size_headroom = max_size_ - size_ - 1;
+
+  // This catches back-to-back frees of allocs in the same size
+  // class. A more comprehensive (and expensive) test would be to walk
+  // the entire freelist. But this might be enough to find some bugs.
+  ASSERT(ptr != list->Next());
+
   list->Push(ptr);
   ssize_t list_headroom =
       static_cast<ssize_t>(list->max_length()) - list->length();

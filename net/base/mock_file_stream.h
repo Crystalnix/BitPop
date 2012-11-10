@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #ifndef NET_BASE_MOCK_FILE_STREAM_H_
 #define NET_BASE_MOCK_FILE_STREAM_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -16,26 +15,33 @@
 
 namespace net {
 
+class IOBuffer;
+
 namespace testing {
 
 class MockFileStream : public net::FileStream {
  public:
-  MockFileStream() : forced_error_(net::OK) {}
+  MockFileStream(net::NetLog* net_log)
+      : net::FileStream(net_log), forced_error_(net::OK) {}
 
-  MockFileStream(base::PlatformFile file, int flags)
-      : net::FileStream(file, flags), forced_error_(net::OK) {}
+  MockFileStream(base::PlatformFile file, int flags, net::NetLog* net_log)
+      : net::FileStream(file, flags, net_log), forced_error_(net::OK) {}
 
   // FileStream methods.
-  virtual int Open(const FilePath& path, int open_flags) OVERRIDE;
-  virtual int64 Seek(net::Whence whence, int64 offset) OVERRIDE;
+  virtual int OpenSync(const FilePath& path, int open_flags) OVERRIDE;
+  virtual int Seek(net::Whence whence, int64 offset,
+                   const Int64CompletionCallback& callback) OVERRIDE;
+  virtual int64 SeekSync(net::Whence whence, int64 offset) OVERRIDE;
   virtual int64 Available() OVERRIDE;
-  virtual int Read(char* buf,
+  virtual int Read(IOBuffer* buf,
                    int buf_len,
                    const CompletionCallback& callback) OVERRIDE;
+  virtual int ReadSync(char* buf, int buf_len) OVERRIDE;
   virtual int ReadUntilComplete(char *buf, int buf_len) OVERRIDE;
-  virtual int Write(const char* buf,
+  virtual int Write(IOBuffer* buf,
                     int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
+  virtual int WriteSync(const char* buf, int buf_len) OVERRIDE;
   virtual int64 Truncate(int64 bytes) OVERRIDE;
   virtual int Flush() OVERRIDE;
 

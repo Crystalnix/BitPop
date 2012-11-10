@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_editor_controller.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -26,7 +27,7 @@ class BookmarkEditorControllerTest : public CocoaProfileTest {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(profile());
 
-    BookmarkModel* model = profile()->GetBookmarkModel();
+    BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
     default_parent_ = model->bookmark_bar_node();
     default_name_ = "http://www.zim-bop-a-dee.com/";
     default_title_ = ASCIIToUTF16("ooh title");
@@ -38,6 +39,8 @@ class BookmarkEditorControllerTest : public CocoaProfileTest {
                                 profile:profile()
                                  parent:default_parent_
                                    node:default_node
+                                    url:GURL()
+                                  title:string16()
                           configuration:BookmarkEditor::NO_TREE];
     [controller_ runAsModalSheet];
   }
@@ -87,7 +90,7 @@ TEST_F(BookmarkEditorControllerTest, EditAndFixPrefix) {
 TEST_F(BookmarkEditorControllerTest, NodeDeleted) {
   // Delete the bookmark being edited and verify the sheet cancels itself:
   ASSERT_TRUE([test_window() attachedSheet]);
-  BookmarkModel* model = profile()->GetBookmarkModel();
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
   model->Remove(default_parent_, 0);
   ASSERT_FALSE([test_window() attachedSheet]);
 }
@@ -138,13 +141,15 @@ class BookmarkEditorControllerNoNodeTest : public CocoaProfileTest {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(profile());
 
-    BookmarkModel* model = profile()->GetBookmarkModel();
+    BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
     const BookmarkNode* parent = model->bookmark_bar_node();
     controller_ = [[BookmarkEditorController alloc]
                    initWithParentWindow:test_window()
                                 profile:profile()
                                  parent:parent
                                    node:NULL
+                                    url:GURL()
+                                  title:string16()
                           configuration:BookmarkEditor::NO_TREE];
 
     [controller_ runAsModalSheet];
@@ -173,7 +178,7 @@ class BookmarkEditorControllerYesNodeTest : public CocoaProfileTest {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(profile());
 
-    BookmarkModel* model = profile()->GetBookmarkModel();
+    BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
     const BookmarkNode* parent = model->bookmark_bar_node();
     default_title_ = ASCIIToUTF16("wooh title");
     url_name_ = "http://www.zoom-baby-doo-da.com/";
@@ -184,6 +189,8 @@ class BookmarkEditorControllerYesNodeTest : public CocoaProfileTest {
                                 profile:profile()
                                  parent:parent
                                    node:node
+                                    url:GURL()
+                                  title:string16()
                           configuration:BookmarkEditor::NO_TREE];
 
     [controller_ runAsModalSheet];
@@ -227,7 +234,7 @@ class BookmarkEditorControllerTreeTest : public CocoaProfileTest {
     //             bb-4
     //            b-1
     //            b-2
-    BookmarkModel& model(*(profile()->GetBookmarkModel()));
+    BookmarkModel& model(*(BookmarkModelFactory::GetForProfile(profile())));
     const BookmarkNode* root = model.bookmark_bar_node();
     folder_a_ = model.AddFolder(root, 0, ASCIIToUTF16("a"));
     model.AddURL(folder_a_, 0, ASCIIToUTF16("a-0"), GURL("http://a-0.com"));
@@ -267,6 +274,8 @@ class BookmarkEditorControllerTreeTest : public CocoaProfileTest {
                             profile:profile()
                              parent:folder_bb_
                                node:bookmark_bb_3_
+                                url:GURL()
+                              title:string16()
                       configuration:BookmarkEditor::SHOW_TREE];
   }
 
@@ -291,7 +300,7 @@ class BookmarkEditorControllerTreeTest : public CocoaProfileTest {
   // bookmark_bb_3_ so that it points to the new node for testing.
   void UpdateBB3() {
     std::vector<const BookmarkNode*> nodes;
-    BookmarkModel* model = profile()->GetBookmarkModel();
+    BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
     model->GetNodesByURL(bb3_url_1_, &nodes);
     if (nodes.empty())
       model->GetNodesByURL(bb3_url_2_, &nodes);
@@ -302,7 +311,7 @@ class BookmarkEditorControllerTreeTest : public CocoaProfileTest {
 };
 
 TEST_F(BookmarkEditorControllerTreeTest, VerifyBookmarkTestModel) {
-  BookmarkModel& model(*(profile()->GetBookmarkModel()));
+  BookmarkModel& model(*(BookmarkModelFactory::GetForProfile(profile())));
   model.root_node();
   const BookmarkNode& root(*model.bookmark_bar_node());
   EXPECT_EQ(4, root.child_count());
@@ -412,6 +421,8 @@ class BookmarkEditorControllerTreeNoNodeTest :
                             profile:profile()
                              parent:folder_bb_
                                node:nil
+                                url:GURL()
+                              title:string16()
                       configuration:BookmarkEditor::SHOW_TREE];
   }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@
 #include "remoting/base/capture_data.h"
 #include "remoting/base/util.h"
 #include "remoting/proto/video.pb.h"
-#include "third_party/skia/include/core/SkRegion.h"
 
 extern "C" {
 #define VPX_CODEC_DISABLE_COMPAT 1
@@ -33,8 +32,7 @@ EncoderVp8::EncoderVp8()
       image_(NULL),
       active_map_width_(0),
       active_map_height_(0),
-      last_timestamp_(0),
-      size_(SkISize::Make(0, 0)) {
+      last_timestamp_(0) {
 }
 
 EncoderVp8::~EncoderVp8() {
@@ -51,7 +49,6 @@ void EncoderVp8::Destroy() {
 
 bool EncoderVp8::Init(const SkISize& size) {
   Destroy();
-  size_ = size;
   codec_.reset(new vpx_codec_ctx_t());
   image_.reset(new vpx_image_t());
   memset(image_.get(), 0, sizeof(vpx_image_t));
@@ -64,12 +61,32 @@ bool EncoderVp8::Init(const SkISize& size) {
   image_->d_h = size.height();
   image_->h = size.height();
 
+  // Initialize active map.
+  active_map_width_ = (image_->w + kMacroBlockSize - 1) / kMacroBlockSize;
+  active_map_height_ = (image_->h + kMacroBlockSize - 1) / kMacroBlockSize;
+  active_map_.reset(new uint8[active_map_width_ * active_map_height_]);
+
   // YUV image size is 1.5 times of a plane. Multiplication is performed first
   // to avoid rounding error.
-  const int plane_size = size.width() * size.height();
-  const int yuv_image_size = plane_size * 3 / 2;
+  const int y_plane_size = image_->w * image_->h;
+  const int uv_width = (image_->w + 1) / 2;
+  const int uv_height = (image_->h + 1) / 2;
+  const int uv_plane_size = uv_width * uv_height;
+  const int yuv_image_size = y_plane_size + uv_plane_size * 2;
 
-  yuv_image_.reset(new uint8[yuv_image_size]);
+  // libvpx may try to access memory after the buffer (it still
+  // doesn't use it) - it copies the data in 16x16 blocks:
+  // crbug.com/119633 . Here we workaround that problem by adding
+  // padding at the end of the buffer. Overreading to U and V buffers
+  // is safe so the padding is necessary only at the end.
+  //
+  // TODO(sergeyu): Remove this padding when the bug is fixed in libvpx.
+  const int active_map_area = active_map_width_ * kMacroBlockSize *
+      active_map_height_ * kMacroBlockSize;
+  const int padding_size = active_map_area - y_plane_size;
+  const int buffer_size = yuv_image_size + padding_size;
+
+  yuv_image_.reset(new uint8[buffer_size]);
 
   // Reset image value to 128 so we just need to fill in the y plane.
   memset(yuv_image_.get(), 128, yuv_image_size);
@@ -77,17 +94,13 @@ bool EncoderVp8::Init(const SkISize& size) {
   // Fill in the information for |image_|.
   unsigned char* image = reinterpret_cast<unsigned char*>(yuv_image_.get());
   image_->planes[0] = image;
-  image_->planes[1] = image + plane_size;
-
-  // The V plane starts from 1.25 of the plane size.
-  image_->planes[2] = image + plane_size + plane_size / 4;
-
-  // In YV12 Y plane has full width, UV plane has half width because of
-  // subsampling.
+  image_->planes[1] = image + y_plane_size;
+  image_->planes[2] = image + y_plane_size + uv_plane_size;
   image_->stride[0] = image_->w;
-  image_->stride[1] = image_->w / 2;
-  image_->stride[2] = image_->w / 2;
+  image_->stride[1] = uv_width;
+  image_->stride[2] = uv_width;
 
+  // Configure the encoder.
   vpx_codec_enc_cfg_t config;
   const vpx_codec_iface_t* algo = vpx_codec_vp8_cx();
   CHECK(algo);
@@ -95,15 +108,10 @@ bool EncoderVp8::Init(const SkISize& size) {
   if (ret != VPX_CODEC_OK)
     return false;
 
-  // Initialize active map.
-  active_map_width_ = (size.width() + kMacroBlockSize - 1) / kMacroBlockSize;
-  active_map_height_ = (size.height() + kMacroBlockSize - 1) / kMacroBlockSize;
-  active_map_.reset(new uint8[active_map_width_ * active_map_height_]);
-
-  config.rc_target_bitrate = size.width() * size.height() *
+  config.rc_target_bitrate = image_->w * image_->h *
       config.rc_target_bitrate / config.g_w / config.g_h;
-  config.g_w = size.width();
-  config.g_h = size.height();
+  config.g_w = image_->w;
+  config.g_h = image_->h;
   config.g_pass = VPX_RC_ONE_PASS;
 
   // Value of 2 means using the real time profile. This is basically a
@@ -136,72 +144,63 @@ bool EncoderVp8::Init(const SkISize& size) {
   return true;
 }
 
-// static
-SkIRect EncoderVp8::AlignAndClipRect(const SkIRect& rect,
-                                     int width, int height) {
-  SkIRect screen(SkIRect::MakeWH(RoundToTwosMultiple(width),
-                                 RoundToTwosMultiple(height)));
-  if (!screen.intersect(AlignRect(rect))) {
-    screen = SkIRect::MakeWH(0, 0);
-  }
-  return screen;
-}
-
-bool EncoderVp8::PrepareImage(scoped_refptr<CaptureData> capture_data,
-                              RectVector* updated_rects) {
+void EncoderVp8::PrepareImage(scoped_refptr<CaptureData> capture_data,
+                              SkRegion* updated_region) {
   // Perform RGB->YUV conversion.
-  if (capture_data->pixel_format() != media::VideoFrame::RGB32) {
-    LOG(ERROR) << "Only RGB32 is supported";
-    return false;
-  }
+  CHECK_EQ(capture_data->pixel_format(), media::VideoFrame::RGB32)
+    << "Only RGB32 is supported";
 
   const SkRegion& region = capture_data->dirty_region();
-  const uint8* in = capture_data->data_planes().data[0];
-  const int in_stride = capture_data->data_planes().strides[0];
-  const int plane_size =
-      capture_data->size().width() * capture_data->size().height();
-  uint8* y_out = yuv_image_.get();
-  uint8* u_out = yuv_image_.get() + plane_size;
-  uint8* v_out = yuv_image_.get() + plane_size + plane_size / 4;
-  const int y_stride = image_->stride[0];
-  const int uv_stride = image_->stride[1];
-
-  DCHECK(updated_rects->empty());
-  for (SkRegion::Iterator r(region); !r.done(); r.next()) {
-    // Align the rectangle, report it as updated.
-    SkIRect rect = r.rect();
-    rect = AlignAndClipRect(rect, image_->w, image_->h);
-    if (!rect.isEmpty())
-      updated_rects->push_back(rect);
-
-    ConvertRGB32ToYUVWithRect(in,
-                              y_out,
-                              u_out,
-                              v_out,
-                              rect.fLeft,
-                              rect.fTop,
-                              rect.width(),
-                              rect.height(),
-                              in_stride,
-                              y_stride,
-                              uv_stride);
+  if (region.isEmpty()) {
+    updated_region->setEmpty();
+    return;
   }
-  return true;
+
+  // Align the region to macroblocks, to avoid encoding artefacts.
+  // This also ensures that all rectangles have even-aligned top-left, which
+  // is required for ConvertRGBToYUVWithRect() to work.
+  std::vector<SkIRect> aligned_rects;
+  for (SkRegion::Iterator r(region); !r.done(); r.next()) {
+    aligned_rects.push_back(AlignRect(r.rect()));
+  }
+  DCHECK(!aligned_rects.empty());
+  updated_region->setRects(&aligned_rects[0], aligned_rects.size());
+
+  // Clip back to the screen dimensions, in case they're not macroblock aligned.
+  // The conversion routines don't require even width & height, so this is safe
+  // even if the source dimensions are not even.
+  updated_region->op(SkIRect::MakeWH(image_->w, image_->h),
+                     SkRegion::kIntersect_Op);
+
+  // Convert the updated region to YUV ready for encoding.
+  const uint8* rgb_data = capture_data->data_planes().data[0];
+  const int rgb_stride = capture_data->data_planes().strides[0];
+  const int y_stride = image_->stride[0];
+  DCHECK(image_->stride[1] == image_->stride[2]);
+  const int uv_stride = image_->stride[1];
+  uint8* y_data = image_->planes[0];
+  uint8* u_data = image_->planes[1];
+  uint8* v_data = image_->planes[2];
+  for (SkRegion::Iterator r(*updated_region); !r.done(); r.next()) {
+    const SkIRect& rect = r.rect();
+    ConvertRGB32ToYUVWithRect(
+        rgb_data, y_data, u_data, v_data,
+        rect.x(), rect.y(), rect.width(), rect.height(),
+        rgb_stride, y_stride, uv_stride);
+  }
 }
 
-void EncoderVp8::PrepareActiveMap(const RectVector& updated_rects) {
+void EncoderVp8::PrepareActiveMap(const SkRegion& updated_region) {
   // Clear active map first.
   memset(active_map_.get(), 0, active_map_width_ * active_map_height_);
 
-  // Mark blocks at active.
-  for (size_t i = 0; i < updated_rects.size(); ++i) {
-    const SkIRect& r = updated_rects[i];
-    CHECK(r.width() && r.height());
-
-    int left = r.fLeft / kMacroBlockSize;
-    int right = (r.fRight - 1) / kMacroBlockSize;
-    int top = r.fTop / kMacroBlockSize;
-    int bottom = (r.fBottom - 1) / kMacroBlockSize;
+  // Mark updated areas active.
+  for (SkRegion::Iterator r(updated_region); !r.done(); r.next()) {
+    const SkIRect& rect = r.rect();
+    int left = rect.left() / kMacroBlockSize;
+    int right = (rect.right() - 1) / kMacroBlockSize;
+    int top = rect.top() / kMacroBlockSize;
+    int bottom = (rect.bottom() - 1) / kMacroBlockSize;
     CHECK(right < active_map_width_);
     CHECK(bottom < active_map_height_);
 
@@ -217,20 +216,23 @@ void EncoderVp8::PrepareActiveMap(const RectVector& updated_rects) {
 void EncoderVp8::Encode(scoped_refptr<CaptureData> capture_data,
                         bool key_frame,
                         const DataAvailableCallback& data_available_callback) {
-  if (!initialized_ || (capture_data->size() != size_)) {
+  DCHECK_LE(32, capture_data->size().width());
+  DCHECK_LE(32, capture_data->size().height());
+
+  if (!initialized_ ||
+      (capture_data->size() != SkISize::Make(image_->w, image_->h))) {
     bool ret = Init(capture_data->size());
     // TODO(hclam): Handle error better.
-    DCHECK(ret) << "Initialization of encoder failed";
+    CHECK(ret) << "Initialization of encoder failed";
     initialized_ = ret;
   }
 
-  RectVector updated_rects;
-  if (!PrepareImage(capture_data, &updated_rects)) {
-    NOTREACHED() << "Can't image data for encoding";
-  }
+  // Convert the updated capture data ready for encode.
+  SkRegion updated_region;
+  PrepareImage(capture_data, &updated_region);
 
-  // Update active map based on updated rectangles.
-  PrepareActiveMap(updated_rects);
+  // Update active map based on updated region.
+  PrepareActiveMap(updated_region);
 
   // Apply active map to the encoder.
   vpx_active_map_t act_map;
@@ -259,41 +261,47 @@ void EncoderVp8::Encode(scoped_refptr<CaptureData> capture_data,
 
   // TODO(hclam): Make sure we get exactly one frame from the packet.
   // TODO(hclam): We should provide the output buffer to avoid one copy.
-  VideoPacket* message = new VideoPacket();
+  scoped_ptr<VideoPacket> packet(new VideoPacket());
 
   while (!got_data) {
-    const vpx_codec_cx_pkt_t* packet = vpx_codec_get_cx_data(codec_.get(),
-                                                             &iter);
-    if (!packet)
+    const vpx_codec_cx_pkt_t* vpx_packet = vpx_codec_get_cx_data(codec_.get(),
+                                                                 &iter);
+    if (!vpx_packet)
       continue;
 
-    switch (packet->kind) {
+    switch (vpx_packet->kind) {
       case VPX_CODEC_CX_FRAME_PKT:
         got_data = true;
         // TODO(sergeyu): Split each frame into multiple partitions.
-        message->set_data(packet->data.frame.buf, packet->data.frame.sz);
+        packet->set_data(vpx_packet->data.frame.buf, vpx_packet->data.frame.sz);
         break;
       default:
         break;
     }
   }
 
-  message->mutable_format()->set_encoding(VideoPacketFormat::ENCODING_VP8);
-  message->set_flags(VideoPacket::FIRST_PACKET | VideoPacket::LAST_PACKET |
+  // Construct the VideoPacket message.
+  packet->mutable_format()->set_encoding(VideoPacketFormat::ENCODING_VP8);
+  packet->set_flags(VideoPacket::FIRST_PACKET | VideoPacket::LAST_PACKET |
                      VideoPacket::LAST_PARTITION);
-  message->mutable_format()->set_screen_width(capture_data->size().width());
-  message->mutable_format()->set_screen_height(capture_data->size().height());
-  message->set_capture_time_ms(capture_data->capture_time_ms());
-  message->set_client_sequence_number(capture_data->client_sequence_number());
-  for (size_t i = 0; i < updated_rects.size(); ++i) {
-    Rect* rect = message->add_dirty_rects();
-    rect->set_x(updated_rects[i].fLeft);
-    rect->set_y(updated_rects[i].fTop);
-    rect->set_width(updated_rects[i].width());
-    rect->set_height(updated_rects[i].height());
+  packet->mutable_format()->set_screen_width(capture_data->size().width());
+  packet->mutable_format()->set_screen_height(capture_data->size().height());
+  packet->set_capture_time_ms(capture_data->capture_time_ms());
+  packet->set_client_sequence_number(capture_data->client_sequence_number());
+  SkIPoint dpi(capture_data->dpi());
+  if (dpi.x())
+    packet->mutable_format()->set_x_dpi(dpi.x());
+  if (dpi.y())
+    packet->mutable_format()->set_y_dpi(dpi.y());
+  for (SkRegion::Iterator r(updated_region); !r.done(); r.next()) {
+    Rect* rect = packet->add_dirty_rects();
+    rect->set_x(r.rect().x());
+    rect->set_y(r.rect().y());
+    rect->set_width(r.rect().width());
+    rect->set_height(r.rect().height());
   }
 
-  data_available_callback.Run(message);
+  data_available_callback.Run(packet.Pass());
 }
 
 }  // namespace remoting

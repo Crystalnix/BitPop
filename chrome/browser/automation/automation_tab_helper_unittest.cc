@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,24 +7,23 @@
 #include "base/basictypes.h"
 #include "chrome/browser/automation/automation_tab_helper.h"
 #include "chrome/browser/automation/mock_tab_event_observer.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "chrome/browser/ui/tab_contents/test_tab_contents_wrapper.h"
-#include "content/browser/tab_contents/test_tab_contents.h"
-#include "content/test/test_browser_thread.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tab_contents/test_tab_contents.h"
+#include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
 using testing::_;
 
-class AutomationTabHelperTest : public TabContentsWrapperTestHarness {
+class AutomationTabHelperTest : public TabContentsTestHarness {
  public:
   AutomationTabHelperTest()
-      : TabContentsWrapperTestHarness(),
+      : TabContentsTestHarness(),
         browser_thread_(BrowserThread::UI, &message_loop_) {}
 
   virtual void SetUp() {
-    TabContentsWrapperTestHarness::SetUp();
+    TabContentsTestHarness::SetUp();
     mock_observer_.StartObserving(tab_helper());
   }
 
@@ -32,15 +31,15 @@ class AutomationTabHelperTest : public TabContentsWrapperTestHarness {
   // These are here so that we don't have to add each test as a
   // |AutomationTabHelper| friend.
   void StartLoading() {
-    tab_helper()->DidStartLoading();
+    tab_helper()->DidStartLoading(NULL);
   }
 
   void StopLoading() {
-    tab_helper()->DidStopLoading();
+    tab_helper()->DidStopLoading(NULL);
   }
 
   void TabContentsDestroyed() {
-    tab_helper()->WebContentsDestroyed(contents_wrapper()->web_contents());
+    tab_helper()->WebContentsDestroyed(tab_contents()->web_contents());
   }
 
   void WillPerformClientRedirect(int64 frame_id) {
@@ -52,7 +51,7 @@ class AutomationTabHelperTest : public TabContentsWrapperTestHarness {
   }
 
   AutomationTabHelper* tab_helper() {
-    return contents_wrapper()->automation_tab_helper();
+    return tab_contents()->automation_tab_helper();
   }
 
   content::TestBrowserThread browser_thread_;

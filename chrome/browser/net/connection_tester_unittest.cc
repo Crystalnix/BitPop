@@ -5,11 +5,11 @@
 #include "chrome/browser/net/connection_tester.h"
 
 #include "chrome/test/base/testing_pref_service.h"
-#include "content/test/test_browser_thread.h"
-#include "net/base/cert_verifier.h"
-#include "net/base/cookie_monster.h"
+#include "content/public/test/test_browser_thread.h"
+#include "net/base/mock_cert_verifier.h"
 #include "net/base/mock_host_resolver.h"
 #include "net/base/ssl_config_service_defaults.h"
+#include "net/cookies/cookie_monster.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_network_layer.h"
@@ -90,7 +90,9 @@ class ConnectionTesterTest : public PlatformTest {
       : message_loop_(MessageLoop::TYPE_IO),
         io_thread_(BrowserThread::IO, &message_loop_),
         test_server_(net::TestServer::TYPE_HTTP,
-            FilePath(FILE_PATH_LITERAL("net/data/url_request_unittest"))),
+                     net::TestServer::kLocalhost,
+                     FilePath(
+                         FILE_PATH_LITERAL("net/data/url_request_unittest"))),
         proxy_script_fetcher_context_(new net::URLRequestContext) {
     InitializeRequestContext();
   }
@@ -106,18 +108,19 @@ class ConnectionTesterTest : public PlatformTest {
   net::TestServer test_server_;
   ConnectionTesterDelegate test_delegate_;
   net::MockHostResolver host_resolver_;
-  net::CertVerifier cert_verifier_;
+  scoped_ptr<net::CertVerifier> cert_verifier_;
   scoped_ptr<net::ProxyService> proxy_service_;
   scoped_refptr<net::SSLConfigService> ssl_config_service_;
   scoped_ptr<net::HttpTransactionFactory> http_transaction_factory_;
   net::HttpAuthHandlerRegistryFactory http_auth_handler_factory_;
-  scoped_refptr<net::URLRequestContext> proxy_script_fetcher_context_;
   net::HttpServerPropertiesImpl http_server_properties_impl_;
+  scoped_ptr<net::URLRequestContext> proxy_script_fetcher_context_;
 
  private:
   void InitializeRequestContext() {
     proxy_script_fetcher_context_->set_host_resolver(&host_resolver_);
-    proxy_script_fetcher_context_->set_cert_verifier(&cert_verifier_);
+    cert_verifier_.reset(new net::MockCertVerifier);
+    proxy_script_fetcher_context_->set_cert_verifier(cert_verifier_.get());
     proxy_script_fetcher_context_->set_http_auth_handler_factory(
         &http_auth_handler_factory_);
     proxy_service_.reset(net::ProxyService::CreateDirect());
@@ -125,7 +128,7 @@ class ConnectionTesterTest : public PlatformTest {
     ssl_config_service_ = new net::SSLConfigServiceDefaults;
     net::HttpNetworkSession::Params session_params;
     session_params.host_resolver = &host_resolver_;
-    session_params.cert_verifier = &cert_verifier_;
+    session_params.cert_verifier = cert_verifier_.get();
     session_params.http_auth_handler_factory = &http_auth_handler_factory_;
     session_params.ssl_config_service = ssl_config_service_;
     session_params.proxy_service = proxy_service_.get();
@@ -145,7 +148,9 @@ class ConnectionTesterTest : public PlatformTest {
 TEST_F(ConnectionTesterTest, RunAllTests) {
   ASSERT_TRUE(test_server_.Start());
 
-  ConnectionTester tester(&test_delegate_, proxy_script_fetcher_context_);
+  ConnectionTester tester(&test_delegate_,
+                          proxy_script_fetcher_context_.get(),
+                          NULL);
 
   // Start the test suite on URL "echoall".
   // TODO(eroman): Is this URL right?
@@ -170,7 +175,9 @@ TEST_F(ConnectionTesterTest, DeleteWhileInProgress) {
   ASSERT_TRUE(test_server_.Start());
 
   scoped_ptr<ConnectionTester> tester(
-      new ConnectionTester(&test_delegate_, proxy_script_fetcher_context_));
+      new ConnectionTester(&test_delegate_,
+                           proxy_script_fetcher_context_.get(),
+                           NULL));
 
   // Start the test suite on URL "echoall".
   // TODO(eroman): Is this URL right?

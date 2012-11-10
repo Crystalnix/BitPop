@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/importer/firefox_profile_lock.h"
 #include "chrome/browser/importer/importer.h"
@@ -21,17 +22,14 @@
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/simple_message_box.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_source.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-
-#if defined(OS_WIN)
-// TODO(port): Port this file.
-#include "ui/base/message_box_win.h"
-#endif
 
 using content::BrowserThread;
 
@@ -43,7 +41,9 @@ ImporterHost::ImporterHost()
       importer_(NULL),
       headless_(false),
       parent_window_(NULL),
+      browser_(NULL),
       observer_(NULL) {
+  BrowserList::AddObserver(this);
 }
 
 void ImporterHost::ShowWarningDialog() {
@@ -161,18 +161,14 @@ void ImporterHost::StartImportSettings(
 void ImporterHost::OnGoogleGAIACookieChecked(bool result) {
 #if defined(OS_WIN)
   if (!result) {
-    ui::MessageBox(
-        NULL,
-        UTF16ToWide(l10n_util::GetStringUTF16(
-            IDS_IMPORTER_GOOGLE_LOGIN_TEXT)).c_str(),
-        L"",
-        MB_OK | MB_TOPMOST);
+    chrome::ShowMessageBox(NULL,
+        l10n_util::GetStringUTF16(IDS_IMPORTER_GOOGLE_LOGIN_TEXT), string16(),
+        chrome::MESSAGE_BOX_TYPE_INFORMATION);
 
-    GURL url("https://www.google.com/accounts/ServiceLogin");
-    DCHECK(profile_);
-    Browser* browser = BrowserList::GetLastActiveWithProfile(profile_);
-    if (browser)
-      browser->AddSelectedTabWithURL(url, content::PAGE_TRANSITION_TYPED);
+    GURL url("https://accounts.google.com/ServiceLogin");
+    if (browser_)
+      chrome::AddSelectedTabWithURL(browser_, url,
+                                    content::PAGE_TRANSITION_TYPED);
 
     MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
         &ImporterHost::OnImportLockDialogEnd, this, false));
@@ -189,12 +185,13 @@ void ImporterHost::Cancel() {
 }
 
 ImporterHost::~ImporterHost() {
+  BrowserList::RemoveObserver(this);
   if (NULL != importer_)
     importer_->Release();
 
   if (installed_bookmark_observer_) {
     DCHECK(profile_);
-    profile_->GetBookmarkModel()->RemoveObserver(this);
+    BookmarkModelFactory::GetForProfile(profile_)->RemoveObserver(this);
   }
 }
 
@@ -222,7 +219,7 @@ void ImporterHost::CheckForLoadedModels(uint16 items) {
   // BookmarkModel should be loaded before adding IE favorites. So we observe
   // the BookmarkModel if needed, and start the task after it has been loaded.
   if ((items & importer::FAVORITES) && !writer_->BookmarkModelIsLoaded()) {
-    profile_->GetBookmarkModel()->AddObserver(this);
+    BookmarkModelFactory::GetForProfile(profile_)->AddObserver(this);
     waiting_for_bookmarkbar_model_ = true;
     installed_bookmark_observer_ = true;
   }
@@ -270,4 +267,9 @@ void ImporterHost::Observe(int type,
   DCHECK(type == chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED);
   registrar_.RemoveAll();
   InvokeTaskIfDone();
+}
+
+void ImporterHost::OnBrowserRemoved(Browser* browser) {
+  if (browser_ == browser)
+    browser_ = NULL;
 }

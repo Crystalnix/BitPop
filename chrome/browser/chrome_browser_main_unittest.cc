@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,10 @@
 
 class BrowserMainTest : public testing::Test {
  public:
-  BrowserMainTest() : command_line_(CommandLine::NO_PROGRAM) {}
+  BrowserMainTest()
+      : command_line_(CommandLine::NO_PROGRAM) {
+    ChromeBrowserMainParts::disable_enforcing_cookie_policies_for_tests_ = true;
+  }
 
  protected:
   TestingPrefService pref_service_;
@@ -35,7 +38,7 @@ TEST_F(BrowserMainTest, WarmConnectionFieldTrial_WarmestSocket) {
   ChromeBrowserMainParts* cbw = static_cast<ChromeBrowserMainParts*>(bw.get());
   EXPECT_TRUE(cbw);
   if (cbw) {
-    cbw->WarmConnectionFieldTrial();
+    cbw->browser_field_trials_.WarmConnectionFieldTrial();
     EXPECT_EQ(0, net::GetSocketReusePolicy());
   }
 }
@@ -50,14 +53,14 @@ TEST_F(BrowserMainTest, WarmConnectionFieldTrial_Random) {
   if (cbw) {
     const int kNumRuns = 1000;
     for (int i = 0; i < kNumRuns; i++) {
-      cbw->WarmConnectionFieldTrial();
+      cbw->browser_field_trials_.WarmConnectionFieldTrial();
       int val = net::GetSocketReusePolicy();
       EXPECT_LE(val, 2);
       EXPECT_GE(val, 0);
     }
   }
 }
-
+#if GTEST_HAS_DEATH_TEST
 TEST_F(BrowserMainTest, WarmConnectionFieldTrial_Invalid) {
   command_line_.AppendSwitchASCII(switches::kSocketReusePolicy, "100");
 
@@ -77,11 +80,12 @@ TEST_F(BrowserMainTest, WarmConnectionFieldTrial_Invalid) {
   EXPECT_TRUE(cbw);
   if (cbw) {
 #if defined(NDEBUG) && defined(DCHECK_ALWAYS_ON)
-    EXPECT_DEATH(cbw->WarmConnectionFieldTrial(),
+    EXPECT_DEATH(cbw->browser_field_trials_.WarmConnectionFieldTrial(),
                  "Not a valid socket reuse policy group");
 #else
-    EXPECT_DEBUG_DEATH(cbw->WarmConnectionFieldTrial(),
+    EXPECT_DEBUG_DEATH(cbw->browser_field_trials_.WarmConnectionFieldTrial(),
                        "Not a valid socket reuse policy group");
 #endif
   }
 }
+#endif

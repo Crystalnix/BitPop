@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <list>
 
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
@@ -13,6 +14,7 @@
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/gl_utils.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
 
 namespace gpu {
 namespace gles2 {
@@ -26,6 +28,7 @@ VertexAttribManager::VertexAttribInfo::VertexAttribInfo()
       normalized_(GL_FALSE),
       gl_stride_(0),
       real_stride_(16),
+      divisor_(0),
       list_(NULL) {
   value_.v[0] = 0.0f;
   value_.v[1] = 0.0f;
@@ -70,9 +73,15 @@ void VertexAttribManager::Initialize(uint32 max_vertex_attribs) {
   max_vertex_attribs_ = max_vertex_attribs;
   vertex_attrib_infos_.reset(
       new VertexAttribInfo[max_vertex_attribs]);
+  bool disable_workarounds = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableGpuDriverBugWorkarounds);
+
   for (uint32 vv = 0; vv < max_vertex_attribs; ++vv) {
     vertex_attrib_infos_[vv].set_index(vv);
     vertex_attrib_infos_[vv].SetList(&disabled_vertex_attribs_);
+    if (!disable_workarounds) {
+      glVertexAttrib4f(vv, 0.0f, 0.0f, 0.0f, 1.0f);
+    }
   }
 }
 

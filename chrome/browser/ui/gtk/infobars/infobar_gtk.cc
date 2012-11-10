@@ -14,7 +14,7 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/infobars/infobar_container_gtk.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
@@ -76,7 +76,7 @@ InfoBarGtk::InfoBarGtk(InfoBarTabHelper* owner, InfoBarDelegate* delegate)
   // Add the icon on the left, if any.
   gfx::Image* icon = delegate->GetIcon();
   if (icon) {
-    GtkWidget* image = gtk_image_new_from_pixbuf(*icon);
+    GtkWidget* image = gtk_image_new_from_pixbuf(icon->ToGdkPixbuf());
 
     gtk_misc_set_alignment(GTK_MISC(image), 0.5, 0.5);
 
@@ -126,6 +126,26 @@ GtkWidget* InfoBarGtk::CreateLabel(const std::string& text) {
 
 GtkWidget* InfoBarGtk::CreateLinkButton(const std::string& text) {
   return theme_service_->BuildChromeLinkButton(text);
+}
+
+// static
+GtkWidget* InfoBarGtk::CreateMenuButton(const std::string& text) {
+  GtkWidget* button = gtk_button_new();
+  GtkWidget* former_child = gtk_bin_get_child(GTK_BIN(button));
+  if (former_child)
+    gtk_container_remove(GTK_CONTAINER(button), former_child);
+
+  GtkWidget* hbox = gtk_hbox_new(FALSE, 0);
+
+  GtkWidget* label = gtk_label_new(text.c_str());
+  gtk_box_pack_start(GTK_BOX(hbox), label, FALSE, FALSE, 0);
+
+  GtkWidget* arrow = gtk_arrow_new(GTK_ARROW_DOWN, GTK_SHADOW_NONE);
+  gtk_box_pack_start(GTK_BOX(hbox), arrow, FALSE, FALSE, 0);
+
+  gtk_container_add(GTK_CONTAINER(button), hbox);
+
+  return button;
 }
 
 SkColor InfoBarGtk::ConvertGetColor(ColorGetter getter) {
@@ -219,7 +239,7 @@ gboolean InfoBarGtk::OnBackgroundExpose(GtkWidget* sender,
   gtk_widget_get_allocation(sender, &allocation);
   const int height = allocation.height;
 
-  cairo_t* cr = gdk_cairo_create(GDK_DRAWABLE(sender->window));
+  cairo_t* cr = gdk_cairo_create(gtk_widget_get_window(sender));
   gdk_cairo_rectangle(cr, &event->area);
   cairo_clip(cr);
 

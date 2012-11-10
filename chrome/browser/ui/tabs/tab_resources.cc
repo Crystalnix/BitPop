@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,32 +13,55 @@ namespace {
 const SkScalar kTabCapWidth = 15;
 const SkScalar kTabTopCurveWidth = 4;
 const SkScalar kTabBottomCurveWidth = 3;
+#if defined(TOOLKIT_VIEWS)
+// Windows and Ash have shadows in the left, right and top parts of the tab.
+const SkScalar kTabInset = 6;
+const SkScalar kTabTop = 2;
+#else
+// Linux GTK and Mac don't have the shadows.
+const SkScalar kTabInset = 0;
+const SkScalar kTabTop = 0;
+#endif
 
 }  // namespace
 
 // static
-void TabResources::GetHitTestMask(int width, int height, gfx::Path* path) {
+void TabResources::GetHitTestMask(int width,
+                                  int height,
+                                  bool include_top_shadow,
+                                  gfx::Path* path) {
   DCHECK(path);
 
-  SkScalar h = SkIntToScalar(height);
-  SkScalar w = SkIntToScalar(width);
+  SkScalar left = kTabInset;
+  SkScalar top = kTabTop;
+  SkScalar right = SkIntToScalar(width) - kTabInset;
+  SkScalar bottom = SkIntToScalar(height);
 
-  path->moveTo(0, h);
+  // Start in the lower-left corner.
+  path->moveTo(left, bottom);
 
   // Left end cap.
-  path->lineTo(kTabBottomCurveWidth, h - kTabBottomCurveWidth);
-  path->lineTo(kTabCapWidth - kTabTopCurveWidth, kTabTopCurveWidth);
-  path->lineTo(kTabCapWidth, 0);
+  path->lineTo(left + kTabBottomCurveWidth, bottom - kTabBottomCurveWidth);
+  path->lineTo(left + kTabCapWidth - kTabTopCurveWidth,
+               top + kTabTopCurveWidth);
+  path->lineTo(left + kTabCapWidth, top);
+
+  // Extend over the top shadow area if we have one and the caller wants it.
+  if (kTabTop > 0 && include_top_shadow) {
+    path->lineTo(left + kTabCapWidth, 0);
+    path->lineTo(right - kTabCapWidth, 0);
+  }
 
   // Connect to the right cap.
-  path->lineTo(w - kTabCapWidth, 0);
+  path->lineTo(right - kTabCapWidth, top);
 
   // Right end cap.
-  path->lineTo(w - kTabCapWidth + kTabTopCurveWidth, kTabTopCurveWidth);
-  path->lineTo(w - kTabBottomCurveWidth, h - kTabBottomCurveWidth);
-  path->lineTo(w, h);
+  path->lineTo(right - kTabCapWidth + kTabTopCurveWidth,
+               top + kTabTopCurveWidth);
+  path->lineTo(right - kTabBottomCurveWidth, bottom - kTabBottomCurveWidth);
+  path->lineTo(right, bottom);
 
   // Close out the path.
-  path->lineTo(0, h);
+  path->lineTo(left, bottom);
   path->close();
 }

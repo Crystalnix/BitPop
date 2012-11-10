@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,8 +23,8 @@ class ClipboardClient {
                                        const void* pixels,
                                        const gfx::Size& size) = 0;
 
-    // Flushes all gathered data, and destroys the context.
-    virtual void FlushAndDestroy(const ui::Clipboard::ObjectMap& objects) = 0;
+    // Flushes all gathered data.
+    virtual void Flush(const ui::Clipboard::ObjectMap& objects) = 0;
   };
 
   virtual ~ClipboardClient() { }
@@ -38,6 +38,9 @@ class ClipboardClient {
   // Tests whether the clipboard contains a certain format
   virtual bool IsFormatAvailable(const ui::Clipboard::FormatType& format,
                                  ui::Clipboard::Buffer buffer) = 0;
+
+  // Clear the contents of the clipboard.
+  virtual void Clear(ui::Clipboard::Buffer buffer) = 0;
 
   // Reads the available types from the clipboard, if available.
   virtual void ReadAvailableTypes(ui::Clipboard::Buffer buffer,
@@ -55,6 +58,9 @@ class ClipboardClient {
   virtual void ReadHTML(ui::Clipboard::Buffer buffer, string16* markup,
                         GURL* url, uint32* fragment_start,
                         uint32* fragment_end) = 0;
+
+  // Reads RTF from the clipboard, if available.
+  virtual void ReadRTF(ui::Clipboard::Buffer buffer, std::string* result) = 0;
 
   // Reads and image from the clipboard, if available.
   virtual void ReadImage(ui::Clipboard::Buffer buffer, std::string* data) = 0;

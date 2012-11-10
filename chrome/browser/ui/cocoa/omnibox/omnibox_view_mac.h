@@ -1,20 +1,18 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_COCOA_OMNIBOX_OMNIBOX_VIEW_MAC_H_
 #define CHROME_BROWSER_UI_COCOA_OMNIBOX_OMNIBOX_VIEW_MAC_H_
-#pragma once
 
 #import <Cocoa/Cocoa.h>
 
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 
-class AutocompleteEditController;
+class OmniboxEditController;
 class OmniboxPopupViewMac;
 class Profile;
 class ToolbarModel;
@@ -24,11 +22,10 @@ class Clipboard;
 }
 
 // Implements OmniboxView on an AutocompleteTextField.
-
 class OmniboxViewMac : public OmniboxView,
                        public AutocompleteTextFieldObserver {
  public:
-  OmniboxViewMac(AutocompleteEditController* controller,
+  OmniboxViewMac(OmniboxEditController* controller,
                  ToolbarModel* toolbar_model,
                  Profile* profile,
                  CommandUpdater* command_updater,
@@ -36,16 +33,15 @@ class OmniboxViewMac : public OmniboxView,
   virtual ~OmniboxViewMac();
 
   // OmniboxView:
-  virtual AutocompleteEditModel* model() OVERRIDE;
-  virtual const AutocompleteEditModel* model() const OVERRIDE;
+  virtual OmniboxEditModel* model() OVERRIDE;
+  virtual const OmniboxEditModel* model() const OVERRIDE;
   virtual void SaveStateToTab(content::WebContents* tab) OVERRIDE;
   virtual void Update(
       const content::WebContents* tab_for_state_restoring) OVERRIDE;
   virtual void OpenMatch(const AutocompleteMatch& match,
                          WindowOpenDisposition disposition,
                          const GURL& alternate_nav_url,
-                         size_t index,
-                         const string16& keyword) OVERRIDE;
+                         size_t index) OVERRIDE;
   virtual string16 GetText() const OVERRIDE;
   virtual bool IsEditingOrEmpty() const OVERRIDE;
   virtual int GetIcon() const OVERRIDE;
@@ -54,9 +50,11 @@ class OmniboxViewMac : public OmniboxView,
                            const string16& display_text,
                            bool update_popup) OVERRIDE;
   virtual void SetWindowTextAndCaretPos(const string16& text,
-                                        size_t caret_pos) OVERRIDE;
+                                        size_t caret_pos,
+                                        bool update_popup,
+                                        bool notify_text_changed) OVERRIDE;
   virtual void SetForcedQuery() OVERRIDE;
-  virtual bool IsSelectAll() OVERRIDE;
+  virtual bool IsSelectAll() const OVERRIDE;
   virtual bool DeleteAtEndPressed() OVERRIDE;
   virtual void GetSelectionBounds(string16::size_type* start,
                                   string16::size_type* end) const OVERRIDE;
@@ -104,10 +102,6 @@ class OmniboxViewMac : public OmniboxView,
 
   // Helper for LocationBarViewMac.  Optionally selects all in |field_|.
   void FocusLocation(bool select_all);
-
-  // Helper to get appropriate contents from |clipboard|.  Returns
-  // empty string if no appropriate data is found on |clipboard|.
-  static string16 GetClipboardText(ui::Clipboard* clipboard);
 
   // Helper to get the font to use in the field, exposed for the
   // popup.
@@ -164,6 +158,9 @@ class OmniboxViewMac : public OmniboxView,
   // though here we cannot really do the in-place operation they do.
   void EmphasizeURLComponents();
 
+  // Internally invoked whenever the text changes in some way.
+  void TextChanged();
+
   // Calculates text attributes according to |display_text| and applies them
   // to the given |as| object.
   void ApplyTextAttributes(const string16& display_text,
@@ -179,10 +176,10 @@ class OmniboxViewMac : public OmniboxView,
   // Returns true if the caret is at the end of the content.
   bool IsCaretAtEnd() const;
 
-  scoped_ptr<AutocompleteEditModel> model_;
+  scoped_ptr<OmniboxEditModel> model_;
   scoped_ptr<OmniboxPopupViewMac> popup_view_;
 
-  AutocompleteEditController* controller_;
+  OmniboxEditController* controller_;
   ToolbarModel* toolbar_model_;
 
   // The object that handles additional command functionality exposed on the

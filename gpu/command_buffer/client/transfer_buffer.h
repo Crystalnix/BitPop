@@ -5,6 +5,7 @@
 #ifndef GPU_COMMAND_BUFFER_CLIENT_TRANSFER_BUFFER_H_
 #define GPU_COMMAND_BUFFER_CLIENT_TRANSFER_BUFFER_H_
 
+#include "../../gpu_export.h"
 #include "../common/buffer.h"
 #include "../common/compiler_specific.h"
 #include "../common/gles2_cmd_utils.h"
@@ -50,7 +51,7 @@ class AlignedRingBuffer : public RingBufferWrapper {
 };
 
 // Interface for managing the transfer buffer.
-class TransferBufferInterface {
+class GPU_EXPORT TransferBufferInterface {
  public:
   TransferBufferInterface() { }
   virtual ~TransferBufferInterface() { }
@@ -60,7 +61,8 @@ class TransferBufferInterface {
       unsigned int result_size,
       unsigned int min_buffer_size,
       unsigned int max_buffer_size,
-      unsigned int alignment) = 0;
+      unsigned int alignment,
+      unsigned int size_to_flush) = 0;
 
   virtual int GetShmId() = 0;
   virtual void* GetResultBuffer() = 0;
@@ -83,18 +85,19 @@ class TransferBufferInterface {
 };
 
 // Class that manages the transfer buffer.
-class TransferBuffer : public TransferBufferInterface {
+class GPU_EXPORT TransferBuffer : public TransferBufferInterface {
  public:
   TransferBuffer(CommandBufferHelper* helper);
   virtual ~TransferBuffer();
 
   // Overridden from TransferBufferInterface.
   virtual bool Initialize(
-      unsigned int buffer_size,
+      unsigned int default_buffer_size,
       unsigned int result_size,
       unsigned int min_buffer_size,
       unsigned int max_buffer_size,
-      unsigned int alignment) OVERRIDE;
+      unsigned int alignment,
+      unsigned int size_to_flush) OVERRIDE;
   virtual int GetShmId() OVERRIDE;
   virtual void* GetResultBuffer() OVERRIDE;
   virtual int GetResultOffset() OVERRIDE;
@@ -122,6 +125,9 @@ class TransferBuffer : public TransferBufferInterface {
   // size reserved for results
   unsigned int result_size_;
 
+  // default size. Size we want when starting or re-allocating
+  unsigned int default_buffer_size_;
+
   // min size we'll consider successful
   unsigned int min_buffer_size_;
 
@@ -130,6 +136,12 @@ class TransferBuffer : public TransferBufferInterface {
 
   // alignment for allocations
   unsigned int alignment_;
+
+  // Size at which to do an async flush. 0 = never.
+  unsigned int size_to_flush_;
+
+  // Number of bytes since we last flushed.
+  unsigned int bytes_since_last_flush_;
 
   // the current buffer.
   gpu::Buffer buffer_;
@@ -148,7 +160,7 @@ class TransferBuffer : public TransferBufferInterface {
 };
 
 // A class that will manage the lifetime of a transferbuffer allocation.
-class ScopedTransferBufferPtr {
+class GPU_EXPORT ScopedTransferBufferPtr {
  public:
   ScopedTransferBufferPtr(
       unsigned int size,

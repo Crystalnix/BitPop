@@ -1,13 +1,12 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 '''A CustomType for filenames.'''
 
-import re
-
 from grit import clique
+from grit import lazy_re
 
 
 class WindowsFilename(clique.CustomType):
@@ -15,7 +14,7 @@ class WindowsFilename(clique.CustomType):
   illegal characters out of translations.
   '''
 
-  BANNED = re.compile('\+|:|\/|\\\\|\*|\?|\"|\<|\>|\|')
+  BANNED = lazy_re.compile('\+|:|\/|\\\\|\*|\?|\"|\<|\>|\|')
 
   def Validate(self, message):
     return not self.BANNED.search(message.GetPresentableContent())

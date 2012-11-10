@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/command_buffer/service/shader_translator.h"
+#include "gpu/gpu_export.h"
 
 namespace gpu {
 namespace gles2 {
@@ -21,20 +22,31 @@ namespace gles2 {
 //
 // NOTE: To support shared resources an instance of this class will
 // need to be shared by multiple GLES2Decoders.
-class ShaderManager {
+class GPU_EXPORT ShaderManager {
  public:
   // This is used to keep the source code for a shader. This is because in order
   // to emluate GLES2 the shaders will have to be re-written before passed to
   // the underlying OpenGL. But, when the user calls glGetShaderSource they
   // should get the source they passed in, not the re-written source.
-  class ShaderInfo : public base::RefCounted<ShaderInfo> {
+  class GPU_EXPORT ShaderInfo : public base::RefCounted<ShaderInfo> {
    public:
     typedef scoped_refptr<ShaderInfo> Ref;
     typedef ShaderTranslator::VariableInfo VariableInfo;
 
+    enum CompilationStatus {
+      NOT_COMPILED,
+      // We're pending compilation for a cache hit with the program cache.
+      PENDING_DEFERRED_COMPILE,
+      COMPILED
+    };
+
     void UpdateSource(const char* source) {
+      // If the source is flagged as compiled, then store our previous source
+      // for deferred compile and caching.
+      if (!deferred_compilation_source_.get()) {
+        deferred_compilation_source_.reset(source_.release());
+      }
       source_.reset(source ? new std::string(source) : NULL);
-      translated_source_.reset(NULL);
     }
 
     void UpdateTranslatedSource(const char* translated_source) {
@@ -62,8 +74,33 @@ class ShaderManager {
         bool valid, const char* log,
         ShaderTranslatorInterface* translator);
 
+    CompilationStatus compilation_status() const {
+      return compilation_status_;
+    }
+
+    // The source that was used when the user called CompileShader.
+    // This is used for a deferred compile and in the program cache
+    const std::string* deferred_compilation_source() const {
+      return deferred_compilation_source_.get() != NULL ?
+          deferred_compilation_source_.get() :
+          source_.get();
+    }
+
+    // Resets our deferred compilation source and stores if the source was
+    // actually compiled, or if we're expecting a cache hit
+    void FlagSourceAsCompiled(bool actually_compiled) {
+      compilation_status_ = actually_compiled ?
+          COMPILED :
+          PENDING_DEFERRED_COMPILE;
+      deferred_compilation_source_.reset();
+    }
+
     const VariableInfo* GetAttribInfo(const std::string& name) const;
     const VariableInfo* GetUniformInfo(const std::string& name) const;
+
+    // If the original_name is not found, return NULL.
+    const std::string* GetAttribMappedName(
+        const std::string& original_name) const;
 
     const std::string* log_info() const {
       return log_info_.get();
@@ -80,6 +117,28 @@ class ShaderManager {
     bool InUse() const {
       DCHECK_GE(use_count_, 0);
       return use_count_ != 0;
+    }
+
+    // Used by program cache.
+    const ShaderTranslator::VariableMap& attrib_map() const {
+      return attrib_map_;
+    }
+
+    // Used by program cache.
+    const ShaderTranslator::VariableMap& uniform_map() const {
+      return uniform_map_;
+    }
+
+    // Used by program cache.
+    void set_attrib_map(const ShaderTranslator::VariableMap& attrib_map) {
+      // copied because cache might be cleared
+      attrib_map_ = ShaderTranslator::VariableMap(attrib_map);
+    }
+
+    // Used by program cache.
+    void set_uniform_map(const ShaderTranslator::VariableMap& uniform_map) {
+      // copied because cache might be cleared
+      uniform_map_ = ShaderTranslator::VariableMap(uniform_map);
     }
 
    private:
@@ -117,6 +176,12 @@ class ShaderManager {
     // The type info when the shader was last compiled.
     VariableMap attrib_map_;
     VariableMap uniform_map_;
+
+    // The current compilation status of the shader
+    CompilationStatus compilation_status_;
+
+    // Holds on to the source for a deferred compile.
+    scoped_ptr<std::string> deferred_compilation_source_;
   };
 
   ShaderManager();

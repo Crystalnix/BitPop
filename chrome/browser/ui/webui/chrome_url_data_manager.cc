@@ -17,10 +17,16 @@
 #include "base/values.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/chrome_url_data_manager_factory.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager_backend.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/platform_locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
+
+#if defined (TOOLKIT_GTK)
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/font.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -100,6 +106,11 @@ void ChromeURLDataManager::DeleteDataSource(const DataSource* data_source) {
 }
 
 // static
+void ChromeURLDataManager::AddDataSource(Profile* profile, DataSource* source) {
+  ChromeURLDataManagerFactory::GetForProfile(profile)->AddDataSource(source);
+}
+
+// static
 bool ChromeURLDataManager::IsScheduledForDeletion(
     const DataSource* data_source) {
   base::AutoLock lock(g_delete_lock.Get());
@@ -119,10 +130,11 @@ ChromeURLDataManager::DataSource::DataSource(const std::string& source_name,
 ChromeURLDataManager::DataSource::~DataSource() {
 }
 
-void ChromeURLDataManager::DataSource::SendResponse(int request_id,
-                                                    RefCountedMemory* bytes) {
+void ChromeURLDataManager::DataSource::SendResponse(
+    int request_id,
+    base::RefCountedMemory* bytes) {
   // Take a ref-pointer on entry so byte->Release() will always get called.
-  scoped_refptr<RefCountedMemory> bytes_ptr(bytes);
+  scoped_refptr<base::RefCountedMemory> bytes_ptr(bytes);
   if (IsScheduledForDeletion(this)) {
     // We're scheduled for deletion. Servicing the request would result in
     // this->AddRef being invoked, even though the ref count is 0 and 'this' is
@@ -155,26 +167,35 @@ bool ChromeURLDataManager::DataSource::ShouldReplaceExistingSource() const {
 // static
 void ChromeURLDataManager::DataSource::SetFontAndTextDirection(
     DictionaryValue* localized_strings) {
-  localized_strings->SetString("fontfamily",
-      l10n_util::GetStringUTF16(IDS_WEB_FONT_FAMILY));
-
+  int web_font_family_id = IDS_WEB_FONT_FAMILY;
   int web_font_size_id = IDS_WEB_FONT_SIZE;
 #if defined(OS_WIN)
-  // Some fonts used for some languages changed a lot in terms of the font
-  // metric in Vista. So, we need to use different size before Vista.
-  if (base::win::GetVersion() < base::win::VERSION_VISTA)
+  // Vary font settings for Windows XP.
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) {
+    web_font_family_id = IDS_WEB_FONT_FAMILY_XP;
     web_font_size_id = IDS_WEB_FONT_SIZE_XP;
+  }
 #endif
-  localized_strings->SetString("fontsize",
-      l10n_util::GetStringUTF16(web_font_size_id));
 
+  std::string font_family = l10n_util::GetStringUTF8(web_font_family_id);
+
+#if defined(TOOLKIT_GTK)
+  // Use the system font on Linux/GTK. Keep the hard-coded font families as
+  // backup in case for some crazy reason this one isn't available.
+  font_family = ui::ResourceBundle::GetSharedInstance().GetFont(
+      ui::ResourceBundle::BaseFont).GetFontName() + ", " + font_family;
+#endif
+
+  localized_strings->SetString("fontfamily", font_family);
+  localized_strings->SetString("fontsize",
+      l10n_util::GetStringUTF8(web_font_size_id));
   localized_strings->SetString("textdirection",
       base::i18n::IsRTL() ? "rtl" : "ltr");
 }
 
 void ChromeURLDataManager::DataSource::SendResponseOnIOThread(
     int request_id,
-    scoped_refptr<RefCountedMemory> bytes) {
+    scoped_refptr<base::RefCountedMemory> bytes) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (backend_)
     backend_->DataAvailable(request_id, bytes);

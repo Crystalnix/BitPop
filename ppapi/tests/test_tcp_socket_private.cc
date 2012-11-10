@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,10 +6,7 @@
 
 #include <stdlib.h>
 
-#include "ppapi/c/dev/ppb_url_util_dev.h"
-#include "ppapi/cpp/dev/url_util_dev.h"
 #include "ppapi/cpp/private/tcp_socket_private.h"
-#include "ppapi/cpp/var.h"
 #include "ppapi/tests/testing_instance.h"
 #include "ppapi/tests/test_utils.h"
 
@@ -35,46 +32,16 @@ bool TestTCPSocketPrivate::Init() {
   if (!pp::TCPSocketPrivate::IsAvailable())
     return false;
 
-  // This test currently only works out-of-process (since the API is really only
-  // implemented in that case).
-  const PPB_Testing_Dev* testing = GetTestingInterface();
-  if (!testing)
-    return false;
-  if (!testing->IsOutOfProcess())
-    return false;
-
   // We need something to connect to, so we connect to the HTTP server whence we
   // came. Grab the host and port.
   if (!EnsureRunningOverHTTP())
     return false;
 
-  PP_URLComponents_Dev components;
-  pp::Var pp_url = pp::URLUtil_Dev::Get()->GetDocumentURL(*instance_,
-                                                          &components);
-  if (!pp_url.is_string())
-    return false;
-  std::string url = pp_url.AsString();
-
-  // Double-check that we're running on HTTP.
-  if (components.scheme.len < 0)
-    return false;
-  if (url.substr(components.scheme.begin, components.scheme.len) != "http")
+  if (!GetLocalHostPort(instance_->pp_instance(), &host_, &port_))
     return false;
 
-  // Get host.
-  if (components.host.len < 0)
-    return false;
-  host_ = url.substr(components.host.begin, components.host.len);
-
-  // Get port (it's optional).
-  port_ = 80;  // Default value.
-  if (components.port.len > 0) {
-    int i = atoi(url.substr(components.port.begin,
-                            components.port.len).c_str());
-    if (i < 0 || i > 65535)
-      return false;
-    port_ = static_cast<uint16_t>(i);
-  }
+  // Get the port for the SSL server.
+  ssl_port_ = instance_->ssl_server_port();
 
   return true;
 }
@@ -82,6 +49,7 @@ bool TestTCPSocketPrivate::Init() {
 void TestTCPSocketPrivate::RunTests(const std::string& filter) {
   RUN_TEST_FORCEASYNC_AND_NOT(Basic, filter);
   RUN_TEST_FORCEASYNC_AND_NOT(ReadWrite, filter);
+  RUN_TEST_FORCEASYNC_AND_NOT(ReadWriteSSL, filter);
   RUN_TEST_FORCEASYNC_AND_NOT(ConnectAddress, filter);
 }
 
@@ -110,6 +78,34 @@ std::string TestTCPSocketPrivate::TestReadWrite() {
   TestCompletionCallback cb(instance_->pp_instance(), force_async_);
 
   int32_t rv = socket.Connect(host_.c_str(), port_, cb);
+  ASSERT_TRUE(!force_async_ || rv == PP_OK_COMPLETIONPENDING);
+  if (rv == PP_OK_COMPLETIONPENDING)
+    rv = cb.WaitForResult();
+  ASSERT_EQ(PP_OK, rv);
+
+  ASSERT_EQ(PP_OK, WriteStringToSocket(&socket, "GET / HTTP/1.0\r\n\r\n"));
+
+  // Read up to the first \n and check that it looks like valid HTTP response.
+  std::string s;
+  ASSERT_EQ(PP_OK, ReadFirstLineFromSocket(&socket, &s));
+  ASSERT_TRUE(ValidateHttpResponse(s));
+
+  socket.Disconnect();
+
+  PASS();
+}
+
+std::string TestTCPSocketPrivate::TestReadWriteSSL() {
+  pp::TCPSocketPrivate socket(instance_);
+  TestCompletionCallback cb(instance_->pp_instance(), force_async_);
+
+  int32_t rv = socket.Connect(host_.c_str(), ssl_port_, cb);
+  ASSERT_TRUE(!force_async_ || rv == PP_OK_COMPLETIONPENDING);
+  if (rv == PP_OK_COMPLETIONPENDING)
+    rv = cb.WaitForResult();
+  ASSERT_EQ(PP_OK, rv);
+
+  rv = socket.SSLHandshake(host_.c_str(), ssl_port_, cb);
   ASSERT_TRUE(!force_async_ || rv == PP_OK_COMPLETIONPENDING);
   if (rv == PP_OK_COMPLETIONPENDING)
     rv = cb.WaitForResult();
@@ -163,8 +159,6 @@ std::string TestTCPSocketPrivate::TestConnectAddress() {
 
   PASS();
 }
-
-// TODO(viettrungluu): Try testing SSL somehow.
 
 int32_t TestTCPSocketPrivate::ReadFirstLineFromSocket(
     pp::TCPSocketPrivate* socket,

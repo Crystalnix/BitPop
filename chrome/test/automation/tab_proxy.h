@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_TEST_AUTOMATION_TAB_PROXY_H_
 #define CHROME_TEST_AUTOMATION_TAB_PROXY_H_
-#pragma once
 
 #include "build/build_config.h"  // NOLINT
 
@@ -20,8 +19,6 @@
 #include "base/observer_list.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/test/automation/automation_handle_tracker.h"
-#include "chrome/test/automation/dom_element_proxy.h"
-#include "chrome/test/automation/javascript_execution_controller.h"
 #include "content/public/browser/save_page_type.h"
 #include "content/public/common/page_type.h"
 #include "content/public/common/security_style.h"
@@ -39,8 +36,7 @@ namespace base {
 class Value;
 }
 
-class TabProxy : public AutomationResourceProxy,
-                 public JavaScriptExecutionController {
+class TabProxy : public AutomationResourceProxy {
  public:
   class TabProxyDelegate {
    public:
@@ -57,9 +53,6 @@ class TabProxy : public AutomationResourceProxy,
            AutomationHandleTracker* tracker,
            int handle);
 
-  // Gets the browser that holds this tab.
-  scoped_refptr<BrowserProxy> GetParentBrowser() const;
-
   // Gets the current url of the tab.
   bool GetCurrentURL(GURL* url) const WARN_UNUSED_RESULT;
 
@@ -68,9 +61,6 @@ class TabProxy : public AutomationResourceProxy,
 
   // Gets the tabstrip index of the tab.
   bool GetTabIndex(int* index) const WARN_UNUSED_RESULT;
-
-  // Gets the number of constrained window for this tab.
-  bool GetConstrainedWindowCount(int* count) const WARN_UNUSED_RESULT;
 
   // Executes a javascript in a frame's context whose xpath is provided as the
   // first parameter and extract the values from the resulting json string.
@@ -90,10 +80,6 @@ class TabProxy : public AutomationResourceProxy,
   bool ExecuteAndExtractInt(const std::wstring& frame_xpath,
                             const std::wstring& jscript,
                             int* value) WARN_UNUSED_RESULT;
-
-  // Returns a DOMElementProxyRef to the tab's current DOM document.
-  // This proxy is invalidated when the document changes.
-  DOMElementProxyRef GetDOMDocument();
 
   // Navigates to a url. This method accepts the same kinds of URL input that
   // can be passed to Chrome on the command line. This is a synchronous call and
@@ -116,19 +102,6 @@ class TabProxy : public AutomationResourceProxy,
   // TODO(mpcomplete): If the navigation results in an auth challenge, the
   // TabProxy we attach won't know about it.  See bug 666730.
   bool NavigateToURLAsync(const GURL& url) WARN_UNUSED_RESULT;
-
-  // Asynchronously navigates to a url using a non-default disposition.
-  // This can be used for example to open a URL in a new tab.
-  bool NavigateToURLAsyncWithDisposition(
-      const GURL& url,
-      WindowOpenDisposition disposition) WARN_UNUSED_RESULT;
-
-  // Replaces a vector contents with the redirect chain out of the given URL.
-  // Returns true on success. Failure may be due to being unable to send the
-  // message, parse the response, or a failure of the history system in the
-  // browser.
-  bool GetRedirectsFrom(const GURL& source_url,
-                        std::vector<GURL>* redirects) WARN_UNUSED_RESULT;
 
   // Equivalent to hitting the Back button. This is a synchronous call and
   // hence blocks until the navigation completes.
@@ -171,30 +144,6 @@ class TabProxy : public AutomationResourceProxy,
   // the last tab.
   bool Close(bool wait_until_closed) WARN_UNUSED_RESULT;
 
-  // Gets the process ID that corresponds to the content area of this tab.
-  // Returns true if the call was successful.  If the specified tab has no
-  // separate process for rendering its content, the return value is true but
-  // the process_id is 0.
-  bool GetProcessID(int* process_id) const WARN_UNUSED_RESULT;
-
-  // Supply or cancel authentication to a login prompt.  These are synchronous
-  // calls and hence block until the load finishes (or another login prompt
-  // appears, in the case of invalid login info).
-  bool SetAuth(const std::wstring& username,
-               const std::wstring& password) WARN_UNUSED_RESULT;
-  bool CancelAuth() WARN_UNUSED_RESULT;
-
-  // Checks if this tab has a login prompt waiting for auth.  This will be
-  // true if a navigation results in a login prompt, and if an attempted login
-  // fails.
-  // Note that this is only valid if you've done a navigation on this same
-  // object; different TabProxy objects can refer to the same Tab.  Calls
-  // that can set this are NavigateToURL, GoBack, and GoForward.
-  // TODO(mpcomplete): we have no way of knowing if auth is needed after either
-  // NavigateToURLAsync, or after appending a tab with an URL that triggers
-  // auth.
-  bool NeedsAuth() const WARN_UNUSED_RESULT;
-
   // Starts a search within the current tab. The parameter |search_string|
   // specifies what string to search for, |forward| specifies whether to search
   // in forward direction, and |match_case| specifies case sensitivity
@@ -209,43 +158,6 @@ class TabProxy : public AutomationResourceProxy,
   bool GetCookieByName(const GURL& url,
                        const std::string& name,
                        std::string* cookies) WARN_UNUSED_RESULT;
-  bool SetCookie(const GURL& url, const std::string& value) WARN_UNUSED_RESULT;
-  bool DeleteCookie(const GURL& url,
-                    const std::string& name) WARN_UNUSED_RESULT;
-
-  // Opens the collected cookies dialog for the current tab. This function can
-  // be invoked on any valid tab.
-  bool ShowCollectedCookiesDialog() WARN_UNUSED_RESULT;
-
-  // Sends a InspectElement message for the current tab. |x| and |y| are the
-  // coordinates that we want to simulate that the user is trying to inspect.
-  int InspectElement(int x, int y);
-
-  // Block the thread until the constrained(child) window count changes.
-  // First parameter is the original child window count
-  // The second parameter is updated with the number of new child windows.
-  // The third parameter specifies the timeout length for the wait loop.
-  // Returns false if the count does not change.
-  bool WaitForChildWindowCountToChange(int count, int* new_count,
-      int wait_timeout) WARN_UNUSED_RESULT;
-
-  // Gets the number of popups blocked from this tab.
-  bool GetBlockedPopupCount(int* count) const WARN_UNUSED_RESULT;
-
-  // Blocks the thread until the number of blocked popup is equal to
-  // |target_count|.
-  bool WaitForBlockedPopupCountToChangeTo(int target_count,
-                                          int wait_timeout) WARN_UNUSED_RESULT;
-
-  bool GetDownloadDirectory(FilePath* download_directory) WARN_UNUSED_RESULT;
-
-  // Shows an interstitial page.  Blocks until the interstitial page
-  // has been loaded. Return false if a failure happens.
-  bool ShowInterstitialPage(const std::string& html_text) WARN_UNUSED_RESULT;
-
-  // Hides the currently shown interstitial page. Blocks until the interstitial
-  // page has been hidden. Return false if a failure happens.
-  bool HideInterstitialPage() WARN_UNUSED_RESULT;
 
 #if defined(OS_WIN)
   // The functions in this block are for external tabs, hence Windows only.
@@ -296,53 +208,15 @@ class TabProxy : public AutomationResourceProxy,
   // out of there' button.
   bool TakeActionOnSSLBlockingPage(bool proceed) WARN_UNUSED_RESULT;
 
-  // Prints the current page without user intervention.
-  bool PrintNow() WARN_UNUSED_RESULT;
-
   // Sends off an asynchronous request for printing.
   bool PrintAsync() WARN_UNUSED_RESULT;
-
-  // Save the current web page. |file_name| is the HTML file name, and
-  // |dir_path| is the directory for saving resource files. |type| indicates
-  // which type we're saving as: HTML only or the complete web page.
-  bool SavePage(const FilePath& file_name, const FilePath& dir_path,
-                content::SavePageType type) WARN_UNUSED_RESULT;
-
-  // Retrieves the number of info-bars currently showing in |count|.
-  bool GetInfoBarCount(size_t* count) WARN_UNUSED_RESULT;
 
   // Waits until the infobar count is |count|.
   // Returns true on success.
   bool WaitForInfoBarCount(size_t count) WARN_UNUSED_RESULT;
 
-  // Causes a click on the "accept" button of the info-bar at |info_bar_index|.
-  // If |wait_for_navigation| is true, this call does not return until a
-  // navigation has occurred.
-  bool ClickInfoBarAccept(size_t info_bar_index,
-                          bool wait_for_navigation) WARN_UNUSED_RESULT;
-
-  // Retrieves the time at which the last navigation occurred.  This is intended
-  // to be used with WaitForNavigation (see below).
-  bool GetLastNavigationTime(int64* last_navigation_time) WARN_UNUSED_RESULT;
-
-  // Waits for a new navigation if none as occurred since |last_navigation_time|
-  // The purpose of this function is for operations that causes asynchronous
-  // navigation to happen.
-  // It is supposed to be used as follow:
-  // int64 last_nav_time;
-  // tab_proxy->GetLastNavigationTime(&last_nav_time);
-  // tab_proxy->SomeOperationThatTriggersAnAsynchronousNavigation();
-  // tab_proxy->WaitForNavigation(last_nav_time);
-  bool WaitForNavigation(int64 last_navigation_time) WARN_UNUSED_RESULT;
-
-  // Gets the current used encoding of the page in the tab.
-  bool GetPageCurrentEncoding(std::string* encoding) WARN_UNUSED_RESULT;
-
   // Uses the specified encoding to override encoding of the page in the tab.
   bool OverrideEncoding(const std::string& encoding) WARN_UNUSED_RESULT;
-
-  // Loads all blocked plug-ins on the page.
-  bool LoadBlockedPlugins() WARN_UNUSED_RESULT;
 
   // Captures the entire page and saves as a PNG at the given path. Returns
   // true on success.
@@ -389,11 +263,6 @@ class TabProxy : public AutomationResourceProxy,
   void OnChannelError();
  protected:
   virtual ~TabProxy();
-
-  // Override JavaScriptExecutionController methods.
-  // Executes |script| and gets the response JSON. Returns true on success.
-  bool ExecuteJavaScriptAndGetJSON(const std::string& script,
-                                   std::string* json) WARN_UNUSED_RESULT;
 
   // Called when tracking the first object. Used for reference counting
   // purposes.

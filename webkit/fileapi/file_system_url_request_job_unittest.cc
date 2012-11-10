@@ -1,16 +1,8 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-//
-// NOTE: These tests are run as part of "unit_tests" (in chrome/test/unit)
-// rather than as part of test_shell_tests because they rely on being able
-// to instantiate a MessageLoop of type TYPE_IO.  test_shell_tests uses
-// TYPE_UI, which URLRequest doesn't allow.
-//
 
 #include "webkit/fileapi/file_system_url_request_job.h"
-
-#include "build/build_config.h"
 
 #include <string>
 
@@ -37,6 +29,7 @@
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_file_util.h"
 #include "webkit/fileapi/file_system_operation_context.h"
+#include "webkit/fileapi/file_system_task_runners.h"
 #include "webkit/fileapi/mock_file_system_options.h"
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/quota/mock_special_storage_policy.h"
@@ -72,7 +65,7 @@ class FileSystemURLRequestJobTest : public testing::Test {
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
     special_storage_policy_ = new quota::MockSpecialStoragePolicy;
@@ -80,8 +73,7 @@ class FileSystemURLRequestJobTest : public testing::Test {
     // TODO(adamk): Run this on the FILE thread we've created as well.
     file_system_context_ =
         new FileSystemContext(
-            base::MessageLoopProxy::current(),
-            base::MessageLoopProxy::current(),
+            FileSystemTaskRunners::CreateMockTaskRunners(),
             special_storage_policy_, NULL,
             temp_dir_.path(),
             CreateDisallowFileAccessOptions());
@@ -96,8 +88,15 @@ class FileSystemURLRequestJobTest : public testing::Test {
         "filesystem", &FileSystemURLRequestJobFactory);
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     net::URLRequest::Deprecated::RegisterProtocolFactory("filesystem", NULL);
+    ClearUnusedJob();
+    if (pending_job_) {
+      pending_job_->Kill();
+      pending_job_ = NULL;
+    }
+    // FileReader posts a task to close the file in destructor.
+    MessageLoop::current()->RunAllPending();
   }
 
   void OnValidateFileSystem(base::PlatformFileError result) {
@@ -111,13 +110,15 @@ class FileSystemURLRequestJobTest : public testing::Test {
     // Make delegate_ exit the MessageLoop when the request is done.
     delegate_->set_quit_on_complete(true);
     delegate_->set_quit_on_redirect(true);
-    request_.reset(new net::URLRequest(url, delegate_.get()));
+    request_.reset(
+        new net::URLRequest(url, delegate_.get(), &empty_context_));
     if (headers)
       request_->SetExtraRequestHeaders(*headers);
+    ASSERT_TRUE(!job_);
     job_ = new FileSystemURLRequestJob(
         request_.get(),
-        file_system_context_.get(),
-        base::MessageLoopProxy::current());
+        file_system_context_.get());
+    pending_job_ = job_;
 
     request_->Start();
     ASSERT_TRUE(request_->is_pending());  // verify that we're starting async
@@ -139,36 +140,38 @@ class FileSystemURLRequestJobTest : public testing::Test {
   }
 
   void CreateDirectory(const base::StringPiece& dir_name) {
-    FilePath path = FilePath().AppendASCII(dir_name);
     FileSystemFileUtil* file_util = file_system_context_->
-        sandbox_provider()->GetFileUtil();
-    FileSystemOperationContext context(file_system_context_, file_util);
-    context.set_src_origin_url(GURL("http://remote"));
-    context.set_src_type(fileapi::kFileSystemTypeTemporary);
+        sandbox_provider()->GetFileUtil(kFileSystemTypeTemporary);
+    FileSystemURL url(GURL("http://remote"),
+                      kFileSystemTypeTemporary,
+                      FilePath().AppendASCII(dir_name));
+
+    FileSystemOperationContext context(file_system_context_);
     context.set_allowed_bytes_growth(1024);
 
     ASSERT_EQ(base::PLATFORM_FILE_OK, file_util->CreateDirectory(
         &context,
-        path,
+        url,
         false /* exclusive */,
         false /* recursive */));
   }
 
   void WriteFile(const base::StringPiece& file_name,
                  const char* buf, int buf_size) {
-    FilePath path = FilePath().AppendASCII(file_name);
     FileSystemFileUtil* file_util = file_system_context_->
-        sandbox_provider()->GetFileUtil();
-    FileSystemOperationContext context(file_system_context_, file_util);
-    context.set_src_origin_url(GURL("http://remote"));
-    context.set_src_type(fileapi::kFileSystemTypeTemporary);
+        sandbox_provider()->GetFileUtil(kFileSystemTypeTemporary);
+    FileSystemURL url(GURL("http://remote"),
+                      kFileSystemTypeTemporary,
+                      FilePath().AppendASCII(file_name));
+
+    FileSystemOperationContext context(file_system_context_);
     context.set_allowed_bytes_growth(1024);
 
     base::PlatformFile handle = base::kInvalidPlatformFileValue;
     bool created = false;
     ASSERT_EQ(base::PLATFORM_FILE_OK, file_util->CreateOrOpen(
         &context,
-        path,
+        url,
         base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_WRITE,
         &handle,
         &created));
@@ -192,6 +195,13 @@ class FileSystemURLRequestJobTest : public testing::Test {
     return temp;
   }
 
+  static void ClearUnusedJob() {
+    if (job_) {
+      scoped_refptr<net::URLRequestJob> deleter = job_;
+      job_ = NULL;
+    }
+  }
+
   // Put the message loop at the top, so that it's the last thing deleted.
   MessageLoop message_loop_;
 
@@ -200,10 +210,13 @@ class FileSystemURLRequestJobTest : public testing::Test {
   scoped_refptr<FileSystemContext> file_system_context_;
   base::WeakPtrFactory<FileSystemURLRequestJobTest> weak_factory_;
 
+  net::URLRequestContext empty_context_;
+
   // NOTE: order matters, request must die before delegate
   scoped_ptr<TestDelegate> delegate_;
   scoped_ptr<net::URLRequest> request_;
 
+  scoped_refptr<net::URLRequestJob> pending_job_;
   static net::URLRequestJob* job_;
 };
 
@@ -358,5 +371,5 @@ TEST_F(FileSystemURLRequestJobTest, GetMimeType) {
   EXPECT_EQ(mime_type_direct, mime_type_from_job);
 }
 
-}  // namespace (anonymous)
+}  // namespace
 }  // namespace fileapi

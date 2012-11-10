@@ -4,12 +4,10 @@
 
 #ifndef UI_GFX_FONT_LIST_H_
 #define UI_GFX_FONT_LIST_H_
-#pragma once
 
 #include <string>
 #include <vector>
 
-#include "base/gtest_prod_util.h"
 #include "ui/base/ui_export.h"
 #include "ui/gfx/font.h"
 

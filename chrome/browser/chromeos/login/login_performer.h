@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_LOGIN_PERFORMER_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_LOGIN_PERFORMER_H_
-#pragma once
 
 #include <string>
 
@@ -60,6 +59,7 @@ class LoginPerformer : public LoginStatusConsumer,
    public:
     virtual ~Delegate() {}
     virtual void WhiteListCheckFailed(const std::string& email) = 0;
+    virtual void PolicyLoadFailed() = 0;
     virtual void OnOnlineChecked(const std::string& email, bool success) = 0;
   };
 
@@ -75,15 +75,14 @@ class LoginPerformer : public LoginStatusConsumer,
 
   // LoginStatusConsumer implementation:
   virtual void OnLoginFailure(const LoginFailure& error) OVERRIDE;
+  virtual void OnDemoUserLoginSuccess() OVERRIDE;
   virtual void OnLoginSuccess(
       const std::string& username,
       const std::string& password,
-      const GaiaAuthConsumer::ClientLoginResult& credentials,
       bool pending_requests,
       bool using_oauth) OVERRIDE;
   virtual void OnOffTheRecordLoginSuccess() OVERRIDE;
-  virtual void OnPasswordChangeDetected(
-      const GaiaAuthConsumer::ClientLoginResult& credentials) OVERRIDE;
+  virtual void OnPasswordChangeDetected() OVERRIDE;
 
   // Completes login process that has already been authenticated with
   // provided |username| and |password|.
@@ -91,6 +90,9 @@ class LoginPerformer : public LoginStatusConsumer,
 
   // Performs login with the |username| and |password| specified.
   void Login(const std::string& username, const std::string& password);
+
+  // Performs login for the demo user.
+  void LoginDemoUser();
 
   // Performs actions to prepare Guest mode login.
   void LoginOffTheRecord();
@@ -109,6 +111,18 @@ class LoginPerformer : public LoginStatusConsumer,
   // True if last login operation has timed out.
   bool login_timed_out() {
     return last_login_failure_.reason() == LoginFailure::LOGIN_TIMED_OUT;
+  }
+
+  // True if password change has been detected.
+  bool password_changed() { return password_changed_; }
+
+  // Number of times we've been called with OnPasswordChangeDetected().
+  // If user enters incorrect old password, same LoginPerformer instance will
+  // be called so callback count makes it possible to distinguish initial
+  // "password changed detected" event from further attempts to enter old
+  // password for cryptohome migration (when > 1).
+  int password_changed_callback_count() {
+    return password_changed_callback_count_;
   }
 
   void set_delegate(Delegate* delegate) { delegate_ = delegate; }
@@ -175,9 +189,6 @@ class LoginPerformer : public LoginStatusConsumer,
   // sign-in server. LoginFailure.None() by default.
   LoginFailure last_login_failure_;
 
-  // Cached credentials data when password change is detected.
-  GaiaAuthConsumer::ClientLoginResult cached_credentials_;
-
   // Username and password for the current login attempt.
   std::string username_;
   std::string password_;
@@ -188,6 +199,7 @@ class LoginPerformer : public LoginStatusConsumer,
   // True if password change has been detected.
   // Once correct password is entered homedir migration is executed.
   bool password_changed_;
+  int password_changed_callback_count_;
 
   // Used for ScreenLock notifications.
   content::NotificationRegistrar registrar_;
@@ -200,8 +212,6 @@ class LoginPerformer : public LoginStatusConsumer,
   // online authentication response. Used to distinguish cases when screen
   // is locked during that stage. No need to resolve screen lock action then.
   bool initial_online_auth_pending_;
-
-  GaiaAuthConsumer::ClientLoginResult credentials_;
 
   // Authorization mode type.
   AuthorizationMode auth_mode_;

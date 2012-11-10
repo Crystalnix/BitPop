@@ -4,7 +4,6 @@
 
 #ifndef SKIA_EXT_CANVAS_PAINT_WIN_H_
 #define SKIA_EXT_CANVAS_PAINT_WIN_H_
-#pragma once
 
 #include "skia/ext/canvas_paint_common.h"
 #include "skia/ext/platform_canvas.h"
@@ -29,6 +28,7 @@ namespace skia {
 //     }
 //     return 0;
 //   }
+// Note: The created context is always inialized to (0, 0, 0, 0).
 template <class T>
 class CanvasPaintT : public T {
  public:
@@ -113,6 +113,7 @@ class CanvasPaintT : public T {
       // Cause a deliberate crash;
       *(char*) 0 = 0;
     }
+    canvas->clear(SkColorSetARGB(0, 0, 0, 0));
 
     // This will bring the canvas into the screen coordinate system for the
     // dirty rect

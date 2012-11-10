@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,6 @@
 
 #ifndef CHROME_BROWSER_NET_SDCH_DICTIONARY_FETCHER_H_
 #define CHROME_BROWSER_NET_SDCH_DICTIONARY_FETCHER_H_
-#pragma once
 
 #include <queue>
 #include <set>
@@ -17,15 +16,20 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "content/public/common/url_fetcher_delegate.h"
 #include "net/base/sdch_manager.h"
+#include "net/url_request/url_fetcher_delegate.h"
+
+namespace net {
+class URLFetcher;
+class URLRequestContextGetter;
+}  // namespace net
 
 class SdchDictionaryFetcher
-    : public content::URLFetcherDelegate,
+    : public net::URLFetcherDelegate,
       public net::SdchFetcher,
       public base::NonThreadSafe {
  public:
-  SdchDictionaryFetcher();
+  explicit SdchDictionaryFetcher(net::URLRequestContextGetter* context);
   virtual ~SdchDictionaryFetcher();
 
   // Stop fetching dictionaries, and abandon any current URLFetcheer operations
@@ -51,15 +55,15 @@ class SdchDictionaryFetcher
   // in the  |fetch_queue_|.
   void StartFetching();
 
-  // Implementation of content::URLFetcherDelegate. Called after transmission
+  // Implementation of net::URLFetcherDelegate. Called after transmission
   // completes (either successfully or with failure).
-  virtual void OnURLFetchComplete(const content::URLFetcher* source) OVERRIDE;
+  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
 
   // A queue of URLs that are being used to download dictionaries.
   std::queue<GURL> fetch_queue_;
   // The currently outstanding URL fetch of a dicitonary.
   // If this is null, then there is no outstanding request.
-  scoped_ptr<content::URLFetcher> current_fetch_;
+  scoped_ptr<net::URLFetcher> current_fetch_;
 
   // Always spread out the dictionary fetches, so that they don't steal
   // bandwidth from the actual page load.  Create delayed tasks to spread out
@@ -81,6 +85,10 @@ class SdchDictionaryFetcher
   // so that we won't try to load from an URL more than once.
   // TODO(jar): Try to augment the SDCH proposal to include this restiction.
   std::set<GURL> attempted_load_;
+
+  // Store the system_url_request_context_getter to use it when we start
+  // fetching.
+  scoped_refptr<net::URLRequestContextGetter> context_;
 
   DISALLOW_COPY_AND_ASSIGN(SdchDictionaryFetcher);
 };

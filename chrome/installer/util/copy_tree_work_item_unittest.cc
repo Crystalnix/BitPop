@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -472,7 +472,7 @@ TEST_F(CopyTreeWorkItemTest, NewNameAndCopyTest) {
       temp_dir_.path(), WorkItem::NEW_NAME_IF_IN_USE,
       alternate_to));
   if (IsFileInUse(file_name_to))
-    base::PlatformThread::Sleep(2000);
+    base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(2));
   // If file is still in use, the rest of the test will fail.
   ASSERT_FALSE(IsFileInUse(file_name_to));
   EXPECT_TRUE(work_item->Do());
@@ -508,7 +508,7 @@ TEST_F(CopyTreeWorkItemTest, NewNameAndCopyTest) {
 //    in the destination folder after Do() and should be rolled back after
 //    Rollback().
 // Flaky, http://crbug.com/59785.
-TEST_F(CopyTreeWorkItemTest, FLAKY_IfNotPresentTest) {
+TEST_F(CopyTreeWorkItemTest, DISABLED_IfNotPresentTest) {
   // Create source file
   FilePath file_name_from(test_dir_.path());
   file_name_from = file_name_from.AppendASCII("File_From");
@@ -590,7 +590,7 @@ TEST_F(CopyTreeWorkItemTest, FLAKY_IfNotPresentTest) {
 // Copy one file without rollback. The existing one in destination is in use.
 // Verify it is moved to backup location and stays there.
 // Flaky, http://crbug.com/59783.
-TEST_F(CopyTreeWorkItemTest, FLAKY_CopyFileInUseAndCleanup) {
+TEST_F(CopyTreeWorkItemTest, DISABLED_CopyFileInUseAndCleanup) {
   // Create source file
   FilePath file_name_from(test_dir_.path());
   file_name_from = file_name_from.AppendASCII("File_From");
@@ -663,7 +663,7 @@ TEST_F(CopyTreeWorkItemTest, FLAKY_CopyFileInUseAndCleanup) {
 
 // Copy a tree from source to destination.
 // Flaky, http://crbug.com/59784.
-TEST_F(CopyTreeWorkItemTest, FLAKY_CopyTree) {
+TEST_F(CopyTreeWorkItemTest, DISABLED_CopyTree) {
   // Create source tree
   FilePath dir_name_from(test_dir_.path());
   dir_name_from = dir_name_from.AppendASCII("from");

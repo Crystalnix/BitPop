@@ -1,12 +1,15 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "content/browser/renderer_host/render_widget_host.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
 
-#include "content/browser/renderer_host/render_widget_host_view.h"
+#include "content/port/browser/render_widget_host_view_port.h"
 
-void RenderWidgetHost::OnMsgCreatePluginContainer(gfx::PluginWindowHandle id) {
+using content::RenderWidgetHostImpl;
+
+void RenderWidgetHostImpl::OnMsgCreatePluginContainer(
+    gfx::PluginWindowHandle id) {
   // TODO(piman): view_ can only be NULL with delayed view creation in
   // extensions (see ExtensionHost::CreateRenderViewSoon). Figure out how to
   // support plugins in that case.
@@ -17,7 +20,8 @@ void RenderWidgetHost::OnMsgCreatePluginContainer(gfx::PluginWindowHandle id) {
   }
 }
 
-void RenderWidgetHost::OnMsgDestroyPluginContainer(gfx::PluginWindowHandle id) {
+void RenderWidgetHostImpl::OnMsgDestroyPluginContainer(
+    gfx::PluginWindowHandle id) {
   if (view_) {
     view_->DestroyPluginContainer(id);
   } else {

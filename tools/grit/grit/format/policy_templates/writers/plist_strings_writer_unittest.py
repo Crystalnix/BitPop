@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,16 +9,11 @@
 import os
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../../../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../../../..'))
 
-import tempfile
 import unittest
-import StringIO
 
 from grit.format.policy_templates.writers import writer_unittest_common
-from grit import grd_reader
-from grit import util
-from grit.tool import build
 
 
 class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):

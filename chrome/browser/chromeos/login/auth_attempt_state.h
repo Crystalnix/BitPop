@@ -1,16 +1,16 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_AUTH_ATTEMPT_STATE_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_AUTH_ATTEMPT_STATE_H_
-#pragma once
 
 #include <string>
 
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
 #include "chrome/common/net/gaia/gaia_auth_consumer.h"
 #include "chrome/common/net/gaia/gaia_auth_fetcher.h"
+#include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace chromeos {
 
@@ -38,11 +38,10 @@ class AuthAttemptState {
 
   virtual ~AuthAttemptState();
 
-  // Copy |credentials| and |outcome| into this object, so we can have
+  // Copy |credentials| and copy |outcome| into this object, so we can have
   // a copy we're sure to own, and can make available on the IO thread.
   // Must be called from the IO thread.
   void RecordOnlineLoginStatus(
-      const GaiaAuthConsumer::ClientLoginResult& credentials,
       const LoginFailure& outcome);
 
   // The next attempt will not allow HOSTED accounts to log in.
@@ -51,7 +50,8 @@ class AuthAttemptState {
   // Copy |cryptohome_code| and |cryptohome_outcome| into this object,
   // so we can have a copy we're sure to own, and can make available
   // on the IO thread.  Must be called from the IO thread.
-  void RecordCryptohomeStatus(bool cryptohome_outcome, int cryptohome_code);
+  void RecordCryptohomeStatus(bool cryptohome_outcome,
+                              cryptohome::MountError cryptohome_code);
 
   // Blow away locally stored cryptohome login status.
   // Must be called from the IO thread.
@@ -59,13 +59,12 @@ class AuthAttemptState {
 
   virtual bool online_complete();
   virtual const LoginFailure& online_outcome();
-  virtual const GaiaAuthConsumer::ClientLoginResult& credentials();
   virtual bool is_first_time_user();
   virtual GaiaAuthFetcher::HostedAccountsSetting hosted_policy();
 
   virtual bool cryptohome_complete();
   virtual bool cryptohome_outcome();
-  virtual int cryptohome_code();
+  virtual cryptohome::MountError cryptohome_code();
 
   const std::string oauth1_access_token() const { return oauth1_access_token_; }
   const std::string oauth1_access_secret() const {
@@ -86,12 +85,9 @@ class AuthAttemptState {
   const bool unlock;  // True if authenticating to unlock the computer.
 
  protected:
-  bool try_again_;  // True if we're willing to retry the login attempt.
-
   // Status of our online login attempt.
   bool online_complete_;
   LoginFailure online_outcome_;
-  GaiaAuthConsumer::ClientLoginResult credentials_;
 
   // Whether or not we're accepting HOSTED accounts during the current
   // online auth attempt.
@@ -101,7 +97,7 @@ class AuthAttemptState {
   // Status of our cryptohome op attempt. Can only have one in flight at a time.
   bool cryptohome_complete_;
   bool cryptohome_outcome_;
-  int cryptohome_code_;
+  cryptohome::MountError cryptohome_code_;
   std::string oauth1_access_token_;
   std::string oauth1_access_secret_;
 

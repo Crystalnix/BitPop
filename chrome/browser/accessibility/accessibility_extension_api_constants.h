@@ -6,7 +6,6 @@
 
 #ifndef CHROME_BROWSER_ACCESSIBILITY_ACCESSIBILITY_EXTENSION_API_CONSTANTS_H_
 #define CHROME_BROWSER_ACCESSIBILITY_ACCESSIBILITY_EXTENSION_API_CONSTANTS_H_
-#pragma once
 
 namespace extension_accessibility_api_constants {
 
@@ -24,6 +23,7 @@ extern const char kSelectionEndKey[];
 extern const char kCheckedKey[];
 extern const char kHasSubmenuKey[];
 extern const char kMessageKey[];
+extern const char kStringValueKey[];
 
 // Events.
 extern const char kOnWindowOpened[];
@@ -43,6 +43,7 @@ extern const char kTypeListBox[];
 extern const char kTypeMenu[];
 extern const char kTypeMenuItem[];
 extern const char kTypeRadioButton[];
+extern const char kTypeSlider[];
 extern const char kTypeTab[];
 extern const char kTypeTextBox[];
 extern const char kTypeVolume[];

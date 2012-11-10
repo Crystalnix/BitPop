@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,38 +8,32 @@
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/json/json_writer.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/string_number_conversions.h"
+#include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/extension_event_router.h"
+#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 
-namespace {
+using extensions::api::history::HistoryItem;
+using extensions::api::history::VisitItem;
 
-const char kAllHistoryKey[] = "allHistory";
-const char kEndTimeKey[] = "endTime";
-const char kFaviconUrlKey[] = "favIconUrl";
-const char kIdKey[] = "id";
-const char kLastVisitdKey[] = "lastVisitTime";
-const char kMaxResultsKey[] = "maxResults";
-const char kNewKey[] = "new";
-const char kReferringVisitId[] = "referringVisitId";
-const char kRemovedKey[] = "removed";
-const char kStartTimeKey[] = "startTime";
-const char kTextKey[] = "text";
-const char kTitleKey[] = "title";
-const char kTypedCountKey[] = "typedCount";
-const char kVisitCountKey[] = "visitCount";
-const char kTransition[] = "transition";
-const char kUrlKey[] = "url";
-const char kUrlsKey[] = "urls";
-const char kVisitId[] = "visitId";
-const char kVisitTime[] = "visitTime";
+namespace AddUrl = extensions::api::history::AddUrl;
+namespace DeleteUrl = extensions::api::history::DeleteUrl;
+namespace DeleteRange = extensions::api::history::DeleteRange;
+namespace GetVisits = extensions::api::history::GetVisits;
+namespace OnVisited = extensions::api::history::OnVisited;
+namespace OnVisitRemoved = extensions::api::history::OnVisitRemoved;
+namespace Search = extensions::api::history::Search;
+
+namespace {
 
 const char kOnVisited[] = "history.onVisited";
 const char kOnVisitRemoved[] = "history.onVisitRemoved";
@@ -51,41 +45,75 @@ double MilliSecondsFromTime(const base::Time& time) {
   return 1000 * time.ToDoubleT();
 }
 
-void GetHistoryItemDictionary(const history::URLRow& row,
-                              DictionaryValue* value) {
-  value->SetString(kIdKey, base::Int64ToString(row.id()));
-  value->SetString(kUrlKey, row.url().spec());
-  value->SetString(kTitleKey, row.title());
-  value->SetDouble(kLastVisitdKey,
-                   MilliSecondsFromTime(row.last_visit()));
-  value->SetInteger(kTypedCountKey, row.typed_count());
-  value->SetInteger(kVisitCountKey, row.visit_count());
+scoped_ptr<HistoryItem> GetHistoryItem(const history::URLRow& row) {
+  scoped_ptr<HistoryItem> history_item(new HistoryItem());
+
+  history_item->id = base::Int64ToString(row.id());
+  history_item->url.reset(new std::string(row.url().spec()));
+  history_item->title.reset(new std::string(UTF16ToUTF8(row.title())));
+  history_item->last_visit_time.reset(
+      new double(MilliSecondsFromTime(row.last_visit())));
+  history_item->typed_count.reset(new int(row.typed_count()));
+  history_item->visit_count.reset(new int(row.visit_count()));
+
+  return history_item.Pass();
 }
 
-void AddHistoryNode(const history::URLRow& row, ListValue* list) {
-  DictionaryValue* dict = new DictionaryValue();
-  GetHistoryItemDictionary(row, dict);
-  list->Append(dict);
-}
+scoped_ptr<VisitItem> GetVisitItem(const history::VisitRow& row) {
+  scoped_ptr<VisitItem> visit_item(new VisitItem());
 
-void GetVisitInfoDictionary(const history::VisitRow& row,
-                            DictionaryValue* value) {
-  value->SetString(kIdKey, base::Int64ToString(row.url_id));
-  value->SetString(kVisitId, base::Int64ToString(row.visit_id));
-  value->SetDouble(kVisitTime, MilliSecondsFromTime(row.visit_time));
-  value->SetString(kReferringVisitId,
-                   base::Int64ToString(row.referring_visit));
+  visit_item->id = base::Int64ToString(row.url_id);
+  visit_item->visit_id = base::Int64ToString(row.visit_id);
+  visit_item->visit_time.reset(
+      new double(MilliSecondsFromTime(row.visit_time)));
+  visit_item->referring_visit_id = base::Int64ToString(row.referring_visit);
 
   const char* trans =
       content::PageTransitionGetCoreTransitionString(row.transition);
   DCHECK(trans) << "Invalid transition.";
-  value->SetString(kTransition, trans);
-}
 
-void AddVisitNode(const history::VisitRow& row, ListValue* list) {
-  DictionaryValue* dict = new DictionaryValue();
-  GetVisitInfoDictionary(row, dict);
-  list->Append(dict);
+  VisitItem::Transition transition = VisitItem::TRANSITION_LINK;
+  switch (row.transition) {
+    case content::PAGE_TRANSITION_LINK:
+      transition = VisitItem::TRANSITION_LINK;
+      break;
+    case content::PAGE_TRANSITION_TYPED:
+      transition = VisitItem::TRANSITION_TYPED;
+      break;
+    case content::PAGE_TRANSITION_AUTO_BOOKMARK:
+      transition = VisitItem::TRANSITION_AUTO_BOOKMARK;
+      break;
+    case content::PAGE_TRANSITION_AUTO_SUBFRAME:
+      transition = VisitItem::TRANSITION_AUTO_SUBFRAME;
+      break;
+    case content::PAGE_TRANSITION_MANUAL_SUBFRAME:
+      transition = VisitItem::TRANSITION_MANUAL_SUBFRAME;
+      break;
+    case content::PAGE_TRANSITION_GENERATED:
+      transition = VisitItem::TRANSITION_GENERATED;
+      break;
+    case content::PAGE_TRANSITION_START_PAGE:
+      transition = VisitItem::TRANSITION_START_PAGE;
+      break;
+    case content::PAGE_TRANSITION_FORM_SUBMIT:
+      transition = VisitItem::TRANSITION_FORM_SUBMIT;
+      break;
+    case content::PAGE_TRANSITION_RELOAD:
+      transition = VisitItem::TRANSITION_RELOAD;
+      break;
+    case content::PAGE_TRANSITION_KEYWORD:
+      transition = VisitItem::TRANSITION_KEYWORD;
+      break;
+    case content::PAGE_TRANSITION_KEYWORD_GENERATED:
+      transition = VisitItem::TRANSITION_KEYWORD_GENERATED;
+      break;
+    default:
+      DCHECK(false);
+  }
+
+  visit_item->transition = transition;
+
+  return visit_item.Pass();
 }
 
 }  // namespace
@@ -128,33 +156,30 @@ void HistoryExtensionEventRouter::Observe(
 void HistoryExtensionEventRouter::HistoryUrlVisited(
     Profile* profile,
     const history::URLVisitedDetails* details) {
-  ListValue args;
-  DictionaryValue* dict = new DictionaryValue();
-  GetHistoryItemDictionary(details->row, dict);
-  args.Append(dict);
+  scoped_ptr<HistoryItem> history_item = GetHistoryItem(details->row);
+  scoped_ptr<ListValue> args = OnVisited::Create(*history_item);
 
   std::string json_args;
-  base::JSONWriter::Write(&args, false, &json_args);
+  base::JSONWriter::Write(args.get(), &json_args);
   DispatchEvent(profile, kOnVisited, json_args);
 }
 
 void HistoryExtensionEventRouter::HistoryUrlsRemoved(
     Profile* profile,
     const history::URLsDeletedDetails* details) {
-  ListValue args;
-  DictionaryValue* dict = new DictionaryValue();
-  dict->SetBoolean(kAllHistoryKey, details->all_history);
-  ListValue* urls = new ListValue();
-  for (std::set<GURL>::const_iterator iterator = details->urls.begin();
-      iterator != details->urls.end();
-      ++iterator) {
-    urls->Append(new StringValue(iterator->spec()));
-  }
-  dict->Set(kUrlsKey, urls);
-  args.Append(dict);
+  OnVisitRemoved::Removed removed;
+  removed.all_history = details->all_history;
 
+  std::vector<std::string>* urls = new std::vector<std::string>();
+  for (history::URLRows::const_iterator iterator = details->rows.begin();
+      iterator != details->rows.end(); ++iterator) {
+    urls->push_back(iterator->url().spec());
+  }
+  removed.urls.reset(urls);
+
+  scoped_ptr<ListValue> args = OnVisitRemoved::Create(removed);
   std::string json_args;
-  base::JSONWriter::Write(&args, false, &json_args);
+  base::JSONWriter::Write(args.get(), &json_args);
   DispatchEvent(profile, kOnVisitRemoved, json_args);
 }
 
@@ -163,7 +188,8 @@ void HistoryExtensionEventRouter::DispatchEvent(Profile* profile,
                                                 const std::string& json_args) {
   if (profile && profile->GetExtensionEventRouter()) {
     profile->GetExtensionEventRouter()->DispatchEventToRenderers(
-        event_name, json_args, profile, GURL());
+        event_name, json_args, profile, GURL(),
+        extensions::EventFilteringInfo());
   }
 }
 
@@ -173,13 +199,7 @@ void HistoryFunction::Run() {
   }
 }
 
-bool HistoryFunction::GetUrlFromValue(Value* value, GURL* url) {
-  std::string url_string;
-  if (!value->GetAsString(&url_string)) {
-    bad_message_ = true;
-    return false;
-  }
-
+bool HistoryFunction::ValidateUrl(const std::string& url_string, GURL* url) {
   GURL temp_url(url_string);
   if (!temp_url.is_valid()) {
     error_ = kInvalidUrlError;
@@ -189,18 +209,14 @@ bool HistoryFunction::GetUrlFromValue(Value* value, GURL* url) {
   return true;
 }
 
-bool HistoryFunction::GetTimeFromValue(Value* value, base::Time* time) {
-  double ms_from_epoch = 0.0;
-  if (!value->GetAsDouble(&ms_from_epoch))
-    return false;
+base::Time HistoryFunction::GetTime(double ms_from_epoch) {
   // The history service has seconds resolution, while javascript Date() has
   // milliseconds resolution.
   double seconds_from_epoch = ms_from_epoch / 1000.0;
   // Time::FromDoubleT converts double time 0 to empty Time object. So we need
   // to do special handling here.
-  *time = (seconds_from_epoch == 0) ?
+  return (seconds_from_epoch == 0) ?
       base::Time::UnixEpoch() : base::Time::FromDoubleT(seconds_from_epoch);
-  return true;
 }
 
 HistoryFunctionWithCallback::HistoryFunctionWithCallback() {
@@ -229,17 +245,16 @@ void HistoryFunctionWithCallback::SendResponseToCallback() {
 }
 
 bool GetVisitsHistoryFunction::RunAsyncImpl() {
-  DictionaryValue* json;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &json));
-
-  Value* value;
-  EXTENSION_FUNCTION_VALIDATE(json->Get(kUrlKey, &value));
+  scoped_ptr<GetVisits::Params> params(GetVisits::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
 
   GURL url;
-  if (!GetUrlFromValue(value, &url))
+  if (!ValidateUrl(params->details.url, &url))
     return false;
 
-  HistoryService* hs = profile()->GetHistoryService(Profile::EXPLICIT_ACCESS);
+  HistoryService* hs =
+      HistoryServiceFactory::GetForProfile(profile(),
+                                           Profile::EXPLICIT_ACCESS);
   hs->QueryURL(url,
                true,  // Retrieve full history of a URL.
                &cancelable_consumer_,
@@ -254,46 +269,40 @@ void GetVisitsHistoryFunction::QueryComplete(
     bool success,
     const history::URLRow* url_row,
     history::VisitVector* visits) {
-  ListValue* list = new ListValue();
+  VisitItemList visit_item_vec;
   if (visits && !visits->empty()) {
     for (history::VisitVector::iterator iterator = visits->begin();
          iterator != visits->end();
          ++iterator) {
-      AddVisitNode(*iterator, list);
+      visit_item_vec.push_back(make_linked_ptr(
+          GetVisitItem(*iterator).release()));
     }
   }
-  result_.reset(list);
+
+  results_ = GetVisits::Results::Create(visit_item_vec);
   SendAsyncResponse();
 }
 
 bool SearchHistoryFunction::RunAsyncImpl() {
-  DictionaryValue* json;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &json));
+  scoped_ptr<Search::Params> params(Search::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  // Initialize the HistoryQuery
-  string16 search_text;
-  EXTENSION_FUNCTION_VALIDATE(json->GetString(kTextKey, &search_text));
+  string16 search_text = UTF8ToUTF16(params->query.text);
 
   history::QueryOptions options;
   options.SetRecentDayRange(1);
   options.max_count = 100;
 
-  if (json->HasKey(kStartTimeKey)) {  // Optional.
-    Value* value;
-    EXTENSION_FUNCTION_VALIDATE(json->Get(kStartTimeKey, &value));
-    EXTENSION_FUNCTION_VALIDATE(GetTimeFromValue(value, &options.begin_time));
-  }
-  if (json->HasKey(kEndTimeKey)) {  // Optional.
-    Value* value;
-    EXTENSION_FUNCTION_VALIDATE(json->Get(kEndTimeKey, &value));
-    EXTENSION_FUNCTION_VALIDATE(GetTimeFromValue(value, &options.end_time));
-  }
-  if (json->HasKey(kMaxResultsKey)) {  // Optional.
-    EXTENSION_FUNCTION_VALIDATE(json->GetInteger(kMaxResultsKey,
-                                                 &options.max_count));
-  }
+  if (params->query.start_time.get())
+    options.begin_time = GetTime(*params->query.start_time);
+  if (params->query.end_time.get())
+    options.end_time = GetTime(*params->query.end_time);
+  if (params->query.max_results.get())
+    options.max_count = *params->query.max_results;
 
-  HistoryService* hs = profile()->GetHistoryService(Profile::EXPLICIT_ACCESS);
+  HistoryService* hs =
+      HistoryServiceFactory::GetForProfile(profile(),
+                                           Profile::EXPLICIT_ACCESS);
   hs->QueryHistory(search_text, options, &cancelable_consumer_,
                    base::Bind(&SearchHistoryFunction::SearchComplete,
                               base::Unretained(this)));
@@ -304,31 +313,31 @@ bool SearchHistoryFunction::RunAsyncImpl() {
 void SearchHistoryFunction::SearchComplete(
     HistoryService::Handle request_handle,
     history::QueryResults* results) {
-  ListValue* list = new ListValue();
+  HistoryItemList history_item_vec;
   if (results && !results->empty()) {
     for (history::QueryResults::URLResultVector::const_iterator iterator =
             results->begin();
          iterator != results->end();
         ++iterator) {
-      AddHistoryNode(**iterator, list);
+      history_item_vec.push_back(make_linked_ptr(
+          GetHistoryItem(**iterator).release()));
     }
   }
-  result_.reset(list);
+  results_ = Search::Results::Create(history_item_vec);
   SendAsyncResponse();
 }
 
 bool AddUrlHistoryFunction::RunImpl() {
-  DictionaryValue* json;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &json));
-
-  Value* value;
-  EXTENSION_FUNCTION_VALIDATE(json->Get(kUrlKey, &value));
+  scoped_ptr<AddUrl::Params> params(AddUrl::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
 
   GURL url;
-  if (!GetUrlFromValue(value, &url))
+  if (!ValidateUrl(params->details.url, &url))
     return false;
 
-  HistoryService* hs = profile()->GetHistoryService(Profile::EXPLICIT_ACCESS);
+  HistoryService* hs =
+      HistoryServiceFactory::GetForProfile(profile(),
+                                           Profile::EXPLICIT_ACCESS);
   hs->AddPage(url, history::SOURCE_EXTENSION);
 
   SendResponse(true);
@@ -336,17 +345,16 @@ bool AddUrlHistoryFunction::RunImpl() {
 }
 
 bool DeleteUrlHistoryFunction::RunImpl() {
-  DictionaryValue* json;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &json));
-
-  Value* value;
-  EXTENSION_FUNCTION_VALIDATE(json->Get(kUrlKey, &value));
+  scoped_ptr<DeleteUrl::Params> params(DeleteUrl::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
 
   GURL url;
-  if (!GetUrlFromValue(value, &url))
+  if (!ValidateUrl(params->details.url, &url))
     return false;
 
-  HistoryService* hs = profile()->GetHistoryService(Profile::EXPLICIT_ACCESS);
+  HistoryService* hs =
+      HistoryServiceFactory::GetForProfile(profile(),
+                                           Profile::EXPLICIT_ACCESS);
   hs->DeleteURL(url);
 
   SendResponse(true);
@@ -354,23 +362,19 @@ bool DeleteUrlHistoryFunction::RunImpl() {
 }
 
 bool DeleteRangeHistoryFunction::RunAsyncImpl() {
-  DictionaryValue* json;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &json));
+  scoped_ptr<DeleteRange::Params> params(DeleteRange::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  Value* value = NULL;
-  EXTENSION_FUNCTION_VALIDATE(json->Get(kStartTimeKey, &value));
-  base::Time begin_time;
-  EXTENSION_FUNCTION_VALIDATE(GetTimeFromValue(value, &begin_time));
-
-  EXTENSION_FUNCTION_VALIDATE(json->Get(kEndTimeKey, &value));
-  base::Time end_time;
-  EXTENSION_FUNCTION_VALIDATE(GetTimeFromValue(value, &end_time));
+  base::Time start_time = GetTime(params->range.start_time);
+  base::Time end_time = GetTime(params->range.end_time);
 
   std::set<GURL> restrict_urls;
-  HistoryService* hs = profile()->GetHistoryService(Profile::EXPLICIT_ACCESS);
+  HistoryService* hs =
+      HistoryServiceFactory::GetForProfile(profile(),
+                                           Profile::EXPLICIT_ACCESS);
   hs->ExpireHistoryBetween(
       restrict_urls,
-      begin_time,
+      start_time,
       end_time,
       &cancelable_consumer_,
       base::Bind(&DeleteRangeHistoryFunction::DeleteComplete,
@@ -385,7 +389,9 @@ void DeleteRangeHistoryFunction::DeleteComplete() {
 
 bool DeleteAllHistoryFunction::RunAsyncImpl() {
   std::set<GURL> restrict_urls;
-  HistoryService* hs = profile()->GetHistoryService(Profile::EXPLICIT_ACCESS);
+  HistoryService* hs =
+      HistoryServiceFactory::GetForProfile(profile(),
+                                           Profile::EXPLICIT_ACCESS);
   hs->ExpireHistoryBetween(
       restrict_urls,
       base::Time::UnixEpoch(),     // From the beginning of the epoch.

@@ -1,12 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_COMMON_MAC_FONT_DESCRIPTOR_H_
 #define CONTENT_COMMON_MAC_FONT_DESCRIPTOR_H_
-#pragma once
 
 #include "base/string16.h"
+#include "content/common/content_export.h"
 
 #ifdef __OBJC__
 @class NSFont;
@@ -15,7 +15,7 @@ class NSFont;
 #endif
 
 // Container to allow serializing an NSFont over IPC.
-struct FontDescriptor {
+struct CONTENT_EXPORT FontDescriptor {
   explicit FontDescriptor(NSFont* font);
   FontDescriptor(string16 name, float size);
 

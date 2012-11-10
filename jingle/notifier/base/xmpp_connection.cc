@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,16 +8,18 @@
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/string_piece.h"
-#include "jingle/notifier/base/chrome_async_socket.h"
-#include "jingle/notifier/base/task_pump.h"
+#include "jingle/glue/chrome_async_socket.h"
+#include "jingle/glue/task_pump.h"
+#include "jingle/glue/xmpp_client_socket_factory.h"
 #include "jingle/notifier/base/weak_xmpp_client.h"
-#include "jingle/notifier/base/xmpp_client_socket_factory.h"
 #include "net/base/ssl_config_service.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/url_request/url_request_context.h"
 #include "talk/xmpp/xmppclientsettings.h"
 
 namespace notifier {
+
+XmppConnection::Delegate::~Delegate() {}
 
 namespace {
 
@@ -32,14 +34,14 @@ buzz::AsyncSocket* CreateSocket(
   // XmppSocketAdapter.
   const size_t kReadBufSize = 64U * 1024U;
   const size_t kWriteBufSize = 64U * 1024U;
-  XmppClientSocketFactory* const client_socket_factory =
-      new XmppClientSocketFactory(
+  jingle_glue::XmppClientSocketFactory* const client_socket_factory =
+      new jingle_glue::XmppClientSocketFactory(
           net::ClientSocketFactory::GetDefaultFactory(),
           ssl_config,
           request_context_getter,
           use_fake_ssl_client_socket);
-  return new ChromeAsyncSocket(client_socket_factory,
-                               kReadBufSize, kWriteBufSize);
+  return new jingle_glue::ChromeAsyncSocket(client_socket_factory,
+                                            kReadBufSize, kWriteBufSize);
 }
 
 }  // namespace
@@ -47,8 +49,9 @@ buzz::AsyncSocket* CreateSocket(
 XmppConnection::XmppConnection(
     const buzz::XmppClientSettings& xmpp_client_settings,
     const scoped_refptr<net::URLRequestContextGetter>& request_context_getter,
-    Delegate* delegate, buzz::PreXmppAuth* pre_xmpp_auth)
-    : task_pump_(new TaskPump()),
+    Delegate* delegate,
+    buzz::PreXmppAuth* pre_xmpp_auth)
+    : task_pump_(new jingle_glue::TaskPump()),
       on_connect_called_(false),
       delegate_(delegate) {
   DCHECK(delegate_);
@@ -74,7 +77,7 @@ XmppConnection::XmppConnection(
 }
 
 XmppConnection::~XmppConnection() {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   ClearClient();
   task_pump_->Stop();
   MessageLoop* current_message_loop = MessageLoop::current();
@@ -87,7 +90,7 @@ XmppConnection::~XmppConnection() {
 }
 
 void XmppConnection::OnStateChange(buzz::XmppEngine::State state) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   VLOG(1) << "XmppClient state changed to " << state;
   if (!weak_xmpp_client_.get()) {
     LOG(DFATAL) << "weak_xmpp_client_ unexpectedly NULL";
@@ -125,12 +128,12 @@ void XmppConnection::OnStateChange(buzz::XmppEngine::State state) {
 }
 
 void XmppConnection::OnInputLog(const char* data, int len) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   VLOG(2) << "XMPP Input: " << base::StringPiece(data, len);
 }
 
 void XmppConnection::OnOutputLog(const char* data, int len) {
-  DCHECK(non_thread_safe_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   VLOG(2) << "XMPP Output: " << base::StringPiece(data, len);
 }
 

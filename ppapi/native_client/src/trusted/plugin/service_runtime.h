@@ -11,30 +11,36 @@
 #ifndef NATIVE_CLIENT_SRC_TRUSTED_PLUGIN_SERVICE_RUNTIME_H_
 #define NATIVE_CLIENT_SRC_TRUSTED_PLUGIN_SERVICE_RUNTIME_H_
 
+#include <map>
+
 #include "native_client/src/include/nacl_macros.h"
 #include "native_client/src/include/nacl_scoped_ptr.h"
 #include "native_client/src/include/nacl_string.h"
-#include "native_client/src/shared/imc/nacl_imc.h"
 #include "native_client/src/shared/platform/nacl_sync.h"
 #include "native_client/src/shared/srpc/nacl_srpc.h"
-#include "native_client/src/trusted/reverse_service/reverse_service.h"
-#include "native_client/src/trusted/plugin/utility.h"
 #include "native_client/src/trusted/desc/nacl_desc_wrapper.h"
+#include "native_client/src/trusted/nonnacl_util/sel_ldr_launcher.h"
+#include "native_client/src/trusted/plugin/utility.h"
+#include "native_client/src/trusted/reverse_service/reverse_service.h"
 #include "native_client/src/trusted/weak_ref/weak_ref.h"
 
+#include "ppapi/c/trusted/ppb_file_io_trusted.h"
 #include "ppapi/cpp/completion_callback.h"
 
 namespace nacl {
 class DescWrapper;
-struct SelLdrLauncher;
+}  // namespace
+
+namespace pp {
+class FileIO;
 }  // namespace
 
 namespace plugin {
 
-class BrowserInterface;
 class ErrorInfo;
 class Manifest;
 class Plugin;
+class PnaclCoordinator;
 class SrpcClient;
 class ServiceRuntime;
 
@@ -59,17 +65,16 @@ struct OpenManifestEntryResource {
   OpenManifestEntryResource(const std::string& target_url,
                             int32_t* descp,
                             ErrorInfo* infop,
-                            bool* portablep,
                             bool* op_complete)
       : url(target_url),
         out_desc(descp),
         error_info(infop),
-        is_portable(portablep),
+        pnacl_translate(false),
         op_complete_ptr(op_complete) {}
   std::string url;
   int32_t* out_desc;
   ErrorInfo* error_info;
-  bool* is_portable;
+  bool pnacl_translate;
   bool* op_complete_ptr;
 };
 
@@ -85,6 +90,41 @@ struct CloseManifestEntryResource {
   int32_t desc;
   bool* op_complete_ptr;
   bool* op_result_ptr;
+};
+
+enum QuotaDataType {
+  PepperQuotaType,
+  TempQuotaType
+};
+
+struct QuotaData {
+  QuotaData(QuotaDataType type_, PP_Resource resource_)
+      : type(type_), resource(resource_) {}
+  QuotaData()
+      : type(PepperQuotaType), resource(0) {}
+
+  QuotaDataType type;
+  PP_Resource resource;
+};
+
+struct QuotaRequest {
+ public:
+  QuotaRequest(QuotaData quota_data,
+               int64_t start_offset,
+               int64_t quota_bytes_requested,
+               int64_t* quota_bytes_granted,
+               bool* op_complete)
+      : data(quota_data),
+        offset(start_offset),
+        bytes_requested(quota_bytes_requested),
+        bytes_granted(quota_bytes_granted),
+        op_complete_ptr(op_complete) { }
+
+  QuotaData data;
+  int64_t offset;
+  int64_t bytes_requested;
+  int64_t* bytes_granted;
+  bool* op_complete_ptr;
 };
 
 // Do not invoke from the main thread, since the main methods will
@@ -122,6 +162,14 @@ class PluginReverseInterface: public nacl::ReverseInterface {
 
   virtual void ReportExitStatus(int exit_status);
 
+  virtual int64_t RequestQuotaForWrite(nacl::string file_id,
+                                       int64_t offset,
+                                       int64_t bytes_to_write);
+
+  void AddQuotaManagedFile(const nacl::string& file_id,
+                           const pp::FileIO& file_io);
+  void AddTempQuotaManagedFile(const nacl::string& file_id);
+
  protected:
   virtual void Log_MainThreadContinuation(LogToJavaScriptConsoleResource* p,
                                           int32_t err);
@@ -137,8 +185,20 @@ class PluginReverseInterface: public nacl::ReverseInterface {
       OpenManifestEntryResource* p,
       int32_t result);
 
+  virtual void BitcodeTranslate_MainThreadContinuation(
+      OpenManifestEntryResource* p,
+      int32_t result);
+
   virtual void CloseManifestEntry_MainThreadContinuation(
       CloseManifestEntryResource* cls,
+      int32_t err);
+
+  virtual void QuotaRequest_MainThreadContinuation(
+      QuotaRequest* request,
+      int32_t err);
+
+  virtual void QuotaRequest_MainThreadResponse(
+      QuotaRequest* request,
       int32_t err);
 
  private:
@@ -149,7 +209,10 @@ class PluginReverseInterface: public nacl::ReverseInterface {
   ServiceRuntime* service_runtime_;
   NaClMutex mu_;
   NaClCondVar cv_;
+  std::map<int64_t, QuotaData> quota_map_;
   bool shutting_down_;
+
+  nacl::scoped_ptr<PnaclCoordinator> pnacl_coordinator_;
 
   pp::CompletionCallback init_done_cb_;
   pp::CompletionCallback crash_cb_;
@@ -172,13 +235,15 @@ class ServiceRuntime {
   // to be started is passed through |nacl_file_desc|.  On success, returns
   // true.  On failure, returns false and |error_string| is set to something
   // describing the error.
-  bool Start(nacl::DescWrapper* nacl_file_desc, ErrorInfo* error_info);
+  bool Start(nacl::DescWrapper* nacl_file_desc,
+             ErrorInfo* error_info,
+             const nacl::string& url,
+             pp::CompletionCallback crash_cb);
 
   // Starts the application channel to the nexe.
   SrpcClient* SetupAppChannel();
 
-  bool Kill();
-  bool Log(int severity, nacl::string msg);
+  bool Log(int severity, const nacl::string& msg);
   Plugin* plugin() const { return plugin_; }
   void Shutdown();
 
@@ -189,8 +254,11 @@ class ServiceRuntime {
   int exit_status();  // const, but grabs mutex etc.
   void set_exit_status(int exit_status);
 
-  nacl::DescWrapper* async_receive_desc() { return async_receive_desc_.get(); }
-  nacl::DescWrapper* async_send_desc() { return async_send_desc_.get(); }
+  nacl::string GetCrashLogOutput();
+
+  // To establish quota callbacks the pnacl coordinator needs to communicate
+  // with the reverse interface.
+  PluginReverseInterface* rev_interface() const { return rev_interface_; }
 
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(ServiceRuntime);
@@ -199,16 +267,8 @@ class ServiceRuntime {
   NaClSrpcChannel command_channel_;
   Plugin* plugin_;
   bool should_report_uma_;
-  BrowserInterface* browser_interface_;
   nacl::ReverseService* reverse_service_;
-  nacl::scoped_ptr<nacl::SelLdrLauncher> subprocess_;
-
-  // We need two IMC sockets rather than one because IMC sockets are
-  // not full-duplex on Windows.
-  // See http://code.google.com/p/nativeclient/issues/detail?id=690.
-  // TODO(mseaborn): We should not have to work around this.
-  nacl::scoped_ptr<nacl::DescWrapper> async_receive_desc_;
-  nacl::scoped_ptr<nacl::DescWrapper> async_send_desc_;
+  nacl::scoped_ptr<nacl::SelLdrLauncherBase> subprocess_;
 
   nacl::WeakRefAnchor* anchor_;
 

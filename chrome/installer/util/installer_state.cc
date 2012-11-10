@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -117,14 +117,125 @@ void InstallerState::Initialize(const CommandLine& command_line,
         AddProductFromPreferences(BrowserDistribution::CHROME_BROWSER, prefs,
                                   machine_state);
     VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
-            << " distribution: " << p->distribution()->GetApplicationName();
+            << " distribution: " << p->distribution()->GetAppShortCutName();
   }
   if (prefs.install_chrome_frame()) {
     Product* p =
         AddProductFromPreferences(BrowserDistribution::CHROME_FRAME, prefs,
                                   machine_state);
     VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
-            << " distribution: " << p->distribution()->GetApplicationName();
+            << " distribution: " << p->distribution()->GetAppShortCutName();
+  }
+  if (prefs.install_chrome_app_host()) {
+    Product* p =
+        AddProductFromPreferences(BrowserDistribution::CHROME_APP_HOST, prefs,
+                                  machine_state);
+    VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
+            << " distribution: " << p->distribution()->GetAppShortCutName();
+  }
+
+  if (!is_uninstall && is_multi_install()) {
+    bool need_binaries = false;
+    if (FindProduct(BrowserDistribution::CHROME_APP_HOST)) {
+      // App Host will happily use Chrome at system level, or binaries at system
+      // level, even if app host is user level.
+      const ProductState* chrome_state = machine_state.GetProductState(
+          true,  // system level
+          BrowserDistribution::CHROME_BROWSER);
+      // If Chrome is at system-level, multi- or otherwise. We'll use it.
+      if (!chrome_state) {
+        const ProductState* binaries_state = machine_state.GetProductState(
+            true,  // system level
+            BrowserDistribution::CHROME_BINARIES);
+        if (!binaries_state)
+          need_binaries = true;
+      }
+    }
+
+    // Chrome/Chrome Frame multi need Binaries at their own level.
+    if (FindProduct(BrowserDistribution::CHROME_BROWSER))
+      need_binaries = true;
+
+    if (FindProduct(BrowserDistribution::CHROME_FRAME))
+      need_binaries = true;
+
+    if (need_binaries && !FindProduct(BrowserDistribution::CHROME_BINARIES)) {
+      // Force binaries to be installed/updated.
+      Product* p =
+          AddProductFromPreferences(BrowserDistribution::CHROME_BINARIES,
+                                    prefs,
+                                    machine_state);
+      VLOG(1) << "Install distribution: "
+              << p->distribution()->GetAppShortCutName();
+    }
+  }
+
+  if (is_uninstall && prefs.is_multi_install()) {
+    if (FindProduct(BrowserDistribution::CHROME_BROWSER)) {
+      const ProductState* chrome_frame_state = machine_state.GetProductState(
+          system_install(), BrowserDistribution::CHROME_FRAME);
+
+      if (chrome_frame_state != NULL &&
+          chrome_frame_state->uninstall_command().HasSwitch(
+              switches::kChromeFrameReadyMode) &&
+          !FindProduct(BrowserDistribution::CHROME_FRAME)) {
+        // Chrome Frame is installed in Ready Mode. Remove it along with Chrome.
+        Product* p = AddProductFromPreferences(
+            BrowserDistribution::CHROME_FRAME, prefs, machine_state);
+
+        VLOG(1) << "Uninstall distribution: "
+                << p->distribution()->GetAppShortCutName();
+      }
+    }
+
+    bool keep_binaries = false;
+    // Look for a product that is not the binaries and that is not being
+    // uninstalled. If not found, binaries are uninstalled too.
+    for (size_t i = 0; i < BrowserDistribution::NUM_TYPES; ++i) {
+      BrowserDistribution::Type type =
+          static_cast<BrowserDistribution::Type>(i);
+
+      if (type == BrowserDistribution::CHROME_BINARIES)
+        continue;
+
+      if (machine_state.GetProductState(system_install(), type) == NULL) {
+        // The product is not installed.
+        continue;
+      }
+
+      // The product is installed.
+
+      if (!FindProduct(type)) {
+        // The product is not being uninstalled.
+        if (type != BrowserDistribution::CHROME_APP_HOST) {
+          keep_binaries = true;
+          break;
+        } else {
+          // If binaries/chrome are at system-level, we can discard them at
+          // user-level...
+          if (!machine_state.GetProductState(
+                  true,  // system-level
+                  BrowserDistribution::CHROME_BROWSER) &&
+              !machine_state.GetProductState(
+                  true,  // system-level
+                  BrowserDistribution::CHROME_BINARIES)) {
+            // ... otherwise keep them.
+            keep_binaries = true;
+            break;
+          }
+
+        }
+      }
+
+      // The product is being uninstalled.
+    }
+    if (!keep_binaries) {
+      Product* p =
+          AddProductFromPreferences(BrowserDistribution::CHROME_BINARIES, prefs,
+                                    machine_state);
+      VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
+              << " distribution: " << p->distribution()->GetAppShortCutName();
+    }
   }
 
   BrowserDistribution* operand = NULL;
@@ -141,17 +252,26 @@ void InstallerState::Initialize(const CommandLine& command_line,
     operand = multi_package_distribution_;
     operation_ = MULTI_UPDATE;
   } else {
-    // Initial and over installs will always take place under one of the
-    // product app guids.  Chrome Frame's will be used if only Chrome Frame
-    // is being installed.  In all other cases, Chrome's is used.
     operation_ = MULTI_INSTALL;
   }
 
+  // Initial, over, and un-installs will always take place under one of the
+  // product app guids (Chrome, Chrome Frame, or App Host, in order of
+  // preference).
   if (operand == NULL) {
+    BrowserDistribution::Type operand_distribution_type =
+        BrowserDistribution::CHROME_BINARIES;
+    if (prefs.install_chrome())
+      operand_distribution_type = BrowserDistribution::CHROME_BROWSER;
+    else if (prefs.install_chrome_frame())
+      operand_distribution_type = BrowserDistribution::CHROME_FRAME;
+    else if (prefs.install_chrome_app_host())
+      operand_distribution_type = BrowserDistribution::CHROME_APP_HOST;
+    else
+      NOTREACHED();
+
     operand = BrowserDistribution::GetSpecificDistribution(
-        prefs.install_chrome() ?
-            BrowserDistribution::CHROME_BROWSER :
-            BrowserDistribution::CHROME_FRAME);
+        operand_distribution_type);
   }
 
   state_key_ = operand->GetStateKey();
@@ -285,7 +405,7 @@ Product* InstallerState::AddProductInDirectory(const FilePath* product_dir,
     state_key_ = the_product.distribution()->GetStateKey();
 
   products_.push_back(product->release());
-  return products_[products_->size() - 1];
+  return products_[products_.size() - 1];
 }
 
 Product* InstallerState::AddProduct(scoped_ptr<Product>* product) {
@@ -350,7 +470,7 @@ bool InstallerState::RemoveProduct(const Product* product) {
   ScopedVector<Product>::iterator it =
       std::find(products_.begin(), products_.end(), product);
   if (it != products_.end()) {
-    products_->erase(it);
+    products_.weak_erase(it);
     return true;
   }
   return false;
@@ -412,7 +532,7 @@ Version* InstallerState::GetCurrentVersion(
     if (version == NULL)
       version = &product_state->version();
 
-    current_version.reset(version->Clone());
+    current_version.reset(new Version(*version));
   }
 
   return current_version.release();
@@ -467,7 +587,7 @@ void InstallerState::RemoveOldVersionDirectories(
     const Version& new_version,
     Version* existing_version,
     const FilePath& temp_path) const {
-  scoped_ptr<Version> version;
+  Version version;
   std::vector<FilePath> key_files;
   scoped_ptr<WorkItem> item;
 
@@ -478,12 +598,12 @@ void InstallerState::RemoveOldVersionDirectories(
   for (FilePath next_version = version_enum.Next(); !next_version.empty();
        next_version = version_enum.Next()) {
     FilePath dir_name(next_version.BaseName());
-    version.reset(Version::GetVersionFromString(WideToASCII(dir_name.value())));
+    version = Version(WideToASCII(dir_name.value()));
     // Delete the version folder if it is less than the new version and not
     // equal to the old version (if we have an old version).
-    if (version.get() &&
-        version->CompareTo(new_version) < 0 &&
-        (existing_version == NULL || !version->Equals(*existing_version))) {
+    if (version.IsValid() &&
+        version.CompareTo(new_version) < 0 &&
+        (existing_version == NULL || !version.Equals(*existing_version))) {
       // Collect the key files (relative to the version dir) for all products.
       key_files.clear();
       std::for_each(products_.begin(), products_.end(),

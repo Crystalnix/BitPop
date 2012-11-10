@@ -11,7 +11,7 @@ namespace gles2 {
 
 class BufferManagerTest : public testing::Test {
  public:
-  BufferManagerTest() {
+  BufferManagerTest() : manager_(NULL) {
   }
   ~BufferManagerTest() {
     manager_.Destroy(false);
@@ -65,6 +65,10 @@ TEST_F(BufferManagerTest, Basic) {
   EXPECT_TRUE(manager_.GetBufferInfo(kClientBuffer2Id) == NULL);
   // Check trying to a remove non-existent buffers does not crash.
   manager_.RemoveBufferInfo(kClientBuffer2Id);
+  // Check that it gets deleted when the last reference is released.
+  EXPECT_CALL(*gl_, DeleteBuffersARB(1, ::testing::Pointee(kServiceBuffer1Id)))
+      .Times(1)
+      .RetiresOnSaturation();
   // Check we can't get the buffer after we remove it.
   manager_.RemoveBufferInfo(kClientBuffer1Id);
   EXPECT_TRUE(manager_.GetBufferInfo(kClientBuffer1Id) == NULL);
@@ -103,6 +107,11 @@ TEST_F(BufferManagerTest, SetRange) {
   EXPECT_FALSE(info->SetRange(0, sizeof(data) + 1, data));
   EXPECT_FALSE(info->SetRange(-1, sizeof(data), data));
   EXPECT_FALSE(info->SetRange(0, -1, data));
+  manager_.SetInfo(info, 1, GL_STATIC_DRAW);
+  const int size = 0x20000;
+  scoped_array<uint8> temp(new uint8[size]);
+  EXPECT_FALSE(info->SetRange(0 - size, size, temp.get()));
+  EXPECT_FALSE(info->SetRange(1, size / 2, temp.get()));
 }
 
 TEST_F(BufferManagerTest, GetRange) {
@@ -123,6 +132,10 @@ TEST_F(BufferManagerTest, GetRange) {
   EXPECT_TRUE(info->GetRange(0, sizeof(data) + 1) == NULL);
   EXPECT_TRUE(info->GetRange(-1, sizeof(data)) == NULL);
   EXPECT_TRUE(info->GetRange(-0, -1) == NULL);
+  const int size = 0x20000;
+  manager_.SetInfo(info, size / 2, GL_STATIC_DRAW);
+  EXPECT_TRUE(info->GetRange(0 - size, size) == NULL);
+  EXPECT_TRUE(info->GetRange(1, size / 2) == NULL);
 }
 
 TEST_F(BufferManagerTest, GetMaxValueForRangeUint8) {
@@ -233,6 +246,11 @@ TEST_F(BufferManagerTest, UseDeletedBuffer) {
   manager_.RemoveBufferInfo(kClientBufferId);
   // Use it after removing
   manager_.SetInfo(info, sizeof(data), GL_STATIC_DRAW);
+  // Check that it gets deleted when the last reference is released.
+  EXPECT_CALL(*gl_, DeleteBuffersARB(1, ::testing::Pointee(kServiceBufferId)))
+      .Times(1)
+      .RetiresOnSaturation();
+  info = NULL;
 }
 
 }  // namespace gles2

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,16 @@
 
 #include "base/stringprintf.h"
 #include "base/values.h"
-#include "chrome/common/net/http_return.h"
+#include "chrome/common/cloud_print/cloud_print_helpers.h"
 #include "chrome/service/cloud_print/cloud_print_consts.h"
 #include "chrome/service/cloud_print/cloud_print_helpers.h"
 #include "chrome/service/cloud_print/cloud_print_token_store.h"
 #include "chrome/service/net/service_url_request_context.h"
 #include "chrome/service/service_process.h"
 #include "googleurl/src/gurl.h"
+#include "net/base/load_flags.h"
+#include "net/http/http_status_code.h"
+#include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
 
 CloudPrintURLFetcher::CloudPrintURLFetcher()
@@ -20,7 +23,7 @@ CloudPrintURLFetcher::CloudPrintURLFetcher()
       num_retries_(0) {
 }
 
-bool CloudPrintURLFetcher::IsSameRequest(const content::URLFetcher* source) {
+bool CloudPrintURLFetcher::IsSameRequest(const net::URLFetcher* source) {
   return (request_.get() == source);
 }
 
@@ -30,7 +33,7 @@ void CloudPrintURLFetcher::StartGetRequest(
     int max_retries,
     const std::string& additional_headers) {
   StartRequestHelper(url,
-                     content::URLFetcher::GET,
+                     net::URLFetcher::GET,
                      delegate,
                      max_retries,
                      std::string(),
@@ -46,7 +49,7 @@ void CloudPrintURLFetcher::StartPostRequest(
     const std::string& post_data,
     const std::string& additional_headers) {
   StartRequestHelper(url,
-                     content::URLFetcher::POST,
+                     net::URLFetcher::POST,
                      delegate,
                      max_retries,
                      post_data_mime_type,
@@ -55,7 +58,7 @@ void CloudPrintURLFetcher::StartPostRequest(
 }
 
 void CloudPrintURLFetcher::OnURLFetchComplete(
-    const content::URLFetcher* source) {
+    const net::URLFetcher* source) {
   VLOG(1) << "CP_PROXY: OnURLFetchComplete, url: " << source->GetURL()
           << ", response code: " << source->GetResponseCode();
   // Make sure we stay alive through the body of this function.
@@ -72,7 +75,7 @@ void CloudPrintURLFetcher::OnURLFetchComplete(
 
   // If we get auth error, notify delegate and check if it wants to proceed.
   if (action == CONTINUE_PROCESSING &&
-      source->GetResponseCode() == RC_FORBIDDEN) {
+      source->GetResponseCode() == net::HTTP_FORBIDDEN) {
     action = delegate_->OnRequestAuthError();
   }
 
@@ -90,7 +93,7 @@ void CloudPrintURLFetcher::OnURLFetchComplete(
       // to a non-cloudprint-server URL eg. for authentication).
       bool succeeded = false;
       DictionaryValue* response_dict = NULL;
-      CloudPrintHelpers::ParseResponseJSON(data, &succeeded, &response_dict);
+      cloud_print::ParseResponseJSON(data, &succeeded, &response_dict);
       if (response_dict)
         action = delegate_->HandleJSONData(source,
                                            source->GetURL(),
@@ -111,7 +114,7 @@ void CloudPrintURLFetcher::OnURLFetchComplete(
     // If we receive error code from the server "Media Type Not Supported",
     // there is no reason to retry, request will never succeed.
     // In that case we should call OnRequestGiveUp() right away.
-    if (source->GetResponseCode() == RC_UNSUPPORTED_MEDIA_TYPE)
+    if (source->GetResponseCode() == net::HTTP_UNSUPPORTED_MEDIA_TYPE)
       num_retries_ = source->GetMaxRetries();
 
     ++num_retries_;
@@ -124,14 +127,15 @@ void CloudPrintURLFetcher::OnURLFetchComplete(
       // reached. Try again. Set up the request headers again because the token
       // may have changed.
       SetupRequestHeaders();
-      request_->StartWithRequestContextGetter(GetRequestContextGetter());
+      request_->SetRequestContext(GetRequestContextGetter());
+      request_->Start();
     }
   }
 }
 
 void CloudPrintURLFetcher::StartRequestHelper(
     const GURL& url,
-    content::URLFetcher::RequestType request_type,
+    net::URLFetcher::RequestType request_type,
     Delegate* delegate,
     int max_retries,
     const std::string& post_data_mime_type,
@@ -140,14 +144,16 @@ void CloudPrintURLFetcher::StartRequestHelper(
   DCHECK(delegate);
   // Persist the additional headers in case we need to retry the request.
   additional_headers_ = additional_headers;
-  request_.reset(content::URLFetcher::Create(url, request_type, this));
+  request_.reset(net::URLFetcher::Create(url, request_type, this));
   request_->SetRequestContext(GetRequestContextGetter());
   // Since we implement our own retry logic, disable the retry in URLFetcher.
   request_->SetAutomaticallyRetryOn5xx(false);
   request_->SetMaxRetries(max_retries);
   delegate_ = delegate;
   SetupRequestHeaders();
-  if (request_type == content::URLFetcher::POST) {
+  request_->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
+                         net::LOAD_DO_NOT_SAVE_COOKIES);
+  if (request_type == net::URLFetcher::POST) {
     request_->SetUploadData(post_data_mime_type, post_data);
   }
 
@@ -158,7 +164,7 @@ void CloudPrintURLFetcher::SetupRequestHeaders() {
   std::string headers = delegate_->GetAuthHeader();
   if (!headers.empty())
     headers += "\r\n";
-  headers += kChromeCloudPrintProxyHeader;
+  headers += cloud_print::kChromeCloudPrintProxyHeader;
   if (!additional_headers_.empty()) {
     headers += "\r\n";
     headers += additional_headers_;

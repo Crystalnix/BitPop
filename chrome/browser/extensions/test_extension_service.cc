@@ -1,11 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_sync_data.h"
 #include "chrome/browser/extensions/test_extension_service.h"
+#include "sync/api/sync_error_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using extensions::Extension;
 
 TestExtensionService::~TestExtensionService() {}
 
@@ -14,7 +17,13 @@ const ExtensionSet* TestExtensionService::extensions() const {
   return NULL;
 }
 
-PendingExtensionManager* TestExtensionService::pending_extension_manager() {
+const ExtensionSet* TestExtensionService::disabled_extensions() const {
+  ADD_FAILURE();
+  return NULL;
+}
+
+extensions::PendingExtensionManager*
+TestExtensionService::pending_extension_manager() {
   ADD_FAILURE();
   return NULL;
 }
@@ -23,9 +32,9 @@ bool TestExtensionService::UpdateExtension(
     const std::string& id,
     const FilePath& path,
     const GURL& download_url,
-    CrxInstaller** out_crx_installer) {
+    extensions::CrxInstaller** out_crx_installer) {
   ADD_FAILURE();
-  return NULL;
+  return false;
 }
 
 const Extension* TestExtensionService::GetExtensionById(
@@ -65,29 +74,30 @@ void TestExtensionService::CheckForUpdatesSoon() {
   ADD_FAILURE();
 }
 
-SyncError TestExtensionService::MergeDataAndStartSyncing(
-    syncable::ModelType type,
-    const SyncDataList& initial_sync_data,
-    SyncChangeProcessor* sync_processor) {
+syncer::SyncError TestExtensionService::MergeDataAndStartSyncing(
+    syncer::ModelType type,
+    const syncer::SyncDataList& initial_sync_data,
+    scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
+    scoped_ptr<syncer::SyncErrorFactory> sync_error_factory) {
   ADD_FAILURE();
-  return SyncError();
+  return syncer::SyncError();
 }
 
-void TestExtensionService::StopSyncing(syncable::ModelType type) {
+void TestExtensionService::StopSyncing(syncer::ModelType type) {
   ADD_FAILURE();
 }
 
-SyncDataList TestExtensionService::GetAllSyncData(
-    syncable::ModelType type) const {
+syncer::SyncDataList TestExtensionService::GetAllSyncData(
+    syncer::ModelType type) const {
   ADD_FAILURE();
-  return SyncDataList();
+  return syncer::SyncDataList();
 }
 
-SyncError TestExtensionService::ProcessSyncChanges(
+syncer::SyncError TestExtensionService::ProcessSyncChanges(
     const tracked_objects::Location& from_here,
-    const SyncChangeList& change_list) {
+    const syncer::SyncChangeList& change_list) {
   ADD_FAILURE();
-  return SyncError();
+  return syncer::SyncError();
 }
 
 bool TestExtensionService::is_ready() {
@@ -102,5 +112,10 @@ void TestExtensionService::AddExtension(const Extension* extension) {
 void TestExtensionService::UnloadExtension(
     const std::string& extension_id,
     extension_misc::UnloadedExtensionReason reason) {
+  ADD_FAILURE();
+}
+
+void TestExtensionService::SyncExtensionChangeIfNeeded(
+    const Extension& extension) {
   ADD_FAILURE();
 }

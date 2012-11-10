@@ -41,19 +41,16 @@
 #include "webkit/tools/test_shell/drop_delegate.h"
 #endif
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 #include <gdk/gdk.h>
 #endif
 
-struct WebPreferences;
 class GURL;
 class TestShell;
 class WebWidgetHost;
 
 namespace WebKit {
 class WebDeviceOrientationClient;
-class WebSpeechInputController;
-class WebSpeechInputListener;
 class WebStorageNamespace;
 struct WebWindowFeatures;
 }
@@ -84,15 +81,15 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
       WebKit::WebFrame* creator,
       const WebKit::WebURLRequest& request,
       const WebKit::WebWindowFeatures& features,
-      const WebKit::WebString& frame_name);
+      const WebKit::WebString& frame_name,
+      WebKit::WebNavigationPolicy policy);
   virtual WebKit::WebWidget* createPopupMenu(WebKit::WebPopupType popup_type);
   virtual WebKit::WebWidget* createPopupMenu(
       const WebKit::WebPopupMenuInfo& info);
   virtual WebKit::WebStorageNamespace* createSessionStorageNamespace(
       unsigned quota);
   virtual WebKit::WebGraphicsContext3D* createGraphicsContext3D(
-      const WebKit::WebGraphicsContext3D::Attributes& attributes,
-      bool direct);
+      const WebKit::WebGraphicsContext3D::Attributes& attributes);
   virtual void didAddMessageToConsole(
       const WebKit::WebConsoleMessage& message,
       const WebKit::WebString& source_name, unsigned source_line);
@@ -133,12 +130,11 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
       const WebKit::WebString& default_value, WebKit::WebString* actual_value);
   virtual bool runModalBeforeUnloadDialog(
       WebKit::WebFrame* frame, const WebKit::WebString& message);
-  virtual void showContextMenu(
-      WebKit::WebFrame* frame, const WebKit::WebContextMenuData& data);
   virtual void setStatusText(const WebKit::WebString& text);
   virtual void startDragging(
-      const WebKit::WebDragData& data, WebKit::WebDragOperationsMask mask,
-      const WebKit::WebImage& image, const WebKit::WebPoint& offset);
+      WebKit::WebFrame* frame, const WebKit::WebDragData& data,
+      WebKit::WebDragOperationsMask mask, const WebKit::WebImage& image,
+      const WebKit::WebPoint& offset);
   virtual void navigateBackForwardSoon(int offset);
   virtual int historyBackListCount();
   virtual int historyForwardListCount();
@@ -204,7 +200,6 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
       WebKit::WebFrame*, const WebKit::WebURLError&);
   virtual void didCommitProvisionalLoad(
       WebKit::WebFrame*, bool is_new_navigation);
-  virtual void didClearWindowObject(WebKit::WebFrame*);
   virtual void didReceiveTitle(
       WebKit::WebFrame*, const WebKit::WebString& title,
       WebKit::WebTextDirection direction);
@@ -245,6 +240,8 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
   virtual webkit::npapi::WebPluginDelegate* CreatePluginDelegate(
       const FilePath& url,
       const std::string& mime_type) OVERRIDE;
+  virtual WebKit::WebPlugin* CreatePluginReplacement(
+      const FilePath& file_path) OVERRIDE;
   virtual void CreatedPluginWindow(
       gfx::PluginWindowHandle handle) OVERRIDE;
   virtual void WillDestroyPluginWindow(
@@ -267,12 +264,6 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
 #if defined(OS_WIN)
   IDropTarget* drop_delegate() { return drop_delegate_.get(); }
 #endif
-  const CapturedContextMenuEvents& captured_context_menu_events() const {
-    return captured_context_menu_events_;
-  }
-  void clear_captured_context_menu_events() {
-    captured_context_menu_events_.clear();
-  }
 
   void set_pending_extra_data(TestShellExtraData* extra_data) {
     pending_extra_data_.reset(extra_data);
@@ -405,7 +396,6 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
   ResourceMap resource_identifier_map_;
   std::string GetResourceDescription(uint32 identifier);
 
-  CapturedContextMenuEvents captured_context_menu_events_;
   scoped_ptr<WebKit::WebContextMenuData> last_context_menu_data_;
 
   WebCursor current_cursor_;
@@ -418,7 +408,7 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
   scoped_refptr<TestDropDelegate> drop_delegate_;
 #endif
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
   // The type of cursor the window is currently using.
   // Used for judging whether a new SetCursor call is actually changing the
   // cursor.

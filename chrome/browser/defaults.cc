@@ -6,34 +6,40 @@
 
 namespace browser_defaults {
 
-#if defined(USE_AURA) || defined(OS_CHROMEOS)
+#if defined(USE_AURA)
 const bool kOSSupportsOtherBrowsers = false;
 #else
 const bool kOSSupportsOtherBrowsers = true;
 #endif
 
-#if defined(OS_CHROMEOS)
+#if defined(TOOLKIT_GTK)
+const bool kShowCancelButtonInTaskManager = true;
+#else
+const bool kShowCancelButtonInTaskManager = false;
+#endif
 
+#if defined(OS_CHROMEOS)
 // Make the regular omnibox text two points larger than the nine-point font
 // used in the tab strip (11pt / 72pt/in * 96px/in = 14.667px).
 const int kAutocompleteEditFontPixelSize = 15;
 
 const int kAutocompleteEditFontPixelSizeInPopup = 10;
 
-const SessionStartupPref::Type kDefaultSessionStartupType =
-    SessionStartupPref::LAST;
-const int kMiniTabWidth = 64;
 const bool kCanToggleSystemTitleBar = false;
 const bool kRestorePopups = false;
 const bool kShowImportOnBookmarkBar = false;
-const bool kShowExitMenuItem = true;
+const bool kShowExitMenuItem = false;
+const bool kShowFeedbackMenuItem = true;
+const bool kShowHelpMenuItemIcon = true;
+const bool kShowSyncSetupMenuItem = false;
+const bool kShowUpgradeMenuItem = false;
 const bool kDownloadPageHasShowInFolder = true;
-const bool kSizeTabButtonToTopOfTabStrip = true;
+const bool kSizeTabButtonToTopOfTabStrip = false;
 const bool kSyncAutoStarts = true;
 const bool kShowOtherBrowsersInAboutMemory = false;
 const bool kAlwaysOpenIncognitoWindow = true;
 
-#elif defined(TOOLKIT_USES_GTK)
+#elif defined(TOOLKIT_GTK)
 
 // 14px = 10.5pt @ 96dpi.
 const int kAutocompleteEditFontPixelSize = 14;
@@ -43,23 +49,23 @@ const int kAutocompleteEditFontPixelSize = 14;
 const int kAutocompleteEditFontPixelSizeInPopup =
     kAutocompleteEditFontPixelSize * 5.0 / 6.0;
 
-const bool kShowCancelButtonInTaskManager = true;
-
 #if defined(TOOLKIT_VIEWS)
 const bool kCanToggleSystemTitleBar = false;
 #else
 const bool kCanToggleSystemTitleBar = true;
-#endif
+#endif  // defined(TOOLKIT_VIEWS)
 
+#endif  // defined(OS_CHROMEOS)
+
+#if defined(TOOLKIT_VIEWS)
+// Windows and Chrome OS have bigger shadows in the tab art.
+const int kMiniTabWidth = 64;
 #else
-const bool kShowCancelButtonInTaskManager = false;
-#endif
+const int kMiniTabWidth = 56;
+#endif  // defined(TOOLKIT_VIEWS)
 
 #if !defined(OS_CHROMEOS)
 
-const SessionStartupPref::Type kDefaultSessionStartupType =
-    SessionStartupPref::DEFAULT;
-const int kMiniTabWidth = 56;
 const bool kRestorePopups = false;
 const bool kShowImportOnBookmarkBar = true;
 const bool kDownloadPageHasShowInFolder = true;
@@ -68,13 +74,22 @@ const bool kShowExitMenuItem = false;
 #else
 const bool kShowExitMenuItem = true;
 #endif
+const bool kShowFeedbackMenuItem = false;
+const bool kShowHelpMenuItemIcon = false;
+const bool kShowSyncSetupMenuItem = true;
+const bool kShowUpgradeMenuItem = true;
 const bool kSizeTabButtonToTopOfTabStrip = false;
+#if defined(OS_ANDROID)
+const bool kSyncAutoStarts = true;
+const bool kShowOtherBrowsersInAboutMemory = false;
+#else
 const bool kSyncAutoStarts = false;
 const bool kShowOtherBrowsersInAboutMemory = true;
+#endif
 const bool kAlwaysOpenIncognitoWindow = false;
 #endif
 
-#if defined(OS_MACOSX)
+#if defined(OS_CHROMEOS) || defined(OS_MACOSX)
 const bool kBrowserAliveWithNoWindows = true;
 #else
 const bool kBrowserAliveWithNoWindows = false;
@@ -87,6 +102,18 @@ const ui::ResourceBundle::FontStyle kAssociatedNetworkFontStyle =
     ui::ResourceBundle::BoldFont;
 
 const int kInfoBarBorderPaddingVertical = 5;
+
+#if defined(OS_ANDROID)
+const bool kPasswordEchoEnabled = true;
+#else
+const bool kPasswordEchoEnabled = false;
+#endif
+
+#if defined(OS_CHROMEOS)
+const bool kAppRestoreSession = true;
+#else
+const bool kAppRestoreSession = false;
+#endif
 
 bool bookmarks_enabled = true;
 

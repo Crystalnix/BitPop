@@ -11,23 +11,13 @@
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/imageburner/burn_manager.h"
-#include "chrome/browser/chromeos/system/statistics_provider.h"
-#include "content/public/browser/browser_context.h"
-#include "content/public/browser/download_item.h"
-#include "content/public/browser/download_manager.h"
-#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "googleurl/src/gurl.h"
-
-using content::DownloadItem;
 
 namespace chromeos {
 namespace imageburner {
 
 namespace {
-
-// Name for hwid in machine statistics.
-const char kHwidStatistic[] = "hardware_class";
 
 const char kImageZipFileName[] = "chromeos_image.bin.zip";
 
@@ -36,7 +26,9 @@ const uint64 kMinDeviceSize = static_cast<uint64>(3.9 * 1000 * 1000 * 1000);
 
 // Returns true when |disk| is a device on which we can burn recovery image.
 bool IsBurnableDevice(const disks::DiskMountManager::Disk& disk) {
-  return disk.is_parent() && !disk.on_boot_device();
+  return disk.is_parent() && !disk.on_boot_device() && disk.has_media() &&
+         (disk.device_type() == DEVICE_TYPE_USB ||
+          disk.device_type() == DEVICE_TYPE_SD);
 }
 
 class BurnControllerImpl
@@ -44,18 +36,12 @@ class BurnControllerImpl
       public disks::DiskMountManager::Observer,
       public BurnLibrary::Observer,
       public NetworkLibrary::NetworkManagerObserver,
-      public DownloadItem::Observer,
-      public content::DownloadManager::Observer,
-      public Downloader::Listener,
       public StateMachine::Observer,
-      public BurnManager::Delegate {
+      public BurnManager::Delegate,
+      public BurnManager::Observer {
  public:
-  explicit BurnControllerImpl(content::WebContents* contents,
-                              BurnController::Delegate* delegate)
-      : web_contents_(contents),
-        download_manager_(NULL),
-        active_download_item_(NULL),
-        burn_manager_(NULL),
+  explicit BurnControllerImpl(BurnController::Delegate* delegate)
+      : burn_manager_(NULL),
         state_machine_(NULL),
         observing_burn_lib_(false),
         working_(false),
@@ -63,17 +49,18 @@ class BurnControllerImpl
     disks::DiskMountManager::GetInstance()->AddObserver(this);
     CrosLibrary::Get()->GetNetworkLibrary()->AddNetworkManagerObserver(this);
     burn_manager_ = BurnManager::GetInstance();
+    burn_manager_->AddObserver(this);
     state_machine_ = burn_manager_->state_machine();
     state_machine_->AddObserver(this);
   }
 
   virtual ~BurnControllerImpl() {
-    disks::DiskMountManager::GetInstance()->RemoveObserver(this);
     CrosLibrary::Get()->GetBurnLibrary()->RemoveObserver(this);
-    CrosLibrary::Get()->GetNetworkLibrary()->RemoveNetworkManagerObserver(this);
-    CleanupDownloadObjects();
     if (state_machine_)
       state_machine_->RemoveObserver(this);
+    burn_manager_->RemoveObserver(this);
+    CrosLibrary::Get()->GetNetworkLibrary()->RemoveNetworkManagerObserver(this);
+    disks::DiskMountManager::GetInstance()->RemoveObserver(this);
   }
 
   // disks::DiskMountManager::Observer interface.
@@ -141,55 +128,27 @@ class BurnControllerImpl
       ProcessError(IDS_IMAGEBURN_NETWORK_ERROR);
   }
 
-  // DownloadItem::Observer interface.
-  virtual void OnDownloadUpdated(DownloadItem* download) OVERRIDE {
-    if (download->IsCancelled()) {
-      DownloadCompleted(false);
-      DCHECK(!active_download_item_);
-    } else if (download->IsComplete()) {
-      burn_manager_->set_final_zip_file_path(download->GetFullPath());
-      DownloadCompleted(true);
-      DCHECK(!active_download_item_);
-    } else if (download->IsPartialDownload() &&
-               state_machine_->state() == StateMachine::DOWNLOADING) {
-      base::TimeDelta remaining_time;
-      download->TimeRemaining(&remaining_time);
-      delegate_->OnProgressWithRemainingTime(
-          DOWNLOADING, download->GetReceivedBytes(), download->GetTotalBytes(),
-          remaining_time);
+  // BurnManager::Observer override.
+  virtual void OnDownloadUpdated(
+      int64 received_bytes,
+      int64 total_bytes,
+      const base::TimeDelta& time_remaining) OVERRIDE {
+    if (state_machine_->state() == StateMachine::DOWNLOADING) {
+      delegate_->OnProgressWithRemainingTime(DOWNLOADING,
+                                             received_bytes,
+                                             total_bytes,
+                                             time_remaining);
     }
   }
 
-  virtual void OnDownloadOpened(DownloadItem* download) OVERRIDE {
-    if (download->GetSafetyState() == DownloadItem::DANGEROUS)
-      download->DangerousDownloadValidated();
+  // BurnManager::Observer override.
+  virtual void OnDownloadCancelled() OVERRIDE {
+    DownloadCompleted(false);
   }
 
-  // DownloadManager::Observer interface.
-  virtual void ModelChanged() OVERRIDE {
-    // Find our item and observe it.
-    std::vector<DownloadItem*> downloads;
-    download_manager_->GetTemporaryDownloads(
-        burn_manager_->GetImageDir(), &downloads);
-    if (active_download_item_)
-      return;
-    for (std::vector<DownloadItem*>::const_iterator it = downloads.begin();
-         it != downloads.end();
-         ++it) {
-      if ((*it)->GetOriginalUrl() == image_download_url_) {
-        (*it)->AddObserver(this);
-        active_download_item_ = *it;
-        break;
-      }
-    }
-  }
-
-  // Downloader::Listener interface.
-  virtual void OnBurnDownloadStarted(bool success) OVERRIDE {
-    if (success)
-      state_machine_->OnDownloadStarted();
-    else
-      DownloadCompleted(false);
+  // BurnManager::Observer override.
+  virtual void OnDownloadCompleted() OVERRIDE {
+    DownloadCompleted(true);
   }
 
   // StateMachine::Observer interface.
@@ -212,38 +171,30 @@ class BurnControllerImpl
     if (success) {
       zip_image_file_path_ =
           burn_manager_->GetImageDir().Append(kImageZipFileName);
-      burn_manager_->FetchConfigFile(web_contents_, this);
+      burn_manager_->FetchConfigFile(this);
     } else {
       DownloadCompleted(success);
     }
   }
 
   // Part of BurnManager::Delegate interface.
-  virtual void OnConfigFileFetched(const ConfigFile& config_file, bool success)
-      OVERRIDE {
-    if (!success || !ExtractInfoFromConfigFile(config_file)) {
+  virtual void OnConfigFileFetched(bool success,
+                                   const std::string& image_file_name,
+                                   const GURL& image_download_url) OVERRIDE {
+    if (!success) {
       DownloadCompleted(false);
       return;
     }
+    image_file_name_ = image_file_name;
 
     if (state_machine_->download_finished()) {
       BurnImage();
       return;
     }
 
-    if (!download_manager_) {
-      download_manager_ =
-          web_contents_->GetBrowserContext()->GetDownloadManager();
-      download_manager_->AddObserver(this);
-    }
     if (!state_machine_->download_started()) {
-      burn_manager_->downloader()->AddListener(this, image_download_url_);
-      if (!state_machine_->image_download_requested()) {
-        state_machine_->OnImageDownloadRequested();
-        burn_manager_->downloader()->DownloadFile(image_download_url_,
-                                                  zip_image_file_path_,
-                                                  web_contents_);
-      }
+      burn_manager_->FetchImage(image_download_url, zip_image_file_path_);
+      state_machine_->OnDownloadStarted();
     }
   }
 
@@ -314,7 +265,6 @@ class BurnControllerImpl
 
  private:
   void DownloadCompleted(bool success) {
-    CleanupDownloadObjects();
     if (success) {
       state_machine_->OnDownloadFinished();
       BurnImage();
@@ -369,18 +319,7 @@ class BurnControllerImpl
 
     // Do cleanup.
     if (state  == StateMachine::DOWNLOADING) {
-      if (active_download_item_) {
-        // This will trigger Download canceled event. As a response to that
-        // event, handlers will remove themselves as observers from download
-        // manager and item.
-        // We don't want to process Download Cancelled signal.
-        active_download_item_->RemoveObserver(this);
-        if (active_download_item_->IsPartialDownload())
-          active_download_item_->Cancel(true);
-        active_download_item_->Delete(DownloadItem::DELETE_DUE_TO_USER_DISCARD);
-        active_download_item_ = NULL;
-        CleanupDownloadObjects();
-      }
+      burn_manager_->CancelImageFetch();
     } else if (state == StateMachine::BURNING) {
       DCHECK(observing_burn_lib_);
       // Burn library doesn't send cancelled signal upon CancelBurnImage
@@ -392,41 +331,12 @@ class BurnControllerImpl
     burn_manager_->ResetTargetPaths();
   }
 
-  bool ExtractInfoFromConfigFile(const ConfigFile& config_file) {
-    std::string hwid;
-    if (!system::StatisticsProvider::GetInstance()->
-        GetMachineStatistic(kHwidStatistic, &hwid))
-      return false;
-
-    image_file_name_ = config_file.GetProperty(kFileName, hwid);
-    if (image_file_name_.empty())
-      return false;
-
-    image_download_url_ = GURL(config_file.GetProperty(kUrl, hwid));
-    if (image_download_url_.is_empty()) {
-      image_file_name_.clear();
-      return false;
-    }
-
-    return true;
-  }
-
-  void CleanupDownloadObjects() {
-    if (active_download_item_) {
-      active_download_item_->RemoveObserver(this);
-      active_download_item_ = NULL;
-    }
-    if (download_manager_) {
-      download_manager_->RemoveObserver(this);
-      download_manager_ = NULL;
-    }
-  }
-
   int64 GetDeviceSize(const std::string& device_path) {
     disks::DiskMountManager* disk_mount_manager =
         disks::DiskMountManager::GetInstance();
-    const disks::DiskMountManager::DiskMap& disks = disk_mount_manager->disks();
-    return disks.find(device_path)->second->total_size_in_bytes();
+    const disks::DiskMountManager::Disk* disk =
+        disk_mount_manager->FindDiskBySourcePath(device_path);
+    return disk ? disk->total_size_in_bytes() : 0;
   }
 
   bool CheckNetwork() {
@@ -434,11 +344,7 @@ class BurnControllerImpl
   }
 
   FilePath zip_image_file_path_;
-  GURL image_download_url_;
   std::string image_file_name_;
-  content::WebContents* web_contents_;
-  content::DownloadManager* download_manager_;
-  DownloadItem*  active_download_item_;
   BurnManager* burn_manager_;
   StateMachine* state_machine_;
   bool observing_burn_lib_;
@@ -454,7 +360,7 @@ class BurnControllerImpl
 BurnController* BurnController::CreateBurnController(
     content::WebContents* web_contents,
     Delegate* delegate) {
-  return new BurnControllerImpl(web_contents, delegate);
+  return new BurnControllerImpl(delegate);
 }
 
 }  // namespace imageburner

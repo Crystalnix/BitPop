@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_SERVICE_CLOUD_PRINT_CLOUD_PRINT_CONSTS_H_
 #define CHROME_SERVICE_CLOUD_PRINT_CLOUD_PRINT_CONSTS_H_
-#pragma once
 
 #include "base/basictypes.h"
 
@@ -20,8 +19,6 @@ extern const char kPrinterRemoveTagValue[];
 extern const char kMessageTextValue[];
 
 // Values in the respone JSON from the cloud print server
-extern const char kPrinterListValue[];
-extern const char kSuccessValue[];
 extern const char kNameValue[];
 extern const char kIdValue[];
 extern const char kTicketUrlValue[];
@@ -38,10 +35,8 @@ extern const char kTagsHashTagName[];
 extern const char kTagDryRunFlag[];
 extern const char kDefaultCloudPrintServerUrl[];
 extern const char kCloudPrintGaiaServiceId[];
-extern const char kSyncGaiaServiceId[];
 extern const char kProxyAuthUserAgent[];
 extern const char kCloudPrintPushNotificationsSource[];
-extern const char kChromeCloudPrintProxyHeader[];
 extern const char kCloudPrintUserAgent[];
 extern const char kJobFetchReasonStartup[];
 extern const char kJobFetchReasonPoll[];
@@ -52,7 +47,6 @@ extern const char kGetPrinterCapsFailedMessageId[];
 extern const char kEnumPrintersFailedMessageId[];
 extern const char kDefaultCloudPrintOAuthClientId[];
 extern const char kDefaultCloudPrintOAuthClientSecret[];
-
 
 // Max retry count for job data fetch requests.
 const int kJobDataMaxRetryCount = 5;

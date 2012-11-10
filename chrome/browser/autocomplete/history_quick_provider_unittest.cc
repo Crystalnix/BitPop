@@ -13,16 +13,18 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
+#include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_url_index.h"
 #include "chrome/browser/history/url_database.h"
+#include "chrome/browser/history/url_index_private_data.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
@@ -75,14 +77,14 @@ struct TestURLInfo {
 };
 
 class HistoryQuickProviderTest : public testing::Test,
-                                 public ACProviderListener {
+                                 public AutocompleteProviderListener {
  public:
   HistoryQuickProviderTest()
       : ui_thread_(BrowserThread::UI, &message_loop_),
         file_thread_(BrowserThread::FILE, &message_loop_) {}
 
-  // ACProviderListener
-  virtual void OnProviderUpdate(bool updated_matches);
+  // AutocompleteProviderListener:
+  virtual void OnProviderUpdate(bool updated_matches) OVERRIDE;
 
  protected:
   class SetShouldContain : public std::unary_function<const std::string&,
@@ -99,10 +101,7 @@ class HistoryQuickProviderTest : public testing::Test,
   };
 
   void SetUp();
-
-  void TearDown() {
-    provider_ = NULL;
-  }
+  void TearDown();
 
   virtual void GetTestData(size_t* data_count, TestURLInfo** test_data);
 
@@ -116,6 +115,9 @@ class HistoryQuickProviderTest : public testing::Test,
                std::vector<std::string> expected_urls,
                bool can_inline_top_result,
                string16 expected_fill_into_edit);
+
+  // Pass-through functions to simplify our friendship with URLIndexPrivateData.
+  bool UpdateURL(const history::URLRow& row);
 
   MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
@@ -135,10 +137,25 @@ void HistoryQuickProviderTest::SetUp() {
   profile_->CreateHistoryService(true, false);
   profile_->CreateBookmarkModel(true);
   profile_->BlockUntilBookmarkModelLoaded();
-  history_service_ = profile_->GetHistoryService(Profile::EXPLICIT_ACCESS);
+  history_service_ =
+      HistoryServiceFactory::GetForProfile(profile_.get(),
+                                           Profile::EXPLICIT_ACCESS);
   EXPECT_TRUE(history_service_);
   provider_ = new HistoryQuickProvider(this, profile_.get());
   FillData();
+}
+
+void HistoryQuickProviderTest::TearDown() {
+  provider_ = NULL;
+}
+
+bool HistoryQuickProviderTest::UpdateURL(const history::URLRow& row) {
+  history::InMemoryURLIndex* index = provider_->GetIndex();
+  DCHECK(index);
+  history::URLIndexPrivateData* private_data = index->private_data();
+  DCHECK(private_data);
+  return private_data->UpdateURL(row, index->languages_,
+                                 index->scheme_whitelist_);
 }
 
 void HistoryQuickProviderTest::OnProviderUpdate(bool updated_matches) {
@@ -156,12 +173,6 @@ void HistoryQuickProviderTest::GetTestData(size_t* data_count,
 void HistoryQuickProviderTest::FillData() {
   history::URLDatabase* db = history_service_->InMemoryDatabase();
   ASSERT_TRUE(db != NULL);
-
-  history::InMemoryURLIndex* index =
-      new history::InMemoryURLIndex(FilePath());
-  PrefService* prefs = profile_->GetPrefs();
-  std::string languages(prefs->GetString(prefs::kAcceptLanguages));
-  index->Init(db, languages);
   size_t data_count = 0;
   TestURLInfo* test_data = NULL;
   GetTestData(&data_count, &test_data);
@@ -171,15 +182,14 @@ void HistoryQuickProviderTest::FillData() {
     Time visit_time = Time::Now() - TimeDelta::FromDays(cur.days_from_now);
 
     history::URLRow url_info(current_url);
+    url_info.set_id(i + 5000);
     url_info.set_title(UTF8ToUTF16(cur.title));
     url_info.set_visit_count(cur.visit_count);
     url_info.set_typed_count(cur.typed_count);
     url_info.set_last_visit(visit_time);
     url_info.set_hidden(false);
-    index->UpdateURL(i, url_info);
+    UpdateURL(url_info);
   }
-
-  provider_->set_index(index);
 }
 
 HistoryQuickProviderTest::SetShouldContain::SetShouldContain(
@@ -227,6 +237,7 @@ void HistoryQuickProviderTest::RunTest(const string16 text,
 
   // We always expect to get at least one result.
   ASSERT_FALSE(ac_matches_.empty());
+  int best_score = ac_matches_.begin()->relevance + 1;
   // Verify that we got the results in the order expected.
   int i = 0;
   std::vector<std::string>::const_iterator expected = expected_urls.begin();
@@ -236,6 +247,10 @@ void HistoryQuickProviderTest::RunTest(const string16 text,
     EXPECT_EQ(*expected, actual->destination_url.spec())
         << "For result #" << i << " we got '" << actual->destination_url.spec()
         << "' but expected '" << *expected << "'.";
+    EXPECT_LT(actual->relevance, best_score)
+      << "At result #" << i << " (url=" << actual->destination_url.spec()
+      << "), we noticed scores are not monotonically decreasing.";
+    best_score = actual->relevance;
   }
 
   if (can_inline_top_result) {
@@ -251,6 +266,9 @@ void HistoryQuickProviderTest::RunTest(const string16 text,
   } else {
     // When the top scorer is not inline-able autocomplete offset must be npos.
     EXPECT_EQ(string16::npos, ac_matches_[0].inline_autocomplete_offset);
+    // Also, the score must be too low to be inlineable.
+    EXPECT_LT(ac_matches_[0].relevance,
+              AutocompleteResult::kLowestDefaultScore);
   }
 }
 
@@ -304,6 +322,13 @@ TEST_F(HistoryQuickProviderTest, PrefixOnlyMatch) {
   expected_urls.push_back("http://foo.com/dir/another/");
   RunTest(ASCIIToUTF16("http://"), expected_urls, true,
           ASCIIToUTF16("http://foo.com"));
+}
+
+TEST_F(HistoryQuickProviderTest, EncodingMatch) {
+  std::vector<std::string> expected_urls;
+  expected_urls.push_back("http://spaces.com/path%20with%20spaces/foo.html");
+  RunTest(ASCIIToUTF16("path%20with%20spaces"), expected_urls, false,
+          ASCIIToUTF16("CANNOT AUTOCOMPLETE"));
 }
 
 TEST_F(HistoryQuickProviderTest, VisitCountMatches) {
@@ -403,73 +428,6 @@ TEST_F(HistoryQuickProviderTest, Spans) {
   EXPECT_EQ(3U, spans_b[2].offset);
   EXPECT_EQ(ACMatchClassification::MATCH | ACMatchClassification::URL,
             spans_b[2].style);
-}
-
-TEST_F(HistoryQuickProviderTest, Relevance) {
-  history::ScoredHistoryMatch match;
-  int next_score = 1500;
-
-  // Can inline, not clamped.
-  match.raw_score = 1425;
-  match.can_inline = true;
-  EXPECT_EQ(HistoryQuickProvider::CalculateRelevance(match, &next_score), 1425);
-  EXPECT_EQ(next_score, 1424);
-
-  // Can't inline, not clamped.
-  next_score = 1500;
-  match.raw_score = 1425;
-  match.can_inline = false;
-  const int kMaxNonInliningScore = AutocompleteResult::kLowestDefaultScore - 1;
-  EXPECT_EQ(HistoryQuickProvider::CalculateRelevance(match, &next_score),
-            kMaxNonInliningScore);
-  EXPECT_EQ(next_score, kMaxNonInliningScore - 1);
-
-  // Can inline, clamped.
-  next_score = kMaxNonInliningScore;
-  match.raw_score = 1425;
-  match.can_inline = true;
-  EXPECT_EQ(HistoryQuickProvider::CalculateRelevance(match, &next_score),
-            kMaxNonInliningScore);
-  EXPECT_EQ(next_score, kMaxNonInliningScore - 1);
-
-  // Can't inline, clamped.
-  next_score = kMaxNonInliningScore;
-  match.raw_score = 1425;
-  match.can_inline = false;
-  EXPECT_EQ(HistoryQuickProvider::CalculateRelevance(match, &next_score),
-            kMaxNonInliningScore);
-  EXPECT_EQ(next_score, kMaxNonInliningScore - 1);
-
-  // Score just above the clamped limit.
-  next_score = kMaxNonInliningScore;
-  match.raw_score = AutocompleteResult::kLowestDefaultScore;
-  match.can_inline = false;
-  EXPECT_EQ(HistoryQuickProvider::CalculateRelevance(match, &next_score),
-            kMaxNonInliningScore);
-  EXPECT_EQ(next_score, kMaxNonInliningScore - 1);
-
-  // Score right at the clamped limit.
-  next_score = kMaxNonInliningScore;
-  match.raw_score = kMaxNonInliningScore;
-  match.can_inline = true;
-  EXPECT_EQ(HistoryQuickProvider::CalculateRelevance(match, &next_score),
-            kMaxNonInliningScore);
-  EXPECT_EQ(next_score, kMaxNonInliningScore - 1);
-
-  // Score just below the clamped limit.
-  next_score = kMaxNonInliningScore;
-  match.raw_score = kMaxNonInliningScore - 1;
-  match.can_inline = true;
-  EXPECT_EQ(HistoryQuickProvider::CalculateRelevance(match, &next_score),
-            kMaxNonInliningScore - 1);
-  EXPECT_EQ(next_score, kMaxNonInliningScore - 2);
-
-  // Low score, can inline, not clamped.
-  next_score = 1500;
-  match.raw_score = 500;
-  match.can_inline = true;
-  EXPECT_EQ(HistoryQuickProvider::CalculateRelevance(match, &next_score), 500);
-  EXPECT_EQ(next_score, 499);
 }
 
 // HQPOrderingTest -------------------------------------------------------------

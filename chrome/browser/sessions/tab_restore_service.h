@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_SESSIONS_TAB_RESTORE_SERVICE_H_
 #define CHROME_BROWSER_SESSIONS_TAB_RESTORE_SERVICE_H_
-#pragma once
 
 #include <list>
 #include <set>
@@ -16,7 +15,7 @@
 #include "chrome/browser/sessions/base_session_service.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sessions/session_types.h"
-#include "content/browser/in_process_webkit/session_storage_namespace.h"
+#include "content/public/browser/session_storage_namespace.h"
 #include "webkit/glue/window_open_disposition.h"
 
 class Profile;
@@ -26,6 +25,8 @@ struct SessionWindow;
 
 namespace content {
 class NavigationController;
+class SessionStorageNamespace;
+class WebContents;
 }
 
 // TabRestoreService is responsible for maintaining the most recently closed
@@ -102,7 +103,10 @@ class TabRestoreService : public BaseSessionService {
     std::string extension_app_id;
 
     // The associated session storage namespace (if any).
-    scoped_refptr<SessionStorageNamespace> session_storage_namespace;
+    scoped_refptr<content::SessionStorageNamespace> session_storage_namespace;
+
+    // The user agent override used for the tab's navigations (if applicable).
+    std::string user_agent_override;
   };
 
   // Represents a previously open window.
@@ -115,6 +119,9 @@ class TabRestoreService : public BaseSessionService {
 
     // Index of the selected tab.
     int selected_tab_index;
+
+    // If an application window, the name of the app.
+    std::string app_name;
   };
 
   typedef std::list<Entry*> Entries;
@@ -131,9 +138,9 @@ class TabRestoreService : public BaseSessionService {
   void AddObserver(TabRestoreServiceObserver* observer);
   void RemoveObserver(TabRestoreServiceObserver* observer);
 
-  // Creates a Tab to represent |tab| and notifies observers the list of
+  // Creates a Tab to represent |contents| and notifies observers the list of
   // entries has changed.
-  void CreateHistoricalTab(content::NavigationController* tab, int index);
+  void CreateHistoricalTab(content::WebContents* contents, int index);
 
   // Invoked when a browser is closing. If |delegate| is a tabbed browser with
   // at least one tab, a Window is created, added to entries and observers are
@@ -156,6 +163,10 @@ class TabRestoreService : public BaseSessionService {
   // added to |delegate|.
   void RestoreMostRecentEntry(TabRestoreServiceDelegate* delegate);
 
+  // Removes the Tab with id |id| from the list and returns it; ownership is
+  // passed to the caller.
+  Tab* RemoveTabEntryById(SessionID::id_type id);
+
   // Restores an entry by id. If there is no entry with an id matching |id|,
   // this does nothing. If |delegate| is NULL, this creates a new window for the
   // entry. |disposition| is respected, but the attributes (tabstrip index,
@@ -168,6 +179,9 @@ class TabRestoreService : public BaseSessionService {
   // Loads the tabs and previous session. This does nothing if the tabs
   // from the previous session have already been loaded.
   void LoadTabsFromLastSession();
+
+  // Returns true if the tab entries have been loaded.
+  bool IsLoaded() const;
 
   // Max number of entries we'll keep around.
   static const size_t kMaxEntries;

@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_SEARCH_ENGINES_TEMPLATE_URL_TABLE_MODEL_H_
 #define CHROME_BROWSER_UI_SEARCH_ENGINES_TEMPLATE_URL_TABLE_MODEL_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -15,9 +14,12 @@
 #include "ui/base/models/table_model.h"
 
 class ModelEntry;
-class SkBitmap;
 class TemplateURL;
 class TemplateURLService;
+
+namespace gfx {
+class ImageSkia;
+}
 
 // TemplateURLTableModel is the TableModel implementation used by
 // KeywordEditorView to show the keywords in a TableView.
@@ -45,7 +47,7 @@ class TemplateURLTableModel : public ui::TableModel,
   // ui::TableModel overrides.
   virtual int RowCount() OVERRIDE;
   virtual string16 GetText(int row, int column) OVERRIDE;
-  virtual SkBitmap GetIcon(int row) OVERRIDE;
+  virtual gfx::ImageSkia GetIcon(int row) OVERRIDE;
   virtual void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
   virtual bool HasGroups() OVERRIDE;
   virtual Groups GetGroups() OVERRIDE;
@@ -55,7 +57,10 @@ class TemplateURLTableModel : public ui::TableModel,
   void Remove(int index);
 
   // Adds a new entry at the specified index.
-  void Add(int index, TemplateURL* template_url);
+  void Add(int index,
+           const string16& short_name,
+           const string16& keyword,
+           const std::string& url);
 
   // Update the entry at the specified index.
   void ModifyTemplateURL(int index,
@@ -66,8 +71,8 @@ class TemplateURLTableModel : public ui::TableModel,
   // Reloads the icon at the specified index.
   void ReloadIcon(int index);
 
-  // Returns The TemplateURL at the specified index.
-  const TemplateURL& GetTemplateURL(int index);
+  // Returns the TemplateURL at the specified index.
+  TemplateURL* GetTemplateURL(int index);
 
   // Returns the index of the TemplateURL, or -1 if it the TemplateURL is not
   // found.

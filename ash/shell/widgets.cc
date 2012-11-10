@@ -1,8 +1,7 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ash/wm/toplevel_frame_view.h"
 #include "base/utf_string_conversions.h"  // ASCIIToUTF16
 #include "ui/aura/window.h"
 #include "ui/gfx/canvas.h"
@@ -36,7 +35,7 @@ class WidgetsWindow : public views::WidgetDelegateView {
   // Overridden from views::WidgetDelegate:
   virtual views::View* GetContentsView() OVERRIDE;
   virtual string16 GetWindowTitle() const OVERRIDE;
-  virtual views::NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
+  virtual bool CanResize() const OVERRIDE;
 
  private:
   views::NativeTextButton* button_;
@@ -93,17 +92,15 @@ WidgetsWindow::~WidgetsWindow() {
 }
 
 void WidgetsWindow::OnPaint(gfx::Canvas* canvas) {
-  canvas->FillRect(SK_ColorWHITE, GetLocalBounds());
+  canvas->FillRect(GetLocalBounds(), SK_ColorWHITE);
 }
 
 void WidgetsWindow::Layout() {
   const int kVerticalPad = 5;
   int left = 5;
   int top = kVerticalPad;
-  for (Views::const_iterator it = children_begin();
-       it != children_end();
-       ++it) {
-    views::View* view = *it;
+  for (int i = 0; i < child_count(); ++i) {
+    views::View* view = child_at(i);
     gfx::Size preferred = view->GetPreferredSize();
     view->SetBounds(left, top, preferred.width(), preferred.height());
     top += preferred.height() + kVerticalPad;
@@ -122,8 +119,8 @@ string16 WidgetsWindow::GetWindowTitle() const {
   return ASCIIToUTF16("Examples: Widgets");
 }
 
-views::NonClientFrameView* WidgetsWindow::CreateNonClientFrameView() {
-  return new ash::internal::ToplevelFrameView;
+bool WidgetsWindow::CanResize() const {
+  return true;
 }
 
 }  // namespace

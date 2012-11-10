@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,38 +9,26 @@
 #include <vector>
 
 #include "content/common/content_export.h"
+#include "content/public/common/media_stream_request.h"
 
 namespace media_stream {
 
 // StreamOptions is a Chromium representation of WebKit's
-// WebGenerateStreamOptionFlags. It describes the components in a request for a
-// new media stream.
+// WebUserMediaRequest Options. It describes the components
+// in a request for a new media stream.
 struct CONTENT_EXPORT StreamOptions {
-  enum VideoOption {
-    kNoCamera = 0,
-    kFacingUser,
-    kFacingEnvironment,
-    kFacingBoth
-  };
-
-  StreamOptions() : audio(false), video_option(kNoCamera) {}
-  StreamOptions(bool audio, VideoOption option)
-      : audio(audio), video_option(option) {}
+  StreamOptions() : audio(false), video(false) {}
+  StreamOptions(bool audio, bool video)
+      : audio(audio), video(video) {}
 
   // True if the stream shall contain an audio input stream.
   bool audio;
 
-  // Describes if a / which type of video capture device is requested.
-  VideoOption video_option;
+  // True if the stream shall contain a video input stream.
+  bool video;
 };
 
-// Type of media stream.
-enum MediaStreamType {
-  kNoService = 0,
-  kAudioCapture,
-  kVideoCapture,
-  kNumMediaStreamTypes
-};
+typedef content::MediaStreamDeviceType MediaStreamType;
 
 // StreamDeviceInfo describes information about a device.
 struct CONTENT_EXPORT StreamDeviceInfo {

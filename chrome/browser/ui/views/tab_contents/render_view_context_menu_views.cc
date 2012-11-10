@@ -7,13 +7,13 @@
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/ui/views/tab_contents/tab_contents_view_views.h"
-#include "content/browser/renderer_host/render_widget_host_view.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/gfx/point.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
@@ -25,7 +25,7 @@ using content::WebContents;
 
 RenderViewContextMenuViews::RenderViewContextMenuViews(
     WebContents* web_contents,
-    const ContextMenuParams& params)
+    const content::ContextMenuParams& params)
     : RenderViewContextMenu(web_contents, params),
       menu_(NULL) {
 }
@@ -33,22 +33,22 @@ RenderViewContextMenuViews::RenderViewContextMenuViews(
 RenderViewContextMenuViews::~RenderViewContextMenuViews() {
 }
 
-void RenderViewContextMenuViews::RunMenuAt(int x, int y) {
-  TabContentsViewViews* tab =
-      static_cast<TabContentsViewViews*>(source_web_contents_->GetView());
-  views::Widget* parent = tab->GetTopLevelWidget();
-  if (menu_runner_->RunMenuAt(parent, NULL,
-          gfx::Rect(gfx::Point(x, y), gfx::Size()),
+#if !defined(OS_WIN)
+// static
+RenderViewContextMenuViews* RenderViewContextMenuViews::Create(
+    content::WebContents* tab_contents,
+    const content::ContextMenuParams& params) {
+  return new RenderViewContextMenuViews(tab_contents, params);
+}
+#endif  // OS_WIN
+
+void RenderViewContextMenuViews::RunMenuAt(views::Widget* parent,
+                                           const gfx::Point& point) {
+  if (menu_runner_->RunMenuAt(parent, NULL, gfx::Rect(point, gfx::Size()),
           views::MenuItemView::TOPLEFT, views::MenuRunner::HAS_MNEMONICS) ==
       views::MenuRunner::MENU_DELETED)
     return;
 }
-
-#if defined(OS_WIN)
-void RenderViewContextMenuViews::SetExternal() {
-  external_ = true;
-}
-#endif
 
 void RenderViewContextMenuViews::UpdateMenuItemStates() {
   menu_delegate_->BuildMenu(menu_);
@@ -64,6 +64,11 @@ void RenderViewContextMenuViews::PlatformInit() {
   UpdateMenuItemStates();
 }
 
+void RenderViewContextMenuViews::PlatformCancel() {
+  DCHECK(menu_runner_.get());
+  menu_runner_->Cancel();
+}
+
 bool RenderViewContextMenuViews::GetAcceleratorForCommandId(
     int command_id,
     ui::Accelerator* accel) {
@@ -71,32 +76,34 @@ bool RenderViewContextMenuViews::GetAcceleratorForCommandId(
   // that Ctrl+C, Ctrl+V, Ctrl+X, Ctrl-A, etc do what they normally do.
   switch (command_id) {
     case IDC_CONTENT_CONTEXT_UNDO:
-      *accel = ui::Accelerator(ui::VKEY_Z, false, true, false);
+      *accel = ui::Accelerator(ui::VKEY_Z, ui::EF_CONTROL_DOWN);
       return true;
 
     case IDC_CONTENT_CONTEXT_REDO:
       // TODO(jcampan): should it be Ctrl-Y?
-      *accel = ui::Accelerator(ui::VKEY_Z, true, true, false);
+      *accel = ui::Accelerator(ui::VKEY_Z,
+                               ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN);
       return true;
 
     case IDC_CONTENT_CONTEXT_CUT:
-      *accel = ui::Accelerator(ui::VKEY_X, false, true, false);
+      *accel = ui::Accelerator(ui::VKEY_X, ui::EF_CONTROL_DOWN);
       return true;
 
     case IDC_CONTENT_CONTEXT_COPY:
-      *accel = ui::Accelerator(ui::VKEY_C, false, true, false);
+      *accel = ui::Accelerator(ui::VKEY_C, ui::EF_CONTROL_DOWN);
       return true;
 
     case IDC_CONTENT_CONTEXT_PASTE:
-      *accel = ui::Accelerator(ui::VKEY_V, false, true, false);
+      *accel = ui::Accelerator(ui::VKEY_V, ui::EF_CONTROL_DOWN);
       return true;
 
     case IDC_CONTENT_CONTEXT_PASTE_AND_MATCH_STYLE:
-      *accel = ui::Accelerator(ui::VKEY_V, true, true, false);
+      *accel = ui::Accelerator(ui::VKEY_V,
+                               ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN);
       return true;
 
     case IDC_CONTENT_CONTEXT_SELECTALL:
-      *accel = ui::Accelerator(ui::VKEY_A, false, true, false);
+      *accel = ui::Accelerator(ui::VKEY_A, ui::EF_CONTROL_DOWN);
       return true;
 
     default:

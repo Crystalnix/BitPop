@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
 #include "net/base/escape.h"
@@ -46,7 +47,7 @@ void BookmarkNodeData::Element::WriteToPickle(Pickle* pickle) const {
   pickle->WriteString16(title);
   pickle->WriteInt64(id_);
   if (!is_url) {
-    pickle->WriteSize(children.size());
+    pickle->WriteUInt64(children.size());
     for (std::vector<Element>::const_iterator i = children.begin();
          i != children.end(); ++i) {
       i->WriteToPickle(pickle);
@@ -55,7 +56,7 @@ void BookmarkNodeData::Element::WriteToPickle(Pickle* pickle) const {
 }
 
 bool BookmarkNodeData::Element::ReadFromPickle(Pickle* pickle,
-                                               void** iterator) {
+                                               PickleIterator* iterator) {
   std::string url_spec;
   if (!pickle->ReadBool(iterator, &is_url) ||
       !pickle->ReadString(iterator, &url_spec) ||
@@ -66,13 +67,13 @@ bool BookmarkNodeData::Element::ReadFromPickle(Pickle* pickle,
   url = GURL(url_spec);
   children.clear();
   if (!is_url) {
-    size_t children_count;
-    if (!pickle->ReadSize(iterator, &children_count))
+    uint64 children_count;
+    if (!pickle->ReadUInt64(iterator, &children_count))
       return false;
-    children.resize(children_count);
-    for (std::vector<Element>::iterator i = children.begin();
-         i != children.end(); ++i) {
-      if (!i->ReadFromPickle(pickle, iterator))
+    children.reserve(children_count);
+    for (uint64 i = 0; i < children_count; ++i) {
+      children.push_back(Element());
+      if (!children.back().ReadFromPickle(pickle, iterator))
         return false;
     }
   }
@@ -82,7 +83,7 @@ bool BookmarkNodeData::Element::ReadFromPickle(Pickle* pickle,
 #if defined(TOOLKIT_VIEWS)
 // static
 ui::OSExchangeData::CustomFormat BookmarkNodeData::GetBookmarkCustomFormat() {
-  static ui::OSExchangeData::CustomFormat format;
+  CR_DEFINE_STATIC_LOCAL(ui::OSExchangeData::CustomFormat, format, ());
   static bool format_valid = false;
 
   if (!format_valid) {
@@ -140,7 +141,8 @@ bool BookmarkNodeData::ReadFromTuple(const GURL& url, const string16& title) {
 
 #if !defined(OS_MACOSX)
 void BookmarkNodeData::WriteToClipboard(Profile* profile) const {
-  ui::ScopedClipboardWriter scw(g_browser_process->clipboard());
+  ui::ScopedClipboardWriter scw(g_browser_process->clipboard(),
+                                ui::Clipboard::BUFFER_STANDARD);
 
   // If there is only one element and it is a URL, write the URL to the
   // clipboard.
@@ -286,20 +288,20 @@ bool BookmarkNodeData::Read(const ui::OSExchangeData& data) {
 void BookmarkNodeData::WriteToPickle(Profile* profile, Pickle* pickle) const {
   FilePath path = profile ? profile->GetPath() : FilePath();
   path.WriteToPickle(pickle);
-  pickle->WriteSize(elements.size());
+  pickle->WriteUInt64(elements.size());
 
   for (size_t i = 0; i < elements.size(); ++i)
     elements[i].WriteToPickle(pickle);
 }
 
 bool BookmarkNodeData::ReadFromPickle(Pickle* pickle) {
-  void* data_iterator = NULL;
-  size_t element_count;
-  if (profile_path_.ReadFromPickle(pickle, &data_iterator) &&
-      pickle->ReadSize(&data_iterator, &element_count)) {
+  PickleIterator data_iterator(*pickle);
+  uint64 element_count;
+  if (profile_path_.ReadFromPickle(&data_iterator) &&
+      pickle->ReadUInt64(&data_iterator, &element_count)) {
     std::vector<Element> tmp_elements;
     tmp_elements.resize(element_count);
-    for (size_t i = 0; i < element_count; ++i) {
+    for (uint64 i = 0; i < element_count; ++i) {
       if (!tmp_elements[i].ReadFromPickle(pickle, &data_iterator)) {
         return false;
       }
@@ -318,8 +320,8 @@ std::vector<const BookmarkNode*> BookmarkNodeData::GetNodes(
     return nodes;
 
   for (size_t i = 0; i < elements.size(); ++i) {
-    const BookmarkNode* node =
-        profile->GetBookmarkModel()->GetNodeByID(elements[i].id_);
+    const BookmarkNode* node = BookmarkModelFactory::GetForProfile(
+        profile)->GetNodeByID(elements[i].id_);
     if (!node) {
       nodes.clear();
       return nodes;

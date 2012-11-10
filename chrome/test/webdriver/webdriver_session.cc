@@ -18,7 +18,6 @@
 #include "base/message_loop_proxy.h"
 #include "base/process.h"
 #include "base/process_util.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
@@ -88,8 +87,7 @@ Error* Session::Init(const DictionaryValue* capabilities_dict) {
     delete this;
     return new Error(kUnknownError, "Cannot start session thread");
   }
-  ScopedTempDir temp_dir;
-  if (!temp_dir.CreateUniqueTempDir()) {
+  if (!temp_dir_.CreateUniqueTempDir()) {
     delete this;
     return new Error(
         kUnknownError, "Unable to create temp directory for unpacking");
@@ -98,7 +96,7 @@ Error* Session::Init(const DictionaryValue* capabilities_dict) {
               "Initializing session with capabilities " +
                   JsonStringifyForDisplay(capabilities_dict));
   CapabilitiesParser parser(
-      capabilities_dict, temp_dir.path(), logger_, &capabilities_);
+      capabilities_dict, temp_dir_.path(), logger_, &capabilities_);
   Error* error = parser.Parse();
   if (error) {
     delete this;
@@ -166,7 +164,6 @@ Error* Session::ExecuteScript(const FrameId& frame_id,
                               Value** value) {
   std::string args_as_json;
   base::JSONWriter::Write(static_cast<const Value* const>(args),
-                          /*pretty_print=*/false,
                           &args_as_json);
 
   // Every injected script is fed through the executeScript atom. This atom
@@ -219,7 +216,6 @@ Error* Session::ExecuteAsyncScript(const FrameId& frame_id,
                                    Value** value) {
   std::string args_as_json;
   base::JSONWriter::Write(static_cast<const Value* const>(args),
-                          /*pretty_print=*/false,
                           &args_as_json);
 
   int timeout_ms = async_script_timeout();
@@ -579,6 +575,9 @@ Error* Session::DeleteCookie(const std::string& url,
   return error;
 }
 
+// Note that when this is called from CookieCommand::ExecutePost then
+// |cookie_dict| is destroyed as soon as the caller finishes. Therefore
+// it is essential that RunSessionTask executes synchronously.
 Error* Session::SetCookie(const std::string& url,
                           DictionaryValue* cookie_dict) {
   Error* error = NULL;
@@ -657,14 +656,8 @@ Error* Session::SwitchToFrameWithNameOrId(const std::string& name_or_id) {
       "  var xpath = '(/html/body//iframe|/html/frameset/frame)';"
       "  var sub = function(s) { return s.replace(/\\$/g, arg); };"
       "  xpath += sub('[@name=\"$\" or @id=\"$\"]');"
-      "  var frame = document.evaluate(xpath, document, null, "
+      "  return document.evaluate(xpath, document, null, "
       "      XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;"
-      "  if (!frame) { return null; }"
-      "  xpath = frame.tagName == 'IFRAME' ? '/html/body//iframe'"
-      "                                    : '/html/frameset/frame';"
-      "  frame_xpath = xpath + "
-      "      sub('[@' + (frame.id == arg ? 'id' : 'name') + '=\"$\"]');"
-      "  return [frame, frame_xpath];"
       "}";
   return SwitchToFrameWithJavaScriptLocatedFrame(
       script, CreateListValueFrom(name_or_id));
@@ -675,7 +668,7 @@ Error* Session::SwitchToFrameWithIndex(int index) {
   // tagName of the frameElement. If child frame N is from another domain, then
   // the following will run afoul of the same origin policy:
   //   window.frames[N].frameElement;
-  // Instead of indexing window.frames, we use a an XPath expression to index
+  // Instead of indexing window.frames, we use an XPath expression to index
   // into the list of all IFRAME and FRAME elements on the page - if we find
   // something, then that XPath expression can be used as the new frame's XPath.
   std::string script =
@@ -683,12 +676,8 @@ Error* Session::SwitchToFrameWithIndex(int index) {
       "  var xpathIndex = '[' + (index + 1) + ']';"
       "  var xpath = '(/html/body//iframe|/html/frameset/frame)' + "
       "              xpathIndex;"
-      "  var frame = document.evaluate(xpath, document, null, "
-      "  XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;"
-      "  if (!frame) { return null; }"
-      "  frame_xpath = ((frame.tagName == 'IFRAME' ? "
-      "      '(/html/body//iframe)' : '/html/frameset/frame') + xpathIndex);"
-      "  return [frame, frame_xpath];"
+      "  return document.evaluate(xpath, document, null, "
+      "      XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;"
       "}";
   return SwitchToFrameWithJavaScriptLocatedFrame(
       script, CreateListValueFrom(index));
@@ -704,7 +693,7 @@ Error* Session::SwitchToFrameWithElement(const ElementId& element) {
       "  }"
       "  for (var i = 0; i < window.frames.length; i++) {"
       "    if (elem.contentWindow == window.frames[i]) {"
-      "      return [elem, '(//iframe|//frame)[' + (i + 1) + ']'];"
+      "      return elem;"
       "    }"
       "  }"
       "  console.info('Frame is not connected to this DOM tree');"
@@ -801,6 +790,16 @@ Error* Session::SetWindowBounds(
       window,
       bounds,
       &error));
+  return error;
+}
+
+Error* Session::MaximizeWindow(const WebViewId& window) {
+  Error* error = NULL;
+  RunSessionTask(base::Bind(
+        &Automation::MaximizeView,
+        base::Unretained(automation_.get()),
+        window,
+        &error));
   return error;
 }
 
@@ -1164,16 +1163,6 @@ Error* Session::WaitForAllViewsToStopLoading() {
   return error;
 }
 
-Error* Session::InstallExtensionDeprecated(const FilePath& path) {
-  Error* error = NULL;
-  RunSessionTask(base::Bind(
-      &Automation::InstallExtensionDeprecated,
-      base::Unretained(automation_.get()),
-      path,
-      &error));
-  return error;
-}
-
 Error* Session::InstallExtension(
     const FilePath& path, std::string* extension_id) {
   Error* error = NULL;
@@ -1262,6 +1251,8 @@ Error* Session::SetPreference(
         pref,
         value,
         &error));
+    if (error)
+      error->AddDetails("Failed to set user pref '" + pref + "'");
   } else {
     RunSessionTask(base::Bind(
         &Automation::SetLocalStatePreference,
@@ -1269,6 +1260,8 @@ Error* Session::SetPreference(
         pref,
         value,
         &error));
+    if (error)
+      error->AddDetails("Failed to set local state pref '" + pref + "'");
   }
   return error;
 }
@@ -1373,6 +1366,27 @@ Error* Session::RemoveStorageItem(StorageType type,
       CreateDirectValueParser(value));
 }
 
+Error* Session::GetGeolocation(
+    scoped_ptr<base::DictionaryValue>* geolocation) {
+  Error* error = NULL;
+  RunSessionTask(base::Bind(
+      &Automation::GetGeolocation,
+      base::Unretained(automation_.get()),
+      geolocation,
+      &error));
+  return error;
+}
+
+Error* Session::OverrideGeolocation(const base::DictionaryValue* geolocation) {
+  Error* error = NULL;
+  RunSessionTask(base::Bind(
+      &Automation::OverrideGeolocation,
+      base::Unretained(automation_.get()),
+      geolocation,
+      &error));
+  return error;
+}
+
 const std::string& Session::id() const {
   return id_;
 }
@@ -1405,6 +1419,10 @@ const Logger& Session::logger() const {
   return logger_;
 }
 
+const FilePath& Session::temp_dir() const {
+  return temp_dir_.path();
+}
+
 const Capabilities& Session::capabilities() const {
   return capabilities_;
 }
@@ -1416,6 +1434,7 @@ void Session::RunSessionTask(const base::Closure& task) {
       base::Unretained(this),
       task,
       &done_event));
+  // See SetCookie for why it is essential that we wait here.
   done_event.Wait();
 }
 
@@ -1467,7 +1486,7 @@ Error* Session::ExecuteScriptAndParseValue(const FrameId& frame_id,
     return error;
 
   scoped_ptr<Value> value(base::JSONReader::ReadAndReturnError(
-      response_json, true, NULL, NULL));
+      response_json, base::JSON_ALLOW_TRAILING_COMMAS, NULL, NULL));
   if (!value.get())
     return new Error(kUnknownError, "Failed to parse script result");
   if (value->GetType() != Value::TYPE_DICTIONARY)
@@ -1573,8 +1592,8 @@ Error* Session::SwitchToFrameWithJavaScriptLocatedFrame(
   class SwitchFrameValueParser : public ValueParser {
    public:
     SwitchFrameValueParser(
-        bool* found_frame, ElementId* frame, std::string* xpath)
-        : found_frame_(found_frame), frame_(frame), xpath_(xpath) { }
+        bool* found_frame, ElementId* frame)
+        : found_frame_(found_frame), frame_(frame) { }
 
     virtual ~SwitchFrameValueParser() { }
 
@@ -1583,33 +1602,44 @@ Error* Session::SwitchToFrameWithJavaScriptLocatedFrame(
         *found_frame_ = false;
         return true;
       }
-      ListValue* list;
-      if (!value->GetAsList(&list))
+      ElementId id(value);
+      if (!id.is_valid()) {
         return false;
+      }
+      *frame_ = id;
       *found_frame_ = true;
-      return SetFromListValue(list, frame_, xpath_);
+      return true;
     }
 
    private:
     bool* found_frame_;
     ElementId* frame_;
-    std::string* xpath_;
   };
 
   bool found_frame;
   ElementId new_frame_element;
-  std::string xpath;
   Error* error = ExecuteScriptAndParse(
       current_target_, script, "switchFrame", args,
-      new SwitchFrameValueParser(&found_frame, &new_frame_element, &xpath));
+      new SwitchFrameValueParser(&found_frame, &new_frame_element));
   if (error)
     return error;
 
   if (!found_frame)
     return new Error(kNoSuchFrame);
 
+  std::string frame_id = GenerateRandomID();
+  error = ExecuteScriptAndParse(
+      current_target_,
+      "function(elem, id) { elem.setAttribute('wd_frame_id_', id); }",
+      "setFrameId",
+      CreateListValueFrom(new_frame_element, frame_id),
+      CreateDirectValueParser(kSkipParsing));
+  if (error)
+    return error;
+
   frame_elements_.push_back(new_frame_element);
-  current_target_.frame_path = current_target_.frame_path.Append(xpath);
+  current_target_.frame_path = current_target_.frame_path.Append(
+      base::StringPrintf("//*[@wd_frame_id_ = '%s']", frame_id.c_str()));
   return NULL;
 }
 
@@ -1820,16 +1850,33 @@ Error* Session::GetScreenShot(std::string* png) {
   return NULL;
 }
 
+#if !defined(NO_TCMALLOC) && (defined(OS_LINUX) || defined(OS_CHROMEOS))
+Error* Session::HeapProfilerDump(const std::string& reason) {
+  // TODO(dmikurube): Support browser processes.
+  Error* error = NULL;
+  RunSessionTask(base::Bind(
+      &Automation::HeapProfilerDump,
+      base::Unretained(automation_.get()),
+      current_target_.view_id,
+      reason,
+      &error));
+  return error;
+}
+#endif  // !defined(NO_TCMALLOC) && (defined(OS_LINUX) || defined(OS_CHROMEOS))
+
 Error* Session::PostBrowserStartInit() {
   Error* error = NULL;
   if (!capabilities_.no_website_testing_defaults)
     error = InitForWebsiteTesting();
+  if (!error)
+    error = SetPrefs();
   if (error)
     return error;
 
   // Install extensions.
   for (size_t i = 0; i < capabilities_.extensions.size(); ++i) {
-    error = InstallExtensionDeprecated(capabilities_.extensions[i]);
+    std::string extension_id;
+    error = InstallExtension(capabilities_.extensions[i], &extension_id);
     if (error)
       return error;
   }
@@ -1852,15 +1899,54 @@ Error* Session::InitForWebsiteTesting() {
   if (error)
     return error;
 
-  // Allow certain content by default.
+  // Allow content by default.
+  // Media-stream cannot be enabled by default; we must specify
+  // particular host patterns and devices.
+  DictionaryValue* devices = new DictionaryValue();
+  devices->SetString("audio", "Default");
+  devices->SetString("video", "Default");
+  DictionaryValue* content_settings = new DictionaryValue();
+  content_settings->Set("media-stream", devices);
+  DictionaryValue* pattern_pairs = new DictionaryValue();
+  pattern_pairs->Set("https://*,*", content_settings);
+  error = SetPreference(
+      "profile.content_settings.pattern_pairs",
+      true /* is_user_pref */,
+      pattern_pairs);
+  if (error)
+    return error;
   const int kAllowContent = 1;
   DictionaryValue* default_content_settings = new DictionaryValue();
   default_content_settings->SetInteger("geolocation", kAllowContent);
+  default_content_settings->SetInteger("mouselock", kAllowContent);
   default_content_settings->SetInteger("notifications", kAllowContent);
+  default_content_settings->SetInteger("popups", kAllowContent);
   return SetPreference(
       "profile.default_content_settings",
       true /* is_user_pref */,
       default_content_settings);
+}
+
+Error* Session::SetPrefs() {
+  DictionaryValue::key_iterator iter = capabilities_.prefs->begin_keys();
+  for (; iter != capabilities_.prefs->end_keys(); ++iter) {
+    Value* value;
+    capabilities_.prefs->GetWithoutPathExpansion(*iter, &value);
+    Error* error = SetPreference(*iter, true /* is_user_pref */,
+                                 value->DeepCopy());
+    if (error)
+      return error;
+  }
+  iter = capabilities_.local_state->begin_keys();
+  for (; iter != capabilities_.local_state->end_keys(); ++iter) {
+    Value* value;
+    capabilities_.local_state->GetWithoutPathExpansion(*iter, &value);
+    Error* error = SetPreference(*iter, false /* is_user_pref */,
+                                 value->DeepCopy());
+    if (error)
+      return error;
+  }
+  return NULL;
 }
 
 }  // namespace webdriver

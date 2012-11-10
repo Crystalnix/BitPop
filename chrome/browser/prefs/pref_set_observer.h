@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_PREFS_PREF_SET_OBSERVER_H_
 #define CHROME_BROWSER_PREFS_PREF_SET_OBSERVER_H_
-#pragma once
 
 #include <set>
 
@@ -37,8 +36,8 @@ class PrefSetObserver : public content::NotificationObserver {
       PrefService* pref_service,
       content::NotificationObserver* observer);
 
-  // Create a pref set observer for all preferences relevant to default search.
-  static PrefSetObserver* CreateDefaultSearchPrefSetObserver(
+  // Create a pref set observer for preferences accessed by ProtectorService.
+  static PrefSetObserver* CreateProtectedPrefSetObserver(
       PrefService* pref_service,
       content::NotificationObserver* observer);
 

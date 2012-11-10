@@ -8,30 +8,28 @@
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
-#include "chrome/browser/download/download_util.h"
-#include "chrome/browser/tab_contents/tab_util.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/common/chrome_paths.h"
-#include "content/browser/download/download_types.h"
-#include "content/browser/renderer_host/render_view_host.h"
-#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/render_process_host.h"
-#include "content/public/browser/web_contents.h"
+#include "net/url_request/url_fetcher.h"
+#include "net/url_request/url_request_status.h"
 
 using content::BrowserThread;
-using content::DownloadItem;
-using content::DownloadManager;
-using content::WebContents;
 
 namespace chromeos {
 namespace imageburner {
 
 namespace {
 
+// Name for hwid in machine statistics.
+const char kHwidStatistic[] = "hardware_class";
+
 const char kConfigFileUrl[] =
     "https://dl.google.com/dl/edgedl/chromeos/recovery/recovery.conf";
 const char kTempImageFolderName[] = "chromeos_image";
-const char kConfigFileName[] = "recovery.conf";
+
+const int64 kBytesImageDownloadProgressReportInterval = 10240;
 
 BurnManager* g_burn_manager = NULL;
 
@@ -41,31 +39,6 @@ void CreateDirectory(const FilePath& path,
   const bool success = file_util::CreateDirectory(path);
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                           base::Bind(callback, success));
-}
-
-// Reads file content and calls |callback| with the result on UI thread.
-void ReadFile(const FilePath& path,
-              base::Callback<void(bool success,
-                                  const std::string& file_content)> callback) {
-  std::string file_content;
-  const bool success = file_util::ReadFileToString(path, &file_content);
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                          base::Bind(callback, success, file_content));
-}
-
-// Creates a FileStream and calls |callback| with the result on UI thread.
-void CreateFileStream(
-    const FilePath& file_path,
-    base::Callback<void(net::FileStream* file_stream)> callback) {
-  scoped_ptr<net::FileStream> file_stream(new net::FileStream);
-  // TODO(tbarzic): Save temp image file to temp folder instead of Downloads
-  // once extracting image directly to removalbe device is implemented
-  if (file_stream->Open(file_path, base::PLATFORM_FILE_OPEN_ALWAYS |
-                        base::PLATFORM_FILE_WRITE))
-    file_stream.reset();
-
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                          base::Bind(callback, file_stream.release()));
 }
 
 }  // namespace
@@ -188,8 +161,7 @@ ConfigFile::ConfigFileBlock::~ConfigFileBlock() {
 //
 ////////////////////////////////////////////////////////////////////////////////
 StateMachine::StateMachine()
-    : image_download_requested_(false),
-      download_started_(false),
+    : download_started_(false),
       download_finished_(false),
       state_(INITIAL) {
 }
@@ -200,10 +172,9 @@ StateMachine::~StateMachine() {
 void StateMachine::OnError(int error_message_id) {
   if (state_ == INITIAL)
     return;
-  if (!download_finished_) {
+  if (!download_finished_)
     download_started_ = false;
-    image_download_requested_ = false;
-  }
+
   state_ = INITIAL;
   FOR_EACH_OBSERVER(Observer, observers_, OnError(error_message_id));
 }
@@ -229,24 +200,16 @@ void StateMachine::OnCancelation() {
 
 BurnManager::BurnManager()
     : weak_ptr_factory_(this),
-      download_manager_(NULL),
-      download_item_observer_added_(false),
-      active_download_item_(NULL),
       config_file_url_(kConfigFileUrl),
-      config_file_requested_(false),
       config_file_fetched_(false),
       state_machine_(new StateMachine()),
-      downloader_(NULL) {
+      bytes_image_download_progress_last_reported_(0) {
 }
 
 BurnManager::~BurnManager() {
   if (!image_dir_.empty()) {
     file_util::Delete(image_dir_, true);
   }
-  if (active_download_item_)
-    active_download_item_->RemoveObserver(this);
-  if (download_manager_)
-    download_manager_->RemoveObserver(this);
 }
 
 // static
@@ -275,45 +238,12 @@ BurnManager* BurnManager::GetInstance() {
   return g_burn_manager;
 }
 
-void BurnManager::OnDownloadUpdated(DownloadItem* download) {
-  if (download->IsCancelled()) {
-    ConfigFileFetched(false, "");
-    DCHECK(!download_item_observer_added_);
-    DCHECK(active_download_item_ == NULL);
-  } else if (download->IsComplete()) {
-    OnConfigFileDownloaded();
-  }
+void BurnManager::AddObserver(Observer* observer) {
+  observers_.AddObserver(observer);
 }
 
-void BurnManager::OnConfigFileDownloaded() {
-  BrowserThread::PostBlockingPoolTask(
-      FROM_HERE,
-      base::Bind(ReadFile,
-                 config_file_path_,
-                 base::Bind(&BurnManager::ConfigFileFetched,
-                            weak_ptr_factory_.GetWeakPtr())));
-}
-
-void BurnManager::ModelChanged() {
-  std::vector<DownloadItem*> downloads;
-  download_manager_->GetTemporaryDownloads(GetImageDir(), &downloads);
-  if (download_item_observer_added_)
-    return;
-  for (std::vector<DownloadItem*>::const_iterator it = downloads.begin();
-      it != downloads.end();
-      ++it) {
-    if ((*it)->GetURL() == config_file_url_) {
-      download_item_observer_added_ = true;
-      (*it)->AddObserver(this);
-      active_download_item_ = *it;
-      break;
-    }
-  }
-}
-
-void BurnManager::OnBurnDownloadStarted(bool success) {
-  if (!success)
-    ConfigFileFetched(false, "");
+void BurnManager::RemoveObserver(Observer* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 void BurnManager::CreateImageDir(Delegate* delegate) {
@@ -341,116 +271,107 @@ const FilePath& BurnManager::GetImageDir() {
   return image_dir_;
 }
 
-void BurnManager::FetchConfigFile(WebContents* web_contents,
-                                  Delegate* delegate) {
+void BurnManager::FetchConfigFile(Delegate* delegate) {
   if (config_file_fetched_) {
-    delegate->OnConfigFileFetched(config_file_, true);
+    delegate->OnConfigFileFetched(true, image_file_name_, image_download_url_);
     return;
   }
   downloaders_.push_back(delegate->AsWeakPtr());
 
-  if (config_file_requested_)
+  if (config_fetcher_.get())
     return;
-  config_file_requested_ = true;
 
-  config_file_path_ = GetImageDir().Append(kConfigFileName);
-  download_manager_ = web_contents->GetBrowserContext()->GetDownloadManager();
-  download_manager_->AddObserver(this);
-  downloader()->AddListener(this, config_file_url_);
-  downloader()->DownloadFile(config_file_url_, config_file_path_, web_contents);
+  config_fetcher_.reset(net::URLFetcher::Create(
+      config_file_url_, net::URLFetcher::GET, this));
+  config_fetcher_->SetRequestContext(
+      g_browser_process->system_request_context());
+  config_fetcher_->Start();
+}
+
+void BurnManager::FetchImage(const GURL& image_url, const FilePath& file_path) {
+  tick_image_download_start_ = base::TimeTicks::Now();
+  bytes_image_download_progress_last_reported_ = 0;
+  image_fetcher_.reset(net::URLFetcher::Create(image_url,
+                                               net::URLFetcher::GET,
+                                               this));
+  image_fetcher_->SetRequestContext(
+      g_browser_process->system_request_context());
+  image_fetcher_->SaveResponseToFileAtPath(
+      file_path,
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
+  image_fetcher_->Start();
+}
+
+void BurnManager::CancelImageFetch() {
+  image_fetcher_.reset();
+}
+
+void BurnManager::OnURLFetchComplete(const net::URLFetcher* source) {
+  const bool success =
+      source->GetStatus().status() == net::URLRequestStatus::SUCCESS;
+  if (source == config_fetcher_.get()) {
+    std::string data;
+    if (success)
+      config_fetcher_->GetResponseAsString(&data);
+    config_fetcher_.reset();
+    ConfigFileFetched(success, data);
+  } else if (source == image_fetcher_.get()) {
+    if (success)
+      FOR_EACH_OBSERVER(Observer, observers_, OnDownloadCompleted());
+    else
+      FOR_EACH_OBSERVER(Observer, observers_, OnDownloadCancelled());
+  }
+}
+
+void BurnManager::OnURLFetchDownloadProgress(const net::URLFetcher* source,
+                                             int64 current,
+                                             int64 total) {
+  if (source == image_fetcher_.get()) {
+    if (current >= bytes_image_download_progress_last_reported_ +
+        kBytesImageDownloadProgressReportInterval) {
+      bytes_image_download_progress_last_reported_ = current;
+      base::TimeDelta time_remaining;
+      if (current > 0) {
+        const base::TimeDelta diff =
+            base::TimeTicks::Now() - tick_image_download_start_;
+        time_remaining = diff*(total - current)/current;
+      }
+      FOR_EACH_OBSERVER(Observer, observers_,
+                        OnDownloadUpdated(current, total, time_remaining));
+    }
+  }
 }
 
 void BurnManager::ConfigFileFetched(bool fetched, const std::string& content) {
   if (config_file_fetched_)
     return;
 
-  if (active_download_item_) {
-    active_download_item_->RemoveObserver(this);
-    active_download_item_ = NULL;
+  // Get image file name and image download URL.
+  std::string hwid;
+  if (fetched && system::StatisticsProvider::GetInstance()->
+      GetMachineStatistic(kHwidStatistic, &hwid)) {
+    ConfigFile config_file(content);
+    image_file_name_ = config_file.GetProperty(kFileName, hwid);
+    image_download_url_ = GURL(config_file.GetProperty(kUrl, hwid));
   }
-  download_item_observer_added_ = false;
-  if (download_manager_)
-    download_manager_->RemoveObserver(this);
 
-  config_file_fetched_ = fetched;
-
-  if (fetched) {
-    config_file_.reset(content);
+  // Error check.
+  if (fetched && !image_file_name_.empty() && !image_download_url_.is_empty()) {
+    config_file_fetched_ = true;
   } else {
-    config_file_.clear();
+    fetched = false;
+    image_file_name_.clear();
+    image_download_url_ = GURL();
   }
 
   for (size_t i = 0; i < downloaders_.size(); ++i) {
     if (downloaders_[i]) {
-      downloaders_[i]->OnConfigFileFetched(config_file_, fetched);
+      downloaders_[i]->OnConfigFileFetched(fetched,
+                                           image_file_name_,
+                                           image_download_url_);
     }
   }
   downloaders_.clear();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-//
-// Downloader
-//
-////////////////////////////////////////////////////////////////////////////////
-
-Downloader::Downloader() : weak_ptr_factory_(this) {}
-
-Downloader::~Downloader() {}
-
-void Downloader::DownloadFile(const GURL& url,
-    const FilePath& file_path, WebContents* web_contents) {
-  BrowserThread::PostBlockingPoolTask(
-      FROM_HERE,
-      base::Bind(CreateFileStream,
-                 file_path,
-                 base::Bind(&Downloader::OnFileStreamCreated,
-                            weak_ptr_factory_.GetWeakPtr(),
-                            url,
-                            file_path,
-                            web_contents)));
-}
-
-void Downloader::OnFileStreamCreated(const GURL& url,
-                                     const FilePath& file_path,
-                                     WebContents* web_contents,
-                                     net::FileStream* file_stream) {
-  if (file_stream) {
-    DownloadManager* download_manager =
-        web_contents->GetBrowserContext()->GetDownloadManager();
-    DownloadSaveInfo save_info;
-    save_info.file_path = file_path;
-    save_info.file_stream = linked_ptr<net::FileStream>(file_stream);
-    DownloadStarted(true, url);
-
-    download_util::RecordDownloadCount(
-        download_util::INITIATED_BY_IMAGE_BURNER_COUNT);
-    download_manager->DownloadUrl(
-        url,
-        web_contents->GetURL(),
-        web_contents->GetEncoding(),
-        false,
-        save_info,
-        web_contents);
-  } else {
-    DownloadStarted(false, url);
-  }
-}
-
-void Downloader::AddListener(Listener* listener, const GURL& url) {
-  listeners_.insert(std::make_pair(url, listener->AsWeakPtr()));
-}
-
-void Downloader::DownloadStarted(bool success, const GURL& url) {
-  std::pair<ListenerMap::iterator, ListenerMap::iterator> listener_range =
-      listeners_.equal_range(url);
-  for (ListenerMap::iterator current_listener = listener_range.first;
-       current_listener != listener_range.second;
-       ++current_listener) {
-    if (current_listener->second)
-      current_listener->second->OnBurnDownloadStarted(success);
-  }
-  listeners_.erase(listener_range.first, listener_range.second);
 }
 
 }  // namespace imageburner

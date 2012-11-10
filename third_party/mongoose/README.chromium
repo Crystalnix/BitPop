@@ -1,7 +1,7 @@
 Name: Mongoose webserver
 Short Name: mongoose
 URL: http://code.google.com/p/mongoose/
-LICENSE: MIT
+License: MIT
 Version: 55cf8bf30cd9
 Release: between 3.0 and 3.1
 Security Critical: no
@@ -25,3 +25,4 @@ pending upstreaming by danielwh):
 * Don't ignore SIGCHLD, since the proxy launcher depends on it for determining
   chrome's exit code.
 * Removed a "set but never used" variable, to fix build for gcc 4.6.
+* Fixed a compiler warning (-Wmaybe-uninitialized).

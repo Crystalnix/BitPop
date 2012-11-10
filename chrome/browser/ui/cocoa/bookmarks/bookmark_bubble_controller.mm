@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,44 +22,6 @@
 
 using content::UserMetricsAction;
 
-
-// Simple class to watch for tab creation/destruction and close the bubble.
-// Bridge between Chrome-style notifications and ObjC-style notifications.
-class BookmarkBubbleNotificationBridge : public content::NotificationObserver {
- public:
-  BookmarkBubbleNotificationBridge(BookmarkBubbleController* controller,
-                                   SEL selector);
-  virtual ~BookmarkBubbleNotificationBridge() {}
-  void Observe(int type,
-               const content::NotificationSource& source,
-               const content::NotificationDetails& details);
- private:
-  content::NotificationRegistrar registrar_;
-  BookmarkBubbleController* controller_;  // weak; owns us.
-  SEL selector_;   // SEL sent to controller_ on notification.
-};
-
-BookmarkBubbleNotificationBridge::BookmarkBubbleNotificationBridge(
-  BookmarkBubbleController* controller, SEL selector)
-    : controller_(controller), selector_(selector) {
-  // registrar_ will automatically RemoveAll() when destroyed so we
-  // don't need to do so explicitly.
-  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_CONNECTED,
-                 content::NotificationService::AllSources());
-  registrar_.Add(this, content::NOTIFICATION_TAB_CLOSED,
-                 content::NotificationService::AllSources());
-}
-
-// At this time all notifications instigate the same behavior (go
-// away) so we don't bother checking which notification came in.
-void BookmarkBubbleNotificationBridge::Observe(
-  int type,
-  const content::NotificationSource& source,
-  const content::NotificationDetails& details) {
-  [controller_ performSelector:selector_ withObject:controller_];
-}
-
-
 // An object to represent the ChooseAnotherFolder item in the pop up.
 @interface ChooseAnotherFolder : NSObject
 @end
@@ -70,7 +32,6 @@ void BookmarkBubbleNotificationBridge::Observe(
 @interface BookmarkBubbleController (PrivateAPI)
 - (void)updateBookmarkNode;
 - (void)fillInFolderList;
-- (void)parentWindowWillClose:(NSNotification*)notification;
 @end
 
 @implementation BookmarkBubbleController
@@ -91,26 +52,19 @@ void BookmarkBubbleNotificationBridge::Observe(
                      model:(BookmarkModel*)model
                       node:(const BookmarkNode*)node
      alreadyBookmarked:(BOOL)alreadyBookmarked {
-  NSString* nibPath =
-      [base::mac::FrameworkBundle() pathForResource:@"BookmarkBubble"
-                                             ofType:@"nib"];
-  if ((self = [super initWithWindowNibPath:nibPath owner:self])) {
-    parentWindow_ = parentWindow;
+  if ((self = [super initWithWindowNibPath:@"BookmarkBubble"
+                              parentWindow:parentWindow
+                                anchoredAt:NSZeroPoint])) {
     model_ = model;
     node_ = node;
     alreadyBookmarked_ = alreadyBookmarked;
-
-    // Watch to see if the parent window closes, and if so, close this one.
-    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
-    [center addObserver:self
-               selector:@selector(parentWindowWillClose:)
-                   name:NSWindowWillCloseNotification
-                 object:parentWindow_];
   }
   return self;
 }
 
 - (void)awakeFromNib {
+  [super awakeFromNib];
+
   // Check if NSTextFieldCell supports the method. This check is in place as
   // only 10.6 and greater support the setUsesSingleLineMode method.
   // TODO(kushi.p): Remove this when the project hits a 10.6+ only state.
@@ -119,11 +73,6 @@ void BookmarkBubbleNotificationBridge::Observe(
           respondsToSelector:@selector(setUsesSingleLineMode:)]) {
     [nameFieldCell_ setUsesSingleLineMode:YES];
   }
-}
-
-- (void)dealloc {
-  [[NSNotificationCenter defaultCenter] removeObserver:self];
-  [super dealloc];
 }
 
 // If this is a new bookmark somewhere visible (e.g. on the bookmark
@@ -177,42 +126,36 @@ void BookmarkBubbleNotificationBridge::Observe(
   [self close];
 }
 
-- (void)parentWindowWillClose:(NSNotification*)notification {
-  [self close];
-}
-
 - (void)windowWillClose:(NSNotification*)notification {
   // We caught a close so we don't need to watch for the parent closing.
-  [[NSNotificationCenter defaultCenter] removeObserver:self];
   bookmark_observer_.reset(NULL);
-  chrome_observer_.reset(NULL);
   [self stopPulsingBookmarkButton];
-  [self autorelease];
+  [super windowWillClose:notification];
 }
 
-// We want this to be a child of a browser window.  addChildWindow:
-// (called from this function) will bring the window on-screen;
-// unfortunately, [NSWindowController showWindow:] will also bring it
-// on-screen (but will cause unexpected changes to the window's
-// position).  We cannot have an addChildWindow: and a subsequent
-// showWindow:. Thus, we have our own version.
+// Override -[BaseBubbleController showWindow:] to tweak bubble location and
+// set up UI elements.
 - (void)showWindow:(id)sender {
+  NSWindow* window = [self window];  // Force load the NIB.
+  NSWindow* parentWindow = self.parentWindow;
   BrowserWindowController* bwc =
-      [BrowserWindowController browserWindowControllerForWindow:parentWindow_];
+      [BrowserWindowController browserWindowControllerForWindow:parentWindow];
   [bwc lockBarVisibilityForOwner:self withAnimation:NO delay:NO];
-  NSWindow* window = [self window];  // completes nib load
-  [bubble_ setArrowLocation:info_bubble::kTopRight];
+
+  InfoBubbleView* bubble = self.bubble;
+  [bubble setArrowLocation:info_bubble::kTopRight];
+
   // Insure decent positioning even in the absence of a browser controller,
   // which will occur for some unit tests.
-  NSPoint arrowtip = bwc ? [bwc bookmarkBubblePoint] :
+  NSPoint arrowTip = bwc ? [bwc bookmarkBubblePoint] :
       NSMakePoint([window frame].size.width, [window frame].size.height);
-  NSPoint origin = [parentWindow_ convertBaseToScreen:arrowtip];
-  NSPoint bubbleArrowtip = [bubble_ arrowTip];
-  bubbleArrowtip = [bubble_ convertPoint:bubbleArrowtip toView:nil];
-  origin.y -= bubbleArrowtip.y;
-  origin.x -= bubbleArrowtip.x;
-  [window setFrameOrigin:origin];
-  [parentWindow_ addChildWindow:window ordered:NSWindowAbove];
+  arrowTip = [parentWindow convertBaseToScreen:arrowTip];
+  NSPoint bubbleArrowTip = [bubble arrowTip];
+  bubbleArrowTip = [bubble convertPoint:bubbleArrowTip toView:nil];
+  arrowTip.y -= bubbleArrowTip.y;
+  arrowTip.x -= bubbleArrowTip.x;
+  [window setFrameOrigin:arrowTip];
+
   // Default is IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARK; "Bookmark".
   // If adding for the 1st time the string becomes "Bookmark Added!"
   if (!alreadyBookmarked_) {
@@ -231,30 +174,18 @@ void BookmarkBubbleNotificationBridge::Observe(
                                node_, model_,
                                self,
                                @selector(dismissWithoutEditing:)));
-  chrome_observer_.reset(new BookmarkBubbleNotificationBridge(
-                             self, @selector(dismissWithoutEditing:)));
 
   // Pulse something interesting on the bookmark bar.
   [self startPulsingBookmarkButton:node_];
 
+  [parentWindow addChildWindow:window ordered:NSWindowAbove];
   [window makeKeyAndOrderFront:self];
+  [self registerKeyStateEventTap];
 }
 
 - (void)close {
-  [[BrowserWindowController browserWindowControllerForWindow:parentWindow_]
+  [[BrowserWindowController browserWindowControllerForWindow:self.parentWindow]
       releaseBarVisibilityForOwner:self withAnimation:YES delay:NO];
-  [parentWindow_ removeChildWindow:[self window]];
-
-  // If you quit while the bubble is open, sometimes we get a
-  // DidResignKey before we get our parent's WindowWillClose and
-  // sometimes not.  We protect against a multiple close (or reference
-  // to parentWindow_ at a bad time) by clearing it out once we're
-  // done, and by removing ourself from future notifications.
-  [[NSNotificationCenter defaultCenter]
-    removeObserver:self
-              name:NSWindowWillCloseNotification
-            object:parentWindow_];
-  parentWindow_ = nil;
 
   [super close];
 }
@@ -304,7 +235,7 @@ void BookmarkBubbleNotificationBridge::Observe(
   // It is possible that due to model change our parent window has been closed
   // but the popup is still showing and able to notify the controller of a
   // folder change.  We ignore the sender in this case.
-  if (!parentWindow_)
+  if (!self.parentWindow)
     return;
   NSMenuItem* selected = [folderPopUpButton_ selectedItem];
   ChooseAnotherFolder* chooseItem = [[self class] chooseAnotherFolderObject];
@@ -382,7 +313,7 @@ void BookmarkBubbleNotificationBridge::Observe(
 @end  // BookmarkBubbleController
 
 
-@implementation BookmarkBubbleController(ExposedForUnitTesting)
+@implementation BookmarkBubbleController (ExposedForUnitTesting)
 
 + (NSString*)chooseAnotherFolderString {
   return l10n_util::GetNSStringWithFixup(

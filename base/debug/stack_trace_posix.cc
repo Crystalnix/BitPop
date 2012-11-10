@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,8 +24,6 @@
 #if defined(OS_MACOSX)
 #include <AvailabilityMacros.h>
 #endif
-
-#include <iostream>
 
 #include "base/basictypes.h"
 #include "base/eintr_wrapper.h"
@@ -150,35 +148,21 @@ bool GetBacktraceStrings(void *const *trace, int size,
 }  // namespace
 
 StackTrace::StackTrace() {
-#if defined(OS_MACOSX) && MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_5
-  if (backtrace == NULL) {
-    count_ = 0;
-    return;
-  }
-#endif
   // Though the backtrace API man page does not list any possible negative
   // return values, we take no chance.
   count_ = std::max(backtrace(trace_, arraysize(trace_)), 0);
 }
 
 void StackTrace::PrintBacktrace() const {
-#if defined(OS_MACOSX) && MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_5
-  if (backtrace_symbols_fd == NULL)
-    return;
-#endif
   fflush(stderr);
   std::vector<std::string> trace_strings;
   GetBacktraceStrings(trace_, count_, &trace_strings, NULL);
   for (size_t i = 0; i < trace_strings.size(); ++i) {
-    std::cerr << "\t" << trace_strings[i] << "\n";
+    fprintf(stderr, "\t%s\n", trace_strings[i].c_str());
   }
 }
 
 void StackTrace::OutputToStream(std::ostream* os) const {
-#if defined(OS_MACOSX) && MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_5
-  if (backtrace_symbols == NULL)
-    return;
-#endif
   std::vector<std::string> trace_strings;
   std::string error_message;
   if (GetBacktraceStrings(trace_, count_, &trace_strings, &error_message)) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,6 +21,10 @@
 #if defined(OS_WIN)
 #include "base/message_loop.h"
 #include "ui/base/clipboard/clipboard_util_win.h"
+#endif
+
+#if defined(OS_ANDROID)
+#include "base/android/jni_android.h"
 #endif
 
 namespace ui {
@@ -54,14 +58,12 @@ TEST_F(ClipboardTest, ClearTest) {
   Clipboard clipboard;
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteText(ASCIIToUTF16("clear me"));
   }
 
-  {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
-    clipboard_writer.WriteHTML(ASCIIToUTF16("<b>broom</b>"), "");
-  }
+  clipboard.Clear(Clipboard::BUFFER_STANDARD);
 
   EXPECT_FALSE(clipboard.IsFormatAvailable(
       Clipboard::GetPlainTextWFormatType(), Clipboard::BUFFER_STANDARD));
@@ -76,7 +78,8 @@ TEST_F(ClipboardTest, TextTest) {
   std::string ascii_text;
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteText(text);
   }
 
@@ -98,7 +101,8 @@ TEST_F(ClipboardTest, HTMLTest) {
   std::string url("http://www.example.com/"), url_result;
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteHTML(markup, url);
   }
 
@@ -115,6 +119,67 @@ TEST_F(ClipboardTest, HTMLTest) {
 #endif  // defined(OS_WIN)
 }
 
+TEST_F(ClipboardTest, RTFTest) {
+  Clipboard clipboard;
+
+  std::string rtf =
+      "{\\rtf1\\ansi{\\fonttbl\\f0\\fswiss Helvetica;}\\f0\\pard\n"
+      "This is some {\\b bold} text.\\par\n"
+      "}";
+
+  {
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
+    clipboard_writer.WriteRTF(rtf);
+  }
+
+  EXPECT_TRUE(clipboard.IsFormatAvailable(Clipboard::GetRtfFormatType(),
+                                          Clipboard::BUFFER_STANDARD));
+  std::string result;
+  clipboard.ReadRTF(Clipboard::BUFFER_STANDARD, &result);
+  EXPECT_EQ(rtf, result);
+}
+
+#if defined(TOOLKIT_GTK)
+TEST_F(ClipboardTest, MultipleBufferTest) {
+  Clipboard clipboard;
+
+  string16 text(ASCIIToUTF16("Standard")), text_result;
+  string16 markup(ASCIIToUTF16("<string>Selection</string>")), markup_result;
+  std::string url("http://www.example.com/"), url_result;
+
+  {
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
+    clipboard_writer.WriteText(text);
+  }
+
+  {
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_SELECTION);
+    clipboard_writer.WriteHTML(markup, url);
+  }
+
+  EXPECT_TRUE(clipboard.IsFormatAvailable(Clipboard::GetPlainTextFormatType(),
+                                          Clipboard::BUFFER_STANDARD));
+  EXPECT_FALSE(clipboard.IsFormatAvailable(Clipboard::GetPlainTextFormatType(),
+                                           Clipboard::BUFFER_SELECTION));
+
+  EXPECT_FALSE(clipboard.IsFormatAvailable(Clipboard::GetHtmlFormatType(),
+                                           Clipboard::BUFFER_STANDARD));
+  EXPECT_TRUE(clipboard.IsFormatAvailable(Clipboard::GetHtmlFormatType(),
+                                          Clipboard::BUFFER_SELECTION));
+
+  clipboard.ReadText(Clipboard::BUFFER_STANDARD, &text_result);
+  EXPECT_EQ(text, text_result);
+
+  uint32 ignored;
+  clipboard.ReadHTML(Clipboard::BUFFER_SELECTION, &markup_result, &url_result,
+                     &ignored, &ignored);
+  EXPECT_PRED2(MarkupMatches, markup, markup_result);
+}
+#endif
+
 TEST_F(ClipboardTest, TrickyHTMLTest) {
   Clipboard clipboard;
 
@@ -123,7 +188,8 @@ TEST_F(ClipboardTest, TrickyHTMLTest) {
   std::string url, url_result;
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteHTML(markup, url);
   }
 
@@ -149,7 +215,8 @@ TEST_F(ClipboardTest, UniodeHTMLTest) {
   std::string url, url_result;
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteHTML(markup, url);
   }
 
@@ -163,11 +230,11 @@ TEST_F(ClipboardTest, UniodeHTMLTest) {
   EXPECT_EQ(url, url_result);
   // Make sure that fragment indices were adjusted when converting.
   EXPECT_EQ(36, fragment_start);
-  EXPECT_EQ(56, fragment_end);
+  EXPECT_EQ(52, fragment_end);
 }
 #endif  // defined(OS_WIN)
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 // Regression test for crbug.com/56298 (pasting empty HTML crashes Linux).
 TEST_F(ClipboardTest, EmptyHTMLTest) {
   Clipboard clipboard;
@@ -176,7 +243,7 @@ TEST_F(ClipboardTest, EmptyHTMLTest) {
   // The 1 is so the compiler doesn't warn about allocating an empty array.
   char* empty = new char[1];
   clipboard.InsertMapping("text/html", empty, 0U);
-  clipboard.SetGtkClipboard();
+  clipboard.SetGtkClipboard(Clipboard::BUFFER_STANDARD);
 
   EXPECT_TRUE(clipboard.IsFormatAvailable(Clipboard::GetHtmlFormatType(),
                                           Clipboard::BUFFER_STANDARD));
@@ -198,7 +265,8 @@ TEST_F(ClipboardTest, BookmarkTest) {
   std::string url("http://www.example.com/"), url_result;
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteBookmark(title, url);
   }
 
@@ -219,7 +287,8 @@ TEST_F(ClipboardTest, MultiFormatTest) {
   std::string ascii_text;
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteHTML(markup, url);
     clipboard_writer.WriteText(text);
   }
@@ -251,7 +320,8 @@ TEST_F(ClipboardTest, URLTest) {
   string16 url(ASCIIToUTF16("http://www.google.com/"));
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteURL(url);
   }
 
@@ -268,7 +338,7 @@ TEST_F(ClipboardTest, URLTest) {
   clipboard.ReadAsciiText(Clipboard::BUFFER_STANDARD, &ascii_text);
   EXPECT_EQ(UTF16ToUTF8(url), ascii_text);
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   ascii_text.clear();
   clipboard.ReadAsciiText(Clipboard::BUFFER_SELECTION, &ascii_text);
   EXPECT_EQ(UTF16ToUTF8(url), ascii_text);
@@ -312,7 +382,7 @@ TEST_F(ClipboardTest, SharedBitmapTest) {
   Clipboard::ReplaceSharedMemHandle(&objects, handle_to_share, current_process);
 
   Clipboard clipboard;
-  clipboard.WriteObjects(objects);
+  clipboard.WriteObjects(Clipboard::BUFFER_STANDARD, objects);
 
   EXPECT_TRUE(clipboard.IsFormatAvailable(Clipboard::GetBitmapFormatType(),
                                           Clipboard::BUFFER_STANDARD));
@@ -321,7 +391,7 @@ TEST_F(ClipboardTest, SharedBitmapTest) {
 // The following test somehow fails on GTK. The image when read back from the
 // clipboard has the alpha channel set to 0xFF for some reason. The other
 // channels stay intact. So I am turning this on only for aura.
-#if defined(USE_AURA)
+#if (defined(USE_AURA) && !defined(OS_WIN)) || defined(OS_ANDROID)
 TEST_F(ClipboardTest, MultipleBitmapReadWriteTest) {
   Clipboard clipboard;
 
@@ -333,7 +403,8 @@ TEST_F(ClipboardTest, MultipleBitmapReadWriteTest) {
   };
   gfx::Size fake_bitmap_1_size(3, 4);
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteBitmapFromPixels(fake_bitmap_1, fake_bitmap_1_size);
   }
   EXPECT_TRUE(clipboard.IsFormatAvailable(Clipboard::GetBitmapFormatType(),
@@ -360,7 +431,8 @@ TEST_F(ClipboardTest, MultipleBitmapReadWriteTest) {
   };
   gfx::Size fake_bitmap_2_size(7, 2);
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteBitmapFromPixels(fake_bitmap_2, fake_bitmap_2_size);
   }
   EXPECT_TRUE(clipboard.IsFormatAvailable(Clipboard::GetBitmapFormatType(),
@@ -386,7 +458,8 @@ TEST_F(ClipboardTest, DataTest) {
   write_pickle.WriteString(payload);
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WritePickledData(write_pickle, kFormat);
   }
 
@@ -397,7 +470,7 @@ TEST_F(ClipboardTest, DataTest) {
   ASSERT_FALSE(output.empty());
 
   Pickle read_pickle(output.data(), output.size());
-  void* iter = NULL;
+  PickleIterator iter(read_pickle);
   std::string unpickled_string;
   ASSERT_TRUE(read_pickle.ReadString(&iter, &unpickled_string));
   EXPECT_EQ(payload, unpickled_string);
@@ -418,7 +491,8 @@ TEST_F(ClipboardTest, MultipleDataTest) {
   write_pickle2.WriteString(payload2);
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WritePickledData(write_pickle1, kFormat1);
     // overwrite the previous pickle for fun
     clipboard_writer.WritePickledData(write_pickle2, kFormat2);
@@ -433,13 +507,14 @@ TEST_F(ClipboardTest, MultipleDataTest) {
   ASSERT_FALSE(output2.empty());
 
   Pickle read_pickle2(output2.data(), output2.size());
-  void* iter2 = NULL;
+  PickleIterator iter2(read_pickle2);
   std::string unpickled_string2;
   ASSERT_TRUE(read_pickle2.ReadString(&iter2, &unpickled_string2));
   EXPECT_EQ(payload2, unpickled_string2);
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WritePickledData(write_pickle2, kFormat2);
     // overwrite the previous pickle for fun
     clipboard_writer.WritePickledData(write_pickle1, kFormat1);
@@ -454,7 +529,7 @@ TEST_F(ClipboardTest, MultipleDataTest) {
   ASSERT_FALSE(output1.empty());
 
   Pickle read_pickle1(output1.data(), output1.size());
-  void* iter1 = NULL;
+  PickleIterator iter1(read_pickle1);
   std::string unpickled_string1;
   ASSERT_TRUE(read_pickle1.ReadString(&iter1, &unpickled_string1));
   EXPECT_EQ(payload1, unpickled_string1);
@@ -472,7 +547,8 @@ TEST_F(ClipboardTest, HyperlinkTest) {
   string16 html_result;
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteHyperlink(ASCIIToUTF16(kTitle), kUrl);
   }
 
@@ -488,7 +564,8 @@ TEST_F(ClipboardTest, WebSmartPasteTest) {
   Clipboard clipboard;
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteWebSmartPaste();
   }
 
@@ -506,7 +583,8 @@ TEST_F(ClipboardTest, BitmapTest) {
   Clipboard clipboard;
 
   {
-    ScopedClipboardWriter clipboard_writer(&clipboard);
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
     clipboard_writer.WriteBitmapFromPixels(fake_bitmap, gfx::Size(3, 4));
   }
 
@@ -562,7 +640,7 @@ TEST_F(ClipboardTest, WriteEverything) {
   Clipboard clipboard;
 
   {
-    ScopedClipboardWriter writer(&clipboard);
+    ScopedClipboardWriter writer(&clipboard, Clipboard::BUFFER_STANDARD);
     writer.WriteText(UTF8ToUTF16("foo"));
     writer.WriteURL(UTF8ToUTF16("foo"));
     writer.WriteHTML(UTF8ToUTF16("foo"), "bar");
@@ -575,4 +653,72 @@ TEST_F(ClipboardTest, WriteEverything) {
   // Passes if we don't crash.
 }
 
+#if defined(OS_ANDROID)
+
+// Test that if another application writes some text to the pasteboard the
+// clipboard properly invalidates other types.
+TEST_F(ClipboardTest, InternalClipboardInvalidation) {
+  const unsigned int kFakeBitmap[] = {
+    0x46155189, 0xF6A55C8D, 0x79845674, 0xFA57BD89,
+    0x78FD46AE, 0x87C64F5A, 0x36EDC5AF, 0x4378F568,
+    0x91E9F63A, 0xC31EA14F, 0x69AB32DF, 0x643A3FD1,
+  };
+
+  // Write a bitmap in our clipboard.
+  Clipboard clipboard;
+  {
+    ScopedClipboardWriter clipboard_writer(&clipboard,
+                                           Clipboard::BUFFER_STANDARD);
+    clipboard_writer.WriteBitmapFromPixels(kFakeBitmap, gfx::Size(3, 4));
+  }
+
+  //
+  // Simulate that another application copied something in the Clipboard
+  //
+  std::string new_value("Some text copied by some other app");
+  using base::android::ScopedJavaLocalRef;
+
+  JNIEnv* env = base::android::AttachCurrentThread();
+  ASSERT_TRUE(env);
+
+  jobject context = base::android::GetApplicationContext();
+  ASSERT_TRUE(context);
+
+  ScopedJavaLocalRef<jclass> context_class =
+      base::android::GetClass(env, "android/content/Context");
+
+  jmethodID get_system_service = base::android::GetMethodID(env, context_class,
+      "getSystemService",  "(Ljava/lang/String;)Ljava/lang/Object;");
+
+  // Retrieve the system service.
+  ScopedJavaLocalRef<jstring> service_name(env, env->NewStringUTF("clipboard"));
+  ScopedJavaLocalRef<jobject> clipboard_manager(
+      env, env->CallObjectMethod(
+        context, get_system_service, service_name.obj()));
+  ASSERT_TRUE(clipboard_manager.obj() && !base::android::ClearException(env));
+
+  ScopedJavaLocalRef<jclass> clipboard_class =
+      base::android::GetClass(env, "android/text/ClipboardManager");
+  jmethodID set_text = base::android::GetMethodID(env, clipboard_class,
+                          "setText", "(Ljava/lang/CharSequence;)V");
+
+  // Will need to call toString as CharSequence is not always a String.
+  env->CallVoidMethod(clipboard_manager.obj(),
+                      set_text,
+                      env->NewStringUTF(new_value.c_str()));
+
+  // The bitmap that should have been available should be gone.
+  EXPECT_FALSE(clipboard.IsFormatAvailable(Clipboard::GetBitmapFormatType(),
+                                           Clipboard::BUFFER_STANDARD));
+
+  // Make sure some text is available
+  EXPECT_TRUE(clipboard.IsFormatAvailable(
+      Clipboard::GetPlainTextWFormatType(), Clipboard::BUFFER_STANDARD));
+
+  // Make sure the text is what we inserted while simulating the other app
+  std::string contents;
+  clipboard.ReadAsciiText(Clipboard::BUFFER_STANDARD, &contents);
+  EXPECT_EQ(contents, new_value);
+}
+#endif
 }  // namespace ui

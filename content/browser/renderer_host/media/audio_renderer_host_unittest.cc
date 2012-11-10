@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,13 +9,13 @@
 #include "base/process_util.h"
 #include "base/sync_socket.h"
 #include "content/browser/browser_thread_impl.h"
-#include "content/browser/mock_resource_context.h"
 #include "content/browser/renderer_host/media/audio_renderer_host.h"
 #include "content/browser/renderer_host/media/mock_media_observer.h"
 #include "content/common/media/audio_messages.h"
 #include "ipc/ipc_message_utils.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/fake_audio_output_stream.h"
+#include "net/url_request/url_request_context.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -43,32 +43,26 @@ static bool IsRunningHeadless() {
 class MockAudioRendererHost : public AudioRendererHost {
  public:
   explicit MockAudioRendererHost(
-      const content::ResourceContext* resource_context)
-      : AudioRendererHost(resource_context),
+      media::AudioManager* audio_manager,
+      content::MediaObserver* media_observer)
+      : AudioRendererHost(audio_manager, media_observer),
         shared_memory_length_(0) {
   }
 
-  virtual ~MockAudioRendererHost() {
-  }
-
   // A list of mock methods.
-  MOCK_METHOD2(OnRequestPacket,
-               void(int stream_id, AudioBuffersState buffers_state));
   MOCK_METHOD2(OnStreamCreated,
-               void(int stream_id, int length));
-  MOCK_METHOD2(OnLowLatencyStreamCreated,
                void(int stream_id, int length));
   MOCK_METHOD1(OnStreamPlaying, void(int stream_id));
   MOCK_METHOD1(OnStreamPaused, void(int stream_id));
   MOCK_METHOD1(OnStreamError, void(int stream_id));
   MOCK_METHOD2(OnStreamVolume, void(int stream_id, double volume));
 
-  base::SharedMemory* shared_memory() { return shared_memory_.get(); }
-  uint32 shared_memory_length() { return shared_memory_length_; }
-
-  base::SyncSocket* sync_socket() { return sync_socket_.get(); }
-
  private:
+  virtual ~MockAudioRendererHost() {
+    // Make sure all audio streams have been deleted.
+    EXPECT_TRUE(audio_entries_.empty());
+  }
+
   // This method is used to dispatch IPC messages to the renderer. We intercept
   // these messages here and dispatch to our mock methods to verify the
   // conversation between this object and the renderer.
@@ -79,13 +73,10 @@ class MockAudioRendererHost : public AudioRendererHost {
     // we are the renderer.
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(MockAudioRendererHost, *message)
-      IPC_MESSAGE_HANDLER(AudioMsg_RequestPacket, OnRequestPacket)
-      IPC_MESSAGE_HANDLER(AudioMsg_NotifyStreamCreated, OnStreamCreated)
-      IPC_MESSAGE_HANDLER(AudioMsg_NotifyLowLatencyStreamCreated,
-                          OnLowLatencyStreamCreated)
+      IPC_MESSAGE_HANDLER(AudioMsg_NotifyStreamCreated,
+                          OnStreamCreated)
       IPC_MESSAGE_HANDLER(AudioMsg_NotifyStreamStateChanged,
                           OnStreamStateChanged)
-      IPC_MESSAGE_HANDLER(AudioMsg_NotifyStreamVolume, OnStreamVolume)
       IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
     EXPECT_TRUE(handled);
@@ -94,32 +85,14 @@ class MockAudioRendererHost : public AudioRendererHost {
     return true;
   }
 
-  // These handler methods do minimal things and delegate to the mock methods.
-  void OnRequestPacket(const IPC::Message& msg, int stream_id,
-                       AudioBuffersState buffers_state) {
-    OnRequestPacket(stream_id, buffers_state);
-  }
-
   void OnStreamCreated(const IPC::Message& msg, int stream_id,
-                       base::SharedMemoryHandle handle, uint32 length) {
-    // Maps the shared memory.
-    shared_memory_.reset(new base::SharedMemory(handle, false));
-    ASSERT_TRUE(shared_memory_->Map(length));
-    ASSERT_TRUE(shared_memory_->memory());
-    shared_memory_length_ = length;
-
-    // And then delegate the call to the mock method.
-    OnStreamCreated(stream_id, length);
-  }
-
-  void OnLowLatencyStreamCreated(const IPC::Message& msg, int stream_id,
-                               base::SharedMemoryHandle handle,
+                                 base::SharedMemoryHandle handle,
 #if defined(OS_WIN)
-                               base::SyncSocket::Handle socket_handle,
+                                 base::SyncSocket::Handle socket_handle,
 #else
-                               base::FileDescriptor socket_descriptor,
+                                 base::FileDescriptor socket_descriptor,
 #endif
-                               uint32 length) {
+                                 uint32 length) {
     // Maps the shared memory.
     shared_memory_.reset(new base::SharedMemory(handle, false));
     CHECK(shared_memory_->Map(length));
@@ -136,24 +109,25 @@ class MockAudioRendererHost : public AudioRendererHost {
     sync_socket_.reset(new base::SyncSocket(sync_socket_handle));
 
     // And then delegate the call to the mock method.
-    OnLowLatencyStreamCreated(stream_id, length);
+    OnStreamCreated(stream_id, length);
   }
 
   void OnStreamStateChanged(const IPC::Message& msg, int stream_id,
-                            AudioStreamState state) {
-    if (state == kAudioStreamPlaying) {
-      OnStreamPlaying(stream_id);
-    } else if (state == kAudioStreamPaused) {
-      OnStreamPaused(stream_id);
-    } else if (state == kAudioStreamError) {
-      OnStreamError(stream_id);
-    } else {
-      FAIL() << "Unknown stream state";
+                            media::AudioOutputIPCDelegate::State state) {
+    switch (state) {
+      case media::AudioOutputIPCDelegate::kPlaying:
+        OnStreamPlaying(stream_id);
+        break;
+      case media::AudioOutputIPCDelegate::kPaused:
+        OnStreamPaused(stream_id);
+        break;
+      case media::AudioOutputIPCDelegate::kError:
+        OnStreamError(stream_id);
+        break;
+      default:
+        FAIL() << "Unknown stream state";
+        break;
     }
-  }
-
-  void OnStreamVolume(const IPC::Message& msg, int stream_id, double volume) {
-    OnStreamVolume(stream_id, volume);
   }
 
   scoped_ptr<base::SharedMemory> shared_memory_;
@@ -183,13 +157,9 @@ class AudioRendererHostTest : public testing::Test {
                                            message_loop_.get()));
     ui_thread_.reset(new BrowserThreadImpl(BrowserThread::UI,
                                            message_loop_.get()));
-    audio_manager_ = AudioManager::Create();
+    audio_manager_.reset(media::AudioManager::Create());
     observer_.reset(new MockMediaObserver());
-    content::MockResourceContext* context =
-        content::MockResourceContext::GetInstance();
-    context->set_media_observer(observer_.get());
-    context->set_audio_manager(audio_manager_);
-    host_ = new MockAudioRendererHost(context);
+    host_ = new MockAudioRendererHost(audio_manager_.get(), observer_.get());
 
     // Simulate IPC channel connected.
     host_->OnChannelConnected(base::GetCurrentProcId());
@@ -206,13 +176,7 @@ class AudioRendererHostTest : public testing::Test {
     // We need to continue running message_loop_ to complete all destructions.
     SyncWithAudioThread();
 
-    // Since the MockResourceContext object is a singleton that lives across
-    // multiple tests, we must clear pointers to objects that are about to die.
-    content::MockResourceContext* context =
-        content::MockResourceContext::GetInstance();
-    context->set_audio_manager(NULL);
-    context->set_media_observer(NULL);
-    audio_manager_ = NULL;
+    audio_manager_.reset();
 
     io_thread_.reset();
     ui_thread_.reset();
@@ -221,56 +185,26 @@ class AudioRendererHostTest : public testing::Test {
   void Create() {
     EXPECT_CALL(*observer_,
                 OnSetAudioStreamStatus(_, kStreamId, "created"));
-    EXPECT_CALL(*observer_, OnDeleteAudioStream(_, kStreamId));
 
     InSequence s;
-    // 1. We will first receive a OnStreamCreated() signal.
-    EXPECT_CALL(*host_, OnStreamCreated(kStreamId, _));
-
-    // 2. First packet request will arrive.
-    EXPECT_CALL(*host_, OnRequestPacket(kStreamId, _))
+    // We will first receive an OnStreamCreated() signal.
+    EXPECT_CALL(*host_, OnStreamCreated(kStreamId, _))
         .WillOnce(QuitMessageLoop(message_loop_.get()));
 
-    AudioParameters params;
+    media::AudioParameters::Format format;
     if (mock_stream_)
-      params.format = AudioParameters::AUDIO_MOCK;
+      format = media::AudioParameters::AUDIO_MOCK;
     else
-      params.format = AudioParameters::AUDIO_PCM_LINEAR;
-    params.channels = 2;
-    params.sample_rate = AudioParameters::kAudioCDSampleRate;
-    params.bits_per_sample = 16;
-    params.samples_per_packet = 0;
+      format = media::AudioParameters::AUDIO_PCM_LINEAR;
+
+    media::AudioParameters params(
+        format, CHANNEL_LAYOUT_STEREO,
+        media::AudioParameters::kAudioCDSampleRate, 16,
+        media::AudioParameters::kAudioCDSampleRate / 10);
 
     // Send a create stream message to the audio output stream and wait until
     // we receive the created message.
-    host_->OnCreateStream(kStreamId, params, false);
-    message_loop_->Run();
-  }
-
-  void CreateLowLatency() {
-    EXPECT_CALL(*observer_,
-                OnSetAudioStreamStatus(_, kStreamId, "created"));
-    EXPECT_CALL(*observer_, OnDeleteAudioStream(_, kStreamId));
-
-    InSequence s;
-    // We will first receive a OnLowLatencyStreamCreated() signal.
-    EXPECT_CALL(*host_,
-                OnLowLatencyStreamCreated(kStreamId, _))
-        .WillOnce(QuitMessageLoop(message_loop_.get()));
-
-    AudioParameters params;
-    if (mock_stream_)
-      params.format = AudioParameters::AUDIO_MOCK;
-    else
-      params.format = AudioParameters::AUDIO_PCM_LINEAR;
-    params.channels = 2;
-    params.sample_rate = AudioParameters::kAudioCDSampleRate;
-    params.bits_per_sample = 16;
-    params.samples_per_packet = 0;
-
-    // Send a create stream message to the audio output stream and wait until
-    // we receive the created message.
-    host_->OnCreateStream(kStreamId, params, true);
+    host_->OnCreateStream(kStreamId, params);
     message_loop_->Run();
   }
 
@@ -312,15 +246,6 @@ class AudioRendererHostTest : public testing::Test {
     message_loop_->RunAllPending();
   }
 
-  void NotifyPacketReady() {
-    EXPECT_CALL(*host_, OnRequestPacket(kStreamId, _))
-        .WillOnce(QuitMessageLoop(message_loop_.get()));
-
-    memset(host_->shared_memory()->memory(), 0, host_->shared_memory_length());
-    host_->OnNotifyPacketReady(kStreamId, host_->shared_memory_length());
-    message_loop_->Run();
-  }
-
   void SimulateError() {
     EXPECT_CALL(*observer_,
                 OnSetAudioStreamStatus(_, kStreamId, "error"));
@@ -333,6 +258,9 @@ class AudioRendererHostTest : public testing::Test {
 
     // Expect an error signal sent through IPC.
     EXPECT_CALL(*host_, OnStreamError(kStreamId));
+
+    // Expect the audio stream will be deleted.
+    EXPECT_CALL(*observer_, OnDeleteAudioStream(_, kStreamId));
 
     // Simulate an error sent from the audio device.
     host_->OnError(controller, 0);
@@ -348,7 +276,7 @@ class AudioRendererHostTest : public testing::Test {
   }
 
   // Called on the main thread.
-  static void PostQuitOnAudioThread(AudioManager* audio_manager,
+  static void PostQuitOnAudioThread(media::AudioManager* audio_manager,
                                     MessageLoop* message_loop) {
     audio_manager->GetMessageLoop()->PostTask(FROM_HERE,
         base::Bind(&PostQuitMessageLoop, message_loop));
@@ -359,7 +287,7 @@ class AudioRendererHostTest : public testing::Test {
   // current thread. It is used to synchronize with the audio thread when we are
   // closing an audio stream.
   void SyncWithAudioThread() {
-    // Don't use scoped_refptr to addref the AudioManager when posting
+    // Don't use scoped_refptr to addref the media::AudioManager when posting
     // to the thread that itself owns.
     message_loop_->PostTask(
         FROM_HERE, base::Bind(&PostQuitOnAudioThread,
@@ -368,8 +296,6 @@ class AudioRendererHostTest : public testing::Test {
     message_loop_->Run();
   }
 
-  MessageLoop* message_loop() { return message_loop_.get(); }
-  MockAudioRendererHost* host() { return host_; }
   void EnableRealDevice() { mock_stream_ = false; }
 
  private:
@@ -379,7 +305,7 @@ class AudioRendererHostTest : public testing::Test {
   scoped_ptr<MessageLoop> message_loop_;
   scoped_ptr<BrowserThreadImpl> io_thread_;
   scoped_ptr<BrowserThreadImpl> ui_thread_;
-  scoped_refptr<AudioManager> audio_manager_;
+  scoped_ptr<media::AudioManager> audio_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioRendererHostTest);
 };
@@ -390,6 +316,14 @@ TEST_F(AudioRendererHostTest, CreateAndClose) {
 
   Create();
   Close();
+}
+
+// Simulate the case where a stream is not properly closed.
+TEST_F(AudioRendererHostTest, CreateAndShutdown) {
+  if (!IsRunningHeadless())
+    EnableRealDevice();
+
+  Create();
 }
 
 TEST_F(AudioRendererHostTest, CreatePlayAndClose) {
@@ -420,19 +354,6 @@ TEST_F(AudioRendererHostTest, SetVolume) {
   Play();
   Pause();
   Close();
-
-  // Expect the volume is set.
-  if (IsRunningHeadless()) {
-    EXPECT_EQ(0.5, FakeAudioOutputStream::GetLastFakeStream()->volume());
-  }
-}
-
-// Simulate the case where a stream is not properly closed.
-TEST_F(AudioRendererHostTest, CreateAndShutdown) {
-  if (!IsRunningHeadless())
-    EnableRealDevice();
-
-  Create();
 }
 
 // Simulate the case where a stream is not properly closed.
@@ -452,33 +373,6 @@ TEST_F(AudioRendererHostTest, CreatePlayPauseAndShutdown) {
   Create();
   Play();
   Pause();
-}
-
-TEST_F(AudioRendererHostTest, DataConversationMockStream) {
-  Create();
-
-  // Note that we only do notify three times because the buffer capacity is
-  // triple of one packet size.
-  NotifyPacketReady();
-  NotifyPacketReady();
-  NotifyPacketReady();
-  Close();
-}
-
-TEST_F(AudioRendererHostTest, DataConversationRealStream) {
-  if (IsRunningHeadless())
-    return;
-  EnableRealDevice();
-  Create();
-  Play();
-
-  // If this is a real audio device, the data conversation is not limited
-  // to the buffer capacity of AudioOutputController. So we do 5 exchanges
-  // before we close the device.
-  for (int i = 0; i < 5; ++i) {
-    NotifyPacketReady();
-  }
-  Close();
 }
 
 TEST_F(AudioRendererHostTest, SimulateError) {
@@ -503,20 +397,5 @@ TEST_F(AudioRendererHostTest, SimulateErrorAndClose) {
   Close();
 }
 
-TEST_F(AudioRendererHostTest, CreateLowLatencyAndClose) {
-  if (!IsRunningHeadless())
-    EnableRealDevice();
-
-  CreateLowLatency();
-  Close();
-}
-
-// Simulate the case where a stream is not properly closed.
-TEST_F(AudioRendererHostTest, CreateLowLatencyAndShutdown) {
-  if (!IsRunningHeadless())
-    EnableRealDevice();
-
-  CreateLowLatency();
-}
 
 // TODO(hclam): Add tests for data conversation in low latency mode.

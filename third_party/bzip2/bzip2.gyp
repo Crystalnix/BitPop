@@ -5,10 +5,10 @@
 {
   'variables': {
     'conditions': [
-      [ 'os_posix == 1 and OS != "mac" and OS != "android"', {
+      [ 'toolkit_uses_gtk==1', {
         # Link to system .so since we already use it due to GTK.
         'use_system_bzip2%': 1,
-      }, {  # os_posix != 1 or OS == "mac" or OS == "android"
+      }, {  # toolkit_uses_gtk!=1
         'use_system_bzip2%': 0,
       }],
     ],
@@ -56,15 +56,24 @@
               'USE_SYSTEM_LIBBZ2',
             ],
           },
-
-          # There aren't any pkg-config files for libbz2
-          'link_settings': {
-            'libraries': [
-              '-lbz2',
-            ],
-          },
+          'conditions': [
+            ['OS=="ios"', {
+              'link_settings': {
+                'libraries': [
+                  '$(SDKROOT)/usr/lib/libbz2.dylib',
+                ],
+              },
+            }, {
+              # There aren't any pkg-config files for libbz2
+              'link_settings': {
+                'libraries': [
+                  '-lbz2',
+                ],
+              },
+            }],
+          ],
         },
-      ]
+      ],
     }],
   ],
 }

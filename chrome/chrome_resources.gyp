@@ -32,13 +32,6 @@
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'options_resources',
-          'variables': {
-            'grit_grd_file': 'browser/resources/options_resources.grd',
-          },
-          'includes': [ '../build/grit_action.gypi' ],
-        },
-        {
           'action_name': 'options2_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/options2_resources.grd',
@@ -67,13 +60,6 @@
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'workers_resources',
-          'variables': {
-            'grit_grd_file': 'browser/resources/workers_resources.grd',
-          },
-          'includes': [ '../build/grit_action.gypi' ],
-        },
-        {
           'action_name': 'devtools_discovery_page_resources',
           'variables': {
             'grit_grd_file':
@@ -83,6 +69,14 @@
         },
       ],
       'includes': [ '../build/grit_target.gypi' ],
+      'copies': [
+        {
+          'destination': '<(PRODUCT_DIR)/resources/extension/demo',
+          'files': [
+            'browser/resources/extension_resource/demo/library.js',
+          ],
+        },
+      ]
     },
     {
       # TODO(mark): It would be better if each static library that needed
@@ -114,6 +108,13 @@
           },
           'includes': [ '../build/grit_action.gypi' ],
         },
+        {
+          'action_name': 'extensions_api_resources',
+          'variables': {
+            'grit_grd_file': 'common/extensions_api_resources.grd',
+          },
+          'includes': [ '../build/grit_action.gypi' ],
+        }
       ],
       'includes': [ '../build/grit_target.gypi' ],
     },
@@ -200,7 +201,7 @@
       'includes': [ '../build/grit_target.gypi' ],
     },
     {
-      'target_name': 'theme_resources',
+      'target_name': 'theme_resources_gen',
       'type': 'none',
       'actions': [
         {
@@ -210,22 +211,63 @@
           },
           'includes': [ '../build/grit_action.gypi' ],
         },
-        {
-          'action_name': 'theme_resources_large',
-          'variables': {
-            'grit_grd_file': 'app/theme/theme_resources_large.grd',
-          },
-          'includes': [ '../build/grit_action.gypi' ],
-        },
-        {
-          'action_name': 'theme_resources_standard',
-          'variables': {
-            'grit_grd_file': 'app/theme/theme_resources_standard.grd',
-          },
-          'includes': [ '../build/grit_action.gypi' ],
-        },
       ],
       'includes': [ '../build/grit_target.gypi' ],
+    },
+    {
+      'target_name': 'theme_resources',
+      'type': 'none',
+      'dependencies': [
+        'theme_resources_gen',
+        '<(DEPTH)/ui/ui.gyp:ui_resources',
+      ],
+      'conditions': [
+        ['OS != "mac"', {
+          # Copy pak files to the product directory. These files will be picked
+          # up by the following installer scripts:
+          #   - Windows: chrome/installer/mini_installer/chrome.release
+          #   - Linux: chrome/installer/linux/internal/common/installer.include
+          # Ensure that the above scripts are updated when adding or removing
+          # pak files.
+          # Copying files to the product directory is not needed on the Mac
+          # since the framework build phase will copy them into the framework
+          # bundle directly.
+          'copies': [
+            {
+              'destination': '<(PRODUCT_DIR)',
+              'files': [
+                '<(grit_out_dir)/theme_resources_100_percent.pak',
+                '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
+              ],
+            },
+          ],
+        }],
+        ['(OS != "mac" and enable_hidpi == 1) or chromeos == 1', {
+          'copies': [
+            {
+              'destination': '<(PRODUCT_DIR)',
+              'files': [
+                '<(grit_out_dir)/theme_resources_200_percent.pak',
+                '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_200_percent.pak',
+                '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_200_percent.pak',
+              ],
+            },
+          ],
+        }],
+        ['enable_touch_ui==1', {
+          'copies': [
+            {
+              'destination': '<(PRODUCT_DIR)',
+              'files': [
+                '<(grit_out_dir)/theme_resources_touch_100_percent.pak',
+                '<(grit_out_dir)/theme_resources_touch_200_percent.pak',
+                '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_touch_100_percent.pak',
+                '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_touch_200_percent.pak',
+              ],
+            },
+          ],
+        }],
+      ],
     },
     {
       'target_name': 'packed_extra_resources',
@@ -269,13 +311,13 @@
         'chrome_strings',
         'platform_locale_settings',
         'theme_resources',
+        # TODO(zork): Protect this with if use_aura==1
+        '<(DEPTH)/ash/ash_strings.gyp:ash_strings',
         '<(DEPTH)/content/content_resources.gyp:content_resources',
         '<(DEPTH)/net/net.gyp:net_resources',
         '<(DEPTH)/ui/base/strings/ui_strings.gyp:ui_strings',
-        '<(DEPTH)/ui/ui.gyp:gfx_resources',
         '<(DEPTH)/ui/ui.gyp:ui_resources',
-        '<(DEPTH)/ui/ui.gyp:ui_resources_large',
-        '<(DEPTH)/ui/ui.gyp:ui_resources_standard',
+        '<(DEPTH)/ui/ui.gyp:ui_resources_wallpapers',
         '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_resources',
         '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_strings',
       ],
@@ -304,13 +346,13 @@
             {
               'destination': '<(PRODUCT_DIR)/locales',
               'files': [
-                '<!@pymod_do_main(repack_locales -o -g <(grit_out_dir) -s <(SHARED_INTERMEDIATE_DIR) -x <(SHARED_INTERMEDIATE_DIR) <(locales))'
+                '<!@pymod_do_main(repack_locales -o -p <(OS) -g <(grit_out_dir) -s <(SHARED_INTERMEDIATE_DIR) -x <(SHARED_INTERMEDIATE_DIR) <(locales))'
               ],
             },
             {
               'destination': '<(PRODUCT_DIR)/pseudo_locales',
               'files': [
-                '<!@pymod_do_main(repack_locales -o -g <(grit_out_dir) -s <(SHARED_INTERMEDIATE_DIR) -x <(SHARED_INTERMEDIATE_DIR) <(pseudo_locales))'
+                '<!@pymod_do_main(repack_locales -o -p <(OS) -g <(grit_out_dir) -s <(SHARED_INTERMEDIATE_DIR) -x <(SHARED_INTERMEDIATE_DIR) <(pseudo_locales))'
               ],
             },
           ],

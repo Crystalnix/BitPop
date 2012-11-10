@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,13 +7,15 @@
 #include "base/bind.h"
 #include "base/platform_file.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
-#include "content/browser/renderer_host/render_view_host.h"
+#include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/notification_types.h"
 
 using content::BrowserThread;
+using content::RenderViewHostImpl;
 using content::WebContents;
 
 MHTMLGenerationManager::Job::Job()
@@ -26,13 +28,18 @@ MHTMLGenerationManager::Job::Job()
 MHTMLGenerationManager::Job::~Job() {
 }
 
+MHTMLGenerationManager* MHTMLGenerationManager::GetInstance() {
+  return Singleton<MHTMLGenerationManager>::get();
+}
+
 MHTMLGenerationManager::MHTMLGenerationManager() {
 }
 
 MHTMLGenerationManager::~MHTMLGenerationManager() {
 }
 
-void MHTMLGenerationManager::GenerateMHTML(WebContents* web_contents,
+void MHTMLGenerationManager::GenerateMHTML(
+    WebContents* web_contents,
     const FilePath& file,
     const GenerateMHTMLCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -42,14 +49,14 @@ void MHTMLGenerationManager::GenerateMHTML(WebContents* web_contents,
   Job job;
   job.file_path = file;
   job.process_id = web_contents->GetRenderProcessHost()->GetID();
-  job.routing_id = web_contents->GetRenderViewHost()->routing_id();
+  job.routing_id = web_contents->GetRenderViewHost()->GetRoutingID();
   job.callback = callback;
   id_to_job_[job_id] = job;
 
   base::ProcessHandle renderer_process =
       web_contents->GetRenderProcessHost()->GetHandle();
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-      base::Bind(&MHTMLGenerationManager::CreateFile, this,
+      base::Bind(&MHTMLGenerationManager::CreateFile, base::Unretained(this),
                  job_id, file, renderer_process));
 }
 
@@ -57,7 +64,8 @@ void MHTMLGenerationManager::MHTMLGenerated(int job_id, int64 mhtml_data_size) {
   JobFinished(job_id, mhtml_data_size);
 }
 
-void MHTMLGenerationManager::CreateFile(int job_id, const FilePath& file_path,
+void MHTMLGenerationManager::CreateFile(
+    int job_id, const FilePath& file_path,
     base::ProcessHandle renderer_process) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   base::PlatformFile browser_file = base::CreatePlatformFile(file_path,
@@ -72,7 +80,7 @@ void MHTMLGenerationManager::CreateFile(int job_id, const FilePath& file_path,
       IPC::GetFileHandleForProcess(browser_file, renderer_process, false);
 
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      base::Bind(&MHTMLGenerationManager::FileCreated, this,
+      base::Bind(&MHTMLGenerationManager::FileCreated, base::Unretained(this),
                  job_id, browser_file, renderer_file));
 }
 
@@ -96,14 +104,15 @@ void MHTMLGenerationManager::FileCreated(int job_id,
   job.browser_file = browser_file;
   job.renderer_file = renderer_file;
 
-  RenderViewHost* rvh = RenderViewHost::FromID(job.process_id, job.routing_id);
+  RenderViewHostImpl* rvh = RenderViewHostImpl::FromID(
+      job.process_id, job.routing_id);
   if (!rvh) {
-    // The tab went away.
+    // The contents went away.
     JobFinished(job_id, -1);
     return;
   }
 
-  rvh->Send(new ViewMsg_SavePageAsMHTML(rvh->routing_id(), job_id,
+  rvh->Send(new ViewMsg_SavePageAsMHTML(rvh->GetRoutingID(), job_id,
                                         renderer_file));
 }
 
@@ -118,7 +127,8 @@ void MHTMLGenerationManager::JobFinished(int job_id, int64 file_size) {
   job.callback.Run(job.file_path, file_size);
 
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-      base::Bind(&MHTMLGenerationManager::CloseFile, this, job.browser_file));
+      base::Bind(&MHTMLGenerationManager::CloseFile, base::Unretained(this),
+                 job.browser_file));
 
   id_to_job_.erase(job_id);
 }

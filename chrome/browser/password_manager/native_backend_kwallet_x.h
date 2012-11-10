@@ -1,20 +1,21 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_PASSWORD_MANAGER_NATIVE_BACKEND_KWALLET_X_H_
 #define CHROME_BROWSER_PASSWORD_MANAGER_NATIVE_BACKEND_KWALLET_X_H_
-#pragma once
 
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/time.h"
+#include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/password_manager/password_store_x.h"
 #include "chrome/browser/profiles/profile.h"
 
 class Pickle;
+class PickleIterator;
 class PrefService;
 
 namespace webkit {
@@ -61,6 +62,17 @@ class NativeBackendKWallet : public PasswordStoreX::NativeBackend {
 
   // Internally used by Init(), but also for testing to provide a mock bus.
   bool InitWithBus(scoped_refptr<dbus::Bus> optional_bus);
+
+  // Deserializes a list of PasswordForms from the wallet.
+  // |size_32| controls reading the size field within the pickle as 32 bits.
+  // We used to use Pickle::WriteSize() to write the number of password forms,
+  // but that has a different size on 32- and 64-bit systems. So, now we always
+  // write a 64-bit quantity, but we support trying to read it as either size
+  // when reading old pickles that fail to deserialize using the native size.
+  static bool DeserializeValueSize(const std::string& signon_realm,
+                                   const PickleIterator& iter,
+                                   bool size_32, bool warn_only,
+                                   PasswordFormList* forms);
 
   // Deserializes a list of PasswordForms from the wallet.
   static void DeserializeValue(const std::string& signon_realm,
@@ -128,12 +140,12 @@ class NativeBackendKWallet : public PasswordStoreX::NativeBackend {
                                    const std::string& realm);
 
   // Convenience function to read a GURL from a Pickle. Assumes the URL has
-  // been written as a std::string. Returns true on success.
-  static bool ReadGURL(const Pickle& pickle, void** iter, GURL* url);
+  // been written as a UTF-8 string. Returns true on success.
+  static bool ReadGURL(PickleIterator* iter, bool warn_only, GURL* url);
 
   // In case the fields in the pickle ever change, version them so we can try to
   // read old pickles. (Note: do not eat old pickles past the expiration date.)
-  static const int kPickleVersion = 0;
+  static const int kPickleVersion = 1;
 
   // Name of the folder to store passwords in.
   static const char kKWalletFolder[];

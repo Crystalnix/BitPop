@@ -10,7 +10,7 @@
 #endif
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
-#include "third_party/skia/include/gpu/GrGLInterface.h"
+#include "third_party/skia/include/gpu/gl/GrGLInterface.h"
 
 namespace webkit_glue {
 
@@ -74,6 +74,7 @@ GrGLInterface* CreateCommandBufferSkiaGLBinding() {
   interface->fStencilOpSeparate = glStencilOpSeparate;
   interface->fTexImage2D = glTexImage2D;
   interface->fTexParameteri = glTexParameteri;
+  interface->fTexParameteriv = glTexParameteriv;
   interface->fTexStorage2D = glTexStorage2DEXT;
   interface->fTexSubImage2D = glTexSubImage2D;
   interface->fUniform1f = glUniform1f;

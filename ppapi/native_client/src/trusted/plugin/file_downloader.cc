@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 #include "native_client/src/include/portability_io.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/shared/platform/nacl_time.h"
+#include "native_client/src/trusted/plugin/callback_source.h"
 #include "native_client/src/trusted/plugin/plugin.h"
 #include "native_client/src/trusted/plugin/utility.h"
 #include "ppapi/c/pp_errors.h"
@@ -37,17 +38,23 @@ void FileDownloader::Initialize(Plugin* instance) {
       pp::Module::Get()->GetBrowserInterface(PPB_FILEIOTRUSTED_INTERFACE));
   url_loader_trusted_interface_ = static_cast<const PPB_URLLoaderTrusted*>(
       pp::Module::Get()->GetBrowserInterface(PPB_URLLOADERTRUSTED_INTERFACE));
+  temp_buffer_.resize(kTempBufferSize);
 }
 
+bool FileDownloader::OpenStream(
+    const nacl::string& url,
+    const pp::CompletionCallback& callback,
+    StreamCallbackSource* stream_callback_source) {
+  data_stream_callback_source_ = stream_callback_source;
+  return Open(url, DOWNLOAD_STREAM, callback, NULL);
+}
 
 bool FileDownloader::Open(
     const nacl::string& url,
-    DownloadFlags flags,
-    bool allow_extension_url,
+    DownloadMode mode,
     const pp::CompletionCallback& callback,
     PP_URLLoaderTrusted_StatusCallback progress_callback) {
-  PLUGIN_PRINTF(("FileDownloader::Open (url=%s, allow_extension_url=%d)\n",
-                 url.c_str(), allow_extension_url));
+  PLUGIN_PRINTF(("FileDownloader::Open (url=%s)\n", url.c_str()));
   if (callback.pp_completion_callback().func == NULL ||
       instance_ == NULL ||
       file_io_trusted_interface_ == NULL)
@@ -58,7 +65,7 @@ bool FileDownloader::Open(
   url_to_open_ = url;
   url_ = url;
   file_open_notify_callback_ = callback;
-  flags_ = flags;
+  mode_ = mode;
   buffer_.clear();
   pp::URLRequestInfo url_request(instance_);
 
@@ -70,14 +77,14 @@ bool FileDownloader::Open(
     url_scheme_ = instance_->GetUrlScheme(url);
     bool grant_universal_access = false;
     if (url_scheme_ == SCHEME_CHROME_EXTENSION) {
-      if (allow_extension_url) {
-        // This NEXE has been granted rights to access URLs in the chrome
-        // extension scheme.
-        grant_universal_access = true;
-      }
+      // Use CORS to access URLs in the chrome extension scheme. If the files
+      // are truly restricted, then they should not be listed as a
+      // web_accessible_resource in the extension manifest.
+      url_request.SetAllowCrossOriginRequests(true);
     } else if (url_scheme_ == SCHEME_DATA) {
       // TODO(elijahtaylor) Remove this when data URIs can be read without
       // universal access.
+      // https://bugs.webkit.org/show_bug.cgi?id=17352
       if (streaming_to_buffer()) {
         grant_universal_access = true;
       } else {
@@ -92,9 +99,8 @@ bool FileDownloader::Open(
 
     if (url_loader_trusted_interface_ != NULL) {
       if (grant_universal_access) {
-        // TODO(sehr,jvoung): this should use
-        // pp::URLRequestInfo::SetAllowCrossOriginRequests() when
-        // support for web accessible resources is added to extensions.
+        // TODO(sehr,jvoung): See if we can remove this -- currently
+        // only used for data URIs.
         url_loader_trusted_interface_->GrantUniversalAccess(
             url_loader_.pp_resource());
       }
@@ -125,7 +131,7 @@ bool FileDownloader::Open(
   // synchronously all other internal callbacks that eventually result in the
   // invocation of the user callback. The user code will not be reentered.
   pp::CompletionCallback onload_callback =
-      callback_factory_.NewRequiredCallback(start_notify);
+      callback_factory_.NewCallback(start_notify);
   int32_t pp_error = url_loader_.Open(url_request, onload_callback);
   PLUGIN_PRINTF(("FileDownloader::Open (pp_error=%"NACL_PRId32")\n", pp_error));
   CHECK(pp_error == PP_OK_COMPLETIONPENDING);
@@ -295,8 +301,10 @@ void FileDownloader::URLBufferStartNotify(int32_t pp_error) {
   // Finish streaming the body asynchronously providing a callback.
   pp::CompletionCallback onread_callback =
       callback_factory_.NewOptionalCallback(&FileDownloader::URLReadBodyNotify);
-  pp_error = url_loader_.ReadResponseBody(temp_buffer_,
-                                          kTempBufferSize,
+
+  int32_t temp_size = static_cast<int32_t>(temp_buffer_.size());
+  pp_error = url_loader_.ReadResponseBody(&temp_buffer_[0],
+                                          temp_size,
                                           onread_callback);
   bool async_notify_ok = (pp_error == PP_OK_COMPLETIONPENDING);
   PLUGIN_PRINTF(("FileDownloader::URLBufferStartNotify (async_notify_ok=%d)\n",
@@ -312,14 +320,26 @@ void FileDownloader::URLReadBodyNotify(int32_t pp_error) {
   if (pp_error < PP_OK) {
     file_open_notify_callback_.Run(pp_error);
   } else if (pp_error == PP_OK) {
+    if (streaming_to_user()) {
+      data_stream_callback_source_->GetCallback().Run(PP_OK);
+    }
     FileOpenNotify(PP_OK);
   } else {
-    buffer_.insert(buffer_.end(), temp_buffer_, temp_buffer_ + pp_error);
+    if (streaming_to_buffer()) {
+      buffer_.insert(buffer_.end(), &temp_buffer_[0], &temp_buffer_[pp_error]);
+    } else if (streaming_to_user()) {
+      PLUGIN_PRINTF(("Running data_stream_callback, temp_buffer_=%p\n",
+                     &temp_buffer_[0]));
+      StreamCallback cb = data_stream_callback_source_->GetCallback();
+      *(cb.output()) = &temp_buffer_;
+      cb.Run(pp_error);
+    }
     pp::CompletionCallback onread_callback =
         callback_factory_.NewOptionalCallback(
             &FileDownloader::URLReadBodyNotify);
-    pp_error = url_loader_.ReadResponseBody(temp_buffer_,
-                                            kTempBufferSize,
+    int32_t temp_size = static_cast<int32_t>(temp_buffer_.size());
+    pp_error = url_loader_.ReadResponseBody(&temp_buffer_[0],
+                                            temp_size,
                                             onread_callback);
     bool async_notify_ok = (pp_error == PP_OK_COMPLETIONPENDING);
     if (!async_notify_ok) {
@@ -335,11 +355,15 @@ void FileDownloader::FileOpenNotify(int32_t pp_error) {
 }
 
 bool FileDownloader::streaming_to_file() const {
-  return (flags_ & DOWNLOAD_TO_BUFFER) == 0;
+  return mode_ == DOWNLOAD_TO_FILE;
 }
 
 bool FileDownloader::streaming_to_buffer() const {
-  return (flags_ & DOWNLOAD_TO_BUFFER) == 1;
+  return mode_ == DOWNLOAD_TO_BUFFER;
+}
+
+bool FileDownloader::streaming_to_user() const {
+  return mode_ == DOWNLOAD_STREAM;
 }
 
 }  // namespace plugin

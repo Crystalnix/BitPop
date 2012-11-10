@@ -5,6 +5,19 @@
 {
   'variables': {
     'chromium_code': 1,
+    # Put all transitive dependencies for Windows HMAC here.
+    # This is required so that we can build them for nacl win64.
+    'hmac_win64_related_sources': [
+      'hmac.cc',
+      'hmac.h',
+      'hmac_win.cc',
+      'secure_util.cc',
+      'secure_util.h',
+      'symmetric_key.h',
+      'symmetric_key_win.cc',
+      'third_party/nss/chromium-sha256.h',
+      'third_party/nss/sha512.cc',
+    ],
   },
   'targets': [
     {
@@ -40,20 +53,29 @@
               ['exclude', '_nss\.cc$'],
               ['include', 'ec_private_key_nss\.cc$'],
               ['include', 'ec_signature_creator_nss\.cc$'],
+              ['include', 'encryptor_nss\.cc$'],
+              ['include', 'hmac_nss\.cc$'],
               ['include', 'signature_verifier_nss\.cc$'],
+              ['include', 'symmetric_key_nss\.cc$'],
             ],
             'sources!': [
+              'hmac_win.cc',
               'openpgp_symmetric_encryption.cc',
+              'openpgp_symmetric_encryption.h',
+              'symmetric_key_win.cc',
             ],
         }],
         [ 'OS == "android"', {
             'dependencies': [
-              '../build/android/system.gyp:ssl',
+              '../third_party/openssl/openssl.gyp:openssl',
             ],
             'sources/': [
               ['exclude', 'ec_private_key_nss\.cc$'],
               ['exclude', 'ec_signature_creator_nss\.cc$'],
+              ['exclude', 'encryptor_nss\.cc$'],
+              ['exclude', 'hmac_nss\.cc$'],
               ['exclude', 'signature_verifier_nss\.cc$'],
+              ['exclude', 'symmetric_key_nss\.cc$'],
             ],
         }],
         [ 'os_bsd==1', {
@@ -80,6 +102,10 @@
         }],
         [ 'OS == "mac" or OS == "win"', {
           'dependencies': [
+            '../third_party/nss/nss.gyp:nspr',
+            '../third_party/nss/nss.gyp:nss',
+          ],
+          'export_dependent_settings': [
             '../third_party/nss/nss.gyp:nspr',
             '../third_party/nss/nss.gyp:nss',
           ],
@@ -131,6 +157,9 @@
         },],
       ],
       'sources': [
+        # NOTE: all transitive dependencies of HMAC on windows need
+        #     to be placed in the source list above.
+        '<@(hmac_win64_related_sources)',
         'capi_util.cc',
         'capi_util.h',
         'crypto_export.h',
@@ -140,23 +169,23 @@
         'ec_private_key.h',
         'ec_private_key_nss.cc',
         'ec_private_key_openssl.cc',
+        'ec_signature_creator.cc',
         'ec_signature_creator.h',
+        'ec_signature_creator_impl.h',
         'ec_signature_creator_nss.cc',
         'ec_signature_creator_openssl.cc',
         'encryptor.cc',
         'encryptor.h',
-        'encryptor_mac.cc',
         'encryptor_nss.cc',
         'encryptor_openssl.cc',
-        'encryptor_win.cc',
-        'hmac.cc',
-        'hmac.h',
-        'hmac_mac.cc',
         'hmac_nss.cc',
         'hmac_openssl.cc',
-        'hmac_win.cc',
+        'keychain_mac.cc',
+        'keychain_mac.h',
         'mac_security_services_lock.cc',
         'mac_security_services_lock.h',
+        'mock_keychain_mac.cc',
+        'mock_keychain_mac.h',
         'p224_spake.cc',
         'p224_spake.h',
         'nss_util.cc',
@@ -168,6 +197,8 @@
         'openssl_util.h',
         'p224.cc',
         'p224.h',
+        'random.h',
+        'random.cc',
         'rsa_private_key.cc',
         'rsa_private_key.h',
         'rsa_private_key_mac.cc',
@@ -179,8 +210,6 @@
         'secure_hash.h',
         'secure_hash_default.cc',
         'secure_hash_openssl.cc',
-        'secure_util.cc',
-        'secure_util.h',
         'sha2.cc',
         'sha2.h',
         'signature_creator.h',
@@ -191,18 +220,13 @@
         'signature_verifier.h',
         'signature_verifier_nss.cc',
         'signature_verifier_openssl.cc',
-        'symmetric_key.h',
-        'symmetric_key_mac.cc',
         'symmetric_key_nss.cc',
         'symmetric_key_openssl.cc',
-        'symmetric_key_win.cc',
         'third_party/nss/chromium-blapi.h',
         'third_party/nss/chromium-blapit.h',
         'third_party/nss/chromium-nss.h',
-        'third_party/nss/chromium-sha256.h',
         'third_party/nss/pk11akey.cc',
         'third_party/nss/secsign.cc',
-        'third_party/nss/sha512.cc',
       ],
     },
     {
@@ -220,6 +244,7 @@
         'nss_util_unittest.cc',
         'p224_unittest.cc',
         'p224_spake_unittest.cc',
+        'random_unittest.cc',
         'rsa_private_key_unittest.cc',
         'rsa_private_key_nss_unittest.cc',
         'secure_hash_unittest.cc',
@@ -237,7 +262,7 @@
         '../testing/gtest.gyp:gtest',
       ],
       'conditions': [
-        [ 'os_posix == 1 and OS != "mac"', {
+        [ 'os_posix == 1 and OS != "mac" and OS != "android"', {
           'conditions': [
             [ 'linux_use_tcmalloc==1', {
                 'dependencies': [
@@ -249,7 +274,7 @@
           'dependencies': [
             '../build/linux/system.gyp:ssl',
           ],
-        }, {  # os_posix != 1 or OS == "mac"
+        }, {  # os_posix != 1 or OS == "mac" or OS == "android"
           'sources!': [
             'rsa_private_key_nss_unittest.cc',
             'openpgp_symmetric_encryption_unittest.cc',
@@ -258,6 +283,11 @@
         [ 'OS == "mac" or OS == "win"', {
           'dependencies': [
             '../third_party/nss/nss.gyp:nss',
+          ],
+        }],
+        [ 'OS == "mac"', {
+          'dependencies': [
+            '../third_party/nss/nss.gyp:nspr',
           ],
         }],
         [ 'use_openssl==1', {
@@ -269,5 +299,37 @@
         }],
       ],
     },
+  ],
+  'conditions': [
+    [ 'OS == "win"', {
+      'targets': [
+        {
+          'target_name': 'crypto_nacl_win64',
+          # We do not want nacl_helper to depend on NSS because this would
+          # require including a 64-bit copy of NSS. Thus, use the native APIs
+          # for the helper.
+          'type': '<(component)',
+          'dependencies': [
+            '../base/base.gyp:base_nacl_win64',
+            '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
+          ],
+          'sources': [
+            '<@(hmac_win64_related_sources)',
+          ],
+          'defines': [
+           'CRYPTO_IMPLEMENTATION',
+           '<@(nacl_win64_defines)',
+          ],
+          'msvs_disabled_warnings': [
+            4018,
+          ],
+          'configurations': {
+            'Common_Base': {
+              'msvs_target_platform': 'x64',
+            },
+          },
+        },
+      ],
+    }],
   ],
 }

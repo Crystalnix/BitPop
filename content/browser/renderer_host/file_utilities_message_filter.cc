@@ -1,11 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/browser/renderer_host/file_utilities_message_filter.h"
 
 #include "base/file_util.h"
-#include "content/browser/child_process_security_policy.h"
+#include "content/browser/child_process_security_policy_impl.h"
 #include "content/common/file_utilities_messages.h"
 
 using content::BrowserThread;
@@ -28,47 +28,29 @@ bool FileUtilitiesMessageFilter::OnMessageReceived(const IPC::Message& message,
                                                    bool* message_was_ok) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(FileUtilitiesMessageFilter, message, *message_was_ok)
-    IPC_MESSAGE_HANDLER(FileUtilitiesMsg_GetFileSize, OnGetFileSize)
-    IPC_MESSAGE_HANDLER(FileUtilitiesMsg_GetFileModificationTime,
-                        OnGetFileModificationTime)
+    IPC_MESSAGE_HANDLER(FileUtilitiesMsg_GetFileInfo, OnGetFileInfo)
     IPC_MESSAGE_HANDLER(FileUtilitiesMsg_OpenFile, OnOpenFile)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
-void FileUtilitiesMessageFilter::OnGetFileSize(const FilePath& path,
-                                               int64* result) {
-  *result = -1;
+void FileUtilitiesMessageFilter::OnGetFileInfo(
+    const FilePath& path,
+    base::PlatformFileInfo* result,
+    base::PlatformFileError* status) {
+  *result = base::PlatformFileInfo();
+  *status = base::PLATFORM_FILE_OK;
 
-  // Get file size only when the child process has been granted permission to
-  // upload the file.
-  if (!ChildProcessSecurityPolicy::GetInstance()->CanReadFile(
+  // Get file metadata only when the child process has been granted
+  // permission to read the file.
+  if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanReadFile(
       process_id_, path)) {
     return;
   }
 
-  base::PlatformFileInfo file_info;
-  file_info.size = 0;
-  if (file_util::GetFileInfo(path, &file_info))
-    *result = file_info.size;
-}
-
-void FileUtilitiesMessageFilter::OnGetFileModificationTime(
-    const FilePath& path, base::Time* result) {
-  *result = base::Time();
-
-  // Get file modification time only when the child process has been granted
-  // permission to upload the file.
-  if (!ChildProcessSecurityPolicy::GetInstance()->CanReadFile(
-      process_id_, path)) {
-    return;
-  }
-
-  base::PlatformFileInfo file_info;
-  file_info.size = 0;
-  if (file_util::GetFileInfo(path, &file_info))
-    *result = file_info.last_modified;
+  if (!file_util::GetFileInfo(path, result))
+    *status = base::PLATFORM_FILE_ERROR_FAILED;
 }
 
 void FileUtilitiesMessageFilter::OnOpenFile(
@@ -78,7 +60,7 @@ void FileUtilitiesMessageFilter::OnOpenFile(
   // Open the file only when the child process has been granted permission to
   // upload the file.
   // TODO(jianli): Do we need separate permission to control opening the file?
-  if (!ChildProcessSecurityPolicy::GetInstance()->CanReadFile(
+  if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanReadFile(
           process_id_, path)) {
 #if defined(OS_WIN)
     *result = base::kInvalidPlatformFileValue;

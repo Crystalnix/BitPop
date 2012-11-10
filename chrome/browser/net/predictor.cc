@@ -14,13 +14,15 @@
 #include "base/compiler_specific.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
+#include "base/string_split.h"
+#include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/time.h"
 #include "base/values.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/preconnect.h"
-#include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
@@ -176,20 +178,6 @@ void Predictor::InitNetworkPredictor(PrefService* user_prefs,
   base::ListValue* referral_list =
       static_cast<base::ListValue*>(user_prefs->GetList(
           prefs::kDnsPrefetchingHostReferralList)->DeepCopy());
-
-  // Remove obsolete preferences from local state if necessary.
-  int current_version =
-      local_state->GetInteger(prefs::kMultipleProfilePrefMigration);
-  if ((current_version & browser::DNS_PREFS) == 0) {
-    local_state->RegisterListPref(prefs::kDnsStartupPrefetchList,
-                                  PrefService::UNSYNCABLE_PREF);
-    local_state->RegisterListPref(prefs::kDnsHostReferralList,
-                                  PrefService::UNSYNCABLE_PREF);
-    local_state->ClearPref(prefs::kDnsStartupPrefetchList);
-    local_state->ClearPref(prefs::kDnsHostReferralList);
-    local_state->SetInteger(prefs::kMultipleProfilePrefMigration,
-        current_version | browser::DNS_PREFS);
-  }
 
   BrowserThread::PostTask(
       BrowserThread::IO,
@@ -476,58 +464,24 @@ void Predictor::PredictorGetHtmlInfo(Predictor* predictor,
 
 // Provide sort order so all .com's are together, etc.
 struct RightToLeftStringSorter {
-  bool operator()(const GURL& left,
-                  const GURL& right) const {
-    return string_compare(left.host(), right.host());
+  bool operator()(const GURL& left, const GURL& right) const {
+    return ReverseComponents(left) < ReverseComponents(right);
   }
 
-  static bool string_compare(const std::string& left_host,
-                             const std::string& right_host) {
-    if (left_host == right_host) return true;
-    size_t left_already_matched = left_host.size();
-    size_t right_already_matched = right_host.size();
+ private:
+  // Transforms something like "http://www.google.com/xyz" to
+  // "http://com.google.www/xyz".
+  static std::string ReverseComponents(const GURL& url) {
+    // Reverse the components in the hostname.
+    std::vector<std::string> parts;
+    base::SplitString(url.host(), '.', &parts);
+    std::reverse(parts.begin(), parts.end());
+    std::string reversed_host = JoinString(parts, '.');
 
-    // Ensure both strings have characters.
-    if (!left_already_matched) return true;
-    if (!right_already_matched) return false;
-
-    // Watch for trailing dot, so we'll always be safe to go one beyond dot.
-    if ('.' == left_host[left_already_matched - 1]) {
-      if ('.' != right_host[right_already_matched - 1])
-        return true;
-      // Both have dots at end of string.
-      --left_already_matched;
-      --right_already_matched;
-    } else {
-      if ('.' == right_host[right_already_matched - 1])
-        return false;
-    }
-
-    while (1) {
-      if (!left_already_matched) return true;
-      if (!right_already_matched) return false;
-
-      size_t left_start = left_host.find_last_of('.', left_already_matched - 1);
-      if (std::string::npos == left_start) {
-        left_already_matched = left_start = 0;
-      } else {
-        left_already_matched = left_start;
-        ++left_start;  // Don't compare the dot.
-      }
-      size_t right_start = right_host.find_last_of('.',
-                                                   right_already_matched - 1);
-      if (std::string::npos == right_start) {
-        right_already_matched = right_start = 0;
-      } else {
-        right_already_matched = right_start;
-        ++right_start;  // Don't compare the dot.
-      }
-
-      int diff = left_host.compare(left_start, left_host.size(),
-                                   right_host, right_start, right_host.size());
-      if (diff > 0) return false;
-      if (diff < 0) return true;
-    }
+    // Return the new URL.
+    GURL::Replacements url_components;
+    url_components.SetHostStr(reversed_host);
+    return url.ReplaceComponents(url_components).spec();
   }
 };
 
@@ -659,7 +613,7 @@ void Predictor::DeserializeReferrers(const base::ListValue& referral_list) {
       referral_list.GetInteger(0, &format_version) &&
       format_version == kPredictorReferrerVersion) {
     for (size_t i = 1; i < referral_list.GetSize(); ++i) {
-      base::ListValue* motivator;
+      const base::ListValue* motivator;
       if (!referral_list.GetList(i, &motivator)) {
         NOTREACHED();
         return;
@@ -670,7 +624,7 @@ void Predictor::DeserializeReferrers(const base::ListValue& referral_list) {
         return;
       }
 
-      Value* subresource_list;
+      const Value* subresource_list;
       if (!motivator->Get(1, &subresource_list)) {
         NOTREACHED();
         return;
@@ -815,8 +769,11 @@ void Predictor::SaveStateForNextStartupAndTrim(PrefService* prefs) {
     // TODO(jar): Synchronous waiting for the IO thread is a potential source
     // to deadlocks and should be investigated. See http://crbug.com/78451.
     DCHECK(posted);
-    if (posted)
+    if (posted) {
+      // http://crbug.com/124954
+      base::ThreadRestrictions::ScopedAllowWait allow_wait;
       completion.Wait();
+    }
   }
 }
 

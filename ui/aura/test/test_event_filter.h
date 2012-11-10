@@ -4,7 +4,6 @@
 
 #ifndef UI_AURA_TEST_TEST_EVENT_FILTER_H_
 #define UI_AURA_TEST_TEST_EVENT_FILTER_H_
-#pragma once
 
 #include "base/compiler_specific.h"
 #include "ui/aura/event_filter.h"
@@ -19,7 +18,7 @@ namespace test {
 // optinally be set to consume those events.
 class TestEventFilter : public EventFilter {
  public:
-  explicit TestEventFilter(Window* owner);
+  TestEventFilter();
   virtual ~TestEventFilter();
 
   // Resets all event counters.

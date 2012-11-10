@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include <gtk/gtk.h>
 
 #include "base/message_loop.h"
+#include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
@@ -91,7 +92,8 @@ DownloadStartedAnimationGtk::DownloadStartedAnimationGtk(
   static GdkPixbuf* kDownloadImage = NULL;
   if (!kDownloadImage) {
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-    kDownloadImage = rb.GetNativeImageNamed(IDR_DOWNLOAD_ANIMATION_BEGIN);
+    kDownloadImage = rb.GetNativeImageNamed(
+        IDR_DOWNLOAD_ANIMATION_BEGIN).ToGdkPixbuf();
   }
 
   width_ = gdk_pixbuf_get_width(kDownloadImage);
@@ -105,7 +107,7 @@ DownloadStartedAnimationGtk::DownloadStartedAnimationGtk(
 
   registrar_.Add(
       this,
-      content::NOTIFICATION_WEB_CONTENTS_HIDDEN,
+      content::NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED,
       content::Source<WebContents>(web_contents_));
   registrar_.Add(
       this,
@@ -161,7 +163,7 @@ void DownloadStartedAnimationGtk::Close() {
 
   registrar_.Remove(
       this,
-      content::NOTIFICATION_WEB_CONTENTS_HIDDEN,
+      content::NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED,
       content::Source<WebContents>(web_contents_));
   registrar_.Remove(
       this,
@@ -195,6 +197,11 @@ void DownloadStartedAnimationGtk::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
+  if (type == content::NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED) {
+    bool visible = *content::Details<bool>(details).ptr();
+    if (visible)
+      return;
+  }
   Close();
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,9 +17,11 @@ namespace npapi {
 // variable, we can get a crash if no plugin libs were marked as always loaded.
 class PluginLibTest : public PluginLib {
  public:
-  PluginLibTest() : PluginLib(WebPluginInfo(), NULL) {
-  }
+  PluginLibTest() : PluginLib(WebPluginInfo(), NULL) {}
   using PluginLib::Unload;
+
+ protected:
+  virtual ~PluginLibTest() {}
 };
 
 TEST(PluginLibLoading, UnloadAllPlugins) {
@@ -163,15 +165,10 @@ TEST(PluginDescriptionParse, ExtractVersion) {
   // It's actually much more likely for a modern Linux distribution to have
   // IcedTea.
   PluginLib::ExtractVersionString(
-      "IcedTea NPR Web Browser Plugin "
-      "(using IcedTea6 1.9.2 (6b20-1.9.2-0ubuntu1~10.04.1))",
+      "IcedTea-Web Plugin "
+      "(using IcedTea-Web 1.2 (1.2-2ubuntu0.10.04.2))",
       &info);
-  EXPECT_EQ(ASCIIToUTF16("1.9.2"), info.version);
-  PluginLib::ExtractVersionString(
-      "IcedTea NPR Web Browser Plugin "
-      "(using IcedTea6 1.9.3 (fedora-49.1.9.3.fc14-i386))`",
-      &info);
-  EXPECT_EQ(ASCIIToUTF16("1.9.3"), info.version);
+  EXPECT_EQ(ASCIIToUTF16("1.2"), info.version);
 }
 
 #endif  // defined(OS_POSIX) && !defined(OS_MACOSX)

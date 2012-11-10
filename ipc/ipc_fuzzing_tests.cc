@@ -11,6 +11,7 @@
 #include "base/threading/platform_thread.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_proxy.h"
+#include "ipc/ipc_multiprocess_test.h"
 #include "ipc/ipc_tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/multiprocess_func_list.h"
@@ -44,7 +45,7 @@ TEST(IPCMessageIntegrity, ReadBeyondBufferStr) {
   EXPECT_TRUE(m.WriteInt(v1));
   EXPECT_TRUE(m.WriteInt(v2));
 
-  void* iter = NULL;
+  PickleIterator iter(m);
   std::string vs;
   EXPECT_FALSE(m.ReadString(&iter, &vs));
 }
@@ -57,7 +58,7 @@ TEST(IPCMessageIntegrity, ReadBeyondBufferWStr) {
   EXPECT_TRUE(m.WriteInt(v1));
   EXPECT_TRUE(m.WriteInt(v2));
 
-  void* iter = NULL;
+  PickleIterator iter(m);
   std::wstring vs;
   EXPECT_FALSE(m.ReadWString(&iter, &vs));
 }
@@ -68,7 +69,7 @@ TEST(IPCMessageIntegrity, ReadBytesBadIterator) {
   EXPECT_TRUE(m.WriteInt(1));
   EXPECT_TRUE(m.WriteInt(2));
 
-  void* iter = NULL;
+  PickleIterator iter(m);
   const char* data = NULL;
   EXPECT_TRUE(m.ReadBytes(&iter, &data, sizeof(int)));
 }
@@ -84,7 +85,7 @@ TEST(IPCMessageIntegrity, ReadVectorNegativeSize) {
   EXPECT_TRUE(m.WriteInt(3));
 
   std::vector<double> vec;
-  void* iter = 0;
+  PickleIterator iter(m);
   EXPECT_FALSE(ReadParam(&m, &iter, &vec));
 }
 
@@ -97,7 +98,7 @@ TEST(IPCMessageIntegrity, ReadVectorTooLarge1) {
   EXPECT_TRUE(m.WriteInt64(2));
 
   std::vector<int64> vec;
-  void* iter = 0;
+  PickleIterator iter(m);
   EXPECT_FALSE(ReadParam(&m, &iter, &vec));
 }
 
@@ -111,19 +112,19 @@ TEST(IPCMessageIntegrity, ReadVectorTooLarge2) {
   EXPECT_TRUE(m.WriteInt64(2));
 
   std::vector<int64> vec;
-  void* iter = 0;
+  PickleIterator iter(m);
   EXPECT_FALSE(ReadParam(&m, &iter, &vec));
 }
 
-class SimpleListener : public IPC::Channel::Listener {
+class SimpleListener : public IPC::Listener {
  public:
   SimpleListener() : other_(NULL) {
   }
-  void Init(IPC::Message::Sender* s) {
+  void Init(IPC::Sender* s) {
     other_ = s;
   }
  protected:
-  IPC::Message::Sender* other_;
+  IPC::Sender* other_;
 };
 
 enum {
@@ -212,7 +213,7 @@ class FuzzerClientListener : public SimpleListener {
       return false;
     int msg_value1 = 0;
     int msg_value2 = 0;
-    void* iter = NULL;
+    PickleIterator iter(*last_msg_);
     if (!last_msg_->ReadInt(&iter, &msg_value1))
       return false;
     if (!last_msg_->ReadInt(&iter, &msg_value2))
@@ -246,7 +247,7 @@ class FuzzerClientListener : public SimpleListener {
 
 // Runs the fuzzing server child mode. Returns when the preset number
 // of messages have been received.
-MULTIPROCESS_TEST_MAIN(RunFuzzServer) {
+MULTIPROCESS_IPC_TEST_MAIN(RunFuzzServer) {
   MessageLoopForIO main_message_loop;
   FuzzerServerListener listener;
   IPC::Channel chan(kFuzzerChannel, IPC::Channel::MODE_CLIENT, &listener);
@@ -281,7 +282,8 @@ TEST_F(IPCFuzzingTest, SanityTest) {
   chan.Send(msg);
   EXPECT_TRUE(listener.ExpectMessage(value, MsgClassSI::ID));
 
-  EXPECT_TRUE(base::WaitForSingleProcess(server_process, 5000));
+  EXPECT_TRUE(base::WaitForSingleProcess(
+      server_process, base::TimeDelta::FromSeconds(5)));
   base::CloseProcessHandle(server_process);
 }
 
@@ -311,7 +313,8 @@ TEST_F(IPCFuzzingTest, MsgBadPayloadShort) {
   chan.Send(msg);
   EXPECT_TRUE(listener.ExpectMessage(1, MsgClassSI::ID));
 
-  EXPECT_TRUE(base::WaitForSingleProcess(server_process, 5000));
+  EXPECT_TRUE(base::WaitForSingleProcess(
+      server_process, base::TimeDelta::FromSeconds(5)));
   base::CloseProcessHandle(server_process);
 }
 #endif
@@ -346,7 +349,8 @@ TEST_F(IPCFuzzingTest, MsgBadPayloadArgs) {
   chan.Send(msg);
   EXPECT_TRUE(listener.ExpectMessage(3, MsgClassIS::ID));
 
-  EXPECT_TRUE(base::WaitForSingleProcess(server_process, 5000));
+  EXPECT_TRUE(base::WaitForSingleProcess(
+      server_process, base::TimeDelta::FromSeconds(5)));
   base::CloseProcessHandle(server_process);
 }
 

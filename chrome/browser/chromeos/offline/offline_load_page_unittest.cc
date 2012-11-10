@@ -4,12 +4,17 @@
 
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/offline/offline_load_page.h"
-#include "chrome/browser/renderer_host/offline_resource_handler.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
-#include "content/browser/tab_contents/test_tab_contents.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/browser/interstitial_page.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/web_contents_tester.h"
 
 using content::BrowserThread;
+using content::InterstitialPage;
+using content::WebContents;
+using content::WebContentsTester;
 
 static const char* kURL1 = "http://www.google.com/";
 static const char* kURL2 = "http://www.gmail.com/";
@@ -18,21 +23,15 @@ namespace chromeos {
 
 class OfflineLoadPageTest;
 
-namespace {
-
 // An OfflineLoadPage class that does not create windows.
 class TestOfflineLoadPage :  public chromeos::OfflineLoadPage {
  public:
-  TestOfflineLoadPage(TabContents* tab_contents,
+  TestOfflineLoadPage(WebContents* web_contents,
                       const GURL& url,
                       OfflineLoadPageTest* test_page)
-    : chromeos::OfflineLoadPage(tab_contents, url, CompletionCallback()),
+    : chromeos::OfflineLoadPage(web_contents, url, CompletionCallback()),
       test_page_(test_page) {
-  }
-
-  // Overriden from InterstitialPage.  Don't create a view.
-  virtual content::WebContentsView* CreateWebContentsView() OVERRIDE {
-    return NULL;
+    interstitial_page_->DontCreateViewForTesting();
   }
 
   // chromeos::OfflineLoadPage override.
@@ -43,8 +42,6 @@ class TestOfflineLoadPage :  public chromeos::OfflineLoadPage {
 
   DISALLOW_COPY_AND_ASSIGN(TestOfflineLoadPage);
 };
-
-}  // namespace
 
 class OfflineLoadPageTest : public ChromeRenderViewHostTestHarness {
  public:
@@ -57,6 +54,8 @@ class OfflineLoadPageTest : public ChromeRenderViewHostTestHarness {
 
   OfflineLoadPageTest()
       : ui_thread_(BrowserThread::UI, MessageLoop::current()),
+        file_user_blocking_thread_(
+            BrowserThread::FILE_USER_BLOCKING, MessageLoop::current()),
         io_thread_(BrowserThread::IO, MessageLoop::current()) {
   }
 
@@ -73,7 +72,7 @@ class OfflineLoadPageTest : public ChromeRenderViewHostTestHarness {
   }
 
   void Navigate(const char* url, int page_id) {
-    contents()->TestDidNavigate(
+    WebContentsTester::For(contents())->TestDidNavigate(
         contents()->GetRenderViewHost(), page_id, GURL(url),
         content::PAGE_TRANSITION_TYPED);
   }
@@ -93,6 +92,7 @@ class OfflineLoadPageTest : public ChromeRenderViewHostTestHarness {
  private:
   UserResponse user_response_;
   content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_user_blocking_thread_;
   content::TestBrowserThread io_thread_;
 
   // Initializes / shuts down a stub CrosLibrary.
@@ -104,7 +104,6 @@ class OfflineLoadPageTest : public ChromeRenderViewHostTestHarness {
 void TestOfflineLoadPage::NotifyBlockingPageComplete(bool proceed) {
   test_page_->OnBlockingPageComplete(proceed);
 }
-
 
 TEST_F(OfflineLoadPageTest, OfflinePageProceed) {
   // Start a load.

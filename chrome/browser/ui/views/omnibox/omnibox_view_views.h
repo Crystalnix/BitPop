@@ -4,16 +4,13 @@
 
 #ifndef CHROME_BROWSER_UI_VIEWS_OMNIBOX_OMNIBOX_VIEW_VIEWS_H_
 #define CHROME_BROWSER_UI_VIEWS_OMNIBOX_OMNIBOX_VIEW_VIEWS_H_
-#pragma once
 
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
-#include "content/public/browser/notification_observer.h"
 #include "ui/base/range/range.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 #include "ui/views/view.h"
@@ -23,11 +20,11 @@
 #include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #endif
 
-class AutocompleteEditController;
-class AutocompleteEditModel;
-class AutocompletePopupView;
+class LocationBarView;
+class OmniboxEditController;
+class OmniboxEditModel;
+class OmniboxPopupView;
 class Profile;
-class TabContents;
 
 namespace ui {
 class OSExchangeData;
@@ -44,7 +41,6 @@ class OSExchangeData;
 class OmniboxViewViews
     : public views::View,
       public OmniboxView,
-      public content::NotificationObserver,
 #if defined(OS_CHROMEOS)
       public
           chromeos::input_method::InputMethodManager::CandidateWindowObserver,
@@ -54,7 +50,7 @@ class OmniboxViewViews
   // The internal view class name.
   static const char kViewClassName[];
 
-  OmniboxViewViews(AutocompleteEditController* controller,
+  OmniboxViewViews(OmniboxEditController* controller,
                    ToolbarModel* toolbar_model,
                    Profile* profile,
                    CommandUpdater* command_updater,
@@ -63,7 +59,7 @@ class OmniboxViewViews
   virtual ~OmniboxViewViews();
 
   // Initialize, create the underlying views, etc;
-  void Init();
+  void Init(views::View* popup_parent_view);
 
   // Sets the colors of the text view according to the theme.
   void SetBaseColor();
@@ -74,8 +70,11 @@ class OmniboxViewViews
   // Called when KeyRelease event is generated on textfield.
   bool HandleKeyReleaseEvent(const views::KeyEvent& event);
 
-  // Called when the mouse press event is generated on textfield.
-  bool HandleMousePressEvent(const views::MouseEvent& event);
+  // Called when mouse events are generated on the textfield.
+  // The views::Textfield implementations will be executed first.
+  void HandleMousePressEvent(const views::MouseEvent& event);
+  void HandleMouseDragEvent(const views::MouseEvent& event);
+  void HandleMouseReleaseEvent(const views::MouseEvent& event);
 
   // Called when Focus is set/unset on textfield.
   void HandleFocusIn();
@@ -95,16 +94,15 @@ class OmniboxViewViews
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
 
   // OmniboxView:
-  virtual AutocompleteEditModel* model() OVERRIDE;
-  virtual const AutocompleteEditModel* model() const OVERRIDE;
+  virtual OmniboxEditModel* model() OVERRIDE;
+  virtual const OmniboxEditModel* model() const OVERRIDE;
   virtual void SaveStateToTab(content::WebContents* tab) OVERRIDE;
   virtual void Update(
       const content::WebContents* tab_for_state_restoring) OVERRIDE;
   virtual void OpenMatch(const AutocompleteMatch& match,
                          WindowOpenDisposition disposition,
                          const GURL& alternate_nav_url,
-                         size_t selected_line,
-                         const string16& keyword) OVERRIDE;
+                         size_t selected_line) OVERRIDE;
   virtual string16 GetText() const OVERRIDE;
   virtual bool IsEditingOrEmpty() const OVERRIDE;
   virtual int GetIcon() const OVERRIDE;
@@ -113,9 +111,11 @@ class OmniboxViewViews
                            const string16& display_text,
                            bool update_popup) OVERRIDE;
   virtual void SetWindowTextAndCaretPos(const string16& text,
-                                        size_t caret_pos) OVERRIDE;
+                                        size_t caret_pos,
+                                        bool update_popup,
+                                        bool notify_text_changed) OVERRIDE;
   virtual void SetForcedQuery() OVERRIDE;
-  virtual bool IsSelectAll() OVERRIDE;
+  virtual bool IsSelectAll() const OVERRIDE;
   virtual bool DeleteAtEndPressed() OVERRIDE;
   virtual void GetSelectionBounds(string16::size_type* start,
                                   string16::size_type* end) const OVERRIDE;
@@ -143,11 +143,8 @@ class OmniboxViewViews
   virtual int GetMaxEditWidth(int entry_width) const OVERRIDE;
   virtual views::View* AddToView(views::View* parent) OVERRIDE;
   virtual int OnPerformDrop(const views::DropTargetEvent& event) OVERRIDE;
-
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  virtual gfx::Font GetFont() OVERRIDE;
+  virtual int WidthOfTextAfterCursor() OVERRIDE;
 
   // views::TextfieldController:
   virtual void ContentsChanged(views::Textfield* sender,
@@ -160,6 +157,8 @@ class OmniboxViewViews
   virtual void OnWriteDragData(ui::OSExchangeData* data) OVERRIDE;
   virtual void UpdateContextMenu(ui::SimpleMenuModel* menu_contents) OVERRIDE;
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
+  virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
+  virtual string16 GetLabelForCommandId(int command_id) const OVERRIDE;
   virtual void ExecuteCommand(int command_id) OVERRIDE;
 
 #if defined(OS_CHROMEOS)
@@ -193,9 +192,9 @@ class OmniboxViewViews
   // different presentation (smaller font size). This is used for popups.
   bool popup_window_mode_;
 
-  scoped_ptr<AutocompleteEditModel> model_;
-  scoped_ptr<AutocompletePopupView> popup_view_;
-  AutocompleteEditController* controller_;
+  scoped_ptr<OmniboxEditModel> model_;
+  scoped_ptr<OmniboxPopupView> popup_view_;
+  OmniboxEditController* controller_;
   ToolbarModel* toolbar_model_;
 
   // The object that handles additional command functionality exposed on the
@@ -221,6 +220,12 @@ class OmniboxViewViews
   // avoid showing the popup. So far, the candidate window is detected only
   // on Chrome OS.
   bool ime_candidate_window_open_;
+
+  // Should we select all the text when we see the mouse button get released?
+  // We select in response to a click that focuses the omnibox, but we defer
+  // until release, setting this variable back to false if we saw a drag, to
+  // allow the user to select just a portion of the text.
+  bool select_all_on_mouse_release_;
 
   DISALLOW_COPY_AND_ASSIGN(OmniboxViewViews);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,7 +31,7 @@ class TemplateURLServiceLoader : public content::NotificationObserver {
     registrar_.Add(this, chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED,
                    content::Source<TemplateURLService>(model));
     model_->Load();
-    ui_test_utils::RunMessageLoop();
+    content::RunMessageLoop();
   }
 
   virtual void Observe(int type,
@@ -61,7 +61,8 @@ IN_PROC_BROWSER_TEST_F(TemplateURLScraperTest, ScrapeWithOnSubmit) {
       TemplateURLServiceFactory::GetInstance(browser()->profile());
   TemplateURLServiceLoader loader(template_urls);
 
-  std::vector<const TemplateURL*> all_urls = template_urls->GetTemplateURLs();
+  TemplateURLService::TemplateURLVector all_urls =
+      template_urls->GetTemplateURLs();
 
   // We need to substract the default pre-populated engines that the profile is
   // set up with.

@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_JUMPLIST_WIN_H_
 #define CHROME_BROWSER_JUMPLIST_WIN_H_
-#pragma once
 
 #include <list>
 #include <string>
@@ -19,6 +18,9 @@
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_observer.h"
 
+namespace content {
+class NotificationRegistrar;
+}
 class FilePath;
 class Profile;
 class PageUsageData;
@@ -49,7 +51,7 @@ class ShellLinkItem : public base::RefCountedThreadSafe<ShellLinkItem> {
   const std::wstring& title() const { return title_; }
   const std::wstring& icon() const { return icon_; }
   int index() const { return index_; }
-  scoped_refptr<RefCountedMemory> data() const { return data_; }
+  scoped_refptr<base::RefCountedMemory> data() const { return data_; }
 
   void SetArguments(const std::wstring& arguments) {
     arguments_ = arguments;
@@ -65,7 +67,7 @@ class ShellLinkItem : public base::RefCountedThreadSafe<ShellLinkItem> {
     favicon_ = favicon;
   }
 
-  void SetIconData(scoped_refptr<RefCountedMemory> data) {
+  void SetIconData(scoped_refptr<base::RefCountedMemory> data) {
     data_ = data;
   }
 
@@ -77,7 +79,7 @@ class ShellLinkItem : public base::RefCountedThreadSafe<ShellLinkItem> {
   std::wstring arguments_;
   std::wstring title_;
   std::wstring icon_;
-  scoped_refptr<RefCountedMemory> data_;
+  scoped_refptr<base::RefCountedMemory> data_;
   int index_;
   bool favicon_;
 
@@ -204,7 +206,8 @@ class JumpList : public TabRestoreServiceObserver,
   // The Profile object is used to listen for events
   Profile* profile_;
 
-  content::NotificationRegistrar registrar_;
+  // Lives on the UI thread.
+  scoped_ptr<content::NotificationRegistrar> registrar_;
 
   // App id to associate with the jump list.
   std::wstring app_id_;

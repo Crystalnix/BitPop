@@ -12,9 +12,12 @@
 #include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
+#include "base/stringprintf.h"
+#include "base/values.h"
 #include "net/base/address_list.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_flags.h"
+#include "net/base/net_log.h"
 #include "net/base/net_util.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_request_info.h"
@@ -24,6 +27,23 @@
 #include "net/spdy/spdy_session.h"
 
 namespace net {
+
+namespace {
+
+Value* NetLogSpdySendRequestCallback(const SpdyHeaderBlock* headers,
+                                     NetLog::LogLevel /* log_level */) {
+  DictionaryValue* dict = new DictionaryValue();
+  ListValue* headers_list = new ListValue();
+  for (SpdyHeaderBlock::const_iterator it = headers->begin();
+       it != headers->end(); ++it) {
+    headers_list->Append(new StringValue(base::StringPrintf(
+        "%s: %s", it->first.c_str(), it->second.c_str())));
+  }
+  dict->Set("headers", headers_list);
+  return dict;
+}
+
+}  // namespace
 
 SpdyHttpStream::SpdyHttpStream(SpdySession* spdy_session,
                                bool direct)
@@ -36,7 +56,8 @@ SpdyHttpStream::SpdyHttpStream(SpdySession* spdy_session,
       user_buffer_len_(0),
       buffered_read_callback_pending_(false),
       more_read_data_pending_(false),
-      direct_(direct) { }
+      direct_(direct),
+      waiting_for_chunk_(false) { }
 
 void SpdyHttpStream::InitializeWithExistingStream(SpdyStream* spdy_stream) {
   stream_ = spdy_stream;
@@ -45,6 +66,8 @@ void SpdyHttpStream::InitializeWithExistingStream(SpdyStream* spdy_stream) {
 }
 
 SpdyHttpStream::~SpdyHttpStream() {
+  if (request_body_stream_ != NULL)
+    request_body_stream_->set_chunk_callback(NULL);
   if (stream_)
     stream_->DetachDelegate();
 }
@@ -129,8 +152,7 @@ int SpdyHttpStream::ReadResponseBody(
       }
       bytes_read += bytes_to_copy;
     }
-    if (spdy_session_ && spdy_session_->is_flow_control_enabled())
-      stream_->IncreaseRecvWindowSize(bytes_read);
+    stream_->IncreaseRecvWindowSize(bytes_read);
     return bytes_read;
   } else if (stream_->closed()) {
     return stream_->response_status();
@@ -183,13 +205,8 @@ bool SpdyHttpStream::IsConnectionReusable() const {
   return false;
 }
 
-void SpdyHttpStream::set_chunk_callback(ChunkCallback* callback) {
-  if (request_body_stream_ != NULL)
-    request_body_stream_->set_chunk_callback(callback);
-}
-
 int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
-                                UploadDataStream* request_body,
+                                scoped_ptr<UploadDataStream> request_body,
                                 HttpResponseInfo* response,
                                 const CompletionCallback& callback) {
   base::Time request_time = base::Time::Now();
@@ -197,10 +214,14 @@ int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
 
   stream_->SetDelegate(this);
 
-  linked_ptr<spdy::SpdyHeaderBlock> headers(new spdy::SpdyHeaderBlock);
+  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock);
   CreateSpdyHeadersFromHttpRequest(*request_info_, request_headers,
-                                   headers.get(), direct_);
-  stream_->set_spdy_headers(headers);
+                                   headers.get(), stream_->GetProtocolVersion(),
+                                   direct_);
+  stream_->net_log().AddEvent(
+      NetLog::TYPE_HTTP_TRANSACTION_SPDY_SEND_REQUEST_HEADERS,
+      base::Bind(&NetLogSpdySendRequestCallback, headers.get()));
+  stream_->set_spdy_headers(headers.Pass());
 
   stream_->SetRequestTime(request_time);
   // This should only get called in the case of a request occurring
@@ -210,11 +231,16 @@ int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
     response_info_->request_time = request_time;
 
   CHECK(!request_body_stream_.get());
-  if (request_body) {
-    if (request_body->size() || request_body->is_chunked())
-      request_body_stream_.reset(request_body);
-    else
-      delete request_body;
+  if (request_body != NULL) {
+    if (request_body->size() || request_body->is_chunked()) {
+      request_body_stream_.reset(request_body.release());
+      request_body_stream_->set_chunk_callback(this);
+      // Use kMaxSpdyFrameChunkSize as the buffer size, since the request
+      // body data is written with this size at a time.
+      raw_request_body_buf_ = new IOBufferWithSize(kMaxSpdyFrameChunkSize);
+      // The request body buffer is empty at first.
+      request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_, 0);
+    }
   }
 
   CHECK(!callback.is_null());
@@ -237,18 +263,18 @@ int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
   if (push_response_info_.get()) {
     *response = *(push_response_info_.get());
     push_response_info_.reset();
-  }
-  else
+  } else {
     DCHECK_EQ(static_cast<HttpResponseInfo*>(NULL), response_info_);
+  }
 
   response_info_ = response;
 
   // Put the peer's IP address and port into the response.
-  AddressList address;
+  IPEndPoint address;
   int result = stream_->GetPeerAddress(&address);
   if (result != OK)
     return result;
-  response_info_->socket_address = HostPortPair::FromAddrInfo(address.head());
+  response_info_->socket_address = HostPortPair::FromIPEndPoint(address);
 
   bool has_upload_data = request_body_stream_.get() != NULL;
   result = stream_->SendRequest(has_upload_data);
@@ -267,6 +293,35 @@ void SpdyHttpStream::Cancel() {
     stream_->Cancel();
 }
 
+int SpdyHttpStream::SendData() {
+  CHECK(request_body_stream_.get());
+  CHECK_EQ(0, request_body_buf_->BytesRemaining());
+
+  // Read the data from the request body stream.
+  const int bytes_read = request_body_stream_->Read(
+      raw_request_body_buf_, raw_request_body_buf_->size());
+  DCHECK(!waiting_for_chunk_ || bytes_read != ERR_IO_PENDING);
+
+  if (request_body_stream_->is_chunked() && bytes_read == ERR_IO_PENDING) {
+    waiting_for_chunk_ = true;
+    return ERR_IO_PENDING;
+  }
+
+  waiting_for_chunk_ = false;
+
+  // ERR_IO_PENDING with chunked encoding is the only possible error.
+  DCHECK_GE(bytes_read, 0);
+
+  request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_,
+                                            bytes_read);
+
+  const bool eof = request_body_stream_->IsEOF();
+  return stream_->WriteStreamData(
+      request_body_buf_,
+      request_body_buf_->BytesRemaining(),
+      eof ? DATA_FLAG_FIN : DATA_FLAG_NONE);
+}
+
 bool SpdyHttpStream::OnSendHeadersComplete(int status) {
   if (!callback_.is_null())
     DoCallback(status);
@@ -275,36 +330,41 @@ bool SpdyHttpStream::OnSendHeadersComplete(int status) {
 
 int SpdyHttpStream::OnSendBody() {
   CHECK(request_body_stream_.get());
+  const bool eof = request_body_stream_->IsEOF();
+  if (request_body_buf_->BytesRemaining() > 0) {
+    return stream_->WriteStreamData(
+        request_body_buf_,
+        request_body_buf_->BytesRemaining(),
+        eof ? DATA_FLAG_FIN : DATA_FLAG_NONE);
+  }
 
-  int buf_len = static_cast<int>(request_body_stream_->buf_len());
-  if (!buf_len)
+  // The entire body data has been sent.
+  if (eof)
     return OK;
-  bool is_chunked = request_body_stream_->is_chunked();
-  // TODO(satish): For non-chunked POST data, we set DATA_FLAG_FIN for all
-  // blocks of data written out. This is wrong if the POST data was larger than
-  // UploadDataStream::kBufSize as that is the largest buffer that
-  // UploadDataStream returns at a time and we'll be setting the FIN flag for
-  // each block of data written out.
-  bool eof = !is_chunked || request_body_stream_->IsOnLastChunk();
-  return stream_->WriteStreamData(
-      request_body_stream_->buf(), buf_len,
-      eof ? spdy::DATA_FLAG_FIN : spdy::DATA_FLAG_NONE);
+
+  return SendData();
 }
 
 int SpdyHttpStream::OnSendBodyComplete(int status, bool* eof) {
+  // |status| is the number of bytes written to the SPDY stream.
   CHECK(request_body_stream_.get());
+  *eof = false;
 
-  request_body_stream_->MarkConsumedAndFillBuffer(status);
-  *eof = request_body_stream_->eof();
-  if (!*eof &&
-      request_body_stream_->is_chunked() &&
-      !request_body_stream_->buf_len())
-    return ERR_IO_PENDING;
+  if (status > 0) {
+    request_body_buf_->DidConsume(status);
+    if (request_body_buf_->BytesRemaining()) {
+      // Go back to OnSendBody() to send the remaining data.
+      return OK;
+    }
+  }
 
+  // Check if the entire body data has been sent.
+  *eof = (request_body_stream_->IsEOF() &&
+          !request_body_buf_->BytesRemaining());
   return OK;
 }
 
-int SpdyHttpStream::OnResponseReceived(const spdy::SpdyHeaderBlock& response,
+int SpdyHttpStream::OnResponseReceived(const SpdyHeaderBlock& response,
                                        base::Time response_time,
                                        int status) {
   if (!response_info_) {
@@ -323,7 +383,8 @@ int SpdyHttpStream::OnResponseReceived(const spdy::SpdyHeaderBlock& response,
   // to first byte.
   response_info_->response_time = base::Time::Now();
 
-  if (!SpdyHeadersToHttpResponse(response, response_info_)) {
+  if (!SpdyHeadersToHttpResponse(response, stream_->GetProtocolVersion(),
+                                 response_info_)) {
     // We might not have complete headers yet.
     return ERR_INCOMPLETE_SPDY_HEADERS;
   }
@@ -332,8 +393,7 @@ int SpdyHttpStream::OnResponseReceived(const spdy::SpdyHeaderBlock& response,
   // Don't store the SSLInfo in the response here, HttpNetworkTransaction
   // will take care of that part.
   SSLInfo ssl_info;
-  SSLClientSocket::NextProto protocol_negotiated =
-      SSLClientSocket::kProtoUnknown;
+  NextProto protocol_negotiated = kProtoUnknown;
   stream_->GetSSLInfo(&ssl_info,
                       &response_info_->was_npn_negotiated,
                       &protocol_negotiated);
@@ -351,11 +411,12 @@ int SpdyHttpStream::OnResponseReceived(const spdy::SpdyHeaderBlock& response,
   return status;
 }
 
-void SpdyHttpStream::OnDataReceived(const char* data, int length) {
+int SpdyHttpStream::OnDataReceived(const char* data, int length) {
   // SpdyStream won't call us with data if the header block didn't contain a
   // valid set of headers.  So we don't expect to not have headers received
   // here.
-  DCHECK(response_headers_received_);
+  if (!response_headers_received_)
+    return ERR_INCOMPLETE_SPDY_HEADERS;
 
   // Note that data may be received for a SpdyStream prior to the user calling
   // ReadResponseBody(), therefore user_buffer_ may be NULL.  This may often
@@ -373,6 +434,7 @@ void SpdyHttpStream::OnDataReceived(const char* data, int length) {
       ScheduleBufferedReadCallback();
     }
   }
+  return OK;
 }
 
 void SpdyHttpStream::OnDataSent(int length) {
@@ -383,12 +445,21 @@ void SpdyHttpStream::OnDataSent(int length) {
 
 void SpdyHttpStream::OnClose(int status) {
   bool invoked_callback = false;
+  if (request_body_stream_ != NULL)
+    request_body_stream_->set_chunk_callback(NULL);
   if (status == net::OK) {
     // We need to complete any pending buffered read now.
     invoked_callback = DoBufferedReadCallback();
   }
   if (!invoked_callback && !callback_.is_null())
     DoCallback(status);
+}
+
+void SpdyHttpStream::OnChunkAvailable() {
+  if (!waiting_for_chunk_)
+    return;
+  DCHECK(request_body_stream_->is_chunked());
+  SendData();
 }
 
 void SpdyHttpStream::ScheduleBufferedReadCallback() {
@@ -468,8 +539,7 @@ void SpdyHttpStream::DoCallback(int rv) {
 void SpdyHttpStream::GetSSLInfo(SSLInfo* ssl_info) {
   DCHECK(stream_);
   bool using_npn;
-  SSLClientSocket::NextProto protocol_negotiated =
-      SSLClientSocket::kProtoUnknown;
+  NextProto protocol_negotiated = kProtoUnknown;
   stream_->GetSSLInfo(ssl_info, &using_npn, &protocol_negotiated);
 }
 

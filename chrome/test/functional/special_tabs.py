@@ -18,7 +18,7 @@ class SpecialTabsTest(pyauto.PyUITest):
     """Get a dict of accelerators and corresponding tab titles."""
     ret = {
         pyauto.IDC_SHOW_HISTORY: 'History',
-        pyauto.IDC_MANAGE_EXTENSIONS: 'Settings - Extensions',
+        pyauto.IDC_MANAGE_EXTENSIONS: 'Extensions',
         pyauto.IDC_SHOW_DOWNLOADS: 'Downloads',
     }
     return ret
@@ -41,13 +41,12 @@ class SpecialTabsTest(pyauto.PyUITest):
     'chrome://appcache-internals': { 'title': 'AppCache Internals' },
     'chrome://blob-internals': { 'title': 'Blob Storage Internals' },
     'chrome://feedback': {},
-    'chrome://feedback/#0': { 'title': 'Feedback' },
     'chrome://chrome-urls': { 'title': 'Chrome URLs' },
     'chrome://crashes': { 'title': 'Crashes' },
-    'chrome://credits': { 'title': 'Credits', 'CSP': False },
+    'chrome://credits': { 'title': 'Credits' },
     'chrome://downloads': { 'title': 'Downloads' },
     'chrome://dns': { 'title': 'About DNS' },
-    'chrome://settings/extensions': { 'title': 'Settings - Extensions' },
+    'chrome://extensions': { 'title': 'Extensions' },
     'chrome://flags': {},
     'chrome://flash': {},
     'chrome://gpu-internals': {},
@@ -59,16 +58,21 @@ class SpecialTabsTest(pyauto.PyUITest):
     'chrome://net-internals/help.html': {},
     'chrome://newtab': { 'title': 'New Tab', 'CSP': False },
     'chrome://plugins': { 'title': 'Plug-ins' },
-    'chrome://sessions': { 'title': 'Sessions' },
-    'chrome://settings': { 'title': 'Settings - Basics' },
+    'chrome://settings': { 'title': 'Settings' },
+    'chrome://settings/autofill': { 'title': 'Settings - Autofill settings' },
+    'chrome://settings/clearBrowserData':
+      { 'title': 'Settings - Clear browsing data' },
+    'chrome://settings/content': { 'title': 'Settings - Content settings' },
+    'chrome://settings/languages':
+      { 'title': 'Settings - Languages' },
+    'chrome://settings/passwords': { 'title': 'Settings - Passwords' },
     'chrome://stats': {},
     'chrome://sync': { 'title': 'Sync Internals' },
     'chrome://sync-internals': { 'title': 'Sync Internals' },
-    'chrome://tasks': { 'title': 'Task Manager - Chromium' },
     'chrome://terms': {},
     'chrome://version': { 'title': 'About Version' },
     'chrome://view-http-cache': {},
-    'chrome://workers': { 'title': 'Workers' },
+    'chrome://inspect': { 'title': 'Inspect with Chrome Developer Tools' },
   }
   broken_special_url_tabs = {
     # crashed under debug when invoked from location bar (bug 88223).
@@ -85,39 +89,21 @@ class SpecialTabsTest(pyauto.PyUITest):
   }
 
   chromeos_special_url_tabs = {
-    'chrome://active-downloads': { 'title': 'Downloads', 'CSP': False },
-    'chrome://choose-mobile-network': { 'title': 'undefined', 'CSP': False },
-    'chrome://imageburner': { 'title':'Create a Recovery Media', 'CSP': False },
-    'chrome://keyboardoverlay': { 'title': 'Keyboard Overlay', 'CSP': False },
-    'chrome://login': { 'CSP': False },
+    'chrome://choose-mobile-network': { 'title': 'undefined', 'CSP': True },
+    'chrome://flags': { 'CSP': True },
+    'chrome://imageburner': { 'title':'Create a Recovery Media', 'CSP': True },
+    'chrome://keyboardoverlay': { 'title': 'Keyboard Overlay', 'CSP': True },
     'chrome://network': { 'title': 'About Network' },
-    'chrome://oobe': { 'title': 'undefined', 'CSP': False },
     'chrome://os-credits': { 'title': 'Credits', 'CSP': False },
     'chrome://proxy-settings': { 'CSP': False },
     'chrome://register': { 'CSP': False },
-    'chrome://sim-unlock': { 'title': 'Enter SIM Card PIN', 'CSP': False },
+    'chrome://settings/languages':
+      { 'title': 'Settings - Languages and input' },
+    'chrome://sim-unlock': { 'title': 'Enter SIM card PIN', 'CSP': False },
     'chrome://system': { 'title': 'About System', 'CSP': False },
 
-    # OVERRIDE - usually a warning page without CSP (so far).
-    'chrome://flags': { 'CSP': False },
-
     # OVERRIDE - title and page different on CrOS
-    'chrome://settings/about': { 'title': 'Settings - About' },
     'chrome://settings/accounts': { 'title': 'Settings - Users' },
-    'chrome://settings/advanced': { 'title': 'Settings - Under the Hood' },
-    'chrome://settings/autofill': { 'title': 'Settings - Autofill Settings' },
-    'chrome://settings/browser': { 'title': 'Settings - Basics' },
-    'chrome://settings/clearBrowserData':
-      { 'title': 'Settings - Clear Browsing Data' },
-    'chrome://settings/content': { 'title': 'Settings - Content Settings' },
-    'chrome://settings/extensions': { 'title': 'Settings - Extensions' },
-    'chrome://settings/internet': { 'title': 'Settings - Internet' },
-    'chrome://settings/languages':
-      { 'title': 'Settings - Languages and Input' },
-    'chrome://settings/passwords': { 'title': 'Settings - Passwords' },
-    'chrome://settings/personal': { 'title': 'Settings - Personal Stuff' },
-    'chrome://settings/proxy': { 'title': 'Proxy' },
-    'chrome://settings/system': { 'title': 'Settings - System' },
   }
   broken_chromeos_special_url_tabs = {
     # returns "not available" page on chromeos=1 linux but has an URL constant.
@@ -134,22 +120,24 @@ class SpecialTabsTest(pyauto.PyUITest):
     'chrome://slideshow': { 'CSP': False },
     'chrome://syncresources': { 'CSP': False },
     'chrome://theme': { 'CSP': False },
+    'chrome://view-http-cache': { 'CSP': False },
 
     # crashes on chromeos=1 on linux, possibly missing real CrOS features.
     'chrome://cryptohome': { 'CSP': False},
     'chrome://mobilesetup': { 'CSP': False },
     'chrome://print': { 'CSP': False },
-    'chrome://tasks': {},
   }
 
   linux_special_url_tabs = {
     'chrome://linux-proxy-config': { 'title': 'Proxy Configuration Help' },
-    'chrome://tcmalloc': { 'title': 'About tcmalloc' },
+    'chrome://tcmalloc': { 'title': 'tcmalloc stats' },
     'chrome://sandbox': { 'title': 'Sandbox Status' },
   }
   broken_linux_special_url_tabs = {}
 
-  mac_special_url_tabs = {}
+  mac_special_url_tabs = {
+    'chrome://settings/languages': { 'title': 'Settings - Languages' },
+  }
   broken_mac_special_url_tabs = {}
 
   win_special_url_tabs = {
@@ -165,7 +153,6 @@ class SpecialTabsTest(pyauto.PyUITest):
     'chrome://terms': {
       'title': 'Google Chrome Terms of Service',
     },
-    'chrome://tasks': { 'title': 'Task Manager - Google Chrome' },
   }
   broken_google_special_url_tabs = {}
 
@@ -190,16 +177,16 @@ class SpecialTabsTest(pyauto.PyUITest):
     """Confirm about:appcache-internals contains expected content for Caches.
        Also confirms that the about page populates Application Caches."""
     # Navigate to html page to activate DNS prefetching.
-    self.NavigateToURL('http://static.webvm.net/appcache-test/simple.html')
+    self.NavigateToURL('http://futtta.be/html5/offline.php')
     # Wait for page to load and display sucess or fail message.
     self.WaitUntil(
-        lambda: self.GetDOMValue('document.getElementById("result").innerHTML'),
-                                 expect_retval='SUCCESS')
+        lambda: self.GetDOMValue('document.getElementById("status").innerHTML'),
+                                 expect_retval='cached')
     self.GetBrowserWindow(0).GetTab(0).GoBack()
     test_utils.StringContentCheck(
         self, self.GetTabContents(),
         ['Manifest',
-         'http://static.webvm.net/appcache-test/resources/simple.manifest'],
+         'http://futtta.be/html5/manifest.php'],
         [])
 
   def _VerifyAboutDNS(self):
@@ -277,9 +264,10 @@ class SpecialTabsTest(pyauto.PyUITest):
       self.NavigateToURL(url)
       expected_title = 'title' in properties and properties['title'] or url
       actual_title = self.GetActiveTabTitle()
-      logging.debug('  %s title was %s (%s)' %
-                    (url, actual_title, expected_title == actual_title))
-      self.assertEqual(expected_title, actual_title)
+      self.assertTrue(self.WaitUntil(
+          lambda: self.GetActiveTabTitle(), expect_retval=expected_title),
+          msg='Title did not match for %s. Expected: %s. Got %s' % (
+              url, expected_title, self.GetActiveTabTitle()))
       include_list = []
       exclude_list = []
       no_csp = 'CSP' in properties and not properties['CSP']
@@ -307,7 +295,11 @@ class SpecialTabsTest(pyauto.PyUITest):
         self.assertEqual(result, 'executed',
                          msg='Got %s for %s' % (result, url))
       else:
-        self.assertEqual(result, 'blocked');
+        self.assertEqual(result, 'blocked',
+                         msg='Got %s for %s' % (result, url))
+
+      # Restart browser so that every URL gets a fresh instance.
+      self.RestartBrowser(clear_profile=True)
 
   def testAboutAppCacheTab(self):
     """Test App Cache tab to confirm about page populates caches."""
@@ -322,13 +314,12 @@ class SpecialTabsTest(pyauto.PyUITest):
     self.assertEqual('About DNS', self.GetActiveTabTitle())
 
   def testSpecialAcceratorTabs(self):
-    """Test special tabs created by acclerators like IDC_SHOW_HISTORY,
-       IDC_SHOW_DOWNLOADS."""
+    """Test special tabs created by accelerators."""
     for accel, title in self.GetSpecialAcceleratorTabs().iteritems():
       self.RunCommand(accel)
       self.assertTrue(self.WaitUntil(
             self.GetActiveTabTitle, expect_retval=title),
-          msg='Expected "%s"' % title)
+          msg='Expected "%s", got "%s"' % (title, self.GetActiveTabTitle()))
 
 
 if __name__ == '__main__':

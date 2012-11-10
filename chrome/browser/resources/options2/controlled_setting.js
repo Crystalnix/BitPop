@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -78,9 +78,9 @@ cr.define('options', function() {
 
       // Work out the bubble text.
       defaultStrings = {
-        'policy' : localStrings.getString('controlledSettingPolicy'),
-        'extension' : localStrings.getString('controlledSettingExtension'),
-        'recommended' : localStrings.getString('controlledSettingRecommended'),
+        policy: loadTimeData.getString('controlledSettingPolicy'),
+        extension: loadTimeData.getString('controlledSettingExtension'),
+        recommended: loadTimeData.getString('controlledSettingRecommended'),
       };
 
       // No controller, no bubble.
@@ -105,7 +105,7 @@ cr.define('options', function() {
         action.classList.add('link-button');
         action.classList.add('controlled-setting-bubble-action');
         action.textContent =
-            localStrings.getString('controlledSettingApplyRecommendation');
+            loadTimeData.getString('controlledSettingApplyRecommendation');
         action.addEventListener(
             'click',
             function(e) {
@@ -133,6 +133,6 @@ cr.define('options', function() {
 
   // Export.
   return {
-    ControlledSettingIndicator : ControlledSettingIndicator
+    ControlledSettingIndicator: ControlledSettingIndicator
   };
 });

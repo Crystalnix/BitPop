@@ -1,16 +1,16 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_COMMON_SANDBOX_MAC_H_
 #define CONTENT_COMMON_SANDBOX_MAC_H_
-#pragma once
 
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/hash_tables.h"
 #include "base/gtest_prod_util.h"
+#include "content/common/content_export.h"
 #include "content/public/common/sandbox_type_mac.h"
 
 class FilePath;
@@ -52,7 +52,7 @@ class SandboxSubstring {
   SandboxSubstringType type_;
 };
 
-class Sandbox {
+class CONTENT_EXPORT Sandbox {
  public:
   // A map of variable name -> string to substitute in its place.
   typedef base::hash_map<std::string, SandboxSubstring>
@@ -124,6 +124,10 @@ class Sandbox {
                   std::string *final_sandbox_profile_str);
 
  private:
+  // Returns an (allow file-read-metadata) rule for |allowed_path| and all its
+  // parent directories.
+  static NSString* AllowMetadataForPath(const FilePath& allowed_path);
+
   // Escape |src_utf8| for use in a plain string variable in a sandbox
   // configuraton file.  On return |dst| is set to the quoted output.
   // Returns: true on success, false otherwise.
@@ -147,11 +151,11 @@ class Sandbox {
   // Convert provided path into a "canonical" path matching what the Sandbox
   // expects i.e. one without symlinks.
   // This path is not necessarily unique e.g. in the face of hardlinks.
-  static void GetCanonicalSandboxPath(FilePath* path);
+  static FilePath GetCanonicalSandboxPath(const FilePath& path);
 
   FRIEND_TEST_ALL_PREFIXES(MacDirAccessSandboxTest, StringEscape);
   FRIEND_TEST_ALL_PREFIXES(MacDirAccessSandboxTest, RegexEscape);
-  FRIEND_TEST_ALL_PREFIXES(MacDirAccessSandboxTest, DISABLED_SandboxAccess);
+  FRIEND_TEST_ALL_PREFIXES(MacDirAccessSandboxTest, SandboxAccess);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(Sandbox);
 };

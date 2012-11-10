@@ -1,10 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  const DeletableItem = options.DeletableItem;
-  const DeletableItemList = options.DeletableItemList;
+  /** @const */ var DeletableItem = options.DeletableItem;
+  /** @const */ var DeletableItemList = options.DeletableItemList;
 
   /**
    * Creates a new list item with support for inline editing.
@@ -356,7 +356,7 @@ cr.define('options', function() {
       var itemAncestor = findAncestor(document.activeElement, function(node) {
         return node instanceof InlineEditableItem;
       });
-      if (itemAncestor);
+      if (itemAncestor)
         document.activeElement.blur();
     });
   }
@@ -399,7 +399,8 @@ cr.define('options', function() {
 
     /**
      * May be overridden by subclasses to disable focusing the placeholder.
-     * @return true if the placeholder element should be focused on edit commit.
+     * @return {boolean} True if the placeholder element should be focused on
+     *     edit commit.
      */
     shouldFocusPlaceholder: function() {
       return true;

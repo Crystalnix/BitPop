@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <X11/keysym.h>
-#include <X11/Xlib.h>
 #include <signal.h>
 
 #include <iostream>  // NOLINT
@@ -16,20 +14,27 @@
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
 #include "media/audio/audio_manager.h"
+#include "media/audio/null_audio_sink.h"
 #include "media/base/filter_collection.h"
 #include "media/base/media.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
-#include "media/base/message_loop_factory_impl.h"
+#include "media/base/message_loop_factory.h"
 #include "media/base/pipeline.h"
 #include "media/base/video_frame.h"
+#include "media/filters/audio_renderer_impl.h"
 #include "media/filters/ffmpeg_audio_decoder.h"
-#include "media/filters/ffmpeg_demuxer_factory.h"
+#include "media/filters/ffmpeg_demuxer.h"
 #include "media/filters/ffmpeg_video_decoder.h"
 #include "media/filters/file_data_source.h"
-#include "media/filters/null_audio_renderer.h"
-#include "media/filters/reference_audio_renderer.h"
 #include "media/filters/video_renderer_base.h"
+#include "media/tools/player_x11/data_source_logger.h"
+
+// Include X11 headers here because X11/Xlib.h #define's Status
+// which causes compiler errors with Status enum declarations
+// in media::DemuxerStream & media::AudioDecoder.
+#include <X11/XKBlib.h>
+#include <X11/Xlib.h>
 #include "media/tools/player_x11/gl_video_renderer.h"
 #include "media/tools/player_x11/x11_video_renderer.h"
 
@@ -37,21 +42,17 @@ static Display* g_display = NULL;
 static Window g_window = 0;
 static bool g_running = false;
 
-AudioManager* g_audio_manager = NULL;
+media::AudioManager* g_audio_manager = NULL;
 
 media::VideoRendererBase* g_video_renderer = NULL;
 
-class MessageLoopQuitter {
- public:
-  explicit MessageLoopQuitter(MessageLoop* loop) : loop_(loop) {}
-  void Quit(media::PipelineStatus status) {
-    loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
-    delete this;
-  }
- private:
-  MessageLoop* loop_;
-  DISALLOW_COPY_AND_ASSIGN(MessageLoopQuitter);
-};
+scoped_refptr<media::FileDataSource> CreateFileDataSource(
+    const std::string& file) {
+  scoped_refptr<media::FileDataSource> file_data_source(
+      new media::FileDataSource());
+  CHECK(file_data_source->Initialize(file));
+  return file_data_source;
+}
 
 // Initialize X11. Returns true if successful. This method creates the X11
 // window. Further initialization is done in X11VideoRenderer.
@@ -96,10 +97,11 @@ void Paint(MessageLoop* message_loop, const PaintCB& paint_cb) {
   g_video_renderer->PutCurrentFrame(video_frame);
 }
 
+// TODO(vrk): Re-enabled audio. (crbug.com/112159)
 bool InitPipeline(MessageLoop* message_loop,
-                  const char* filename,
+                  const scoped_refptr<media::DataSource>& data_source,
                   const PaintCB& paint_cb,
-                  bool enable_audio,
+                  bool /* enable_audio */,
                   scoped_refptr<media::Pipeline>* pipeline,
                   MessageLoop* paint_message_loop,
                   media::MessageLoopFactory* message_loop_factory) {
@@ -109,49 +111,41 @@ bool InitPipeline(MessageLoop* message_loop,
     return false;
   }
 
-  // Open the file.
-  scoped_refptr<media::FileDataSource> data_source =
-      new media::FileDataSource();
-  if (data_source->Initialize(filename) != media::PIPELINE_OK) {
-    return false;
-  }
-
   // Create our filter factories.
   scoped_ptr<media::FilterCollection> collection(
       new media::FilterCollection());
-  collection->SetDemuxerFactory(scoped_ptr<media::DemuxerFactory>(
-      new media::FFmpegDemuxerFactory(data_source, message_loop)));
+  collection->SetDemuxer(new media::FFmpegDemuxer(message_loop, data_source));
   collection->AddAudioDecoder(new media::FFmpegAudioDecoder(
-      message_loop_factory->GetMessageLoop("AudioDecoderThread")));
+      base::Bind(&media::MessageLoopFactory::GetMessageLoop,
+                 base::Unretained(message_loop_factory),
+                 "AudioDecoderThread")));
   collection->AddVideoDecoder(new media::FFmpegVideoDecoder(
-      message_loop_factory->GetMessageLoop("VideoDecoderThread")));
+      base::Bind(&media::MessageLoopFactory::GetMessageLoop,
+                 base::Unretained(message_loop_factory),
+                 "VideoDecoderThread")));
 
   // Create our video renderer and save a reference to it for painting.
   g_video_renderer = new media::VideoRendererBase(
       base::Bind(&Paint, paint_message_loop, paint_cb),
-      base::Bind(&SetOpaque));
+      base::Bind(&SetOpaque),
+      true);
   collection->AddVideoRenderer(g_video_renderer);
 
-  if (enable_audio) {
-    collection->AddAudioRenderer(
-        new media::ReferenceAudioRenderer(g_audio_manager));
-  } else {
-    collection->AddAudioRenderer(new media::NullAudioRenderer());
-  }
+  collection->AddAudioRenderer(
+      new media::AudioRendererImpl(new media::NullAudioSink()));
 
   // Create the pipeline and start it.
   *pipeline = new media::Pipeline(message_loop, new media::MediaLog());
   media::PipelineStatusNotification note;
   (*pipeline)->Start(
-      collection.Pass(), filename, media::PipelineStatusCB(),
-      media::PipelineStatusCB(), media::NetworkEventCB(),
+      collection.Pass(), media::PipelineStatusCB(), media::PipelineStatusCB(),
       note.Callback());
 
   // Wait until the pipeline is fully initialized.
   note.Wait();
   if (note.status() != media::PIPELINE_OK) {
     std::cout << "InitPipeline: " << note.status() << std::endl;
-    (*pipeline)->Stop(media::PipelineStatusCB());
+    (*pipeline)->Stop(base::Closure());
     return false;
   }
 
@@ -171,9 +165,7 @@ void PeriodicalUpdate(
   if (!g_running) {
     // interrupt signal was received during last time period.
     // Quit message_loop only when pipeline is fully stopped.
-    MessageLoopQuitter* quitter = new MessageLoopQuitter(message_loop);
-    pipeline->Stop(base::Bind(&MessageLoopQuitter::Quit,
-                              base::Unretained(quitter)));
+    pipeline->Stop(MessageLoop::QuitClosure());
     return;
   }
 
@@ -202,13 +194,11 @@ void PeriodicalUpdate(
         break;
       case KeyPress:
         {
-          KeySym key = XKeycodeToKeysym(g_display, e.xkey.keycode, 0);
+          KeySym key = XkbKeycodeToKeysym(g_display, e.xkey.keycode, 0, 0);
           if (key == XK_Escape) {
             g_running = false;
             // Quit message_loop only when pipeline is fully stopped.
-            MessageLoopQuitter* quitter = new MessageLoopQuitter(message_loop);
-            pipeline->Stop(base::Bind(&MessageLoopQuitter::Quit,
-                                      base::Unretained(quitter)));
+            pipeline->Stop(MessageLoop::QuitClosure());
             return;
           } else if (key == XK_space) {
             if (pipeline->GetPlaybackRate() < 0.01f)  // paused
@@ -223,38 +213,37 @@ void PeriodicalUpdate(
     }
   }
 
-  message_loop->PostDelayedTask(FROM_HERE, base::Bind(
-      &PeriodicalUpdate, make_scoped_refptr(pipeline),
-      message_loop, audio_only), 10);
+  message_loop->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&PeriodicalUpdate,
+                 make_scoped_refptr(pipeline),
+                 message_loop,
+                 audio_only),
+      base::TimeDelta::FromMilliseconds(10));
 }
 
 int main(int argc, char** argv) {
   base::AtExitManager at_exit;
+  CommandLine::Init(argc, argv);
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  std::string filename = command_line->GetSwitchValueASCII("file");
 
-  scoped_refptr<AudioManager> audio_manager(AudioManager::Create());
-  g_audio_manager = audio_manager;
-
-  // Read arguments.
-  if (argc == 1) {
+  if (filename.empty()) {
     std::cout << "Usage: " << argv[0] << " --file=FILE" << std::endl
               << std::endl
               << "Optional arguments:" << std::endl
               << "  [--audio]"
               << "  [--alsa-device=DEVICE]"
-              << "  [--use-gl]" << std::endl
+              << "  [--use-gl]"
+              << "  [--streaming]" << std::endl
               << " Press [ESC] to stop" << std::endl
               << " Press [SPACE] to toggle pause/play" << std::endl
               << " Press mouse left button to seek" << std::endl;
     return 1;
   }
 
-  // Read command line.
-  CommandLine::Init(argc, argv);
-  std::string filename =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII("file");
-  bool enable_audio = CommandLine::ForCurrentProcess()->HasSwitch("audio");
-  bool use_gl = CommandLine::ForCurrentProcess()->HasSwitch("use-gl");
-  bool audio_only = false;
+  scoped_ptr<media::AudioManager> audio_manager(media::AudioManager::Create());
+  g_audio_manager = audio_manager.get();
 
   logging::InitLogging(
       NULL,
@@ -273,7 +262,7 @@ int main(int argc, char** argv) {
 
   // Initialize the pipeline thread and the pipeline.
   scoped_ptr<media::MessageLoopFactory> message_loop_factory(
-      new media::MessageLoopFactoryImpl());
+      new media::MessageLoopFactory());
   scoped_ptr<base::Thread> thread;
   scoped_refptr<media::Pipeline> pipeline;
   MessageLoop message_loop;
@@ -281,7 +270,7 @@ int main(int argc, char** argv) {
   thread->Start();
 
   PaintCB paint_cb;
-  if (use_gl) {
+  if (command_line->HasSwitch("use-gl")) {
     paint_cb = base::Bind(
         &GlVideoRenderer::Paint, new GlVideoRenderer(g_display, g_window));
   } else {
@@ -289,17 +278,18 @@ int main(int argc, char** argv) {
         &X11VideoRenderer::Paint, new X11VideoRenderer(g_display, g_window));
   }
 
-  if (InitPipeline(thread->message_loop(), filename.c_str(),
-                   paint_cb, enable_audio, &pipeline, &message_loop,
-                   message_loop_factory.get())) {
+  scoped_refptr<media::DataSource> data_source(
+      new DataSourceLogger(CreateFileDataSource(filename),
+                           command_line->HasSwitch("streaming")));
+
+  if (InitPipeline(thread->message_loop(), data_source,
+                   paint_cb, command_line->HasSwitch("audio"),
+                   &pipeline, &message_loop, message_loop_factory.get())) {
     // Main loop of the application.
     g_running = true;
 
-    // Check if video is present.
-    audio_only = !pipeline->HasVideo();
-
     message_loop.PostTask(FROM_HERE, base::Bind(
-        &PeriodicalUpdate, pipeline, &message_loop, audio_only));
+        &PeriodicalUpdate, pipeline, &message_loop, !pipeline->HasVideo()));
     message_loop.Run();
   } else {
     std::cout << "Pipeline initialization failed..." << std::endl;

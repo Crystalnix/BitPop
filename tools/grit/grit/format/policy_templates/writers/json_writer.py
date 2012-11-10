@@ -1,9 +1,9 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 from textwrap import TextWrapper
-from xml.dom import minidom
 from grit.format.policy_templates.writers import template_writer
 
 
@@ -41,7 +41,7 @@ class JsonWriter(template_writer.TemplateWriter):
     example_value = policy['example_value']
     if policy['type'] == 'string':
       example_value_str = '"' + example_value + '"'
-    elif policy['type'] == 'int':
+    elif policy['type'] in ('int', 'int-enum', 'dict'):
       example_value_str = str(example_value)
     elif policy['type'] == 'list':
       if example_value == []:
@@ -55,8 +55,6 @@ class JsonWriter(template_writer.TemplateWriter):
         example_value_str = 'false'
     elif policy['type'] == 'string-enum':
       example_value_str = '"%s"' % example_value;
-    elif policy['type'] == 'int-enum':
-      example_value_str = str(example_value)
     else:
       raise Exception('unknown policy type %s:' % policy['type'])
 
@@ -88,8 +86,8 @@ class JsonWriter(template_writer.TemplateWriter):
     self._first_written = True
     # Create the TextWrapper object once.
     self._text_wrapper = TextWrapper(
-        initial_indent = '  // ', 
-        subsequent_indent = '  // ', 
+        initial_indent = '  // ',
+        subsequent_indent = '  // ',
         break_long_words = False,
         width = 80)
 

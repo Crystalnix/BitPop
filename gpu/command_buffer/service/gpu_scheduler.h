@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,15 +7,19 @@
 
 #include <queue>
 
+#include "base/atomicops.h"
+#include "base/atomic_ref_count.h"
 #include "base/callback.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/linked_ptr.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/shared_memory.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/service/cmd_buffer_engine.h"
 #include "gpu/command_buffer/service/cmd_parser.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
+#include "gpu/gpu_export.h"
 
 namespace gfx {
 class GLFence;
@@ -23,12 +27,27 @@ class GLFence;
 
 namespace gpu {
 
+struct RefCountedCounter
+    : public base::RefCountedThreadSafe<RefCountedCounter> {
+  base::AtomicRefCount count;
+  RefCountedCounter() : count(0) {}
+
+  bool IsZero() { return base::AtomicRefCountIsZero(&count); }
+  void IncCount() { base::AtomicRefCountInc(&count); }
+  void DecCount() { base::AtomicRefCountDec(&count); }
+  void Reset() { base::subtle::NoBarrier_Store(&count, 0); }
+ private:
+  ~RefCountedCounter() {}
+
+  friend class base::RefCountedThreadSafe<RefCountedCounter>;
+};
+
 // This class schedules commands that have been flushed. They are received via
 // a command buffer and forwarded to a command parser. TODO(apatrick): This
 // class should not know about the decoder. Do not add additional dependencies
 // on it.
-class GpuScheduler
-    : public CommandBufferEngine,
+class GPU_EXPORT GpuScheduler
+    : NON_EXPORTED_BASE(public CommandBufferEngine),
       public base::SupportsWeakPtr<GpuScheduler> {
  public:
   GpuScheduler(CommandBuffer* command_buffer,
@@ -38,6 +57,10 @@ class GpuScheduler
   virtual ~GpuScheduler();
 
   void PutChanged();
+
+  void SetPreemptByCounter(scoped_refptr<RefCountedCounter> counter) {
+    preempt_by_counter_ = counter;
+  }
 
   // Sets whether commands should be processed by this scheduler. Setting to
   // false unschedules. Setting to true reschedules. Whether or not the
@@ -66,15 +89,15 @@ class GpuScheduler
 
   void DeferToFence(base::Closure task);
 
+  // Polls the fences, invoking callbacks that were waiting to be triggered
+  // by them and returns whether all fences were complete.
+  bool PollUnscheduleFences();
+
   CommandParser* parser() const {
     return parser_.get();
   }
 
  private:
-  // Polls the fences, invoking callbacks that were waiting to be triggered
-  // by them and returns whether all fences were complete.
-  bool PollUnscheduleFences();
-
   // Artificially reschedule if the scheduler is still unscheduled after a
   // timeout.
   void RescheduleTimeOut();
@@ -121,6 +144,11 @@ class GpuScheduler
 
   base::Closure scheduled_callback_;
   base::Closure command_processed_callback_;
+
+  // If non-NULL and preempt_by_counter_->count is non-zero,
+  // exit PutChanged early.
+  scoped_refptr<RefCountedCounter> preempt_by_counter_;
+  bool was_preempted_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuScheduler);
 };

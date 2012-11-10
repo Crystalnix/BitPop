@@ -1,16 +1,16 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_PRERENDER_PRERENDER_HISTOGRAMS_H_
 #define CHROME_BROWSER_PRERENDER_PRERENDER_HISTOGRAMS_H_
-#pragma once
 
 #include <string>
 
 #include "base/time.h"
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/prerender/prerender_final_status.h"
+#include "chrome/browser/prerender/prerender_local_predictor.h"
 #include "chrome/browser/prerender/prerender_origin.h"
 #include "googleurl/src/gurl.h"
 
@@ -36,6 +36,26 @@ class PrerenderHistograms {
                                    bool was_complete_prerender,
                                    const GURL& url);
 
+  // Records, in a histogram, the percentage of the page load time that had
+  // elapsed by the time it is swapped in.  Values outside of [0, 1.0] are
+  // invalid and ignored.
+  void RecordPercentLoadDoneAtSwapin(double fraction) const;
+
+  // Records the actual pageload time of a prerender that has not been swapped
+  // in yet, but finished loading.
+  void RecordPageLoadTimeNotSwappedIn(base::TimeDelta page_load_time,
+                                      const GURL& url) const;
+
+  // For simulated local browsing prerendering, records the PLT without
+  // any local browsing prerendering.
+  void RecordSimulatedLocalBrowsingBaselinePLT(base::TimeDelta page_load_time,
+                                               const GURL& url) const;
+
+  // For simulated local browsing prerendering, records the PLT with
+  // local browsing prerendering.
+  void RecordSimulatedLocalBrowsingPLT(base::TimeDelta page_load_time,
+                                       const GURL& url) const;
+
   // Records the time from when a page starts prerendering to when the user
   // navigates to it. This must be called on the UI thread.
   void RecordTimeUntilUsed(base::TimeDelta time_until_used,
@@ -59,8 +79,28 @@ class PrerenderHistograms {
   // To be called when a new prerender is started.
   void RecordPrerenderStarted(Origin origin) const;
 
+  // To be called when we know how many prerenders are running after starting
+  // a prerender.
+  void RecordConcurrency(size_t prerender_count) const;
+
   // Called when we swap in a prerender.
   void RecordUsedPrerender(Origin origin) const;
+
+  // Record the time since a page was recently visited.
+  void RecordTimeSinceLastRecentVisit(base::TimeDelta time) const;
+
+  // Record a percentage of pixels of the final page already in place at
+  // swap-in.
+  void RecordFractionPixelsFinalAtSwapin(double fraction) const;
+
+  // Record the occurrence of an event from the local predictor.
+  void RecordLocalPredictorEvent(PrerenderLocalPredictor::Event event) const;
+
+  // For the local predictor, records the time from when a page starts
+  // prerendering to when the user navigates to it. This must be called on the
+  // UI thread.
+  void RecordLocalPredictorTimeUntilUsed(base::TimeDelta time_until_used,
+                                         base::TimeDelta max_age) const;
 
  private:
   base::TimeTicks GetCurrentTimeTicks() const;

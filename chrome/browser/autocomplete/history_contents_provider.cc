@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,11 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/url_util.h"
@@ -26,7 +29,7 @@ namespace {
 // time it will take.
 const int kDaysToSearch = 30;
 
-}  // end namespace
+}  // namespace
 
 HistoryContentsProvider::MatchReference::MatchReference(
     const history::URLResult* result,
@@ -44,9 +47,10 @@ bool HistoryContentsProvider::MatchReference::CompareRelevance(
   return lhs.result->last_visit() > rhs.result->last_visit();
 }
 
-HistoryContentsProvider::HistoryContentsProvider(ACProviderListener* listener,
-                                                 Profile* profile,
-                                                 bool body_only)
+HistoryContentsProvider::HistoryContentsProvider(
+    AutocompleteProviderListener* listener,
+    Profile* profile,
+    bool body_only)
     : HistoryProvider(listener, profile, "HistoryContents"),
       star_title_count_(0),
       star_contents_count_(0),
@@ -63,11 +67,13 @@ void HistoryContentsProvider::Start(const AutocompleteInput& input,
   matches_.clear();
 
   if (input.text().empty() || (input.type() == AutocompleteInput::INVALID) ||
+      (input.type() == AutocompleteInput::FORCED_QUERY) ||
       !profile_ ||
       // The history service or bookmark bar model must exist.
-      !(profile_->GetHistoryService(Profile::EXPLICIT_ACCESS) ||
-        profile_->GetBookmarkModel())) {
-    Stop();
+      !(HistoryServiceFactory::GetForProfile(profile_,
+                                             Profile::EXPLICIT_ACCESS) ||
+        BookmarkModelFactory::GetForProfile(profile_))) {
+    Stop(false);
     return;
   }
 
@@ -78,13 +84,13 @@ void HistoryContentsProvider::Start(const AutocompleteInput& input,
       (((input.type() == AutocompleteInput::REQUESTED_URL) ||
         (input.type() == AutocompleteInput::UNKNOWN)) &&
        (input.text().find('.') != string16::npos))) {
-    Stop();
+    Stop(false);
     return;
   }
 
   if (input.matches_requested() == AutocompleteInput::BEST_MATCH) {
     // None of our results are applicable for best match.
-    Stop();
+    Stop(false);
     return;
   }
 
@@ -95,7 +101,7 @@ void HistoryContentsProvider::Start(const AutocompleteInput& input,
   // Decide what to do about any previous query/results.
   if (!minimal_changes) {
     // Any in-progress request is irrelevant, cancel it.
-    Stop();
+    Stop(false);
   } else if (have_results_) {
     // We finished the previous query and still have its results.  Mark them up
     // again for the new input.
@@ -128,7 +134,8 @@ void HistoryContentsProvider::Start(const AutocompleteInput& input,
 
   if (input.matches_requested() == AutocompleteInput::ALL_MATCHES) {
     HistoryService* history =
-        profile_->GetHistoryService(Profile::EXPLICIT_ACCESS);
+        HistoryServiceFactory::GetForProfile(profile_,
+                                             Profile::EXPLICIT_ACCESS);
     if (history) {
       done_ = false;
 
@@ -144,7 +151,7 @@ void HistoryContentsProvider::Start(const AutocompleteInput& input,
   }
 }
 
-void HistoryContentsProvider::Stop() {
+void HistoryContentsProvider::Stop(bool clear_cached_results) {
   done_ = true;
   request_consumer_.CancelAllRequests();
 
@@ -216,9 +223,8 @@ AutocompleteMatch HistoryContentsProvider::ResultToMatch(
   match.contents_class.push_back(
       ACMatchClassification(0, ACMatchClassification::URL));
   match.description = result.title();
-  match.starred =
-      (profile_->GetBookmarkModel() &&
-       profile_->GetBookmarkModel()->IsBookmarked(result.url()));
+  BookmarkModel* bm_model = BookmarkModelFactory::GetForProfile(profile_);
+  match.starred = (bm_model && bm_model->IsBookmarked(result.url()));
 
   ClassifyDescription(result, &match);
   return match;
@@ -252,15 +258,16 @@ void HistoryContentsProvider::ClassifyDescription(
 int HistoryContentsProvider::CalculateRelevance(
     const history::URLResult& result) {
   const bool in_title = MatchInTitle(result);
-  if (!profile_->GetBookmarkModel() ||
-      !profile_->GetBookmarkModel()->IsBookmarked(result.url()))
+  BookmarkModel* bm_model = BookmarkModelFactory::GetForProfile(profile_);
+  if (!bm_model || !bm_model->IsBookmarked(result.url()))
     return in_title ? (700 + title_count_++) : (500 + contents_count_++);
   return in_title ?
       (1000 + star_title_count_++) : (550 + star_contents_count_++);
 }
 
 void HistoryContentsProvider::QueryBookmarks(const AutocompleteInput& input) {
-  BookmarkModel* bookmark_model = profile_->GetBookmarkModel();
+  BookmarkModel* bookmark_model =
+      BookmarkModelFactory::GetForProfile(profile_);
   if (!bookmark_model)
     return;
 

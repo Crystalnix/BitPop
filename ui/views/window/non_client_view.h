@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_VIEWS_WINDOW_NON_CLIENT_VIEW_H_
 #define UI_VIEWS_WINDOW_NON_CLIENT_VIEW_H_
-#pragma once
 
 #include "ui/views/view.h"
 #include "ui/views/window/client_view.h"
@@ -39,6 +38,17 @@ class VIEWS_EXPORT NonClientFrameView : public View {
   // false gives normal behavior.
   void SetInactiveRenderingDisabled(bool disable);
 
+  // Helper for non-client view implementations to determine which area of the
+  // window border the specified |point| falls within. The other parameters are
+  // the size of the sizing edges, and whether or not the window can be
+  // resized.
+  int GetHTComponentForFrame(const gfx::Point& point,
+                             int top_resize_border_height,
+                             int resize_border_thickness,
+                             int top_resize_corner_height,
+                             int resize_corner_width,
+                             bool can_resize);
+
   // Returns the bounds (in this View's parent's coordinates) that the client
   // view should be laid out within.
   virtual gfx::Rect GetBoundsForClientView() const = 0;
@@ -65,17 +75,6 @@ class VIEWS_EXPORT NonClientFrameView : public View {
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
 
   NonClientFrameView() : paint_as_active_(false) {}
-
-  // Helper for non-client view implementations to determine which area of the
-  // window border the specified |point| falls within. The other parameters are
-  // the size of the sizing edges, and whether or not the window can be
-  // resized.
-  int GetHTComponentForFrame(const gfx::Point& point,
-                             int top_resize_border_height,
-                             int resize_border_thickness,
-                             int top_resize_corner_height,
-                             int resize_corner_width,
-                             bool can_resize);
 
   // Used to determine if the frame should be painted as active. Keyed off the
   // window's actual active state and the override, see
@@ -201,6 +200,7 @@ class VIEWS_EXPORT NonClientView : public View {
   // NonClientView, View overrides:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual gfx::Size GetMinimumSize() OVERRIDE;
+  virtual gfx::Size GetMaximumSize() OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
   virtual std::string GetClassName() const OVERRIDE;

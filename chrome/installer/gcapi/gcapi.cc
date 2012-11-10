@@ -17,22 +17,26 @@
 #include <windows.h>
 
 #include <cstdlib>
+#include <iterator>
 #include <limits>
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/process_util.h"
 #include "base/string_number_conversions.h"
 #include "base/time.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_handle.h"
+#include "chrome/installer/gcapi/gcapi_omaha_experiment.h"
+#include "chrome/installer/gcapi/gcapi_reactivation.h"
+#include "chrome/installer/launcher_support/chrome_launcher_support.h"
 #include "chrome/installer/util/google_update_constants.h"
 #include "chrome/installer/util/util_constants.h"
-
-#include "google_update_idl.h"  // NOLINT
+#include "google_update/google_update_idl.h"
 
 using base::Time;
 using base::TimeDelta;
@@ -318,7 +322,9 @@ bool GetUserIdForProcess(size_t pid, wchar_t** user_sid) {
 }
 }  // namespace
 
-BOOL __stdcall GoogleChromeCompatibilityCheck(BOOL set_flag, DWORD* reasons) {
+BOOL __stdcall GoogleChromeCompatibilityCheck(BOOL set_flag,
+                                              int shell_mode,
+                                              DWORD* reasons) {
   DWORD local_reasons = 0;
 
   WindowsVersion windows_version = GetWindowsVersion();
@@ -332,13 +338,17 @@ BOOL __stdcall GoogleChromeCompatibilityCheck(BOOL set_flag, DWORD* reasons) {
   if (IsChromeInstalled(HKEY_CURRENT_USER))
     local_reasons |= GCCC_ERROR_USERLEVELALREADYPRESENT;
 
-  if (!VerifyHKLMAccess()) {
+  if (shell_mode == GCAPI_INVOKED_UAC_ELEVATION) {
+    // Only check that we have HKLM write permissions if we specify that
+    // GCAPI is being invoked from an elevated shell, or in admin mode
+    if (!VerifyHKLMAccess()) {
     local_reasons |= GCCC_ERROR_ACCESSDENIED;
-  } else if ((windows_version == VERSION_VISTA_OR_HIGHER) &&
-             !VerifyAdminGroup()) {
+    } else if ((windows_version == VERSION_VISTA_OR_HIGHER) &&
+         !VerifyAdminGroup()) {
     // For Vista or later check for elevation since even for admin user we could
     // be running in non-elevated mode. We require integrity level High.
     local_reasons |= GCCC_ERROR_INTEGRITYLEVEL;
+    }
   }
 
   // Then only check whether we can re-offer, if everything else is OK.
@@ -364,30 +374,8 @@ BOOL __stdcall LaunchGoogleChrome() {
 
   // Now grab the uninstall string from the appropriate ClientState key
   // and use that as the base for a path to chrome.exe.
-  FilePath chrome_exe_path;
-  RegKey client_state(install_key, kChromeRegClientStateKey, KEY_QUERY_VALUE);
-  if (client_state.Valid()) {
-    std::wstring uninstall_string;
-    if (client_state.ReadValue(installer::kUninstallStringField,
-                               &uninstall_string) == ERROR_SUCCESS) {
-      // The uninstall path contains the path to setup.exe which is two levels
-      // down from chrome.exe. Move up two levels (plus one to drop the file
-      // name) and look for chrome.exe from there.
-      FilePath uninstall_path(uninstall_string);
-      chrome_exe_path = uninstall_path.DirName()
-                                      .DirName()
-                                      .DirName()
-                                      .Append(installer::kChromeExe);
-      if (!file_util::PathExists(chrome_exe_path)) {
-        // By way of mild future proofing, look up one to see if there's a
-        // chrome.exe in the version directory
-        chrome_exe_path =
-            uninstall_path.DirName().DirName().Append(installer::kChromeExe);
-      }
-    }
-  }
-
-  if (!file_util::PathExists(chrome_exe_path)) {
+  FilePath chrome_exe_path(chrome_launcher_support::GetAnyChromePath());
+  if (chrome_exe_path.empty()) {
     return false;
   }
 
@@ -456,6 +444,12 @@ BOOL __stdcall LaunchGoogleChrome() {
     if (SUCCEEDED(ipl->LaunchCmdLine(chrome_exe_path.value().c_str())))
       ret = true;
     ipl.Release();
+  } else {
+    // Couldn't get Omaha's process launcher, Omaha may not be installed at
+    // system level. Try just running Chrome instead.
+    ret = base::LaunchProcess(chrome_exe_path.value(),
+                              base::LaunchOptions(),
+                              NULL);
   }
 
   if (impersonation_success)
@@ -539,3 +533,68 @@ int __stdcall GoogleChromeDaysSinceLastRun() {
 
   return days_since_last_run;
 }
+
+BOOL __stdcall CanOfferReactivation(const wchar_t* brand_code,
+                                    int shell_mode,
+                                    DWORD* error_code) {
+  DCHECK(error_code);
+
+  if (!brand_code) {
+    if (error_code)
+      *error_code = REACTIVATE_ERROR_INVALID_INPUT;
+    return FALSE;
+  }
+
+  int days_since_last_run = GoogleChromeDaysSinceLastRun();
+  if (days_since_last_run >= 0 &&
+      days_since_last_run < kReactivationMinDaysDormant) {
+    if (error_code)
+      *error_code = REACTIVATE_ERROR_NOTDORMANT;
+    return FALSE;
+  }
+
+  // Only run the code below when this function is invoked from a standard,
+  // non-elevated cmd shell.  This is because this section of code looks at
+  // values in HKEY_CURRENT_USER, and we only want to look at the logged-in
+  // user's HKCU, not the admin user's HKCU.
+  if (shell_mode == GCAPI_INVOKED_STANDARD_SHELL) {
+
+    if (!IsChromeInstalled(HKEY_LOCAL_MACHINE) &&
+        !IsChromeInstalled(HKEY_CURRENT_USER)) {
+      if (error_code)
+        *error_code = REACTIVATE_ERROR_NOTINSTALLED;
+      return FALSE;
+    }
+
+    if (HasBeenReactivated()) {
+      if (error_code)
+        *error_code = REACTIVATE_ERROR_ALREADY_REACTIVATED;
+      return FALSE;
+    }
+  }
+
+  return TRUE;
+}
+
+BOOL __stdcall ReactivateChrome(wchar_t* brand_code,
+                                int shell_mode,
+                                DWORD* error_code) {
+  BOOL result = FALSE;
+  if (CanOfferReactivation(brand_code,
+                           shell_mode,
+                           error_code)) {
+    if (SetReactivationBrandCode(brand_code, shell_mode)) {
+      // Currently set this as a best-effort thing. We return TRUE if
+      // reactivation succeeded regardless of the experiment label result.
+      SetOmahaExperimentLabel(brand_code, shell_mode);
+
+      result = TRUE;
+    } else {
+      if (error_code)
+        *error_code = REACTIVATE_ERROR_REACTIVATION_FAILED;
+    }
+  }
+
+  return result;
+}
+

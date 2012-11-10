@@ -28,6 +28,9 @@ def Main(args):
   # them off on the main Chrome waterfall, but not on NaCl's integration bots.
   # This makes it easier to see when things have been fixed NaCl side.
   if not is_integration_bot:
+    # TODO(nfullagar): Reenable when this issue is resolved.
+    # http://code.google.com/p/chromium/issues/detail?id=116169
+    tests_to_disable.append('run_ppapi_example_audio_test');
     # TODO(ncbray): Reenable when this issue is resolved.
     # http://code.google.com/p/nativeclient/issues/detail?id=2091
     tests_to_disable.append('run_ppapi_bad_browser_test')
@@ -35,36 +38,11 @@ def Main(args):
     # See http://code.google.com/p/nativeclient/issues/detail?id=2124
     # TODO(mseaborn): Reenable when this issue is resolved.
     tests_to_disable.append('run_ppapi_ppb_var_browser_test')
-    # The behavior of the URLRequest changed slightly and this test needs to be
-    # updated. http://code.google.com/p/chromium/issues/detail?id=94352
-    tests_to_disable.append('run_ppapi_ppb_url_request_info_browser_test')
-    # This test failed and caused the build's gatekeep to close the tree.
-    # http://code.google.com/p/chromium/issues/detail?id=96434
-    tests_to_disable.append('run_ppapi_example_post_message_test')
-    # These tests are flakey on the chrome waterfall and need to be looked at.
-    # TODO(bsy): http://code.google.com/p/nativeclient/issues/detail?id=2509
-    tests_to_disable.append('run_pm_redir_stderr_fg_0_chrome_browser_test')
-    tests_to_disable.append('run_pm_redir_stderr_bg_0_chrome_browser_test')
-    tests_to_disable.append('run_pm_redir_stderr_bg_1000_chrome_browser_test')
-    tests_to_disable.append('run_pm_redir_stderr_bg_1000000_chrome_browser_test')
     # http://code.google.com/p/nativeclient/issues/detail?id=2511
     tests_to_disable.append('run_ppapi_ppb_image_data_browser_test')
-    # TODO(cdn): Reenable once we can pass
-    # --disable-extensions-resource-whitelist to chrome for this test.
-    # http://code.google.com/p/nativeclient/issues/detail?id=108131
-    tests_to_disable.append('run_ppapi_extension_mime_handler_browser_test')
 
-
-    # TODO(ncbray) why did these tests flake?
-    # http://code.google.com/p/nativeclient/issues/detail?id=2230
+    # TODO(ncbray) are these tests stable?
     tests_to_disable.extend([
-        'run_pm_manifest_file_chrome_browser_test',
-        'run_srpc_basic_chrome_browser_test',
-        'run_srpc_hw_data_chrome_browser_test',
-        'run_srpc_hw_chrome_browser_test',
-        'run_srpc_manifest_file_chrome_browser_test',
-        'run_srpc_nameservice_chrome_browser_test',
-        'run_srpc_nrd_xfer_chrome_browser_test',
         'run_no_fault_pm_nameservice_chrome_browser_test',
         'run_fault_pm_nameservice_chrome_browser_test',
         'run_fault_pq_os_pm_nameservice_chrome_browser_test',
@@ -75,6 +53,13 @@ def Main(args):
       # TODO(mseaborn) fix
       # http://code.google.com/p/nativeclient/issues/detail?id=1835
       tests_to_disable.append('run_ppapi_crash_browser_test')
+
+    if sys.platform in ('win32', 'cygwin'):
+      # This one is only failing for nacl_glibc on x64 Windows
+      # but it is not clear how to disable only that limited case.
+      # See http://crbug.com/132395
+      tests_to_disable.append('run_inbrowser_test_runner')
+
 
   if sys.platform in ('win32', 'cygwin'):
     tests_to_disable.append('run_ppapi_ppp_input_event_browser_test')
@@ -92,7 +77,11 @@ def Main(args):
          '--build-dir=',
          '--',
          nacl_integration_script,
-         '--disable_tests=%s' % ','.join(tests_to_disable)] + args
+         # TODO(ncbray) re-enable.
+         # https://code.google.com/p/chromium/issues/detail?id=133568
+         '--disable_glibc',
+         '--disable_tests=%s' % ','.join(tests_to_disable)]
+  cmd += args
   sys.stdout.write('Running %s\n' % ' '.join(cmd))
   sys.stdout.flush()
   return subprocess.call(cmd)

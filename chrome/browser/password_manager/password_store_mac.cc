@@ -18,12 +18,13 @@
 #include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/keychain_mac.h"
 #include "chrome/browser/password_manager/login_database.h"
 #include "chrome/browser/password_manager/password_store_change.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
+#include "crypto/keychain_mac.h"
 
+using crypto::MacKeychain;
 using webkit::forms::PasswordForm;
 
 // Utility class to handle the details of constructing and running a keychain
@@ -758,10 +759,15 @@ bool PasswordStoreMac::Init() {
   return PasswordStore::Init();
 }
 
-void PasswordStoreMac::ScheduleTask(const base::Closure& task) {
+void PasswordStoreMac::ShutdownOnUIThread() {
+}
+
+bool PasswordStoreMac::ScheduleTask(const base::Closure& task) {
   if (thread_.get()) {
     thread_->message_loop()->PostTask(FROM_HERE, task);
+    return true;
   }
+  return false;
 }
 
 void PasswordStoreMac::ReportMetricsImpl() {

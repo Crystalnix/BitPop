@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_HISTORY_DOWNLOAD_DATABASE_H_
 #define CHROME_BROWSER_HISTORY_DOWNLOAD_DATABASE_H_
-#pragma once
 
 #include <set>
 #include <string>
@@ -13,8 +12,11 @@
 #include "chrome/browser/history/history_types.h"
 #include "sql/meta_table.h"
 
-struct DownloadPersistentStoreInfo;
 class FilePath;
+
+namespace content {
+struct DownloadPersistentStoreInfo;
+}
 
 namespace sql {
 class Connection;
@@ -32,12 +34,13 @@ class DownloadDatabase {
   int next_download_id() const { return next_id_; }
 
   // Get all the downloads from the database.
-  void QueryDownloads(std::vector<DownloadPersistentStoreInfo>* results);
+  void QueryDownloads(
+      std::vector<content::DownloadPersistentStoreInfo>* results);
 
   // Update the state of one download. Returns true if successful.
   // Does not update |url|, |start_time|, |total_bytes|; uses |db_handle| only
   // to select the row in the database table to update.
-  bool UpdateDownload(const DownloadPersistentStoreInfo& data);
+  bool UpdateDownload(const content::DownloadPersistentStoreInfo& data);
 
   // Update the path of one download. Returns true if successful.
   bool UpdateDownloadPath(const FilePath& path, DownloadID db_handle);
@@ -49,7 +52,7 @@ class DownloadDatabase {
   bool CleanUpInProgressEntries();
 
   // Create a new database entry for one download and return its primary db id.
-  int64 CreateDownload(const DownloadPersistentStoreInfo& info);
+  int64 CreateDownload(const content::DownloadPersistentStoreInfo& info);
 
   // Remove a download from the database.
   void RemoveDownload(DownloadID db_handle);
@@ -63,6 +66,9 @@ class DownloadDatabase {
  protected:
   // Returns the database for the functions in this interface.
   virtual sql::Connection& GetDB() = 0;
+
+  // Returns the meta-table object for the functions in this interface.
+  virtual sql::MetaTable& GetMetaTable() = 0;
 
   // Creates the downloads table if needed.
   bool InitDownloadTable();
@@ -82,7 +88,6 @@ class DownloadDatabase {
 
   int next_id_;
   int next_db_handle_;
-  sql::MetaTable meta_table_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadDatabase);
 };

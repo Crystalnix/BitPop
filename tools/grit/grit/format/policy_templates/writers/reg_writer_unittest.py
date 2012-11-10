@@ -1,5 +1,5 @@
-#!/usr/bin/python2.6
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 import os
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../../../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../../../..'))
 
 import unittest
 
@@ -211,6 +211,44 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Chromium\\ListPolicy]',
         '"1"="foo"',
         '"2"="bar"'])
+
+  def testDictionaryPolicy(self):
+    # Tests a policy group with a single policy of type 'dict'.
+    example = {
+      'bool': True,
+      'int': 10,
+      'string': 'abc',
+      'list': [1, 2, 3],
+      'dict': {
+        'a': 1,
+        'b': 2,
+      }
+    }
+    # Encode |value| here, to make sure the string encoded within the reg_writer
+    # and the expected value are the same.
+    value = str(example)
+    grd = self.PrepareTest(
+        '{'
+        '  "policy_definitions": ['
+        '    {'
+        '      "name": "DictionaryPolicy",'
+        '      "type": "dict",'
+        '      "caption": "",'
+        '      "desc": "",'
+        '      "supported_on": ["chrome.win:8-"],'
+        '      "example_value": ' + value +
+        '    },'
+        '  ],'
+        '  "placeholders": [],'
+        '  "messages": {},'
+        '}')
+    output = self.GetOutput(grd, 'fr', {'_chromium' : '1'}, 'reg', 'en')
+    expected_output = self.NEWLINE.join([
+        'Windows Registry Editor Version 5.00',
+        '',
+        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Chromium]',
+        '"DictionaryPolicy"="%s"' % str(eval(value))])
+    self.CompareOutputs(output, expected_output)
 
   def testNonSupportedPolicy(self):
     # Tests a policy that is not supported on Windows, so it shouldn't

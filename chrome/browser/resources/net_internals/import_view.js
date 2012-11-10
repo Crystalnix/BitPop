@@ -35,8 +35,6 @@ var ImportView = (function() {
     dropTarget.ondragover = this.onDrag.bind(this);
     dropTarget.ondrop = this.onDrop.bind(this);
 
-    $(ImportView.RELOAD_LINK_ID).onclick = this.clickedReload_.bind(this);
-
     this.loadedInfoBuildName_ = $(ImportView.LOADED_INFO_BUILD_NAME_ID);
     this.loadedInfoExportDate_ = $(ImportView.LOADED_INFO_EXPORT_DATE_ID);
     this.loadedInfoOsType_ = $(ImportView.LOADED_INFO_OS_TYPE_ID);
@@ -51,7 +49,6 @@ var ImportView = (function() {
   ImportView.LOADED_DIV_ID = 'import-view-loaded-div';
   ImportView.LOAD_LOG_FILE_ID = 'import-view-load-log-file';
   ImportView.LOAD_STATUS_TEXT_ID = 'import-view-load-status-text';
-  ImportView.RELOAD_LINK_ID = 'import-view-reloaded-link';
   ImportView.LOADED_INFO_EXPORT_DATE_ID = 'import-view-export-date';
   ImportView.LOADED_INFO_BUILD_NAME_ID = 'import-view-build-name';
   ImportView.LOADED_INFO_OS_TYPE_ID = 'import-view-os-type';
@@ -76,14 +73,6 @@ var ImportView = (function() {
     },
 
     /**
-     * Called when the user clicks the "reloaded" link.
-     */
-    clickedReload_: function() {
-      window.location.reload();
-      return false;
-    },
-
-    /**
      * Called when something is dragged over the drop target.
      *
      * Returns false to cancel default browser behavior when a single file is
@@ -91,7 +80,13 @@ var ImportView = (function() {
      * security reasons, which is why we allow the |files| array to be empty.
      */
     onDrag: function(event) {
-      return event.dataTransfer.types.indexOf('Files') == -1 ||
+      // NOTE: Use Array.prototype.indexOf here is necessary while WebKit
+      // decides which type of data structure dataTransfer.types will be
+      // (currently between DOMStringList and Array). These have different APIs
+      // so assuming one type or the other was breaking things. See
+      // http://crbug.com/115433. TODO(dbeam): Remove when standardized more.
+      var indexOf = Array.prototype.indexOf;
+      return indexOf.call(event.dataTransfer.types, 'Files') == -1 ||
              event.dataTransfer.files.length > 1;
     },
 
@@ -100,7 +95,8 @@ var ImportView = (function() {
      * file, tries to load it as a log file.
      */
     onDrop: function(event) {
-      if (event.dataTransfer.types.indexOf('Files') == -1 ||
+      var indexOf = Array.prototype.indexOf;
+      if (indexOf.call(event.dataTransfer.types, 'Files') == -1 ||
           event.dataTransfer.files.length != 1) {
         return;
       }
@@ -150,7 +146,7 @@ var ImportView = (function() {
     },
 
     onLoadLogFile: function(logFile, event) {
-      var result = log_util.loadLogFile(event.target.result, logFile.fileName);
+      var result = log_util.loadLogFile(event.target.result, logFile.name);
       this.setLoadFileStatus(result, false);
     },
 
@@ -175,6 +171,18 @@ var ImportView = (function() {
         this.loadFileElement_ = $(loadFileElementId);
         this.loadFileElement_.onchange = loadFileElementOnChange;
       }
+
+      // Style the log output differently depending on what just happened.
+      var pos = text.indexOf('Log loaded.');
+      if (isLoading) {
+        this.loadStatusText_.className = 'import-view-pending-log';
+      } else if (pos == 0) {
+        this.loadStatusText_.className = 'import-view-success-log';
+      } else if (pos != -1) {
+        this.loadStatusText_.className = 'import-view-warning-log';
+      } else {
+        this.loadStatusText_.className = 'import-view-error-log';
+      }
     },
 
     enableLoadFileElement_: function(enabled) {
@@ -196,17 +204,8 @@ var ImportView = (function() {
       if (typeof(ClientInfo) != 'object')
         return;
 
-      var dateString = '';
-      // Dumps made with the command line option don't have a date, and older
-      // versions of Chrome use a formatted string.
-      // TODO(mmenke):  At some point, after Chrome 17 hits stable, remove the
-      //                ClientInfo.date case.
-      if (ClientInfo.numericDate) {
-        dateString = (new Date(ClientInfo.numericDate)).toLocaleString();
-      } else if (ClientInfo.date) {
-        dateString = ClientInfo.date;
-      }
-      this.loadedInfoExportDate_.innerText = dateString;
+      timeutil.addNodeWithDate(this.loadedInfoExportDate_,
+                               new Date(ClientInfo.numericDate));
 
       var buildName =
           ClientInfo.name +

@@ -1,10 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/chromeos/disks/mock_disk_mount_manager.h"
 
+#include <utility>
+
 #include "base/message_loop.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -26,6 +29,7 @@ const char* kTestMountPath = "/media/foofoo";
 const char* kTestFilePath = "/this/file/path";
 const char* kTestDeviceLabel = "A label";
 const char* kTestDriveLabel = "Another label";
+const char* kTestUuid = "FFFF-FFFF";
 
 }  // namespace
 
@@ -47,9 +51,16 @@ MockDiskMountManager::MockDiskMountManager() {
                             &MockDiskMountManager::RemoveObserverInternal));
   ON_CALL(*this, disks())
       .WillByDefault(Invoke(this, &MockDiskMountManager::disksInternal));
+  ON_CALL(*this, mount_points())
+      .WillByDefault(Invoke(this, &MockDiskMountManager::mountPointsInternal));
+  ON_CALL(*this, FindDiskBySourcePath(_))
+      .WillByDefault(Invoke(
+          this, &MockDiskMountManager::FindDiskBySourcePathInternal));
 }
 
 MockDiskMountManager::~MockDiskMountManager() {
+  STLDeleteContainerPairSecondPointers(disks_.begin(), disks_.end());
+  disks_.clear();
 }
 
 void MockDiskMountManager::NotifyDeviceInsertEvents() {
@@ -60,8 +71,9 @@ void MockDiskMountManager::NotifyDeviceInsertEvents() {
       std::string(kTestFilePath),
       std::string(),
       std::string(kTestDriveLabel),
+      std::string(kTestUuid),
       std::string(kTestSystemPathPrefix),
-      FLASH,
+      DEVICE_TYPE_USB,
       4294967295U,
       false,  // is_parent
       false,  // is_read_only
@@ -90,8 +102,9 @@ void MockDiskMountManager::NotifyDeviceInsertEvents() {
       std::string(kTestFilePath),
       std::string(kTestDeviceLabel),
       std::string(kTestDriveLabel),
+      std::string(kTestUuid),
       std::string(kTestSystemPathPrefix),
-      FLASH,
+      DEVICE_TYPE_MOBILE,
       1073741824,
       false,  // is_parent
       false,  // is_read_only
@@ -113,8 +126,9 @@ void MockDiskMountManager::NotifyDeviceRemoveEvents() {
       std::string(kTestFilePath),
       std::string(kTestDeviceLabel),
       std::string(kTestDriveLabel),
+      std::string(kTestUuid),
       std::string(kTestSystemPathPrefix),
-      FLASH,
+      DEVICE_TYPE_SD,
       1073741824,
       false,  // is_parent
       false,  // is_read_only
@@ -134,9 +148,13 @@ void MockDiskMountManager::SetupDefaultReplies() {
       .Times(AnyNumber());
   EXPECT_CALL(*this, disks())
       .WillRepeatedly(ReturnRef(disks_));
+  EXPECT_CALL(*this, mount_points())
+      .WillRepeatedly(ReturnRef(mount_points_));
+  EXPECT_CALL(*this, FindDiskBySourcePath(_))
+      .Times(AnyNumber());
   EXPECT_CALL(*this, RequestMountInfoRefresh())
       .Times(AnyNumber());
-  EXPECT_CALL(*this, MountPath(_, _))
+  EXPECT_CALL(*this, MountPath(_, _, _, _))
       .Times(AnyNumber());
   EXPECT_CALL(*this, UnmountPath(_))
       .Times(AnyNumber());
@@ -148,9 +166,57 @@ void MockDiskMountManager::SetupDefaultReplies() {
       .Times(AnyNumber());
 }
 
-void MockDiskMountManager::NotifyDiskChanged(DiskMountManagerEventType event,
-                                             const DiskMountManager::Disk* disk)
-{
+void MockDiskMountManager::CreateDiskEntryForMountDevice(
+    const DiskMountManager::MountPointInfo& mount_info,
+    const std::string& device_id) {
+  Disk* disk = new DiskMountManager::Disk(std::string(mount_info.source_path),
+                                          std::string(mount_info.mount_path),
+                                          std::string(),  // system_path
+                                          std::string(),  // file_path
+                                          std::string(),  // device_label
+                                          std::string(),  // drive_label
+                                          device_id,  // fs_uuid
+                                          std::string(),  // system_path_prefix
+                                          DEVICE_TYPE_USB,  // device_type
+                                          1073741824,  // total_size_in_bytes
+                                          false,  // is_parent
+                                          false,  // is_read_only
+                                          true,  // has_media
+                                          false,  // on_boot_device
+                                          false);  // is_hidden
+  DiskMountManager::DiskMap::iterator it = disks_.find(mount_info.source_path);
+  if (it == disks_.end()) {
+    disks_.insert(std::make_pair(std::string(mount_info.source_path), disk));
+  } else {
+    delete it->second;
+    it->second = disk;
+  }
+}
+
+void MockDiskMountManager::RemoveDiskEntryForMountDevice(
+    const DiskMountManager::MountPointInfo& mount_info) {
+  DiskMountManager::DiskMap::iterator it = disks_.find(mount_info.source_path);
+  if (it != disks_.end()) {
+    delete it->second;
+    disks_.erase(it);
+  }
+}
+
+const DiskMountManager::MountPointMap&
+MockDiskMountManager::mountPointsInternal() const {
+  return mount_points_;
+}
+
+const DiskMountManager::Disk*
+MockDiskMountManager::FindDiskBySourcePathInternal(
+    const std::string& source_path) const {
+  DiskMap::const_iterator disk_it = disks_.find(source_path);
+  return disk_it == disks_.end() ? NULL : disk_it->second;
+}
+
+void MockDiskMountManager::NotifyDiskChanged(
+    DiskMountManagerEventType event,
+    const DiskMountManager::Disk* disk) {
   // Make sure we run on UI thread.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 

@@ -1,6 +1,7 @@
-set noparent
-avi@chromium.org
-ben@chromium.org
-brettw@chromium.org
-darin@chromium.org
-jam@chromium.org
+# For sandbox*_linux.*
+cevans@chromium.org
+jln@chromium.org
+
+# For sandbox_policy.cc
+jschuh@chromium.org
+cpu@chromium.org

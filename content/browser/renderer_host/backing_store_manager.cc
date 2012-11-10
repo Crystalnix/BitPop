@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,9 +9,10 @@
 #include "base/memory/mru_cache.h"
 #include "base/sys_info.h"
 #include "content/browser/renderer_host/backing_store.h"
-#include "content/browser/renderer_host/render_widget_host.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/public/common/content_switches.h"
 
+namespace content {
 namespace {
 
 // There are two separate caches, |large_cache| and |small_cache|.  large_cache
@@ -21,8 +22,8 @@ namespace {
 // items will tend to be visible more of the time.
 typedef base::OwningMRUCache<RenderWidgetHost*, BackingStore*>
     BackingStoreCache;
-static BackingStoreCache* large_cache = NULL;
-static BackingStoreCache* small_cache = NULL;
+BackingStoreCache* large_cache = NULL;
+BackingStoreCache* small_cache = NULL;
 
 // Threshold is based on a single large-monitor-width toolstrip.
 // (32bpp, 32 pixels high, 1920 pixels wide)
@@ -126,8 +127,8 @@ BackingStore* CreateBackingStore(RenderWidgetHost* host,
   if (current_mem + new_mem > max_mem) {
     // Need to remove old backing stores to make room for the new one. We
     // don't want to do this when the backing store is being replace by a new
-    // one for the same tab, but this case won't get called then: we'll have
-    // removed the old one in the RemoveBackingStore above, and the cache
+    // one for the same WebContents, but this case won't get called then: we'll
+    // have removed the old one in the RemoveBackingStore above, and the cache
     // won't be over-sized.
     CreateCacheSpace((current_mem + new_mem) - max_mem);
   }
@@ -145,7 +146,8 @@ BackingStore* CreateBackingStore(RenderWidgetHost* host,
   } else {
     cache = small_cache;
   }
-  BackingStore* backing_store = host->AllocBackingStore(backing_store_size);
+  BackingStore* backing_store = RenderWidgetHostImpl::From(
+      host)->AllocBackingStore(backing_store_size);
   if (backing_store)
     cache->Put(host, backing_store);
   return backing_store;
@@ -195,6 +197,7 @@ void BackingStoreManager::PrepareBackingStore(
     TransportDIB::Id bitmap,
     const gfx::Rect& bitmap_rect,
     const std::vector<gfx::Rect>& copy_rects,
+    float scale_factor,
     const base::Closure& completion_callback,
     bool* needs_full_paint,
     bool* scheduled_completion_callback) {
@@ -215,8 +218,8 @@ void BackingStoreManager::PrepareBackingStore(
     }
   }
 
-  backing_store->PaintToBackingStore(host->process(), bitmap,
-                                     bitmap_rect, copy_rects,
+  backing_store->PaintToBackingStore(host->GetProcess(), bitmap,
+                                     bitmap_rect, copy_rects, scale_factor,
                                      completion_callback,
                                      scheduled_completion_callback);
 }
@@ -261,21 +264,6 @@ void BackingStoreManager::RemoveAllBackingStores() {
 }
 
 // static
-bool BackingStoreManager::ExpireBackingStoreForTest(RenderWidgetHost* host) {
-  BackingStoreCache* cache = large_cache;
-
-  BackingStoreCache::iterator it = cache->Peek(host);
-  if (it == cache->end()) {
-    cache = small_cache;
-    it = cache->Peek(host);
-    if (it == cache->end())
-      return false;
-  }
-  ExpireBackingStoreAt(cache, it);
-  return true;
-}
-
-// static
 size_t BackingStoreManager::MemorySize() {
   if (!large_cache)
     return 0;
@@ -290,3 +278,5 @@ size_t BackingStoreManager::MemorySize() {
 
   return mem;
 }
+
+}  // namespace content

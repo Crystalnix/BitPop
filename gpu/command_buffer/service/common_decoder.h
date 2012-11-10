@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/service/cmd_parser.h"
+#include "gpu/gpu_export.h"
 
 namespace gpu {
 
@@ -18,7 +19,7 @@ class CommandBufferEngine;
 
 // This class is a helper base class for implementing the common parts of the
 // o3d/gl2 command buffer decoder.
-class CommonDecoder : public AsyncAPIInterface {
+class GPU_EXPORT CommonDecoder : NON_EXPORTED_BASE(public AsyncAPIInterface) {
  public:
   typedef error::Error Error;
 
@@ -46,7 +47,7 @@ class CommonDecoder : public AsyncAPIInterface {
   // arbitary size, the service puts the string in a bucket. The client can
   // then query the size of a bucket and request sections of the bucket to
   // be passed across shared memory.
-  class Bucket {
+  class GPU_EXPORT Bucket {
    public:
     Bucket();
     ~Bucket();
@@ -101,22 +102,11 @@ class CommonDecoder : public AsyncAPIInterface {
     engine_ = engine;
   }
 
+  // Creates a bucket. If the bucket already exists returns that bucket.
+  Bucket* CreateBucket(uint32 bucket_id);
+
   // Gets a bucket. Returns NULL if the bucket does not exist.
   Bucket* GetBucket(uint32 bucket_id) const;
-
- protected:
-  // Executes a common command.
-  // Parameters:
-  //    command: the command index.
-  //    arg_count: the number of CommandBufferEntry arguments.
-  //    cmd_data: the command data.
-  // Returns:
-  //   error::kNoError if no error was found, one of
-  //   error::Error otherwise.
-  error::Error DoCommonCommand(
-      unsigned int command,
-      unsigned int arg_count,
-      const void* cmd_data);
 
   // Gets the address of shared memory data, given a shared memory ID and an
   // offset. Also checks that the size is consistent with the shared memory
@@ -139,11 +129,22 @@ class CommonDecoder : public AsyncAPIInterface {
     return static_cast<T>(GetAddressAndCheckSize(shm_id, offset, size));
   }
 
+ protected:
+  // Executes a common command.
+  // Parameters:
+  //    command: the command index.
+  //    arg_count: the number of CommandBufferEntry arguments.
+  //    cmd_data: the command data.
+  // Returns:
+  //   error::kNoError if no error was found, one of
+  //   error::Error otherwise.
+  error::Error DoCommonCommand(
+      unsigned int command,
+      unsigned int arg_count,
+      const void* cmd_data);
+
   // Gets an name for a common command.
   const char* GetCommonCommandName(cmd::CommandId command_id) const;
-
-  // Creates a bucket. If the bucket already exists returns that bucket.
-  Bucket* CreateBucket(uint32 bucket_id);
 
  private:
   // Generate a member function prototype for each command in an automated and

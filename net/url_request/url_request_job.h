@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef NET_URL_REQUEST_URL_REQUEST_JOB_H_
 #define NET_URL_REQUEST_URL_REQUEST_JOB_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -13,22 +12,22 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/system_monitor/system_monitor.h"
-#include "base/time.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/filter.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_states.h"
 #include "net/base/net_export.h"
+#include "net/cookies/canonical_cookie.h"
 
 namespace net {
 
 class AuthChallengeInfo;
 class AuthCredentials;
-class CookieList;
 class CookieOptions;
 class HttpRequestHeaders;
 class HttpResponseInfo;
 class IOBuffer;
+class NetworkDelegate;
 class SSLCertRequestInfo;
 class SSLInfo;
 class URLRequest;
@@ -39,7 +38,8 @@ class X509Certificate;
 class NET_EXPORT URLRequestJob : public base::RefCounted<URLRequestJob>,
                                  public base::SystemMonitor::PowerObserver {
  public:
-  explicit URLRequestJob(URLRequest* request);
+  explicit URLRequestJob(URLRequest* request,
+                         NetworkDelegate* network_delegate);
 
   // Returns the request that owns this job. THIS POINTER MAY BE NULL if the
   // request was destroyed.
@@ -334,6 +334,9 @@ class NET_EXPORT URLRequestJob : public base::RefCounted<URLRequestJob>,
   // The default implementation does nothing.
   virtual void UpdatePacketReadTimes();
 
+  // Custom handler for derived classes when the request is detached.
+  virtual void OnDetachRequest() {}
+
   // Indicates that the job is done producing data, either it has completed
   // all the data or an error has been encountered. Set exclusively by
   // NotifyDone so that it is kept in sync with the request.
@@ -371,6 +374,8 @@ class NET_EXPORT URLRequestJob : public base::RefCounted<URLRequestJob>,
   // Set when a redirect is deferred.
   GURL deferred_redirect_url_;
   int deferred_redirect_status_code_;
+
+  NetworkDelegate* network_delegate_;
 
   base::WeakPtrFactory<URLRequestJob> weak_factory_;
 

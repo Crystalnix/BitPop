@@ -4,6 +4,7 @@
 
 #include "chrome/browser/browser_process_impl.h"
 
+#include <algorithm>
 #include <map>
 #include <set>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/debug/alias.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/synchronization/waitable_event.h"
@@ -18,28 +20,30 @@
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/automation/automation_provider_list.h"
 #include "chrome/browser/background/background_mode_manager.h"
-#include "chrome/browser/browser_trial.h"
 #include "chrome/browser/chrome_browser_main.h"
+#include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/chrome_plugin_service_filter.h"
 #include "chrome/browser/component_updater/component_updater_configurator.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
 #include "chrome/browser/debugger/remote_debugging_server.h"
 #include "chrome/browser/download/download_request_limiter.h"
-#include "chrome/browser/extensions/extension_event_router_forwarder.h"
+#include "chrome/browser/download/download_status_updater.h"
+#include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/extensions/extension_tab_id_map.h"
-#include "chrome/browser/extensions/user_script_listener.h"
 #include "chrome/browser/first_run/upgrade_util.h"
-#include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/icon_manager.h"
 #include "chrome/browser/intranet_redirect_detector.h"
 #include "chrome/browser/io_thread.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/browser/metrics/thread_watcher.h"
+#include "chrome/browser/metrics/variations_service.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/net/crl_set_fetcher.h"
 #include "chrome/browser/net/sdch_dictionary_fetcher.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
+#include "chrome/browser/policy/policy_service.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prerender/prerender_tracker.h"
@@ -51,10 +55,10 @@
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/status_icons/status_tray.h"
-#include "chrome/browser/tab_closeable_state_watcher.h"
 #include "chrome/browser/tab_contents/thumbnail_generator.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -65,21 +69,21 @@
 #include "chrome/common/switch_utils.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/google_update_constants.h"
-#include "content/browser/child_process_security_policy.h"
-#include "content/browser/download/download_status_updater.h"
-#include "content/browser/download/mhtml_generation_manager.h"
-#include "content/browser/gpu/gpu_process_host_ui_shim.h"
-#include "content/browser/net/browser_online_state_observer.h"
-#include "content/browser/renderer_host/resource_dispatcher_host.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/render_process_host.h"
-#include "media/audio/audio_manager.h"
+#include "content/public/browser/resource_dispatcher_host.h"
+#include "content/public/common/pepper_plugin_info.h"
 #include "net/socket/client_socket_pool_manager.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
+
+#if !defined(ENABLE_CONFIGURATION_POLICY)
+#include "chrome/browser/policy/policy_service_stub.h"
+#endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
 #if defined(OS_WIN)
 #include "ui/views/focus/view_storage.h"
@@ -87,8 +91,12 @@
 #include "chrome/browser/chrome_browser_main_mac.h"
 #endif
 
+#if defined(USE_AURA)
+#include "ui/aura/env.h"
+#endif
+
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/oom_priority_manager.h"
+#include "chrome/browser/chromeos/oom_priority_manager.h"
 #endif  // defined(OS_CHROMEOS)
 
 #if (defined(OS_WIN) || defined(OS_LINUX)) && !defined(OS_CHROMEOS)
@@ -113,15 +121,17 @@ static const int kEndSessionTimeoutSeconds = 10;
 #endif
 
 using content::BrowserThread;
+using content::ChildProcessSecurityPolicy;
 using content::PluginService;
+using content::ResourceDispatcherHost;
 
 BrowserProcessImpl::BrowserProcessImpl(const CommandLine& command_line)
     : created_metrics_service_(false),
       created_watchdog_thread_(false),
+      created_browser_policy_connector_(false),
       created_profile_manager_(false),
       created_local_state_(false),
       created_icon_manager_(false),
-      created_browser_policy_connector_(false),
       created_notification_ui_manager_(false),
       created_safe_browsing_service_(false),
       module_ref_count_(0),
@@ -133,32 +143,31 @@ BrowserProcessImpl::BrowserProcessImpl(const CommandLine& command_line)
   g_browser_process = this;
   clipboard_.reset(new ui::Clipboard);
 
+#if defined(ENABLE_PRINTING)
   // Must be created after the NotificationService.
   print_job_manager_.reset(new printing::PrintJobManager);
+#endif
 
   net_log_.reset(new ChromeNetLog);
 
   ChildProcessSecurityPolicy::GetInstance()->RegisterWebSafeScheme(
       chrome::kExtensionScheme);
+  ChildProcessSecurityPolicy::GetInstance()->RegisterWebSafeScheme(
+      chrome::kExtensionResourceScheme);
 
-  extension_event_router_forwarder_ = new ExtensionEventRouterForwarder;
+  extension_event_router_forwarder_ = new extensions::EventRouterForwarder;
 
   ExtensionTabIdMap::GetInstance()->Init();
-
-  online_state_observer_.reset(new BrowserOnlineStateObserver);
 }
 
 BrowserProcessImpl::~BrowserProcessImpl() {
-  // Wait for the pending print jobs to finish.
-  print_job_manager_->OnQuit();
-  print_job_manager_.reset();
-
   tracked_objects::ThreadData::EnsureCleanupWasCalled(4);
 
   g_browser_process = NULL;
 }
 
 void BrowserProcessImpl::StartTearDown() {
+#if defined(ENABLE_AUTOMATION)
   // Delete the AutomationProviderList before NotificationService,
   // since it may try to unregister notifications
   // Both NotificationService and AutomationProvider are singleton instances in
@@ -167,6 +176,7 @@ void BrowserProcessImpl::StartTearDown() {
   // NotificationService. NotificationService won't be destroyed until after
   // this destructor is run.
   automation_provider_list_.reset();
+#endif
 
   // We need to shutdown the SdchDictionaryFetcher as it regularly holds
   // a pointer to a URLFetcher, and that URLFetcher (upon destruction) will do
@@ -175,14 +185,14 @@ void BrowserProcessImpl::StartTearDown() {
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                           base::Bind(&SdchDictionaryFetcher::Shutdown));
 
-  // We need to destroy the MetricsService, GoogleURLTracker,
+  // We need to destroy the MetricsService, VariationsService,
   // IntranetRedirectDetector, and SafeBrowsing ClientSideDetectionService
   // (owned by the SafeBrowsingService) before the io_thread_ gets destroyed,
   // since their destructors can call the URLFetcher destructor, which does a
-  // PostDelayedTask operation on the IO thread.
-  // (The IO thread will handle that URLFetcher operation before going away.)
+  // PostDelayedTask operation on the IO thread. (The IO thread will handle that
+  // URLFetcher operation before going away.)
   metrics_service_.reset();
-  google_url_tracker_.reset();
+  variations_service_.reset();
   intranet_redirect_detector_.reset();
 #if defined(ENABLE_SAFE_BROWSING)
   if (safe_browsing_service_.get()) {
@@ -207,14 +217,14 @@ void BrowserProcessImpl::StartTearDown() {
   // down while the IO and FILE threads are still alive.
   browser_policy_connector_.reset();
 
-  // Destroying the GpuProcessHostUIShims on the UI thread posts a task to
-  // delete related objects on the GPU thread. This must be done before
-  // stopping the GPU thread. The GPU thread will close IPC channels to renderer
-  // processes so this has to happen before stopping the IO thread.
-  GpuProcessHostUIShim::DestroyAll();
-
   // Stop the watchdog thread before stopping other threads.
   watchdog_thread_.reset();
+
+#if defined(USE_AURA)
+  // Delete aura after the metrics service has been deleted as it accesses
+  // monitor information.
+  aura::Env::DeleteInstance();
+#endif
 }
 
 void BrowserProcessImpl::PostDestroyThreads() {
@@ -248,7 +258,16 @@ static void Signal(base::WaitableEvent* event) {
 
 unsigned int BrowserProcessImpl::AddRefModule() {
   DCHECK(CalledOnValidThread());
-  CHECK(!IsShuttingDown());
+
+  // CHECK(!IsShuttingDown());
+  if (IsShuttingDown()) {
+    // Copy the stacktrace which released the final reference onto our stack so
+    // it will be available in the crash report for inspection.
+    base::debug::StackTrace callstack = release_last_reference_callstack_;
+    base::debug::Alias(&callstack);
+    CHECK(false);
+  }
+
   did_start_ = true;
   module_ref_count_++;
   return module_ref_count_;
@@ -259,16 +278,17 @@ unsigned int BrowserProcessImpl::ReleaseModule() {
   DCHECK_NE(0u, module_ref_count_);
   module_ref_count_--;
   if (0 == module_ref_count_) {
+    release_last_reference_callstack_ = base::debug::StackTrace();
+
+#if defined(ENABLE_PRINTING)
+    // Wait for the pending print jobs to finish. Don't do this later, since
+    // this might cause a nested message loop to run, and we don't want pending
+    // tasks to run once teardown has started.
+    print_job_manager_->OnQuit();
+    print_job_manager_.reset();
+#endif
+
     CHECK(MessageLoop::current()->is_running());
-    // Allow UI and IO threads to do blocking IO on shutdown, since we do a lot
-    // of it on shutdown for valid reasons.
-    base::ThreadRestrictions::SetIOAllowed(true);
-    CHECK(!BrowserList::GetLastActive());
-    BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(base::IgnoreResult(&base::ThreadRestrictions::SetIOAllowed),
-                   true));
 
 #if defined(OS_MACOSX)
     MessageLoop::current()->PostTask(
@@ -295,6 +315,9 @@ void BrowserProcessImpl::EndSession() {
     // MetricsService lazily writes to prefs, force it to write now.
     local_state()->CommitPendingWrite();
   }
+
+  // http://crbug.com/125207
+  base::ThreadRestrictions::ScopedAllowWait allow_wait;
 
   // We must write that the profile and metrics service shutdown cleanly,
   // otherwise on startup we'll think we crashed. So we block until done and
@@ -372,16 +395,23 @@ net::URLRequestContextGetter* BrowserProcessImpl::system_request_context() {
   return io_thread()->system_url_request_context_getter();
 }
 
+chrome_variations::VariationsService* BrowserProcessImpl::variations_service() {
+  DCHECK(CalledOnValidThread());
+  if (!variations_service_.get())
+    variations_service_.reset(new chrome_variations::VariationsService());
+  return variations_service_.get();
+}
+
 #if defined(OS_CHROMEOS)
-browser::OomPriorityManager* BrowserProcessImpl::oom_priority_manager() {
+chromeos::OomPriorityManager* BrowserProcessImpl::oom_priority_manager() {
   DCHECK(CalledOnValidThread());
   if (!oom_priority_manager_.get())
-    oom_priority_manager_.reset(new browser::OomPriorityManager());
+    oom_priority_manager_.reset(new chromeos::OomPriorityManager());
   return oom_priority_manager_.get();
 }
 #endif  // defined(OS_CHROMEOS)
 
-ExtensionEventRouterForwarder*
+extensions::EventRouterForwarder*
 BrowserProcessImpl::extension_event_router_forwarder() {
   return extension_event_router_forwarder_.get();
 }
@@ -397,13 +427,27 @@ policy::BrowserPolicyConnector* BrowserProcessImpl::browser_policy_connector() {
   DCHECK(CalledOnValidThread());
   if (!created_browser_policy_connector_) {
     DCHECK(browser_policy_connector_.get() == NULL);
-    created_browser_policy_connector_ = true;
 #if defined(ENABLE_CONFIGURATION_POLICY)
     browser_policy_connector_.reset(new policy::BrowserPolicyConnector());
     browser_policy_connector_->Init();
 #endif
+    // Init() should not reenter this function. Updating
+    // |created_browser_policy_connector_| here makes reentering hit the DCHECK.
+    created_browser_policy_connector_ = true;
   }
   return browser_policy_connector_.get();
+}
+
+policy::PolicyService* BrowserProcessImpl::policy_service() {
+  if (!policy_service_.get()) {
+#if defined(ENABLE_CONFIGURATION_POLICY)
+    policy_service_.reset(
+        browser_policy_connector()->CreatePolicyService(NULL));
+#else
+    policy_service_.reset(new policy::PolicyServiceStub());
+#endif
+  }
+  return policy_service_.get();
 }
 
 IconManager* BrowserProcessImpl::icon_manager() {
@@ -419,9 +463,13 @@ ThumbnailGenerator* BrowserProcessImpl::GetThumbnailGenerator() {
 
 AutomationProviderList* BrowserProcessImpl::GetAutomationProviderList() {
   DCHECK(CalledOnValidThread());
+#if defined(ENABLE_AUTOMATION)
   if (automation_provider_list_.get() == NULL)
     automation_provider_list_.reset(new AutomationProviderList());
   return automation_provider_list_.get();
+#else
+  return NULL;
+#endif
 }
 
 void BrowserProcessImpl::InitDevToolsHttpProtocolHandler(
@@ -450,25 +498,28 @@ printing::PrintJobManager* BrowserProcessImpl::print_job_manager() {
 
 printing::PrintPreviewTabController*
     BrowserProcessImpl::print_preview_tab_controller() {
+#if defined(ENABLE_PRINTING)
   DCHECK(CalledOnValidThread());
   if (!print_preview_tab_controller_.get())
     CreatePrintPreviewTabController();
   return print_preview_tab_controller_.get();
+#else
+  NOTIMPLEMENTED();
+  return NULL;
+#endif
 }
 
 printing::BackgroundPrintingManager*
     BrowserProcessImpl::background_printing_manager() {
+#if defined(ENABLE_PRINTING)
   DCHECK(CalledOnValidThread());
   if (!background_printing_manager_.get())
     CreateBackgroundPrintingManager();
   return background_printing_manager_.get();
-}
-
-GoogleURLTracker* BrowserProcessImpl::google_url_tracker() {
-  DCHECK(CalledOnValidThread());
-  if (!google_url_tracker_.get())
-    CreateGoogleURLTracker();
-  return google_url_tracker_.get();
+#else
+  NOTIMPLEMENTED();
+  return NULL;
+#endif
 }
 
 IntranetRedirectDetector* BrowserProcessImpl::intranet_redirect_detector() {
@@ -486,6 +537,8 @@ const std::string& BrowserProcessImpl::GetApplicationLocale() {
 void BrowserProcessImpl::SetApplicationLocale(const std::string& locale) {
   locale_ = locale;
   extension_l10n_util::SetProcessLocale(locale);
+  static_cast<chrome::ChromeContentBrowserClient*>(
+      content::GetContentClient()->browser())->SetApplicationLocale(locale);
 }
 
 DownloadStatusUpdater* BrowserProcessImpl::download_status_updater() {
@@ -497,13 +550,6 @@ DownloadRequestLimiter* BrowserProcessImpl::download_request_limiter() {
   if (!download_request_limiter_)
     download_request_limiter_ = new DownloadRequestLimiter();
   return download_request_limiter_;
-}
-
-TabCloseableStateWatcher* BrowserProcessImpl::tab_closeable_state_watcher() {
-  DCHECK(CalledOnValidThread());
-  if (!tab_closeable_state_watcher_.get())
-    CreateTabCloseableStateWatcher();
-  return tab_closeable_state_watcher_.get();
 }
 
 BackgroundModeManager* BrowserProcessImpl::background_mode_manager() {
@@ -580,13 +626,6 @@ prerender::PrerenderTracker* BrowserProcessImpl::prerender_tracker() {
   return prerender_tracker_.get();
 }
 
-MHTMLGenerationManager* BrowserProcessImpl::mhtml_generation_manager() {
-  if (!mhtml_generation_manager_.get())
-    mhtml_generation_manager_ = new MHTMLGenerationManager();
-
-  return mhtml_generation_manager_.get();
-}
-
 ComponentUpdateService* BrowserProcessImpl::component_updater() {
 #if defined(OS_CHROMEOS)
   return NULL;
@@ -617,22 +656,11 @@ CRLSetFetcher* BrowserProcessImpl::crl_set_fetcher() {
 #endif
 }
 
-AudioManager* BrowserProcessImpl::audio_manager() {
-  DCHECK(CalledOnValidThread());
-  if (!audio_manager_)
-    audio_manager_ = AudioManager::Create();
-
-  return audio_manager_;
-}
-
 void BrowserProcessImpl::ResourceDispatcherHostCreated() {
-  // UserScriptListener will delete itself.
-  ResourceDispatcherHost* rdh = ResourceDispatcherHost::Get();
-  rdh->AddResourceQueueDelegate(new UserScriptListener());
-
   resource_dispatcher_host_delegate_.reset(
-      new ChromeResourceDispatcherHostDelegate(rdh, prerender_tracker()));
-  rdh->set_delegate(resource_dispatcher_host_delegate_.get());
+      new ChromeResourceDispatcherHostDelegate(prerender_tracker()));
+  ResourceDispatcherHost::Get()->SetDelegate(
+      resource_dispatcher_host_delegate_.get());
 
   pref_change_registrar_.Add(prefs::kAllowCrossOriginAuthPrompt, this);
   ApplyAllowCrossOriginAuthPromptPolicy();
@@ -671,14 +699,13 @@ void BrowserProcessImpl::CreateLocalState() {
   FilePath local_state_path;
   PathService::Get(chrome::FILE_LOCAL_STATE, &local_state_path);
   local_state_.reset(
-      PrefService::CreatePrefService(local_state_path, NULL, false));
+      PrefService::CreatePrefService(local_state_path, policy_service(), NULL,
+                                     false));
 
   // Initialize the prefs of the local state.
-  browser::RegisterLocalState(local_state_.get());
+  chrome::RegisterLocalState(local_state_.get());
 
   pref_change_registrar_.Init(local_state_.get());
-
-  print_job_manager_->InitOnUIThread(local_state_.get());
 
   // Initialize the notification for the default browser setting policy.
   local_state_->RegisterBooleanPref(prefs::kDefaultBrowserSettingEnabled,
@@ -699,8 +726,10 @@ void BrowserProcessImpl::CreateLocalState() {
                                     net::kDefaultMaxSocketsPerProxyServer);
   int max_per_proxy = local_state_->GetInteger(prefs::kMaxConnectionsPerProxy);
   net::ClientSocketPoolManager::set_max_sockets_per_proxy_server(
+      net::HttpNetworkSession::NORMAL_SOCKET_POOL,
       std::max(std::min(max_per_proxy, 99),
-               net::ClientSocketPoolManager::max_sockets_per_group()));
+               net::ClientSocketPoolManager::max_sockets_per_group(
+                   net::HttpNetworkSession::NORMAL_SOCKET_POOL)));
 
   // This is observed by ChildProcessSecurityPolicy, which lives in content/
   // though, so it can't register itself.
@@ -725,8 +754,19 @@ void BrowserProcessImpl::PreMainMessageLoopRun() {
   FilePath path;
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableInternalFlash) &&
-      PathService::Get(chrome::FILE_FLASH_PLUGIN, &path)) {
+      PathService::Get(chrome::FILE_FLASH_PLUGIN_EXISTING, &path)) {
     plugin_service->AddExtraPluginPath(path);
+  }
+
+  // Register bundled Pepper Flash if available.
+  content::PepperPluginInfo plugin;
+  bool add_at_beginning = false;
+  chrome::ChromeContentClient* content_client =
+      static_cast<chrome::ChromeContentClient*>(content::GetContentClient());
+  if (content_client->GetBundledFieldTrialPepperFlash(&plugin,
+                                                      &add_at_beginning)) {
+    plugin_service->RegisterInternalPlugin(plugin.ToWebPluginInfo(),
+                                           add_at_beginning);
   }
 
 #if defined(OS_POSIX)
@@ -748,12 +788,6 @@ void BrowserProcessImpl::CreateIconManager() {
   icon_manager_.reset(new IconManager);
 }
 
-void BrowserProcessImpl::CreateGoogleURLTracker() {
-  DCHECK(google_url_tracker_.get() == NULL);
-  scoped_ptr<GoogleURLTracker> google_url_tracker(new GoogleURLTracker);
-  google_url_tracker_.swap(google_url_tracker);
-}
-
 void BrowserProcessImpl::CreateIntranetRedirectDetector() {
   DCHECK(intranet_redirect_detector_.get() == NULL);
   scoped_ptr<IntranetRedirectDetector> intranet_redirect_detector(
@@ -762,14 +796,11 @@ void BrowserProcessImpl::CreateIntranetRedirectDetector() {
 }
 
 void BrowserProcessImpl::CreateNotificationUIManager() {
+#if defined(ENABLE_NOTIFICATIONS)
   DCHECK(notification_ui_manager_.get() == NULL);
   notification_ui_manager_.reset(NotificationUIManager::Create(local_state()));
   created_notification_ui_manager_ = true;
-}
-
-void BrowserProcessImpl::CreateTabCloseableStateWatcher() {
-  DCHECK(tab_closeable_state_watcher_.get() == NULL);
-  tab_closeable_state_watcher_.reset(TabCloseableStateWatcher::Create());
+#endif
 }
 
 void BrowserProcessImpl::CreateBackgroundModeManager() {
@@ -785,13 +816,21 @@ void BrowserProcessImpl::CreateStatusTray() {
 }
 
 void BrowserProcessImpl::CreatePrintPreviewTabController() {
+#if defined(ENABLE_PRINTING)
   DCHECK(print_preview_tab_controller_.get() == NULL);
   print_preview_tab_controller_ = new printing::PrintPreviewTabController();
+#else
+  NOTIMPLEMENTED();
+#endif
 }
 
 void BrowserProcessImpl::CreateBackgroundPrintingManager() {
+#if defined(ENABLE_PRINTING)
   DCHECK(background_printing_manager_.get() == NULL);
   background_printing_manager_.reset(new printing::BackgroundPrintingManager());
+#else
+  NOTIMPLEMENTED();
+#endif
 }
 
 void BrowserProcessImpl::CreateSafeBrowsingService() {
@@ -827,7 +866,7 @@ void BrowserProcessImpl::ApplyDefaultBrowserPolicy() {
 
 void BrowserProcessImpl::ApplyAllowCrossOriginAuthPromptPolicy() {
   bool value = local_state()->GetBoolean(prefs::kAllowCrossOriginAuthPrompt);
-  ResourceDispatcherHost::Get()->set_allow_cross_origin_auth_prompt(value);
+  ResourceDispatcherHost::Get()->SetAllowCrossOriginAuthPrompt(value);
 }
 
 // Mac is currently not supported.
@@ -836,7 +875,7 @@ void BrowserProcessImpl::ApplyAllowCrossOriginAuthPromptPolicy() {
 bool BrowserProcessImpl::CanAutorestartForUpdate() const {
   // Check if browser is in the background and if it needs to be restarted to
   // apply a pending update.
-  return BrowserList::size() == 0 && BrowserList::WillKeepAlive() &&
+  return BrowserList::size() == 0 && browser::WillKeepAlive() &&
          upgrade_util::IsUpdatePendingRestart();
 }
 
@@ -873,7 +912,7 @@ void BrowserProcessImpl::RestartBackgroundInstance() {
   }
 
   DLOG(WARNING) << "Shutting down current instance of the browser.";
-  BrowserList::AttemptExit();
+  browser::AttemptExit();
 
   // Transfer ownership to Upgrade.
   upgrade_util::SetNewCommandLine(new_cl.release());

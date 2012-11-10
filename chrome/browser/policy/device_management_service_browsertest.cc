@@ -8,9 +8,9 @@
 #include "chrome/browser/policy/cloud_policy_constants.h"
 #include "chrome/browser/policy/device_management_service.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "content/public/common/url_fetcher.h"
 #include "net/base/upload_data.h"
 #include "net/test/test_server.h"
+#include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_job.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -44,7 +44,7 @@ class CannedResponseInterceptor : public net::URLRequest::Interceptor {
   virtual net::URLRequestJob* MaybeIntercept(
       net::URLRequest* request) OVERRIDE {
     em::DeviceManagementRequest dm_request;
-    net::UploadData* upload = request->get_upload();
+    net::UploadData* upload = request->get_upload_mutable();
     if (request->url().GetOrigin() == service_url_.GetOrigin() &&
         request->url().path() == service_url_.path() &&
         upload != NULL &&
@@ -94,7 +94,7 @@ class DeviceManagementServiceIntegrationTest
                                const em::DeviceManagementResponse&));
 
   std::string InitCannedResponse() {
-    content::URLFetcher::SetEnableInterceptionForTests(true);
+    net::URLFetcher::SetEnableInterceptionForTests(true);
     interceptor_.reset(new CannedResponseInterceptor(GURL(kServiceUrl)));
     return kServiceUrl;
   }
@@ -139,6 +139,7 @@ class DeviceManagementServiceIntegrationTest
     test_server_.reset(
         new net::TestServer(
             net::TestServer::TYPE_HTTP,
+            net::TestServer::kLocalhost,
             FilePath(FILE_PATH_LITERAL("chrome/test/data/policy"))));
     ASSERT_TRUE(test_server_->Start());
   }

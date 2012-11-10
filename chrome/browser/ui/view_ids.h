@@ -7,7 +7,6 @@
 
 #ifndef CHROME_BROWSER_UI_VIEW_IDS_H_
 #define CHROME_BROWSER_UI_VIEW_IDS_H_
-#pragma once
 
 enum ViewID {
   VIEW_ID_NONE = 0,
@@ -46,6 +45,7 @@ enum ViewID {
   VIEW_ID_BROWSER_ACTION_TOOLBAR,
   VIEW_ID_FEEDBACK_BUTTON,
   VIEW_ID_OMNIBOX,
+  VIEW_ID_CHROME_TO_MOBILE_BUTTON,
 
   // The Bookmark Bar.
   VIEW_ID_BOOKMARK_BAR,
@@ -59,7 +59,6 @@ enum ViewID {
 
   // Tab Container window.
   VIEW_ID_TAB_CONTAINER,
-  VIEW_ID_TAB_CONTAINER_FOCUS_VIEW,
 
   // Docked dev tools.
   VIEW_ID_DEV_TOOLS_DOCKED,
@@ -75,7 +74,10 @@ enum ViewID {
 
   // Used in chrome/browser/ui/gtk/view_id_util_browsertests.cc
   // If you add new ids, make sure the above test passes.
-  VIEW_ID_PREDEFINED_COUNT
+  VIEW_ID_PREDEFINED_COUNT,
+
+  // Plus button on location bar.
+  VIEW_ID_ACTION_BOX_BUTTON
 };
 
 #endif  // CHROME_BROWSER_UI_VIEW_IDS_H_

@@ -11,6 +11,9 @@
 #include "chrome/browser/password_manager/password_form_data.h"
 #include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/password_manager/password_store_consumer.h"
+#include "chrome/browser/password_manager/password_store_factory.h"
+#include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -85,7 +88,7 @@ void GetLogins(PasswordStore* store, std::vector<PasswordForm>& matches) {
   matcher_form.signon_realm = kFakeSignonRealm;
   PasswordStoreConsumerHelper consumer(&matches);
   store->GetLogins(matcher_form, &consumer);
-  ui_test_utils::RunMessageLoop();
+  content::RunMessageLoop();
 }
 
 void RemoveLogin(PasswordStore* store, const PasswordForm& form) {
@@ -105,19 +108,26 @@ void RemoveLogins(PasswordStore* store) {
   }
 }
 
-void SetPassphrase(int index, const std::string& passphrase) {
-  test()->GetProfile(index)->GetProfileSyncService()->SetPassphrase(
-      passphrase,
-      ProfileSyncService::EXPLICIT,
-      ProfileSyncService::USER_PROVIDED);
+void SetEncryptionPassphrase(int index,
+                             const std::string& passphrase,
+                             ProfileSyncService::PassphraseType type) {
+  ProfileSyncServiceFactory::GetForProfile(
+      test()->GetProfile(index))->SetEncryptionPassphrase(passphrase, type);
+}
+
+bool SetDecryptionPassphrase(int index, const std::string& passphrase) {
+  return ProfileSyncServiceFactory::GetForProfile(
+      test()->GetProfile(index))->SetDecryptionPassphrase(passphrase);
 }
 
 PasswordStore* GetPasswordStore(int index) {
-  return test()->GetProfile(index)->GetPasswordStore(Profile::IMPLICIT_ACCESS);
+  return PasswordStoreFactory::GetForProfile(test()->GetProfile(index),
+                                             Profile::IMPLICIT_ACCESS);
 }
 
 PasswordStore* GetVerifierPasswordStore() {
-  return test()->verifier()->GetPasswordStore(Profile::IMPLICIT_ACCESS);
+  return PasswordStoreFactory::GetForProfile(test()->verifier(),
+                                             Profile::IMPLICIT_ACCESS);
 }
 
 bool ProfileContainsSamePasswordFormsAsVerifier(int index) {

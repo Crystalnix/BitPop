@@ -13,24 +13,9 @@ using WebKit::WebWidget;
 RenderWidgetFullscreen* RenderWidgetFullscreen::Create(int32 opener_id) {
   DCHECK_NE(MSG_ROUTING_NONE, opener_id);
   scoped_refptr<RenderWidgetFullscreen> widget(
-      new RenderWidgetFullscreen());
+      new RenderWidgetFullscreen(WebKit::WebScreenInfo()));
   widget->Init(opener_id);
   return widget.release();
-}
-
-WebWidget* RenderWidgetFullscreen::CreateWebWidget() {
-  // TODO(boliu): Handle full screen render widgets here.
-  return RenderWidget::CreateWebWidget(this);
-}
-
-void RenderWidgetFullscreen::Init(int32 opener_id) {
-  DCHECK(!webwidget_);
-
-  RenderWidget::DoInit(
-      opener_id,
-      CreateWebWidget(),
-      new ViewHostMsg_CreateFullscreenWidget(
-          opener_id, &routing_id_, &surface_id_));
 }
 
 void RenderWidgetFullscreen::show(WebKit::WebNavigationPolicy) {
@@ -45,6 +30,24 @@ void RenderWidgetFullscreen::show(WebKit::WebNavigationPolicy) {
   }
 }
 
-RenderWidgetFullscreen::RenderWidgetFullscreen()
-    : RenderWidget(WebKit::WebPopupTypeNone) {
+RenderWidgetFullscreen::RenderWidgetFullscreen(
+    const WebKit::WebScreenInfo& screen_info)
+    : RenderWidget(WebKit::WebPopupTypeNone, screen_info, false) {
+}
+
+RenderWidgetFullscreen::~RenderWidgetFullscreen() {}
+
+WebWidget* RenderWidgetFullscreen::CreateWebWidget() {
+  // TODO(boliu): Handle full screen render widgets here.
+  return RenderWidget::CreateWebWidget(this);
+}
+
+void RenderWidgetFullscreen::Init(int32 opener_id) {
+  DCHECK(!webwidget_);
+
+  RenderWidget::DoInit(
+      opener_id,
+      CreateWebWidget(),
+      new ViewHostMsg_CreateFullscreenWidget(
+          opener_id, &routing_id_, &surface_id_));
 }

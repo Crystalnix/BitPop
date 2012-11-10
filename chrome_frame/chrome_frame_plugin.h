@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -82,7 +82,8 @@ END_MSG_MAP()
     FilePath actual_profile_name = profile_path.BaseName();
     launch_params_ = new ChromeFrameLaunchParams(url, referrer, profile_path,
         actual_profile_name.value(), SimpleResourceLoader::GetLanguage(),
-        incognito_mode, is_widget_mode, route_all_top_level_navigations);
+        incognito_mode, is_widget_mode, route_all_top_level_navigations,
+        automation_client_->send_shutdown_delay_switch());
     return automation_client_->Initialize(this, launch_params_);
   }
 
@@ -239,9 +240,7 @@ END_MSG_MAP()
 
   virtual void GetProfilePath(const std::wstring& profile_name,
                               FilePath* profile_path) {
-    chrome::GetChromeFrameUserDataDirectory(profile_path);
-    *profile_path = profile_path->Append(profile_name);
-    DVLOG(1) << __FUNCTION__ << ": " << profile_path->value();
+    return GetChromeFrameProfilePath(profile_name, profile_path);
   }
 
  protected:

@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -10,18 +10,17 @@ expansion of $lf; placeholders into the correct linefeed character.
 
 import preprocess_interface
 
-import re
-import sys
-import codecs
+from grit import lazy_re
 
 class ToolbarPreProcessor(preprocess_interface.PreProcessor):
   ''' Toolbar PreProcessing class.
   '''
 
-  _IDS_COMMAND_MACRO = re.compile(r'(.*IDS_COMMAND)\s*\(([a-zA-Z0-9_]*)\s*,\s*([a-zA-Z0-9_]*)\)(.*)')
-  _LINE_FEED_PH = re.compile(r'\$lf;')
-  _PH_COMMENT = re.compile(r'PHRWR')
-  _COMMENT = re.compile(r'^(\s*)//.*')
+  _IDS_COMMAND_MACRO = lazy_re.compile(
+      r'(.*IDS_COMMAND)\s*\(([a-zA-Z0-9_]*)\s*,\s*([a-zA-Z0-9_]*)\)(.*)')
+  _LINE_FEED_PH = lazy_re.compile(r'\$lf;')
+  _PH_COMMENT = lazy_re.compile(r'PHRWR')
+  _COMMENT = lazy_re.compile(r'^(\s*)//.*')
 
 
   def Process(self, rctext, rcpath):

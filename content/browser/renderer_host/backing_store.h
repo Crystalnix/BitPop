@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_RENDERER_HOST_BACKING_STORE_H_
 #define CONTENT_BROWSER_RENDERER_HOST_BACKING_STORE_H_
-#pragma once
 
 #include <vector>
 
@@ -12,29 +11,30 @@
 #include "base/callback_forward.h"
 #include "content/common/content_export.h"
 #include "ui/gfx/size.h"
-#include "ui/gfx/surface/transport_dib.h"
+#include "ui/surface/transport_dib.h"
 
 class RenderProcessHost;
-class RenderWidgetHost;
 
 namespace gfx {
 class Rect;
-}
-
-namespace content {
-class RenderProcessHost;
 }
 
 namespace skia {
 class PlatformCanvas;
 }
 
+namespace content {
+class RenderProcessHost;
+class RenderWidgetHost;
+
 // Represents a backing store for the pixels in a RenderWidgetHost.
 class CONTENT_EXPORT BackingStore {
  public:
   virtual ~BackingStore();
 
-  RenderWidgetHost* render_widget_host() const { return render_widget_host_; }
+  RenderWidgetHost* render_widget_host() const {
+    return render_widget_host_;
+  }
   const gfx::Size& size() { return size_; }
 
   // The number of bytes that this backing store consumes. The default
@@ -43,18 +43,21 @@ class CONTENT_EXPORT BackingStore {
   // information about the color depth.
   virtual size_t MemorySize();
 
-  // Paints the bitmap from the renderer onto the backing store.  bitmap_rect
+  // Paints the bitmap from the renderer onto the backing store. bitmap_rect
   // gives the location of bitmap, and copy_rects specifies the subregion(s) of
-  // the backingstore to be painted from the bitmap.
+  // the backingstore to be painted from the bitmap. All coordinates are in
+  // DIPs. |scale_factor| contains the expected device scale factor of the
+  // backing store.
   //
   // PaintToBackingStore does not need to guarantee that this has happened by
   // the time it returns, in which case it will set |scheduled_callback| to
   // true and will call |callback| when completed.
   virtual void PaintToBackingStore(
-      content::RenderProcessHost* process,
+      RenderProcessHost* process,
       TransportDIB::Id bitmap,
       const gfx::Rect& bitmap_rect,
       const std::vector<gfx::Rect>& copy_rects,
+      float scale_factor,
       const base::Closure& completion_callback,
       bool* scheduled_completion_callback) = 0;
 
@@ -83,5 +86,7 @@ class CONTENT_EXPORT BackingStore {
 
   DISALLOW_COPY_AND_ASSIGN(BackingStore);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_BACKING_STORE_H_

@@ -1,30 +1,30 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_WEBUI_WEB_UI_BROWSERTEST_H_
 #define CHROME_BROWSER_UI_WEBUI_WEB_UI_BROWSERTEST_H_
-#pragma once
 
 #include <string>
+#include <vector>
 
 #include "base/file_path.h"
+#include "base/memory/scoped_vector.h"
 #include "base/string16.h"
-#include "chrome/browser/ui/webui/web_ui_test_handler.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "content/test/js_injection_ready_observer.h"
-#include "content/test/test_navigation_observer.h"
-
-class RenderViewHost;
+#include "content/public/test/js_injection_ready_observer.h"
 
 namespace base {
 class Value;
 }
 
 namespace content {
+class RenderViewHost;
 class WebUI;
 class WebUIMessageHandler;
 }
+
+class WebUITestHandler;
 
 // This macro simplifies the declaration of simple javascript unit tests.
 // Use:
@@ -42,9 +42,9 @@ class WebUIMessageHandler;
 // and the lone test within this class.
 class WebUIBrowserTest
     : public InProcessBrowserTest,
-      public JsInjectionReadyObserver {
+      public content::JsInjectionReadyObserver {
  public:
-  typedef std::vector<const base::Value*> ConstValueVector;
+  typedef ScopedVector<const base::Value> ConstValueVector;
   virtual ~WebUIBrowserTest();
 
   // Add a custom helper JS library for your test.
@@ -54,7 +54,7 @@ class WebUIBrowserTest
 
   // Runs a javascript function in the context of all libraries.
   // Note that calls to functions in test_api.js are not supported.
-  // Takes ownership of Value arguments.
+  // Takes ownership of Value* arguments.
   bool RunJavascriptFunction(const std::string& function_name);
   bool RunJavascriptFunction(const std::string& function_name,
                              base::Value* arg);
@@ -70,7 +70,7 @@ class WebUIBrowserTest
                           const std::string& test_name);
 
   // Runs a test that may include calls to functions in test_api.js.
-  // Takes ownership of Value arguments.
+  // Takes ownership of Value* arguments.
   bool RunJavascriptTest(const std::string& test_name);
   bool RunJavascriptTest(const std::string& test_name,
                          base::Value* arg);
@@ -81,7 +81,7 @@ class WebUIBrowserTest
                          const ConstValueVector& test_arguments);
 
   // Runs a test that may include calls to functions in test_api.js, and waits
-  // for call to testDone().  Takes ownership of Value arguments.
+  // for call to testDone().  Takes ownership of Value* arguments.
   bool RunJavascriptAsyncTest(const std::string& test_name);
   bool RunJavascriptAsyncTest(const std::string& test_name,
                               base::Value* arg);
@@ -100,7 +100,7 @@ class WebUIBrowserTest
   // javascript invocation.
   void PreLoadJavascriptLibraries(const std::string& preload_test_fixture,
                                   const std::string& preload_test_name,
-                                  RenderViewHost* preload_host);
+                                  content::RenderViewHost* preload_host);
 
   // Called by javascript-generated test bodies to browse to a page and preload
   // the javascript for the given |preload_test_fixture| and
@@ -145,8 +145,9 @@ class WebUIBrowserTest
   static GURL WebUITestDataPathToURL(const FilePath::StringType& path);
 
  private:
-  // JsInjectionReadyObserver implementation.
-  virtual void OnJsInjectionReady(RenderViewHost* render_view_host) OVERRIDE;
+  // content::JsInjectionReadyObserver implementation.
+  virtual void OnJsInjectionReady(
+      content::RenderViewHost* render_view_host) OVERRIDE;
 
   // Builds a string containing all added javascript libraries.
   void BuildJavascriptLibraries(string16* content);
@@ -168,7 +169,7 @@ class WebUIBrowserTest
                                  const ConstValueVector& function_arguments,
                                  bool is_test,
                                  bool is_async,
-                                 RenderViewHost* preload_host);
+                                 content::RenderViewHost* preload_host);
 
   // Attaches mock and test handlers.
   void SetupHandlers();

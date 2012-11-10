@@ -1,9 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  const OptionsPage = options.OptionsPage;
+  /** @const */ var OptionsPage = options.OptionsPage;
 
   /**
    * CertificateEditCaTrustOverlay class
@@ -96,7 +96,7 @@ cr.define('options', function() {
    * Callback from CertificateManagerHandler with the trust values.
    * @param {boolean} trustSSL The initial value of SSL trust checkbox.
    * @param {boolean} trustEmail The initial value of Email trust checkbox.
-   * @param {boolean} trustObjSign The initial value of Object Signing trust
+   * @param {boolean} trustObjSign The initial value of Object Signing trust.
    */
   CertificateEditCaTrustOverlay.populateTrust = function(
       trustSSL, trustEmail, trustObjSign) {
@@ -123,7 +123,7 @@ cr.define('options', function() {
       self.finishEdit_();
     }
     $('certificateEditCaTrustDescription').textContent =
-        localStrings.getStringF('certificateEditCaTrustDescriptionFormat',
+        loadTimeData.getStringF('certificateEditCaTrustDescriptionFormat',
                                 certName);
     self.enableInputs_(false);
     OptionsPage.navigateToPage('certificateEditCaTrustOverlay');
@@ -147,7 +147,7 @@ cr.define('options', function() {
       self.finishImport_();
     }
     $('certificateEditCaTrustDescription').textContent =
-        localStrings.getStringF('certificateImportCaDescriptionFormat',
+        loadTimeData.getStringF('certificateImportCaDescriptionFormat',
                                 certName);
     CertificateEditCaTrustOverlay.populateTrust(false, false, false);
     OptionsPage.navigateToPage('certificateEditCaTrustOverlay');

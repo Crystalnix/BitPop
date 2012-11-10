@@ -83,6 +83,9 @@ PrerenderTask.prototype = {
    * @param {object} prerenderInfo State of prerendering pages.
    */
   onPrerenderInfoChanged: function(prerenderInfo) {
+    if (this.isDone())
+      return;
+
     // Verify that prerendering is enabled.
     assertTrue(prerenderInfo.enabled, 'Prerendering not enabled.');
 
@@ -111,10 +114,21 @@ PrerenderTask.prototype = {
   startPrerendering_: function(prerenderInfo) {
     expectEquals(0, prerenderInfo.active.length);
     expectEquals(0, prerenderInfo.history.length);
-    chrome.send('prerenderPage', [this.url_]);
     if (this.shouldSucceed_) {
+      chrome.send('prerenderPage', [this.url_]);
+
       this.state_ = STATE.NEED_NAVIGATE;
     } else {
+      // If the prerender is going to fail, we can add the prerender link to the
+      // current document, so we will create one less process.  Unfortunately,
+      // if the prerender is going to succeed, we have to create a new process
+      // with the prerender link, to avoid the prerender being cancelled due to
+      // a session storage namespace mismatch.
+      var link = document.createElement('link');
+      link.rel = 'prerender';
+      link.href = this.url_;
+      document.head.appendChild(link);
+
       this.state_ = STATE.HISTORY_WAIT;
     }
   },
@@ -159,7 +173,7 @@ PrerenderTask.prototype = {
     expectEquals(this.url_, prerenderInfo.history[0].url);
     expectEquals(this.finalStatus_, prerenderInfo.history[0].final_status);
 
-    testDone();
+    this.onTaskDone();
   }
 };
 

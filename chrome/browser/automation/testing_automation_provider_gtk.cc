@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,26 +9,14 @@
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/automation/automation_window_tracker.h"
-#include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/view_id_util.h"
-
-void TestingAutomationProvider::ActivateWindow(int handle) {
-  NOTIMPLEMENTED();
-}
-
-void TestingAutomationProvider::IsWindowMaximized(int handle,
-                                                  bool* is_maximized,
-                                                  bool* success) {
-  *success = false;
-  NOTIMPLEMENTED();
-}
+#include "ui/base/gtk/gtk_screen_util.h"
 
 void TestingAutomationProvider::TerminateSession(int handle, bool* success) {
   *success = false;
   NOTIMPLEMENTED();
 }
 
-#if !defined(TOOLKIT_VIEWS)
 void TestingAutomationProvider::WindowGetViewBounds(int handle,
                                                     int view_id,
                                                     bool screen_coordinates,
@@ -49,7 +37,7 @@ void TestingAutomationProvider::WindowGetViewBounds(int handle,
     *bounds = gfx::Rect(allocation.width, allocation.height);
     gint x, y;
     if (screen_coordinates) {
-      gfx::Point point = gtk_util::GetWidgetScreenPosition(widget);
+      gfx::Point point = ui::GetWidgetScreenPosition(widget);
       x = point.x();
       y = point.y();
     } else {
@@ -58,14 +46,6 @@ void TestingAutomationProvider::WindowGetViewBounds(int handle,
     }
     bounds->set_origin(gfx::Point(x, y));
   }
-}
-#endif
-
-void TestingAutomationProvider::GetWindowBounds(int handle,
-                                                gfx::Rect* bounds,
-                                                bool* result) {
-  *result = false;
-  NOTIMPLEMENTED();
 }
 
 void TestingAutomationProvider::SetWindowBounds(int handle,
@@ -78,25 +58,4 @@ void TestingAutomationProvider::SetWindowBounds(int handle,
     gtk_window_resize(window, bounds.width(), bounds.height());
     *success = true;
   }
-}
-
-void TestingAutomationProvider::SetWindowVisible(int handle,
-                                                 bool visible,
-                                                 bool* result) {
-  *result = false;
-  GtkWindow* window = window_tracker_->GetResource(handle);
-  if (window) {
-    if (visible) {
-      gtk_window_present(window);
-    } else {
-      gtk_widget_hide(GTK_WIDGET(window));
-    }
-    *result = true;
-  }
-}
-
-void TestingAutomationProvider::GetWindowTitle(int handle, string16* text) {
-  gfx::NativeWindow window = window_tracker_->GetResource(handle);
-  const gchar* title = gtk_window_get_title(window);
-  text->assign(UTF8ToUTF16(title));
 }

@@ -5,6 +5,18 @@
 #include "chrome/browser/intents/default_web_intent_service.h"
 
 DefaultWebIntentService::DefaultWebIntentService()
-  : url_pattern(URLPattern::SCHEME_ALL), user_date(-1), suppression(0) {}
+  : url_pattern(URLPattern::SCHEME_ALL, URLPattern::kAllUrlsPattern),
+    user_date(-1),
+    suppression(0) {}
 
 DefaultWebIntentService::~DefaultWebIntentService() {}
+
+bool DefaultWebIntentService::operator==(
+    const DefaultWebIntentService& other) const {
+  return action == other.action &&
+         type == other.type &&
+         url_pattern == other.url_pattern &&
+         user_date == other.user_date &&
+         suppression == other.suppression &&
+         service_url == other.service_url;
+}

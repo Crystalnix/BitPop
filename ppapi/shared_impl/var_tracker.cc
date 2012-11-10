@@ -4,6 +4,8 @@
 
 #include "ppapi/shared_impl/var_tracker.h"
 
+#include <string.h>
+
 #include <limits>
 
 #include "base/logging.h"
@@ -31,10 +33,14 @@ VarTracker::~VarTracker() {
 }
 
 int32 VarTracker::AddVar(Var* var) {
+  DCHECK(CalledOnValidThread());
+
   return AddVarInternal(var, ADD_VAR_TAKE_ONE_REFERENCE);
 }
 
 Var* VarTracker::GetVar(int32 var_id) const {
+  DCHECK(CalledOnValidThread());
+
   VarMap::const_iterator result = live_vars_.find(var_id);
   if (result == live_vars_.end())
     return NULL;
@@ -42,12 +48,16 @@ Var* VarTracker::GetVar(int32 var_id) const {
 }
 
 Var* VarTracker::GetVar(const PP_Var& var) const {
+  DCHECK(CalledOnValidThread());
+
   if (!IsVarTypeRefcounted(var.type))
     return NULL;
   return GetVar(static_cast<int32>(var.value.as_id));
 }
 
 bool VarTracker::AddRefVar(int32 var_id) {
+  DCHECK(CalledOnValidThread());
+
   DLOG_IF(ERROR, !CheckIdType(var_id, PP_ID_TYPE_VAR))
       << var_id << " is not a PP_Var ID.";
   VarMap::iterator found = live_vars_.find(var_id);
@@ -71,19 +81,21 @@ bool VarTracker::AddRefVar(int32 var_id) {
 }
 
 bool VarTracker::AddRefVar(const PP_Var& var) {
+  DCHECK(CalledOnValidThread());
+
   if (!IsVarTypeRefcounted(var.type))
     return false;
   return AddRefVar(static_cast<int32>(var.value.as_id));
 }
 
 bool VarTracker::ReleaseVar(int32 var_id) {
+  DCHECK(CalledOnValidThread());
+
   DLOG_IF(ERROR, !CheckIdType(var_id, PP_ID_TYPE_VAR))
       << var_id << " is not a PP_Var ID.";
   VarMap::iterator found = live_vars_.find(var_id);
-  if (found == live_vars_.end()) {
-    NOTREACHED() << "Unref-ing an invalid var";
+  if (found == live_vars_.end())
     return false;
-  }
 
   VarInfo& info = found->second;
   if (info.ref_count == 0) {
@@ -108,6 +120,8 @@ bool VarTracker::ReleaseVar(int32 var_id) {
 }
 
 bool VarTracker::ReleaseVar(const PP_Var& var) {
+  DCHECK(CalledOnValidThread());
+
   if (!IsVarTypeRefcounted(var.type))
     return false;
   return ReleaseVar(static_cast<int32>(var.value.as_id));
@@ -130,6 +144,8 @@ VarTracker::VarMap::iterator VarTracker::GetLiveVar(int32 id) {
 }
 
 int VarTracker::GetRefCountForObject(const PP_Var& plugin_object) {
+  DCHECK(CalledOnValidThread());
+
   VarMap::iterator found = GetLiveVar(plugin_object);
   if (found == live_vars_.end())
     return -1;
@@ -138,6 +154,8 @@ int VarTracker::GetRefCountForObject(const PP_Var& plugin_object) {
 
 int VarTracker::GetTrackedWithNoReferenceCountForObject(
     const PP_Var& plugin_object) {
+  DCHECK(CalledOnValidThread());
+
   VarMap::iterator found = GetLiveVar(plugin_object);
   if (found == live_vars_.end())
     return -1;
@@ -158,13 +176,28 @@ bool VarTracker::IsVarTypeRefcounted(PP_VarType type) const {
 }
 
 PP_Var VarTracker::MakeArrayBufferPPVar(uint32 size_in_bytes) {
+  DCHECK(CalledOnValidThread());
+
   scoped_refptr<ArrayBufferVar> array_buffer(CreateArrayBuffer(size_in_bytes));
   if (!array_buffer)
     return PP_MakeNull();
   return array_buffer->GetPPVar();
 }
 
+PP_Var VarTracker::MakeArrayBufferPPVar(uint32 size_in_bytes,
+                                        const void* data) {
+  DCHECK(CalledOnValidThread());
+
+  scoped_refptr<ArrayBufferVar> array_buffer(CreateArrayBuffer(size_in_bytes));
+  if (!array_buffer)
+    return PP_MakeNull();
+  memcpy(array_buffer->Map(), data, size_in_bytes);
+  return array_buffer->GetPPVar();
+}
+
 std::vector<PP_Var> VarTracker::GetLiveVars() {
+  DCHECK(CalledOnValidThread());
+
   std::vector<PP_Var> var_vector;
   var_vector.reserve(live_vars_.size());
   for (VarMap::const_iterator iter = live_vars_.begin();

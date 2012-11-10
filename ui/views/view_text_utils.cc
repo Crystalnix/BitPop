@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
 #include "base/i18n/break_iterator.h"
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
@@ -91,15 +91,14 @@ void DrawTextStartingFrom(gfx::Canvas* canvas,
                           bool ltr_within_rtl) {
   // Iterate through line breaking opportunities (which in English would be
   // spaces and such). This tells us where to wrap.
-  string16 text16(text);
-  base::i18n::BreakIterator iter(text16,
+  base::i18n::BreakIterator iter(text,
                                  base::i18n::BreakIterator::BREAK_SPACE);
   if (!iter.Init())
     return;
 
   int flags = (text_direction_is_rtl ? gfx::Canvas::TEXT_ALIGN_RIGHT :
                                        gfx::Canvas::TEXT_ALIGN_LEFT);
-  flags |= gfx::Canvas::MULTI_LINE | gfx::Canvas::HIDE_PREFIX;
+  flags |= gfx::Canvas::HIDE_PREFIX | gfx::Canvas::NO_ELLIPSIS;
 
   // Iterate over each word in the text, or put in a more locale-neutral way:
   // iterate to the next line breaking opportunity.
@@ -109,10 +108,10 @@ void DrawTextStartingFrom(gfx::Canvas* canvas,
     if (!ltr_within_rtl)
       word = iter.GetString();  // Get the next word.
     else
-      word = text16;  // Draw the whole text at once.
+      word = text;  // Draw the whole text at once.
 
-    int w = font.GetStringWidth(word), h = font.GetHeight();
-    gfx::CanvasSkia::SizeStringInt(word, font, &w, &h, flags);
+    int w = 0, h = 0;
+    gfx::Canvas::SizeStringInt(word, font, &w, &h, flags);
 
     // If we exceed the boundaries, we need to wrap.
     WrapIfWordDoesntFit(w, font.GetHeight(), position, bounds);
@@ -123,13 +122,8 @@ void DrawTextStartingFrom(gfx::Canvas* canvas,
       // When drawing LTR strings inside RTL text we need to make sure we
       // draw the trailing space (if one exists after the LTR text) to the
       // left of the LTR string.
-      if (ltr_within_rtl && word[word.size() - 1] == ' ') {
-        int space_w = font.GetStringWidth(ASCIIToUTF16(" "));
-        int space_h = font.GetHeight();
-        gfx::CanvasSkia::SizeStringInt(ASCIIToUTF16(" "), font, &space_w,
-                                       &space_h, flags);
-        x += space_w;
-      }
+      if (ltr_within_rtl && word[word.size() - 1] == ' ')
+        x += gfx::Canvas::GetStringWidth(ASCIIToUTF16(" "), font);
     }
     int y = position->height() + bounds.y();
 

@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -55,6 +55,7 @@ import types
 
 from grit import clique
 from grit import exception
+from grit import lazy_re
 from grit import util
 from grit import tclib
 
@@ -68,7 +69,8 @@ _BLOCK_TAGS = ['script', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'br',
               'html', 'link', 'form', 'select', 'textarea',
               'button', 'option', 'map', 'area', 'blockquote', 'pre',
               'meta', 'xmp', 'noscript', 'label', 'tbody', 'thead',
-              'script', 'style', 'pre', 'iframe', 'img', 'input', 'nowrap']
+              'script', 'style', 'pre', 'iframe', 'img', 'input', 'nowrap',
+              'fieldset', 'legend']
 
 # HTML tags which may appear within a chunk.
 _INLINE_TAGS = ['b', 'i', 'u', 'tt', 'code', 'font', 'a', 'span', 'small',
@@ -94,20 +96,25 @@ _SUFFIXES = '123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 # Matches whitespace in an HTML document.  Also matches HTML comments, which are
 # treated as whitespace.
-_WHITESPACE = re.compile(r'(\s|&nbsp;|\\n|\\r|<!--\s*desc\s*=.*?-->)+',
-                         re.DOTALL)
+_WHITESPACE = lazy_re.compile(r'(\s|&nbsp;|\\n|\\r|<!--\s*desc\s*=.*?-->)+',
+                              re.DOTALL)
+
+# Matches whitespace sequences which can be folded into a single whitespace
+# character.  This matches single characters so that non-spaces are replaced
+# with spaces.
+_FOLD_WHITESPACE = lazy_re.compile(r'\s+')
 
 # Finds a non-whitespace character
-_NON_WHITESPACE = re.compile(r'\S')
+_NON_WHITESPACE = lazy_re.compile(r'\S')
 
 # Matches two or more &nbsp; in a row (a single &nbsp is not changed into
 # placeholders because different languages require different numbers of spaces
 # and placeholders must match exactly; more than one is probably a "special"
 # whitespace sequence and should be turned into a placeholder).
-_NBSP = re.compile(r'&nbsp;(&nbsp;)+')
+_NBSP = lazy_re.compile(r'&nbsp;(&nbsp;)+')
 
 # Matches nontranslateable chunks of the document
-_NONTRANSLATEABLES = re.compile(r'''
+_NONTRANSLATEABLES = lazy_re.compile(r'''
   <\s*script.+?<\s*/\s*script\s*>
   |
   <\s*style.+?<\s*/\s*style\s*>
@@ -124,7 +131,7 @@ _NONTRANSLATEABLES = re.compile(r'''
   ''', re.MULTILINE | re.DOTALL | re.VERBOSE | re.IGNORECASE)
 
 # Matches a tag and its attributes
-_ELEMENT = re.compile(r'''
+_ELEMENT = lazy_re.compile(r'''
   # Optional closing /, element name
   <\s*(?P<closing>/)?\s*(?P<element>[a-zA-Z0-9]+)\s*
   # Attributes and/or replaceables inside the tag, if any
@@ -143,7 +150,7 @@ _ELEMENT = re.compile(r'''
 # regexp demands that the attribute value be quoted; this is necessary because
 # the non-tree-building nature of the parser means we don't know when we're
 # writing out attributes, so we wouldn't know to escape spaces.
-_SPECIAL_ELEMENT = re.compile(r'''
+_SPECIAL_ELEMENT = lazy_re.compile(r'''
   <\s*(
     input[^>]+?value\s*=\s*(\'(?P<value3>[^\']*)\'|"(?P<value4>[^"]*)")
     [^>]+type\s*=\s*"?'?(button|reset|text|submit)'?"?
@@ -163,7 +170,7 @@ _SPECIAL_ELEMENT = re.compile(r'''
 # (between tags).  This includes all characters and character entities.
 # Note that this also matches &nbsp; which needs to be handled as whitespace
 # before this regexp is applied.
-_CHARACTERS = re.compile(r'''
+_CHARACTERS = lazy_re.compile(r'''
   (
     \w
     |
@@ -176,19 +183,27 @@ _CHARACTERS = re.compile(r'''
 # Matches Total Recall's "replaceable" tags, which are just any text
 # in capitals enclosed by delimiters like [] or [~~] or [$~~$] (e.g. [HELLO],
 # [~HELLO~] and [$~HELLO~$]).
-_REPLACEABLE = re.compile(r'\[(\$?\~)?(?P<name>[A-Z0-9-_]+?)(\~\$?)?\]',
-                          re.MULTILINE)
+_REPLACEABLE = lazy_re.compile(r'\[(\$?\~)?(?P<name>[A-Z0-9-_]+?)(\~\$?)?\]',
+                               re.MULTILINE)
 
 
 # Matches the silly [!]-prefixed "header" that is used in some TotalRecall
 # templates.
-_SILLY_HEADER = re.compile(r'\[!\]\ntitle\t(?P<title>[^\n]+?)\n.+?\n\n',
-                           re.MULTILINE | re.DOTALL)
+_SILLY_HEADER = lazy_re.compile(r'\[!\]\ntitle\t(?P<title>[^\n]+?)\n.+?\n\n',
+                                re.MULTILINE | re.DOTALL)
 
 
 # Matches a comment that provides a description for the message it occurs in.
-_DESCRIPTION_COMMENT = re.compile(
+_DESCRIPTION_COMMENT = lazy_re.compile(
   r'<!--\s*desc\s*=\s*(?P<description>.+?)\s*-->', re.DOTALL)
+
+# Matches a comment which is used to break apart multiple messages.
+_MESSAGE_BREAK_COMMENT = lazy_re.compile(r'<!--\s*message-break\s*-->',
+                                         re.DOTALL)
+
+# Matches a comment which is used to prevent block tags from splitting a message
+_MESSAGE_NO_BREAK_COMMENT = re.compile(r'<!--\s*message-no-break\s*-->',
+                                       re.DOTALL)
 
 
 _DEBUG = 0
@@ -237,17 +252,30 @@ class HtmlChunks(object):
     '''Adds a chunk to self, removing linebreaks and duplicate whitespace
     if appropriate.
     '''
-    if translateable and not self.last_element_ in _PREFORMATTED_TAGS:
-      text = text.replace('\n', ' ')
-      text = text.replace('\r', ' ')
-      text = text.replace('   ', ' ')
-      text = text.replace('  ', ' ')
-
     m = _DESCRIPTION_COMMENT.search(text)
     if m:
       self.last_description = m.group('description')
-      # remove the description from the output text
+      # Remove the description from the output text
       text = _DESCRIPTION_COMMENT.sub('', text)
+
+    m = _MESSAGE_BREAK_COMMENT.search(text)
+    if m:
+      # Remove the coment from the output text.  It should already effectively
+      # break apart messages.
+      text = _MESSAGE_BREAK_COMMENT.sub('', text)
+
+    if translateable and not self.last_element_ in _PREFORMATTED_TAGS:
+      if self.fold_whitespace_:
+        # Fold whitespace sequences if appropriate.  This is optional because it
+        # alters the output strings.
+        text = _FOLD_WHITESPACE.sub(' ', text)
+      else:
+        text = text.replace('\n', ' ')
+        text = text.replace('\r', ' ')
+        # This whitespace folding doesn't work in all cases, thus the
+        # fold_whitespace flag to support backwards compatibility.
+        text = text.replace('   ', ' ')
+        text = text.replace('  ', ' ')
 
     if translateable:
       description = self.last_description
@@ -258,10 +286,15 @@ class HtmlChunks(object):
     if text != '':
       self.chunks_.append((translateable, text, description))
 
-  def Parse(self, text):
+  def Parse(self, text, fold_whitespace):
     '''Parses self.text_ into an intermediate format stored in self.chunks_
     which is translateable and nontranslateable chunks.  Also returns
     self.chunks_
+
+    Args:
+      text: The HTML for parsing.
+      fold_whitespace: Whether whitespace sequences should be folded into a
+        single space.
 
     Return:
       [chunk1, chunk2, chunk3, ...]  (instances of class Chunk)
@@ -271,6 +304,7 @@ class HtmlChunks(object):
     #
 
     self.text_ = text
+    self.fold_whitespace_ = fold_whitespace
 
     # A list of tuples (is_translateable, text) which represents the document
     # after chunking.
@@ -301,10 +335,19 @@ class HtmlChunks(object):
     # The last explicit description we found.
     self.last_description = ''
 
+    # Whether no-break was the last chunk seen
+    self.last_nobreak = False
+
     while self.current < len(self.text_):
       _DebugPrint('REST: %s' % self.text_[self.current:self.current+60])
 
-      # First try to match whitespace
+      m = _MESSAGE_NO_BREAK_COMMENT.match(self.Rest())
+      if m:
+        self.AdvancePast(m)
+        self.last_nobreak = True
+        continue
+
+      # Try to match whitespace
       m = _WHITESPACE.match(self.Rest())
       if m:
         # Whitespace is neutral, it just advances 'current' and does not switch
@@ -337,7 +380,10 @@ class HtmlChunks(object):
         if element_name in _BLOCK_TAGS:
           self.last_element_ = element_name
           if self.InTranslateable():
-            self.EndTranslateable()
+            if self.last_nobreak:
+              self.last_nobreak = False
+            else:
+              self.EndTranslateable()
 
           # Check for "special" elements, i.e. ones that have a translateable
           # attribute, and handle them correctly.  Note that all of the
@@ -431,7 +477,7 @@ def HtmlToMessage(html, include_block_tags=False, description=''):
     Return:
       Closure()
     '''
-    name = base
+    name = base.upper()
     if type != '':
       name = ('%s_%s' % (type, base)).upper()
 
@@ -461,8 +507,15 @@ def HtmlToMessage(html, include_block_tags=False, description=''):
     return MakeFinalName
 
   current = 0
+  last_nobreak = False
 
   while current < len(html):
+    m = _MESSAGE_NO_BREAK_COMMENT.match(html[current:])
+    if m:
+      last_nobreak = True
+      current += m.end()
+      continue
+
     m = _NBSP.match(html[current:])
     if m:
       parts.append((MakeNameClosure('SPACE'), m.group()))
@@ -480,7 +533,10 @@ def HtmlToMessage(html, include_block_tags=False, description=''):
     m = _SPECIAL_ELEMENT.match(html[current:])
     if m:
       if not include_block_tags:
-        raise exception.BlockTagInTranslateableChunk(html)
+        if last_nobreak:
+          last_nobreak = False
+        else:
+          raise exception.BlockTagInTranslateableChunk(html)
       element_name = 'block'  # for simplification
       # Get the appropriate group name
       for group in m.groupdict().keys():
@@ -498,7 +554,10 @@ def HtmlToMessage(html, include_block_tags=False, description=''):
     if m:
       element_name = m.group('element').lower()
       if not include_block_tags and not element_name in _INLINE_TAGS:
-        raise exception.BlockTagInTranslateableChunk(html[current:])
+        if last_nobreak:
+          last_nobreak = False
+        else:
+          raise exception.BlockTagInTranslateableChunk(html[current:])
       if element_name in _HTML_PLACEHOLDER_NAMES:  # use meaningful names
         element_name = _HTML_PLACEHOLDER_NAMES[element_name]
 
@@ -544,25 +603,34 @@ class TrHtml(interface.GathererBase):
   '''Represents a document or message in the template format used by
   Total Recall for HTML documents.'''
 
-  def __init__(self, text):
-    '''Creates a new object that represents 'text'.
-    Args:
-      text: '<html>...</html>'
-    '''
-    super(type(self), self).__init__()
-
-    self.text_ = text
+  def __init__(self, *args, **kwargs):
+    super(TrHtml, self).__init__(*args, **kwargs)
     self.have_parsed_ = False
     self.skeleton_ = []  # list of strings and MessageClique objects
+    self.fold_whitespace_ = False
+
+  def SetAttributes(self, attrs):
+    '''Sets node attributes used by the gatherer.
+
+    This checks the fold_whitespace attribute.
+
+    Args:
+      attrs: The mapping of node attributes.
+    '''
+    self.fold_whitespace_ = ('fold_whitespace' in attrs and
+                             attrs['fold_whitespace'] == 'true')
 
   def GetText(self):
     '''Returns the original text of the HTML document'''
     return self.text_
 
+  def GetTextualIds(self):
+    return [self.extkey]
+
   def GetCliques(self):
     '''Returns the message cliques for each translateable message in the
     document.'''
-    return filter(lambda x: isinstance(x, clique.MessageClique), self.skeleton_)
+    return [x for x in self.skeleton_ if isinstance(x, clique.MessageClique)]
 
   def Translate(self, lang, pseudo_if_not_available=True,
                 skeleton_gatherer=None, fallback_to_english=False):
@@ -605,17 +673,23 @@ class TrHtml(interface.GathererBase):
 
     return ''.join(out)
 
-
-  # Parsing is done in two phases:  First, we break the document into
-  # translateable and nontranslateable chunks.  Second, we run through each
-  # translateable chunk and insert placeholders for any HTML elements, unescape
-  # escaped characters, etc.
   def Parse(self):
     if self.have_parsed_:
       return
     self.have_parsed_ = True
 
-    text = self.text_
+    text = self._LoadInputFile()
+
+    # Ignore the BOM character if the document starts with one.
+    if text.startswith(u'\ufeff'):
+      text = text[1:]
+
+    self.text_ = text
+
+    # Parsing is done in two phases:  First, we break the document into
+    # translateable and nontranslateable chunks.  Second, we run through each
+    # translateable chunk and insert placeholders for any HTML elements,
+    # unescape escaped characters, etc.
 
     # First handle the silly little [!]-prefixed header because it's not
     # handled by our HTML parsers.
@@ -627,7 +701,7 @@ class TrHtml(interface.GathererBase):
       self.skeleton_.append(text[m.end('title') : m.end()])
       text = text[m.end():]
 
-    chunks = HtmlChunks().Parse(text)
+    chunks = HtmlChunks().Parse(text, self.fold_whitespace_)
 
     for chunk in chunks:
       if chunk[0]:  # Chunk is translateable
@@ -650,30 +724,22 @@ class TrHtml(interface.GathererBase):
         if not got_text:
           self.skeleton_[ix] = msg.GetRealContent()
 
+  def SubstituteMessages(self, substituter):
+    '''Applies substitutions to all messages in the tree.
 
-  # Static method
-  def FromFile(html, extkey=None, encoding = 'utf-8'):
-    '''Creates a TrHtml object from the contents of 'html' which are decoded
-    using 'encoding'.  Returns a new TrHtml object, upon which Parse() has not
-    been called.
+    Goes through the skeleton and finds all MessageCliques.
 
     Args:
-      html: file('') | 'filename.html'
-      extkey: ignored
-      encoding: 'utf-8' (note that encoding is ignored if 'html' is not a file
-                         name but instead an open file or file-like object)
-
-    Return:
-      TrHtml(text_of_file)
+      substituter: a grit.util.Substituter object.
     '''
-    if isinstance(html, types.StringTypes):
-      html = util.WrapInputStream(file(html, 'r'), encoding)
-    doc = html.read()
-
-    # Ignore the BOM character if the document starts with one.
-    if len(doc) and doc[0] == u'\ufeff':
-      doc = doc[1:]
-
-    return TrHtml(doc)
-  FromFile = staticmethod(FromFile)
+    new_skel = []
+    for chunk in self.skeleton_:
+      if isinstance(chunk, clique.MessageClique):
+        old_message = chunk.GetMessage()
+        new_message = substituter.SubstituteMessage(old_message)
+        if new_message is not old_message:
+          new_skel.append(self.uberclique.MakeClique(new_message))
+          continue
+      new_skel.append(chunk)
+    self.skeleton_ = new_skel
 

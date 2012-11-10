@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,13 +14,7 @@ namespace language_prefs {
 // For ibus-daemon
 // ---------------------------------------------------------------------------
 const char kGeneralSectionName[] = "general";
-const char kHotKeySectionName[] = "general/hotkey";
 const char kPreloadEnginesConfigName[] = "preload_engines";
-const char kNextEngineInMenuConfigName[] = "next_engine_in_menu";
-const char kPreviousEngineConfigName[] = "previous_engine";
-// The following two variables are for deleting ibus-daemon's default hotkeys.
-const char kHotkeyNextEngineInMenu[] = "";
-const char kHotkeyPreviousEngine[] = "";
 
 // ---------------------------------------------------------------------------
 // For Traditional Chinese input method (ibus-mozc-chewing)
@@ -164,12 +158,12 @@ COMPILE_ASSERT(kNumHangulKeyboardNameIDPairs ==
                TheSizeShouldMatch);
 
 // ---------------------------------------------------------------------------
-// For Simplified Chinese input method (ibus-pinyin)
+// For Simplified Chinese input method (ibus-mozc-pinyin)
 // ---------------------------------------------------------------------------
 const char kPinyinSectionName[] = "engine/Pinyin";
 
 // We have to sync the |ibus_config_name|s with those in
-// ibus-pinyin/files/src/Config.cc.
+// ibus-mozc-pinyin/files/languages/pinyin/unix/ibus/config_updater.cc.
 const LanguageBooleanPrefs kPinyinBooleanPrefs[] = {
   { prefs::kLanguagePinyinCorrectPinyin, true, "CorrectPinyin",
     IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_SETTING_CORRECT_PINYIN,
@@ -390,9 +384,19 @@ COMPILE_ASSERT(kNumMozcIntegerPrefs == arraysize(kMozcIntegerPrefs),
 // ---------------------------------------------------------------------------
 // For keyboard stuff
 // ---------------------------------------------------------------------------
-const int kXkbAutoRepeatDelayInMs = 750;
+const int kXkbAutoRepeatDelayInMs = 500;
 const int kXkbAutoRepeatIntervalInMs = 50;
 const char kPreferredKeyboardLayout[] = "PreferredKeyboardLayout";
+
+void RegisterPrefs(PrefService* local_state) {
+  // We use an empty string here rather than a hardware keyboard layout name
+  // since input_method::GetHardwareInputMethodId() might return a fallback
+  // layout name if local_state->RegisterStringPref(kHardwareKeyboardLayout)
+  // is not called yet.
+  local_state->RegisterStringPref(kPreferredKeyboardLayout,
+                                  "",
+                                  PrefService::UNSYNCABLE_PREF);
+}
 
 }  // namespace language_prefs
 }  // namespace chromeos

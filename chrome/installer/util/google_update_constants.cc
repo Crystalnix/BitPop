@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,11 +7,14 @@
 namespace google_update {
 
 const wchar_t kChromeUpgradeCode[] = L"{8A69D345-D564-463C-AFF1-A69D9E530F96}";
+const wchar_t kGoogleUpdateUpgradeCode[] =
+    L"{430FD4D0-B729-4F61-AA34-91526481799D}";
 
 const wchar_t kRegPathClients[] = L"Software\\Google\\Update\\Clients";
 const wchar_t kRegPathClientState[] = L"Software\\Google\\Update\\ClientState";
-const wchar_t kRegPathClientStateMedium[]
-    = L"Software\\Google\\Update\\ClientStateMedium";
+const wchar_t kRegPathClientStateMedium[] =
+    L"Software\\Google\\Update\\ClientStateMedium";
+const wchar_t kRegPathGoogleUpdate[] = L"Software\\Google\\Update";
 
 const wchar_t kRegCommandsKey[] = L"Commands";
 
@@ -27,8 +30,14 @@ const wchar_t kRegCommandLineField[] = L"CommandLine";
 const wchar_t kRegCriticalVersionField[] = L"cpv";
 const wchar_t kRegDidRunField[] = L"dr";
 const wchar_t kRegEULAAceptedField[] = L"eulaaccepted";
+const wchar_t kRegGoogleUpdateVersion[] = L"version";
 const wchar_t kRegLangField[] = L"lang";
+const wchar_t kRegLastStartedAUField[] = L"LastStartedAU";
 const wchar_t kRegLastCheckedField[] = L"LastChecked";
+const wchar_t kRegLastCheckSuccessField[] = L"LastCheckSuccess";
+const wchar_t kRegLastInstallerResultField[] = L"LastInstallerResult";
+const wchar_t kRegLastInstallerErrorField[] = L"LastInstallerError";
+const wchar_t kRegLastInstallerExtraField[] = L"LastInstallerExtraCode1";
 const wchar_t kRegLastRunTimeField[] = L"lastrun";
 const wchar_t kRegMetricsId[] = L"metricsid";
 const wchar_t kRegMSIField[] = L"msi";
@@ -41,6 +50,7 @@ const wchar_t kRegRLZReactivationBrandField[] = L"reactivationbrand";
 const wchar_t kRegReferralField[] = L"referral";
 const wchar_t kRegRenameCmdField[] = L"cmd";
 const wchar_t kRegSendsPingsField[] = L"SendsPings";
+const wchar_t kRegUninstallCmdLine[] = L"UninstallCmdLine";
 const wchar_t kRegUsageStatsField[] = L"usagestats";
 const wchar_t kRegVersionField[] = L"pv";
 const wchar_t kRegWebAccessibleField[] = L"WebAccessible";

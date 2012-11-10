@@ -13,6 +13,13 @@
 #include "base/mac/mac_logging.h"
 #include "base/sys_string_conversions.h"
 
+#if !defined(OS_IOS)
+extern "C" {
+CFTypeID SecACLGetTypeID();
+CFTypeID SecTrustedApplicationGetTypeID();
+}  // extern "C"
+#endif
+
 namespace base {
 namespace mac {
 
@@ -21,6 +28,10 @@ static bool g_override_am_i_bundled_value = false;
 
 // Adapted from http://developer.apple.com/carbon/tipsandtricks.html#AmIBundled
 static bool UncachedAmIBundled() {
+#if defined(OS_IOS)
+  // All apps are bundled on iOS
+  return true;
+#else
   if (g_override_am_i_bundled)
     return g_override_am_i_bundled_value;
 
@@ -42,6 +53,7 @@ static bool UncachedAmIBundled() {
   }
 
   return info.nodeFlags & kFSNodeIsDirectoryMask;
+#endif
 }
 
 bool AmIBundled() {
@@ -57,6 +69,11 @@ bool AmIBundled() {
 }
 
 void SetOverrideAmIBundled(bool value) {
+#if defined(OS_IOS)
+  // It doesn't make sense not to be bundled on iOS.
+  if (!value)
+    NOTREACHED();
+#endif
   g_override_am_i_bundled = true;
   g_override_am_i_bundled_value = value;
 }
@@ -73,9 +90,7 @@ FilePath PathForFrameworkBundleResource(CFStringRef resourceName) {
   NSBundle* bundle = base::mac::FrameworkBundle();
   NSString* resourcePath = [bundle pathForResource:(NSString*)resourceName
                                             ofType:nil];
-  if (!resourcePath)
-    return FilePath();
-  return FilePath([resourcePath fileSystemRepresentation]);
+  return NSStringToFilePath(resourcePath);
 }
 
 OSType CreatorCodeForCFBundleRef(CFBundleRef bundle) {
@@ -101,8 +116,7 @@ bool GetSearchPathDirectory(NSSearchPathDirectory directory,
   if ([dirs count] < 1) {
     return false;
   }
-  NSString* path = [dirs objectAtIndex:0];
-  *result = FilePath([path fileSystemRepresentation]);
+  *result = NSStringToFilePath([dirs objectAtIndex:0]);
   return true;
 }
 
@@ -186,6 +200,11 @@ TYPE_NAME_FOR_CF_TYPE_DEFN(CFNull);
 TYPE_NAME_FOR_CF_TYPE_DEFN(CFNumber);
 TYPE_NAME_FOR_CF_TYPE_DEFN(CFSet);
 TYPE_NAME_FOR_CF_TYPE_DEFN(CFString);
+
+TYPE_NAME_FOR_CF_TYPE_DEFN(CGColor);
+
+TYPE_NAME_FOR_CF_TYPE_DEFN(CTFont);
+TYPE_NAME_FOR_CF_TYPE_DEFN(CTRun);
 
 #undef TYPE_NAME_FOR_CF_TYPE_DEFN
 
@@ -292,7 +311,7 @@ CFCast<TypeCF##Ref>(const CFTypeRef& cf_val) { \
     return NULL; \
   } \
   if (CFGetTypeID(cf_val) == TypeCF##GetTypeID()) { \
-    return reinterpret_cast<TypeCF##Ref>(cf_val); \
+    return (TypeCF##Ref)(cf_val); \
   } \
   return NULL; \
 } \
@@ -315,6 +334,16 @@ CF_CAST_DEFN(CFNumber);
 CF_CAST_DEFN(CFSet);
 CF_CAST_DEFN(CFString);
 
+CF_CAST_DEFN(CGColor);
+
+CF_CAST_DEFN(CTFont);
+CF_CAST_DEFN(CTRun);
+
+#if !defined(OS_IOS)
+CF_CAST_DEFN(SecACL);
+CF_CAST_DEFN(SecTrustedApplication);
+#endif
+
 #undef CF_CAST_DEFN
 
 std::string GetValueFromDictionaryErrorMessage(
@@ -328,6 +357,18 @@ std::string GetValueFromDictionaryErrorMessage(
       " but it was " +
       base::SysCFStringRefToUTF8(actual_type_ref) +
       " instead";
+}
+
+NSString* FilePathToNSString(const FilePath& path) {
+  if (path.empty())
+    return nil;
+  return [NSString stringWithUTF8String:path.value().c_str()];
+}
+
+FilePath NSStringToFilePath(NSString* str) {
+  if (![str length])
+    return FilePath();
+  return FilePath([str fileSystemRepresentation]);
 }
 
 }  // namespace mac

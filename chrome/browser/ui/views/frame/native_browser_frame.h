@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_VIEWS_FRAME_NATIVE_BROWSER_FRAME_H_
 #define CHROME_BROWSER_UI_VIEWS_FRAME_NATIVE_BROWSER_FRAME_H_
-#pragma once
 
 class BrowserFrame;
 class BrowserView;
@@ -24,6 +23,9 @@ class NativeBrowserFrame {
 
   virtual views::NativeWidget* AsNativeWidget() = 0;
   virtual const views::NativeWidget* AsNativeWidget() const = 0;
+
+  // Initializes the system context menu.
+  virtual void InitSystemContextMenu() = 0;
 
  protected:
   friend class BrowserFrame;

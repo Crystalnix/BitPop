@@ -40,7 +40,7 @@ struct TestData {
   const int compare_result;
 };
 
-void RunTest(Testcase* testcases, size_t num_testcases) {
+void RunUrlTest(Testcase* testcases, size_t num_testcases) {
   static const gfx::Font font;
   for (size_t i = 0; i < num_testcases; ++i) {
     const GURL url(testcases[i].input);
@@ -54,6 +54,86 @@ void RunTest(Testcase* testcases, size_t num_testcases) {
 }
 
 }  // namespace
+
+TEST(TextEliderTest, ElideEmail) {
+  const std::string kEllipsisStr(kEllipsis);
+
+  // Test emails and their expected elided forms (from which the available
+  // widths will be derived).
+  // For elided forms in which both the username and domain must be elided:
+  // the result (how many characters are left on each side) can be font
+  // dependent. To avoid this, the username is prefixed with the characters
+  // expected to remain in the domain.
+  Testcase testcases[] = {
+      {"g@g.c", "g@g.c"},
+      {"g@g.c", kEllipsisStr},
+      {"ga@co.ca", "ga@c" + kEllipsisStr + "a"},
+      {"short@small.com", "s" + kEllipsisStr + "@s" + kEllipsisStr},
+      {"short@small.com", "s" + kEllipsisStr + "@small.com"},
+      {"short@longbutlotsofspace.com", "short@longbutlotsofspace.com"},
+      {"short@longbutnotverymuchspace.com",
+       "short@long" + kEllipsisStr + ".com"},
+      {"la_short@longbutverytightspace.ca",
+       "la" + kEllipsisStr + "@l" + kEllipsisStr + "a"},
+      {"longusername@gmail.com", "long" + kEllipsisStr + "@gmail.com"},
+      {"elidetothemax@justfits.com", "e" + kEllipsisStr + "@justfits.com"},
+      {"thatom_somelongemail@thatdoesntfit.com",
+       "thatom" + kEllipsisStr + "@tha" + kEllipsisStr + "om"},
+      {"namefits@butthedomaindoesnt.com",
+       "namefits@butthedo" + kEllipsisStr + "snt.com"},
+      {"widthtootight@nospace.com", kEllipsisStr},
+      {"nospaceforusername@l", kEllipsisStr},
+      {"little@littlespace.com", "l" + kEllipsisStr + "@l" + kEllipsisStr},
+      {"l@llllllllllllllllllllllll.com", "l@lllll" + kEllipsisStr + ".com"},
+      {"messed\"up@whyanat\"++@notgoogley.com",
+       "messed\"up@whyanat\"++@notgoogley.com"},
+      {"messed\"up@whyanat\"++@notgoogley.com",
+       "messed\"up@why" + kEllipsisStr + "@notgoogley.com"},
+      {"noca_messed\"up@whyanat\"++@notgoogley.ca",
+       "noca" + kEllipsisStr + "@no" + kEllipsisStr + "ca"},
+      {"at\"@@@@@@@@@...@@.@.@.@@@\"@madness.com",
+       "at\"@@@@@@@@@...@@.@." + kEllipsisStr + "@madness.com"},
+      // Special case: "m..." takes more than half of the available width; thus
+      // the domain must elide to "l..." and not "l...l" as it must allow enough
+      // space for the minimal username elision although its half of the
+      // available width would normally allow it to elide to "l...l".
+      {"mmmmm@llllllllll", "m" + kEllipsisStr + "@l" + kEllipsisStr},
+  };
+
+  const gfx::Font font;
+  for (size_t i = 0; i < arraysize(testcases); ++i) {
+    const string16 expected_output = UTF8ToUTF16(testcases[i].output);
+    EXPECT_EQ(expected_output,
+              ElideEmail(UTF8ToUTF16(testcases[i].input),
+                         font,
+                         font.GetStringWidth(expected_output)));
+  }
+}
+
+TEST(TextEliderTest, ElideEmailMoreSpace) {
+  const int test_width_factors[] = {
+      100,
+      10000,
+      1000000,
+  };
+  const std::string test_emails[] = {
+      "a@c",
+      "test@email.com",
+      "short@verysuperdupperlongdomain.com",
+      "supermegalongusername@withasuperlonnnggggdomain.gouv.qc.ca",
+  };
+
+  const gfx::Font font;
+  for (size_t i = 0; i < arraysize(test_width_factors); ++i) {
+    const int test_width = test_width_factors[i] *
+                           font.GetAverageCharacterWidth();
+    for (size_t j = 0; j < arraysize(test_emails); ++j) {
+      // Extra space is available: the email should not be elided.
+      const string16 test_email = UTF8ToUTF16(test_emails[j]);
+      EXPECT_EQ(test_email, ElideEmail(test_email, font, test_width));
+    }
+  }
+}
 
 // Test eliding of commonplace URLs.
 TEST(TextEliderTest, TestGeneralEliding) {
@@ -78,7 +158,7 @@ TEST(TextEliderTest, TestGeneralEliding) {
      "www.google.com/intl/en/ads/?aLongQ" + kEllipsisStr},
   };
 
-  RunTest(testcases, arraysize(testcases));
+  RunUrlTest(testcases, arraysize(testcases));
 }
 
 // When there is very little space available, the elision code will shorten
@@ -101,7 +181,7 @@ TEST(TextEliderTest, TestTrailingEllipsisSlashEllipsisHack) {
     {"http://battersbox.com/directory/foo/peter_paul_and_mary.html",
      "battersbox.com/" + kEllipsisStr + "/peter" + kEllipsisStr},
   };
-  RunTest(testcases, arraysize(testcases));
+  RunUrlTest(testcases, arraysize(testcases));
 }
 
 // Test eliding of empty strings, URLs with ports, passwords, queries, etc.
@@ -139,7 +219,7 @@ TEST(TextEliderTest, TestMoreEliding) {
      "www/%E4%A0%E5%A5%BD?q=\xe4\xbd\xa0\xe5\xa5\xbd#\xe4\xbd\xa0"},
   };
 
-  RunTest(testcases, arraysize(testcases));
+  RunUrlTest(testcases, arraysize(testcases));
 }
 
 // Test eliding of file: URLs.
@@ -164,7 +244,7 @@ TEST(TextEliderTest, TestFileURLEliding) {
     {"file://filer/foo/bar/file", "filer/" + kEllipsisStr + "/file"},
   };
 
-  RunTest(testcases, arraysize(testcases));
+  RunUrlTest(testcases, arraysize(testcases));
 }
 
 TEST(TextEliderTest, TestFilenameEliding) {
@@ -450,6 +530,14 @@ TEST(TextEliderTest, ElideRectangleText) {
     { "\nTest", test_width, line_height, true, "" },
     { "\n\nTest", test_width, line_height * 3, false, "||Test" },
     { "\n\nTest", test_width, line_height * 2, true, "|" },
+    { "Test\n", 2 * test_width, line_height * 5, false, "Test|" },
+    { "Test\n\n", 2 * test_width, line_height * 5, false, "Test||" },
+    { "Test\n\n\n", 2 * test_width, line_height * 5, false, "Test|||" },
+    { "Test\nTest\n\n", 2 * test_width, line_height * 5, false, "Test|Test||" },
+    { "Test\n\nTest\n", 2 * test_width, line_height * 5, false, "Test||Test|" },
+    { "Test\n\n\nTest", 2 * test_width, line_height * 5, false, "Test|||Test" },
+    { "Te ", test_width, line_height, false, "Te" },
+    { "Te  Te Test", test_width, 3 * line_height, false, "Te|Te|Test" },
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
@@ -461,10 +549,12 @@ TEST(TextEliderTest, ElideRectangleText) {
                                  cases[i].available_pixel_height,
                                  TRUNCATE_LONG_WORDS,
                                  &lines));
-    if (cases[i].output)
-      EXPECT_EQ(cases[i].output, UTF16ToUTF8(JoinString(lines, '|')));
-    else
-      EXPECT_TRUE(lines.empty());
+    if (cases[i].output) {
+      const std::string result = UTF16ToUTF8(JoinString(lines, '|'));
+      EXPECT_EQ(cases[i].output, result) << "Case " << i << " failed!";
+    } else {
+      EXPECT_TRUE(lines.empty()) << "Case " << i << " failed!";
+    }
   }
 }
 
@@ -499,10 +589,12 @@ TEST(TextEliderTest, ElideRectangleTextPunctuation) {
                                  cases[i].available_pixel_height,
                                  wrap_behavior,
                                  &lines));
-    if (cases[i].output)
-      EXPECT_EQ(cases[i].output, UTF16ToUTF8(JoinString(lines, '|')));
-    else
-      EXPECT_TRUE(lines.empty());
+    if (cases[i].output) {
+      const std::string result = UTF16ToUTF8(JoinString(lines, '|'));
+      EXPECT_EQ(cases[i].output, result) << "Case " << i << " failed!";
+    } else {
+      EXPECT_TRUE(lines.empty()) << "Case " << i << " failed!";
+    }
   }
 }
 
@@ -558,7 +650,8 @@ TEST(TextEliderTest, ElideRectangleTextLongWords) {
                        &lines);
     std::string expected_output(cases[i].output);
     ReplaceSubstringsAfterOffset(&expected_output, 0, "...", kEllipsis);
-    EXPECT_EQ(expected_output, UTF16ToUTF8(JoinString(lines, '|')));
+    const std::string result = UTF16ToUTF8(JoinString(lines, '|'));
+    EXPECT_EQ(expected_output, result) << "Case " << i << " failed!";
   }
 }
 

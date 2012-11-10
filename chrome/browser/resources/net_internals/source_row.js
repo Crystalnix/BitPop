@@ -42,6 +42,7 @@ var SourceRow = (function() {
 
       var selectionCol = addNode(tr, 'td');
       var checkbox = addNode(selectionCol, 'input');
+      selectionCol.style.borderLeft = '0';
       checkbox.type = 'checkbox';
 
       var idCell = addNode(tr, 'td');
@@ -74,7 +75,8 @@ var SourceRow = (function() {
 
       // Add a CSS classname specific to this source type (so CSS can specify
       // different stylings for different types).
-      changeClassName(this.row_, 'source_' + sourceTypeString, true);
+      var sourceTypeClass = sourceTypeString.toLowerCase().replace(/_/g, '-');
+      this.row_.classList.add('source-' + sourceTypeClass);
 
       this.updateClass_();
     },
@@ -119,9 +121,12 @@ var SourceRow = (function() {
       var noStyleSet = true;
       for (var i = 0; i < propertyNames.length; ++i) {
         var setStyle = noStyleSet && this[propertyNames[i][0]];
-        changeClassName(this.row_, propertyNames[i][1], setStyle);
-        if (setStyle)
+        if (setStyle) {
+          this.row_.classList.add(propertyNames[i][1]);
           noStyleSet = false;
+        } else {
+          this.row_.classList.remove(propertyNames[i][1]);
+        }
       }
     },
 
@@ -294,12 +299,6 @@ var SourceRow = (function() {
      */
     moveAfter: function(entry) {
       this.row_.parentNode.insertBefore(this.row_, entry.row_.nextSibling);
-    },
-
-    remove: function() {
-      this.setSelected(false);
-      this.setIsMatchedByFilter(false);
-      this.row_.parentNode.removeChild(this.row_);
     }
   };
 

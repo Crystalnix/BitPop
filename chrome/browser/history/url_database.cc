@@ -99,7 +99,7 @@ bool URLDatabase::GetURLRow(URLID url_id, URLRow* info) {
   return false;
 }
 
-bool URLDatabase::GetAllTypedUrls(std::vector<history::URLRow>* urls) {
+bool URLDatabase::GetAllTypedUrls(URLRows* urls) {
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "SELECT" HISTORY_URL_ROW_FIELDS "FROM urls WHERE typed_count > 0"));
 
@@ -266,7 +266,7 @@ bool URLDatabase::InitIconMappingEnumeratorForEverything(
 bool URLDatabase::AutocompleteForPrefix(const std::string& prefix,
                                         size_t max_results,
                                         bool typed_only,
-                                        std::vector<history::URLRow>* results) {
+                                        URLRows* results) {
   // NOTE: this query originally sorted by starred as the second parameter. But
   // as bookmarks is no longer part of the db we no longer include the order
   // by clause.
@@ -315,10 +315,10 @@ bool URLDatabase::IsTypedHost(const std::string& host) {
     chrome::kHttpsScheme,
     chrome::kFtpScheme
   };
-  std::vector<history::URLRow> dummy;
+  URLRows dummy;
   for (size_t i = 0; i < arraysize(schemes); ++i) {
     std::string scheme_and_host(schemes[i]);
-    scheme_and_host += chrome::kStandardSchemeSeparator + host;
+    scheme_and_host += content::kStandardSchemeSeparator + host;
     if (AutocompleteForPrefix(scheme_and_host + '/', 1, true, &dummy) ||
         AutocompleteForPrefix(scheme_and_host + ':', 1, true, &dummy))
       return true;
@@ -386,6 +386,12 @@ bool URLDatabase::CreateKeywordSearchTermsIndices() {
     return false;
   }
 
+  // For query or deletion by term.
+  if (!GetDB().Execute(
+          "CREATE INDEX IF NOT EXISTS keyword_search_terms_index3 ON "
+          "keyword_search_terms (term)")) {
+    return false;
+  }
   return true;
 }
 
@@ -439,6 +445,26 @@ bool URLDatabase::GetKeywordSearchTermRow(URLID url_id,
   return true;
 }
 
+bool URLDatabase::GetKeywordSearchTermRows(
+    const string16& term,
+    std::vector<KeywordSearchTermRow>* rows) {
+  sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
+      "SELECT keyword_id, url_id FROM keyword_search_terms WHERE term=?"));
+  statement.BindString16(0, term);
+
+  if (!statement.is_valid())
+    return false;
+
+  while (statement.Step()) {
+    KeywordSearchTermRow row;
+    row.url_id = statement.ColumnInt64(1);
+    row.keyword_id = statement.ColumnInt64(0);
+    row.term = term;
+    rows->push_back(row);
+  }
+  return true;
+}
+
 void URLDatabase::DeleteAllSearchTermsForKeyword(
     TemplateURLID keyword_id) {
   DCHECK(keyword_id);
@@ -486,6 +512,14 @@ void URLDatabase::GetMostRecentKeywordSearchTerms(
     visit.time = base::Time::FromInternalValue(statement.ColumnInt64(2));
     matches->push_back(visit);
   }
+}
+
+bool URLDatabase::DeleteKeywordSearchTerm(const string16& term) {
+  sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
+      "DELETE FROM keyword_search_terms WHERE term=?"));
+  statement.BindString16(0, term);
+
+  return statement.Run();
 }
 
 bool URLDatabase::DropStarredIDFromURLs() {

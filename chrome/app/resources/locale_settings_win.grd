@@ -119,17 +119,21 @@
     <messages fallback_to_english="true">
       <!-- The font used in Web UI (e.g. History). -->
       <message name="IDS_WEB_FONT_FAMILY" use_name_for_id="true">
-        Arial, sans-serif
+        'Segoe UI', Tahoma, sans-serif
+      </message>
+      <!-- The font used in Web UI on Windows XP (e.g. History). -->
+      <message name="IDS_WEB_FONT_FAMILY_XP" use_name_for_id="true">
+        Tahoma, sans-serif
       </message>
 
       <!-- The relative font size in % used in Web UI (e.g. History).  -->
       <message name="IDS_WEB_FONT_SIZE" use_name_for_id="true">
-        84%
+        75%
       </message>
       <!-- The relative font size in % used in web-style native pages
       on Windows earlier than Vista (e.g. History).  -->
       <message name="IDS_WEB_FONT_SIZE_XP" use_name_for_id="true">
-        84%
+        75%
       </message>
 
       <!-- The default value for |WebPreference::standard_font_family| -->
@@ -160,6 +164,54 @@
       <!-- The default value for |WebPreference::fantasy_font_family| -->
       <message name="IDS_FANTASY_FONT_FAMILY" use_name_for_id="true">
         Impact
+      </message>
+
+      <!-- The default value for |WebPreference::standard_font_family_map| for
+           Cyrillic script. -->
+      <message name="IDS_STANDARD_FONT_FAMILY_CYRILLIC" use_name_for_id="true">
+        Times New Roman
+      </message>
+
+      <!-- The default value for |WebPreference::fixed_font_family_map| for
+           Cyrillic script. -->
+      <message name="IDS_FIXED_FONT_FAMILY_CYRILLIC" use_name_for_id="true">
+        Courier New
+      </message>
+
+      <!-- The default value for |WebPreference::serif_font_family_map| for
+           Cyrillic script. -->
+      <message name="IDS_SERIF_FONT_FAMILY_CYRILLIC" use_name_for_id="true">
+        Times New Roman
+      </message>
+
+      <!-- The default value for |WebPreference::sans_serif_font_family_map| for
+           Cyrillic script.  -->
+      <message name="IDS_SANS_SERIF_FONT_FAMILY_CYRILLIC" use_name_for_id="true">
+        Arial
+      </message>
+
+      <!-- The default value for |WebPreference::standard_font_family_map| for
+           Greek script. -->
+      <message name="IDS_STANDARD_FONT_FAMILY_GREEK" use_name_for_id="true">
+        Times New Roman
+      </message>
+
+      <!-- The default value for |WebPreference::fixed_font_family_map| for
+           Greek script. -->
+      <message name="IDS_FIXED_FONT_FAMILY_GREEK" use_name_for_id="true">
+        Courier New
+      </message>
+
+      <!-- The default value for |WebPreference::serif_font_family_map| for
+           Greek script. -->
+      <message name="IDS_SERIF_FONT_FAMILY_GREEK" use_name_for_id="true">
+        Times New Roman
+      </message>
+
+      <!-- The default value for |WebPreference::sans_serif_font_family_map| for
+           Greek script.  -->
+      <message name="IDS_SANS_SERIF_FONT_FAMILY_GREEK" use_name_for_id="true">
+        Arial
       </message>
 
       <!-- The default value for |WebPreference::standard_font_family_map| for

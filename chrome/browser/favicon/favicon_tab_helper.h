@@ -1,22 +1,26 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_FAVICON_FAVICON_TAB_HELPER_H_
 #define CHROME_BROWSER_FAVICON_FAVICON_TAB_HELPER_H_
-#pragma once
 
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "chrome/browser/favicon/favicon_handler_delegate.h"
-#include "chrome/browser/favicon/favicon_service.h"
+#include "chrome/browser/history/history_types.h"
 #include "chrome/common/favicon_url.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "googleurl/src/gurl.h"
 
+namespace gfx {
+class Image;
+}
+
+class GURL;
 class FaviconHandler;
+class Profile;
 class SkBitmap;
 
 // FaviconTabHelper works with FaviconHandlers to fetch the favicons.
@@ -39,9 +43,9 @@ class FaviconTabHelper : public content::WebContentsObserver,
 
   // Returns the favicon for this tab, or IDR_DEFAULT_FAVICON if the tab does
   // not have a favicon. The default implementation uses the current navigation
-  // entry. This will return an isNull bitmap if there are no navigation
+  // entry. This will return an empty bitmap if there are no navigation
   // entries, which should rarely happen.
-  SkBitmap GetFavicon() const;
+  gfx::Image GetFavicon() const;
 
   // Returns true if we have the favicon for the page.
   bool FaviconIsValid() const;
@@ -74,7 +78,7 @@ class FaviconTabHelper : public content::WebContentsObserver,
 
   // FaviconHandlerDelegate methods.
   virtual content::NavigationEntry* GetActiveEntry() OVERRIDE;
-  virtual void StartDownload(int id, const GURL& url, int image_size) OVERRIDE;
+  virtual int StartDownload(const GURL& url, int image_size) OVERRIDE;
   virtual void NotifyFaviconUpdated() OVERRIDE;
 
  private:
@@ -90,7 +94,8 @@ class FaviconTabHelper : public content::WebContentsObserver,
   void OnDidDownloadFavicon(int id,
                             const GURL& image_url,
                             bool errored,
-                            const SkBitmap& image);
+                            int requested_size,
+                            const std::vector<SkBitmap>& bitmaps);
 
   Profile* profile_;
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,13 @@
 #include "base/logging.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
 #include "third_party/skia/include/core/SkUnPreMultiply.h"
+#include "third_party/skia/include/effects/SkBlurImageFilter.h"
+#include "ui/gfx/insets.h"
+#include "ui/gfx/point.h"
+#include "ui/gfx/size.h"
 
 // static
 SkBitmap SkBitmapOperations::CreateInvertedBitmap(const SkBitmap& image) {
@@ -574,7 +579,7 @@ SkBitmap SkBitmapOperations::CreateHSLShiftedBitmap(
 SkBitmap SkBitmapOperations::CreateTiledBitmap(const SkBitmap& source,
                                                int src_x, int src_y,
                                                int dst_w, int dst_h) {
-  DCHECK(source.getConfig() == SkBitmap::kARGB_8888_Config);
+  DCHECK(source.config() == SkBitmap::kARGB_8888_Config);
 
   SkBitmap cropped;
   cropped.setConfig(SkBitmap::kARGB_8888_Config, dst_w, dst_h, 0);
@@ -716,7 +721,7 @@ SkBitmap SkBitmapOperations::UnPreMultiply(const SkBitmap& bitmap) {
 }
 
 // static
-SkBitmap SkBitmapOperations::CreateTransposedBtmap(const SkBitmap& image) {
+SkBitmap SkBitmapOperations::CreateTransposedBitmap(const SkBitmap& image) {
   DCHECK(image.config() == SkBitmap::kARGB_8888_Config);
 
   SkBitmap transposed;
@@ -738,3 +743,66 @@ SkBitmap SkBitmapOperations::CreateTransposedBtmap(const SkBitmap& image) {
   return transposed;
 }
 
+// static
+SkBitmap SkBitmapOperations::CreateColorMask(const SkBitmap& bitmap,
+                                             SkColor c) {
+  DCHECK(bitmap.config() == SkBitmap::kARGB_8888_Config);
+
+  SkBitmap color_mask;
+  color_mask.setConfig(SkBitmap::kARGB_8888_Config,
+                       bitmap.width(), bitmap.height());
+  color_mask.allocPixels();
+  color_mask.eraseARGB(0, 0, 0, 0);
+
+  SkCanvas canvas(color_mask);
+
+  SkColorFilter* color_filter = SkColorFilter::CreateModeFilter(
+      c, SkXfermode::kSrcIn_Mode);
+  SkPaint paint;
+  paint.setColorFilter(color_filter)->unref();
+  canvas.drawBitmap(bitmap, SkIntToScalar(0), SkIntToScalar(0), &paint);
+  return color_mask;
+}
+
+// static
+SkBitmap SkBitmapOperations::CreateDropShadow(
+    const SkBitmap& bitmap,
+    const gfx::ShadowValues& shadows) {
+  DCHECK(bitmap.config() == SkBitmap::kARGB_8888_Config);
+
+  // Shadow margin insets are negative values because they grow outside.
+  // Negate them here as grow direction is not important and only pixel value
+  // is of interest here.
+  gfx::Insets shadow_margin = -gfx::ShadowValue::GetMargin(shadows);
+
+  SkBitmap image_with_shadow;
+  image_with_shadow.setConfig(SkBitmap::kARGB_8888_Config,
+                              bitmap.width() + shadow_margin.width(),
+                              bitmap.height() + shadow_margin.height());
+  image_with_shadow.allocPixels();
+  image_with_shadow.eraseARGB(0, 0, 0, 0);
+
+  SkCanvas canvas(image_with_shadow);
+  canvas.translate(SkIntToScalar(shadow_margin.left()),
+                   SkIntToScalar(shadow_margin.top()));
+
+  SkPaint paint;
+  for (size_t i = 0; i < shadows.size(); ++i) {
+    const gfx::ShadowValue& shadow = shadows[i];
+    SkBitmap shadow_image = SkBitmapOperations::CreateColorMask(bitmap,
+                                                                shadow.color());
+
+    paint.setImageFilter(
+        new SkBlurImageFilter(SkDoubleToScalar(shadow.blur()),
+                              SkDoubleToScalar(shadow.blur())))->unref();
+
+    canvas.saveLayer(0, &paint);
+    canvas.drawBitmap(shadow_image,
+                      SkIntToScalar(shadow.x()),
+                      SkIntToScalar(shadow.y()));
+    canvas.restore();
+  }
+
+  canvas.drawBitmap(bitmap, SkIntToScalar(0), SkIntToScalar(0));
+  return image_with_shadow;
+}

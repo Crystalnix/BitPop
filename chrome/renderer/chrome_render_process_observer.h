@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_RENDERER_CHROME_RENDER_PROCESS_OBSERVER_H_
 #define CHROME_RENDERER_CHROME_RENDER_PROCESS_OBSERVER_H_
-#pragma once
 
 #include <string>
 
@@ -48,7 +47,6 @@ class ChromeRenderProcessObserver : public content::RenderProcessObserver {
  private:
   // RenderProcessObserver implementation.
   virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void WebKitInitialized() OVERRIDE;
 
   void OnSetIsIncognitoProcess(bool is_incognito_process);
   void OnSetContentSettingsForCurrentURL(
@@ -63,11 +61,9 @@ class ChromeRenderProcessObserver : public content::RenderProcessObserver {
   void OnGetCacheResourceStats();
   void OnSetFieldTrialGroup(const std::string& fiel_trial_name,
                             const std::string& group_name);
-  void OnGetRendererTcmalloc();
-  void OnSetTcmallocHeapProfiling(bool profiling, const std::string& prefix);
-  void OnWriteTcmallocHeapProfile(const FilePath::StringType& filename);
   void OnGetV8HeapStats();
   void OnPurgeMemory();
+  void OnToggleWebKitSharedTimer(bool suspend);
 
   static bool is_incognito_process_;
   scoped_ptr<content::ResourceDispatcherDelegate> resource_delegate_;

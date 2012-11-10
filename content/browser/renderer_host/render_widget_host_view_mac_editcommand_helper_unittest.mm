@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,16 +7,16 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/message_loop.h"
-#include "content/browser/renderer_host/mock_render_process_host.h"
-#include "content/browser/renderer_host/render_widget_host.h"
+#include "content/browser/renderer_host/render_widget_host_delegate.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/view_messages.h"
-#include "content/test/test_browser_context.h"
+#include "content/public/test/mock_render_process_host.h"
+#include "content/public/test/test_browser_context.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
-class RenderWidgetHostViewMacEditCommandHelperTest : public PlatformTest {
-};
+using content::RenderWidgetHostViewMac;
 
 // Bare bones obj-c class for testing purposes.
 @interface RenderWidgetHostViewMacEditCommandHelperTestClass : NSObject
@@ -49,43 +49,52 @@ class RenderWidgetHostViewMacEditCommandHelperTest : public PlatformTest {
 
 @end
 
-
+namespace content {
 namespace {
-  // Returns true if all the edit command names in the array are present
-  // in test_obj.
-  // edit_commands is a list of NSStrings, selector names are formed by
-  // appending a trailing ':' to the string.
-  bool CheckObjectRespondsToEditCommands(NSArray* edit_commands,
-                                         id test_obj) {
-    for (NSString* edit_command_name in edit_commands) {
-      NSString* sel_str = [edit_command_name stringByAppendingString:@":"];
-      if (![test_obj respondsToSelector:NSSelectorFromString(sel_str)]) {
-        return false;
-      }
-    }
 
-    return true;
+// Returns true if all the edit command names in the array are present in
+// test_obj.  edit_commands is a list of NSStrings, selector names are formed
+// by appending a trailing ':' to the string.
+bool CheckObjectRespondsToEditCommands(NSArray* edit_commands, id test_obj) {
+  for (NSString* edit_command_name in edit_commands) {
+    NSString* sel_str = [edit_command_name stringByAppendingString:@":"];
+    if (![test_obj respondsToSelector:NSSelectorFromString(sel_str)]) {
+      return false;
+    }
   }
+  return true;
+}
+
 }  // namespace
 
-// Create a RenderWidget for which we can filter messages.
-class RenderWidgetHostEditCommandCounter : public RenderWidgetHost {
+class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
  public:
-  RenderWidgetHostEditCommandCounter(content::RenderProcessHost* process,
-                                     int routing_id)
-    : RenderWidgetHost(process, routing_id),
+  MockRenderWidgetHostDelegate() {}
+  virtual ~MockRenderWidgetHostDelegate() {}
+};
+
+// Create a RenderWidget for which we can filter messages.
+class RenderWidgetHostEditCommandCounter : public RenderWidgetHostImpl {
+ public:
+  RenderWidgetHostEditCommandCounter(
+      RenderWidgetHostDelegate* delegate,
+      RenderProcessHost* process,
+      int routing_id)
+    : RenderWidgetHostImpl(delegate, process, routing_id),
       edit_command_message_count_(0) {
   }
 
   virtual bool Send(IPC::Message* message) {
     if (message->type() == ViewMsg_ExecuteEditCommand::ID)
       edit_command_message_count_++;
-    return RenderWidgetHost::Send(message);
+    return RenderWidgetHostImpl::Send(message);
   }
 
   unsigned int edit_command_message_count_;
 };
 
+class RenderWidgetHostViewMacEditCommandHelperTest : public PlatformTest {
+};
 
 // Tests that editing commands make it through the pipeline all the way to
 // RenderWidgetHost.
@@ -99,11 +108,13 @@ TEST_F(RenderWidgetHostViewMacEditCommandHelperTest,
   MessageLoopForUI message_loop;
   TestBrowserContext browser_context;
   MockRenderProcessHost mock_process(&browser_context);
-  RenderWidgetHostEditCommandCounter render_widget(&mock_process, 0);
+  MockRenderWidgetHostDelegate delegate;
+  RenderWidgetHostEditCommandCounter render_widget(&delegate, &mock_process, 0);
 
   // RenderWidgetHostViewMac self destructs (RenderWidgetHostViewMacCocoa
   // takes ownership) so no need to delete it ourselves.
-  RenderWidgetHostViewMac* rwhvm = new RenderWidgetHostViewMac(&render_widget);
+  RenderWidgetHostViewMac* rwhvm = static_cast<RenderWidgetHostViewMac*>(
+      RenderWidgetHostView::CreateViewForWidget(&render_widget));
 
   RenderWidgetHostViewMacOwner* rwhwvm_owner =
       [[[RenderWidgetHostViewMacOwner alloc]
@@ -167,3 +178,5 @@ TEST_F(RenderWidgetHostViewMacEditCommandHelperTest, TestMenuItemEnabling) {
   // TODO(jeremy): Currently IsMenuItemEnabled just returns true for all edit
   // selectors.  Once we go past that we should do more extensive testing here.
 }
+
+}  // namespace content

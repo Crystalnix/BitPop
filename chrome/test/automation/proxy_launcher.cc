@@ -4,6 +4,8 @@
 
 #include "chrome/test/automation/proxy_launcher.h"
 
+#include <vector>
+
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/string_number_conversions.h"
@@ -121,11 +123,6 @@ bool ProxyLauncher::WaitForBrowserLaunch(bool wait_for_initial_loads) {
 #endif
   }
 
-  if (!automation()->SetFilteredInet(ShouldFilterInet())) {
-    LOG(ERROR) << "SetFilteredInet failed.";
-    return false;
-  }
-
   return true;
 }
 
@@ -133,7 +130,7 @@ bool ProxyLauncher::LaunchBrowserAndServer(const LaunchState& state,
                                            bool wait_for_initial_loads) {
   // Set up IPC testing interface as a server.
   automation_proxy_.reset(CreateAutomationProxy(
-                              TestTimeouts::action_max_timeout_ms()));
+      TestTimeouts::action_max_timeout()));
 
   if (!LaunchBrowser(state))
     return false;
@@ -147,7 +144,7 @@ bool ProxyLauncher::LaunchBrowserAndServer(const LaunchState& state,
 bool ProxyLauncher::ConnectToRunningBrowser(bool wait_for_initial_loads) {
   // Set up IPC testing interface as a client.
   automation_proxy_.reset(CreateAutomationProxy(
-                              TestTimeouts::action_max_timeout_ms()));
+                              TestTimeouts::action_max_timeout()));
 
   return WaitForBrowserLaunch(wait_for_initial_loads);
 }
@@ -212,13 +209,6 @@ bool ProxyLauncher::LaunchBrowser(const LaunchState& state) {
   return true;
 }
 
-#if !defined(OS_MACOSX)
-bool ProxyLauncher::LaunchAnotherBrowserBlockUntilClosed(
-    const LaunchState& state) {
-  return LaunchBrowserHelper(state, false, true, NULL);
-}
-#endif
-
 void ProxyLauncher::QuitBrowser() {
   // If we have already finished waiting for the browser to exit
   // (or it hasn't launched at all), there's nothing to do here.
@@ -231,8 +221,6 @@ void ProxyLauncher::QuitBrowser() {
   }
 
   base::TimeTicks quit_start = base::TimeTicks::Now();
-
-  EXPECT_TRUE(automation()->SetFilteredInet(false));
 
   if (WINDOW_CLOSE == shutdown_type_) {
     int window_count = 0;
@@ -283,7 +271,7 @@ void ProxyLauncher::QuitBrowser() {
   // been closed.
   int exit_code = -1;
   EXPECT_TRUE(WaitForBrowserProcessToQuit(
-                  TestTimeouts::action_max_timeout_ms(), &exit_code));
+                  TestTimeouts::action_max_timeout(), &exit_code));
   EXPECT_EQ(0, exit_code);  // Expect a clean shutdown.
 
   browser_quit_time_ = base::TimeTicks::Now() - quit_start;
@@ -297,7 +285,6 @@ void ProxyLauncher::TerminateBrowser() {
 
   base::TimeTicks quit_start = base::TimeTicks::Now();
 
-  EXPECT_TRUE(automation()->SetFilteredInet(false));
 #if defined(OS_WIN) && !defined(USE_AURA)
   scoped_refptr<BrowserProxy> browser(automation()->GetBrowserWindow(0));
   ASSERT_TRUE(browser.get());
@@ -315,7 +302,7 @@ void ProxyLauncher::TerminateBrowser() {
 
   int exit_code = -1;
   EXPECT_TRUE(WaitForBrowserProcessToQuit(
-                  TestTimeouts::action_max_timeout_ms(), &exit_code));
+                  TestTimeouts::action_max_timeout(), &exit_code));
   EXPECT_EQ(0, exit_code);  // Expect a clean shutdown.
 
   browser_quit_time_ = base::TimeTicks::Now() - quit_start;
@@ -336,9 +323,11 @@ void ProxyLauncher::AssertAppNotRunning(const std::string& error_message) {
   ASSERT_TRUE(processes.empty()) << final_error_message;
 }
 
-bool ProxyLauncher::WaitForBrowserProcessToQuit(int timeout, int* exit_code) {
+bool ProxyLauncher::WaitForBrowserProcessToQuit(
+    base::TimeDelta timeout,
+    int* exit_code) {
 #ifdef WAIT_FOR_DEBUGGER_ON_OPEN
-  timeout = 500000;
+  timeout = base::TimeDelta::FromSeconds(500);
 #endif
   bool success = false;
 
@@ -432,11 +421,14 @@ void ProxyLauncher::PrepareTestCommandline(CommandLine* command_line,
   command_line->AppendSwitch(switches::kDebugOnStart);
 #endif
 
-  // Disable TabCloseableStateWatcher for tests.
-  command_line->AppendSwitch(switches::kDisableTabCloseableStateWatcher);
+  // Force the app to always exit when the last browser window is closed.
+  command_line->AppendSwitch(switches::kDisableZeroBrowsersOpenForTests);
 
   // Allow file:// access on ChromeOS.
   command_line->AppendSwitch(switches::kAllowFileAccess);
+
+  // The tests assume that file:// URIs can freely access other file:// URIs.
+  command_line->AppendSwitch(switches::kAllowFileAccessFromFiles);
 }
 
 bool ProxyLauncher::LaunchBrowserHelper(const LaunchState& state,
@@ -476,7 +468,7 @@ bool ProxyLauncher::LaunchBrowserHelper(const LaunchState& state,
 #elif defined(OS_POSIX)
   int ipcfd = -1;
   file_util::ScopedFD ipcfd_closer(&ipcfd);
-  base::file_handle_mapping_vector fds;
+  base::FileHandleMappingVector fds;
   if (main_launch && automation_proxy_.get()) {
     ipcfd = automation_proxy_->channel()->TakeClientFileDescriptor();
     fds.push_back(std::make_pair(ipcfd, kPrimaryIPCChannel + 3));
@@ -524,7 +516,7 @@ NamedProxyLauncher::NamedProxyLauncher(const std::string& channel_id,
 }
 
 AutomationProxy* NamedProxyLauncher::CreateAutomationProxy(
-    int execution_timeout) {
+    base::TimeDelta execution_timeout) {
   AutomationProxy* proxy = new AutomationProxy(execution_timeout,
                                                disconnect_on_failure_);
   proxy->InitializeChannel(channel_id_, true);
@@ -551,14 +543,15 @@ bool NamedProxyLauncher::InitializeConnection(const LaunchState& state,
 
   // Wait for browser to be ready for connections.
   bool channel_initialized = false;
-  for (int wait_time = 0;
-       wait_time < TestTimeouts::action_max_timeout_ms();
-       wait_time += automation::kSleepTime) {
+  base::TimeDelta sleep_time = base::TimeDelta::FromMilliseconds(
+      automation::kSleepTime);
+  for (base::TimeDelta wait_time = base::TimeDelta();
+       wait_time < TestTimeouts::action_max_timeout();
+       wait_time += sleep_time) {
     channel_initialized = IPC::Channel::IsNamedServerInitialized(channel_id_);
     if (channel_initialized)
       break;
-    base::PlatformThread::Sleep(
-        base::TimeDelta::FromMilliseconds(automation::kSleepTime));
+    base::PlatformThread::Sleep(sleep_time);
   }
   if (!channel_initialized) {
     LOG(ERROR) << "Failed to wait for testing channel presence.";
@@ -593,7 +586,7 @@ AnonymousProxyLauncher::AnonymousProxyLauncher(bool disconnect_on_failure)
 }
 
 AutomationProxy* AnonymousProxyLauncher::CreateAutomationProxy(
-    int execution_timeout) {
+    base::TimeDelta execution_timeout) {
   AutomationProxy* proxy = new AutomationProxy(execution_timeout,
                                                disconnect_on_failure_);
   proxy->InitializeChannel(channel_id_, false);

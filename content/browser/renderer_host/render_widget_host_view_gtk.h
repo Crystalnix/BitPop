@@ -4,7 +4,6 @@
 
 #ifndef CONTENT_BROWSER_RENDERER_HOST_RENDER_WIDGET_HOST_VIEW_GTK_H_
 #define CONTENT_BROWSER_RENDERER_HOST_RENDER_WIDGET_HOST_VIEW_GTK_H_
-#pragma once
 
 #include <gdk/gdk.h>
 
@@ -13,64 +12,71 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
-#include "content/browser/renderer_host/render_widget_host_view.h"
+#include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/content_export.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/gtk/gtk_signal_registrar.h"
 #include "ui/base/gtk/owned_widget_gtk.h"
+#include "ui/base/x/active_window_watcher_x_observer.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "webkit/glue/webcursor.h"
 #include "webkit/plugins/npapi/gtk_plugin_container_manager.h"
 
-class RenderWidgetHost;
-class GtkIMContextWrapper;
-struct NativeWebKeyboardEvent;
-
-#if defined(OS_CHROMEOS)
-namespace ui {
-class TooltipWindowGtk;
-}
-#else
 class GtkKeyBindingsHandler;
-#endif  // defined(OS_CHROMEOS)
 
 typedef struct _GtkClipboard GtkClipboard;
 typedef struct _GtkSelectionData GtkSelectionData;
 
+namespace content {
+class GtkIMContextWrapper;
+class RenderWidgetHost;
+class RenderWidgetHostImpl;
+struct NativeWebKeyboardEvent;
+
 // -----------------------------------------------------------------------------
 // See comments in render_widget_host_view.h about this class and its members.
 // -----------------------------------------------------------------------------
-class CONTENT_EXPORT RenderWidgetHostViewGtk : public RenderWidgetHostView {
+class CONTENT_EXPORT RenderWidgetHostViewGtk
+    : public RenderWidgetHostViewBase,
+      public BrowserAccessibilityDelegate,
+      public ui::ActiveWindowWatcherXObserver {
  public:
   virtual ~RenderWidgetHostViewGtk();
 
   // RenderWidgetHostView implementation.
   virtual void InitAsChild(gfx::NativeView parent_view) OVERRIDE;
-  virtual void InitAsPopup(RenderWidgetHostView* parent_host_view,
-                           const gfx::Rect& pos) OVERRIDE;
-  virtual void InitAsFullscreen(
-      RenderWidgetHostView* reference_host_view) OVERRIDE;
   virtual RenderWidgetHost* GetRenderWidgetHost() const OVERRIDE;
-  virtual void DidBecomeSelected() OVERRIDE;
-  virtual void WasHidden() OVERRIDE;
   virtual void SetSize(const gfx::Size& size) OVERRIDE;
   virtual void SetBounds(const gfx::Rect& rect) OVERRIDE;
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
-  virtual void MovePluginWindows(
-      const std::vector<webkit::npapi::WebPluginGeometry>& moves) OVERRIDE;
-  virtual void Focus() OVERRIDE;
-  virtual void Blur() OVERRIDE;
   virtual bool HasFocus() const OVERRIDE;
+  virtual bool IsSurfaceAvailableForCopy() const OVERRIDE;
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
   virtual bool IsShowing() OVERRIDE;
   virtual gfx::Rect GetViewBounds() const OVERRIDE;
+  virtual GdkEventButton* GetLastMouseDown() OVERRIDE;
+  virtual gfx::NativeView BuildInputMethodsGtkMenu() OVERRIDE;
+  virtual void SetBackground(const SkBitmap& background) OVERRIDE;
+
+  // RenderWidgetHostViewPort implementation.
+  virtual void InitAsPopup(RenderWidgetHostView* parent_host_view,
+                           const gfx::Rect& pos) OVERRIDE;
+  virtual void InitAsFullscreen(
+      RenderWidgetHostView* reference_host_view) OVERRIDE;
+  virtual void WasShown() OVERRIDE;
+  virtual void WasHidden() OVERRIDE;
+  virtual void MovePluginWindows(
+      const std::vector<webkit::npapi::WebPluginGeometry>& moves) OVERRIDE;
+  virtual void Focus() OVERRIDE;
+  virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
   virtual void TextInputStateChanged(ui::TextInputType type,
@@ -89,8 +95,12 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk : public RenderWidgetHostView {
                                 const ui::Range& range) OVERRIDE;
   virtual void SelectionBoundsChanged(const gfx::Rect& start_rect,
                                       const gfx::Rect& end_rect) OVERRIDE;
-  virtual void ShowingContextMenu(bool showing) OVERRIDE;
   virtual BackingStore* AllocBackingStore(const gfx::Size& size) OVERRIDE;
+  virtual void CopyFromCompositingSurface(
+      const gfx::Rect& src_subrect,
+      const gfx::Size& dst_size,
+      const base::Callback<void(bool)>& callback,
+      skia::PlatformCanvas* output) OVERRIDE;
   virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
@@ -98,21 +108,27 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk : public RenderWidgetHostView {
   virtual void AcceleratedSurfacePostSubBuffer(
       const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params,
       int gpu_host_id) OVERRIDE;
-  virtual void SetBackground(const SkBitmap& background) OVERRIDE;
+  virtual void AcceleratedSurfaceSuspend() OVERRIDE;
+  virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) OVERRIDE;
   virtual void CreatePluginContainer(gfx::PluginWindowHandle id) OVERRIDE;
   virtual void DestroyPluginContainer(gfx::PluginWindowHandle id) OVERRIDE;
-  virtual void UnhandledWheelEvent(
-      const WebKit::WebMouseWheelEvent& event) OVERRIDE;
-  virtual void ProcessTouchAck(bool processed) OVERRIDE;
+  virtual void ProcessTouchAck(WebKit::WebInputEvent::Type type,
+                               bool processed) OVERRIDE;
   virtual void SetHasHorizontalScrollbar(
       bool has_horizontal_scrollbar) OVERRIDE;
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
   virtual void GetScreenInfo(WebKit::WebScreenInfo* results) OVERRIDE;
-  virtual gfx::Rect GetRootWindowBounds() OVERRIDE;
-  virtual gfx::PluginWindowHandle GetCompositingSurface() OVERRIDE;
+  virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
+  virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
+  virtual void OnAccessibilityNotifications(
+      const std::vector<AccessibilityHostMsg_NotificationParams>& params)
+      OVERRIDE;
+
+  // ActiveWindowWatcherXObserver implementation.
+  virtual void ActiveWindowChanged(GdkWindow* active_window) OVERRIDE;
 
   // If the widget is aligned with an edge of the monitor its on and the user
   // attempts to drag past that edge we track the number of times it has
@@ -137,14 +153,18 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk : public RenderWidgetHostView {
 
   bool RetrieveSurrounding(std::string* text, size_t* cursor_index);
 
-  GdkEventButton* last_mouse_down() const {
-    return last_mouse_down_;
-  }
+  // BrowserAccessibilityDelegate implementation.
+  virtual void SetAccessibilityFocus(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityDoDefaultAction(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityScrollToMakeVisible(
+      int acc_obj_id, gfx::Rect subfocus) OVERRIDE;
+  virtual void AccessibilityScrollToPoint(
+      int acc_obj_id, gfx::Point point) OVERRIDE;
+  virtual void AccessibilitySetTextSelection(
+      int acc_obj_id, int start_offset, int end_offset) OVERRIDE;
 
-#if !defined(TOOLKIT_VIEWS)
-  // Builds a submenu containing all the gtk input method commands.
-  GtkWidget* BuildInputMethodsGtkMenu();
-#endif
+  // Get the root of the AtkObject* tree for accessibility.
+  AtkObject* GetAccessible();
 
  protected:
   friend class RenderWidgetHostView;
@@ -154,11 +174,6 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk : public RenderWidgetHostView {
 
  private:
   friend class RenderWidgetHostViewGtkWidget;
-
-  CHROMEGTK_CALLBACK_1(RenderWidgetHostViewGtk,
-                       gboolean,
-                       OnWindowStateEvent,
-                       GdkEventWindowState*);
 
   CHROMEGTK_CALLBACK_0(RenderWidgetHostViewGtk,
                        void,
@@ -184,10 +199,13 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk : public RenderWidgetHostView {
 
   void set_last_mouse_down(GdkEventButton* event);
 
+  // Cause the next query for the widget center to recompute the cached value.
+  void MarkCachedWidgetCenterStale();
+
   gfx::Point GetWidgetCenter();
 
   // The model object.
-  RenderWidgetHost* host_;
+  RenderWidgetHostImpl* host_;
 
   // The native UI widget.
   ui::OwnedWidgetGtk view_;
@@ -209,16 +227,13 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk : public RenderWidgetHostView {
   // The cursor for the page. This is passed up from the renderer.
   WebCursor current_cursor_;
 
-  // Whether we are showing a context menu.
-  bool is_showing_context_menu_;
-
   // The time at which this view started displaying white pixels as a result of
   // not having anything to paint (empty backing store from renderer). This
   // value returns true for is_null() if we are not recording whiteout times.
   base::TimeTicks whiteout_start_time_;
 
   // The time it took after this view was selected for it to be fully painted.
-  base::TimeTicks tab_switch_paint_time_;
+  base::TimeTicks web_contents_switch_paint_time_;
 
   // The native view of our parent widget.  Used only for popups.
   GtkWidget* parent_;
@@ -239,6 +254,10 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk : public RenderWidgetHostView {
   // Is the widget fullscreen?
   bool is_fullscreen_;
 
+  // Has the window ever been marked active? Only valid for fullscreen or
+  // popup windows.
+  bool made_active_;
+
   // Used to record the last position of the mouse.
   // While the mouse is locked, they store the last known position just as mouse
   // lock was entered.
@@ -258,11 +277,9 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk : public RenderWidgetHostView {
   // A convenience wrapper object for GtkIMContext;
   scoped_ptr<GtkIMContextWrapper> im_context_;
 
-#if !defined(OS_CHROMEOS)
   // A convenience object for handling editor key bindings defined in gtk
   // keyboard theme.
   scoped_ptr<GtkKeyBindingsHandler> key_bindings_handler_;
-#endif
 
   // Helper class that lets us allocate plugin containers and move them.
   webkit::npapi::GtkPluginContainerManager plugin_container_manager_;
@@ -292,12 +309,13 @@ class CONTENT_EXPORT RenderWidgetHostViewGtk : public RenderWidgetHostView {
   // menus and drags.
   GdkEventButton* last_mouse_down_;
 
-#if defined(OS_CHROMEOS)
-  // Custimized tooltip window.
-  scoped_ptr<ui::TooltipWindowGtk> tooltip_window_;
-#endif  // defined(OS_CHROMEOS)
+  // Instance of accessibility information for the root of the AtkObject
+  // tree representation of the WebKit render tree.
+  scoped_ptr<BrowserAccessibilityManager> browser_accessibility_manager_;
 
   ui::GtkSignalRegistrar signals_;
 };
+
+}  // namespace content
 
 #endif  // CHROME_BROWSER_RENDERER_HOST_RENDER_WIDGET_HOST_VIEW_GTK_H_

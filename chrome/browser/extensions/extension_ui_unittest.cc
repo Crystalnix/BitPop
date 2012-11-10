@@ -1,16 +1,53 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/json/json_value_serializer.h"
+#include "base/command_line.h"
+#include "base/json/json_file_value_serializer.h"
+#include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
-#include "chrome/browser/ui/webui/options/extension_settings_handler.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/management_policy.h"
+#include "chrome/browser/extensions/test_extension_system.h"
+#include "chrome/browser/ui/webui/extensions/extension_settings_handler.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace {
+using extensions::Extension;
+
+class ExtensionUITest : public testing::Test {
+ public:
+  ExtensionUITest()
+      : ui_thread_(content::BrowserThread::UI, &message_loop_),
+        file_thread_(content::BrowserThread::FILE, &message_loop_) {}
+
+ protected:
+  virtual void SetUp() OVERRIDE {
+    // Create an ExtensionService and ManagementPolicy to inject into the
+    // ExtensionSettingsHandler.
+    profile_.reset(new TestingProfile());
+    extensions::TestExtensionSystem* system =
+        static_cast<extensions::TestExtensionSystem*>(
+            extensions::ExtensionSystem::Get(profile_.get()));
+    extension_service_ = system->CreateExtensionService(
+        CommandLine::ForCurrentProcess(), FilePath(), false);
+    management_policy_ = system->CreateManagementPolicy();
+
+    handler_.reset(new ExtensionSettingsHandler(extension_service_,
+                                                management_policy_));
+  }
+
+  virtual void TearDown() OVERRIDE {
+    handler_.reset();
+    profile_.reset();
+    // Execute any pending deletion tasks.
+    message_loop_.RunAllPending();
+  }
+
   static DictionaryValue* DeserializeJSONTestData(const FilePath& path,
       std::string *error) {
     Value* value;
@@ -21,7 +58,7 @@ namespace {
     return static_cast<DictionaryValue*>(value);
   }
 
-  static DictionaryValue* CreateExtensionDetailViewFromPath(
+  DictionaryValue* CreateExtensionDetailViewFromPath(
       const FilePath& extension_path,
       const std::vector<ExtensionPage>& pages,
       Extension::Location location) {
@@ -34,17 +71,15 @@ namespace {
     EXPECT_EQ("", error);
 
     scoped_refptr<Extension> extension(Extension::Create(
-        extension_path, location, *extension_data,
-        Extension::REQUIRE_KEY | Extension::STRICT_ERROR_CHECKS, &error));
+        extension_path, location, *extension_data, Extension::REQUIRE_KEY,
+        &error));
     EXPECT_TRUE(extension.get());
     EXPECT_EQ("", error);
 
-    return ExtensionSettingsHandler::CreateExtensionDetailValue(
-        NULL, extension.get(), pages, NULL, true, false);
+    return handler_->CreateExtensionDetailValue(extension.get(), pages, NULL);
   }
 
-
-  static void CompareExpectedAndActualOutput(
+  void CompareExpectedAndActualOutput(
       const FilePath& extension_path,
       const std::vector<ExtensionPage>& pages,
       const FilePath& expected_output_path) {
@@ -81,9 +116,17 @@ namespace {
       }
     }
   }
-}  // namespace
 
-TEST(ExtensionUITest, GenerateExtensionsJSONData) {
+  MessageLoop message_loop_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
+  scoped_ptr<TestingProfile> profile_;
+  ExtensionService* extension_service_;
+  extensions::ManagementPolicy* management_policy_;
+  scoped_ptr<ExtensionSettingsHandler> handler_;
+};
+
+TEST_F(ExtensionUITest, GenerateExtensionsJSONData) {
   FilePath data_test_dir_path, extension_path, expected_output_path;
   EXPECT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_test_dir_path));
 
@@ -147,7 +190,7 @@ TEST(ExtensionUITest, GenerateExtensionsJSONData) {
 
 // Test that using Extension::LOAD for the extension location triggers the
 // correct values in the details, including location, order, and allow_reload.
-TEST(ExtensionUITest, LocationLoadPropagation) {
+TEST_F(ExtensionUITest, LocationLoadPropagation) {
   FilePath data_test_dir_path, extension_path;
   EXPECT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_test_dir_path));
 
@@ -179,7 +222,7 @@ TEST(ExtensionUITest, LocationLoadPropagation) {
 // the correct values in the details, including location, order, and
 // allow_reload.  Contrast to Extension::LOAD, which has somewhat different
 // values.
-TEST(ExtensionUITest, LocationExternalPrefPropagation) {
+TEST_F(ExtensionUITest, LocationExternalPrefPropagation) {
   FilePath data_test_dir_path, extension_path;
   EXPECT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_test_dir_path));
 
@@ -208,7 +251,7 @@ TEST(ExtensionUITest, LocationExternalPrefPropagation) {
 
 // Test that the extension path is correctly propagated into the extension
 // details.
-TEST(ExtensionUITest, PathPropagation) {
+TEST_F(ExtensionUITest, PathPropagation) {
   FilePath data_test_dir_path, extension_path;
   EXPECT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_test_dir_path));
 
@@ -229,4 +272,3 @@ TEST(ExtensionUITest, PathPropagation) {
   EXPECT_TRUE(extension_details->GetString("path", &ui_path));
   EXPECT_EQ(extension_path, FilePath(ui_path));
 }
-

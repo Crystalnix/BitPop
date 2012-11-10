@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,8 @@
  * @fileoverview This is a table column model
  */
 cr.define('cr.ui.table', function() {
-  const EventTarget = cr.EventTarget;
-  const Event = cr.Event;
+  /** @const */ var EventTarget = cr.EventTarget;
+  /** @const */ var Event = cr.Event;
 
   /**
    * A table column model that wraps table columns array
@@ -76,6 +76,15 @@ cr.define('cr.ui.table', function() {
      */
     getWidth: function(index) {
       return this.columns_[index].width;
+    },
+
+    /**
+     * Check if the column at the given index should align to the end.
+     * @param {number} index The index of the column.
+     * @return {boolean} True if the column is aligned to end.
+     */
+    isEndAlign: function(index) {
+      return this.columns_[index].endAlign;
     },
 
     /**
@@ -160,6 +169,15 @@ cr.define('cr.ui.table', function() {
       for (var i = 0; i < this.size; i++) {
         this.columns_[i].width = this.columns_[i].width * 100 / total;
       }
+    },
+
+    /**
+     * Returns default sorting order for the column at the given index.
+     * @param {number} index The index of the column.
+     * @return {string} 'asc' or 'desc'.
+     */
+    getDefaultOrder: function(index) {
+      return this.columns_[index].defaultOrder;
     },
 
     /**

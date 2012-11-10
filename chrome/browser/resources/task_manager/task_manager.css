@@ -1,13 +1,6 @@
-/*
- * Copyright (c) 2011 The Chromium Authors. All rights reserved.
+/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
-
-* {
-  margin: 0;
-  padding: 0;
-}
+ * found in the LICENSE file. */
 
 html {
   overflow: hidden;
@@ -24,17 +17,6 @@ body {
   min-height: 150px;
   position: absolute;
   width: 100%;
-}
-
-/* The top title of the dialog. */
-.dialog-title {
-  background-image: -webkit-linear-gradient(top, #fff,#f6f6f6);
-  border-bottom: 1px #d6d9e3 solid;
-  color: #42506c;
-  cursor: default;
-  font-size: 15px;
-  font-weight: bold;
-  padding: 0 12px 4px 12px;
 }
 
 /* Container for the detail list views. */
@@ -88,8 +70,8 @@ body {
 /* Bullets on the left of row. */
 .table-row > .table-row-cell:first-child:before {
   -webkit-border-radius: 3px;
-  background: #CCCCCC;
-  content: "";
+  background: #ccc;
+  content: '';
   display: block;
   margin: 7px 4px 7px 7px;
   width: 6px;
@@ -154,8 +136,8 @@ body {
 }
 
 #about-memory-link {
+  color: rgb(17, 85, 204);
   padding-left: 2px;
-  color: #1155CC;
 }
 
 /* Container for the ok/cancel buttons. */

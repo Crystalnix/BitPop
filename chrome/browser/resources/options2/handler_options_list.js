@@ -1,16 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  const ArrayDataModel = cr.ui.ArrayDataModel;
-  const List = cr.ui.List;
-  const ListItem = cr.ui.ListItem;
-  const HandlerOptions = options.HandlerOptions;
-  const DeletableItem = options.DeletableItem;
-  const DeletableItemList = options.DeletableItemList;
-
-  const localStrings = new LocalStrings();
+  /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
+  /** @const */ var List = cr.ui.List;
+  /** @const */ var ListItem = cr.ui.ListItem;
+  /** @const */ var HandlerOptions = options.HandlerOptions;
+  /** @const */ var DeletableItem = options.DeletableItem;
+  /** @const */ var DeletableItemList = options.DeletableItemList;
 
   /**
    * Creates a new ignored protocol / content handler list item.
@@ -126,7 +124,7 @@ cr.define('options', function() {
       var defaultOptionElement = document.createElement('option');
       defaultOptionElement.selected = data.default_handler == -1;
       defaultOptionElement.textContent =
-          localStrings.getString('handlers_none_handler');
+          loadTimeData.getString('handlers_none_handler');
       defaultOptionElement.value = -1;
       selectElement.appendChild(defaultOptionElement);
 
@@ -138,7 +136,7 @@ cr.define('options', function() {
         selectElement.appendChild(optionElement);
       }
 
-      selectElement.addEventListener('change', function (e) {
+      selectElement.addEventListener('change', function(e) {
         var index = e.target.value;
         if (index == -1) {
           this.classList.add('none');
@@ -157,8 +155,8 @@ cr.define('options', function() {
       // Remove link.
       var removeElement = document.createElement('div');
       removeElement.textContent =
-          localStrings.getString('handlers_remove_link');
-      removeElement.addEventListener('click', function (e) {
+          loadTimeData.getString('handlers_remove_link');
+      removeElement.addEventListener('click', function(e) {
         var value = selectElement ? selectElement.value : 0;
         delegate.removeHandler(value, data.handlers[value]);
       });

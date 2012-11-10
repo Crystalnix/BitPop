@@ -4,9 +4,7 @@
 
 #ifndef CONTENT_BROWSER_BROWSER_THREAD_IMPL_H_
 #define CONTENT_BROWSER_BROWSER_THREAD_IMPL_H_
-#pragma once
 
-#include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_thread.h"
@@ -29,6 +27,7 @@ class CONTENT_EXPORT BrowserThreadImpl
 
  protected:
   virtual void Init() OVERRIDE;
+  virtual void Run(MessageLoop* message_loop) OVERRIDE;
   virtual void CleanUp() OVERRIDE;
 
  private:
@@ -37,11 +36,22 @@ class CONTENT_EXPORT BrowserThreadImpl
   // the API cleaner. Therefore make BrowserThread a friend class.
   friend class BrowserThread;
 
+  // The following are unique function names that makes it possible to tell
+  // the thread id from the callstack alone in crash dumps.
+  void UIThreadRun(MessageLoop* message_loop);
+  void DBThreadRun(MessageLoop* message_loop);
+  void WebKitThreadRun(MessageLoop* message_loop);
+  void FileThreadRun(MessageLoop* message_loop);
+  void FileUserBlockingThreadRun(MessageLoop* message_loop);
+  void ProcessLauncherThreadRun(MessageLoop* message_loop);
+  void CacheThreadRun(MessageLoop* message_loop);
+  void IOThreadRun(MessageLoop* message_loop);
+
   static bool PostTaskHelper(
       BrowserThread::ID identifier,
       const tracked_objects::Location& from_here,
       const base::Closure& task,
-      int64 delay_ms,
+      base::TimeDelta delay,
       bool nestable);
 
   // Common initialization code for the constructors.

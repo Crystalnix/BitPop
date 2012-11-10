@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/message_loop.h"
-#include "content/common/file_system/file_system_dispatcher.h"
-#include "content/common/file_system/webfilesystem_callback_dispatcher.h"
+#include "content/common/fileapi/file_system_dispatcher.h"
+#include "content/common/fileapi/webfilesystem_callback_dispatcher.h"
 #include "content/common/webmessageportchannel_impl.h"
 #include "content/common/worker_messages.h"
 #include "content/public/common/content_switches.h"
@@ -166,6 +166,13 @@ void WebSharedWorkerClientProxy::openFileSystem(
   ChildThread::current()->file_system_dispatcher()->OpenFileSystem(
       stub_->url().GetOrigin(), static_cast<fileapi::FileSystemType>(type),
       size, create, new WebFileSystemCallbackDispatcher(callbacks));
+}
+
+bool WebSharedWorkerClientProxy::allowIndexedDB(const WebKit::WebString& name) {
+  bool result = false;
+  Send(new WorkerProcessHostMsg_AllowIndexedDB(
+      route_id_, stub_->url().GetOrigin(), name, &result));
+  return result;
 }
 
 void WebSharedWorkerClientProxy::dispatchDevToolsMessage(

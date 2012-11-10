@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,9 +23,13 @@
 // created and destroyed on different threads.
 class JavaBoundObject {
  public:
-  // Takes a Java object and creates a JavaBoundObject around it. Returns an
-  // NPObject with a ref count of one which owns the JavaBoundObject.
-  static NPObject* Create(const base::android::JavaRef<jobject>& object);
+  // Takes a Java object and creates a JavaBoundObject around it. Also takes
+  // a boolean that determines whether or not inherited methods are allowed
+  // to be called as well.  This property propagates to all Objects that get
+  // implicitly exposed as return values as well. Returns an NPObject with
+  // a ref count of one which owns the JavaBoundObject.
+  static NPObject* Create(const base::android::JavaRef<jobject>& object,
+                          bool allow_inherited_methods);
 
   virtual ~JavaBoundObject();
 
@@ -40,20 +44,23 @@ class JavaBoundObject {
               NPVariant* result);
 
  private:
-  explicit JavaBoundObject(const base::android::JavaRef<jobject>& object);
+  explicit JavaBoundObject(const base::android::JavaRef<jobject>& object,
+                           bool allow_inherited_methods);
 
   void EnsureMethodsAreSetUp() const;
 
-  // Global ref to the underlying Java object. We use a naked jobject, rather
-  // than a ScopedJavaGlobalRef, as the global ref will be added and dropped on
-  // different threads.
-  jobject java_object_;
+  // The global ref to the underlying Java object that this JavaBoundObject
+  // instance represents.
+  base::android::ScopedJavaGlobalRef<jobject> java_object_;
 
   // Map of public methods, from method name to Method instance. Multiple
   // entries will be present for overloaded methods. Note that we can't use
   // scoped_ptr in STL containers as we can't copy it.
   typedef std::multimap<std::string, linked_ptr<JavaMethod> > JavaMethodMap;
   mutable JavaMethodMap methods_;
+  mutable bool are_methods_set_up_;
+
+  bool allow_inherited_methods_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(JavaBoundObject);
 };

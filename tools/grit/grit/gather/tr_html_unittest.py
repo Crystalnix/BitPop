@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,10 +9,11 @@
 import os
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../..'))
 
 import types
 import unittest
+import StringIO
 
 from grit.gather import tr_html
 from grit import clique
@@ -20,77 +21,149 @@ from grit import util
 
 
 class ParserUnittest(unittest.TestCase):
-  def testChunking(self):
+  def testChunkingWithoutFoldWhitespace(self):
+    self.VerifyChunking(False)
+
+  def testChunkingWithFoldWhitespace(self):
+    self.VerifyChunking(True)
+
+  def VerifyChunking(self, fold_whitespace):
+    """Use a single function to run all chunking testing.
+
+    This makes it easier to run chunking with fold_whitespace both on and off,
+    to make sure the outputs are the same.
+
+    Args:
+      fold_whitespace: Whether whitespace sequences should be folded into a
+        single space.
+    """
+    self.VerifyChunkingBasic(fold_whitespace)
+    self.VerifyChunkingDescriptions(fold_whitespace)
+    self.VerifyChunkingReplaceables(fold_whitespace)
+    self.VerifyChunkingLineBreaks(fold_whitespace)
+    self.VerifyChunkingMessageBreak(fold_whitespace)
+    self.VerifyChunkingMessageNoBreak(fold_whitespace)
+
+  def VerifyChunkingBasic(self, fold_whitespace):
     p = tr_html.HtmlChunks()
-    chunks = p.Parse('<p>Hello <b>dear</b> how <i>are</i>you?<p>Fine!')
-    self.failUnless(chunks == [
+    chunks = p.Parse('<p>Hello <b>dear</b> how <i>are</i>you?<p>Fine!',
+                     fold_whitespace)
+    self.failUnlessEqual(chunks, [
       (False, '<p>', ''), (True, 'Hello <b>dear</b> how <i>are</i>you?', ''),
       (False, '<p>', ''), (True, 'Fine!', '')])
 
-    chunks = p.Parse('<p> Hello <b>dear</b> how <i>are</i>you? <p>Fine!')
-    self.failUnless(chunks == [
+    chunks = p.Parse('<p> Hello <b>dear</b> how <i>are</i>you? <p>Fine!',
+                     fold_whitespace)
+    self.failUnlessEqual(chunks, [
       (False, '<p> ', ''), (True, 'Hello <b>dear</b> how <i>are</i>you?', ''),
       (False, ' <p>', ''), (True, 'Fine!', '')])
 
-    chunks = p.Parse('<p> Hello <b>dear how <i>are you? <p> Fine!')
-    self.failUnless(chunks == [
+    chunks = p.Parse('<p> Hello <b>dear how <i>are you? <p> Fine!',
+                     fold_whitespace)
+    self.failUnlessEqual(chunks, [
       (False, '<p> ', ''), (True, 'Hello <b>dear how <i>are you?', ''),
       (False, ' <p> ', ''), (True, 'Fine!', '')])
 
     # Ensure translateable sections that start with inline tags contain
     # the starting inline tag.
-    chunks = p.Parse('<b>Hello!</b> how are you?<p><i>I am fine.</i>')
-    self.failUnless(chunks == [
+    chunks = p.Parse('<b>Hello!</b> how are you?<p><i>I am fine.</i>',
+                     fold_whitespace)
+    self.failUnlessEqual(chunks, [
       (True, '<b>Hello!</b> how are you?', ''), (False, '<p>', ''),
       (True, '<i>I am fine.</i>', '')])
 
     # Ensure translateable sections that end with inline tags contain
     # the ending inline tag.
-    chunks = p.Parse("Hello! How are <b>you?</b><p><i>I'm fine!</i>")
-    self.failUnless(chunks == [
+    chunks = p.Parse("Hello! How are <b>you?</b><p><i>I'm fine!</i>",
+                     fold_whitespace)
+    self.failUnlessEqual(chunks, [
       (True, 'Hello! How are <b>you?</b>', ''), (False, '<p>', ''),
       (True, "<i>I'm fine!</i>", '')])
 
+  def VerifyChunkingDescriptions(self, fold_whitespace):
+    p = tr_html.HtmlChunks()
     # Check capitals and explicit descriptions
-    chunks = p.Parse('<!-- desc=bingo! --><B>Hello!</B> how are you?<P><I>I am fine.</I>')
-    self.failUnless(chunks == [
+    chunks = p.Parse('<!-- desc=bingo! --><B>Hello!</B> how are you?<P>'
+                     '<I>I am fine.</I>', fold_whitespace)
+    self.failUnlessEqual(chunks, [
       (True, '<B>Hello!</B> how are you?', 'bingo!'), (False, '<P>', ''),
       (True, '<I>I am fine.</I>', '')])
-    chunks = p.Parse('<B><!-- desc=bingo! -->Hello!</B> how are you?<P><I>I am fine.</I>')
-    self.failUnless(chunks == [
+    chunks = p.Parse('<B><!-- desc=bingo! -->Hello!</B> how are you?<P>'
+                     '<I>I am fine.</I>', fold_whitespace)
+    self.failUnlessEqual(chunks, [
       (True, '<B>Hello!</B> how are you?', 'bingo!'), (False, '<P>', ''),
       (True, '<I>I am fine.</I>', '')])
-    # Linebreaks get changed to spaces just like any other HTML content
-    chunks = p.Parse('<B>Hello!</B> <!-- desc=bi\nngo\n! -->how are you?<P><I>I am fine.</I>')
-    self.failUnless(chunks == [
-      (True, '<B>Hello!</B> how are you?', 'bi ngo !'), (False, '<P>', ''),
+    # Linebreaks get handled by the tclib message.
+    chunks = p.Parse('<B>Hello!</B> <!-- desc=bi\nngo\n! -->how are you?<P>'
+                     '<I>I am fine.</I>', fold_whitespace)
+    self.failUnlessEqual(chunks, [
+      (True, '<B>Hello!</B> how are you?', 'bi\nngo\n!'), (False, '<P>', ''),
       (True, '<I>I am fine.</I>', '')])
 
     # In this case, because the explicit description appears after the first
     # translateable, it will actually apply to the second translateable.
-    chunks = p.Parse('<B>Hello!</B> how are you?<!-- desc=bingo! --><P><I>I am fine.</I>')
-    self.failUnless(chunks == [
+    chunks = p.Parse('<B>Hello!</B> how are you?<!-- desc=bingo! --><P>'
+                     '<I>I am fine.</I>', fold_whitespace)
+    self.failUnlessEqual(chunks, [
       (True, '<B>Hello!</B> how are you?', ''), (False, '<P>', ''),
       (True, '<I>I am fine.</I>', 'bingo!')])
 
+  def VerifyChunkingReplaceables(self, fold_whitespace):
     # Check that replaceables within block tags (where attributes would go) are
     # handled correctly.
+    p = tr_html.HtmlChunks()
     chunks = p.Parse('<b>Hello!</b> how are you?<p [BINGO] [$~BONGO~$]>'
-                     '<i>I am fine.</i>')
-    self.failUnless(chunks == [
+                     '<i>I am fine.</i>', fold_whitespace)
+    self.failUnlessEqual(chunks, [
       (True, '<b>Hello!</b> how are you?', ''),
       (False, '<p [BINGO] [$~BONGO~$]>', ''),
       (True, '<i>I am fine.</i>', '')])
 
+  def VerifyChunkingLineBreaks(self, fold_whitespace):
     # Check that the contents of preformatted tags preserve line breaks.
-    chunks = p.Parse('<textarea>Hello\nthere\nhow\nare\nyou?</textarea>')
-    self.failUnless(chunks == [(False, '<textarea>', ''),
+    p = tr_html.HtmlChunks()
+    chunks = p.Parse('<textarea>Hello\nthere\nhow\nare\nyou?</textarea>',
+                     fold_whitespace)
+    self.failUnlessEqual(chunks, [(False, '<textarea>', ''),
       (True, 'Hello\nthere\nhow\nare\nyou?', ''), (False, '</textarea>', '')])
 
     # ...and that other tags' line breaks are converted to spaces
-    chunks = p.Parse('<p>Hello\nthere\nhow\nare\nyou?</p>')
-    self.failUnless(chunks == [(False, '<p>', ''),
+    chunks = p.Parse('<p>Hello\nthere\nhow\nare\nyou?</p>', fold_whitespace)
+    self.failUnlessEqual(chunks, [(False, '<p>', ''),
       (True, 'Hello there how are you?', ''), (False, '</p>', '')])
+
+  def VerifyChunkingMessageBreak(self, fold_whitespace):
+    p = tr_html.HtmlChunks()
+    # Make sure that message-break comments work properly.
+    chunks = p.Parse('Break<!-- message-break --> apart '
+                     '<!--message-break-->messages', fold_whitespace)
+    self.failUnlessEqual(chunks, [(True, 'Break', ''),
+                                  (False, ' ', ''),
+                                  (True, 'apart', ''),
+                                  (False, ' ', ''),
+                                  (True, 'messages', '')])
+
+    # Make sure message-break comments work in an inline tag.
+    chunks = p.Parse('<a href=\'google.com\'><!-- message-break -->Google'
+                     '<!--message-break--></a>', fold_whitespace)
+    self.failUnlessEqual(chunks, [(False, '<a href=\'google.com\'>', ''),
+                                  (True, 'Google', ''),
+                                  (False, '</a>', '')])
+
+  def VerifyChunkingMessageNoBreak(self, fold_whitespace):
+    p = tr_html.HtmlChunks()
+    # Make sure that message-no-break comments work properly.
+    chunks = p.Parse('Please <!-- message-no-break --> <br />don\'t break',
+                     fold_whitespace)
+    self.failUnlessEqual(chunks, [(True, 'Please <!-- message-no-break --> '
+                         '<br />don\'t break', '')])
+
+    chunks = p.Parse('Please <br /> break. <!-- message-no-break --> <br /> '
+                     'But not this time.', fold_whitespace)
+    self.failUnlessEqual(chunks, [(True, 'Please', ''),
+                                  (False, ' <br /> ', ''),
+                                  (True, 'break. <!-- message-no-break --> '
+                                         '<br /> But not this time.', '')])
 
   def testTranslateableAttributes(self):
     p = tr_html.HtmlChunks()
@@ -100,8 +173,8 @@ class ParserUnittest(unittest.TestCase):
     chunks = p.Parse('<img src=bingo.jpg alt="hello there">'
                      '<input type=submit value="hello">'
                      '<input type="button" value="hello">'
-                     '<input type=\'text\' value=\'Howdie\'>')
-    self.failUnless(chunks == [
+                     '<input type=\'text\' value=\'Howdie\'>', False)
+    self.failUnlessEqual(chunks, [
       (False, '<img src=bingo.jpg alt="', ''), (True, 'hello there', ''),
       (False, '"><input type=submit value="', ''), (True, 'hello', ''),
       (False, '"><input type="button" value="', ''), (True, 'hello', ''),
@@ -182,25 +255,52 @@ and <A HREF='http://desktop.google.com/privacyfaq.html?hl=[LANG_CODE]'>Privacy F
 BEGIN_LINK_1Privacy PolicyEND_LINK_1
 and BEGIN_LINK_2Privacy FAQEND_LINK_2 online.''')
 
-
+    # Check that message-no-break comments are handled correctly.
+    msg = tr_html.HtmlToMessage('''Please <!-- message-no-break --><br /> don't break''')
+    pres = msg.GetPresentableContent()
+    self.failUnlessEqual(pres, '''Please BREAK don't break''')
 
 class TrHtmlUnittest(unittest.TestCase):
+  def testSetAttributes(self):
+    html = tr_html.TrHtml(StringIO.StringIO(''))
+    self.failUnlessEqual(html.fold_whitespace_, False)
+    html.SetAttributes({})
+    self.failUnlessEqual(html.fold_whitespace_, False)
+    html.SetAttributes({'fold_whitespace': 'false'})
+    self.failUnlessEqual(html.fold_whitespace_, False)
+    html.SetAttributes({'fold_whitespace': 'true'})
+    self.failUnlessEqual(html.fold_whitespace_, True)
+
+  def testFoldWhitespace(self):
+    text = '<td>   Test     Message   </td>'
+
+    html = tr_html.TrHtml(StringIO.StringIO(text))
+    html.Parse()
+    self.failUnlessEqual(html.skeleton_[1].GetMessage().GetPresentableContent(),
+                         'Test  Message')
+
+    html = tr_html.TrHtml(StringIO.StringIO(text))
+    html.fold_whitespace_ = True
+    html.Parse()
+    self.failUnlessEqual(html.skeleton_[1].GetMessage().GetPresentableContent(),
+                         'Test Message')
+
   def testTable(self):
-    html = tr_html.TrHtml('''<table class="shaded-header"><tr>
+    html = tr_html.TrHtml(StringIO.StringIO('''<table class="shaded-header"><tr>
 <td class="header-element b expand">Preferences</td>
 <td class="header-element s">
 <a href="http://desktop.google.com/preferences.html">Preferences&nbsp;Help</a>
 </td>
-</tr></table>''')
+</tr></table>'''))
     html.Parse()
     self.failUnless(html.skeleton_[3].GetMessage().GetPresentableContent() ==
                     'BEGIN_LINKPreferences&nbsp;HelpEND_LINK')
 
   def testSubmitAttribute(self):
-    html = tr_html.TrHtml('''</td>
+    html = tr_html.TrHtml(StringIO.StringIO('''</td>
 <td class="header-element"><input type=submit value="Save Preferences"
 name=submit2></td>
-</tr></table>''')
+</tr></table>'''))
     html.Parse()
     self.failUnless(html.skeleton_[1].GetMessage().GetPresentableContent() ==
                     'Save Preferences')
@@ -209,19 +309,20 @@ name=submit2></td>
     '''Test that even if there is whitespace after an inline tag at the start
     of a translateable section the inline tag will be included.
     '''
-    html = tr_html.TrHtml('''<label for=DISPLAYNONE><font size=-1> Hello</font>''')
+    html = tr_html.TrHtml(
+        StringIO.StringIO('''<label for=DISPLAYNONE><font size=-1> Hello</font>'''))
     html.Parse()
     self.failUnless(html.skeleton_[1].GetMessage().GetRealContent() ==
                     '<font size=-1> Hello</font>')
 
   def testSillyHeader(self):
-    html = tr_html.TrHtml('''[!]
+    html = tr_html.TrHtml(StringIO.StringIO('''[!]
 title\tHello
 bingo
 bongo
 bla
 
-<p>Other stuff</p>''')
+<p>Other stuff</p>'''))
     html.Parse()
     content = html.skeleton_[1].GetMessage().GetRealContent()
     self.failUnless(content == 'Hello')
@@ -232,16 +333,25 @@ bla
 
 
   def testExplicitDescriptions(self):
-    html = tr_html.TrHtml('Hello [USER]<br/><!-- desc=explicit --><input type="button">Go!</input>')
+    html = tr_html.TrHtml(
+        StringIO.StringIO('Hello [USER]<br/><!-- desc=explicit -->'
+                          '<input type="button">Go!</input>'))
     html.Parse()
     msg = html.GetCliques()[1].GetMessage()
-    self.failUnless(msg.GetDescription() == 'explicit')
-    self.failUnless(msg.GetRealContent() == 'Go!')
+    self.failUnlessEqual(msg.GetDescription(), 'explicit')
+    self.failUnlessEqual(msg.GetRealContent(), 'Go!')
+
+    html = tr_html.TrHtml(
+        StringIO.StringIO('Hello [USER]<br/><!-- desc=explicit\nmultiline -->'
+                          '<input type="button">Go!</input>'))
+    html.Parse()
+    msg = html.GetCliques()[1].GetMessage()
+    self.failUnlessEqual(msg.GetDescription(), 'explicit multiline')
+    self.failUnlessEqual(msg.GetRealContent(), 'Go!')
 
 
   def testRegressionInToolbarAbout(self):
-    html = tr_html.TrHtml.FromFile(
-      util.PathFromRoot(r'grit/testdata/toolbar_about.html'))
+    html = tr_html.TrHtml(util.PathFromRoot(r'grit/testdata/toolbar_about.html'))
     html.Parse()
     cliques = html.GetCliques()
     for cl in cliques:
@@ -251,7 +361,7 @@ bla
 
 
   def HtmlFromFileWithManualCheck(self, f):
-    html = tr_html.TrHtml.FromFile(f)
+    html = tr_html.TrHtml(f)
     html.Parse()
 
     # For manual results inspection only...
@@ -283,8 +393,8 @@ bla
     # one of the MessageClique objects (it would be a placeholder-only message
     # and we're supposed to have stripped those).
 
-    for item in filter(lambda x: isinstance(x, clique.MessageClique),
-                       html.skeleton_):
+    for item in [x for x in html.skeleton_
+                 if isinstance(x, clique.MessageClique)]:
       if (item.GetMessage().GetRealContent() == '[STATUS-MESSAGE]' or
           item.GetMessage().GetRealContent() == '[ADDIN-DO] [ADDIN-OPTIONS]'):
         self.fail()
@@ -334,7 +444,7 @@ bla
     # character itself.  So for this test we choose some relatively complex
     # HTML without character entities (but with &nbsp; because that's handled
     # specially).
-    html = tr_html.TrHtml('''  <script>
+    html = tr_html.TrHtml(StringIO.StringIO('''  <script>
       <!--
       function checkOffice() { var w = document.getElementById("h7");
       var e = document.getElementById("h8"); var o = document.getElementById("h10");
@@ -358,7 +468,7 @@ bla
         <label for=h10> Password-protected Office documents (Word, Excel)</label><br />
         <input type=checkbox [DISABLED-HTTPS] [CHECK-HTTPS] name=HTTPS id=h12><label
         for=h12> Secure pages (HTTPS) in web history</label></span></td></tr>
-      </table>''')
+      </table>'''))
     html.Parse()
     trans = html.Translate('en')
     if (html.GetText() != trans):
@@ -404,8 +514,8 @@ bla
 
   def testRegressionCpuHang(self):
     # If this regression occurs, the unit test will never return
-    html = tr_html.TrHtml(
-      '''<input type=text size=12 id=advFileTypeEntry [~SHOW-FILETYPE-BOX~] value="[EXT]" name=ext>''')
+    html = tr_html.TrHtml(StringIO.StringIO(
+      '''<input type=text size=12 id=advFileTypeEntry [~SHOW-FILETYPE-BOX~] value="[EXT]" name=ext>'''))
     html.Parse()
 
 if __name__ == '__main__':

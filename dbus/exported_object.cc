@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "base/time.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
+#include "dbus/object_path.h"
 #include "dbus/scoped_dbus_error.h"
 
 namespace dbus {
@@ -34,10 +35,8 @@ std::string GetAbsoluteMethodName(
 }  // namespace
 
 ExportedObject::ExportedObject(Bus* bus,
-                               const std::string& service_name,
-                               const std::string& object_path)
+                               const ObjectPath& object_path)
     : bus_(bus),
-      service_name_(service_name),
       object_path_(object_path),
       object_is_registered_(false) {
 }
@@ -63,8 +62,6 @@ bool ExportedObject::ExportMethodAndBlock(
   if (!bus_->Connect())
     return false;
   if (!bus_->SetUpAsyncOperations())
-    return false;
-  if (!bus_->RequestOwnership(service_name_))
     return false;
   if (!Register())
     return false;
@@ -93,7 +90,7 @@ void ExportedObject::ExportMethod(const std::string& interface_name,
 void ExportedObject::SendSignal(Signal* signal) {
   // For signals, the object path should be set to the path to the sender
   // object, which is this exported object here.
-  signal->SetPath(object_path_);
+  CHECK(signal->SetPath(object_path_));
 
   // Increment the reference count so we can safely reference the
   // underlying signal message until the signal sending is complete. This
@@ -175,8 +172,8 @@ bool ExportedObject::Register() {
                                                    this,
                                                    error.get());
   if (!success) {
-    LOG(ERROR) << "Failed to register the object: " << object_path_ << ": "
-               << (error.is_set() ? error.message() : "");
+    LOG(ERROR) << "Failed to register the object: " << object_path_.value()
+               << ": " << (error.is_set() ? error.message() : "");
     return false;
   }
 

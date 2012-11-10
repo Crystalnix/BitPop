@@ -11,11 +11,10 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "media/base/media.h"
-#include "net/base/cookie_monster.h"
+#include "net/cookies/cookie_monster.h"
 #include "net/http/http_cache.h"
 #include "net/test/test_server.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebAudioDevice.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabase.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebFileSystem.h"
@@ -36,7 +35,6 @@
 #include "v8/include/v8.h"
 #include "webkit/appcache/web_application_cache_host_impl.h"
 #include "webkit/database/vfs_backend.h"
-#include "webkit/extensions/v8/gc_extension.h"
 #include "webkit/glue/simple_webmimeregistry_impl.h"
 #include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webkit_glue.h"
@@ -45,6 +43,7 @@
 #include "webkit/gpu/webgraphicscontext3d_in_process_impl.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/support/simple_database_system.h"
+#include "webkit/support/gc_extension.h"
 #include "webkit/support/test_webmessageportchannel.h"
 #include "webkit/support/webkit_support.h"
 #include "webkit/support/weburl_loader_mock_factory.h"
@@ -69,8 +68,10 @@
 
 using WebKit::WebScriptController;
 
-TestWebKitPlatformSupport::TestWebKitPlatformSupport(bool unit_test_mode)
-      : unit_test_mode_(unit_test_mode) {
+TestWebKitPlatformSupport::TestWebKitPlatformSupport(bool unit_test_mode,
+    WebKit::Platform* shadow_platform_delegate)
+    : unit_test_mode_(unit_test_mode),
+      shadow_platform_delegate_(shadow_platform_delegate) {
   v8::V8::SetCounterFunction(base::StatsTable::FindLocation);
 
   WebKit::initialize(this);
@@ -78,6 +79,10 @@ TestWebKitPlatformSupport::TestWebKitPlatformSupport(bool unit_test_mode)
   WebKit::WebSecurityPolicy::registerURLSchemeAsLocal(
       WebKit::WebString::fromUTF8("test-shell-resource"));
   WebKit::WebSecurityPolicy::registerURLSchemeAsNoAccess(
+      WebKit::WebString::fromUTF8("test-shell-resource"));
+  WebKit::WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(
+      WebKit::WebString::fromUTF8("test-shell-resource"));
+  WebKit::WebSecurityPolicy::registerURLSchemeAsEmptyDocument(
       WebKit::WebString::fromUTF8("test-shell-resource"));
   WebScriptController::enableV8SingleThreadMode();
   WebKit::WebRuntimeFeatures::enableSockets(true);
@@ -149,9 +154,6 @@ TestWebKitPlatformSupport::TestWebKitPlatformSupport(bool unit_test_mode)
 }
 
 TestWebKitPlatformSupport::~TestWebKitPlatformSupport() {
-  if (RunningOnValgrind())
-    WebKit::WebCache::clear();
-  WebKit::shutdown();
 }
 
 WebKit::WebMimeRegistry* TestWebKitPlatformSupport::mimeRegistry() {
@@ -321,29 +323,71 @@ WebKit::WebString TestWebKitPlatformSupport::defaultLocale() {
 WebKit::WebStorageNamespace*
 TestWebKitPlatformSupport::createLocalStorageNamespace(
     const WebKit::WebString& path, unsigned quota) {
-  return WebKit::WebStorageNamespace::createLocalStorageNamespace(path, quota);
+  return dom_storage_system_.CreateLocalStorageNamespace();
 }
 
-void TestWebKitPlatformSupport::dispatchStorageEvent(
-    const WebKit::WebString& key,
-    const WebKit::WebString& old_value, const WebKit::WebString& new_value,
-    const WebKit::WebString& origin, const WebKit::WebURL& url,
-    bool is_local_storage) {
-  // The event is dispatched by the proxy.
-}
+// Wrap a WebKit::WebIDBFactory to rewrite the data directory to
+// a scoped temp directory. In multiprocess Chromium this is rewritten
+// to a real profile directory during IPC.
+class TestWebIDBFactory : public WebKit::WebIDBFactory {
+ public:
+  TestWebIDBFactory()
+      : factory_(WebKit::WebIDBFactory::create()) {
+    // Create a new temp directory for Indexed DB storage, specific to this
+    // factory. If this fails, WebKit uses in-memory storage.
+    if (!indexed_db_dir_.CreateUniqueTempDir()) {
+      LOG(WARNING) << "Failed to create a temp dir for Indexed DB, "
+          "using in-memory storage.";
+      DCHECK(indexed_db_dir_.path().empty());
+    }
+    data_dir_ = webkit_support::GetAbsoluteWebStringFromUTF8Path(
+      indexed_db_dir_.path().AsUTF8Unsafe());
+  }
+
+  virtual void getDatabaseNames(WebKit::WebIDBCallbacks* callbacks,
+                                const WebKit::WebSecurityOrigin& origin,
+                                WebKit::WebFrame* frame,
+                                const WebString& dataDir) {
+    factory_->getDatabaseNames(callbacks, origin, frame,
+                               dataDir.isEmpty() ? data_dir_ : dataDir);
+  }
+
+  virtual void open(const WebString& name,
+                    long long version,
+                    WebKit::WebIDBCallbacks* callbacks,
+                    const WebKit::WebSecurityOrigin& origin,
+                    WebKit::WebFrame* frame,
+                    const WebString& dataDir) {
+    factory_->open(name, version, callbacks, origin, frame,
+                   dataDir.isEmpty() ? data_dir_ : dataDir);
+  }
+
+  virtual void deleteDatabase(const WebString& name,
+                              WebKit::WebIDBCallbacks* callbacks,
+                              const WebKit::WebSecurityOrigin& origin,
+                              WebKit::WebFrame* frame,
+                              const WebString& dataDir) {
+    factory_->deleteDatabase(name, callbacks, origin, frame,
+                             dataDir.isEmpty() ? data_dir_ : dataDir);
+  }
+ private:
+  scoped_ptr<WebIDBFactory> factory_;
+  ScopedTempDir indexed_db_dir_;
+  WebString data_dir_;
+};
 
 WebKit::WebIDBFactory* TestWebKitPlatformSupport::idbFactory() {
-  return WebKit::WebIDBFactory::create();
+  return new TestWebIDBFactory();
 }
 
 void TestWebKitPlatformSupport::createIDBKeysFromSerializedValuesAndKeyPath(
       const WebKit::WebVector<WebKit::WebSerializedScriptValue>& values,
-      const WebKit::WebString& keyPath,
+      const WebKit::WebIDBKeyPath& keyPath,
       WebKit::WebVector<WebKit::WebIDBKey>& keys_out) {
   WebKit::WebVector<WebKit::WebIDBKey> keys(values.size());
   for (size_t i = 0; i < values.size(); ++i) {
     keys[i] = WebKit::WebIDBKey::createFromValueAndKeyPath(
-        values[i], WebKit::WebIDBKeyPath::create(keyPath));
+        values[i], keyPath);
   }
   keys_out.swap(keys);
 }
@@ -352,9 +396,9 @@ WebKit::WebSerializedScriptValue
 TestWebKitPlatformSupport::injectIDBKeyIntoSerializedValue(
     const WebKit::WebIDBKey& key,
     const WebKit::WebSerializedScriptValue& value,
-    const WebKit::WebString& keyPath) {
+    const WebKit::WebIDBKeyPath& keyPath) {
   return WebKit::WebIDBKey::injectIDBKeyIntoSerializedValue(
-      key, value, WebKit::WebIDBKeyPath::create(keyPath));
+      key, value, keyPath);
 }
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
@@ -374,36 +418,29 @@ TestWebKitPlatformSupport::sharedWorkerRepository() {
 }
 
 WebKit::WebGraphicsContext3D*
-TestWebKitPlatformSupport::createGraphicsContext3D() {
-  switch (webkit_support::GetGraphicsContext3DImplementation()) {
-    case webkit_support::IN_PROCESS:
-      return new webkit::gpu::WebGraphicsContext3DInProcessImpl(
-          gfx::kNullPluginWindow, NULL);
-    case webkit_support::IN_PROCESS_COMMAND_BUFFER:
-      return new webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl();
-    default:
-      CHECK(false) << "Unknown GraphicsContext3D Implementation";
-      return NULL;
-  }
-}
-
-WebKit::WebGraphicsContext3D*
 TestWebKitPlatformSupport::createOffscreenGraphicsContext3D(
     const WebKit::WebGraphicsContext3D::Attributes& attributes) {
-  scoped_ptr<WebKit::WebGraphicsContext3D> context;
   switch (webkit_support::GetGraphicsContext3DImplementation()) {
     case webkit_support::IN_PROCESS:
-      context.reset(new webkit::gpu::WebGraphicsContext3DInProcessImpl(
-          gfx::kNullPluginWindow, NULL));
-      break;
-    case webkit_support::IN_PROCESS_COMMAND_BUFFER:
-      context.reset(
-          new webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl());
-      break;
+      return webkit::gpu::WebGraphicsContext3DInProcessImpl::CreateForWebView(
+          attributes, false);
+    case webkit_support::IN_PROCESS_COMMAND_BUFFER: {
+      scoped_ptr<webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl>
+          context(new
+              webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl());
+      if (!context->Initialize(attributes, NULL))
+        return NULL;
+      return context.release();
+    }
   }
-  if (!context->initialize(attributes, NULL, false))
-    return NULL;
-  return context.release();
+  NOTREACHED();
+  return NULL;
+}
+
+bool TestWebKitPlatformSupport::canAccelerate2dCanvas() {
+  // We supply an OS-MESA based context for accelarated 2d
+  // canvas, which should always work.
+  return true;
 }
 
 double TestWebKitPlatformSupport::audioHardwareSampleRate() {
@@ -462,4 +499,24 @@ TestWebKitPlatformSupport::CreateWebSocketBridge(
     WebKit::WebSocketStreamHandle* handle,
     webkit_glue::WebSocketStreamHandleDelegate* delegate) {
   return SimpleSocketStreamBridge::Create(handle, delegate);
+}
+
+WebKit::WebMediaStreamCenter*
+TestWebKitPlatformSupport::createMediaStreamCenter(
+    WebKit::WebMediaStreamCenterClient* client) {
+  if (shadow_platform_delegate_)
+    return shadow_platform_delegate_->createMediaStreamCenter(client);
+
+  return webkit_glue::WebKitPlatformSupportImpl::createMediaStreamCenter(
+      client);
+}
+
+WebKit::WebRTCPeerConnectionHandler*
+TestWebKitPlatformSupport::createRTCPeerConnectionHandler(
+    WebKit::WebRTCPeerConnectionHandlerClient* client) {
+  if (shadow_platform_delegate_)
+    return shadow_platform_delegate_->createRTCPeerConnectionHandler(client);
+
+  return webkit_glue::WebKitPlatformSupportImpl::createRTCPeerConnectionHandler(
+      client);
 }

@@ -5,14 +5,19 @@
 #include "chrome/browser/chromeos/system/statistics_provider.h"
 
 #include "base/bind.h"
+#include "base/chromeos/chromeos_version.h"
+#include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/time.h"
+#include "base/chromeos/chromeos_version.h"
 #include "chrome/browser/chromeos/system/name_value_pairs_parser.h"
-#include "chrome/browser/chromeos/system/runtime_environment.h"
+#include "chrome/common/child_process_logging.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -40,6 +45,12 @@ const char kUnknownHardwareClass[] = "unknown";
 const char kMachineHardwareInfoFile[] = "/tmp/machine-info";
 const char kMachineHardwareInfoEq[] = "=";
 const char kMachineHardwareInfoDelim[] = " \n";
+
+// File to get ECHO coupon info from, and key/value delimiters of
+// the file.
+const char kEchoCouponFile[] = "/var/cache/echo/vpd_echo.txt";
+const char kEchoCouponEq[] = "=";
+const char kEchoCouponDelim[] = "\n";
 
 // File to get machine OS info from, and key/value delimiters of the file.
 const char kMachineOSInfoFile[] = "/etc/lsb-release";
@@ -98,7 +109,15 @@ bool StatisticsProviderImpl::GetMachineStatistic(
   if (!on_statistics_loaded_.IsSignaled()) {
     LOG(WARNING) << "Waiting to load statistics. Requested statistic: "
                  << name;
+    // http://crbug.com/125385
+    base::ThreadRestrictions::ScopedAllowWait allow_wait;
     on_statistics_loaded_.TimedWait(base::TimeDelta::FromSeconds(kTimeoutSecs));
+
+    if (!on_statistics_loaded_.IsSignaled()) {
+      LOG(ERROR) << "Statistics weren't loaded after waiting! "
+                 << "Requested statistic: " << name;
+      return false;
+    }
   }
 
   NameValuePairsParser::NameValueMap::iterator iter = machine_info_.find(name);
@@ -118,10 +137,7 @@ StatisticsProviderImpl::StatisticsProviderImpl()
 
 void StatisticsProviderImpl::StartLoadingMachineStatistics() {
   VLOG(1) << "Started loading statistics";
-  CHECK(BrowserThread::IsMessageLoopValid(BrowserThread::FILE))
-      << "StatisticsProvider must not be used before FILE thread is created";
-  BrowserThread::PostTask(
-      BrowserThread::FILE,
+  BrowserThread::PostBlockingPoolTask(
       FROM_HERE,
       base::Bind(&StatisticsProviderImpl::LoadMachineStatistics,
                  base::Unretained(this)));
@@ -131,9 +147,12 @@ void StatisticsProviderImpl::LoadMachineStatistics() {
   NameValuePairsParser parser(&machine_info_);
 
   // Parse all of the key/value pairs from the crossystem tool.
-  parser.ParseNameValuePairsFromTool(
-      arraysize(kCrosSystemTool), kCrosSystemTool, kCrosSystemEq,
-      kCrosSystemDelim, kCrosSystemCommentDelim);
+  if (!parser.ParseNameValuePairsFromTool(
+          arraysize(kCrosSystemTool), kCrosSystemTool, kCrosSystemEq,
+          kCrosSystemDelim, kCrosSystemCommentDelim)) {
+    LOG(WARNING) << "There were errors parsing the output of "
+                 << kCrosSystemTool << ".";
+  }
 
   // Ensure that the hardware class key is present with the expected
   // key name, and if it couldn't be retrieved, that the value is "unknown".
@@ -146,6 +165,9 @@ void StatisticsProviderImpl::LoadMachineStatistics() {
   parser.GetNameValuePairsFromFile(FilePath(kMachineHardwareInfoFile),
                                    kMachineHardwareInfoEq,
                                    kMachineHardwareInfoDelim);
+  parser.GetNameValuePairsFromFile(FilePath(kEchoCouponFile),
+                                   kEchoCouponEq,
+                                   kEchoCouponDelim);
   parser.GetNameValuePairsFromFile(FilePath(kMachineOSInfoFile),
                                    kMachineOSInfoEq,
                                    kMachineOSInfoDelim);
@@ -166,6 +188,15 @@ void StatisticsProviderImpl::LoadMachineStatistics() {
   std::string channel;
   if (GetMachineStatistic(kChromeOSReleaseTrack, &channel)) {
       chrome::VersionInfo::SetChannel(channel);
+      // Set the product channel for crash reports.  We can't just do this in
+      // ChromeBrowserMainParts::PreCreateThreads like we do for Linux because
+      // the FILE thread hasn't been created yet there so we can't possibly
+      // have read this yet.  Note that this string isn't exactly the same as
+      // 'channel', it's been parsed to be consistent with other platforms
+      // (eg. "canary-channel" becomes "canary", "testimage-channel" becomes
+      // "unknown").
+      child_process_logging::SetChannel(
+          chrome::VersionInfo::GetVersionStringModifier());
   }
 #endif
 }
@@ -181,6 +212,14 @@ class StatisticsProviderStubImpl : public StatisticsProvider {
   // StatisticsProvider implementation:
   virtual bool GetMachineStatistic(const std::string& name,
                                    std::string* result) OVERRIDE {
+    if (name == "CHROMEOS_RELEASE_BOARD") {
+      const CommandLine* command_line = CommandLine::ForCurrentProcess();
+      if (command_line->HasSwitch(switches::kChromeOSReleaseBoard)) {
+        *result = command_line->
+            GetSwitchValueASCII(switches::kChromeOSReleaseBoard);
+        return true;
+      }
+    }
     return false;
   }
 
@@ -199,7 +238,7 @@ class StatisticsProviderStubImpl : public StatisticsProvider {
 };
 
 StatisticsProvider* StatisticsProvider::GetInstance() {
-  if (system::runtime_environment::IsRunningOnChromeOS()) {
+  if (base::chromeos::IsRunningOnChromeOS()) {
     return StatisticsProviderImpl::GetInstance();
   } else {
     return StatisticsProviderStubImpl::GetInstance();

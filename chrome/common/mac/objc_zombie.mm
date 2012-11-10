@@ -12,7 +12,6 @@
 #import <objc/objc-class.h>
 
 #include <algorithm>
-#include <iostream>
 
 #include "base/debug/stack_trace.h"
 #include "base/lazy_instance.h"
@@ -26,7 +25,10 @@
 // Deallocated objects are re-classed as |CrZombie|.  No superclass
 // because then the class would have to override many/most of the
 // inherited methods (|NSObject| is like a category magnet!).
-@interface CrZombie {
+// Without the __attribute__, clang's -Wobjc-root-class warns on the missing
+// superclass.
+__attribute__((objc_root_class))
+@interface CrZombie  {
   Class isa;
 }
 @end
@@ -253,8 +255,7 @@ BOOL GetZombieRecord(id object, ZombieRecord* record) {
 // Dump the symbols.  This is pulled out into a function to make it
 // easy to use DCHECK to dump only in debug builds.
 BOOL DumpDeallocTrace(const void* const* array, int size) {
-  // |cerr| because that's where PrintBacktrace() sends output.
-  std::cerr << "Backtrace from -dealloc:\n";
+  fprintf(stderr, "Backtrace from -dealloc:\n");
   base::debug::StackTrace(array, size).PrintBacktrace();
 
   return YES;
@@ -290,21 +291,11 @@ void ZombieObjectCrash(id object, SEL aSelector, SEL viaSelector) {
   // Set a value for breakpad to report.
   base::mac::SetCrashKeyValue(@"zombie", aString);
 
-  // Hex-encode the backtrace and tuck it into a breakpad key.
-  NSString* deallocTrace = @"<unknown>";
-  if (found && record.traceDepth) {
-    NSMutableArray* hexBacktrace =
-        [NSMutableArray arrayWithCapacity:record.traceDepth];
-    for (size_t i = 0; i < record.traceDepth; ++i) {
-      NSString* s = [NSString stringWithFormat:@"%p", record.trace[i]];
-      [hexBacktrace addObject:s];
-    }
-    deallocTrace = [hexBacktrace componentsJoinedByString:@" "];
-
-    // Warn someone if this exceeds the breakpad limits.
-    DCHECK_LE(strlen([deallocTrace UTF8String]), 255U);
+  // Encode trace into a breakpad key.
+  if (found) {
+    base::mac::SetCrashKeyFromAddresses(
+        @"zombie_dealloc_bt", record.trace, record.traceDepth);
   }
-  base::mac::SetCrashKeyValue(@"zombie_dealloc_bt", deallocTrace);
 
   // Log -dealloc backtrace in debug builds then crash with a useful
   // stack trace.

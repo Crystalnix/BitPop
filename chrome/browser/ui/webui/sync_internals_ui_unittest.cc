@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,15 +10,14 @@
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/sync/js/js_arg_list.h"
-#include "chrome/browser/sync/js/js_event_details.h"
-#include "chrome/browser/sync/js/js_test_util.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/profile_mock.h"
-#include "content/browser/tab_contents/test_tab_contents.h"
 #include "content/public/browser/web_ui_controller.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
+#include "sync/js/js_arg_list.h"
+#include "sync/js/js_event_details.h"
+#include "sync/js/js_test_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -32,8 +31,8 @@
 namespace {
 
 using browser_sync::HasArgsAsList;
-using browser_sync::JsArgList;
-using browser_sync::JsEventDetails;
+using syncer::JsArgList;
+using syncer::JsEventDetails;
 using content::BrowserThread;
 using content::WebContents;
 using testing::_;

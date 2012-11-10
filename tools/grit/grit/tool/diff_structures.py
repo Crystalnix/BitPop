@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -99,16 +99,16 @@ class DiffStructures(interface.Tool):
     Return:
       'c:\\temp\\werlkjsdf334.tmp'
     """
-    original = structure._GATHERERS[self.structure_type].FromFile(
-      original_filename, extkey=self.section, encoding=encoding)
+    original = structure._GATHERERS[self.structure_type](original_filename,
+                                                         extkey=self.section,
+                                                         encoding=encoding)
     original.Parse()
     translated = original.Translate(constants.CONSTANT_LANGUAGE, False)
 
     fname = tempfile.mktemp()
-    fhandle = file(fname, 'w')
-    writer = util.WrapOutputStream(fhandle)
-    writer.write("Original filename: %s\n=============\n\n" % original_filename)
-    writer.write(translated)  # write in UTF-8
-    fhandle.close()
+    with util.WrapOutputStream(open(fname, 'w')) as writer:
+      writer.write("Original filename: %s\n=============\n\n"
+                       % original_filename)
+      writer.write(translated)  # write in UTF-8
 
     return fname

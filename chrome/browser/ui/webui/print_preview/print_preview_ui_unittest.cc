@@ -5,63 +5,57 @@
 #include <vector>
 
 #include "base/memory/ref_counted_memory.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/printing/print_preview_tab_controller.h"
-#include "chrome/browser/printing/print_preview_unit_test_base.h"
 #include "chrome/browser/printing/print_view_manager.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/constrained_window_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
-#include "content/browser/tab_contents/test_tab_contents.h"
+#include "chrome/common/pref_names.h"
+#include "chrome/test/base/browser_with_test_window_test.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/web_contents_tester.h"
 #include "printing/print_job_constants.h"
+
+using content::WebContents;
+using content::WebContentsTester;
 
 namespace {
 
-const unsigned char blob1[] =
-    "12346102356120394751634516591348710478123649165419234519234512349134";
+base::RefCountedBytes* CreateTestData() {
+  const unsigned char blob1[] =
+      "12346102356120394751634516591348710478123649165419234519234512349134";
+  std::vector<unsigned char> preview_data(blob1, blob1 + sizeof(blob1));
+  return new base::RefCountedBytes(preview_data);
+}
 
-size_t GetConstrainedWindowCount(TabContentsWrapper* tab) {
+size_t GetConstrainedWindowCount(TabContents* tab) {
   return tab->constrained_window_tab_helper()->constrained_window_count();
 }
 
-class FocusTestTabContents : public TestTabContents {
- public:
-  FocusTestTabContents(content::BrowserContext* browser_context,
-                       content::SiteInstance* instance)
-      : TestTabContents(browser_context, instance), focus_called_(0) {
-      }
-
-  int focus_called() const { return focus_called_; }
-
-  virtual void Focus() OVERRIDE {
-    focus_called_++;
-  }
-
- private:
-  int focus_called_;
-};
-
 }  // namespace
 
-class PrintPreviewUIUnitTest : public PrintPreviewUnitTestBase {
+class PrintPreviewUIUnitTest : public BrowserWithTestWindowTest {
  public:
   PrintPreviewUIUnitTest() {}
   virtual ~PrintPreviewUIUnitTest() {}
 
  protected:
   virtual void SetUp() OVERRIDE {
-    PrintPreviewUnitTestBase::SetUp();
+    BrowserWithTestWindowTest::SetUp();
 
-    browser()->NewTab();
+    profile()->GetPrefs()->SetBoolean(prefs::kPrintPreviewDisabled, false);
+
+    chrome::NewTab(browser());
   }
 };
 
 // Create/Get a preview tab for initiator tab.
 TEST_F(PrintPreviewUIUnitTest, PrintPreviewData) {
-  TabContentsWrapper* initiator_tab =
-      browser()->GetSelectedTabContentsWrapper();
+  TabContents* initiator_tab = chrome::GetActiveTabContents(browser());
   ASSERT_TRUE(initiator_tab);
   EXPECT_EQ(0U, GetConstrainedWindowCount(initiator_tab));
 
@@ -70,8 +64,7 @@ TEST_F(PrintPreviewUIUnitTest, PrintPreviewData) {
   ASSERT_TRUE(controller);
 
   initiator_tab->print_view_manager()->PrintPreviewNow();
-  TabContentsWrapper* preview_tab =
-      controller->GetOrCreatePreviewTab(initiator_tab);
+  TabContents* preview_tab = controller->GetOrCreatePreviewTab(initiator_tab);
 
   EXPECT_NE(initiator_tab, preview_tab);
   EXPECT_EQ(1, browser()->tab_count());
@@ -81,14 +74,13 @@ TEST_F(PrintPreviewUIUnitTest, PrintPreviewData) {
       preview_tab->web_contents()->GetWebUI()->GetController());
   ASSERT_TRUE(preview_ui != NULL);
 
-  scoped_refptr<RefCountedBytes> data;
+  scoped_refptr<base::RefCountedBytes> data;
   preview_ui->GetPrintPreviewDataForIndex(
       printing::COMPLETE_PREVIEW_DOCUMENT_INDEX,
       &data);
   EXPECT_EQ(NULL, data.get());
 
-  std::vector<unsigned char> preview_data(blob1, blob1 + sizeof(blob1));
-  scoped_refptr<RefCountedBytes> dummy_data(new RefCountedBytes(preview_data));
+  scoped_refptr<base::RefCountedBytes> dummy_data = CreateTestData();
 
   preview_ui->SetPrintPreviewDataForIndex(
       printing::COMPLETE_PREVIEW_DOCUMENT_INDEX,
@@ -100,7 +92,7 @@ TEST_F(PrintPreviewUIUnitTest, PrintPreviewData) {
   EXPECT_EQ(dummy_data.get(), data.get());
 
   // This should not cause any memory leaks.
-  dummy_data = new RefCountedBytes();
+  dummy_data = new base::RefCountedBytes();
   preview_ui->SetPrintPreviewDataForIndex(printing::FIRST_PAGE_INDEX,
                                           dummy_data);
 
@@ -115,8 +107,7 @@ TEST_F(PrintPreviewUIUnitTest, PrintPreviewData) {
 
 // Set and get the individual draft pages.
 TEST_F(PrintPreviewUIUnitTest, PrintPreviewDraftPages) {
-  TabContentsWrapper* initiator_tab =
-      browser()->GetSelectedTabContentsWrapper();
+  TabContents* initiator_tab = chrome::GetActiveTabContents(browser());
   ASSERT_TRUE(initiator_tab);
 
   printing::PrintPreviewTabController* controller =
@@ -124,8 +115,7 @@ TEST_F(PrintPreviewUIUnitTest, PrintPreviewDraftPages) {
   ASSERT_TRUE(controller);
 
   initiator_tab->print_view_manager()->PrintPreviewNow();
-  TabContentsWrapper* preview_tab =
-      controller->GetOrCreatePreviewTab(initiator_tab);
+  TabContents* preview_tab = controller->GetOrCreatePreviewTab(initiator_tab);
 
   EXPECT_NE(initiator_tab, preview_tab);
   EXPECT_EQ(1, browser()->tab_count());
@@ -135,12 +125,11 @@ TEST_F(PrintPreviewUIUnitTest, PrintPreviewDraftPages) {
       preview_tab->web_contents()->GetWebUI()->GetController());
   ASSERT_TRUE(preview_ui != NULL);
 
-  scoped_refptr<RefCountedBytes> data;
+  scoped_refptr<base::RefCountedBytes> data;
   preview_ui->GetPrintPreviewDataForIndex(printing::FIRST_PAGE_INDEX, &data);
   EXPECT_EQ(NULL, data.get());
 
-  std::vector<unsigned char> preview_data(blob1, blob1 + sizeof(blob1));
-  scoped_refptr<RefCountedBytes> dummy_data(new RefCountedBytes(preview_data));
+  scoped_refptr<base::RefCountedBytes> dummy_data = CreateTestData();
 
   preview_ui->SetPrintPreviewDataForIndex(printing::FIRST_PAGE_INDEX,
                                           dummy_data.get());
@@ -176,8 +165,7 @@ TEST_F(PrintPreviewUIUnitTest, PrintPreviewDraftPages) {
 
 // Test the browser-side print preview cancellation functionality.
 TEST_F(PrintPreviewUIUnitTest, GetCurrentPrintPreviewStatus) {
-  TabContentsWrapper* initiator_tab =
-      browser()->GetSelectedTabContentsWrapper();
+  TabContents* initiator_tab = chrome::GetActiveTabContents(browser());
   ASSERT_TRUE(initiator_tab);
 
   printing::PrintPreviewTabController* controller =
@@ -185,8 +173,7 @@ TEST_F(PrintPreviewUIUnitTest, GetCurrentPrintPreviewStatus) {
   ASSERT_TRUE(controller);
 
   initiator_tab->print_view_manager()->PrintPreviewNow();
-  TabContentsWrapper* preview_tab =
-      controller->GetOrCreatePreviewTab(initiator_tab);
+  TabContents* preview_tab = controller->GetOrCreatePreviewTab(initiator_tab);
 
   EXPECT_NE(initiator_tab, preview_tab);
   EXPECT_EQ(1, browser()->tab_count());
@@ -198,12 +185,13 @@ TEST_F(PrintPreviewUIUnitTest, GetCurrentPrintPreviewStatus) {
 
   // Test with invalid |preview_ui_addr|.
   bool cancel = false;
-  preview_ui->GetCurrentPrintPreviewStatus("invalid", 0, &cancel);
+  const int32 kInvalidId = -5;
+  preview_ui->GetCurrentPrintPreviewStatus(kInvalidId, 0, &cancel);
   EXPECT_TRUE(cancel);
 
   const int kFirstRequestId = 1000;
   const int kSecondRequestId = 1001;
-  const std::string preview_ui_addr = preview_ui->GetPrintPreviewUIAddress();
+  const int32 preview_ui_addr = preview_ui->GetIDForPrintPreviewUI();
 
   // Test with kFirstRequestId.
   preview_ui->OnPrintPreviewRequest(kFirstRequestId);
@@ -232,30 +220,28 @@ TEST_F(PrintPreviewUIUnitTest, GetCurrentPrintPreviewStatus) {
 
 TEST_F(PrintPreviewUIUnitTest, InitiatorTabGetsFocusOnPrintPreviewTabClose) {
   EXPECT_EQ(1, browser()->tab_count());
-  FocusTestTabContents* initiator_contents =
-      new FocusTestTabContents(profile(), NULL);
-  browser()->AddWebContents(initiator_contents,
-                            NEW_FOREGROUND_TAB,
-                            gfx::Rect(),
-                            false);
-  TabContentsWrapper* initiator_tab =
-      TabContentsWrapper::GetCurrentWrapperForContents(initiator_contents);
+  WebContents* initiator_contents =
+      WebContentsTester::CreateTestWebContentsCountFocus(profile(), NULL);
+  WebContentsTester* initiator_tester =
+      WebContentsTester::For(initiator_contents);
+  chrome::AddWebContents(browser(), NULL, initiator_contents,
+                         NEW_FOREGROUND_TAB, gfx::Rect(), false);
+  TabContents* initiator_tab = TabContents::FromWebContents(initiator_contents);
   ASSERT_TRUE(initiator_tab);
   EXPECT_EQ(2, browser()->tab_count());
-  EXPECT_EQ(0, initiator_contents->focus_called());
+  EXPECT_EQ(0, initiator_tester->GetNumberOfFocusCalls());
 
   printing::PrintPreviewTabController* controller =
       printing::PrintPreviewTabController::GetInstance();
   ASSERT_TRUE(controller);
 
   initiator_tab->print_view_manager()->PrintPreviewNow();
-  TabContentsWrapper* preview_tab =
-      controller->GetOrCreatePreviewTab(initiator_tab);
+  TabContents* preview_tab = controller->GetOrCreatePreviewTab(initiator_tab);
 
   EXPECT_NE(initiator_tab, preview_tab);
   EXPECT_EQ(2, browser()->tab_count());
   EXPECT_EQ(1U, GetConstrainedWindowCount(initiator_tab));
-  EXPECT_EQ(0, initiator_contents->focus_called());
+  EXPECT_EQ(0, initiator_tester->GetNumberOfFocusCalls());
 
   PrintPreviewUI* preview_ui = static_cast<PrintPreviewUI*>(
       preview_tab->web_contents()->GetWebUI()->GetController());
@@ -265,5 +251,5 @@ TEST_F(PrintPreviewUIUnitTest, InitiatorTabGetsFocusOnPrintPreviewTabClose) {
 
   EXPECT_EQ(2, browser()->tab_count());
   EXPECT_EQ(0U, GetConstrainedWindowCount(initiator_tab));
-  EXPECT_EQ(1, initiator_contents->focus_called());
+  EXPECT_EQ(1, initiator_tester->GetNumberOfFocusCalls());
 }

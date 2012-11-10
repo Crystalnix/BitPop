@@ -15,8 +15,12 @@
 
 #include "../common/gles2_cmd_utils.h"
 #include "../common/scoped_ptr.h"
+#include "../client/ref_counted.h"
 #include "../client/gles2_cmd_helper.h"
+#include "../client/query_tracker.h"
 #include "../client/ring_buffer.h"
+#include "../client/share_group.h"
+#include "gles2_impl_export.h"
 
 #if !defined(NDEBUG) && !defined(__native_client__) && !defined(GLES2_CONFORMANCE_TESTS)  // NOLINT
   #if defined(GLES2_INLINE_OPTIMIZATION)
@@ -71,6 +75,8 @@
     GPU_CLIENT_VALIDATE_DESTINATION_INITALIZATION_ASSERT(ptr && \
         (ptr[0] == static_cast<type>(0) || ptr[0] == static_cast<type>(-1)));
 
+struct GLUniformDefinitionCHROMIUM;
+
 namespace gpu {
 
 class MappedMemoryManager;
@@ -80,23 +86,6 @@ class TransferBufferInterface;
 namespace gles2 {
 
 class ClientSideBufferHelper;
-class ProgramInfoManager;
-
-// Base class for IdHandlers
-class IdHandlerInterface {
- public:
-  IdHandlerInterface() { }
-  virtual ~IdHandlerInterface() { }
-
-  // Makes some ids at or above id_offset.
-  virtual void MakeIds(GLuint id_offset, GLsizei n, GLuint* ids) = 0;
-
-  // Frees some ids.
-  virtual bool FreeIds(GLsizei n, const GLuint* ids) = 0;
-
-  // Marks an id as used for glBind functions. id = 0 does nothing.
-  virtual bool MarkAsUsedForBind(GLuint id) = 0;
-};
 
 // This class emulates GLES2 over command buffers. It can be used by a client
 // program so that the program does not need deal with shared memory and command
@@ -104,37 +93,71 @@ class IdHandlerInterface {
 // be had by changing your code to use command buffers directly by using the
 // GLES2CmdHelper but that entails changing your code to use and deal with
 // shared memory and synchronization issues.
-class GLES2Implementation {
+class GLES2_IMPL_EXPORT GLES2Implementation {
  public:
-  // Stores client side cached GL state.
-  struct GLState {
-    GLState()
-        : max_combined_texture_image_units(0),
-          max_cube_map_texture_size(0),
-          max_fragment_uniform_vectors(0),
-          max_renderbuffer_size(0),
-          max_texture_image_units(0),
-          max_texture_size(0),
-          max_varying_vectors(0),
-          max_vertex_attribs(0),
-          max_vertex_texture_image_units(0),
-          max_vertex_uniform_vectors(0),
-          num_compressed_texture_formats(0),
-          num_shader_binary_formats(0) {
-    }
+  class ErrorMessageCallback {
+   public:
+    virtual ~ErrorMessageCallback() { }
+    virtual void OnErrorMessage(const char* msg, int id) = 0;
+  };
 
-    GLint max_combined_texture_image_units;
-    GLint max_cube_map_texture_size;
-    GLint max_fragment_uniform_vectors;
-    GLint max_renderbuffer_size;
-    GLint max_texture_image_units;
-    GLint max_texture_size;
-    GLint max_varying_vectors;
-    GLint max_vertex_attribs;
-    GLint max_vertex_texture_image_units;
-    GLint max_vertex_uniform_vectors;
-    GLint num_compressed_texture_formats;
-    GLint num_shader_binary_formats;
+  // Stores client side cached GL state.
+  struct GLCachedState {
+    struct IntState {
+      IntState()
+          : max_combined_texture_image_units(0),
+            max_cube_map_texture_size(0),
+            max_fragment_uniform_vectors(0),
+            max_renderbuffer_size(0),
+            max_texture_image_units(0),
+            max_texture_size(0),
+            max_varying_vectors(0),
+            max_vertex_attribs(0),
+            max_vertex_texture_image_units(0),
+            max_vertex_uniform_vectors(0),
+            num_compressed_texture_formats(0),
+            num_shader_binary_formats(0) {
+      }
+
+      GLint max_combined_texture_image_units;
+      GLint max_cube_map_texture_size;
+      GLint max_fragment_uniform_vectors;
+      GLint max_renderbuffer_size;
+      GLint max_texture_image_units;
+      GLint max_texture_size;
+      GLint max_varying_vectors;
+      GLint max_vertex_attribs;
+      GLint max_vertex_texture_image_units;
+      GLint max_vertex_uniform_vectors;
+      GLint num_compressed_texture_formats;
+      GLint num_shader_binary_formats;
+    };
+    struct EnableState {
+      EnableState()
+          : blend(false),
+            cull_face(false),
+            depth_test(false),
+            dither(false),
+            polygon_offset_fill(false),
+            sample_alpha_to_coverage(false),
+            sample_coverage(false),
+            scissor_test(false),
+            stencil_test(false) {
+      }
+
+      bool blend;
+      bool cull_face;
+      bool depth_test;
+      bool dither;
+      bool polygon_offset_fill;
+      bool sample_alpha_to_coverage;
+      bool sample_coverage;
+      bool scissor_test;
+      bool stencil_test;
+    };
+
+    IntState int_state;
+    EnableState enable_state;
   };
 
   // The maxiumum result size from simple GL get commands.
@@ -142,6 +165,9 @@ class GLES2Implementation {
 
   // used for testing only. If more things are reseved add them here.
   static const unsigned int kStartingOffset = kMaxSizeOfSimpleResult;
+
+  // Size in bytes to issue async flush for transfer buffer.
+  static const unsigned int kSizeToFlush = 256 * 1024;
 
   // The bucket used for results. Public for testing only.
   static const uint32 kResultBucketId = 1;
@@ -158,6 +184,7 @@ class GLES2Implementation {
 
   GLES2Implementation(
       GLES2CmdHelper* helper,
+      ShareGroup* share_group,
       TransferBufferInterface* transfer_buffer,
       bool share_resources,
       bool bind_generates_resource);
@@ -171,9 +198,10 @@ class GLES2Implementation {
 
   // The GLES2CmdHelper being used by this GLES2Implementation. You can use
   // this to issue cmds at a lower level for certain kinds of optimization.
-  GLES2CmdHelper* helper() const {
-    return helper_;
-  }
+  GLES2CmdHelper* helper() const;
+
+  // Gets client side generated errors.
+  GLenum GetClientSideGLError();
 
   // Include the auto-generated part of this class. We split this because
   // it means we can easily edit the non-auto generated parts right here in
@@ -195,23 +223,25 @@ class GLES2Implementation {
       GLuint program, GLuint index, GLsizei bufsize, GLsizei* length,
       GLint* size, GLenum* type, char* name);
 
-  GLuint MakeTextureId() {
-    GLuint id;
-    id_handlers_[id_namespaces::kTextures]->MakeIds(0, 1, &id);
-    return id;
-  }
-
-  void FreeTextureId(GLuint id) {
-    id_handlers_[id_namespaces::kTextures]->FreeIds(1, &id);
-  }
+  GLuint MakeTextureId();
+  void FreeTextureId(GLuint id);
 
   void SetSharedMemoryChunkSizeMultiple(unsigned int multiple);
 
   void FreeUnusedSharedMemory();
   void FreeEverything();
 
+  void SetErrorMessageCallback(ErrorMessageCallback* callback) {
+    error_message_callback_ = callback;
+  }
+
+  ShareGroup* share_group() const {
+    return share_group_.get();
+  }
+
  private:
   friend class ClientSideBufferHelper;
+  friend class GLES2ImplementationTest;
 
   // Used to track whether an extension is available
   enum ExtensionStatus {
@@ -342,7 +372,7 @@ class GLES2Implementation {
   GLenum GetGLError();
 
   // Sets our wrapper for the GLError.
-  void SetGLError(GLenum error, const char* msg);
+  void SetGLError(GLenum error, const char* function_name, const char* msg);
 
   // Returns the last error and clears it. Useful for debugging.
   const std::string& GetLastError() {
@@ -389,6 +419,16 @@ class GLES2Implementation {
   void DeleteTexturesHelper(GLsizei n, const GLuint* textures);
   bool DeleteProgramHelper(GLuint program);
   bool DeleteShaderHelper(GLuint shader);
+  void DeleteQueriesEXTHelper(GLsizei n, const GLuint* textures);
+
+  void DeleteBuffersStub(GLsizei n, const GLuint* buffers);
+  void DeleteFramebuffersStub(GLsizei n, const GLuint* framebuffers);
+  void DeleteRenderbuffersStub(GLsizei n, const GLuint* renderbuffers);
+  void DeleteTexturesStub(GLsizei n, const GLuint* textures);
+  void DeleteProgramStub(GLsizei n, const GLuint* programs);
+  void DeleteShaderStub(GLsizei n, const GLuint* shaders);
+  // TODO(gman): Remove this as queries are not shared.
+  void DeleteQueriesStub(GLsizei n, const GLuint* queries);
 
   void BufferDataHelper(
       GLenum target, GLsizeiptr size, const void* data, GLenum usage);
@@ -404,13 +444,13 @@ class GLES2Implementation {
   GLuint GetMaxValueInBufferCHROMIUMHelper(
       GLuint buffer_id, GLsizei count, GLenum type, GLuint offset);
 
-  bool CopyRectToBufferFlipped(
-      const void* pixels, GLsizei width, GLsizei height, GLenum format,
-      GLenum type, void* buffer);
+  // The pixels pointer should already account for unpack skip rows and skip
+  // pixels.
   void TexSubImage2DImpl(
       GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width,
-      GLsizei height, GLenum format, GLenum type, const void* pixels,
-      GLboolean internal, ScopedTransferBufferPtr* buffer);
+      GLsizei height, GLenum format, GLenum type, uint32 unpadded_row_size,
+      const void* pixels, uint32 pixels_padded_row_size, GLboolean internal,
+      ScopedTransferBufferPtr* buffer, uint32 buffer_padded_row_size);
 
   // Helpers for query functions.
   bool GetHelper(GLenum pname, GLint* params);
@@ -430,10 +470,21 @@ class GLES2Implementation {
 
   bool IsExtensionAvailable(const char* ext);
 
+  // Caches certain capabilties state. Return true if cached.
+  bool SetCapabilityState(GLenum cap, bool enabled);
+
+  IdHandlerInterface* GetIdHandler(int id_namespace) const;
+
+  void FinishHelper();
+
+  // Checks if the context is lost.
+  // NOTE: This is an expensive call and should only be called
+  // for error checking.
+  bool MustBeContextLost();
+
   GLES2Util util_;
   GLES2CmdHelper* helper_;
   TransferBufferInterface* transfer_buffer_;
-  scoped_ptr<IdHandlerInterface> id_handlers_[id_namespaces::kNumIdNamespaces];
   std::string last_error_;
 
   std::queue<int32> swap_buffers_tokens_;
@@ -441,7 +492,7 @@ class GLES2Implementation {
 
   ExtensionStatus angle_pack_reverse_row_order_status;
 
-  GLState gl_state_;
+  GLCachedState gl_state_;
 
   // pack alignment as last set by glPixelStorei
   GLint pack_alignment_;
@@ -451,6 +502,15 @@ class GLES2Implementation {
 
   // unpack yflip as last set by glPixelstorei
   bool unpack_flip_y_;
+
+  // unpack row length as last set by glPixelStorei
+  GLint unpack_row_length_;
+
+  // unpack skip rows as last set by glPixelStorei
+  GLint unpack_skip_rows_;
+
+  // unpack skip pixels as last set by glPixelStorei
+  GLint unpack_skip_pixels_;
 
   // pack reverse row order as last set by glPixelstorei
   bool pack_reverse_row_order_;
@@ -485,11 +545,6 @@ class GLES2Implementation {
   // Whether or not to print debugging info.
   bool debug_;
 
-  // Whether or not this context is sharing resources.
-  bool sharing_resources_;
-
-  bool bind_generates_resource_;
-
   // Used to check for single threaded access.
   int use_count_;
 
@@ -510,7 +565,14 @@ class GLES2Implementation {
 
   scoped_ptr<MappedMemoryManager> mapped_memory_;
 
-  scoped_ptr<ProgramInfoManager> program_info_manager_;
+  scoped_refptr<ShareGroup> share_group_;
+
+  scoped_ptr<QueryTracker> query_tracker_;
+  QueryTracker::Query* current_query_;
+
+  ErrorMessageCallback* error_message_callback_;
+
+  bool context_lost_;
 
   DISALLOW_COPY_AND_ASSIGN(GLES2Implementation);
 };

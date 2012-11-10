@@ -5,65 +5,63 @@
 #include "remoting/client/frame_consumer_proxy.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
+#include "ppapi/cpp/image_data.h"
 
 namespace remoting {
 
 FrameConsumerProxy::FrameConsumerProxy(
-    FrameConsumer* frame_consumer,
-    base::MessageLoopProxy* frame_consumer_message_loop)
-    : frame_consumer_(frame_consumer),
-      frame_consumer_message_loop_(frame_consumer_message_loop) {
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
+    : task_runner_(task_runner) {
+}
+
+void FrameConsumerProxy::ApplyBuffer(const SkISize& view_size,
+                                     const SkIRect& clip_area,
+                                     pp::ImageData* buffer,
+                                     const SkRegion& region) {
+  if (!task_runner_->BelongsToCurrentThread()) {
+    task_runner_->PostTask(FROM_HERE, base::Bind(
+        &FrameConsumerProxy::ApplyBuffer, this,
+        view_size, clip_area, buffer, region));
+    return;
+  }
+
+  if (frame_consumer_)
+    frame_consumer_->ApplyBuffer(view_size, clip_area, buffer, region);
+}
+
+void FrameConsumerProxy::ReturnBuffer(pp::ImageData* buffer) {
+  if (!task_runner_->BelongsToCurrentThread()) {
+    task_runner_->PostTask(FROM_HERE, base::Bind(
+        &FrameConsumerProxy::ReturnBuffer, this, buffer));
+    return;
+  }
+
+  if (frame_consumer_)
+    frame_consumer_->ReturnBuffer(buffer);
+}
+
+void FrameConsumerProxy::SetSourceSize(const SkISize& source_size,
+                                       const SkIPoint& source_dpi) {
+  if (!task_runner_->BelongsToCurrentThread()) {
+    task_runner_->PostTask(FROM_HERE, base::Bind(
+        &FrameConsumerProxy::SetSourceSize, this, source_size, source_dpi));
+    return;
+  }
+
+  if (frame_consumer_)
+    frame_consumer_->SetSourceSize(source_size, source_dpi);
+}
+
+void FrameConsumerProxy::Attach(
+    const base::WeakPtr<FrameConsumer>& frame_consumer) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(frame_consumer_ == NULL);
+  frame_consumer_ = frame_consumer;
 }
 
 FrameConsumerProxy::~FrameConsumerProxy() {
-}
-
-void FrameConsumerProxy::AllocateFrame(
-    media::VideoFrame::Format format,
-    const SkISize& size,
-    scoped_refptr<media::VideoFrame>* frame_out,
-    const base::Closure& done) {
-  if (!frame_consumer_message_loop_->BelongsToCurrentThread()) {
-    frame_consumer_message_loop_->PostTask(FROM_HERE, base::Bind(
-        &FrameConsumerProxy::AllocateFrame, this, format, size, frame_out,
-        done));
-    return;
-  }
-
-  if (frame_consumer_) {
-    frame_consumer_->AllocateFrame(format, size, frame_out, done);
-  }
-}
-
-void FrameConsumerProxy::ReleaseFrame(media::VideoFrame* frame) {
-  if (!frame_consumer_message_loop_->BelongsToCurrentThread()) {
-    frame_consumer_message_loop_->PostTask(FROM_HERE, base::Bind(
-        &FrameConsumerProxy::ReleaseFrame, this, make_scoped_refptr(frame)));
-    return;
-  }
-
-  if (frame_consumer_)
-    frame_consumer_->ReleaseFrame(frame);
-}
-
-void FrameConsumerProxy::OnPartialFrameOutput(media::VideoFrame* frame,
-                                              SkRegion* region,
-                                              const base::Closure& done) {
-  if (!frame_consumer_message_loop_->BelongsToCurrentThread()) {
-    frame_consumer_message_loop_->PostTask(FROM_HERE, base::Bind(
-        &FrameConsumerProxy::OnPartialFrameOutput, this,
-        make_scoped_refptr(frame), region, done));
-    return;
-  }
-
-  if (frame_consumer_)
-    frame_consumer_->OnPartialFrameOutput(frame, region, done);
-}
-
-void FrameConsumerProxy::Detach() {
-  DCHECK(frame_consumer_message_loop_->BelongsToCurrentThread());
-  frame_consumer_ = NULL;
 }
 
 }  // namespace remoting

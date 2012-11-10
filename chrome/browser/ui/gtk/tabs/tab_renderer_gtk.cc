@@ -10,7 +10,7 @@
 #include "base/debug/trace_event.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/extensions/extension_tab_helper.h"
+#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -19,18 +19,18 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/theme_resources_standard.h"
 #include "grit/ui_resources.h"
 #include "skia/ext/image_operations.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/animation/throb_animation.h"
 #include "ui/base/gtk/gtk_compat.h"
+#include "ui/base/gtk/gtk_screen_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia_paint.h"
@@ -96,8 +96,8 @@ const int kCloseButtonHorzFuzz = 5;
 // Gets the bounds of |widget| relative to |parent|.
 gfx::Rect GetWidgetBoundsRelativeToParent(GtkWidget* parent,
                                           GtkWidget* widget) {
-  gfx::Point parent_pos = gtk_util::GetWidgetScreenPosition(parent);
-  gfx::Point widget_pos = gtk_util::GetWidgetScreenPosition(widget);
+  gfx::Point parent_pos = ui::GetWidgetScreenPosition(parent);
+  gfx::Point widget_pos = ui::GetWidgetScreenPosition(widget);
 
   GtkAllocation allocation;
   gtk_widget_get_allocation(widget, &allocation);
@@ -325,8 +325,7 @@ void TabRendererGtk::UpdateData(WebContents* contents,
                                 bool app,
                                 bool loading_only) {
   DCHECK(contents);
-  TabContentsWrapper* wrapper =
-      TabContentsWrapper::GetCurrentWrapperForContents(contents);
+  TabContents* tab_contents = TabContents::FromWebContents(contents);
 
   if (!loading_only) {
     data_.title = contents->GetTitle();
@@ -334,12 +333,12 @@ void TabRendererGtk::UpdateData(WebContents* contents,
     data_.crashed = contents->IsCrashed();
 
     SkBitmap* app_icon =
-        TabContentsWrapper::GetCurrentWrapperForContents(contents)->
-            extension_tab_helper()->GetExtensionAppIcon();
+        tab_contents->extension_tab_helper()->GetExtensionAppIcon();
     if (app_icon) {
       data_.favicon = *app_icon;
     } else {
-      data_.favicon = wrapper->favicon_tab_helper()->GetFavicon();
+      data_.favicon =
+          tab_contents->favicon_tab_helper()->GetFavicon().AsBitmap();
     }
 
     data_.app = app;
@@ -374,13 +373,13 @@ void TabRendererGtk::UpdateData(WebContents* contents,
 
       GdkPixbuf* pixbuf;
       if (dest_w == src_w && dest_h == src_h) {
-        pixbuf = gfx::GdkPixbufFromSkBitmap(&data_.favicon);
+        pixbuf = gfx::GdkPixbufFromSkBitmap(data_.favicon);
       } else {
         SkBitmap resized_icon = skia::ImageOperations::Resize(
             data_.favicon,
             skia::ImageOperations::RESIZE_BETTER,
             dest_w, dest_h);
-        pixbuf = gfx::GdkPixbufFromSkBitmap(&resized_icon);
+        pixbuf = gfx::GdkPixbufFromSkBitmap(resized_icon);
       }
 
       data_.cairo_favicon.UsePixbuf(pixbuf);
@@ -403,7 +402,7 @@ void TabRendererGtk::UpdateData(WebContents* contents,
   // Loading state also involves whether we show the favicon, since that's where
   // we display the throbber.
   data_.loading = contents->IsLoading();
-  data_.show_icon = wrapper->favicon_tab_helper()->ShouldDisplayFavicon();
+  data_.show_icon = tab_contents->favicon_tab_helper()->ShouldDisplayFavicon();
 }
 
 void TabRendererGtk::UpdateFromModel() {
@@ -813,7 +812,7 @@ void TabRendererGtk::MoveCloseButtonWidget() {
 }
 
 void TabRendererGtk::PaintTab(GtkWidget* widget, GdkEventExpose* event) {
-  cairo_t* cr = gdk_cairo_create(GDK_DRAWABLE(widget->window));
+  cairo_t* cr = gdk_cairo_create(gtk_widget_get_window(widget));
   gdk_cairo_rectangle(cr, &event->area);
   cairo_clip(cr);
 
@@ -869,7 +868,7 @@ void TabRendererGtk::PaintIcon(GtkWidget* widget, cairo_t* cr) {
     to_display = theme_service_->GetImageNamed(IDR_SAD_FAVICON)->ToCairo();
   } else if (!data_.favicon.isNull()) {
     if (data_.is_default_favicon && theme_service_->UsingNativeTheme()) {
-      to_display = GtkThemeService::GetDefaultFavicon(true)->ToCairo();
+      to_display = GtkThemeService::GetDefaultFavicon(true).ToCairo();
     } else if (data_.cairo_favicon.valid()) {
       to_display = &data_.cairo_favicon;
     }
@@ -1017,9 +1016,6 @@ CustomDrawButton* TabRendererGtk::MakeCloseButton() {
   CustomDrawButton* button = new CustomDrawButton(IDR_TAB_CLOSE,
       IDR_TAB_CLOSE_P, IDR_TAB_CLOSE_H, IDR_TAB_CLOSE);
 
-  gtk_widget_set_tooltip_text(button->widget(),
-      l10n_util::GetStringUTF8(IDS_TOOLTIP_CLOSE_TAB).c_str());
-
   g_signal_connect(button->widget(), "clicked",
                    G_CALLBACK(OnCloseButtonClickedThunk), this);
   g_signal_connect(button->widget(), "button-release-event",
@@ -1113,15 +1109,18 @@ void TabRendererGtk::InitResources() {
 
   // Grab the pixel sizes of our masking images.
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  GdkPixbuf* tab_active_l = rb.GetNativeImageNamed(IDR_TAB_ACTIVE_LEFT);
+  GdkPixbuf* tab_active_l = rb.GetNativeImageNamed(
+      IDR_TAB_ACTIVE_LEFT).ToGdkPixbuf();
   tab_active_l_width_ = gdk_pixbuf_get_width(tab_active_l);
   tab_active_l_height_ = gdk_pixbuf_get_height(tab_active_l);
 
-  GdkPixbuf* tab_inactive_l = rb.GetNativeImageNamed(IDR_TAB_INACTIVE_LEFT);
+  GdkPixbuf* tab_inactive_l = rb.GetNativeImageNamed(
+      IDR_TAB_INACTIVE_LEFT).ToGdkPixbuf();
   tab_inactive_l_height_ = gdk_pixbuf_get_height(tab_inactive_l);
 
-  close_button_width_ = rb.GetBitmapNamed(IDR_TAB_CLOSE)->width();
-  close_button_height_ = rb.GetBitmapNamed(IDR_TAB_CLOSE)->height();
+  GdkPixbuf* tab_close = rb.GetNativeImageNamed(IDR_TAB_CLOSE).ToGdkPixbuf();
+  close_button_width_ = gdk_pixbuf_get_width(tab_close);
+  close_button_height_ = gdk_pixbuf_get_height(tab_close);
 
   const gfx::Font& base_font = rb.GetFont(ui::ResourceBundle::BaseFont);
   title_font_ = new gfx::Font(base_font.GetFontName(), kFontPixelSize);

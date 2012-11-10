@@ -6,6 +6,8 @@
 #define CHROME_BROWSER_UI_AUTO_LOGIN_INFO_BAR_DELEGATE_H_
 
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 class InfoBarTabHelper;
 class PrefService;
@@ -16,67 +18,67 @@ class NavigationController;
 }  // namespace content
 
 // This is the actual infobar displayed to prompt the user to auto-login.
-class AutoLoginInfoBarDelegate : public ConfirmInfoBarDelegate {
+class AutoLoginInfoBarDelegate : public ConfirmInfoBarDelegate,
+                                 public content::NotificationObserver {
  public:
-  AutoLoginInfoBarDelegate(InfoBarTabHelper* owner,
-                           content::NavigationController* navigation_controller,
-                           TokenService* token_service,
-                           PrefService* pref_service,
-                           const std::string& username,
-                           const std::string& args);
+  struct Params {
+    Params();
+    ~Params();
+
+    // "realm" string from x-auto-login (e.g. "com.google").
+    std::string realm;
+
+    // "account" string from x-auto-login.
+    std::string account;
+
+    // "args" string from x-auto-login to be passed to MergeSession. This string
+    // should be considered opaque and not be cracked open to look inside.
+    std::string args;
+
+    // Username to display in the infobar indicating user to be logged in as.
+    // This is initially fetched from sign-in on non-Android platforms. Note
+    // that on Android this field is not used.
+    std::string username;
+  };
+
+  AutoLoginInfoBarDelegate(InfoBarTabHelper* owner, const Params& params);
   virtual ~AutoLoginInfoBarDelegate();
 
- private:
-  // ConfirmInfoBarDelegate overrides.
+  // ConfirmInfoBarDelegate:
+  virtual void InfoBarDismissed() OVERRIDE;
   virtual gfx::Image* GetIcon() const OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;
+  virtual AutoLoginInfoBarDelegate* AsAutoLoginInfoBarDelegate() OVERRIDE;
   virtual string16 GetMessageText() const OVERRIDE;
   virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
 
+  // content::NotificationObserver overrides.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
+  // All the methods below are used by the Android implementation of the
+  // AutoLogin bar on the app side.
+  string16 GetMessageText(const std::string& username) const;
+
+  const std::string& realm() const { return params_.realm; }
+  const std::string& account() const { return params_.account; }
+  const std::string& args() const { return params_.args; }
+
+ private:
   void RecordHistogramAction(int action);
 
-  content::NavigationController* navigation_controller_;
-  TokenService* token_service_;
-  PrefService* pref_service_;
-  std::string username_;
-  std::string args_;
+  const Params params_;
+
+  // Whether any UI controls in the infobar were pressed or not.
   bool button_pressed_;
+
+  // For listening to the user signing out.
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(AutoLoginInfoBarDelegate);
-};
-
-// This is the actual infobar displayed to prompt the user to reverse
-// auto-login.
-class ReverseAutoLoginInfoBarDelegate : public ConfirmInfoBarDelegate {
- public:
-  ReverseAutoLoginInfoBarDelegate(
-      InfoBarTabHelper* owner,
-      content::NavigationController* navigation_controller,
-      PrefService* pref_service,
-      const std::string& continue_url);
-  virtual ~ReverseAutoLoginInfoBarDelegate();
-
- private:
-  // ConfirmInfoBarDelegate overrides.
-  virtual gfx::Image* GetIcon() const OVERRIDE;
-  virtual Type GetInfoBarType() const OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
-  virtual bool Accept() OVERRIDE;
-  virtual bool Cancel() OVERRIDE;
-
-  void RecordHistogramAction(int action);
-
-  content::NavigationController* navigation_controller_;
-  TokenService* token_service_;
-  PrefService* pref_service_;
-  const std::string username_;
-  const std::string continue_url_;
-  bool button_pressed_;
-
-  DISALLOW_COPY_AND_ASSIGN(ReverseAutoLoginInfoBarDelegate);
 };
 
 #endif  // CHROME_BROWSER_UI_AUTO_LOGIN_INFO_BAR_DELEGATE_H_

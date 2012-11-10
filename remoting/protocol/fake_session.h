@@ -40,6 +40,10 @@ class FakeSocket : public net::StreamSocket {
 
   const std::string& written_data() const { return written_data_; }
 
+  void set_write_limit(int write_limit) { write_limit_ = write_limit; }
+  void set_async_write(bool async_write) { async_write_ = async_write; }
+  void set_next_write_error(int error) { next_write_error_ = error; }
+  void set_next_read_error(int error) { next_read_error_ = error; }
   void AppendInputData(const std::vector<char>& data);
   void PairWith(FakeSocket* peer_socket);
   int input_pos() const { return input_pos_; }
@@ -59,7 +63,7 @@ class FakeSocket : public net::StreamSocket {
   virtual void Disconnect() OVERRIDE;
   virtual bool IsConnected() const OVERRIDE;
   virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual int GetPeerAddress(net::AddressList* address) const OVERRIDE;
+  virtual int GetPeerAddress(net::IPEndPoint* address) const OVERRIDE;
   virtual int GetLocalAddress(net::IPEndPoint* address) const OVERRIDE;
   virtual const net::BoundNetLog& NetLog() const OVERRIDE;
   virtual void SetSubresourceSpeculation() OVERRIDE;
@@ -68,8 +72,21 @@ class FakeSocket : public net::StreamSocket {
   virtual bool UsingTCPFastOpen() const OVERRIDE;
   virtual int64 NumBytesRead() const OVERRIDE;
   virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
+  virtual bool WasNpnNegotiated() const OVERRIDE;
+  virtual net::NextProto GetNegotiatedProtocol() const OVERRIDE;
+  virtual bool GetSSLInfo(net::SSLInfo* ssl_info) OVERRIDE;
 
  private:
+  void DoAsyncWrite(scoped_refptr<net::IOBuffer> buf, int buf_len,
+                    const net::CompletionCallback& callback);
+  void DoWrite(net::IOBuffer* buf, int buf_len);
+
+  bool async_write_;
+  bool write_pending_;
+  int write_limit_;
+  int next_write_error_;
+
+  int next_read_error_;
   bool read_pending_;
   scoped_refptr<net::IOBuffer> read_buffer_;
   int read_buffer_size_;
@@ -134,13 +151,13 @@ class FakeSession : public Session {
   FakeSession();
   virtual ~FakeSession();
 
-  const StateChangeCallback& state_change_callback() { return callback_; }
+  EventHandler* event_handler() { return event_handler_; }
 
   void set_message_loop(MessageLoop* message_loop) {
     message_loop_ = message_loop;
   }
 
-  void set_error(Session::Error error) { error_ = error; }
+  void set_error(ErrorCode error) { error_ = error; }
 
   bool is_closed() const { return closed_; }
 
@@ -148,13 +165,9 @@ class FakeSession : public Session {
   FakeUdpSocket* GetDatagramChannel(const std::string& name);
 
   // Session implementation.
-  virtual void SetStateChangeCallback(
-      const StateChangeCallback& callback) OVERRIDE;
+  virtual void SetEventHandler(EventHandler* event_handler) OVERRIDE;
 
-  virtual void SetRouteChangeCallback(
-      const RouteChangeCallback& callback) OVERRIDE;
-
-  virtual Session::Error error() OVERRIDE;
+  virtual ErrorCode error() OVERRIDE;
 
   virtual void CreateStreamChannel(
       const std::string& name, const StreamChannelCallback& callback) OVERRIDE;
@@ -172,7 +185,7 @@ class FakeSession : public Session {
   virtual void Close() OVERRIDE;
 
  public:
-  StateChangeCallback callback_;
+  EventHandler* event_handler_;
   scoped_ptr<const CandidateSessionConfig> candidate_config_;
   SessionConfig config_;
   MessageLoop* message_loop_;
@@ -182,7 +195,7 @@ class FakeSession : public Session {
 
   std::string jid_;
 
-  Session::Error error_;
+  ErrorCode error_;
   bool closed_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeSession);

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -19,24 +19,20 @@ namespace {
 class SkippablePickle : public Pickle {
  public:
   SkippablePickle(const void* data, size_t data_len);
-  bool SkipString16(void** iter);
+  bool SkipString16(PickleIterator* iter);
 };
 
 SkippablePickle::SkippablePickle(const void* data, size_t data_len)
     : Pickle(reinterpret_cast<const char*>(data), data_len) {
 }
 
-bool SkippablePickle::SkipString16(void** iter) {
+bool SkippablePickle::SkipString16(PickleIterator* iter) {
   DCHECK(iter);
 
   int len;
   if (!ReadLength(iter, &len))
     return false;
-  if (!IteratorHasRoomFor(*iter, len * sizeof(char16)))
-    return false;
-
-  UpdateIter(iter, len * sizeof(char16));
-  return true;
+  return iter->SkipBytes(len * sizeof(char16));
 }
 
 }  // namespace
@@ -45,18 +41,18 @@ void ReadCustomDataTypes(const void* data,
                          size_t data_length,
                          std::vector<string16>* types) {
   SkippablePickle pickle(data, data_length);
-  void* iter = NULL;
+  PickleIterator iter(pickle);
 
-  size_t size = 0;
-  if (!pickle.ReadSize(&iter, &size))
+  uint64 size = 0;
+  if (!pickle.ReadUInt64(&iter, &size))
     return;
 
   // Keep track of the original elements in the types vector. On failure, we
   // truncate the vector to the original size since we want to ignore corrupt
   // custom data pickles.
-  size_t original_size = types->size();
+  uint64 original_size = types->size();
 
-  for (size_t i = 0; i < size; ++i) {
+  for (uint64 i = 0; i < size; ++i) {
     types->push_back(string16());
     if (!pickle.ReadString16(&iter, &types->back()) ||
         !pickle.SkipString16(&iter)) {
@@ -71,13 +67,13 @@ void ReadCustomDataForType(const void* data,
                            const string16& type,
                            string16* result) {
   SkippablePickle pickle(data, data_length);
-  void* iter = NULL;
+  PickleIterator iter(pickle);
 
-  size_t size = 0;
-  if (!pickle.ReadSize(&iter, &size))
+  uint64 size = 0;
+  if (!pickle.ReadUInt64(&iter, &size))
     return;
 
-  for (size_t i = 0; i < size; ++i) {
+  for (uint64 i = 0; i < size; ++i) {
     string16 deserialized_type;
     if (!pickle.ReadString16(&iter, &deserialized_type))
       return;
@@ -94,13 +90,13 @@ void ReadCustomDataIntoMap(const void* data,
                            size_t data_length,
                            std::map<string16, string16>* result) {
   Pickle pickle(reinterpret_cast<const char*>(data), data_length);
-  void* iter = NULL;
+  PickleIterator iter(pickle);
 
-  size_t size = 0;
-  if (!pickle.ReadSize(&iter, &size))
+  uint64 size = 0;
+  if (!pickle.ReadUInt64(&iter, &size))
     return;
 
-  for (size_t i = 0; i < size; ++i) {
+  for (uint64 i = 0; i < size; ++i) {
     string16 type;
     if (!pickle.ReadString16(&iter, &type)) {
       // Data is corrupt, return an empty map.
@@ -119,7 +115,7 @@ void ReadCustomDataIntoMap(const void* data,
 
 void WriteCustomDataToPickle(const std::map<string16, string16>& data,
                              Pickle* pickle) {
-  pickle->WriteSize(data.size());
+  pickle->WriteUInt64(data.size());
   for (std::map<string16, string16>::const_iterator it = data.begin();
        it != data.end();
        ++it) {

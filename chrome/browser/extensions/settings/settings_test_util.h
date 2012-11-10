@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_EXTENSIONS_SETTINGS_SETTINGS_TEST_UTIL_H_
 #define CHROME_BROWSER_EXTENSIONS_SETTINGS_SETTINGS_TEST_UTIL_H_
-#pragma once
 
 #include <set>
 #include <string>
@@ -13,7 +12,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/extension_event_router.h"
+#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/settings/settings_namespace.h"
 #include "chrome/browser/extensions/settings/settings_storage_factory.h"
@@ -21,23 +20,22 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/testing_profile.h"
 
+class ValueStore;
 
 namespace extensions {
 
 class SettingsFrontend;
-class SettingsStorage;
-
 // Utilities for extension settings API tests.
 namespace settings_test_util {
 
 // Synchronously gets the storage area for an extension from |frontend|.
-SettingsStorage* GetStorage(
+ValueStore* GetStorage(
     const std::string& extension_id,
     settings_namespace::Namespace setting_namespace,
     SettingsFrontend* frontend);
 
 // Synchronously gets the SYNC storage for an extension from |frontend|.
-SettingsStorage* GetStorage(
+ValueStore* GetStorage(
     const std::string& extension_id,
     SettingsFrontend* frontend);
 
@@ -65,7 +63,7 @@ class MockExtensionService : public TestExtensionService {
   std::map<std::string, scoped_refptr<Extension> > extensions_;
 };
 
-// A Profile which returns ExtensionService and ExtensionEventRouters with
+// A Profile which returns ExtensionService and EventRouters with
 // enough functionality for the tests.
 class MockProfile : public TestingProfile {
  public:
@@ -77,11 +75,11 @@ class MockProfile : public TestingProfile {
   MockExtensionService* GetMockExtensionService();
 
   virtual ExtensionService* GetExtensionService() OVERRIDE;
-  virtual ExtensionEventRouter* GetExtensionEventRouter() OVERRIDE;
+  virtual EventRouter* GetExtensionEventRouter() OVERRIDE;
 
  private:
   MockExtensionService extension_service_;
-  scoped_ptr<ExtensionEventRouter> event_router_;
+  scoped_ptr<EventRouter> event_router_;
 };
 
 // SettingsStorageFactory which acts as a wrapper for other factories.
@@ -96,7 +94,7 @@ class ScopedSettingsStorageFactory : public SettingsStorageFactory {
   void Reset(const scoped_refptr<SettingsStorageFactory>& delegate);
 
   // SettingsStorageFactory implementation.
-  virtual SettingsStorage* Create(
+  virtual ValueStore* Create(
       const FilePath& base_path, const std::string& extension_id) OVERRIDE;
 
  private:

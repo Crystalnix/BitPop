@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_RENDERER_HOST_MEDIA_AUDIO_INPUT_SYNC_WRITER_H_
 #define CONTENT_BROWSER_RENDERER_HOST_MEDIA_AUDIO_INPUT_SYNC_WRITER_H_
-#pragma once
 
 #include "base/file_descriptor_posix.h"
 #include "base/process.h"
@@ -15,6 +14,7 @@ namespace base {
 class SharedMemory;
 }
 
+namespace media {
 // A AudioInputController::SyncWriter implementation using SyncSocket. This
 // is used by AudioInputController to provide a low latency data source for
 // transmitting audio packets between the browser process and the renderer
@@ -27,7 +27,7 @@ class AudioInputSyncWriter : public media::AudioInputController::SyncWriter {
 
   // media::AudioOutputController::SyncWriter implementation.
   virtual void UpdateRecordedBytes(uint32 bytes) OVERRIDE;
-  virtual uint32 Write(const void* data, uint32 size) OVERRIDE;
+  virtual uint32 Write(const void* data, uint32 size, double volume) OVERRIDE;
   virtual void Close() OVERRIDE;
 
   bool Init();
@@ -41,14 +41,16 @@ class AudioInputSyncWriter : public media::AudioInputController::SyncWriter {
  private:
   base::SharedMemory* shared_memory_;
 
-  // A pair of SyncSocket for transmitting audio data.
-  scoped_ptr<base::SyncSocket> socket_;
+  // Socket for transmitting audio data.
+  scoped_ptr<base::CancelableSyncSocket> socket_;
 
-  // SyncSocket to be used by the renderer. The reference is released after
+  // Socket to be used by the renderer. The reference is released after
   // PrepareForeignSocketHandle() is called and ran successfully.
-  scoped_ptr<base::SyncSocket> foreign_socket_;
+  scoped_ptr<base::CancelableSyncSocket> foreign_socket_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(AudioInputSyncWriter);
 };
+
+}  // namespace media
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_MEDIA_AUDIO_INPUT_SYNC_WRITER_H_

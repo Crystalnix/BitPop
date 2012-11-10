@@ -2,7 +2,7 @@ Name: Khronos header files
 Short Name: khronos_headers
 URL: http://www.khronos.org/registry
 Version: unknown
-Date: 2011-11-01
+Date: 2012-02-01
 License: MIT/X11 (BSD like) for {EGL,KHR}/*, SGI Free Software License B for GLES2/*
 Security Critical: no
 
@@ -18,3 +18,11 @@ GLES2/gl2.h
  - Added GL_CONTEXT_LOST constant.
 GLES2/gl2ext.h
  - Added Chromium and Angle extensions.
+ - Added ANGLE_instanced_arrays
+ - Added GL_EXT_framebuffer_multisample
+ - Added GL_CHROMIUM_command_buffer_query
+ - Added GL_CHROMIUM_copy_texture
+ - Added GL_CHROMIUM_bind_uniform_location
+ - Added GL_CHROMIUM_get_error_query
+EGL/eglplatform.h
+ - Added EGLNative*Type for Mac.

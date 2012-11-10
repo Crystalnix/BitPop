@@ -6,12 +6,12 @@
 
 #include "base/bind.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/ui/browser_dialogs.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_dialogs.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog_delegate.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/browser/tab_contents/test_tab_contents.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -21,10 +21,10 @@ class MockTabModalConfirmDialogDelegate : public TabModalConfirmDialogDelegate {
       : TabModalConfirmDialogDelegate(web_contents) {}
 
   virtual string16 GetTitle() OVERRIDE {
-    return ASCIIToUTF16("");
+    return string16();
   }
   virtual string16 GetMessage() OVERRIDE {
-    return ASCIIToUTF16("");
+    return string16();
   }
 
   MOCK_METHOD0(OnAccepted, void());
@@ -40,14 +40,14 @@ TabModalConfirmDialogTest::TabModalConfirmDialogTest()
 
 void TabModalConfirmDialogTest::SetUpOnMainThread() {
   delegate_ = new MockTabModalConfirmDialogDelegate(
-      browser()->GetSelectedWebContents());
+      chrome::GetActiveWebContents(browser()));
   dialog_ = CreateTestDialog(delegate_,
-                             browser()->GetSelectedTabContentsWrapper());
-  ui_test_utils::RunAllPendingInMessageLoop();
+                             chrome::GetActiveTabContents(browser()));
+  content::RunAllPendingInMessageLoop();
 }
 
 void TabModalConfirmDialogTest::CleanUpOnMainThread() {
-  ui_test_utils::RunAllPendingInMessageLoop();
+  content::RunAllPendingInMessageLoop();
   ::testing::Mock::VerifyAndClearExpectations(delegate_);
 }
 
@@ -55,8 +55,8 @@ void TabModalConfirmDialogTest::CleanUpOnMainThread() {
 // a separate file.
 #if !defined(OS_MACOSX)
 TabModalConfirmDialog* TabModalConfirmDialogTest::CreateTestDialog(
-    TabModalConfirmDialogDelegate* delegate, TabContentsWrapper* wrapper) {
-  return new TabModalConfirmDialog(delegate, wrapper);
+    TabModalConfirmDialogDelegate* delegate, TabContents* tab_contents) {
+  return new TabModalConfirmDialog(delegate, tab_contents);
 }
 
 void TabModalConfirmDialogTest::CloseDialog(bool accept) {
@@ -65,14 +65,7 @@ void TabModalConfirmDialogTest::CloseDialog(bool accept) {
     dialog_->OnAccept(NULL);
   else
     dialog_->OnCancel(NULL);
-#elif defined(OS_CHROMEOS) || defined(USE_AURA)
-  // |dialog_| deletes itself in |OnDialogClosed()|, so we need to save its
-  // ConstrainedHTMLUIDelegate before that.
-  ConstrainedHtmlUIDelegate* constrained_html_ui_delegate =
-      dialog_->constrained_html_ui_delegate();
-  dialog_->OnDialogClosed(accept ? "true" : "false");
-  constrained_html_ui_delegate->OnDialogCloseFromWebUI();
-#elif defined(OS_WIN)
+#else
   if (accept)
     dialog_->GetDialogClientView()->AcceptWindow();
   else
@@ -99,6 +92,6 @@ IN_PROC_BROWSER_TEST_F(TabModalConfirmDialogTest, CancelSelf) {
 IN_PROC_BROWSER_TEST_F(TabModalConfirmDialogTest, Quit) {
   EXPECT_CALL(*delegate_, OnCanceled());
   MessageLoopForUI::current()->PostTask(FROM_HERE,
-                                        base::Bind(&BrowserList::AttemptExit));
-  ui_test_utils::RunMessageLoop();
+                                        base::Bind(&browser::AttemptExit));
+  content::RunMessageLoop();
 }

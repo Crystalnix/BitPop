@@ -19,6 +19,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/installer/util/auto_launch_util.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/shell_util.h"
 #include "content/public/browser/browser_thread.h"
@@ -149,8 +150,8 @@ void CreateChromeDesktopShortcutForProfile(
       icon_path.empty() ? chrome_exe.value() : icon_path.value(),
       icon_path.empty() ? dist->GetIconIndex() : 0,
       ShellUtil::CURRENT_USER,
-      false,  // Use alternate text.
-      create);  // Create if it doesn't already exist.
+      create ? ShellUtil::SHORTCUT_CREATE_ALWAYS :
+               ShellUtil::SHORTCUT_NO_OPTIONS);
 }
 
 // Renames an existing Chrome desktop profile shortcut. Must be called on the
@@ -202,7 +203,17 @@ void UpdateChromeDesktopShortcutForProfile(
       description,
       icon_path.empty() ? chrome_exe.value() : icon_path.value(),
       icon_path.empty() ? dist->GetIconIndex() : 0,
-      false);
+      ShellUtil::SHORTCUT_NO_OPTIONS);
+}
+
+void DeleteAutoLaunchValueForProfile(
+    const FilePath& profile_path) {
+  if (auto_launch_util::AutoStartRequested(profile_path.BaseName().value(),
+                                           true,  // Window requested.
+                                           FilePath())) {
+    auto_launch_util::DisableForegroundStartAtLogin(
+        profile_path.BaseName().value());
+  }
 }
 
 }  // namespace
@@ -315,6 +326,10 @@ void ProfileShortcutManagerWin::OnProfileWillBeRemoved(
 void ProfileShortcutManagerWin::OnProfileWasRemoved(
     const FilePath& profile_path,
     const string16& profile_name) {
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&DeleteAutoLaunchValueForProfile, profile_path));
+
   // If there is one profile left, we want to remove the badge and name from it.
   ProfileInfoCache& cache =
       g_browser_process->profile_manager()->GetProfileInfoCache();

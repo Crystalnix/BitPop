@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_ACCESSIBILITY_ACCESSIBILITY_EVENTS_H_
 #define CHROME_BROWSER_ACCESSIBILITY_ACCESSIBILITY_EVENTS_H_
-#pragma once
 
 #include <string>
 #include "base/compiler_specific.h"
@@ -312,6 +311,25 @@ class AccessibilityMenuItemInfo : public AccessibilityControlInfo {
   // The 0-based index of the current item and the number of total items.
   int item_index_;
   int item_count_;
+};
+
+// Accessibility information about a slider passed to onControlFocused
+// and onControlAction event listeners.
+class AccessibilitySliderInfo : public AccessibilityControlInfo {
+ public:
+  AccessibilitySliderInfo(Profile* profile,
+                          const std::string& name,
+                          const std::string& context,
+                          const std::string& value);
+
+  virtual const char* type() const OVERRIDE;
+
+  virtual void SerializeToDict(base::DictionaryValue* dict) const OVERRIDE;
+
+  const std::string& value() const { return value_; }
+
+ private:
+  std::string value_;
 };
 
 #endif  // CHROME_BROWSER_ACCESSIBILITY_ACCESSIBILITY_EVENTS_H_

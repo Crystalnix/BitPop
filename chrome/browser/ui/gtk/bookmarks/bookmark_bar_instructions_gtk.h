@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_GTK_BOOKMARKS_BOOKMARK_BAR_INSTRUCTIONS_GTK_H_
 #define CHROME_BROWSER_UI_GTK_BOOKMARKS_BOOKMARK_BAR_INSTRUCTIONS_GTK_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -16,19 +15,14 @@ typedef struct _GtkWidget GtkWidget;
 class GtkThemeService;
 class Profile;
 
+namespace chrome {
+class BookmarkBarInstructionsDelegate;
+}
+
 class BookmarkBarInstructionsGtk : public content::NotificationObserver {
  public:
-  // The delegate is notified once the user clicks on the link to import
-  // bookmarks.
-  class Delegate {
-   public:
-    virtual void ShowImportDialog() = 0;
-
-   protected:
-    virtual ~Delegate() {}
-  };
-
-  BookmarkBarInstructionsGtk(Delegate* delegate, Profile* profile);
+  BookmarkBarInstructionsGtk(chrome::BookmarkBarInstructionsDelegate* delegate,
+                             Profile* profile);
 
   // Get the native widget.
   GtkWidget* widget() const { return instructions_hbox_; }
@@ -44,7 +38,7 @@ class BookmarkBarInstructionsGtk : public content::NotificationObserver {
   // Sets the correct color for |instructions_label_| and |instructions_link_|.
   void UpdateColors();
 
-  Delegate* delegate_;
+  chrome::BookmarkBarInstructionsDelegate* delegate_;
 
   Profile* profile_;
 

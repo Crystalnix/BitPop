@@ -4,11 +4,11 @@
 
 #include "content/browser/worker_host/worker_message_filter.h"
 
-#include "content/browser/resource_context.h"
 #include "content/browser/worker_host/message_port_service.h"
 #include "content/browser/worker_host/worker_service_impl.h"
 #include "content/common/view_messages.h"
 #include "content/common/worker_messages.h"
+#include "content/public/browser/resource_context.h"
 
 using content::BrowserMessageFilter;
 using content::BrowserThread;
@@ -16,7 +16,7 @@ using content::WorkerServiceImpl;
 
 WorkerMessageFilter::WorkerMessageFilter(
     int render_process_id,
-    const content::ResourceContext* resource_context,
+    content::ResourceContext* resource_context,
     const NextRoutingIDCallback& callback)
     : render_process_id_(render_process_id),
       resource_context_(resource_context),
@@ -81,7 +81,7 @@ void WorkerMessageFilter::OnCreateWorker(
   *route_id = params.route_id != MSG_ROUTING_NONE ?
       params.route_id : next_routing_id_.Run();
   WorkerServiceImpl::GetInstance()->CreateWorker(
-      params, *route_id, this, *resource_context_);
+      params, *route_id, this, resource_context_);
 }
 
 void WorkerMessageFilter::OnLookupSharedWorker(

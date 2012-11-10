@@ -4,10 +4,10 @@
 
 #ifndef CHROME_BROWSER_POLICY_CLOUD_POLICY_CONTROLLER_H_
 #define CHROME_BROWSER_POLICY_CLOUD_POLICY_CONTROLLER_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time.h"
 #include "chrome/browser/policy/cloud_policy_constants.h"
 #include "chrome/browser/policy/cloud_policy_data_store.h"
 
@@ -47,8 +47,11 @@ class CloudPolicyController : public CloudPolicyDataStore::Observer {
   void Reset();
 
   // Attempts to fetch policies again, if possible. The cache is notified that
-  // a fetch was attempted.
-  void RefreshPolicies();
+  // a fetch was attempted. If there is no DMToken yet and no material to fetch
+  // it, the cache is immediately notified that a fetch was attempted unless
+  // |wait_for_auth_token| is true. In that case, an asynchronous auth token
+  // fetch should be in progress that will eventually make the controller retry.
+  void RefreshPolicies(bool wait_for_auth_token);
 
   // Policy request response handler.
   void OnPolicyFetchCompleted(
@@ -117,7 +120,13 @@ class CloudPolicyController : public CloudPolicyDataStore::Observer {
   void SetState(ControllerState new_state);
 
   // Computes the policy refresh delay to use.
-  int64 GetRefreshDelay();
+  base::TimeDelta GetRefreshDelay();
+
+  // Schedules a DoWork() invocation |delay| time units later.
+  void ScheduleDelayedWorkTask(const base::TimeDelta& delay);
+
+  // Gets the last refresh time, defaulting to |now| if there is none.
+  base::Time GetLastRefreshTime(const base::Time& now);
 
   DeviceManagementService* service_;
   CloudPolicyCacheBase* cache_;

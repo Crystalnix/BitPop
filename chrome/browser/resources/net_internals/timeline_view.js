@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,8 @@
 var TimelineView = (function() {
   'use strict';
 
-  // We inherit from ResizableVerticalSplitView.
-  var superClass = ResizableVerticalSplitView;
+  // We inherit from HorizontalSplitView.
+  var superClass = HorizontalSplitView;
 
   /**
    * @constructor
@@ -26,12 +26,13 @@ var TimelineView = (function() {
         TimelineView.SCROLLBAR_INNER_DIV_ID);
 
     // Call superclass's constructor.
-    superClass.call(this,
-                    new DivView(TimelineView.SELECTION_DIV_ID),
-                    this.graphView_,
-                    new DivView(TimelineView.VERTICAL_SPLITTER_ID));
 
-    this.setLeftSplit(250);
+    var selectionView = new DivView(TimelineView.SELECTION_DIV_ID);
+    superClass.call(this, selectionView, this.graphView_);
+
+    this.selectionDivFullWidth_ = selectionView.getWidth();
+    $(TimelineView.SELECTION_TOGGLE_ID).onclick =
+        this.toggleSelectionDiv_.bind(this);
 
     // Interval id returned by window.setInterval for update timer.
     this.updateIntervalId_ = null;
@@ -50,7 +51,7 @@ var TimelineView = (function() {
     // them on to each DataSource.  We initialize the graph range to initially
     // include all events, but after that, we only update it to be the current
     // time on a timer.
-    g_browser.sourceTracker.addLogEntryObserver(this);
+    EventsTracker.getInstance().addLogEntryObserver(this);
     this.graphRangeInitialized_ = false;
   }
 
@@ -60,8 +61,9 @@ var TimelineView = (function() {
   // IDs for special HTML elements in timeline_view.html
   TimelineView.GRAPH_DIV_ID = 'timeline-view-graph-div';
   TimelineView.GRAPH_CANVAS_ID = 'timeline-view-graph-canvas';
-  TimelineView.VERTICAL_SPLITTER_ID = 'timeline-view-vertical-splitter';
   TimelineView.SELECTION_DIV_ID = 'timeline-view-selection-div';
+  TimelineView.SELECTION_TOGGLE_ID = 'timeline-view-selection-toggle';
+  TimelineView.SELECTION_UL_ID = 'timeline-view-selection-ul';
   TimelineView.SCROLLBAR_DIV_ID = 'timeline-view-scrollbar-div';
   TimelineView.SCROLLBAR_INNER_DIV_ID = 'timeline-view-scrollbar-inner-div';
 
@@ -148,7 +150,10 @@ var TimelineView = (function() {
      */
     updateDataSeriesVisibility_: function(dataSeries, listItem, checkBox) {
       dataSeries.show(checkBox.checked);
-      changeClassName(listItem, TimelineView.HIDDEN_CLASS, !checkBox.checked);
+      if (checkBox.checked)
+        listItem.classList.remove(TimelineView.HIDDEN_CLASS);
+      else
+        listItem.classList.add(TimelineView.HIDDEN_CLASS);
     },
 
     dataSeriesClicked_: function(dataSeries, listItem, checkBox) {
@@ -168,7 +173,7 @@ var TimelineView = (function() {
 
       // Make sure |listItem| is visible, and then use its color for the
       // DataSource.
-      changeClassName(listItem, TimelineView.HIDDEN_CLASS, false);
+      listItem.classList.remove(TimelineView.HIDDEN_CLASS);
       dataSeries.setColor(getComputedStyle(listItem).color);
 
       this.updateDataSeriesVisibility_(dataSeries, listItem, checkBox);
@@ -185,37 +190,39 @@ var TimelineView = (function() {
       this.dataSeries_ = [];
 
       this.addDataSeries_(new SourceCountDataSeries(
-                              LogSourceType.SOCKET,
-                              LogEventType.SOCKET_ALIVE),
+                              EventSourceType.SOCKET,
+                              EventType.SOCKET_ALIVE),
                           TimelineView.OPEN_SOCKETS_ID);
 
       this.addDataSeries_(new SocketsInUseDataSeries(),
                           TimelineView.IN_USE_SOCKETS_ID);
 
       this.addDataSeries_(new SourceCountDataSeries(
-                              LogSourceType.URL_REQUEST,
-                              LogEventType.REQUEST_ALIVE),
+                              EventSourceType.URL_REQUEST,
+                              EventType.REQUEST_ALIVE),
                           TimelineView.URL_REQUESTS_ID);
 
       this.addDataSeries_(new SourceCountDataSeries(
-                              LogSourceType.HOST_RESOLVER_IMPL_REQUEST,
-                              LogEventType.HOST_RESOLVER_IMPL_REQUEST),
+                              EventSourceType.HOST_RESOLVER_IMPL_REQUEST,
+                              EventType.HOST_RESOLVER_IMPL_REQUEST),
                           TimelineView.DNS_REQUESTS_ID);
 
       this.addDataSeries_(new NetworkTransferRateDataSeries(
-                              LogEventType.SOCKET_BYTES_RECEIVED,
-                              LogEventType.UDP_BYTES_RECEIVED),
+                              EventType.SOCKET_BYTES_RECEIVED,
+                              EventType.UDP_BYTES_RECEIVED),
                           TimelineView.BYTES_RECEIVED_ID);
 
       this.addDataSeries_(new NetworkTransferRateDataSeries(
-                              LogEventType.SOCKET_BYTES_SENT,
-                              LogEventType.UDP_BYTES_SENT),
+                              EventType.SOCKET_BYTES_SENT,
+                              EventType.UDP_BYTES_SENT),
                           TimelineView.BYTES_SENT_ID);
 
-      this.addDataSeries_(new DiskCacheTransferRateDataSeries(),
+      this.addDataSeries_(new DiskCacheTransferRateDataSeries(
+                              EventType.ENTRY_READ_DATA),
                           TimelineView.DISK_CACHE_BYTES_READ_ID);
 
-      this.addDataSeries_(new DiskCacheTransferRateDataSeries(),
+      this.addDataSeries_(new DiskCacheTransferRateDataSeries(
+                              EventType.ENTRY_WRITE_DATA),
                           TimelineView.DISK_CACHE_BYTES_WRITTEN_ID);
 
       this.graphView_.setDataSeries(this.dataSeries_);
@@ -229,8 +236,7 @@ var TimelineView = (function() {
     },
 
     /**
-     * When log entries are deleted, simpler to recreate the DataSeries, rather
-     * than clearing them.
+     * When all log entries are deleted, recreate the DataSeries.
      */
     onAllLogEntriesDeleted: function() {
       this.graphRangeInitialized_ = false;
@@ -239,7 +245,7 @@ var TimelineView = (function() {
 
     onReceivedLogEntries: function(entries) {
       // Pass each entry to every DataSeries, one at a time.  Not having each
-      // data series get data directly from the SourceTracker saves us from
+      // data series get data directly from the EventsTracker saves us from
       // having very un-Javascript-like destructors for when we load new,
       // constants and slightly simplifies DataSeries objects.
       for (var entry = 0; entry < entries.length; ++entry) {
@@ -265,6 +271,31 @@ var TimelineView = (function() {
           timeutil.convertTimeTicksToDate(entries[entries.length - 1].time);
       this.graphView_.setDateRange(startDate, endDate);
       this.graphRangeInitialized_ = true;
+    },
+
+    toggleSelectionDiv_: function() {
+      var toggle = $(TimelineView.SELECTION_TOGGLE_ID);
+      var shouldCollapse = toggle.className == 'timeline-view-rotateleft';
+
+      setNodeDisplay($(TimelineView.SELECTION_UL_ID), !shouldCollapse);
+      toggle.className = shouldCollapse ?
+          'timeline-view-rotateright' : 'timeline-view-rotateleft';
+
+      // Figure out the appropriate width for the selection div.
+      var newWidth;
+      if (shouldCollapse) {
+        newWidth = toggle.offsetWidth;
+      } else {
+        newWidth = this.selectionDivFullWidth_;
+      }
+
+      // Change the width on the selection view (doesn't matter what we
+      // set the other values to, since we will re-layout in the next line).
+      this.leftView_.setGeometry(0, 0, newWidth, 100);
+
+      // Force a re-layout now that the left view has changed width.
+      this.setGeometry(this.getLeft(), this.getTop(), this.getWidth(),
+                       this.getHeight());
     }
   };
 

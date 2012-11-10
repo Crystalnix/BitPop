@@ -4,44 +4,70 @@
 
 #include "chrome/browser/ui/auto_login_info_bar_delegate.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
+#include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/signin/token_service.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/ubertoken_fetcher.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/net/gaia/gaia_constants.h"
 #include "chrome/common/net/gaia/gaia_urls.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/page_navigator.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/referrer.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources_standard.h"
+#include "grit/theme_resources.h"
 #include "net/base/escape.h"
 #include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
 using content::NavigationController;
+using content::NotificationSource;
+using content::NotificationDetails;
 
 namespace {
 
 // Enum values used for UMA histograms.
 enum {
+  // The infobar was shown to the user.
   HISTOGRAM_SHOWN,
+
+  // The user pressed the accept button to perform the suggested action.
   HISTOGRAM_ACCEPTED,
+
+  // The user pressed the reject to turn off the feature.
   HISTOGRAM_REJECTED,
+
+  // The user pressed the X button to dismiss the infobar this time.
+  HISTOGRAM_DISMISSED,
+
+  // The user completely ignored the infoar.  Either they navigated away, or
+  // they used the page as is.
   HISTOGRAM_IGNORED,
+
+  // The user clicked on the learn more link in the infobar.
+  HISTOGRAM_LEARN_MORE,
+
   HISTOGRAM_MAX
 };
 
@@ -51,15 +77,19 @@ enum {
 // auto-login.  It holds context information needed while re-issuing service
 // tokens using the TokenService, gets the browser cookies with the TokenAuth
 // API, and finally redirects the user to the correct page.
-class AutoLoginRedirector : public content::NotificationObserver {
+class AutoLoginRedirector : public UbertokenConsumer,
+                            public content::NotificationObserver {
  public:
-  AutoLoginRedirector(TokenService* token_service,
-                      NavigationController* navigation_controller,
+  AutoLoginRedirector(NavigationController* navigation_controller,
                       const std::string& args);
   virtual ~AutoLoginRedirector();
 
  private:
-  // content::NotificationObserver override.
+  // Overriden from UbertokenConsumer:
+  virtual void OnUbertokenSuccess(const std::string& token) OVERRIDE;
+  virtual void OnUbertokenFailure(const GoogleServiceAuthError& error) OVERRIDE;
+
+  // Implementation of content::NotificationObserver
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
@@ -70,66 +100,58 @@ class AutoLoginRedirector : public content::NotificationObserver {
 
   NavigationController* navigation_controller_;
   const std::string args_;
+  scoped_ptr<UbertokenFetcher> ubertoken_fetcher_;
+
+  // For listening to NavigationController destruction.
   content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(AutoLoginRedirector);
 };
 
 AutoLoginRedirector::AutoLoginRedirector(
-    TokenService* token_service,
     NavigationController* navigation_controller,
     const std::string& args)
     : navigation_controller_(navigation_controller),
       args_(args) {
-  // Register to receive notification for new tokens and then force the tokens
-  // to be re-issued.  The token service guarantees to fire either
-  // TOKEN_AVAILABLE or TOKEN_REQUEST_FAILED, so we will get at least one or
-  // the other, allow AutoLoginRedirector to delete itself correctly.
+  ubertoken_fetcher_.reset(new UbertokenFetcher(
+      Profile::FromBrowserContext(navigation_controller_->GetBrowserContext()),
+      this));
   registrar_.Add(this,
-                 chrome::NOTIFICATION_TOKEN_AVAILABLE,
-                 content::Source<TokenService>(token_service));
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_TOKEN_REQUEST_FAILED,
-                 content::Source<TokenService>(token_service));
-  token_service->StartFetchingTokens();
+                 content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                 content::Source<content::WebContents>(
+                     navigation_controller_->GetWebContents()));
+  ubertoken_fetcher_->StartFetchingToken();
 }
 
 AutoLoginRedirector::~AutoLoginRedirector() {
 }
 
 void AutoLoginRedirector::Observe(int type,
-                                  const content::NotificationSource& source,
-                                  const content::NotificationDetails& details) {
-  DCHECK(type == chrome::NOTIFICATION_TOKEN_AVAILABLE ||
-         type == chrome::NOTIFICATION_TOKEN_REQUEST_FAILED);
+                                  const NotificationSource& source,
+                                  const NotificationDetails& details) {
+  DCHECK(type == content::NOTIFICATION_WEB_CONTENTS_DESTROYED);
+  // The WebContents that started this has been destroyed. The request must be
+  // cancelled and this object must be deleted.
+  ubertoken_fetcher_.reset();
+  MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+}
 
-  // We are only interested in GAIA tokens.
-  if (type == chrome::NOTIFICATION_TOKEN_AVAILABLE) {
-    TokenService::TokenAvailableDetails* tok_details =
-        content::Details<TokenService::TokenAvailableDetails>(details).ptr();
-    if (tok_details->service() == GaiaConstants::kGaiaService) {
-      RedirectToMergeSession(tok_details->token());
-      delete this;
-    }
-  } else {
-    TokenService::TokenRequestFailedDetails* tok_details =
-        content::Details<TokenService::TokenRequestFailedDetails>(details).
-            ptr();
-    if (tok_details->service() == GaiaConstants::kGaiaService) {
-      LOG(WARNING) << "AutoLoginRedirector: token request failed";
-      delete this;
-    }
-  }
+void AutoLoginRedirector::OnUbertokenSuccess(const std::string& token) {
+  RedirectToMergeSession(token);
+  MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+}
+
+void AutoLoginRedirector::OnUbertokenFailure(
+    const GoogleServiceAuthError& error) {
+  LOG(WARNING) << "AutoLoginRedirector: token request failed";
+  MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
 void AutoLoginRedirector::RedirectToMergeSession(const std::string& token) {
-  // The args are URL encoded, so we need to decode them before use.
-  std::string unescaped_args =
-      net::UnescapeURLComponent(args_, net::UnescapeRule::URL_SPECIAL_CHARS);
   // TODO(rogerta): what is the correct page transition?
   navigation_controller_->LoadURL(
       GURL(GaiaUrls::GetInstance()->merge_session_url() +
-          "?source=chrome&uberauth=" + token + "&" + unescaped_args),
+          "?source=chrome&uberauth=" + token + "&" + args_),
       content::Referrer(), content::PAGE_TRANSITION_AUTO_BOOKMARK,
       std::string());
 }
@@ -139,27 +161,37 @@ void AutoLoginRedirector::RedirectToMergeSession(const std::string& token) {
 
 // AutoLoginInfoBarDelegate ---------------------------------------------------
 
+// AutoLoginInfoBarDelegate::Params -------------------------------------------
+
+AutoLoginInfoBarDelegate::Params::Params() {}
+AutoLoginInfoBarDelegate::Params::~Params() {}
+
 AutoLoginInfoBarDelegate::AutoLoginInfoBarDelegate(
     InfoBarTabHelper* owner,
-    NavigationController* navigation_controller,
-    TokenService* token_service,
-    PrefService* pref_service,
-    const std::string& username,
-    const std::string& args)
+    const Params& params)
     : ConfirmInfoBarDelegate(owner),
-      navigation_controller_(navigation_controller),
-      token_service_(token_service),
-      pref_service_(pref_service),
-      username_(username),
-      args_(args),
+      params_(params),
       button_pressed_(false) {
   RecordHistogramAction(HISTOGRAM_SHOWN);
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
+                 content::Source<Profile>(Profile::FromBrowserContext(
+                     owner->web_contents()->GetBrowserContext())));
 }
 
 AutoLoginInfoBarDelegate::~AutoLoginInfoBarDelegate() {
-  if (!button_pressed_) {
+  if (!button_pressed_)
     RecordHistogramAction(HISTOGRAM_IGNORED);
-  }
+}
+
+AutoLoginInfoBarDelegate*
+    AutoLoginInfoBarDelegate::AsAutoLoginInfoBarDelegate() {
+  return this;
+}
+
+void AutoLoginInfoBarDelegate::InfoBarDismissed() {
+  RecordHistogramAction(HISTOGRAM_DISMISSED);
+  button_pressed_ = true;
 }
 
 gfx::Image* AutoLoginInfoBarDelegate::GetIcon() const {
@@ -172,8 +204,7 @@ InfoBarDelegate::Type AutoLoginInfoBarDelegate::GetInfoBarType() const {
 }
 
 string16 AutoLoginInfoBarDelegate::GetMessageText() const {
-  return l10n_util::GetStringFUTF16(IDS_AUTOLOGIN_INFOBAR_MESSAGE,
-                                    UTF8ToUTF16(username_));
+  return GetMessageText(params_.username);
 }
 
 string16 AutoLoginInfoBarDelegate::GetButtonLabel(
@@ -184,91 +215,38 @@ string16 AutoLoginInfoBarDelegate::GetButtonLabel(
 
 bool AutoLoginInfoBarDelegate::Accept() {
   // AutoLoginRedirector deletes itself.
-  new AutoLoginRedirector(token_service_, navigation_controller_, args_);
+  new AutoLoginRedirector(&owner()->web_contents()->GetController(),
+                          params_.args);
   RecordHistogramAction(HISTOGRAM_ACCEPTED);
   button_pressed_ = true;
   return true;
 }
 
 bool AutoLoginInfoBarDelegate::Cancel() {
-  pref_service_->SetBoolean(prefs::kAutologinEnabled, false);
+  PrefService* pref_service = TabContents::FromWebContents(
+      owner()->web_contents())->profile()->GetPrefs();
+  pref_service->SetBoolean(prefs::kAutologinEnabled, false);
   RecordHistogramAction(HISTOGRAM_REJECTED);
   button_pressed_ = true;
   return true;
+}
+
+string16 AutoLoginInfoBarDelegate::GetMessageText(
+    const std::string& username) const {
+  return l10n_util::GetStringFUTF16(IDS_AUTOLOGIN_INFOBAR_MESSAGE,
+                                    UTF8ToUTF16(username));
 }
 
 void AutoLoginInfoBarDelegate::RecordHistogramAction(int action) {
   UMA_HISTOGRAM_ENUMERATION("AutoLogin.Regular", action, HISTOGRAM_MAX);
 }
 
-
-// ReverseAutoLoginInfoBarDelegate --------------------------------------------
-
-ReverseAutoLoginInfoBarDelegate::ReverseAutoLoginInfoBarDelegate(
-    InfoBarTabHelper* owner,
-    NavigationController* navigation_controller,
-    PrefService* pref_service,
-    const std::string& continue_url)
-    : ConfirmInfoBarDelegate(owner),
-      navigation_controller_(navigation_controller),
-      pref_service_(pref_service),
-      continue_url_(continue_url),
-      button_pressed_(false) {
-  DCHECK(!continue_url.empty());
-  RecordHistogramAction(HISTOGRAM_SHOWN);
-}
-
-ReverseAutoLoginInfoBarDelegate::~ReverseAutoLoginInfoBarDelegate() {
-  if (!button_pressed_) {
-    RecordHistogramAction(HISTOGRAM_IGNORED);
-  }
-}
-
-gfx::Image* ReverseAutoLoginInfoBarDelegate::GetIcon() const {
-  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-      IDR_INFOBAR_AUTOLOGIN);
-}
-
-InfoBarDelegate::Type ReverseAutoLoginInfoBarDelegate::GetInfoBarType() const {
-  return PAGE_ACTION_TYPE;
-}
-
-string16 ReverseAutoLoginInfoBarDelegate::GetMessageText() const {
-  return l10n_util::GetStringFUTF16(
-      IDS_REVERSE_AUTOLOGIN_INFOBAR_MESSAGE,
-      l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME));
-}
-
-string16 ReverseAutoLoginInfoBarDelegate::GetButtonLabel(
-    InfoBarButton button) const {
-  return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
-      IDS_REVERSE_AUTOLOGIN_INFOBAR_OK_BUTTON :
-      IDS_REVERSE_AUTOLOGIN_INFOBAR_CANCEL_BUTTON);
-}
-
-bool ReverseAutoLoginInfoBarDelegate::Accept() {
-  // Redirect to the syncpromo so that user can connect their profile to a
-  // Google account.  This will automatically stuff the profile's cookie jar
-  // with credentials for the same account.  The syncpromo will eventually
-  // redirect back to the continue URL, so the user ends up on the page they
-  // would have landed on with the regular google login.
-  GURL sync_promo_url = SyncPromoUI::GetSyncPromoURL(GURL(continue_url_), false,
-                                                     "ReverseAutoLogin");
-  navigation_controller_->LoadURL(sync_promo_url, content::Referrer(),
-                                  content::PAGE_TRANSITION_AUTO_BOOKMARK,
-                                  std::string());
-  RecordHistogramAction(HISTOGRAM_ACCEPTED);
-  button_pressed_ = true;
-  return true;
-}
-
-bool ReverseAutoLoginInfoBarDelegate::Cancel() {
-  pref_service_->SetBoolean(prefs::kReverseAutologinEnabled, false);
-  RecordHistogramAction(HISTOGRAM_REJECTED);
-  button_pressed_ = true;
-  return true;
-}
-
-void ReverseAutoLoginInfoBarDelegate::RecordHistogramAction(int action) {
-  UMA_HISTOGRAM_ENUMERATION("AutoLogin.Reverse", action, HISTOGRAM_MAX);
+void AutoLoginInfoBarDelegate::Observe(int type,
+                                       const NotificationSource& source,
+                                       const NotificationDetails& details) {
+  DCHECK_EQ(chrome::NOTIFICATION_GOOGLE_SIGNED_OUT, type);
+  // owner() can be NULL when InfoBarTabHelper removes us. See
+  // |InfoBarDelegate::clear_owner|.
+  if (owner())
+    owner()->RemoveInfoBar(this);
 }

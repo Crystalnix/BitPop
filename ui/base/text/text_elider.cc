@@ -5,7 +5,7 @@
 // This file implements utility functions for eliding and formatting UI text.
 //
 // Note that several of the functions declared in text_elider.h are implemented
-// in this file using helper classes in the anonymous namespace.
+// in this file using helper classes in an unnamed namespace.
 
 #include "ui/base/text/text_elider.h"
 
@@ -24,7 +24,7 @@
 #include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
 #include "net/base/net_util.h"
-#include "net/base/registry_controlled_domain.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "ui/gfx/font.h"
 #include "unicode/rbbi.h"
 #include "unicode/uloc.h"
@@ -149,12 +149,66 @@ string16 ElideComponentizedPath(const string16& url_path_prefix,
 
 }  // namespace
 
-// This function takes a GURL object and elides it. It returns a string
-// which composed of parts from subdomain, domain, path, filename and query.
-// A "..." is added automatically at the end if the elided string is bigger
-// than the available pixel width. For available pixel width = 0, a formatted,
-// but un-elided, string is returned.
-//
+string16 ElideEmail(const string16& email,
+                    const gfx::Font& font,
+                    int available_pixel_width) {
+  if (font.GetStringWidth(email) <= available_pixel_width)
+    return email;
+
+  // Split the email into its local-part (username) and domain-part. The email
+  // spec technically allows for @ symbols in the local-part (username) of the
+  // email under some special requirements. It is guaranteed that there is no @
+  // symbol in the domain part of the email however so splitting at the last @
+  // symbol is safe.
+  const size_t split_index = email.find_last_of('@');
+  DCHECK_NE(split_index, string16::npos);
+  string16 username = email.substr(0, split_index);
+  string16 domain = email.substr(split_index + 1);
+  DCHECK(!username.empty());
+  DCHECK(!domain.empty());
+
+  const string16 kEllipsisUTF16 = UTF8ToUTF16(kEllipsis);
+
+  // Subtract the @ symbol from the available width as it is mandatory.
+  const string16 kAtSignUTF16 = ASCIIToUTF16("@");
+  available_pixel_width -= font.GetStringWidth(kAtSignUTF16);
+
+  // Check whether eliding the domain is necessary: if eliding the username
+  // is sufficient, the domain will not be elided.
+  const int full_username_width = font.GetStringWidth(username);
+  const int available_domain_width =
+      available_pixel_width -
+      std::min(full_username_width,
+               font.GetStringWidth(username.substr(0, 1) + kEllipsisUTF16));
+  if (font.GetStringWidth(domain) > available_domain_width) {
+    // Elide the domain so that it only takes half of the available width.
+    // Should the username not need all the width available in its half, the
+    // domain will occupy the leftover width.
+    // If |desired_domain_width| is greater than |available_domain_width|: the
+    // minimal username elision allowed by the specifications will not fit; thus
+    // |desired_domain_width| must be <= |available_domain_width| at all cost.
+    const int desired_domain_width =
+        std::min(available_domain_width,
+                 std::max(available_pixel_width - full_username_width,
+                          available_pixel_width / 2));
+    domain = ElideText(domain, font, desired_domain_width, ELIDE_IN_MIDDLE);
+    // Failing to elide the domain such that at least one character remains
+    // (other than the ellipsis itself) remains: return a single ellipsis.
+    if (domain.length() <= 1U)
+      return kEllipsisUTF16;
+  }
+
+  // Fit the username in the remaining width (at this point the elided username
+  // is guaranteed to fit with at least one character remaining given all the
+  // precautions taken earlier).
+  username = ElideText(username,
+                       font,
+                       available_pixel_width - font.GetStringWidth(domain),
+                       ELIDE_AT_END);
+
+  return username + kAtSignUTF16 + domain;
+}
+
 // TODO(pkasting): http://crbug.com/77883 This whole function gets
 // kerning/ligatures/etc. issues potentially wrong by assuming that the width of
 // a rendered string is always the sum of the widths of its substrings.  Also I
@@ -171,8 +225,8 @@ string16 ElideUrl(const GURL& url,
   if (available_pixel_width <= 0)
     return url_string;
 
-  // If non-standard or not file type, return plain eliding.
-  if (!(url.SchemeIsFile() || url.IsStandard()))
+  // If non-standard, return plain eliding.
+  if (!url.IsStandard())
     return ElideText(url_string, font, available_pixel_width, ELIDE_AT_END);
 
   // Now start eliding url_string to fit within available pixel width.
@@ -393,8 +447,6 @@ string16 ElideFilename(const FilePath& filename,
   return base::i18n::GetDisplayStringInLTRDirectionality(elided_name);
 }
 
-// This function adds an ellipsis at the end of the text if the text
-// does not fit the given pixel width.
 string16 ElideText(const string16& text,
                    const gfx::Font& font,
                    int available_pixel_width,
@@ -741,6 +793,7 @@ class RectangleText {
         wrap_behavior_(wrap_behavior),
         current_width_(0),
         current_height_(0),
+        last_line_ended_in_lf_(false),
         lines_(lines),
         full_(false) {}
 
@@ -760,9 +813,6 @@ class RectangleText {
   bool Finalize();
 
  private:
-  // Returns |true| if |text| is entirely composed of whitespace.
-  bool IsWhitespaceString(const string16& text) const;
-
   // Add a line to the rectangular region at the current position,
   // either by itself or by breaking it into words.
   void AddLine(const string16& line);
@@ -811,6 +861,9 @@ class RectangleText {
   // The current line of text.
   string16 current_line_;
 
+  // Indicates whether the last line ended with \n.
+  bool last_line_ended_in_lf_;
+
   // The output vector of lines.
   std::vector<string16>* lines_;
 
@@ -829,7 +882,8 @@ void RectangleText::AddString(const string16& input) {
       // The BREAK_NEWLINE iterator will keep the trailing newline character,
       // except in the case of the last line, which may not have one.  Remove
       // the newline character, if it exists.
-      if (!line.empty() && line[line.length() - 1] == '\n')
+      last_line_ended_in_lf_ = !line.empty() && line[line.length() - 1] == '\n';
+      if (last_line_ended_in_lf_)
         line.resize(line.length() - 1);
       AddLine(line);
     }
@@ -843,14 +897,12 @@ bool RectangleText::Finalize() {
   // completely, if it's just whitespace.
   if (!full_ && !lines_->empty()) {
     TrimWhitespace(lines_->back(), TRIM_TRAILING, &lines_->back());
-    if (lines_->back().empty())
+    if (lines_->back().empty() && !last_line_ended_in_lf_)
       lines_->pop_back();
   }
+  if (last_line_ended_in_lf_)
+    lines_->push_back(string16());
   return full_;
-}
-
-bool RectangleText::IsWhitespaceString(const string16& text) const {
-  return text.find_first_not_of(kWhitespaceUTF16) == string16::npos;
 }
 
 void RectangleText::AddLine(const string16& line) {
@@ -873,7 +925,7 @@ void RectangleText::AddLine(const string16& line) {
             const int line = lines_->size() - lines_added;
             TrimWhitespace(lines_->at(line), TRIM_TRAILING, &lines_->at(line));
           }
-          if (IsWhitespaceString(word)) {
+          if (ContainsOnlyWhitespace(word)) {
             // Skip the first space if the previous line was carried over.
             current_width_ = 0;
             current_line_.clear();
@@ -944,7 +996,8 @@ int RectangleText::AddWord(const string16& word) {
     // Append the non-trimmed word, in case more words are added after.
     AddToCurrentLine(word);
   } else {
-    lines_added = AddWordOverflow(word);
+    lines_added = AddWordOverflow(wrap_behavior_ == ui::IGNORE_LONG_WORDS ?
+                                  trimmed : word);
   }
   return lines_added;
 }

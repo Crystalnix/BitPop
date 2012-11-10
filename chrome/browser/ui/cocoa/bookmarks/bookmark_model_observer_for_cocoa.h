@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,6 @@
 
 #ifndef CHROME_BROWSER_UI_COCOA_BOOKMARKS_BOOKMARK_MODEL_OBSERVER_FOR_COCOA_H
 #define CHROME_BROWSER_UI_COCOA_BOOKMARKS_BOOKMARK_MODEL_OBSERVER_FOR_COCOA_H
-#pragma once
 
 #import <Cocoa/Cocoa.h>
 
@@ -56,7 +55,7 @@ class BookmarkModelObserverForCocoa : public BookmarkModelObserver {
                                    const BookmarkNode* node) OVERRIDE;
   virtual void BookmarkNodeChanged(BookmarkModel* model,
                                    const BookmarkNode* node) OVERRIDE;
-  virtual void BookmarkImportBeginning(BookmarkModel* model) OVERRIDE;
+  virtual void ExtensiveBookmarkChangesBeginning(BookmarkModel* model) OVERRIDE;
 
   // Some notifications we don't care about, but by being pure virtual
   // in the base class we must implement them.
@@ -74,7 +73,7 @@ class BookmarkModelObserverForCocoa : public BookmarkModelObserver {
       const BookmarkNode* node) OVERRIDE {
   }
 
-  virtual void BookmarkImportEnding(BookmarkModel* model) OVERRIDE {
+  virtual void ExtensiveBookmarkChangesEnded(BookmarkModel* model) OVERRIDE {
   }
 
  private:

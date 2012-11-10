@@ -4,9 +4,9 @@
 
 #ifndef ASH_LAUNCHER_LAUNCHER_MODEL_OBSERVER_H_
 #define ASH_LAUNCHER_LAUNCHER_MODEL_OBSERVER_H_
-#pragma once
 
 #include "ash/ash_export.h"
+#include "ash/launcher/launcher_types.h"
 
 namespace ash {
 
@@ -19,7 +19,7 @@ class ASH_EXPORT LauncherModelObserver {
 
   // Invoked after an item has been removed. |index| is the index the item was
   // at.
-  virtual void LauncherItemRemoved(int index) = 0;
+  virtual void LauncherItemRemoved(int index, LauncherID id) = 0;
 
   // Invoked after an item has been moved. See LauncherModel::Move() for details
   // of the arguments.
@@ -28,9 +28,6 @@ class ASH_EXPORT LauncherModelObserver {
   // Invoked when the the state of an item changes. |old_item| is the item
   // before the change.
   virtual void LauncherItemChanged(int index, const LauncherItem& old_item) = 0;
-
-  // Signals that LauncherItemChanged() is going to be sent in the near future.
-  virtual void LauncherItemWillChange(int index) = 0;
 
  protected:
   virtual ~LauncherModelObserver() {}

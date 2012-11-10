@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,18 +16,19 @@ namespace views {
 // All text sizing measurements (width and height) should be greater than this.
 const int kMinTextDimension = 4;
 
-#if defined(OS_WIN)
-// Courier is failing on linux because it's non scalable.
 TEST(LabelTest, FontPropertyCourier) {
   Label label;
   std::string font_name("courier");
-  gfx::Font font(font_name, 30);
+  // Note: This test is size dependent since Courier does not support all sizes.
+  gfx::Font font(font_name, 26);
   label.SetFont(font);
   gfx::Font font_used = label.font();
+#if defined(OS_WIN)
+  // On Linux, this results in "Sans" instead of "courier".
   EXPECT_EQ(font_name, font_used.GetFontName());
-  EXPECT_EQ(30, font_used.GetFontSize());
-}
 #endif
+  EXPECT_EQ(26, font_used.GetFontSize());
+}
 
 TEST(LabelTest, FontPropertyArial) {
   Label label;
@@ -43,16 +44,7 @@ TEST(LabelTest, TextProperty) {
   Label label;
   string16 test_text(ASCIIToUTF16("A random string."));
   label.SetText(test_text);
-  EXPECT_EQ(test_text, label.GetText());
-}
-
-TEST(LabelTest, UrlProperty) {
-  Label label;
-  std::string my_url("http://www.orkut.com/some/Random/path");
-  GURL url(my_url);
-  label.SetURL(url);
-  EXPECT_EQ(my_url, label.GetURL().spec());
-  EXPECT_EQ(UTF8ToUTF16(my_url), label.GetText());
+  EXPECT_EQ(test_text, label.text());
 }
 
 TEST(LabelTest, ColorProperty) {
@@ -78,9 +70,9 @@ TEST(LabelTest, AlignmentProperty) {
   label.SetHorizontalAlignment(Label::ALIGN_CENTER);
   EXPECT_EQ(Label::ALIGN_CENTER, label.horizontal_alignment());
 
-  // The label's alignment should not be flipped if the RTL alignment mode
-  // is AUTO_DETECT_ALIGNMENT.
-  label.set_rtl_alignment_mode(Label::AUTO_DETECT_ALIGNMENT);
+  // The label's alignment should not be flipped if the directionality mode is
+  // AUTO_DETECT_DIRECTIONALITY.
+  label.set_directionality_mode(Label::AUTO_DETECT_DIRECTIONALITY);
   label.SetHorizontalAlignment(Label::ALIGN_RIGHT);
   EXPECT_EQ(Label::ALIGN_RIGHT, label.horizontal_alignment());
   label.SetHorizontalAlignment(Label::ALIGN_LEFT);
@@ -89,15 +81,15 @@ TEST(LabelTest, AlignmentProperty) {
   EXPECT_EQ(Label::ALIGN_CENTER, label.horizontal_alignment());
 }
 
-TEST(LabelTest, RTLAlignmentModeProperty) {
+TEST(LabelTest, DirectionalityModeProperty) {
   Label label;
-  EXPECT_EQ(Label::USE_UI_ALIGNMENT, label.rtl_alignment_mode());
+  EXPECT_EQ(Label::USE_UI_DIRECTIONALITY, label.directionality_mode());
 
-  label.set_rtl_alignment_mode(Label::AUTO_DETECT_ALIGNMENT);
-  EXPECT_EQ(Label::AUTO_DETECT_ALIGNMENT, label.rtl_alignment_mode());
+  label.set_directionality_mode(Label::AUTO_DETECT_DIRECTIONALITY);
+  EXPECT_EQ(Label::AUTO_DETECT_DIRECTIONALITY, label.directionality_mode());
 
-  label.set_rtl_alignment_mode(Label::USE_UI_ALIGNMENT);
-  EXPECT_EQ(Label::USE_UI_ALIGNMENT, label.rtl_alignment_mode());
+  label.set_directionality_mode(Label::USE_UI_DIRECTIONALITY);
+  EXPECT_EQ(Label::USE_UI_DIRECTIONALITY, label.directionality_mode());
 }
 
 TEST(LabelTest, MultiLineProperty) {
@@ -216,7 +208,7 @@ TEST(LabelTest, MultiLineSizing) {
   label.SizeToFit(required_width - 1);
   int constrained_width = label.GetLocalBounds().width();
 #if defined(OS_WIN)
-  // Canvas::SizeStringInt (in ui/gfx/canvas_skia_linux.cc)
+  // Canvas::SizeStringInt (in ui/gfx/canvas_linux.cc)
   // has to be fixed to return the size that fits to given width/height.
   EXPECT_LT(constrained_width, required_width);
 #endif
@@ -231,7 +223,7 @@ TEST(LabelTest, MultiLineSizing) {
   EXPECT_GT(required_height, kMinTextDimension);
   int height_for_constrained_width = label.GetHeightForWidth(constrained_width);
 #if defined(OS_WIN)
-  // Canvas::SizeStringInt (in ui/gfx/canvas_skia_linux.cc)
+  // Canvas::SizeStringInt (in ui/gfx/canvas_linux.cc)
   // has to be fixed to return the size that fits to given width/height.
   EXPECT_GT(height_for_constrained_width, required_height);
 #endif
@@ -263,7 +255,7 @@ TEST(LabelTest, MultiLineSizing) {
   // is shrunk.
   int height1 = label.GetHeightForWidth(required_width_with_border - 1);
 #if defined(OS_WIN)
-  // Canvas::SizeStringInt (in ui/gfx/canvas_skia_linux.cc)
+  // Canvas::SizeStringInt (in ui/gfx/canvas_linux.cc)
   // has to be fixed to return the size that fits to given width/height.
   EXPECT_GT(height1, required_height_with_border);
 #endif
@@ -278,13 +270,46 @@ TEST(LabelTest, MultiLineSizing) {
             required_size.width() + border.width());
 }
 
+TEST(LabelTest, AutoDetectDirectionality) {
+  Label label;
+  label.set_directionality_mode(Label::AUTO_DETECT_DIRECTIONALITY);
+
+  // Test text starts with RTL character.
+  string16 test_text(WideToUTF16(L"  \x5d0\x5d1\x5d2 abc"));
+  label.SetText(test_text);
+  gfx::Size required_size(label.GetPreferredSize());
+  gfx::Size extra(22, 8);
+  label.SetBounds(0,
+                  0,
+                  required_size.width() + extra.width(),
+                  required_size.height() + extra.height());
+
+  string16 paint_text;
+  gfx::Rect text_bounds;
+  int flags;
+  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
+  EXPECT_EQ(gfx::Canvas::FORCE_RTL_DIRECTIONALITY, flags);
+
+  // Test text starts with LTR character.
+  test_text = (WideToUTF16(L"ltr \x5d0\x5d1\x5d2 abc"));
+  label.SetText(test_text);
+  required_size = label.GetPreferredSize();
+  label.SetBounds(0,
+                  0,
+                  required_size.width() + extra.width(),
+                  required_size.height() + extra.height());
+
+  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
+  EXPECT_EQ(gfx::Canvas::FORCE_LTR_DIRECTIONALITY, flags);
+}
+
 TEST(LabelTest, DrawSingleLineString) {
   Label label;
   label.set_focusable(false);
 
   // Turn off mirroring so that we don't need to figure out if
   // align right really means align left.
-  label.set_rtl_alignment_mode(Label::AUTO_DETECT_ALIGNMENT);
+  label.set_directionality_mode(Label::AUTO_DETECT_DIRECTIONALITY);
 
   string16 test_text(ASCIIToUTF16("Here's a string with no returns."));
   label.SetText(test_text);
@@ -334,7 +359,7 @@ TEST(LabelTest, DrawSingleLineString) {
   EXPECT_EQ(extra.height() / 2 , text_bounds.y());
   EXPECT_EQ(required_size.width(), text_bounds.width());
   EXPECT_EQ(required_size.height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::FORCE_RTL_DIRECTIONALITY, flags);
+  EXPECT_EQ(gfx::Canvas::FORCE_LTR_DIRECTIONALITY, flags);
 
   // Test single line drawing with a border.
   gfx::Insets border(39, 34, 8, 96);
@@ -390,7 +415,7 @@ TEST(LabelTest, DrawSingleLineString) {
   EXPECT_EQ(border.top() + extra.height() / 2 , text_bounds.y());
   EXPECT_EQ(required_size.width(), text_bounds.width());
   EXPECT_EQ(required_size.height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::FORCE_RTL_DIRECTIONALITY, flags);
+  EXPECT_EQ(gfx::Canvas::FORCE_LTR_DIRECTIONALITY, flags);
 }
 
 // On Linux the underlying pango routines require a max height in order to
@@ -402,7 +427,7 @@ TEST(LabelTest, DrawMultiLineString) {
 
   // Turn off mirroring so that we don't need to figure out if
   // align right really means align left.
-  label.set_rtl_alignment_mode(Label::AUTO_DETECT_ALIGNMENT);
+  label.set_directionality_mode(Label::AUTO_DETECT_DIRECTIONALITY);
 
   string16 test_text(ASCIIToUTF16("Another string\nwith returns\n\n!"));
   label.SetText(test_text);
@@ -463,7 +488,7 @@ TEST(LabelTest, DrawMultiLineString) {
   EXPECT_GT(text_bounds.height(), kMinTextDimension);
   expected_flags = gfx::Canvas::MULTI_LINE |
                    gfx::Canvas::TEXT_ALIGN_RIGHT |
-                   gfx::Canvas::FORCE_RTL_DIRECTIONALITY;
+                   gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
 #if defined(OS_WIN)
   EXPECT_EQ(expected_flags, flags);
 #else
@@ -529,7 +554,7 @@ TEST(LabelTest, DrawMultiLineString) {
   EXPECT_EQ(center_bounds.height(), text_bounds.height());
   expected_flags = gfx::Canvas::MULTI_LINE |
                    gfx::Canvas::TEXT_ALIGN_RIGHT |
-                   gfx::Canvas::FORCE_RTL_DIRECTIONALITY;
+                   gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
 #if defined(OS_WIN)
   EXPECT_EQ(expected_flags, flags);
 #else
@@ -806,6 +831,20 @@ TEST(LabelTest, DrawMultiLineStringInRTL) {
 
   // Reset Locale
   base::i18n::SetICUDefaultLocale(locale);
+}
+
+// Check that we disable subpixel rendering when a transparent background is
+// being used.
+TEST(LabelTest, DisableSubpixelRendering) {
+  Label label;
+  label.SetBackgroundColor(SK_ColorWHITE);
+  EXPECT_EQ(
+      0, label.ComputeDrawStringFlags() & gfx::Canvas::NO_SUBPIXEL_RENDERING);
+
+  label.SetBackgroundColor(SkColorSetARGB(64, 255, 255, 255));
+  EXPECT_EQ(
+      gfx::Canvas::NO_SUBPIXEL_RENDERING,
+      label.ComputeDrawStringFlags() & gfx::Canvas::NO_SUBPIXEL_RENDERING);
 }
 
 }  // namespace views

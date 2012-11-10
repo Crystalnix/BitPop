@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 cr.define('options.system.bluetooth', function() {
-  const ArrayDataModel = cr.ui.ArrayDataModel;
-  const DeletableItem = options.DeletableItem;
-  const DeletableItemList = options.DeletableItemList;
+  /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
+  /** @const */ var DeletableItem = options.DeletableItem;
+  /** @const */ var DeletableItemList = options.DeletableItemList;
 
   /**
    * Bluetooth settings constants.
@@ -13,27 +13,11 @@ cr.define('options.system.bluetooth', function() {
   function Constants() {}
 
   /**
-   * Enumeration of supported device types.
-   * @enum {string}
-   */
-  // TODO(kevers): Prune list based on the set of devices that will be
-  // supported for V1 of the feature.  The set will likely be restricted to
-  // mouse and keyboard.  Others are temporarily included for testing device
-  // discovery.
-  Constants.DEVICE_TYPE = {
-    COMPUTER: 'computer',
-    HEADSET: 'headset',
-    KEYBOARD: 'input-keyboard',
-    MOUSE: 'input-mouse',
-    PHONE: 'phone',
-  };
-
-  /**
    * Creates a new bluetooth list item.
    * @param {{name: string,
    *          address: string,
-   *          icon: Constants.DEVICE_TYPE,
    *          paired: boolean,
+   *          bonded: boolean,
    *          connected: boolean,
    *          pairing: string|undefined,
    *          passkey: number|undefined,
@@ -61,8 +45,8 @@ cr.define('options.system.bluetooth', function() {
      * Description of the Bluetooth device.
      * @type {{name: string,
      *         address: string,
-     *         icon: Constants.DEVICE_TYPE,
      *         paired: boolean,
+     *         bonded: boolean,
      *         connected: boolean,
      *         pairing: string|undefined,
      *         passkey: number|undefined,
@@ -85,7 +69,7 @@ cr.define('options.system.bluetooth', function() {
       // Update label for devices that are paired but not connected.
       if (this.paired) {
         content = content + ' (' +
-            templateData['bluetoothDeviceNotConnected'] + ')';
+            loadTimeData.getString('bluetoothDeviceNotConnected') + ')';
       }
       label.textContent = content;
       this.contentElement.appendChild(label);
@@ -102,9 +86,28 @@ cr.define('options.system.bluetooth', function() {
   BluetoothDeviceList.prototype = {
     __proto__: DeletableItemList.prototype,
 
+    /**
+     * Height of a list entry in px.
+     * @type {number}
+     * @private
+     */
+    itemHeight_: 32,
+
+    /**
+     * Width of a list entry in px.
+     * @type {number}
+     * @private.
+     */
+    itemWidth_: 400,
+
     /** @inheritDoc */
-    decorate:  function() {
+    decorate: function() {
       DeletableItemList.prototype.decorate.call(this);
+      // Force layout of all items even if not in the viewport to address
+      // calculation errors when the list is hidden.  The impact on performance
+      // should be minimal given that the list is not expected to grow very
+      // large.
+      this.autoExpand = true;
       this.addEventListener('blur', this.onBlur_);
       this.clear();
     },
@@ -124,8 +127,8 @@ cr.define('options.system.bluetooth', function() {
      * existing device is updated.
      * @param {{name: string,
      *          address: string,
-     *          icon: Constants.DEVICE_TYPE,
      *          paired: boolean,
+     *          bonded: boolean,
      *          connected: boolean,
      *          pairing: string|undefined,
      *          passkey: number|undefined,
@@ -134,8 +137,7 @@ cr.define('options.system.bluetooth', function() {
      * @return {boolean} True if the devies was successfully added or updated.
      */
     appendDevice: function(device) {
-      if (!this.isSupported_(device))
-        return false;
+      var selectedDevice = this.getSelectedDevice_();
       var index = this.find(device.address);
       if (index == undefined) {
         this.dataModel.push(device);
@@ -145,7 +147,52 @@ cr.define('options.system.bluetooth', function() {
         this.redrawItem(index);
       }
       this.updateListVisibility_();
+      if (selectedDevice)
+        this.setSelectedDevice_(selectedDevice);
       return true;
+    },
+
+    /**
+     * Forces a revailidation of the list content. Content added while the list
+     * is hidden is not properly rendered when the list becomes visible. In
+     * addition, deleting a single item from the list results in a stale cache
+     * requiring an invalidation.
+     * @param {String=} opt_selection Optional address of device to select
+     *     after refreshing the list.
+     */
+    refresh: function(opt_selection) {
+      // TODO(kevers): Investigate if the root source of the problems can be
+      // fixed in cr.ui.list.
+      var selectedDevice = opt_selection ? opt_selection :
+          this.getSelectedDevice_();
+      this.invalidate();
+      this.redraw();
+      if (selectedDevice)
+        this.setSelectedDevice_(selectedDevice);
+    },
+
+    /**
+     * Retrieves the address of the selected device, or null if no device is
+     * selected.
+     * @return {?String} Address of selected device or null.
+     * @private
+     */
+    getSelectedDevice_: function() {
+      var selection = this.selectedItem;
+      if (selection)
+        return selection.address;
+      return null;
+    },
+
+    /**
+     * Selects the device with the matching address.
+     * @param {String} address The unique address of the device.
+     * @private
+     */
+    setSelectedDevice_: function(address) {
+      var index = this.find(address);
+      if (index != undefined)
+        this.selectionModel.selectRange(index, index);
     },
 
     /**
@@ -177,35 +224,86 @@ cr.define('options.system.bluetooth', function() {
       return new BluetoothListItem(entry);
     },
 
-    /** @inheritDoc */
-    deleteItemAtIndex: function(index) {
-      var item = this.dataModel.item(index);
-      if (item && (item.connected || item.paired)) {
-        // Inform the bluetooth adapter that we are disconnecting the device.
-        chrome.send('updateBluetoothDevice',
-            [item.address, item.connected ? 'disconnect' : 'forget']);
-      }
-      this.dataModel.splice(index, 1);
-      // Invalidate the list since it has a stale cache after a splice
-      // involving a deletion.
-      this.invalidate();
-      this.redraw();
-      this.updateListVisibility_();
+    /**
+     * Overrides the default implementation, which is used to compute the
+     * size of an element in the list.  The default implementation relies
+     * on adding a placeholder item to the list and fetching its size and
+     * position. This strategy does not work if an item is added to the list
+     * while it is hidden, as the computed metrics will all be zero in that
+     * case.
+     * @return {{height: number, marginTop: number, marginBottom: number,
+     *     width: number, marginLeft: number, marginRight: number}}
+     *     The height and width of the item, taking margins into account,
+     *     and the margins themselves.
+     */
+    measureItem: function() {
+      return {
+        height: this.itemHeight_,
+        marginTop: 0,
+        marginBotton: 0,
+        width: this.itemWidth_,
+        marginLeft: 0,
+        marginRight: 0
+      };
     },
 
     /**
-     * Tests if the bluetooth device is supported based on the type of device.
-     * @param {Object.<string,string>} device Desription of the device.
-     * @return {boolean} true if the device is supported.
+     * Override the default implementation to return a predetermined size,
+     * which in turns allows proper layout of items even if the list is hidden.
+     * @return {height: number, width: number} Dimensions of a single item in
+     *     the list of bluetooth device.
+     * @private.
+     */
+    getDefaultItemSize_: function() {
+      return {
+        height: this.itemHeight_,
+        width: this.itemWidth_
+      };
+    },
+
+    /**
+     * Override base implementation of handleClick_, which unconditionally
+     * removes the item.  In this case, removal of the element is deferred
+     * pending confirmation from the Bluetooth adapter.
+     * @param {Event} e The click event object.
      * @private
      */
-    isSupported_: function(device) {
-      var target = device.icon;
-      for (var key in Constants.DEVICE_TYPE) {
-        if (Constants.DEVICE_TYPE[key] == target)
-          return true;
+    handleClick_: function(e) {
+      if (this.disabled)
+        return;
+
+      var target = e.target;
+      if (!target.classList.contains('row-delete-button'))
+        return;
+
+      var listItem = this.getListItemAncestor(target);
+      var selected = this.selectionModel.selectedIndexes;
+      var index = this.getIndexOfListItem(listItem);
+      if (selected.indexOf(index) == -1)
+        selected = [index];
+      for (var j = selected.length - 1; j >= 0; j--) {
+        var index = selected[j];
+        var item = this.getListItemByIndex(index);
+        if (item && item.deletable) {
+          // Device is busy until we hear back from the Bluetooth adapter.
+          // Prevent double removal request.
+          item.deletable = false;
+          // TODO(kevers): Provide visual feedback that the device is busy.
+
+          // Inform the bluetooth adapter that we are disconnecting or
+          // forgetting the device.
+          chrome.send('updateBluetoothDevice',
+            [item.data.address, item.connected ? 'disconnect' : 'forget']);
+        }
       }
-      return false;
+    },
+
+    /** @inheritDoc */
+    deleteItemAtIndex: function(index) {
+      var selectedDevice = this.getSelectedDevice_();
+      this.dataModel.splice(index, 1);
+      this.refresh(selectedDevice);
+      this.updateListVisibility_();
     },
 
     /**
@@ -217,8 +315,11 @@ cr.define('options.system.bluetooth', function() {
       var empty = this.dataModel.length == 0;
       var listPlaceHolderID = this.id + '-empty-placeholder';
       if ($(listPlaceHolderID)) {
-        this.hidden = empty;
-        $(listPlaceHolderID).hidden = !empty;
+        if (this.hidden != empty) {
+          this.hidden = empty;
+          $(listPlaceHolderID).hidden = !empty;
+          this.refresh();
+        }
       }
     },
   };

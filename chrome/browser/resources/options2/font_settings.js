@@ -7,12 +7,6 @@ cr.define('options', function() {
   var OptionsPage = options.OptionsPage;
 
   /**
-   * This is the absolute difference maintained between standard and
-   * fixed-width font sizes. Refer http://crbug.com/91922.
-   */
-  const SIZE_DIFFERENCE_FIXED_STANDARD = 3;
-
-  /**
    * FontSettings class
    * Encapsulated handling of the 'Fonts and Encoding' page.
    * @class
@@ -20,7 +14,7 @@ cr.define('options', function() {
   function FontSettings() {
     OptionsPage.call(this,
                      'fonts',
-                     templateData.fontSettingsPageTabTitle,
+                     loadTimeData.getString('fontSettingsPageTabTitle'),
                      'font-settings');
   }
 
@@ -51,7 +45,7 @@ cr.define('options', function() {
       minimumFontRange.notifyPrefChange =
           this.minimumFontSizeChanged_.bind(this);
 
-      var placeholder = localStrings.getString('fontSettingsPlaceholder');
+      var placeholder = loadTimeData.getString('fontSettingsPlaceholder');
       var elements = [$('standard-font-family'), $('serif-font-family'),
                       $('sans-serif-font-family'), $('fixed-font-family'),
                       $('font-encoding')];
@@ -59,6 +53,10 @@ cr.define('options', function() {
         el.appendChild(new Option(placeholder));
         el.setDisabled('noFontsAvailable', true);
       });
+
+      $('font-settings-confirm').onclick = function() {
+        OptionsPage.closeOverlay();
+      };
     },
 
     /**
@@ -97,7 +95,7 @@ cr.define('options', function() {
 
       fontSampleEl = $('fixed-font-sample');
       this.setUpFontSample_(fontSampleEl,
-                            value - SIZE_DIFFERENCE_FIXED_STANDARD,
+                            value - OptionsPage.SIZE_DIFFERENCE_FIXED_STANDARD,
                             fontSampleEl.style.fontFamily, false);
     },
 
@@ -110,8 +108,8 @@ cr.define('options', function() {
      */
     standardFontSizeChanged_: function(el, value) {
       Preferences.setIntegerPref(
-        'webkit.webprefs.global.default_fixed_font_size',
-        value - SIZE_DIFFERENCE_FIXED_STANDARD, '');
+        'webkit.webprefs.default_fixed_font_size',
+        value - OptionsPage.SIZE_DIFFERENCE_FIXED_STANDARD, '');
     },
 
     /**
@@ -136,7 +134,7 @@ cr.define('options', function() {
      */
     minimumFontSizeChanged_: function(el, value) {
       Preferences.setIntegerPref(
-        'webkit.webprefs.global.minimum_logical_font_size', value, '');
+        'webkit.webprefs.minimum_logical_font_size', value, '');
     },
 
     /**
@@ -150,7 +148,7 @@ cr.define('options', function() {
     setUpFontSample_: function(el, size, font, showSize) {
       var prefix = showSize ? (size + ': ') : '';
       el.textContent = prefix +
-          localStrings.getString('fontSettingsLoremIpsum');
+          loadTimeData.getString('fontSettingsLoremIpsum');
       el.style.fontSize = size + 'px';
       if (font)
         el.style.fontFamily = font;
@@ -172,9 +170,12 @@ cr.define('options', function() {
       for (var i = 0; i < items.length; i++) {
         value = items[i][0];
         text = items[i][1];
+        dir = items[i][2];
         if (text) {
           selected = value == selectedValue;
-          element.appendChild(new Option(text, value, false, selected));
+          var option = new Option(text, value, false, selected);
+          option.dir = dir;
+          element.appendChild(option);
         } else {
           element.appendChild(document.createElement('hr'));
         }

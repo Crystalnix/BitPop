@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,23 +19,20 @@
 #include "base/string_number_conversions.h"
 #include "base/sys_info.h"
 #include "base/utf_string_conversions.h"
-#include "net/base/cookie_monster.h"
 #include "net/base/net_module.h"
 #include "net/base/net_util.h"
+#include "net/cookies/cookie_monster.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_util.h"
 #include "net/test/test_server.h"
 #include "net/url_request/url_request_context.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptController.h"
-#include "ui/gfx/gl/gl_implementation.h"
-#include "ui/gfx/gl/gl_switches.h"
+#include "ui/gl/gl_implementation.h"
+#include "ui/gl/gl_switches.h"
 #include "webkit/glue/webkit_glue.h"
+#include "webkit/glue/webpreferences.h"
 #include "webkit/glue/window_open_disposition.h"
-#include "webkit/extensions/v8/gc_extension.h"
-#include "webkit/extensions/v8/heap_profiler_extension.h"
-#include "webkit/extensions/v8/playback_extension.h"
-#include "webkit/extensions/v8/profiler_extension.h"
 #include "webkit/tools/test_shell/simple_resource_loader_bridge.h"
 #include "webkit/tools/test_shell/test_shell.h"
 #include "webkit/tools/test_shell/test_shell_platform_delegate.h"
@@ -159,21 +156,6 @@ int main(int argc, char* argv[]) {
 
   net::HttpCache::Mode cache_mode = net::HttpCache::NORMAL;
 
-  // This is a special mode where JS helps the browser implement
-  // playback/record mode.  Generally, in this mode, some functions
-  // of client-side randomness are removed.  For example, in
-  // this mode Math.random() and Date.getTime() may not return
-  // values which vary.
-  bool playback_mode =
-    parsed_command_line.HasSwitch(test_shell::kPlaybackMode);
-  bool record_mode =
-    parsed_command_line.HasSwitch(test_shell::kRecordMode);
-
-  if (playback_mode)
-    cache_mode = net::HttpCache::PLAYBACK;
-  else if (record_mode)
-    cache_mode = net::HttpCache::RECORD;
-
   if (parsed_command_line.HasSwitch(test_shell::kEnableFileCookies))
     net::CookieMonster::EnableFileScheme();
 
@@ -200,6 +182,9 @@ int main(int argc, char* argv[]) {
 
   if (parsed_command_line.HasSwitch(test_shell::kAllowScriptsToCloseWindows))
     TestShell::SetAllowScriptsToCloseWindows();
+
+  if (parsed_command_line.HasSwitch(test_shell::kEnableSmoothScrolling))
+    TestShell::GetWebPreferences()->enable_scroll_animator = true;
 
   // Disable user themes for layout tests so pixel tests are consistent.
 #if defined(OS_WIN)
@@ -273,24 +258,6 @@ int main(int argc, char* argv[]) {
   // Test shell always exposes the GC.
   webkit_glue::SetJavaScriptFlags("--expose-gc");
 
-  // Expose GCController to JavaScript.
-  WebScriptController::registerExtension(extensions_v8::GCExtension::Get());
-
-  if (parsed_command_line.HasSwitch(test_shell::kProfiler)) {
-    WebScriptController::registerExtension(
-        extensions_v8::ProfilerExtension::Get());
-  }
-
-  if (parsed_command_line.HasSwitch(test_shell::kHeapProfiler)) {
-    WebScriptController::registerExtension(
-        extensions_v8::HeapProfilerExtension::Get());
-  }
-
-  if (parsed_command_line.HasSwitch(test_shell::kDartFlags)) {
-    webkit_glue::SetDartFlags(
-        parsed_command_line.GetSwitchValueASCII(test_shell::kDartFlags));
-  }
-
   // Load and initialize the stats table.  Attempt to construct a somewhat
   // unique name to isolate separate instances from each other.
 
@@ -306,36 +273,13 @@ int main(int argc, char* argv[]) {
 
   TestShell* shell;
   if (TestShell::CreateNewWindow(starting_url, &shell)) {
-    if (record_mode || playback_mode) {
-      platform.SetWindowPositionForRecording(shell);
-      WebScriptController::registerExtension(
-          extensions_v8::PlaybackExtension::Get());
-    }
-
     shell->Show(WebKit::WebNavigationPolicyNewWindow);
 
     if (parsed_command_line.HasSwitch(test_shell::kDumpStatsTable))
       shell->DumpStatsTableOnExit();
 
-    bool no_events = parsed_command_line.HasSwitch(test_shell::kNoEvents);
-    if ((record_mode || playback_mode) && !no_events) {
-      FilePath script_path = cache_path;
-      // Create the cache directory in case it doesn't exist.
-      file_util::CreateDirectory(cache_path);
-      script_path = script_path.AppendASCII("script.log");
-      if (record_mode)
-        base::EventRecorder::current()->StartRecording(script_path);
-      if (playback_mode)
-        base::EventRecorder::current()->StartPlayback(script_path);
-    }
-
     webkit_glue::SetJavaScriptFlags(TestShell::GetJSFlagsForLoad(0));
     MessageLoop::current()->Run();
-
-    if (record_mode)
-      base::EventRecorder::current()->StopRecording();
-    if (playback_mode)
-      base::EventRecorder::current()->StopPlayback();
   }
 
   TestShell::ShutdownTestShell();

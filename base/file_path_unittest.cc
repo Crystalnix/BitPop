@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -46,10 +46,10 @@ struct UTF8TestData {
 // to be a PlatformTest
 class FilePathTest : public PlatformTest {
  protected:
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     PlatformTest::SetUp();
   }
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     PlatformTest::TearDown();
   }
 };
@@ -896,6 +896,44 @@ TEST_F(FilePathTest, ReplaceExtension) {
   }
 }
 
+TEST_F(FilePathTest, AddExtension) {
+  const struct BinaryTestData cases[] = {
+    { { FPL(""),              FPL("") },      FPL("") },
+    { { FPL(""),              FPL("txt") },   FPL("") },
+    { { FPL("."),             FPL("txt") },   FPL("") },
+    { { FPL(".."),            FPL("txt") },   FPL("") },
+    { { FPL("."),             FPL("") },      FPL("") },
+    { { FPL("foo.dll"),       FPL("txt") },   FPL("foo.dll.txt") },
+    { { FPL("./foo.dll"),     FPL("txt") },   FPL("./foo.dll.txt") },
+    { { FPL("foo..dll"),      FPL("txt") },   FPL("foo..dll.txt") },
+    { { FPL("foo.dll"),       FPL(".txt") },  FPL("foo.dll.txt") },
+    { { FPL("foo"),           FPL("txt") },   FPL("foo.txt") },
+    { { FPL("foo."),          FPL("txt") },   FPL("foo.txt") },
+    { { FPL("foo.."),         FPL("txt") },   FPL("foo..txt") },
+    { { FPL("foo"),           FPL(".txt") },  FPL("foo.txt") },
+    { { FPL("foo.baz.dll"),   FPL("txt") },   FPL("foo.baz.dll.txt") },
+    { { FPL("foo.baz.dll"),   FPL(".txt") },  FPL("foo.baz.dll.txt") },
+    { { FPL("foo.dll"),       FPL("") },      FPL("foo.dll") },
+    { { FPL("foo.dll"),       FPL(".") },     FPL("foo.dll") },
+    { { FPL("foo"),           FPL("") },      FPL("foo") },
+    { { FPL("foo"),           FPL(".") },     FPL("foo") },
+    { { FPL("foo.baz.dll"),   FPL("") },      FPL("foo.baz.dll") },
+    { { FPL("foo.baz.dll"),   FPL(".") },     FPL("foo.baz.dll") },
+#if defined(FILE_PATH_USES_WIN_SEPARATORS)
+    { { FPL("C:\\foo.bar\\foo"),    FPL("baz") }, FPL("C:\\foo.bar\\foo.baz") },
+    { { FPL("C:\\foo.bar\\..\\\\"), FPL("baz") }, FPL("") },
+#endif
+    { { FPL("/foo.bar/foo"),        FPL("baz") }, FPL("/foo.bar/foo.baz") },
+    { { FPL("/foo.bar/..////"),     FPL("baz") }, FPL("") },
+  };
+  for (unsigned int i = 0; i < arraysize(cases); ++i) {
+    FilePath path(cases[i].inputs[0]);
+    FilePath added = path.AddExtension(cases[i].inputs[1]);
+    EXPECT_EQ(cases[i].expected, added.value()) << "i: " << i <<
+        ", path: " << path.value() << ", add: " << cases[i].inputs[1];
+  }
+}
+
 TEST_F(FilePathTest, MatchesExtension) {
   const struct BinaryBooleanTestData cases[] = {
     { { FPL("foo"),                     FPL("") },                    true},
@@ -1074,7 +1112,7 @@ TEST_F(FilePathTest, FromUTF8Unsafe_And_AsUTF8Unsafe) {
 }
 
 #if defined(FILE_PATH_USES_WIN_SEPARATORS)
-TEST_F(FilePathTest, NormalizeWindowsPathSeparators) {
+TEST_F(FilePathTest, NormalizePathSeparators) {
   const struct UnaryTestData cases[] = {
     { FPL("foo/bar"), FPL("foo\\bar") },
     { FPL("foo/bar\\betz"), FPL("foo\\bar\\betz") },
@@ -1110,7 +1148,7 @@ TEST_F(FilePathTest, NormalizeWindowsPathSeparators) {
   };
   for (size_t i = 0; i < arraysize(cases); ++i) {
     FilePath input(cases[i].input);
-    FilePath observed = input.NormalizeWindowsPathSeparators();
+    FilePath observed = input.NormalizePathSeparators();
     EXPECT_EQ(FilePath::StringType(cases[i].expected), observed.value()) <<
               "i: " << i << ", input: " << input.value();
   }

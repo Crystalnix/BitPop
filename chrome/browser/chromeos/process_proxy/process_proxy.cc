@@ -4,7 +4,6 @@
 
 #include "chrome/browser/chromeos/process_proxy/process_proxy.h"
 
-#include <cstdio>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/ioctl.h>
@@ -120,8 +119,8 @@ void ProcessProxy::OnProcessOutput(ProcessOutputType type,
 }
 
 bool ProcessProxy::StopWatching() {
-   if (!watcher_started_)
-     return true;
+  if (!watcher_started_)
+    return true;
   // Signal Watcher that we are done. We use self-pipe trick to unblock watcher.
   // Anything may be written to the pipe.
   const char message[] = "q";
@@ -154,6 +153,19 @@ bool ProcessProxy::Write(const std::string& text) {
       file_util::WriteFileDescriptor(pt_pair_[PT_MASTER_FD],
                                      text.c_str(), data_size);
   return (bytes_written == static_cast<int>(data_size));
+}
+
+bool ProcessProxy::OnTerminalResize(int width, int height) {
+  if (width < 0 || height < 0)
+    return false;
+
+  winsize ws;
+  // Number of rows.
+  ws.ws_row = height;
+  // Number of columns.
+  ws.ws_col = width;
+
+  return (HANDLE_EINTR(ioctl(pt_pair_[PT_MASTER_FD], TIOCSWINSZ, &ws)) != -1);
 }
 
 ProcessProxy::~ProcessProxy() {
@@ -194,9 +206,9 @@ bool ProcessProxy::CreatePseudoTerminalPair(int *pt_pair) {
 }
 
 bool ProcessProxy::LaunchProcess(const std::string& command, int slave_fd,
-                                 pid_t *pid) {
+                                 pid_t* pid) {
   // Redirect crosh  process' output and input so we can read it.
-  base::file_handle_mapping_vector fds_mapping;
+  base::FileHandleMappingVector fds_mapping;
   fds_mapping.push_back(std::make_pair(slave_fd, STDIN_FILENO));
   fds_mapping.push_back(std::make_pair(slave_fd, STDOUT_FILENO));
   fds_mapping.push_back(std::make_pair(slave_fd, STDERR_FILENO));

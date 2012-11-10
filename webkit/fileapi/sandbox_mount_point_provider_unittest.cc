@@ -22,6 +22,7 @@
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_mount_point_provider.h"
 #include "webkit/fileapi/file_system_operation_context.h"
+#include "webkit/fileapi/file_system_task_runners.h"
 #include "webkit/fileapi/file_system_util.h"
 #include "webkit/fileapi/mock_file_system_options.h"
 #include "webkit/quota/mock_special_storage_policy.h"
@@ -53,6 +54,7 @@ class SandboxMountPointProviderOriginEnumeratorTest : public testing::Test {
   }
 
   ScopedTempDir data_dir_;
+  MessageLoop message_loop_;
   scoped_ptr<SandboxMountPointProvider> sandbox_provider_;
 };
 
@@ -141,8 +143,7 @@ class SandboxMountPointProviderMigrationTest : public testing::Test {
         new quota::MockSpecialStoragePolicy;
     special_storage_policy->SetAllUnlimited(true);
     file_system_context_ = new FileSystemContext(
-        base::MessageLoopProxy::current(),
-        base::MessageLoopProxy::current(),
+        FileSystemTaskRunners::CreateMockTaskRunners(),
         special_storage_policy,
         NULL,
         data_dir_.path(),
@@ -154,7 +155,7 @@ class SandboxMountPointProviderMigrationTest : public testing::Test {
   }
 
   FileSystemFileUtil* file_util() {
-    return sandbox_provider()->GetFileUtil();
+    return sandbox_provider()->GetFileUtil(kFileSystemTypeTemporary);
   }
 
   void OnValidate(base::PlatformFileError result) {
@@ -196,13 +197,8 @@ class SandboxMountPointProviderMigrationTest : public testing::Test {
         root.AppendASCII(seed).AppendASCII("d 0").AppendASCII("file 2"));
   }
 
-  FileSystemOperationContext* NewContext(const GURL& origin_url,
-    fileapi::FileSystemType type) {
-    FileSystemOperationContext* context = new FileSystemOperationContext(
-      file_system_context_, file_util());
-    context->set_src_origin_url(origin_url);
-    context->set_src_type(type);
-    return context;
+  FileSystemOperationContext* NewContext() {
+    return new FileSystemOperationContext(file_system_context_);
   }
 
   std::string URLAndTypeToSeedString(const GURL& origin_url,
@@ -213,41 +209,47 @@ class SandboxMountPointProviderMigrationTest : public testing::Test {
 
   void ValidateDataInNewFileSystem(
       const GURL& origin_url, fileapi::FileSystemType type) {
-
     scoped_ptr<FileSystemOperationContext> context;
-    FilePath seed = FilePath().AppendASCII(
+    FilePath seed_file_path = FilePath().AppendASCII(
         URLAndTypeToSeedString(origin_url, type));
 
-    context.reset(NewContext(origin_url, type));
+    FileSystemURL root(origin_url, type, FilePath());
+    FileSystemURL seed = root.WithPath(root.path().Append(seed_file_path));
+
+    context.reset(NewContext());
     EXPECT_TRUE(file_util()->DirectoryExists(
         context.get(), seed));
-    context.reset(NewContext(origin_url, type));
+    context.reset(NewContext());
     EXPECT_TRUE(file_util()->DirectoryExists(
-        context.get(), seed.Append(seed)));
-    context.reset(NewContext(origin_url, type));
+        context.get(), seed.WithPath(seed.path().Append(seed_file_path))));
+    context.reset(NewContext());
     EXPECT_TRUE(file_util()->DirectoryExists(
-        context.get(), seed.AppendASCII("d 0")));
-    context.reset(NewContext(origin_url, type));
+        context.get(), seed.WithPath(seed.path().AppendASCII("d 0"))));
+    context.reset(NewContext());
     EXPECT_TRUE(file_util()->DirectoryExists(
-        context.get(), seed.AppendASCII("d 1")));
-    context.reset(NewContext(origin_url, type));
+        context.get(), seed.WithPath(seed.path().AppendASCII("d 1"))));
+    context.reset(NewContext());
     EXPECT_TRUE(file_util()->PathExists(
-        context.get(), FilePath().AppendASCII("file 0")));
-    context.reset(NewContext(origin_url, type));
+        context.get(), root.WithPath(root.path().AppendASCII("file 0"))));
+    context.reset(NewContext());
     EXPECT_FALSE(file_util()->DirectoryExists(
-        context.get(), seed.AppendASCII("file 0")));
-    context.reset(NewContext(origin_url, type));
+        context.get(), seed.WithPath(seed.path().AppendASCII("file 0"))));
+    context.reset(NewContext());
     EXPECT_TRUE(file_util()->PathExists(
-        context.get(), seed.AppendASCII("d 0").AppendASCII("file 1")));
-    context.reset(NewContext(origin_url, type));
+        context.get(),
+        seed.WithPath(seed.path().AppendASCII("d 0").AppendASCII("file 1"))));
+    context.reset(NewContext());
     EXPECT_FALSE(file_util()->DirectoryExists(
-        context.get(), seed.AppendASCII("d 0").AppendASCII("file 1")));
-    context.reset(NewContext(origin_url, type));
+        context.get(),
+        seed.WithPath(seed.path().AppendASCII("d 0").AppendASCII("file 1"))));
+    context.reset(NewContext());
     EXPECT_TRUE(file_util()->PathExists(
-        context.get(), seed.AppendASCII("d 0").AppendASCII("file 2")));
-    context.reset(NewContext(origin_url, type));
+        context.get(),
+        seed.WithPath(seed.path().AppendASCII("d 0").AppendASCII("file 2"))));
+    context.reset(NewContext());
     EXPECT_FALSE(file_util()->DirectoryExists(
-        context.get(), seed.AppendASCII("d 0").AppendASCII("file 2")));
+        context.get(),
+        seed.WithPath(seed.path().AppendASCII("d 0").AppendASCII("file 2"))));
   }
 
   void RunMigrationTest(int method) {
@@ -297,7 +299,7 @@ class SandboxMountPointProviderMigrationTest : public testing::Test {
       break;
     case 3:
       sandbox_provider()->DeleteOriginDataOnFileThread(
-          NULL, origin_url, type);
+          file_system_context_, NULL, origin_url, type);
       break;
     case 4:
       sandbox_provider()->GetOriginsForTypeOnFileThread(
@@ -309,26 +311,26 @@ class SandboxMountPointProviderMigrationTest : public testing::Test {
       break;
     case 6:
       sandbox_provider()->GetOriginUsageOnFileThread(
-          origin_url, type);
+          file_system_context_, origin_url, type);
       break;
     case 7:
       // This case has to use an origin that already exists in the
       // migrated data.
       sandbox_provider()->UpdateOriginUsageOnFileThread(
           NULL, kMigrationTestRecords[0].origin,
-          fileapi::kFileSystemTypeTemporary, delta);
+          kFileSystemTypeTemporary, delta);
       break;
     case 8:
       // This case has to use a filesystem that already exists in the
       // migrated data.
       sandbox_provider()->StartUpdateOriginOnFileThread(
-          kMigrationTestRecords[0].origin, fileapi::kFileSystemTypeTemporary);
+          kMigrationTestRecords[0].origin, kFileSystemTypeTemporary);
       break;
     case 9:
       // This case has to use a filesystem that already exists in the
       // migrated data.
       sandbox_provider()->EndUpdateOriginOnFileThread(
-          kMigrationTestRecords[0].origin, fileapi::kFileSystemTypeTemporary);
+          kMigrationTestRecords[0].origin, kFileSystemTypeTemporary);
       break;
     default:
       FAIL();
@@ -347,6 +349,7 @@ class SandboxMountPointProviderMigrationTest : public testing::Test {
 
  protected:
   ScopedTempDir data_dir_;
+  MessageLoop message_loop_;
   scoped_refptr<FileSystemContext> file_system_context_;
   base::WeakPtrFactory<SandboxMountPointProviderMigrationTest> weak_factory_;
 };

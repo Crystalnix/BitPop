@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_DEBUGGER_DEVTOOLS_NETLOG_OBSERVER_H_
 #define CONTENT_BROWSER_DEBUGGER_DEVTOOLS_NETLOG_OBSERVER_H_
-#pragma once
 
 #include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
@@ -31,29 +30,11 @@ class DevToolsNetLogObserver : public net::NetLog::ThreadSafeObserver {
 
  public:
   // net::NetLog::ThreadSafeObserver implementation:
-  virtual void OnAddEntry(net::NetLog::EventType type,
-                          const base::TimeTicks& time,
-                          const net::NetLog::Source& source,
-                          net::NetLog::EventPhase phase,
-                          net::NetLog::EventParameters* params) OVERRIDE;
+  virtual void OnAddEntry(const net::NetLog::Entry& entry) OVERRIDE;
 
-  void OnAddURLRequestEntry(net::NetLog::EventType type,
-                            const base::TimeTicks& time,
-                            const net::NetLog::Source& source,
-                            net::NetLog::EventPhase phase,
-                            net::NetLog::EventParameters* params);
-
-  void OnAddHTTPStreamJobEntry(net::NetLog::EventType type,
-                               const base::TimeTicks& time,
-                               const net::NetLog::Source& source,
-                               net::NetLog::EventPhase phase,
-                               net::NetLog::EventParameters* params);
-
-  void OnAddSocketEntry(net::NetLog::EventType type,
-                        const base::TimeTicks& time,
-                        const net::NetLog::Source& source,
-                        net::NetLog::EventPhase phase,
-                        net::NetLog::EventParameters* params);
+  void OnAddURLRequestEntry(const net::NetLog::Entry& entry);
+  void OnAddHTTPStreamJobEntry(const net::NetLog::Entry& entry);
+  void OnAddSocketEntry(const net::NetLog::Entry& entry);
 
   static void Attach();
   static void Detach();
@@ -68,12 +49,11 @@ class DevToolsNetLogObserver : public net::NetLog::ThreadSafeObserver {
  private:
   static DevToolsNetLogObserver* instance_;
 
-  explicit DevToolsNetLogObserver(net::NetLog* net_log);
+  DevToolsNetLogObserver();
   virtual ~DevToolsNetLogObserver();
 
   ResourceInfo* GetResourceInfo(uint32 id);
 
-  net::NetLog* net_log_;
   typedef base::hash_map<uint32, scoped_refptr<ResourceInfo> > RequestToInfoMap;
   typedef base::hash_map<uint32, int> RequestToEncodedDataLengthMap;
   typedef base::hash_map<uint32, uint32> HTTPStreamJobToSocketMap;

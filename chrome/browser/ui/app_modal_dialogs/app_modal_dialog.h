@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_UI_APP_MODAL_DIALOGS_APP_MODAL_DIALOG_H_
 #define CHROME_BROWSER_UI_APP_MODAL_DIALOGS_APP_MODAL_DIALOG_H_
-#pragma once
 
 #include <string>
 
@@ -82,6 +81,9 @@ class AppModalDialog {
   string16 title_;
 
   content::WebContents* web_contents_;
+
+  // True if CompleteDialog was called.
+  bool completed_;
 
   DISALLOW_COPY_AND_ASSIGN(AppModalDialog);
 };

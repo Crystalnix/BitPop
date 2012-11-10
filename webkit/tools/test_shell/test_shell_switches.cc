@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -43,15 +43,6 @@ const char kMultipleLoads[] = "multiple-loads";
 // in the corresponding load.
 const char kJavaScriptFlags[] = "js-flags";
 
-// Run the http cache in record mode.
-const char kRecordMode[] = "record-mode";
-
-// Run the http cache in playback mode.
-const char kPlaybackMode[] = "playback-mode";
-
-// Don't record/playback events when using record & playback.
-const char kNoEvents[] = "no-events";
-
 // Dump stats table on exit.
 const char kDumpStatsTable[] = "stats";
 
@@ -73,19 +64,12 @@ const char kCheckLayoutTestSystemDeps[] = "check-layout-test-sys-deps";
 // to happen even if in layout test mode.
 const char kGDB[] = "gdb";
 
-// Make functions of the Profiler class available in javascript
-const char kProfiler[] = "profiler";
-
-// Make functions of the HeapProfiler class available in javascript
-const char kHeapProfiler[] = "heap-profiler";
-
 const char kAllowExternalPages[] = "allow-external-pages";
 
 const char kEnableAccel2DCanvas[] = "enable-accelerated-2d-canvas";
 
 const char kEnableAccelCompositing[] = "enable-accelerated-compositing";
 
-// Options to pass to the Dart VM.
-const char kDartFlags[] = "dart-flags";
+const char kEnableSmoothScrolling[] = "enable-smooth-scrolling";
 
 }  // namespace test_shell

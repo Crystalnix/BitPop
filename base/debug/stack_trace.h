@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef BASE_DEBUG_STACK_TRACE_H_
 #define BASE_DEBUG_STACK_TRACE_H_
-#pragma once
 
 #include <iosfwd>
 #include <string>
@@ -64,7 +63,9 @@ class BASE_EXPORT StackTrace {
   static const int kMaxTraces = 62;
 
   void* trace_[kMaxTraces];
-  int count_;
+
+  // The number of valid frames in |trace_|.
+  size_t count_;
 };
 
 }  // namespace debug

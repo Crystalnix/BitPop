@@ -4,17 +4,18 @@
 
 #ifndef CHROME_BROWSER_EXTENSIONS_EXTENSION_DATA_DELETER_H_
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_DATA_DELETER_H_
-#pragma once
 
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop_helpers.h"
+#include "base/sequenced_task_runner_helpers.h"
 #include "base/string16.h"
 #include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
 
-namespace webkit_database {
-class DatabaseTracker;
+namespace content {
+class DOMStorageContext;
+class IndexedDBContext;
+class ResourceContext;
 }
 
 namespace fileapi {
@@ -25,9 +26,11 @@ namespace net {
 class URLRequestContextGetter;
 }
 
-class ChromeAppCacheService;
+namespace webkit_database {
+class DatabaseTracker;
+}
+
 class Profile;
-class WebKitContext;
 
 // A helper class that takes care of removing local storage, databases and
 // cookies for a given extension. This is used by
@@ -66,13 +69,10 @@ class ExtensionDataDeleter
   // thread.
   void DeleteDatabaseOnFileThread();
 
-  // Deletes local storage for the extension. May only be called on the webkit
-  // thread.
-  void DeleteLocalStorageOnWebkitThread();
-
   // Deletes indexed db files for the extension. May only be called on the
   // webkit thread.
-  void DeleteIndexedDBOnWebkitThread();
+  void DeleteIndexedDBOnWebkitThread(
+      scoped_refptr<content::IndexedDBContext> indexed_db_context);
 
   // Deletes filesystem files for the extension. May only be called on the
   // file thread.
@@ -80,7 +80,7 @@ class ExtensionDataDeleter
 
   // Deletes appcache files for the extension. May only be called on the IO
   // thread.
-  void DeleteAppcachesOnIOThread();
+  void DeleteAppcachesOnIOThread(content::ResourceContext* resource_context);
 
   // The ID of the extension being deleted.
   const std::string extension_id_;
@@ -97,12 +97,7 @@ class ExtensionDataDeleter
   // The security origin identifier for which we're deleting stuff.
   string16 origin_id_;
 
-  // Webkit context for accessing the DOM storage helper.
-  scoped_refptr<WebKitContext> webkit_context_;
-
   scoped_refptr<fileapi::FileSystemContext> file_system_context_;
-
-  scoped_refptr<ChromeAppCacheService> appcache_service_;
 
   // If non-empty, the extension we're deleting is an isolated app, and this
   // is its directory which we should delete.

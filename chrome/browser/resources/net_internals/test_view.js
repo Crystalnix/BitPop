@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -65,12 +65,12 @@ var TestView = (function() {
       this.summaryDiv_.innerHTML = '';
 
       var p = addNode(this.summaryDiv_, 'p');
-      addTextNode(p, 'Started connection test suite suite on ' +
-                     (new Date()).toLocaleString());
+      addTextNode(p, 'Started connection test suite suite on ');
+      timeutil.addNodeWithDate(p, new Date());
 
       // Add a table that will hold the individual test results.
       var table = addNode(this.summaryDiv_, 'table');
-      table.className = 'styledTable';
+      table.className = 'styled-table';
       var thead = addNode(table, 'thead');
       thead.innerHTML = '<tr><th>Result</th><th>Experiment</th>' +
                         '<th>Error</th><th>Time (ms)</th></tr>';
@@ -141,7 +141,7 @@ var TestView = (function() {
         addTextNode(r.passFailCell, 'PASS');
       } else {
         addTextNode(r.resultCell,
-                    getKeyWithValue(NetError, result) + ' (' + result + ')');
+                    netErrorToString(result) + ' (' + result + ')');
         r.passFailCell.style.color = 'red';
         addTextNode(r.passFailCell, 'FAIL');
       }

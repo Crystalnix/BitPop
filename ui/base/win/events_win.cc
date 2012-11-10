@@ -8,10 +8,16 @@
 
 #include "base/logging.h"
 #include "base/time.h"
+#include "base/win/win_util.h"
 #include "ui/base/keycodes/keyboard_code_conversion_win.h"
 #include "ui/gfx/point.h"
 
 namespace {
+
+// From MSDN: "Mouse" events are flagged with 0xFF515700 if they come
+// from a touch or stylus device.  In Vista or later, they are also flagged
+// with 0x80 if they come from touch.
+#define MOUSEEVENTF_FROMTOUCH (0xFF515700 | 0x80)
 
 // Get the native mouse key state from the native event message type.
 int GetNativeMouseKey(const base::NativeEvent& native_event) {
@@ -84,9 +90,9 @@ bool IsKeyEvent(const base::NativeEvent& native_event) {
 // Checks the current global state and the state sent by client mouse messages.
 int KeyStateFlagsFromNative(const base::NativeEvent& native_event) {
   int flags = 0;
-  flags |= (GetKeyState(VK_MENU) & 0x80) ? ui::EF_ALT_DOWN : 0;
-  flags |= (GetKeyState(VK_SHIFT) & 0x80) ? ui::EF_SHIFT_DOWN : 0;
-  flags |= (GetKeyState(VK_CONTROL) & 0x80) ? ui::EF_CONTROL_DOWN : 0;
+  flags |= base::win::IsAltPressed() ? ui::EF_ALT_DOWN : ui::EF_NONE;
+  flags |= base::win::IsShiftPressed() ? ui::EF_SHIFT_DOWN : ui::EF_NONE;
+  flags |= base::win::IsCtrlPressed() ? ui::EF_CONTROL_DOWN : ui::EF_NONE;
 
   // Check key messages for the extended key flag.
   if (IsKeyEvent(native_event))
@@ -126,6 +132,10 @@ int MouseStateFlagsFromNative(const base::NativeEvent& native_event) {
 }  // namespace
 
 namespace ui {
+
+void UpdateDeviceList() {
+  NOTIMPLEMENTED();
+}
 
 EventType EventTypeFromNative(const base::NativeEvent& native_event) {
   switch (native_event.message) {
@@ -249,6 +259,16 @@ float GetTouchForce(const base::NativeEvent& native_event) {
 bool GetScrollOffsets(const base::NativeEvent& native_event,
                       float* x_offset,
                       float* y_offset) {
+  // Not supported in Windows.
+  NOTIMPLEMENTED();
+  return false;
+}
+
+bool GetFlingData(const base::NativeEvent& native_event,
+                  float* vx,
+                  float* vy,
+                  bool* is_cancel) {
+  // Not supported in Windows.
   NOTIMPLEMENTED();
   return false;
 }
@@ -262,14 +282,48 @@ bool GetGestureTimes(const base::NativeEvent& native_event,
   return false;
 }
 
-void UpdateDeviceList() {
+void SetNaturalScroll(bool enabled) {
   NOTIMPLEMENTED();
+}
+
+bool IsNaturalScrollEnabled() {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+bool IsTouchpadEvent(const base::NativeEvent& event) {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+bool IsNoopEvent(const base::NativeEvent& event) {
+  return event.message == WM_USER + 310;
 }
 
 base::NativeEvent CreateNoopEvent() {
   MSG event = { NULL };
-  event.message = WM_USER;
+  event.message = WM_USER + 310;
   return event;
+}
+
+int GetModifiersFromACCEL(const ACCEL& accel) {
+  int modifiers = ui::EF_NONE;
+  if (accel.fVirt & FSHIFT)
+    modifiers |= ui::EF_SHIFT_DOWN;
+  if (accel.fVirt & FCONTROL)
+    modifiers |= ui::EF_CONTROL_DOWN;
+  if (accel.fVirt & FALT)
+    modifiers |= ui::EF_ALT_DOWN;
+  return modifiers;
+}
+
+// Windows emulates mouse messages for touch events.
+bool IsMouseEventFromTouch(UINT message) {
+  return (message == WM_MOUSEMOVE ||
+      message == WM_LBUTTONDOWN || message == WM_LBUTTONUP ||
+      message == WM_RBUTTONDOWN || message == WM_RBUTTONUP) &&
+      (GetMessageExtraInfo() & MOUSEEVENTF_FROMTOUCH) ==
+      MOUSEEVENTF_FROMTOUCH;
 }
 
 }  // namespace ui

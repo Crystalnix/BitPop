@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/controls/button/text_button.h"
@@ -128,15 +128,15 @@ FullscreenExitBubbleViews::FullscreenExitView::FullscreenExitView(
   set_border(bubble_border);
   set_focusable(false);
 
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   message_label_ = new views::Label();
-  message_label_->SetFont(ResourceBundle::GetSharedInstance().GetFont(
-      ResourceBundle::MediumFont));
+  message_label_->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
 
   mouse_lock_exit_instruction_ = new views::Label();
   mouse_lock_exit_instruction_->set_collapse_when_hidden(true);
   mouse_lock_exit_instruction_->SetText(bubble_->GetInstructionText());
   mouse_lock_exit_instruction_->SetFont(
-      ResourceBundle::GetSharedInstance().GetFont(ResourceBundle::MediumFont));
+      rb.GetFont(ui::ResourceBundle::MediumFont));
 
   link_ = new views::Link();
   link_->set_collapse_when_hidden(true);
@@ -146,8 +146,7 @@ FullscreenExitBubbleViews::FullscreenExitView::FullscreenExitView(
   link_->SetText(l10n_util::GetStringUTF16(IDS_EXIT_FULLSCREEN_MODE));
 #endif
   link_->set_listener(this);
-  link_->SetFont(ResourceBundle::GetSharedInstance().GetFont(
-      ResourceBundle::MediumFont));
+  link_->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
   link_->SetPressedColor(message_label_->enabled_color());
   link_->SetEnabledColor(message_label_->enabled_color());
   link_->SetVisible(false);
@@ -218,7 +217,8 @@ void FullscreenExitBubbleViews::FullscreenExitView::UpdateContent(
   } else {
     bool link_visible = true;
     string16 accelerator;
-    if (bubble_type == FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION) {
+    if (bubble_type == FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION ||
+        bubble_type == FEB_TYPE_BROWSER_EXTENSION_FULLSCREEN_EXIT_INSTRUCTION) {
       accelerator = browser_fullscreen_exit_accelerator_;
     } else if (bubble_type == FEB_TYPE_FULLSCREEN_EXIT_INSTRUCTION) {
       accelerator = l10n_util::GetStringUTF16(IDS_APP_ESC_KEY);
@@ -255,7 +255,7 @@ FullscreenExitBubbleViews::FullscreenExitBubbleViews(
   size_animation_->Reset(1);
 
   // Create the contents view.
-  ui::Accelerator accelerator(ui::VKEY_UNKNOWN, false, false, false);
+  ui::Accelerator accelerator(ui::VKEY_UNKNOWN, ui::EF_NONE);
   bool got_accelerator = frame->GetAccelerator(IDC_FULLSCREEN, &accelerator);
   DCHECK(got_accelerator);
   view_ = new FullscreenExitView(
@@ -340,8 +340,8 @@ gfx::Rect FullscreenExitBubbleViews::GetPopupRect(
   gfx::Size size(view_->GetPreferredSize());
   // NOTE: don't use the bounds of the root_view_. On linux changing window
   // size is async. Instead we use the size of the screen.
-  gfx::Rect screen_bounds = gfx::Screen::GetMonitorAreaNearestWindow(
-      root_view_->GetWidget()->GetNativeView());
+  gfx::Rect screen_bounds = gfx::Screen::GetDisplayNearestWindow(
+      root_view_->GetWidget()->GetNativeView()).bounds();
   gfx::Point origin(screen_bounds.x() +
                     (screen_bounds.width() - size.width()) / 2,
                     kPopupTopPx + screen_bounds.y());

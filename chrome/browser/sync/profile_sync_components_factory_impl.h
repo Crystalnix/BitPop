@@ -4,22 +4,26 @@
 
 #ifndef CHROME_BROWSER_SYNC_PROFILE_SYNC_COMPONENTS_FACTORY_IMPL_H__
 #define CHROME_BROWSER_SYNC_PROFILE_SYNC_COMPONENTS_FACTORY_IMPL_H__
-#pragma once
 
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
+#include "chrome/browser/webdata/web_data_service.h"
 
 class CommandLine;
 class Profile;
+
+namespace extensions {
+class ExtensionSystem;
+}
 
 class ProfileSyncComponentsFactoryImpl : public ProfileSyncComponentsFactory {
  public:
   ProfileSyncComponentsFactoryImpl(Profile* profile,
                                    CommandLine* command_line);
-  virtual ~ProfileSyncComponentsFactoryImpl() {}
+  virtual ~ProfileSyncComponentsFactoryImpl();
 
   virtual void RegisterDataTypes(ProfileSyncService* pss) OVERRIDE;
 
@@ -29,70 +33,44 @@ class ProfileSyncComponentsFactoryImpl : public ProfileSyncComponentsFactory {
 
   virtual browser_sync::GenericChangeProcessor* CreateGenericChangeProcessor(
       ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler,
-      const base::WeakPtr<SyncableService>& local_service) OVERRIDE;
+      browser_sync::DataTypeErrorHandler* error_handler,
+      const base::WeakPtr<syncer::SyncableService>& local_service) OVERRIDE;
 
   virtual browser_sync::SharedChangeProcessor*
       CreateSharedChangeProcessor() OVERRIDE;
 
-  virtual SyncComponents CreateAppSyncComponents(
-      ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) OVERRIDE;
+  virtual base::WeakPtr<syncer::SyncableService> GetSyncableServiceForType(
+      syncer::ModelType type) OVERRIDE;
 
-  virtual base::WeakPtr<SyncableService> GetAutofillProfileSyncableService(
-      WebDataService* web_data_service) const OVERRIDE;
-
-  virtual base::WeakPtr<SyncableService> GetAutocompleteSyncableService(
-      WebDataService* web_data_service) const OVERRIDE;
-
+  // Legacy datatypes that need to be converted to the SyncableService API.
   virtual SyncComponents CreateBookmarkSyncComponents(
       ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) OVERRIDE;
-
-  virtual SyncComponents CreateExtensionOrAppSettingSyncComponents(
-      // Either EXTENSION_SETTING or APP_SETTING.
-      syncable::ModelType type,
-      SyncableService* settings_service,
-      ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) OVERRIDE;
-
-  virtual SyncComponents CreateExtensionSyncComponents(
-      ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) OVERRIDE;
-
+      browser_sync::DataTypeErrorHandler* error_handler) OVERRIDE;
   virtual SyncComponents CreatePasswordSyncComponents(
       ProfileSyncService* profile_sync_service,
       PasswordStore* password_store,
-      browser_sync::UnrecoverableErrorHandler* error_handler) OVERRIDE;
-
-  virtual SyncComponents CreatePreferenceSyncComponents(
-      ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) OVERRIDE;
-
+      browser_sync::DataTypeErrorHandler* error_handler) OVERRIDE;
+#if defined(ENABLE_THEMES)
   virtual SyncComponents CreateThemeSyncComponents(
       ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) OVERRIDE;
-
+      browser_sync::DataTypeErrorHandler* error_handler) OVERRIDE;
+#endif
   virtual SyncComponents CreateTypedUrlSyncComponents(
       ProfileSyncService* profile_sync_service,
       history::HistoryBackend* history_backend,
-      browser_sync::UnrecoverableErrorHandler* error_handler) OVERRIDE;
-
+      browser_sync::DataTypeErrorHandler* error_handler) OVERRIDE;
   virtual SyncComponents CreateSessionSyncComponents(
       ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) OVERRIDE;
-
-  virtual SyncComponents CreateSearchEngineSyncComponents(
-      ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) OVERRIDE;
-
-  virtual SyncComponents CreateAppNotificationSyncComponents(
-      ProfileSyncService* profile_sync_service,
-      browser_sync::UnrecoverableErrorHandler* error_handler) OVERRIDE;
+      browser_sync::DataTypeErrorHandler* error_handler) OVERRIDE;
 
  private:
   Profile* profile_;
   CommandLine* command_line_;
+  // Set on the UI thread (since extensions::ExtensionSystemFactory is
+  // non-threadsafe); accessed on both the UI and FILE threads in
+  // GetSyncableServiceForType.
+  extensions::ExtensionSystem* extension_system_;
+  scoped_refptr<WebDataService> web_data_service_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileSyncComponentsFactoryImpl);
 };

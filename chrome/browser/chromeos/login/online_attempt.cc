@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,7 +29,8 @@ namespace {
 
 // The service scope of the OAuth v2 token that ChromeOS login will be
 // requesting.
-const char* kServiceScopeChromeOS = GaiaConstants::kSyncServiceOAuth;
+const char kServiceScopeChromeOS[] =
+    "https://www.googleapis.com/auth/chromesync";
 
 }
 
@@ -63,7 +64,6 @@ void OnlineAttempt::Initiate(Profile* auth_profile) {
     oauth_fetcher_.reset(
         new GaiaOAuthFetcher(this,
                              auth_profile->GetRequestContext(),
-                             auth_profile,
                              kServiceScopeChromeOS));
   } else {
     client_fetcher_.reset(
@@ -71,13 +71,13 @@ void OnlineAttempt::Initiate(Profile* auth_profile) {
                             auth_profile->GetRequestContext()));
   }
   BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&OnlineAttempt::TryClientLogin, this));
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&OnlineAttempt::TryClientLogin, weak_factory_.GetWeakPtr()));
 }
 
 void OnlineAttempt::OnClientLoginSuccess(
-    const GaiaAuthConsumer::ClientLoginResult& credentials) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    const GaiaAuthConsumer::ClientLoginResult& unused) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   VLOG(1) << "Online login successful!";
 
   weak_factory_.InvalidateWeakPtrs();
@@ -95,12 +95,12 @@ void OnlineAttempt::OnClientLoginSuccess(
     TryClientLogin();
     return;
   }
-  TriggerResolve(credentials, LoginFailure::None());
+  TriggerResolve(LoginFailure::None());
 }
 
 void OnlineAttempt::OnClientLoginFailure(
     const GoogleServiceAuthError& error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   weak_factory_.InvalidateWeakPtrs();
 
@@ -122,8 +122,7 @@ void OnlineAttempt::OnClientLoginFailure(
     // and succeeded.  That we've failed with INVALID_GAIA_CREDENTIALS now
     // indicates that the account is HOSTED.
     LOG(WARNING) << "Rejecting valid HOSTED account.";
-    TriggerResolve(GaiaAuthConsumer::ClientLoginResult(),
-                   LoginFailure::FromNetworkAuthFailure(
+    TriggerResolve(LoginFailure::FromNetworkAuthFailure(
                        GoogleServiceAuthError(
                            GoogleServiceAuthError::HOSTED_NOT_ALLOWED)));
     return;
@@ -131,14 +130,12 @@ void OnlineAttempt::OnClientLoginFailure(
 
   if (error.state() == GoogleServiceAuthError::TWO_FACTOR) {
     LOG(WARNING) << "Two factor authenticated. Sync will not work.";
-    TriggerResolve(GaiaAuthConsumer::ClientLoginResult(),
-                   LoginFailure::None());
+    TriggerResolve(LoginFailure::None());
 
     return;
   }
   VLOG(2) << "ClientLogin attempt failed with " << error.state();
-  TriggerResolve(GaiaAuthConsumer::ClientLoginResult(),
-                 LoginFailure::FromNetworkAuthFailure(error));
+  TriggerResolve(LoginFailure::FromNetworkAuthFailure(error));
 }
 
 void OnlineAttempt::OnOAuthLoginSuccess(const std::string& sid,
@@ -154,12 +151,12 @@ void OnlineAttempt::OnOAuthLoginFailure(const GoogleServiceAuthError& error) {
 }
 
 void OnlineAttempt::TryClientLogin() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   BrowserThread::PostDelayedTask(
-      BrowserThread::IO, FROM_HERE,
+      BrowserThread::UI, FROM_HERE,
       base::Bind(&OnlineAttempt::CancelClientLogin, weak_factory_.GetWeakPtr()),
-      kClientLoginTimeoutMs);
+      base::TimeDelta::FromMilliseconds(kClientLoginTimeoutMs));
 
   if (using_oauth_) {
     if (!attempt_->oauth1_access_token().length() ||
@@ -196,20 +193,18 @@ void OnlineAttempt::CancelRequest() {
 }
 
 void OnlineAttempt::CancelClientLogin() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (HasPendingFetch()) {
     LOG(WARNING) << "Canceling ClientLogin attempt.";
     CancelRequest();
 
-    TriggerResolve(GaiaAuthConsumer::ClientLoginResult(),
-                   LoginFailure(LoginFailure::LOGIN_TIMED_OUT));
+    TriggerResolve(LoginFailure(LoginFailure::LOGIN_TIMED_OUT));
   }
 }
 
 void OnlineAttempt::TriggerResolve(
-    const GaiaAuthConsumer::ClientLoginResult& credentials,
     const LoginFailure& outcome) {
-  attempt_->RecordOnlineLoginStatus(credentials, outcome);
+  attempt_->RecordOnlineLoginStatus(outcome);
   client_fetcher_.reset(NULL);
   oauth_fetcher_.reset(NULL);
   resolver_->Resolve();

@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_LOGIN_UTILS_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_LOGIN_UTILS_H_
-#pragma once
 
 #include <string>
 
@@ -41,17 +40,17 @@ class LoginUtils {
   // Set LoginUtils singleton object for test purpose only!
   static void Set(LoginUtils* ptr);
 
-  // Thin wrapper around BrowserInit::LaunchBrowser().  Meant to be used in a
-  // Task posted to the UI thread.  Once the browser is launched the login
-  // host is deleted.
-  static void DoBrowserLaunch(Profile* profile,
-                              LoginDisplayHost* login_host);
-
   // Checks if the given username is whitelisted and allowed to sign-in to
   // this device.
   static bool IsWhitelisted(const std::string& username);
 
   virtual ~LoginUtils() {}
+
+  // Thin wrapper around StartupBrowserCreator::LaunchBrowser().  Meant to be
+  // used in a Task posted to the UI thread.  Once the browser is launched the
+  // login host is deleted.
+  virtual void DoBrowserLaunch(Profile* profile,
+                               LoginDisplayHost* login_host) = 0;
 
   // Loads and prepares profile for the session. Fires |delegate| in the end.
   // If |pending_requests| is true, there's a pending online auth request.
@@ -62,7 +61,6 @@ class LoginUtils {
       const std::string& username,
       const std::string& display_email,
       const std::string& password,
-      const GaiaAuthConsumer::ClientLoginResult& credentials,
       bool pending_requests,
       bool using_oauth,
       bool has_cookies,

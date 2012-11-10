@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,11 +10,15 @@
 #include <X11/keysymdef.h>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/eintr_wrapper.h"
-#include "remoting/host/chromoting_host.h"
+#include "base/logging.h"
+#include "remoting/host/mouse_move_observer.h"
+#include "third_party/skia/include/core/SkPoint.h"
 
 // These includes need to be later than dictated by the style guide due to
 // Xlib header pollution, specifically the min, max, and Status macros.
+#include <X11/XKBlib.h>
 #include <X11/Xlibint.h>
 #include <X11/extensions/record.h>
 
@@ -61,9 +65,15 @@ static void ProcessReply(XPointer thread,
   XRecordFreeData(data);
 }
 
-LocalInputMonitorThread::LocalInputMonitorThread(ChromotingHost* host)
+LocalInputMonitorThread::LocalInputMonitorThread(
+    MouseMoveObserver* mouse_move_observer,
+    const base::Closure& disconnect_callback)
     : base::SimpleThread("LocalInputMonitor"),
-      host_(host), display_(NULL), alt_pressed_(false), ctrl_pressed_(false) {
+      mouse_move_observer_(mouse_move_observer),
+      disconnect_callback_(disconnect_callback),
+      display_(NULL),
+      alt_pressed_(false),
+      ctrl_pressed_(false) {
   wakeup_pipe_[0] = -1;
   wakeup_pipe_[1] = -1;
   CHECK_EQ(pipe(wakeup_pipe_), 0);
@@ -163,17 +173,17 @@ void LocalInputMonitorThread::Run() {
 }
 
 void LocalInputMonitorThread::LocalMouseMoved(const SkIPoint& pos) {
-  host_->LocalMouseMoved(pos);
+  mouse_move_observer_->OnLocalMouseMoved(pos);
 }
 
 void LocalInputMonitorThread::LocalKeyPressed(int key_code, bool down) {
-  int key_sym = XKeycodeToKeysym(display_, key_code, 0);
+  KeySym key_sym = XkbKeycodeToKeysym(display_, key_code, 0, 0);
   if (key_sym == XK_Control_L || key_sym == XK_Control_R) {
     ctrl_pressed_ = down;
   } else if (key_sym == XK_Alt_L || key_sym == XK_Alt_R) {
     alt_pressed_ = down;
   } else if (alt_pressed_ && ctrl_pressed_ && key_sym == XK_Escape && down) {
-    host_->Shutdown(base::Closure());
+    disconnect_callback_.Run();
   }
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,45 +26,62 @@ namespace {
 const FilePath::CharType kDocRoot[] = FILE_PATH_LITERAL("chrome/test/data");
 
 int g_request_context_getter_instances = 0;
-class TestURLRequestContextGetter : public net::URLRequestContextGetter {
+class TrackingTestURLRequestContextGetter
+    : public TestURLRequestContextGetter {
  public:
-  explicit TestURLRequestContextGetter(
-      base::MessageLoopProxy* io_message_loop_proxy)
-          : io_message_loop_proxy_(io_message_loop_proxy) {
+  explicit TrackingTestURLRequestContextGetter(
+      base::MessageLoopProxy* io_message_loop_proxy,
+      net::URLRequestThrottlerManager* throttler_manager)
+      : TestURLRequestContextGetter(io_message_loop_proxy),
+        throttler_manager_(throttler_manager),
+        context_(NULL) {
     g_request_context_getter_instances++;
   }
-  virtual net::URLRequestContext* GetURLRequestContext() {
-    if (!context_)
-      context_ = new TestURLRequestContext();
-    return context_;
-  }
-  virtual scoped_refptr<base::MessageLoopProxy> GetIOMessageLoopProxy() const {
-    return io_message_loop_proxy_;
+
+  virtual TestURLRequestContext* GetURLRequestContext() OVERRIDE {
+    if (!context_.get()) {
+      context_.reset(new TestURLRequestContext(true));
+      context_->set_throttler_manager(throttler_manager_);
+      context_->Init();
+    }
+    return context_.get();
   }
 
  protected:
-  scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
-
- private:
-  virtual ~TestURLRequestContextGetter() {
+  virtual ~TrackingTestURLRequestContextGetter() {
     g_request_context_getter_instances--;
   }
 
-  scoped_refptr<net::URLRequestContext> context_;
+ private:
+  // Not owned here.
+  net::URLRequestThrottlerManager* throttler_manager_;
+  scoped_ptr<TestURLRequestContext> context_;
 };
 
 class TestCloudPrintURLFetcher : public CloudPrintURLFetcher {
  public:
   explicit TestCloudPrintURLFetcher(
       base::MessageLoopProxy* io_message_loop_proxy)
-          : io_message_loop_proxy_(io_message_loop_proxy) {
+      : io_message_loop_proxy_(io_message_loop_proxy) {
   }
 
   virtual net::URLRequestContextGetter* GetRequestContextGetter() {
-    return new TestURLRequestContextGetter(io_message_loop_proxy_.get());
+    return new TrackingTestURLRequestContextGetter(
+        io_message_loop_proxy_.get(), throttler_manager());
   }
+
+  net::URLRequestThrottlerManager* throttler_manager() {
+    return &throttler_manager_;
+  }
+
  private:
+  virtual ~TestCloudPrintURLFetcher() {}
+
   scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
+
+  // We set this as the throttler manager for the
+  // TestURLRequestContext we create.
+  net::URLRequestThrottlerManager throttler_manager_;
 };
 
 class CloudPrintURLFetcherTest : public testing::Test,
@@ -77,7 +94,7 @@ class CloudPrintURLFetcherTest : public testing::Test,
 
   // CloudPrintURLFetcher::Delegate
   virtual CloudPrintURLFetcher::ResponseAction HandleRawResponse(
-      const content::URLFetcher* source,
+      const net::URLFetcher* source,
       const GURL& url,
       const net::URLRequestStatus& status,
       int response_code,
@@ -121,7 +138,7 @@ class CloudPrintURLFetcherTest : public testing::Test,
   scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
   int max_retries_;
   Time start_time_;
-  scoped_refptr<CloudPrintURLFetcher> fetcher_;
+  scoped_refptr<TestCloudPrintURLFetcher> fetcher_;
 };
 
 class CloudPrintURLFetcherBasicTest : public CloudPrintURLFetcherTest {
@@ -130,7 +147,7 @@ class CloudPrintURLFetcherBasicTest : public CloudPrintURLFetcherTest {
       : handle_raw_response_(false), handle_raw_data_(false) { }
   // CloudPrintURLFetcher::Delegate
   virtual CloudPrintURLFetcher::ResponseAction HandleRawResponse(
-      const content::URLFetcher* source,
+      const net::URLFetcher* source,
       const GURL& url,
       const net::URLRequestStatus& status,
       int response_code,
@@ -138,12 +155,12 @@ class CloudPrintURLFetcherBasicTest : public CloudPrintURLFetcherTest {
       const std::string& data);
 
   virtual CloudPrintURLFetcher::ResponseAction HandleRawData(
-      const content::URLFetcher* source,
+      const net::URLFetcher* source,
       const GURL& url,
       const std::string& data);
 
   virtual CloudPrintURLFetcher::ResponseAction HandleJSONData(
-      const content::URLFetcher* source,
+      const net::URLFetcher* source,
       const GURL& url,
       DictionaryValue* json_data,
       bool succeeded);
@@ -167,7 +184,7 @@ class CloudPrintURLFetcherOverloadTest : public CloudPrintURLFetcherTest {
 
   // CloudPrintURLFetcher::Delegate
   virtual CloudPrintURLFetcher::ResponseAction HandleRawData(
-      const content::URLFetcher* source,
+      const net::URLFetcher* source,
       const GURL& url,
       const std::string& data);
 
@@ -183,7 +200,7 @@ class CloudPrintURLFetcherRetryBackoffTest : public CloudPrintURLFetcherTest {
 
   // CloudPrintURLFetcher::Delegate
   virtual CloudPrintURLFetcher::ResponseAction HandleRawData(
-      const content::URLFetcher* source,
+      const net::URLFetcher* source,
       const GURL& url,
       const std::string& data);
 
@@ -196,6 +213,14 @@ class CloudPrintURLFetcherRetryBackoffTest : public CloudPrintURLFetcherTest {
 
 void CloudPrintURLFetcherTest::CreateFetcher(const GURL& url, int max_retries) {
   fetcher_ = new TestCloudPrintURLFetcher(io_message_loop_proxy());
+
+  // Registers an entry for test url. It only allows 3 requests to be sent
+  // in 200 milliseconds.
+  scoped_refptr<net::URLRequestThrottlerEntry> entry(
+      new net::URLRequestThrottlerEntry(
+          fetcher_->throttler_manager(), "", 200, 3, 1, 2.0, 0.0, 256));
+  fetcher_->throttler_manager()->OverrideEntryForTests(url, entry);
+
   max_retries_ = max_retries;
   start_time_ = Time::Now();
   fetcher_->StartGetRequest(url, this, max_retries_, std::string());
@@ -203,7 +228,7 @@ void CloudPrintURLFetcherTest::CreateFetcher(const GURL& url, int max_retries) {
 
 CloudPrintURLFetcher::ResponseAction
 CloudPrintURLFetcherTest::HandleRawResponse(
-    const content::URLFetcher* source,
+    const net::URLFetcher* source,
     const GURL& url,
     const net::URLRequestStatus& status,
     int response_code,
@@ -217,7 +242,7 @@ CloudPrintURLFetcherTest::HandleRawResponse(
 
 CloudPrintURLFetcher::ResponseAction
 CloudPrintURLFetcherBasicTest::HandleRawResponse(
-    const content::URLFetcher* source,
+    const net::URLFetcher* source,
     const GURL& url,
     const net::URLRequestStatus& status,
     int response_code,
@@ -238,7 +263,7 @@ CloudPrintURLFetcherBasicTest::HandleRawResponse(
 
 CloudPrintURLFetcher::ResponseAction
 CloudPrintURLFetcherBasicTest::HandleRawData(
-    const content::URLFetcher* source,
+    const net::URLFetcher* source,
     const GURL& url,
     const std::string& data) {
   // We should never get here if we returned true in HandleRawResponse
@@ -252,7 +277,7 @@ CloudPrintURLFetcherBasicTest::HandleRawData(
 
 CloudPrintURLFetcher::ResponseAction
 CloudPrintURLFetcherBasicTest::HandleJSONData(
-    const content::URLFetcher* source,
+    const net::URLFetcher* source,
     const GURL& url,
     DictionaryValue* json_data,
     bool succeeded) {
@@ -265,7 +290,7 @@ CloudPrintURLFetcherBasicTest::HandleJSONData(
 
 CloudPrintURLFetcher::ResponseAction
 CloudPrintURLFetcherOverloadTest::HandleRawData(
-    const content::URLFetcher* source,
+    const net::URLFetcher* source,
     const GURL& url,
     const std::string& data) {
   const TimeDelta one_second = TimeDelta::FromMilliseconds(1000);
@@ -286,7 +311,7 @@ CloudPrintURLFetcherOverloadTest::HandleRawData(
 
 CloudPrintURLFetcher::ResponseAction
 CloudPrintURLFetcherRetryBackoffTest::HandleRawData(
-    const content::URLFetcher* source,
+    const net::URLFetcher* source,
     const GURL& url,
     const std::string& data) {
   response_count_++;
@@ -302,8 +327,10 @@ void CloudPrintURLFetcherRetryBackoffTest::OnRequestGiveUp() {
 }
 
 // http://code.google.com/p/chromium/issues/detail?id=60426
-TEST_F(CloudPrintURLFetcherBasicTest, FLAKY_HandleRawResponse) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTP, FilePath(kDocRoot));
+TEST_F(CloudPrintURLFetcherBasicTest, DISABLED_HandleRawResponse) {
+  net::TestServer test_server(net::TestServer::TYPE_HTTP,
+                              net::TestServer::kLocalhost,
+                              FilePath(kDocRoot));
   ASSERT_TRUE(test_server.Start());
   SetHandleRawResponse(true);
 
@@ -312,8 +339,10 @@ TEST_F(CloudPrintURLFetcherBasicTest, FLAKY_HandleRawResponse) {
 }
 
 // http://code.google.com/p/chromium/issues/detail?id=60426
-TEST_F(CloudPrintURLFetcherBasicTest, FLAKY_HandleRawData) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTP, FilePath(kDocRoot));
+TEST_F(CloudPrintURLFetcherBasicTest, DISABLED_HandleRawData) {
+  net::TestServer test_server(net::TestServer::TYPE_HTTP,
+                              net::TestServer::kLocalhost,
+                              FilePath(kDocRoot));
   ASSERT_TRUE(test_server.Start());
 
   SetHandleRawData(true);
@@ -322,48 +351,28 @@ TEST_F(CloudPrintURLFetcherBasicTest, FLAKY_HandleRawData) {
 }
 
 TEST_F(CloudPrintURLFetcherOverloadTest, Protect) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTP, FilePath(kDocRoot));
+  net::TestServer test_server(net::TestServer::TYPE_HTTP,
+                              net::TestServer::kLocalhost,
+                              FilePath(kDocRoot));
   ASSERT_TRUE(test_server.Start());
 
   GURL url(test_server.GetURL("defaultresponse"));
-
-  // Registers an entry for test url. It only allows 3 requests to be sent
-  // in 200 milliseconds.
-  net::URLRequestThrottlerManager* manager =
-      net::URLRequestThrottlerManager::GetInstance();
-  scoped_refptr<net::URLRequestThrottlerEntry> entry(
-      new net::URLRequestThrottlerEntry(manager, "", 200, 3, 1, 2.0, 0.0, 256));
-  manager->OverrideEntryForTests(url, entry);
-
   CreateFetcher(url, 11);
 
   MessageLoop::current()->Run();
-
-  net::URLRequestThrottlerManager::GetInstance()->EraseEntryForTests(url);
 }
 
 // http://code.google.com/p/chromium/issues/detail?id=60426
-TEST_F(CloudPrintURLFetcherRetryBackoffTest, FLAKY_GiveUp) {
-  net::TestServer test_server(net::TestServer::TYPE_HTTP, FilePath(kDocRoot));
+TEST_F(CloudPrintURLFetcherRetryBackoffTest, DISABLED_GiveUp) {
+  net::TestServer test_server(net::TestServer::TYPE_HTTP,
+                              net::TestServer::kLocalhost,
+                              FilePath(kDocRoot));
   ASSERT_TRUE(test_server.Start());
 
   GURL url(test_server.GetURL("defaultresponse"));
-
-  // Registers an entry for test url. The backoff time is calculated by:
-  //     new_backoff = 2.0 * old_backoff + 0
-  // and maximum backoff time is 256 milliseconds.
-  // Maximum retries allowed is set to 11.
-  net::URLRequestThrottlerManager* manager =
-      net::URLRequestThrottlerManager::GetInstance();
-  scoped_refptr<net::URLRequestThrottlerEntry> entry(
-      new net::URLRequestThrottlerEntry(manager, "", 200, 3, 1, 2.0, 0.0, 256));
-  manager->OverrideEntryForTests(url, entry);
-
   CreateFetcher(url, 11);
 
   MessageLoop::current()->Run();
-
-  net::URLRequestThrottlerManager::GetInstance()->EraseEntryForTests(url);
 }
 
 }  // namespace.

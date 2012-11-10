@@ -1,41 +1,95 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/common/child_thread.h"
 
+#include "base/allocator/allocator_extension.h"
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/process.h"
 #include "base/process_util.h"
 #include "base/string_util.h"
 #include "base/tracked_objects.h"
+#include "content/common/child_histogram_message_filter.h"
 #include "content/common/child_process.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/child_trace_message_filter.h"
-#include "content/common/file_system/file_system_dispatcher.h"
+#include "content/common/fileapi/file_system_dispatcher.h"
 #include "content/common/quota_dispatcher.h"
 #include "content/common/resource_dispatcher.h"
 #include "content/common/socket_stream_dispatcher.h"
 #include "content/public/common/content_switches.h"
 #include "ipc/ipc_logging.h"
+#include "ipc/ipc_switches.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ipc/ipc_sync_message_filter.h"
-#include "ipc/ipc_switches.h"
 #include "webkit/glue/webkit_glue.h"
 
 #if defined(OS_WIN)
 #include "content/common/handle_enumerator_win.h"
 #endif
 
-ChildThread::ChildThread() {
+using content::ResourceDispatcher;
+using tracked_objects::ThreadData;
+
+namespace {
+
+// How long to wait for a connection to the browser process before giving up.
+const int kConnectionTimeoutS = 15;
+
+// This isn't needed on Windows because there the sandbox's job object
+// terminates child processes automatically. For unsandboxed processes (i.e.
+// plugins), PluginThread has EnsureTerminateMessageFilter.
+#if defined(OS_POSIX)
+
+class SuicideOnChannelErrorFilter : public IPC::ChannelProxy::MessageFilter {
+ public:
+  // IPC::ChannelProxy::MessageFilter
+  virtual void OnChannelError() OVERRIDE {
+    // For renderer/worker processes:
+    // On POSIX, at least, one can install an unload handler which loops
+    // forever and leave behind a renderer process which eats 100% CPU forever.
+    //
+    // This is because the terminate signals (ViewMsg_ShouldClose and the error
+    // from the IPC channel) are routed to the main message loop but never
+    // processed (because that message loop is stuck in V8).
+    //
+    // One could make the browser SIGKILL the renderers, but that leaves open a
+    // large window where a browser failure (or a user, manually terminating
+    // the browser because "it's stuck") will leave behind a process eating all
+    // the CPU.
+    //
+    // So, we install a filter on the channel so that we can process this event
+    // here and kill the process.
+    //
+    // We want to kill this process after giving it 30 seconds to run the exit
+    // handlers. SIGALRM has a default disposition of terminating the
+    // application.
+    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kChildCleanExit))
+      alarm(30);
+    else
+      _exit(0);
+  }
+
+ protected:
+  virtual ~SuicideOnChannelErrorFilter() {}
+};
+
+#endif  // OS(POSIX)
+
+}  // namespace
+
+ChildThread::ChildThread()
+    : ALLOW_THIS_IN_INITIALIZER_LIST(channel_connected_factory_(this)) {
   channel_name_ = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
       switches::kProcessChannelID);
   Init();
 }
 
 ChildThread::ChildThread(const std::string& channel_name)
-    : channel_name_(channel_name) {
+    : channel_name_(channel_name),
+      ALLOW_THIS_IN_INITIALIZER_LIST(channel_connected_factory_(this)) {
   Init();
 }
 
@@ -57,8 +111,24 @@ void ChildThread::Init() {
 
   sync_message_filter_ =
       new IPC::SyncMessageFilter(ChildProcess::current()->GetShutDownEvent());
+  histogram_message_filter_ = new content::ChildHistogramMessageFilter();
+
+  channel_->AddFilter(histogram_message_filter_.get());
   channel_->AddFilter(sync_message_filter_.get());
   channel_->AddFilter(new ChildTraceMessageFilter());
+
+#if defined(OS_POSIX)
+  // Check that --process-type is specified so we don't do this in unit tests
+  // and single-process mode.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kProcessType))
+    channel_->AddFilter(new SuicideOnChannelErrorFilter());
+#endif
+
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&ChildThread::EnsureConnected,
+                 channel_connected_factory_.GetWeakPtr()),
+      base::TimeDelta::FromSeconds(kConnectionTimeoutS));
 }
 
 ChildThread::~ChildThread() {
@@ -66,12 +136,8 @@ ChildThread::~ChildThread() {
   IPC::Logging::GetInstance()->SetIPCSender(NULL);
 #endif
 
+  channel_->RemoveFilter(histogram_message_filter_.get());
   channel_->RemoveFilter(sync_message_filter_.get());
-
-  // Close this channel before resetting the message loop attached to it so
-  // the message loop can call ChannelProxy::Context::OnChannelClosed(), which
-  // releases the reference count to this channel.
-  channel_->Close();
 
   // The ChannelProxy object caches a pointer to the IPC thread, so need to
   // reset it as it's not guaranteed to outlive this object.
@@ -81,7 +147,11 @@ ChildThread::~ChildThread() {
   // until this process is shut down, and the OS closes the handle
   // automatically.  We used to watch the object handle on Windows to do this,
   // but it wasn't possible to do so on POSIX.
-  channel_->ClearIPCMessageLoop();
+  channel_->ClearIPCTaskRunner();
+}
+
+void ChildThread::OnChannelConnected(int32 peer_pid) {
+  channel_connected_factory_.InvalidateWeakPtrs();
 }
 
 void ChildThread::OnChannelError() {
@@ -90,6 +160,7 @@ void ChildThread::OnChannelError() {
 }
 
 bool ChildThread::Send(IPC::Message* msg) {
+  DCHECK(MessageLoop::current() == message_loop());
   if (!channel_.get()) {
     delete msg;
     return false;
@@ -98,7 +169,7 @@ bool ChildThread::Send(IPC::Message* msg) {
   return channel_->Send(msg);
 }
 
-void ChildThread::AddRoute(int32 routing_id, IPC::Channel::Listener* listener) {
+void ChildThread::AddRoute(int32 routing_id, IPC::Listener* listener) {
   DCHECK(MessageLoop::current() == message_loop());
 
   router_.AddRoute(routing_id, listener);
@@ -110,7 +181,7 @@ void ChildThread::RemoveRoute(int32 routing_id) {
   router_.RemoveRoute(routing_id);
 }
 
-IPC::Channel::Listener* ChildThread::ResolveRoute(int32 routing_id) {
+IPC::Listener* ChildThread::ResolveRoute(int32 routing_id) {
   DCHECK(MessageLoop::current() == message_loop());
 
   return router_.ResolveRoute(routing_id);
@@ -189,6 +260,9 @@ bool ChildThread::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ChildProcessMsg_GetChildProfilerData,
                         OnGetChildProfilerData)
     IPC_MESSAGE_HANDLER(ChildProcessMsg_DumpHandles, OnDumpHandles)
+#if defined(USE_TCMALLOC)
+    IPC_MESSAGE_HANDLER(ChildProcessMsg_GetTcmallocStats, OnGetTcmallocStats)
+#endif
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -218,20 +292,16 @@ void ChildThread::OnSetIPCLoggingEnabled(bool enable) {
 }
 #endif  //  IPC_MESSAGE_LOG_ENABLED
 
-void ChildThread::OnSetProfilerStatus(bool enable) {
-  tracked_objects::ThreadData::InitializeAndSetTrackingStatus(enable);
+void ChildThread::OnSetProfilerStatus(ThreadData::Status status) {
+  ThreadData::InitializeAndSetTrackingStatus(status);
 }
 
-void ChildThread::OnGetChildProfilerData(
-    int sequence_number,
-    const std::string& process_type) {
-  scoped_ptr<base::DictionaryValue> value(
-      tracked_objects::ThreadData::ToValue(false));
-  value->SetString("process_type", process_type);
-  value->SetInteger("process_id", base::GetCurrentProcId());
+void ChildThread::OnGetChildProfilerData(int sequence_number) {
+  tracked_objects::ProcessDataSnapshot process_data;
+  ThreadData::Snapshot(false, &process_data);
 
-  Send(new ChildProcessHostMsg_ChildProfilerData(
-      sequence_number, *value.get()));
+  Send(new ChildProcessHostMsg_ChildProfilerData(sequence_number,
+                                                 process_data));
 }
 
 void ChildThread::OnDumpHandles() {
@@ -248,8 +318,23 @@ void ChildThread::OnDumpHandles() {
   NOTIMPLEMENTED();
 }
 
+#if defined(USE_TCMALLOC)
+void ChildThread::OnGetTcmallocStats() {
+  std::string result;
+  char buffer[1024 * 32];
+  base::allocator::GetStats(buffer, sizeof(buffer));
+  result.append(buffer);
+  Send(new ChildProcessHostMsg_TcmallocStats(result));
+}
+#endif
+
 ChildThread* ChildThread::current() {
   return ChildProcess::current()->main_thread();
+}
+
+bool ChildThread::IsWebFrameValid(WebKit::WebFrame* frame) {
+  // Return false so that it is overridden in any process in which it is used.
+  return false;
 }
 
 void ChildThread::OnProcessFinalRelease() {
@@ -265,4 +350,9 @@ void ChildThread::OnProcessFinalRelease() {
   // race conditions if the process refcount is 0 but there's an IPC message
   // inflight that would addref it.
   Send(new ChildProcessHostMsg_ShutdownRequest);
+}
+
+void ChildThread::EnsureConnected() {
+  LOG(INFO) << "ChildThread::EnsureConnected()";
+  base::KillProcess(base::GetCurrentProcessHandle(), 0, false);
 }

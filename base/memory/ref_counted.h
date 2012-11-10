@@ -4,7 +4,6 @@
 
 #ifndef BASE_MEMORY_REF_COUNTED_H_
 #define BASE_MEMORY_REF_COUNTED_H_
-#pragma once
 
 #include <cassert>
 
@@ -18,8 +17,6 @@ namespace subtle {
 
 class BASE_EXPORT RefCountedBase {
  public:
-  static bool ImplementsThreadSafeReferenceCounting() { return false; }
-
   bool HasOneRef() const { return ref_count_ == 1; }
 
  protected:
@@ -44,8 +41,6 @@ class BASE_EXPORT RefCountedBase {
 
 class BASE_EXPORT RefCountedThreadSafeBase {
  public:
-  static bool ImplementsThreadSafeReferenceCounting() { return true; }
-
   bool HasOneRef() const;
 
  protected:
@@ -85,8 +80,7 @@ class BASE_EXPORT RefCountedThreadSafeBase {
 template <class T>
 class RefCounted : public subtle::RefCountedBase {
  public:
-  RefCounted() { }
-  ~RefCounted() { }
+  RefCounted() {}
 
   void AddRef() const {
     subtle::RefCountedBase::AddRef();
@@ -97,6 +91,9 @@ class RefCounted : public subtle::RefCountedBase {
       delete static_cast<const T*>(this);
     }
   }
+
+ protected:
+  ~RefCounted() {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RefCounted<T>);
@@ -133,8 +130,7 @@ struct DefaultRefCountedThreadSafeTraits {
 template <class T, typename Traits = DefaultRefCountedThreadSafeTraits<T> >
 class RefCountedThreadSafe : public subtle::RefCountedThreadSafeBase {
  public:
-  RefCountedThreadSafe() { }
-  ~RefCountedThreadSafe() { }
+  RefCountedThreadSafe() {}
 
   void AddRef() const {
     subtle::RefCountedThreadSafeBase::AddRef();
@@ -145,6 +141,9 @@ class RefCountedThreadSafe : public subtle::RefCountedThreadSafeBase {
       Traits::Destruct(static_cast<const T*>(this));
     }
   }
+
+ protected:
+  ~RefCountedThreadSafe() {}
 
  private:
   friend struct DefaultRefCountedThreadSafeTraits<T>;
@@ -164,6 +163,10 @@ class RefCountedData : public base::RefCounted< base::RefCountedData<T> > {
   RefCountedData(const T& in_value) : data(in_value) {}
 
   T data;
+
+ private:
+  friend class base::RefCounted<base::RefCountedData<T> >;
+  ~RefCountedData() {}
 };
 
 }  // namespace base
@@ -219,6 +222,8 @@ class RefCountedData : public base::RefCounted< base::RefCountedData<T> > {
 template <class T>
 class scoped_refptr {
  public:
+  typedef T element_type;
+
   scoped_refptr() : ptr_(NULL) {
   }
 

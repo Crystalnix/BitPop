@@ -16,9 +16,18 @@
 
 #include "base/compiler_specific.h"
 #include "base/observer_list.h"
+#include "base/timer.h"
 #include "base/threading/non_thread_safe.h"
 #include "third_party/libjingle/source/talk/base/sigslot.h"
 #include "third_party/libjingle/source/talk/xmpp/xmppclient.h"
+
+namespace net {
+class URLRequestContextGetter;
+}  // namespace net
+
+namespace talk_base {
+class TaskRunner;
+}  // namespace talk_base
 
 namespace remoting {
 
@@ -29,20 +38,22 @@ class XmppSignalStrategy : public base::NonThreadSafe,
                            public buzz::XmppStanzaHandler,
                            public sigslot::has_slots<> {
  public:
-  XmppSignalStrategy(JingleThread* thread,
-                     const std::string& username,
-                     const std::string& auth_token,
-                     const std::string& auth_token_service);
+  XmppSignalStrategy(
+      scoped_refptr<net::URLRequestContextGetter> request_context_getter,
+      const std::string& username,
+      const std::string& auth_token,
+      const std::string& auth_token_service);
   virtual ~XmppSignalStrategy();
 
   // SignalStrategy interface.
   virtual void Connect() OVERRIDE;
   virtual void Disconnect() OVERRIDE;
   virtual State GetState() const OVERRIDE;
+  virtual Error GetError() const OVERRIDE;
   virtual std::string GetLocalJid() const OVERRIDE;
   virtual void AddListener(Listener* listener) OVERRIDE;
   virtual void RemoveListener(Listener* listener) OVERRIDE;
-  virtual bool SendStanza(buzz::XmlElement* stanza) OVERRIDE;
+  virtual bool SendStanza(scoped_ptr<buzz::XmlElement> stanza) OVERRIDE;
   virtual std::string GetNextId() OVERRIDE;
 
   // buzz::XmppStanzaHandler interface.
@@ -66,17 +77,22 @@ class XmppSignalStrategy : public base::NonThreadSafe,
   void OnConnectionStateChanged(buzz::XmppEngine::State state);
   void SetState(State new_state);
 
-  JingleThread* thread_;
+  void SendKeepAlive();
 
+  scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
   std::string username_;
   std::string auth_token_;
   std::string auth_token_service_;
   std::string resource_name_;
+  scoped_ptr<talk_base::TaskRunner> task_runner_;
   buzz::XmppClient* xmpp_client_;
 
   State state_;
+  Error error_;
 
-  ObserverList<Listener> listeners_;
+  ObserverList<Listener, true> listeners_;
+
+  base::RepeatingTimer<XmppSignalStrategy> keep_alive_timer_;
 
   DISALLOW_COPY_AND_ASSIGN(XmppSignalStrategy);
 };

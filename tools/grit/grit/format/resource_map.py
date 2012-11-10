@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -38,9 +38,7 @@ def GetMapName(root):
 class HeaderTopLevel(interface.ItemFormatter):
   '''Create the header file for the resource mapping.  This file just declares
   an array of name/value pairs.'''
-  def Format(self, item, lang='en', begin_item=True, output_dir='.'):
-    if not begin_item:
-      return ''
+  def Format(self, item, lang='en', output_dir='.'):
     return '''\
 // Copyright (c) %(year)d The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -67,22 +65,20 @@ extern const size_t %(map_name)sSize;
 class SourceTopLevel(interface.ItemFormatter):
   '''Create the C++ source file for the resource mapping.  This class handles
   the header/footer of the file.'''
-  def Format(self, item, lang='en', begin_item=True, output_dir='.'):
-    if begin_item:
-      grit_root = item.GetRoot()
-      outputs = grit_root.GetOutputFiles()
-      rc_header_file = None
-      map_header_file = None
-      for output in outputs:
-        if 'rc_header' == output.GetType():
-          rc_header_file = output.GetFilename()
-        elif 'resource_map_header' == output.GetType():
-          map_header_file = output.GetFilename()
-      if not rc_header_file or not map_header_file:
-        raise Exception('resource_map_source output type requires '
-            'resource_map_header and rc_header outputs')
-
-      return '''\
+  def Format(self, item, lang='en', output_dir='.'):
+    grit_root = item.GetRoot()
+    outputs = grit_root.GetOutputFiles()
+    rc_header_file = None
+    map_header_file = None
+    for output in outputs:
+      if 'rc_header' == output.GetType():
+        rc_header_file = output.GetFilename()
+      elif 'resource_map_header' == output.GetType():
+        map_header_file = output.GetFilename()
+    if not rc_header_file or not map_header_file:
+      raise Exception('resource_map_source output type requires '
+          'resource_map_header and rc_header outputs')
+    return '''\
 // Copyright (c) %(year)d The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -99,9 +95,10 @@ const GritResourceMap %(map_name)s[] = {
         'rc_header_file': rc_header_file,
         'map_name': GetMapName(item.GetRoot()),
       }
-    else:
-      # Return the footer text.
-      return '''\
+
+  def FormatEnd(self, item, lang='en', output_dir='.'):
+    # Return the footer text.
+    return '''\
 };
 
 const size_t %(map_name)sSize = arraysize(%(map_name)s);
@@ -111,17 +108,13 @@ const size_t %(map_name)sSize = arraysize(%(map_name)s);
 class SourceInclude(interface.ItemFormatter):
   '''Populate the resource mapping.  For each include, we map a string to
   the resource ID.'''
-  def Format(self, item, lang='en', begin_item=True, output_dir='.'):
-    if not begin_item:
-      return ''
+  def Format(self, item, lang='en', output_dir='.'):
     return '  {"%s", %s},\n' % (item.attrs['name'], item.attrs['name'])
 
 
 class SourceFileInclude(interface.ItemFormatter):
   '''Populate the resource mapping.  For each include, we map a filename to
   the resource ID.'''
-  def Format(self, item, lang='en', begin_item=True, output_dir='.'):
-    if not begin_item:
-      return ''
-    filename = item.attrs['file'].replace("\\", "/")
+  def Format(self, item, lang='en', output_dir='.'):
+    filename = item.GetInputPath().replace("\\", "/")
     return '  {"%s", %s},\n' % (filename, item.attrs['name'])

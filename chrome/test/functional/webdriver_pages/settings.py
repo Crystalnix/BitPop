@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -6,6 +6,7 @@ import types
 
 import selenium.common.exceptions
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.support.ui import WebDriverWait
 
 
 def _FocusField(driver, list_elem, field_elem):
@@ -48,7 +49,7 @@ def _FocusField(driver, list_elem, field_elem):
   try:
     driver.execute_async_script(correct_focus_script, list_elem, field_elem)
   except selenium.common.exceptions.TimeoutException:
-    raise RuntimeError('Unable to focus list item ' + field_elem)
+    raise RuntimeError('Unable to focus list item ' + field_elem.tag_name)
 
 
 class DynamicList(object):
@@ -122,7 +123,7 @@ class DynamicList(object):
 
     item_list = self.GetCommittedItems()
     close_button_list = self.elem.find_elements_by_class_name(
-        'close-button')[:-1]
+        'row-delete-button')[:-1]
     for i in range(len(item_list)):
       if item_list[i] == item:
         # Highlight the item, so the close button shows up, then click it.
@@ -187,7 +188,7 @@ class TextField(object):
 class AutofillEditAddressDialog(object):
   """The overlay for editing an autofill address."""
 
-  _URL = 'chrome://settings/autofillEditAddress'
+  _URL = 'chrome://settings-frame/autofillEditAddress'
 
   @staticmethod
   def FromNavigation(driver):
@@ -280,7 +281,7 @@ class Behaviors(object):
 class ContentSettingsPage(object):
   """The overlay for managing exceptions on the Content Settings page."""
 
-  _URL = 'chrome://settings/content'
+  _URL = 'chrome://settings-frame/content'
 
   @staticmethod
   def FromNavigation(driver):
@@ -315,43 +316,69 @@ class ManageExceptionsPage(object):
       driver: The remote WebDriver instance to manage some content type.
       content_type: The content type to manage.
     """
-    content_url = 'chrome://settings/contentExceptions#%s' % content_type
+    content_url = 'chrome://settings-frame/contentExceptions#%s' % content_type
     driver.get(content_url)
     return ManageExceptionsPage(driver, content_type)
 
   def __init__(self, driver, content_type):
-    content_url = 'chrome://settings/contentExceptions#%s' % content_type
-    assert content_url == driver.current_url
     self._list_elem = driver.find_element_by_xpath(
-        './/*[@id="content-settings-exceptions-area"]' \
-        '//*[@contenttype="%s"]//list[@role="listbox"]' \
+        './/*[@id="content-settings-exceptions-area"]'
+        '//*[@contenttype="%s"]//list[@role="listbox"]'
         '[@class="settings-list"]' % content_type)
     self._driver = driver
     self._content_type = content_type
+    try:
+      self._incognito_list_elem = driver.find_element_by_xpath(
+          './/*[@id="content-settings-exceptions-area"]'
+          '//*[@contenttype="%s"]//div[not(@hidden)]'
+          '//list[@mode="otr"][@role="listbox"]'
+          '[@class="settings-list"]' % content_type)
+    except selenium.common.exceptions.NoSuchElementException:
+      self._incognito_list_elem = None
 
-  def _GetExceptionList(self):
-    return DynamicList(self._driver, self._list_elem)
+  def _AssertIncognitoAvailable(self):
+    if not self._incognito_list_elem:
+      raise AssertionError(
+          'Incognito settings in "%s" content page not available'
+          % self._content_type)
 
-  def _GetPatternList(self):
+  def _GetExceptionList(self, incognito):
+    if not incognito:
+      list_elem = self._list_elem
+    else:
+      list_elem = self._incognito_list_elem
+    return DynamicList(self._driver, list_elem)
+
+  def _GetPatternList(self, incognito):
+    if not incognito:
+      list_elem = self._list_elem
+    else:
+      list_elem = self._incognito_list_elem
     pattern_list = [p.text for p in
-        self._list_elem.find_elements_by_xpath(
+        list_elem.find_elements_by_xpath(
             './/*[contains(@class, "exception-pattern")]'
             '//*[@class="static-text"]')]
     return pattern_list
 
-  def AddNewException(self, pattern, behavior):
+  def AddNewException(self, pattern, behavior, incognito=False):
     """Add a new pattern and behavior to the Exceptions page.
 
     Args:
       pattern: Hostname pattern string.
       behavior: Setting for the hostname pattern (Allow, Block, Session Only).
+      incognito: Incognito list box. Display to false.
 
     Raises:
       AssertionError when an exception cannot be added on the content page.
     """
+    if incognito:
+      self._AssertIncognitoAvailable()
+      list_elem = self._incognito_list_elem
+    else:
+      list_elem = self._list_elem
     # Select behavior first.
     try:
-      self._list_elem.find_element_by_xpath(
+      list_elem.find_element_by_xpath(
           './/*[@class="exception-setting"]'
           '[not(@displaymode)]//option[@value="%s"]'
              % behavior).click()
@@ -360,51 +387,71 @@ class ManageExceptionsPage(object):
           'Adding new exception not allowed in "%s" content page'
           % self._content_type)
     # Set pattern now.
-    self._GetExceptionList().Add(pattern)
+    self._GetExceptionList(incognito).Add(pattern)
 
-  def DeleteException(self, pattern):
+  def DeleteException(self, pattern, incognito=False):
     """Delete the exception for the selected hostname pattern.
 
     Args:
       pattern: Hostname pattern string.
+      incognito: Incognito list box. Default to false.
     """
-    self._GetExceptionList().Remove(pattern)
+    if incognito:
+      self._AssertIncognitoAvailable()
+    self._GetExceptionList(incognito).Remove(pattern)
 
-  def GetExceptions(self):
+  def GetExceptions(self, incognito=False):
     """Returns a dictionary of {pattern: behavior}.
 
     Example: {'file:///*': 'block'}
+
+    Args:
+      incognito: Incognito list box. Default to false.
     """
-    pattern_list = self._GetPatternList()
-    behavior_list = self._list_elem.find_elements_by_xpath(
-        './/*[@role="listitem"][@class="deletable-item"]' \
+    if incognito:
+      self._AssertIncognitoAvailable()
+      list_elem = self._incognito_list_elem
+    else:
+      list_elem = self._list_elem
+    pattern_list = self._GetPatternList(incognito)
+    behavior_list = list_elem.find_elements_by_xpath(
+        './/*[@role="listitem"][@class="deletable-item"]'
         '//*[@class="exception-setting"][@displaymode="static"]')
     assert len(pattern_list) == len(behavior_list), \
-        'Number of patterns does not match the behaviors.'
+           'Number of patterns does not match the behaviors.'
     return dict(zip(pattern_list, [b.text.lower() for b in behavior_list]))
 
-  def GetBehaviorForPattern(self, pattern):
+  def GetBehaviorForPattern(self, pattern, incognito=False):
     """Returns the behavior for a given pattern on the Exceptions page.
 
     Args:
       pattern: Hostname pattern string.
-    """
-    assert self.GetExceptions().has_key(pattern), \
-            'No displayed host name matches pattern "%s"' % pattern
-    return self.GetExceptions()[pattern]
+      incognito: Incognito list box. Default to false.
+     """
+    if incognito:
+      self._AssertIncognitoAvailable()
+    assert self.GetExceptions(incognito).has_key(pattern), \
+           'No displayed host name matches pattern "%s"' % pattern
+    return self.GetExceptions(incognito)[pattern]
 
-  def SetBehaviorForPattern(self, pattern, behavior):
+  def SetBehaviorForPattern(self, pattern, behavior, incognito=False):
     """Set the behavior for the selected pattern on the Exceptions page.
 
     Args:
       pattern: Hostname pattern string.
       behavior: Setting for the hostname pattern (Allow, Block, Session Only).
+      incognito: Incognito list box. Default to false.
 
     Raises:
       AssertionError when the behavior cannot be changed on the content page.
     """
-    pattern_list = self._GetPatternList()
-    listitem_list = self._list_elem.find_elements_by_xpath(
+    if incognito:
+      self._AssertIncognitoAvailable()
+      list_elem = self._incognito_list_elem
+    else:
+      list_elem = self._list_elem
+    pattern_list = self._GetPatternList(incognito)
+    listitem_list = list_elem.find_elements_by_xpath(
         './/*[@role="listitem"][@class="deletable-item"]')
     pattern_listitem_dict = dict(zip(pattern_list, listitem_list))
     # Set focus to appropriate listitem.
@@ -420,5 +467,182 @@ class ManageExceptionsPage(object):
           '"%s" in "%s" content page' % (behavior, self._content_type))
     # Send enter key.
     pattern_elem = listitem_elem.find_element_by_tag_name('input')
-    _FocusField(self._driver, self._list_elem, pattern_elem)
+    _FocusField(self._driver, list_elem, pattern_elem)
     pattern_elem.send_keys('\n')
+
+
+class RestoreOnStartupType(object):
+  NEW_TAB_PAGE = 5
+  RESTORE_SESSION = 1
+  RESTORE_URLS = 4
+
+
+class BasicSettingsPage(object):
+  """The basic settings page."""
+  _URL = 'chrome://settings-frame/settings'
+
+  @staticmethod
+  def FromNavigation(driver):
+    """Creates an instance of BasicSetting page by navigating to it."""
+    driver.get(BasicSettingsPage._URL)
+    return BasicSettingsPage(driver)
+
+  def __init__(self, driver):
+    self._driver = driver
+    assert self._URL == driver.current_url
+
+  def SetOnStartupOptions(self, on_startup_option):
+    """Set on-startup options.
+
+    Args:
+      on_startup_option: option types for on start up settings.
+
+    Raises:
+      AssertionError when invalid startup option type is provided.
+    """
+    if on_startup_option == RestoreOnStartupType.NEW_TAB_PAGE:
+      startup_option_elem = self._driver.find_element_by_id('startup-newtab')
+    elif on_startup_option == RestoreOnStartupType.RESTORE_SESSION:
+      startup_option_elem = self._driver.find_element_by_id(
+          'startup-restore-session')
+    elif on_startup_option == RestoreOnStartupType.RESTORE_URLS:
+      startup_option_elem = self._driver.find_element_by_id(
+          'startup-show-pages')
+    else:
+      raise AssertionError('Invalid value for restore start up option!')
+    startup_option_elem.click()
+
+  def _GoToStartupSetPages(self):
+    self._driver.find_element_by_id('startup-set-pages').click()
+
+  def _FillStartupURL(self, url):
+    list = DynamicList(self._driver, self._driver.find_element_by_id(
+                       'startupPagesList'))
+    list.Add(url + '\n')
+
+  def AddStartupPage(self, url):
+    """Add a startup URL.
+
+    Args:
+      url: A startup url.
+    """
+    self._GoToStartupSetPages()
+    self._FillStartupURL(url)
+    self._driver.find_element_by_id('startup-overlay-confirm').click()
+    self._driver.get(self._URL)
+
+  def UseCurrentPageForStartup(self, title_list):
+    """Use current pages and verify page url show up in settings.
+
+    Args:
+      title_list: startup web page title list.
+    """
+    self._GoToStartupSetPages()
+    self._driver.find_element_by_id('startupUseCurrentButton').click()
+    self._driver.find_element_by_id('startup-overlay-confirm').click()
+    def is_current_page_visible(driver):
+      title_elem_list = driver.find_elements_by_xpath(
+          '//*[contains(@class, "title")][text()="%s"]' % title_list[0])
+      if len(title_elem_list) == 0:
+        return False
+      return True
+    WebDriverWait(self._driver, 10).until(is_current_page_visible)
+    self._driver.get(self._URL)
+
+  def VerifyStartupURLs(self, title_list):
+    """Verify saved startup URLs appear in set page UI.
+
+    Args:
+      title_list: A list of startup page title.
+
+    Raises:
+      AssertionError when start up URLs do not appear in set page UI.
+    """
+    self._GoToStartupSetPages()
+    for i in range(len(title_list)):
+      try:
+        self._driver.find_element_by_xpath(
+            '//*[contains(@class, "title")][text()="%s"]' % title_list[i])
+      except selenium.common.exceptions.NoSuchElementException:
+        raise AssertionError("Current page %s did not appear as startup page."
+            % title_list[i])
+    self._driver.find_element_by_id('startup-overlay-cancel').click()
+
+  def CancelStartupURLSetting(self, url):
+    """Cancel start up URL settings.
+
+    Args:
+      url: A startup url.
+    """
+    self._GoToStartupSetPages()
+    self._FillStartupURL(url)
+    self._driver.find_element_by_id('startup-overlay-cancel').click()
+    self._driver.get(self._URL)
+
+
+class CookiesAndSiteDataSettings(object):
+  """The overlay for managing cookies on the Content Settings page."""
+
+  _URL = 'chrome://settings-frame/cookies'
+
+  @staticmethod
+  def FromNavigation(driver):
+    """Creates an instance of the dialog by navigating directly to it.
+
+    Args:
+      driver: The remote WebDriver instance for managing content type.
+    """
+    driver.get(CookiesAndSiteDataSettings._URL)
+    return CookiesAndSiteDataSettings(driver)
+
+  def __init__(self, driver):
+    self._driver = driver
+    assert self._URL == driver.current_url
+    self._list_elem = driver.find_element_by_id('cookies-list')
+
+  def GetSiteNameList(self):
+    """Returns a list of the site names.
+
+    This is a public function since the test needs to check if the site is
+    deleted.
+    """
+    site_list = [p.text for p in
+                 self._list_elem.find_elements_by_xpath(
+                     './/*[contains(@class, "deletable-item")]'
+                     '//div[@class="cookie-site"]')]
+    return site_list
+
+  def _GetCookieNameList(self):
+    """Returns a list where each item is the list of cookie names of each site.
+
+    Example: site1 | cookie1 cookie2
+             site2 | cookieA
+             site3 | cookieA cookie1 cookieB
+
+    Returns:
+      A cookie names list such as:
+      [ ['cookie1', 'cookie2'], ['cookieA'], ['cookieA', 'cookie1', 'cookieB'] ]
+    """
+    cookie_name_list = []
+    for elem in self._list_elem.find_elements_by_xpath(
+        './/*[@role="listitem"]'):
+      elem.click()
+      cookie_name_list.append([c.text for c in
+            elem.find_elements_by_xpath('.//div[@class="cookie-item"]')])
+    return cookie_name_list
+
+  def DeleteSiteData(self, site):
+    """Delete a site entry with its cookies in cookies content settings.
+
+    Args:
+      site: The site string as it appears in the UI.
+    """
+    delete_button_list = self._list_elem.find_elements_by_class_name(
+        'row-delete-button')
+    site_list = self.GetSiteNameList()
+    for i in range(len(site_list)):
+      if site_list[i] == site:
+        # Highlight the item so the close button shows up, then delete button
+        # shows up, then click on the delete button.
+        ActionChains(self._driver).move_to_element(
+            delete_button_list[i]).click().perform()

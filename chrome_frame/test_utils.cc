@@ -113,8 +113,9 @@ void ScopedChromeFrameRegistrar::DoRegistration(
         << registration_command;
   } else {
     base::win::ScopedHandle rundll32(process_handle);
-    if (!base::WaitForExitCodeWithTimeout(process_handle, &exit_code,
-                                          kDllRegistrationTimeoutMs)) {
+    if (!base::WaitForExitCodeWithTimeout(
+            process_handle, &exit_code,
+            base::TimeDelta::FromMilliseconds(kDllRegistrationTimeoutMs))) {
       LOG(ERROR) << "Timeout waiting to register or unregister DLL with "
                     "command: " << registration_command;
       base::KillProcess(process_handle, 0, false);
@@ -123,10 +124,11 @@ void ScopedChromeFrameRegistrar::DoRegistration(
   }
   if (exit_code != 0) {
     if (registration_operation == REGISTER) {
-      LOG(FATAL)
+      LOG(ERROR)
           << "DLL registration failed (exit code: 0x" << std::hex << exit_code
           << ", command: " << registration_command
           << "). Make sure you are running as Admin.";
+      ::ExitProcess(1);
     } else {
       LOG(WARNING)
           << "DLL unregistration failed (exit code: 0x" << std::hex << exit_code
@@ -247,7 +249,7 @@ ScopedChromeFrameRegistrar::~ScopedChromeFrameRegistrar() {
     if (IsWindow(chrome_frame_helper_window)) {
       PostMessage(chrome_frame_helper_window, WM_CLOSE, 0, 0);
     } else {
-      chrome_frame_test::KillProcesses(L"chrome_frame_helper.exe", 0, false);
+      base::KillProcesses(L"chrome_frame_helper.exe", 0, NULL);
     }
   }
 }
@@ -410,16 +412,7 @@ class ArgumentFilter : public base::ProcessFilter {
 
 bool KillAllNamedProcessesWithArgument(const std::wstring& process_name,
                                        const std::wstring& argument) {
-  bool result = true;
-  ArgumentFilter filter(argument);
-  base::NamedProcessIterator iter(process_name, &filter);
-  while (const base::ProcessEntry* entry = iter.NextProcessEntry()) {
-    if (!base::KillProcessById(entry->pid(), 0, true)) {
-      result = false;
-    }
-  }
-
-  return result;
+  return base::KillProcesses(process_name, 0, &ArgumentFilter(argument));
 }
 
 bool IsWorkstationLocked() {

@@ -6,48 +6,56 @@
 
 #include "base/message_loop_proxy.h"
 #include "net/base/ip_endpoint.h"
+#include "remoting/base/capture_data.h"
 #include "remoting/proto/event.pb.h"
+#include "remoting/protocol/transport.h"
 
 namespace remoting {
 
-MockCapturer::MockCapturer() {}
+MockVideoFrameCapturer::MockVideoFrameCapturer() {}
 
-MockCapturer::~MockCapturer() {}
+MockVideoFrameCapturer::~MockVideoFrameCapturer() {}
 
-MockCurtain::MockCurtain() {}
+MockCaptureCompletedCallback::MockCaptureCompletedCallback() {}
 
-MockCurtain::~MockCurtain() {}
+MockCaptureCompletedCallback::~MockCaptureCompletedCallback() {}
 
-Curtain* Curtain::Create() {
-  return new MockCurtain();
+void MockCaptureCompletedCallback::CaptureCompleted(
+    scoped_refptr<CaptureData> capture_data) {
+  CaptureCompletedPtr(capture_data.get());
 }
 
 MockEventExecutor::MockEventExecutor() {}
 
 MockEventExecutor::~MockEventExecutor() {}
 
+void MockEventExecutor::OnSessionStarted(
+    scoped_ptr<protocol::ClipboardStub> client_clipboard) {
+  OnSessionStartedPtr(client_clipboard.get());
+}
+
 MockDisconnectWindow::MockDisconnectWindow() {}
 
 MockDisconnectWindow::~MockDisconnectWindow() {}
 
-DisconnectWindow* DisconnectWindow::Create() {
-  return new MockDisconnectWindow();
+scoped_ptr<DisconnectWindow> DisconnectWindow::Create() {
+  return scoped_ptr<DisconnectWindow>(new MockDisconnectWindow());
 }
 
 MockContinueWindow::MockContinueWindow() {}
 
 MockContinueWindow::~MockContinueWindow() {}
 
-ContinueWindow* ContinueWindow::Create() {
-  return new MockContinueWindow();
+scoped_ptr<ContinueWindow> ContinueWindow::Create() {
+  return scoped_ptr<ContinueWindow>(new MockContinueWindow());
 }
 
 MockLocalInputMonitor::MockLocalInputMonitor() {}
 
 MockLocalInputMonitor::~MockLocalInputMonitor() {}
 
-LocalInputMonitor* LocalInputMonitor::Create() {
-  return new MockLocalInputMonitor();
+scoped_ptr<LocalInputMonitor> LocalInputMonitor::Create() {
+  return scoped_ptr<LocalInputMonitor>(new MockLocalInputMonitor());
 }
 
 MockChromotingHostContext::MockChromotingHostContext()
@@ -59,6 +67,10 @@ MockChromotingHostContext::~MockChromotingHostContext() {}
 MockClientSessionEventHandler::MockClientSessionEventHandler() {}
 
 MockClientSessionEventHandler::~MockClientSessionEventHandler() {}
+
+MockHostStatusObserver::MockHostStatusObserver() {}
+
+MockHostStatusObserver::~MockHostStatusObserver() {}
 
 MockUserAuthenticator::MockUserAuthenticator() {}
 

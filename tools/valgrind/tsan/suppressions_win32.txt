@@ -108,6 +108,29 @@
   fun:media::FFmpegVideoDecoder::Flush
 }
 {
+  bug_93932g
+  ThreadSanitizer:Race
+  ...
+  fun:av_parser_close
+  ...
+  fun:BaseThreadInitThunk
+}
+{
+  bug_93932h
+  ThreadSanitizer:Race
+  ...
+  fun:av_parser_close
+  ...
+  fun:base::internal::RunnableAdapter::Run
+}
+{
+  bug_93932i
+  ThreadSanitizer:Race
+  fun:ff_simple_idct_add_mmx
+  ...
+  fun:BaseThreadInitThunk
+}
+{
   bug_110514_a
   ThreadSanitizer:Race
   fun:memset

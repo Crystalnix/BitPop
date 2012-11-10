@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,11 +9,9 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
+#include "third_party/libjingle/source/talk/p2p/base/candidate.h"
 #include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
 
-namespace cricket {
-class Candidate;
-}  // namespace cricket
 
 namespace remoting {
 namespace protocol {
@@ -35,13 +33,21 @@ struct JingleMessage {
   };
 
   enum Reason {
-    // Currently only termination reasons that can be sent by the host
-    // are understood. All others are converted to UNKNOWN_REASON.
     UNKNOWN_REASON,
     SUCCESS,
     DECLINE,
+    CANCEL,
     GENERAL_ERROR,
     INCOMPATIBLE_PARAMETERS,
+  };
+
+  struct NamedCandidate {
+    NamedCandidate();
+    NamedCandidate(const std::string& name,
+                   const cricket::Candidate& candidate);
+
+    std::string name;
+    cricket::Candidate candidate;
   };
 
   JingleMessage();
@@ -52,12 +58,13 @@ struct JingleMessage {
 
   // Caller keeps ownership of |stanza|.
   static bool IsJingleMessage(const buzz::XmlElement* stanza);
+  static std::string GetActionName(ActionType action);
 
   // Caller keeps ownership of |stanza|. |error| is set to debug error
   // message when parsing fails.
   bool ParseXml(const buzz::XmlElement* stanza, std::string* error);
 
-  buzz::XmlElement* ToXml();
+  scoped_ptr<buzz::XmlElement> ToXml() const;
 
   std::string from;
   std::string to;
@@ -65,7 +72,7 @@ struct JingleMessage {
   std::string sid;
 
   scoped_ptr<ContentDescription> description;
-  std::list<cricket::Candidate> candidates;
+  std::list<NamedCandidate> candidates;
 
   // Content of session-info messages.
   scoped_ptr<buzz::XmlElement> info;
@@ -98,7 +105,8 @@ struct JingleMessageReply {
   // Formats reply stanza for the specified |request_stanza|. Id and
   // recepient as well as other information needed to generate a valid
   // reply are taken from |request_stanza|.
-  buzz::XmlElement* ToXml(const buzz::XmlElement* request_stanza) const;
+  scoped_ptr<buzz::XmlElement> ToXml(
+      const buzz::XmlElement* request_stanza) const;
 
   ReplyType type;
   ErrorType error_type;

@@ -1,22 +1,25 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <windows.h>
 
-#include "base/base_paths.h"
+#include <string>
+
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
-#include "base/string_util.h"
+#include "base/time.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/threading/platform_thread.h"
+#include "base/win/scoped_handle.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/installer/setup/setup_util.h"
-#include "chrome/installer/util/master_preferences.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
-class SetupUtilTest : public testing::Test {
+
+class SetupUtilTestWithDir : public testing::Test {
  protected:
   virtual void SetUp() {
     ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_dir_));
@@ -38,10 +41,56 @@ class SetupUtilTest : public testing::Test {
   // The path to input data used in tests.
   FilePath data_dir_;
 };
+
+// The privilege tested in ScopeTokenPrivilege tests below.
+// Use SE_RESTORE_NAME as it is one of the many privileges that is available,
+// but not enabled by default on processes running at high integrity.
+static const wchar_t kTestedPrivilege[] = SE_RESTORE_NAME;
+
+// Returns true if the current process' token has privilege |privilege_name|
+// enabled.
+bool CurrentProcessHasPrivilege(const wchar_t* privilege_name) {
+  base::win::ScopedHandle token;
+  if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY,
+                          token.Receive())) {
+    ADD_FAILURE();
+    return false;
+  }
+
+  // First get the size of the buffer needed for |privileges| below.
+  DWORD size;
+  EXPECT_FALSE(::GetTokenInformation(token, TokenPrivileges, NULL, 0, &size));
+
+  scoped_array<BYTE> privileges_bytes(new BYTE[size]);
+  TOKEN_PRIVILEGES* privileges =
+      reinterpret_cast<TOKEN_PRIVILEGES*>(privileges_bytes.get());
+
+  if (!::GetTokenInformation(token, TokenPrivileges, privileges, size, &size)) {
+    ADD_FAILURE();
+    return false;
+  }
+
+  // There is no point getting a buffer to store more than |privilege_name|\0 as
+  // anything longer will obviously not be equal to |privilege_name|.
+  const DWORD desired_size = wcslen(privilege_name);
+  const DWORD buffer_size = desired_size + 1;
+  scoped_array<wchar_t> name_buffer(new wchar_t[buffer_size]);
+  for (int i = privileges->PrivilegeCount - 1; i >= 0 ; --i) {
+    LUID_AND_ATTRIBUTES& luid_and_att = privileges->Privileges[i];
+    DWORD size = buffer_size;
+    ::LookupPrivilegeName(NULL, &luid_and_att.Luid, name_buffer.get(), &size);
+    if (size == desired_size &&
+        wcscmp(name_buffer.get(), privilege_name) == 0) {
+      return luid_and_att.Attributes == SE_PRIVILEGE_ENABLED;
+    }
+  }
+  return false;
 }
 
+}  // namespace
+
 // Test that we are parsing Chrome version correctly.
-TEST_F(SetupUtilTest, ApplyDiffPatchTest) {
+TEST_F(SetupUtilTestWithDir, ApplyDiffPatchTest) {
   FilePath work_dir(test_dir_.path());
   work_dir = work_dir.AppendASCII("ApplyDiffPatchTest");
   ASSERT_FALSE(file_util::PathExists(work_dir));
@@ -60,7 +109,7 @@ TEST_F(SetupUtilTest, ApplyDiffPatchTest) {
 }
 
 // Test that we are parsing Chrome version correctly.
-TEST_F(SetupUtilTest, GetMaxVersionFromArchiveDirTest) {
+TEST_F(SetupUtilTestWithDir, GetMaxVersionFromArchiveDirTest) {
   // Create a version dir
   FilePath chrome_dir = test_dir_.path().AppendASCII("1.0.0.0");
   file_util::CreateDirectory(chrome_dir);
@@ -96,57 +145,46 @@ TEST_F(SetupUtilTest, GetMaxVersionFromArchiveDirTest) {
   ASSERT_EQ(version->GetString(), "9.9.9.9");
 }
 
-TEST_F(SetupUtilTest, ProgramCompare) {
-  using installer::ProgramCompare;
-  ScopedTempDir temp_dir;
-
-  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-
-  FilePath some_long_dir(temp_dir.path().Append(L"Some Long Directory Name"));
-  FilePath expect(some_long_dir.Append(L"file.txt"));
-  FilePath expect_upcase(some_long_dir.Append(L"FILE.txt"));
-  FilePath other(some_long_dir.Append(L"otherfile.txt"));
-
-  // Tests where the expected file doesn't exist.
-
-  // Paths don't match.
-  EXPECT_FALSE(ProgramCompare(expect).Evaluate(L"\"" + other.value() + L"\""));
-  // Paths match exactly.
-  EXPECT_TRUE(ProgramCompare(expect).Evaluate(L"\"" + expect.value() + L"\""));
-  // Paths differ by case.
-  EXPECT_TRUE(ProgramCompare(expect).Evaluate(
-      L"\"" + expect_upcase.value() + L"\""));
-
-  // Tests where the expected file exists.
-  static const char data[] = "data";
-  ASSERT_TRUE(file_util::CreateDirectory(some_long_dir));
-  ASSERT_NE(-1, file_util::WriteFile(expect, data, arraysize(data) - 1));
-  // Paths don't match.
-  EXPECT_FALSE(ProgramCompare(expect).Evaluate(L"\"" + other.value() + L"\""));
-  // Paths match exactly.
-  EXPECT_TRUE(ProgramCompare(expect).Evaluate(L"\"" + expect.value() + L"\""));
-  // Paths differ by case.
-  EXPECT_TRUE(ProgramCompare(expect).Evaluate(
-      L"\"" + expect_upcase.value() + L"\""));
-
-  // Test where strings don't match, but the same file is indicated.
-  std::wstring short_expect;
-  DWORD short_len = GetShortPathName(expect.value().c_str(),
-                                     WriteInto(&short_expect, MAX_PATH),
-                                     MAX_PATH);
-  ASSERT_NE(static_cast<DWORD>(0), short_len);
-  ASSERT_GT(static_cast<DWORD>(MAX_PATH), short_len);
-  short_expect.resize(short_len);
-  ASSERT_FALSE(FilePath::CompareEqualIgnoreCase(expect.value(), short_expect));
-  EXPECT_TRUE(ProgramCompare(expect).Evaluate(L"\"" + short_expect + L"\""));
-}
-
-TEST_F(SetupUtilTest, DeleteFileFromTempProcess) {
+TEST_F(SetupUtilTestWithDir, DeleteFileFromTempProcess) {
   FilePath test_file;
   file_util::CreateTemporaryFileInDir(test_dir_.path(), &test_file);
   ASSERT_TRUE(file_util::PathExists(test_file));
   file_util::WriteFile(test_file, "foo", 3);
   EXPECT_TRUE(installer::DeleteFileFromTempProcess(test_file, 0));
-  base::PlatformThread::Sleep(200);
+  base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(200));
   EXPECT_FALSE(file_util::PathExists(test_file));
+}
+
+// Note: This test is only valid when run at high integrity (i.e. it will fail
+// at medium integrity).
+TEST(SetupUtilTest, ScopedTokenPrivilegeBasic) {
+  ASSERT_FALSE(CurrentProcessHasPrivilege(kTestedPrivilege));
+
+  {
+    installer::ScopedTokenPrivilege test_scoped_privilege(kTestedPrivilege);
+    ASSERT_TRUE(test_scoped_privilege.is_enabled());
+    ASSERT_TRUE(CurrentProcessHasPrivilege(kTestedPrivilege));
+  }
+
+  ASSERT_FALSE(CurrentProcessHasPrivilege(kTestedPrivilege));
+}
+
+// Note: This test is only valid when run at high integrity (i.e. it will fail
+// at medium integrity).
+TEST(SetupUtilTest, ScopedTokenPrivilegeAlreadyEnabled) {
+  ASSERT_FALSE(CurrentProcessHasPrivilege(kTestedPrivilege));
+
+  {
+    installer::ScopedTokenPrivilege test_scoped_privilege(kTestedPrivilege);
+    ASSERT_TRUE(test_scoped_privilege.is_enabled());
+    ASSERT_TRUE(CurrentProcessHasPrivilege(kTestedPrivilege));
+    {
+      installer::ScopedTokenPrivilege dup_scoped_privilege(kTestedPrivilege);
+      ASSERT_TRUE(dup_scoped_privilege.is_enabled());
+      ASSERT_TRUE(CurrentProcessHasPrivilege(kTestedPrivilege));
+    }
+    ASSERT_TRUE(CurrentProcessHasPrivilege(kTestedPrivilege));
+  }
+
+  ASSERT_FALSE(CurrentProcessHasPrivilege(kTestedPrivilege));
 }

@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_SYNC_TEST_INTEGRATION_SESSIONS_HELPER_H_
 #define CHROME_BROWSER_SYNC_TEST_INTEGRATION_SESSIONS_HELPER_H_
-#pragma once
 
 #include <algorithm>
 #include <vector>
@@ -12,8 +11,8 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/sessions/session_types.h"
 #include "chrome/browser/sync/glue/synced_session.h"
-#include "chrome/browser/sync/engine/nigori_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
+#include "sync/syncable/nigori_util.h"
 
 class GURL;
 

@@ -7,39 +7,57 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/hi_res_timer_manager.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/run_loop.h"
+#include "base/string_number_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/download/download_file_manager.h"
 #include "content/browser/download/save_file_manager.h"
+#include "content/browser/gamepad/gamepad_service.h"
+#include "content/browser/gpu/browser_gpu_channel_host_factory.h"
+#include "content/browser/gpu/gpu_process_host.h"
+#include "content/browser/gpu/gpu_process_host_ui_shim.h"
+#include "content/browser/histogram_synchronizer.h"
 #include "content/browser/in_process_webkit/webkit_thread.h"
+#include "content/browser/net/browser_online_state_observer.h"
 #include "content/browser/plugin_service_impl.h"
-#include "content/browser/renderer_host/resource_dispatcher_host.h"
-#include "content/browser/trace_controller.h"
-#include "content/common/hi_res_timer_manager.h"
-#include "content/common/sandbox_policy.h"
+#include "content/browser/renderer_host/media/audio_input_device_manager.h"
+#include "content/browser/renderer_host/media/media_stream_manager.h"
+#include "content/browser/renderer_host/media/video_capture_manager.h"
+#include "content/browser/renderer_host/resource_dispatcher_host_impl.h"
+#include "content/browser/speech/speech_recognition_manager_impl.h"
+#include "content/browser/trace_controller_impl.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/browser/browser_shutdown.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/gpu_data_manager.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/result_codes.h"
 #include "crypto/nss_util.h"
+#include "media/audio/audio_manager.h"
 #include "net/base/network_change_notifier.h"
 #include "net/base/ssl_config_service.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/tcp_client_socket.h"
 
+#if defined(USE_AURA)
+#include "content/browser/renderer_host/image_transport_factory.h"
+#endif
+
 #if defined(OS_WIN)
 #include <windows.h>
 #include <commctrl.h>
-#include <ole2.h>
 #include <shellapi.h>
 
 #include "content/browser/system_message_window_win.h"
+#include "content/common/sandbox_policy.h"
 #include "ui/base/l10n/l10n_util_win.h"
 #include "net/base/winsock_init.h"
 #endif
@@ -48,27 +66,38 @@
 #include <glib-object.h>
 #endif
 
+#if defined(OS_LINUX)
+#include "content/browser/device_monitor_linux.h"
+#endif
+
 #if defined(OS_CHROMEOS)
 #include <dbus/dbus-glib.h>
 #endif
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 #include "ui/gfx/gtk_util.h"
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include <sys/stat.h>
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
-#include "content/browser/zygote_host_linux.h"
+#include "content/browser/zygote_host/zygote_host_impl_linux.h"
 #endif
 
 #if defined(USE_X11)
 #include <X11/Xlib.h>
 #endif
 
+// One of the linux specific headers defines this as a macro.
+#ifdef DestroyAll
+#undef DestroyAll
+#endif
+
+using content::TraceControllerImpl;
+
 namespace {
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 void SetupSandbox(const CommandLine& parsed_command_line) {
   // TODO(evanm): move this into SandboxWrapper; I'm just trying to move this
   // code en masse out of chrome_main for now.
@@ -91,10 +120,8 @@ void SetupSandbox(const CommandLine& parsed_command_line) {
     sandbox_cmd = sandbox_binary;
 
   // Tickle the sandbox host and zygote host so they fork now.
-  RenderSandboxHostLinux* shost = RenderSandboxHostLinux::GetInstance();
-  shost->Init(sandbox_cmd);
-  ZygoteHost* zhost = ZygoteHost::GetInstance();
-  zhost->Init(sandbox_cmd);
+  RenderSandboxHostLinux::GetInstance()->Init(sandbox_cmd);
+  ZygoteHostImpl::GetInstance()->Init(sandbox_cmd);
 }
 #endif
 
@@ -160,16 +187,15 @@ static void SetUpGLibLogHandler() {
 namespace content {
 
 // The currently-running BrowserMainLoop.  There can be one or zero.
-// This is stored to enable immediate shutdown when needed.
-BrowserMainLoop* current_browser_main_loop = NULL;
+BrowserMainLoop* g_current_browser_main_loop = NULL;
 
 // This is just to be able to keep ShutdownThreadsAndCleanUp out of
 // the public interface of BrowserMainLoop.
 class BrowserShutdownImpl {
  public:
   static void ImmediateShutdownAndExitProcess() {
-    DCHECK(current_browser_main_loop);
-    current_browser_main_loop->ShutdownThreadsAndCleanUp();
+    DCHECK(g_current_browser_main_loop);
+    g_current_browser_main_loop->ShutdownThreadsAndCleanUp();
 
 #if defined(OS_WIN)
     // At this point the message loop is still running yet we've shut everything
@@ -187,25 +213,28 @@ void ImmediateShutdownAndExitProcess() {
   BrowserShutdownImpl::ImmediateShutdownAndExitProcess();
 }
 
-// BrowserMainLoop construction / destructione =============================
+// static
+media::AudioManager* BrowserMainLoop::GetAudioManager() {
+  return g_current_browser_main_loop->audio_manager_.get();
+}
+
+// static
+media_stream::MediaStreamManager* BrowserMainLoop::GetMediaStreamManager() {
+  return g_current_browser_main_loop->media_stream_manager_.get();
+}
+// BrowserMainLoop construction / destruction =============================
 
 BrowserMainLoop::BrowserMainLoop(const content::MainFunctionParams& parameters)
     : parameters_(parameters),
       parsed_command_line_(parameters.command_line),
       result_code_(content::RESULT_CODE_NORMAL_EXIT) {
-  DCHECK(!current_browser_main_loop);
-  current_browser_main_loop = this;
-#if defined(OS_WIN)
-  OleInitialize(NULL);
-#endif
+  DCHECK(!g_current_browser_main_loop);
+  g_current_browser_main_loop = this;
 }
 
 BrowserMainLoop::~BrowserMainLoop() {
-  DCHECK_EQ(this, current_browser_main_loop);
-  current_browser_main_loop = NULL;
-#if defined(OS_WIN)
-  OleUninitialize();
-#endif
+  DCHECK_EQ(this, g_current_browser_main_loop);
+  g_current_browser_main_loop = NULL;
 }
 
 void BrowserMainLoop::Init() {
@@ -243,6 +272,7 @@ void BrowserMainLoop::EarlyInitialization() {
   } else {
     init_nspr = true;
   }
+  UMA_HISTOGRAM_BOOLEAN("Chrome.CommandLineUseSystemSSL", !init_nspr);
 #elif defined(USE_NSS)
   init_nspr = true;
 #endif
@@ -252,21 +282,26 @@ void BrowserMainLoop::EarlyInitialization() {
   }
 #endif  // !defined(USE_OPENSSL)
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   SetupSandbox(parsed_command_line_);
 #endif
 
   if (parsed_command_line_.HasSwitch(switches::kEnableSSLCachedInfo))
     net::SSLConfigService::EnableCachedInfo();
-  if (parsed_command_line_.HasSwitch(
-          switches::kEnableDNSCertProvenanceChecking)) {
-    net::SSLConfigService::EnableDNSCertProvenanceChecking();
-  }
 
   // TODO(abarth): Should this move to InitializeNetworkOptions?  This doesn't
   // seem dependent on SSL initialization().
   if (parsed_command_line_.HasSwitch(switches::kEnableTcpFastOpen))
     net::set_tcp_fastopen_enabled(true);
+
+  if (parsed_command_line_.HasSwitch(switches::kRendererProcessLimit)) {
+    std::string limit_string = parsed_command_line_.GetSwitchValueASCII(
+        switches::kRendererProcessLimit);
+    size_t process_limit;
+    if (base::StringToSizeT(limit_string, &process_limit)) {
+      content::RenderProcessHost::SetMaxRendererProcessCount(process_limit);
+    }
+  }
 
   if (parts_.get())
     parts_->PostEarlyInitialization();
@@ -285,21 +320,30 @@ void BrowserMainLoop::MainMessageLoopStart() {
   }
 #endif
 
-  // Must first NULL pointer or we hit a DCHECK that the newly constructed
-  // message loop is the current one.
-  main_message_loop_.reset();
-  main_message_loop_.reset(new MessageLoop(MessageLoop::TYPE_UI));
+  // Create a MessageLoop if one does not already exist for the current thread.
+  if (!MessageLoop::current())
+    main_message_loop_.reset(new MessageLoop(MessageLoop::TYPE_UI));
 
   InitializeMainThread();
 
   // Start tracing to a file if needed.
-  if (base::debug::TraceLog::GetInstance()->IsEnabled())
-    TraceController::GetInstance()->InitStartupTracing(parsed_command_line_);
+  if (base::debug::TraceLog::GetInstance()->IsEnabled()) {
+    TraceControllerImpl::GetInstance()->InitStartupTracing(
+        parsed_command_line_);
+  }
 
   system_monitor_.reset(new base::SystemMonitor);
   hi_res_timer_manager_.reset(new HighResolutionTimerManager);
-
   network_change_notifier_.reset(net::NetworkChangeNotifier::Create());
+  audio_manager_.reset(media::AudioManager::Create());
+  online_state_observer_.reset(new BrowserOnlineStateObserver);
+  scoped_refptr<media_stream::AudioInputDeviceManager>
+      audio_input_device_manager(
+          new media_stream::AudioInputDeviceManager(audio_manager_.get()));
+  scoped_refptr<media_stream::VideoCaptureManager> video_capture_manager(
+      new media_stream::VideoCaptureManager());
+  media_stream_manager_.reset(new media_stream::MediaStreamManager(
+      audio_input_device_manager, video_capture_manager));
 
 #if defined(OS_WIN)
   system_message_window_.reset(new SystemMessageWindowWin);
@@ -315,8 +359,7 @@ void BrowserMainLoop::MainMessageLoopStart() {
     parts_->PostMainMessageLoopStart();
 }
 
-void BrowserMainLoop::RunMainMessageLoopParts(
-    bool* completed_main_message_loop) {
+void BrowserMainLoop::CreateThreads() {
   if (parts_.get())
     result_code_ = parts_->PreCreateThreads();
 
@@ -398,10 +441,30 @@ void BrowserMainLoop::RunMainMessageLoopParts(
   if (parts_.get())
     parts_->PreMainMessageLoopRun();
 
-  TRACE_EVENT_BEGIN_ETW("BrowserMain:MESSAGE_LOOP", 0, "");
+  // When running the GPU thread in-process, avoid optimistically starting it
+  // since creating the GPU thread races against creation of the one-and-only
+  // ChildProcess instance which is created by the renderer thread.
+  GpuDataManager* gpu_data_manager = content::GpuDataManager::GetInstance();
+  if (gpu_data_manager->GpuAccessAllowed() &&
+      !parsed_command_line_.HasSwitch(switches::kDisableGpuProcessPrelaunch) &&
+      !parsed_command_line_.HasSwitch(switches::kSingleProcess) &&
+      !parsed_command_line_.HasSwitch(switches::kInProcessGPU)) {
+    TRACE_EVENT_INSTANT0("gpu", "Post task to launch GPU process");
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE, base::Bind(
+            base::IgnoreResult(&GpuProcessHost::Get),
+            GpuProcessHost::GPU_PROCESS_KIND_SANDBOXED,
+            content::CAUSE_FOR_GPU_LAUNCH_BROWSER_STARTUP));
+  }
+
   // If the UI thread blocks, the whole UI is unresponsive.
   // Do not allow disk IO from the UI thread.
   base::ThreadRestrictions::SetIOAllowed(false);
+  base::ThreadRestrictions::DisallowWaiting();
+}
+
+void BrowserMainLoop::RunMainMessageLoopParts() {
+  TRACE_EVENT_BEGIN_ETW("BrowserMain:MESSAGE_LOOP", 0, "");
 
   bool ran_main_loop = false;
   if (parts_.get())
@@ -411,11 +474,6 @@ void BrowserMainLoop::RunMainMessageLoopParts(
     MainMessageLoopRun();
 
   TRACE_EVENT_END_ETW("BrowserMain:MESSAGE_LOOP", 0, "");
-
-  if (completed_main_message_loop)
-    *completed_main_message_loop = true;
-
-  ShutdownThreadsAndCleanUp();
 }
 
 void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
@@ -430,9 +488,22 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   if (parts_.get())
     parts_->PostMainMessageLoopRun();
 
+  // Destroying the GpuProcessHostUIShims on the UI thread posts a task to
+  // delete related objects on the GPU thread. This must be done before
+  // stopping the GPU thread. The GPU thread will close IPC channels to renderer
+  // processes so this has to happen before stopping the IO thread.
+  GpuProcessHostUIShim::DestroyAll();
+
   // Cancel pending requests and prevent new requests.
   if (resource_dispatcher_host_.get())
     resource_dispatcher_host_.get()->Shutdown();
+
+#if defined(USE_AURA)
+  ImageTransportFactory::Terminate();
+#endif
+  BrowserGpuChannelHostFactory::Terminate();
+
+  GamepadService::GetInstance()->Terminate();
 
   // Must be size_t so we can subtract from it.
   for (size_t thread_id = BrowserThread::ID_COUNT - 1;
@@ -529,7 +600,8 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
 void BrowserMainLoop::InitializeMainThread() {
   const char* kThreadName = "CrBrowserMain";
   base::PlatformThread::SetName(kThreadName);
-  main_message_loop_->set_thread_name(kThreadName);
+  if (main_message_loop_.get())
+    main_message_loop_->set_thread_name(kThreadName);
 
   // Register the main thread by instantiating it, but don't call any methods.
   main_thread_.reset(new BrowserThreadImpl(BrowserThread::UI,
@@ -538,8 +610,27 @@ void BrowserMainLoop::InitializeMainThread() {
 
 
 void BrowserMainLoop::BrowserThreadsStarted() {
+  HistogramSynchronizer::GetInstance();
+
+  content::BrowserGpuChannelHostFactory::Initialize();
+#if defined(USE_AURA)
+  ImageTransportFactory::Initialize();
+#endif
+
+#if defined(OS_LINUX)
+  device_monitor_linux_.reset(new DeviceMonitorLinux());
+#endif
+
   // RDH needs the IO thread to be created.
-  resource_dispatcher_host_.reset(new ResourceDispatcherHost());
+  resource_dispatcher_host_.reset(new ResourceDispatcherHostImpl());
+
+#if defined(ENABLE_INPUT_SPEECH)
+  speech_recognition_manager_.reset(new speech::SpeechRecognitionManagerImpl());
+#endif
+
+  // Start the GpuDataManager before we set up the MessageLoops because
+  // otherwise we'll trigger the assertion about doing IO on the UI thread.
+  content::GpuDataManager::GetInstance();
 }
 
 void BrowserMainLoop::InitializeToolkit() {
@@ -555,10 +646,6 @@ void BrowserMainLoop::InitializeToolkit() {
   // definitely harmless, so retained as a reminder of this
   // requirement for gconf.
   g_type_init();
-
-#if defined(USE_AURA)
-  setlocale(LC_ALL, "");
-#endif
 
 #if !defined(USE_AURA)
   gfx::GtkInitFromCommandLine(parsed_command_line_);
@@ -587,13 +674,16 @@ void BrowserMainLoop::InitializeToolkit() {
 }
 
 void BrowserMainLoop::MainMessageLoopRun() {
+#if defined(OS_ANDROID)
+  // Android's main message loop is the Java message loop.
+  NOTREACHED();
+#else
+  DCHECK_EQ(MessageLoop::TYPE_UI, MessageLoop::current()->type());
   if (parameters_.ui_task)
     MessageLoopForUI::current()->PostTask(FROM_HERE, *parameters_.ui_task);
 
-#if defined(OS_MACOSX)
-  MessageLoopForUI::current()->Run();
-#else
-  MessageLoopForUI::current()->RunWithDispatcher(NULL);
+  base::RunLoop run_loop;
+  run_loop.Run();
 #endif
 }
 

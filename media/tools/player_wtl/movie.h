@@ -13,11 +13,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "media/base/message_loop_factory.h"
 
-class AudioManager;
 template <typename T> struct DefaultSingletonTraits;
 
 namespace media {
 
+class AudioManager;
 class Pipeline;
 class VideoRendererBase;
 
@@ -85,7 +85,7 @@ class Movie {
 
   scoped_refptr<Pipeline> pipeline_;
   scoped_ptr<media::MessageLoopFactory> message_loop_factory_;
-  scoped_refptr<AudioManager> audio_manager_;
+  scoped_ptr<AudioManager> audio_manager_;
 
   bool enable_audio_;
   bool enable_draw_;

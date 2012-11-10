@@ -38,11 +38,11 @@ message DeviceRegisterRequest {
   // "Android", or "Chrome OS".
   optional string machine_model = 4;
 
-  // When true, indicates that the |machine_id| field should be known to the
-  // server. The server can do additional checks based on this information.
-  // This is currently used for requests triggered by auto-enrollment.
+  // When true, indicates that the |machine_id| has been identified as auto-
+  // enrollment candidate on the client and the server can use it to verify
+  // that the client is to be enrolled in the correct mode.
   // Defaults to false when not present.
-  optional bool known_machine_id = 5;
+  optional bool auto_enrolled = 5;
 }
 
 // Response from server to device register request.
@@ -56,6 +56,20 @@ message DeviceRegisterResponse {
   // the format of "Machine Model - Machine Id".  However, domain
   // admin can update it using CPanel, so do NOT treat it as constant.
   optional string machine_name = 2;
+
+  // Enum listing the possible modes the device should be locked into when the
+  // registration is finished.
+  enum DeviceMode {
+    // In ENTERPRISE mode the device has no local owner and device settings are
+    // controlled through the cloud policy infrastructure. Auto-enrollment is
+    // supported in that mode.
+    ENTERPRISE = 0;
+    // Devices in RETAIL mode also have no local owner and get their device
+    // settings from the cloud, but additionally this mode enables the demo
+    // account on the device.
+    RETAIL = 1;
+  }
+  optional DeviceMode enrollment_type = 3 [default = ENTERPRISE];
 }
 
 // Request from device to server to unregister device.
@@ -229,6 +243,11 @@ message TimePeriod {
   optional int64 end_timestamp = 2;
 }
 
+message ActiveTimePeriod {
+  optional TimePeriod time_period = 1;
+  optional int32 active_duration = 2;
+}
+
 // This captures launch events for one app/extension or other installments.
 message InstallableLaunch {
   optional string install_id = 1;
@@ -245,6 +264,44 @@ message InstallableLaunch {
   optional int64 total_count = 4;
 }
 
+// Used to report the device location.
+message DeviceLocation {
+  enum ErrorCode {
+    ERROR_CODE_NONE                 = 0;
+    ERROR_CODE_POSITION_UNAVAILABLE = 1;
+  }
+
+  // Latitude in decimal degrees north (WGS84 coordinate frame).
+  optional double latitude = 1;
+
+  // Longitude in decimal degrees west (WGS84 coordinate frame).
+  optional double longitude = 2;
+
+  // Altitude in meters (above WGS84 datum).
+  optional double altitude = 3;
+
+  // Accuracy of horizontal position in meters.
+  optional double accuracy = 4;
+
+  // Accuracy of altitude in meters.
+  optional double altitude_accuracy = 5;
+
+  // Heading in decimal degrees clockwise from true north.
+  optional double heading = 6;
+
+  // Horizontal component of device velocity in meters per second.
+  optional double speed = 7;
+
+  // Time of position measurement in milisecons since Epoch in UTC time.
+  optional int64 timestamp = 8;
+
+  // Error code, see enum above.
+  optional ErrorCode error_code = 9;
+
+  // Human-readable error message.
+  optional string error_message = 10;
+}
+
 // Report device level status.
 message DeviceStatusReportRequest {
   optional string os_version = 1;
@@ -254,11 +311,17 @@ message DeviceStatusReportRequest {
   // If the mode is unknown, this field should not be set.
   optional string boot_mode = 3;
 
-  // Device active times collection since last report rpc call.
-  repeated TimePeriod active_time = 4;
+  // No longer used -- use active_period instead.
+  repeated TimePeriod active_time = 4 [deprecated=true];
 
   // The browser version string as shown in the About dialog.
   optional string browser_version = 5;
+
+  // A list of periods when the device was active, aggregated by day.
+  repeated ActiveTimePeriod active_period = 6;
+
+  // The device location.
+  optional DeviceLocation device_location = 7;
 }
 
 // Report session (a user on one device) level status.

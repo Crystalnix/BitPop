@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 #include "chrome_frame/test/perf/chrome_frame_perftest.h"
@@ -26,6 +26,7 @@
 #include "base/win/scoped_bstr.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_variant.h"
+#include "chrome/app/image_pre_reader_win.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_paths_internal.h"
@@ -294,8 +295,8 @@ class ChromeFrameStartupTest : public ChromeFramePerfTestBase {
     chrome_exe_ = dir_app_.Append(chrome::kBrowserProcessExecutableName);
     chrome_frame_dll_ = dir_app_.Append(kChromeFrameDllName);
     icu_dll_ = dir_app_.Append(L"icudt.dll");
-    avcodec_dll_ = dir_app_.Append(L"avcodec-53.dll");
-    avformat_dll_ = dir_app_.Append(L"avformat-53.dll");
+    avcodec_dll_ = dir_app_.Append(L"avcodec-54.dll");
+    avformat_dll_ = dir_app_.Append(L"avformat-54.dll");
     avutil_dll_ = dir_app_.Append(L"avutil-51.dll");
   }
 
@@ -339,7 +340,7 @@ class ChromeFrameStartupTest : public ChromeFramePerfTestBase {
 
       // TODO(beng): Can't shut down so quickly. Figure out why, and fix. If we
       // do, we crash.
-      base::PlatformThread::Sleep(50);
+      base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(50));
     }
 
     std::string times;
@@ -408,23 +409,39 @@ class ChromeFrameStartupTestActiveX : public ChromeFrameStartupTest {
 class ChromeFrameBinariesLoadTest : public ChromeFrameStartupTestActiveX {
   static const size_t kStepSize = 4 * 1024;
  public:
+  enum PreReadType {
+    kPreReadNone,
+    kPreReadPartial,
+    kPreReadFull
+  };
+
   ChromeFrameBinariesLoadTest()
-      : pre_read_(false),
+      : pre_read_type_(kPreReadNone),
         step_size_(kStepSize),
-        bytes_to_read_(0) {}
+        bytes_to_read_(0),
+        percentage_to_preread_(25) {}
 
  protected:
   virtual void RunStartupTestImpl(TimeTicks* start_time,
                                   TimeTicks* end_time) {
     *start_time = TimeTicks::Now();
 
-    if (pre_read_) {
-      EXPECT_TRUE(file_util::PreReadImage(chrome_exe_.value().c_str(),
-                                          bytes_to_read_,
-                                          step_size_));
-      EXPECT_TRUE(file_util::PreReadImage(chrome_dll_.value().c_str(),
-                                          bytes_to_read_,
-                                          step_size_));
+    if (pre_read_type_ == kPreReadFull) {
+      EXPECT_TRUE(ImagePreReader::PreReadImage(chrome_exe_.value().c_str(),
+                                               bytes_to_read_,
+                                               step_size_));
+      EXPECT_TRUE(ImagePreReader::PreReadImage(chrome_dll_.value().c_str(),
+                                               bytes_to_read_,
+                                               step_size_));
+    } else if (pre_read_type_ == kPreReadPartial) {
+      EXPECT_TRUE(
+          ImagePreReader::PartialPreReadImage(chrome_exe_.value().c_str(),
+                                              percentage_to_preread_,
+                                              step_size_));
+      EXPECT_TRUE(
+          ImagePreReader::PartialPreReadImage(chrome_dll_.value().c_str(),
+                                              percentage_to_preread_,
+                                              step_size_));
     }
 
     HMODULE chrome_exe = LoadLibrary(chrome_exe_.value().c_str());
@@ -439,9 +456,10 @@ class ChromeFrameBinariesLoadTest : public ChromeFrameStartupTestActiveX {
     FreeLibrary(chrome_dll);
   }
 
-  bool pre_read_;
+  PreReadType pre_read_type_;
   size_t bytes_to_read_;
   size_t step_size_;
+  uint8 percentage_to_preread_;
 };
 
 // This class provides functionality to run the startup performance test for
@@ -815,7 +833,7 @@ class ChromeFrameActiveXMemoryTest : public MemoryTestBase {
     PrintResults(test_name_.c_str());
 
     CoFreeUnusedLibraries();
-    base::PlatformThread::Sleep(100);
+    base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100));
   }
 
   void NavigateImpl(const std::string& url) {
@@ -926,6 +944,91 @@ class SilverlightCreationTest : public ChromeFrameStartupTest {
   }
 };
 
+// TODO(rogerm): Flesh out the *PreReadImage* tests to validate an observed
+//     change in paging behaviour between raw loading and pre-reading.
+
+// TODO(rogerm): Add checks to the *PreReadImage* tests to validate the
+//     handling of invalid pe files and paths as input.
+
+TEST(ImagePreReader, PreReadImage) {
+  FilePath current_exe;
+  ASSERT_TRUE(PathService::Get(base::FILE_EXE, &current_exe));
+
+  int64 file_size_64 = 0;
+  ASSERT_TRUE(file_util::GetFileSize(current_exe, &file_size_64));
+  ASSERT_TRUE(file_size_64 < std::numeric_limits<std::size_t>::max());
+  size_t file_size = static_cast<size_t>(file_size_64);
+
+  const wchar_t* module_path = current_exe.value().c_str();
+  const size_t kStepSize = 2 * 1024 * 1024;
+
+  ASSERT_TRUE(
+      ImagePreReader::PreReadImage(module_path, 0, kStepSize));
+  ASSERT_TRUE(
+      ImagePreReader::PreReadImage(module_path, file_size / 4, kStepSize));
+  ASSERT_TRUE(
+      ImagePreReader::PreReadImage(module_path, file_size / 2, kStepSize));
+  ASSERT_TRUE(
+      ImagePreReader::PreReadImage(module_path, file_size, kStepSize));
+  ASSERT_TRUE(
+      ImagePreReader::PreReadImage(module_path, file_size * 2, kStepSize));
+}
+
+TEST(ImagePreReader, PartialPreReadImage) {
+  FilePath current_exe;
+  ASSERT_TRUE(PathService::Get(base::FILE_EXE, &current_exe));
+
+  const wchar_t* module_path = current_exe.value().c_str();
+  const size_t kStepSize = 2 * 1024 * 1024;
+
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImage(module_path, 0, kStepSize));
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImage(module_path, 25, kStepSize));
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImage(module_path, 50, kStepSize));
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImage(module_path, 100, kStepSize));
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImage(module_path, 150, kStepSize));
+}
+
+TEST(ImagePreReader, PartialPreReadImageOnDisk) {
+  FilePath current_exe;
+  ASSERT_TRUE(PathService::Get(base::FILE_EXE, &current_exe));
+
+  const wchar_t* module_path = current_exe.value().c_str();
+  const size_t kChunkSize = 2 * 1024 * 1024;
+
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImageOnDisk(module_path, 0, kChunkSize));
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImageOnDisk(module_path, 25, kChunkSize));
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImageOnDisk(module_path, 50, kChunkSize));
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImageOnDisk(module_path, 100, kChunkSize));
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImageOnDisk(module_path, 150, kChunkSize));
+}
+
+TEST(ImagePreReader, PartialPreReadImageInMemory) {
+  FilePath current_exe;
+  ASSERT_TRUE(PathService::Get(base::FILE_EXE, &current_exe));
+  const wchar_t* module_path = current_exe.value().c_str();
+
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImageInMemory(module_path, 0));
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImageInMemory(module_path, 25));
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImageInMemory(module_path, 50));
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImageInMemory(module_path, 100));
+  ASSERT_TRUE(
+      ImagePreReader::PartialPreReadImageInMemory(module_path, 150));
+}
+
 TEST(ChromeFramePerf, DISABLED_HostActiveX) {
   // TODO(stoyan): Create a low integrity level thread && perform the test there
   SimpleModule module;
@@ -989,8 +1092,36 @@ TEST_F(ChromeFrameBinariesLoadTest, PerfCold) {
 
 TEST_F(ChromeFrameBinariesLoadTest, PerfColdPreRead) {
   FilePath binaries_to_evict[] = {chrome_exe_, chrome_dll_};
-  pre_read_ = true;
+  pre_read_type_ = kPreReadFull;
   RunStartupTest("binary_load_cold_preread", "t", "", true /* cold */,
+                 arraysize(binaries_to_evict), binaries_to_evict,
+                 false /* not important */, false);
+}
+
+TEST_F(ChromeFrameBinariesLoadTest, PerfColdPartialPreRead15) {
+  FilePath binaries_to_evict[] = {chrome_exe_, chrome_dll_};
+  pre_read_type_ = kPreReadPartial;
+  percentage_to_preread_ = 15;
+  RunStartupTest("binary_load_cold_partial_preread", "t", "", true /* cold */,
+                 arraysize(binaries_to_evict), binaries_to_evict,
+                 false /* not important */, false);
+}
+
+
+TEST_F(ChromeFrameBinariesLoadTest, PerfColdPartialPreRead25) {
+  FilePath binaries_to_evict[] = {chrome_exe_, chrome_dll_};
+  pre_read_type_ = kPreReadPartial;
+  percentage_to_preread_ = 25;
+  RunStartupTest("binary_load_cold_partial_preread", "t", "", true /* cold */,
+                 arraysize(binaries_to_evict), binaries_to_evict,
+                 false /* not important */, false);
+}
+
+TEST_F(ChromeFrameBinariesLoadTest, PerfColdPartialPreRead40) {
+  FilePath binaries_to_evict[] = {chrome_exe_, chrome_dll_};
+  pre_read_type_ = kPreReadPartial;
+  percentage_to_preread_ = 40;
+  RunStartupTest("binary_load_cold_partial_preread", "t", "", true /* cold */,
                  arraysize(binaries_to_evict), binaries_to_evict,
                  false /* not important */, false);
 }
@@ -1367,17 +1498,17 @@ bool RunSingleTestOutOfProc(const std::string& test_name) {
   if (!base::LaunchProcess(cmd_line, base::LaunchOptions(), &process_handle))
     return false;
 
-  int test_terminate_timeout_ms = 60 * 1000;
+  base::TimeDelta test_terminate_timeout = base::TimeDelta::FromMinutes(1);
   int exit_code = 0;
   if (!base::WaitForExitCodeWithTimeout(process_handle, &exit_code,
-    test_terminate_timeout_ms)) {
-      LOG(ERROR) << "Test timeout (" << test_terminate_timeout_ms
-        << " ms) exceeded for " << test_name;
+                                        test_terminate_timeout)) {
+    LOG(ERROR) << "Test timeout (" << test_terminate_timeout.InMilliseconds()
+               << " ms) exceeded for " << test_name;
 
-      exit_code = -1;  // Set a non-zero exit code to signal a failure.
+    exit_code = -1;  // Set a non-zero exit code to signal a failure.
 
-      // Ensure that the process terminates.
-      base::KillProcess(process_handle, -1, true);
+    // Ensure that the process terminates.
+    base::KillProcess(process_handle, -1, true);
   }
 
   base::CloseProcessHandle(process_handle);
@@ -1438,9 +1569,10 @@ TEST(TestAsPerfTest, MetaTag_createproxy) {
         "AutomationProvider::InitializeChannel");
 
     external_tab_navigate_monitor[i].set_interesting_event(
-        "ExternalTabContainer::Navigate");
+        "ExternalTabContainerWin::Navigate");
 
-    renderer_main_monitor[i].set_start_event("ExternalTabContainer::Navigate");
+    renderer_main_monitor[i].set_start_event(
+        "ExternalTabContainerWin::Navigate");
     renderer_main_monitor[i].set_end_event("RendererMain");
 
     pre_read_chrome_monitor[i].set_interesting_event("PreReadImage");

@@ -1,3 +1,7 @@
+/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
 .user-list-table {
   border: 1px solid lightgrey;
   border-collapse: collapse;
@@ -5,8 +9,8 @@
 }
 
 .user-name-edit-row {
+  background-color: rgb(235, 239, 250);
   border: 1px solid lightgrey;
-  background-color: #ebeffa;
   padding: 5px;
 }
 
@@ -16,8 +20,8 @@
 
 .user-icon {
   border: 1px solid black;
-  width: 26px;
   height: 26px;
+  width: 26px;
 }
 
 .user-email-label {
@@ -25,8 +29,8 @@
 }
 
 .user-name-label {
-  color: darkgray;
   -webkit-margin-start: 10px;
+  color: darkgray;
 }
 
 .user-email-name-block {
@@ -38,19 +42,25 @@
 }
 
 .remove-user-button {
-  background-image: url('../../../../../ui/resources/close_bar.png');
-  width: 16px;
+  background-image: -webkit-image-set(
+      url('../../../../../ui/resources/default_100_percent/close_bar.png') 1x,
+      url('../../../../../ui/resources/default_200_percent/close_bar.png') 2x);
   height: 16px;
+  width: 16px;
 }
 
 .remove-user-button:hover {
-  background-image: url('../../../../../ui/resources/close_bar_h.png');
+  background-image: -webkit-image-set(
+      url('../../../../../ui/resources/default_100_percent/close_bar_hover.png')
+          1x,
+      url('../../../../../ui/resources/default_200_percent/close_bar_hover.png')
+          2x);
 }
 
 #userList {
+  height: 166px;
   padding: 5px;
   width: 366px;
-  height: 166px;
 }
 
 #userList[disabled],
@@ -74,14 +84,14 @@
 }
 
 #ownerOnlyWarning {
-  margin-top: 10px;
-  margin-bottom: 10px;
-  padding-bottom: 1px;
   -webkit-padding-start: 20px;
-  background-repeat: no-repeat;
   background-image: url('warning.png');
+  background-repeat: no-repeat;
+  margin-bottom: 10px;
+  margin-top: 10px;
+  padding-bottom: 1px;
 }
 
 input#userNameEdit:invalid {
-  background-color: #ff6666;
+  background-color: rgb(255, 102, 102);
 }

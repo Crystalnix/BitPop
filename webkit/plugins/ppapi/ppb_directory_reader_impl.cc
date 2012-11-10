@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,6 +23,7 @@
 #include "webkit/plugins/ppapi/resource_helper.h"
 
 using ::ppapi::PpapiGlobals;
+using ::ppapi::TrackedCallback;
 using ::ppapi::thunk::EnterResourceNoLock;
 using ::ppapi::thunk::PPB_DirectoryReader_API;
 using ::ppapi::thunk::PPB_FileRef_API;
@@ -56,7 +57,7 @@ FilePath::StringType UTF8StringToFilePathString(const std::string& str) {
 
 PPB_DirectoryReader_Impl::PPB_DirectoryReader_Impl(
     PPB_FileRef_Impl* directory_ref)
-    : Resource(directory_ref->pp_instance()),
+    : Resource(::ppapi::OBJECT_IS_IMPL, directory_ref->pp_instance()),
       directory_ref_(directory_ref),
       has_more_(true),
       entry_(NULL) {
@@ -80,9 +81,7 @@ PPB_DirectoryReader_API* PPB_DirectoryReader_Impl::AsPPB_DirectoryReader_API() {
 
 int32_t PPB_DirectoryReader_Impl::GetNextEntry(
     PP_DirectoryEntry_Dev* entry,
-    PP_CompletionCallback callback) {
-  if (!callback.func)
-    return PP_ERROR_BLOCKS_MAIN_THREAD;
+    scoped_refptr<TrackedCallback> callback) {
   if (directory_ref_->GetFileSystemType() == PP_FILESYSTEMTYPE_EXTERNAL)
     return PP_ERROR_FAILED;
 

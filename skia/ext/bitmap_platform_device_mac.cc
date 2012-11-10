@@ -125,11 +125,6 @@ BitmapPlatformDevice* BitmapPlatformDevice::Create(CGContextRef context,
     bitmap.setPixels(data);
   } else {
     data = bitmap.getPixels();
-
-    // Note: The Windows implementation clears the Bitmap later on.
-    // This bears mentioning since removal of this line makes the
-    // unit tests only fail periodically (or when MallocPreScribble is set).
-    bitmap.eraseARGB(0, 0, 0, 0);
   }
 
   bitmap.setIsOpaque(is_opaque);
@@ -158,6 +153,15 @@ BitmapPlatformDevice* BitmapPlatformDevice::Create(CGContextRef context,
   CGContextRelease(context);
 
   return rv;
+}
+
+BitmapPlatformDevice* BitmapPlatformDevice::CreateAndClear(int width,
+                                                           int height,
+                                                           bool is_opaque) {
+  BitmapPlatformDevice* device = Create(NULL, width, height, is_opaque);
+  if (!is_opaque)
+    device->accessBitmap(true).eraseARGB(0, 0, 0, 0);
+  return device;
 }
 
 BitmapPlatformDevice* BitmapPlatformDevice::CreateWithData(uint8_t* data,
@@ -233,15 +237,18 @@ void BitmapPlatformDevice::DrawToNativeContext(CGContextRef context, int x,
     data_->ReleaseBitmapContext();
 }
 
-void BitmapPlatformDevice::onAccessBitmap(SkBitmap*) {
+const SkBitmap& BitmapPlatformDevice::onAccessBitmap(SkBitmap* bitmap) {
   // Not needed in CoreGraphics
+  return *bitmap;
 }
 
 SkDevice* BitmapPlatformDevice::onCreateCompatibleDevice(
     SkBitmap::Config config, int width, int height, bool isOpaque,
     Usage /*usage*/) {
   SkASSERT(config == SkBitmap::kARGB_8888_Config);
-  return BitmapPlatformDevice::Create(NULL, width, height, isOpaque);
+  SkDevice* bitmap_device = BitmapPlatformDevice::CreateAndClear(width, height,
+                                                                 isOpaque);
+  return bitmap_device;
 }
 
 }  // namespace skia

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,10 +12,11 @@ SSLClientSocket::SSLClientSocket()
     : was_npn_negotiated_(false),
       was_spdy_negotiated_(false),
       protocol_negotiated_(kProtoUnknown),
-      was_origin_bound_cert_sent_(false) {
+      channel_id_sent_(false) {
 }
 
-SSLClientSocket::NextProto SSLClientSocket::NextProtoFromString(
+// static
+NextProto SSLClientSocket::NextProtoFromString(
     const std::string& proto_string) {
   if (proto_string == "http1.1" || proto_string == "http/1.1") {
     return kProtoHTTP11;
@@ -23,15 +24,15 @@ SSLClientSocket::NextProto SSLClientSocket::NextProtoFromString(
     return kProtoSPDY1;
   } else if (proto_string == "spdy/2") {
     return kProtoSPDY2;
-  } else if (proto_string == "spdy/2.1") {
-    return kProtoSPDY21;
+  } else if (proto_string == "spdy/3") {
+    return kProtoSPDY3;
   } else {
     return kProtoUnknown;
   }
 }
 
-const char* SSLClientSocket::NextProtoToString(
-    SSLClientSocket::NextProto next_proto) {
+// static
+const char* SSLClientSocket::NextProtoToString(NextProto next_proto) {
   switch (next_proto) {
     case kProtoHTTP11:
       return "http/1.1";
@@ -39,8 +40,8 @@ const char* SSLClientSocket::NextProtoToString(
       return "spdy/1";
     case kProtoSPDY2:
       return "spdy/2";
-    case kProtoSPDY21:
-      return "spdy/2.1";
+    case kProtoSPDY3:
+      return "spdy/3";
     default:
       break;
   }
@@ -76,6 +77,14 @@ std::string SSLClientSocket::ServerProtosToString(
   return JoinString(server_protos_with_commas, ',');
 }
 
+bool SSLClientSocket::WasNpnNegotiated() const {
+  return was_npn_negotiated_;
+}
+
+NextProto SSLClientSocket::GetNegotiatedProtocol() const {
+  return protocol_negotiated_;
+}
+
 bool SSLClientSocket::IgnoreCertError(int error, int load_flags) {
   if (error == OK || load_flags & LOAD_IGNORE_ALL_CERT_ERRORS)
     return true;
@@ -95,10 +104,6 @@ bool SSLClientSocket::IgnoreCertError(int error, int load_flags) {
   return false;
 }
 
-bool SSLClientSocket::was_npn_negotiated() const {
-  return was_npn_negotiated_;
-}
-
 bool SSLClientSocket::set_was_npn_negotiated(bool negotiated) {
   return was_npn_negotiated_ = negotiated;
 }
@@ -111,21 +116,16 @@ bool SSLClientSocket::set_was_spdy_negotiated(bool negotiated) {
   return was_spdy_negotiated_ = negotiated;
 }
 
-SSLClientSocket::NextProto SSLClientSocket::protocol_negotiated() const {
-  return protocol_negotiated_;
-}
-
-void SSLClientSocket::set_protocol_negotiated(
-    SSLClientSocket::NextProto protocol_negotiated) {
+void SSLClientSocket::set_protocol_negotiated(NextProto protocol_negotiated) {
   protocol_negotiated_ = protocol_negotiated;
 }
 
-bool SSLClientSocket::was_origin_bound_cert_sent() const {
-  return was_origin_bound_cert_sent_;
+bool SSLClientSocket::WasChannelIDSent() const {
+  return channel_id_sent_;
 }
 
-bool SSLClientSocket::set_was_origin_bound_cert_sent(bool sent) {
-  return was_origin_bound_cert_sent_ = sent;
+void SSLClientSocket::set_channel_id_sent(bool channel_id_sent) {
+  channel_id_sent_ = channel_id_sent;
 }
 
 }  // namespace net

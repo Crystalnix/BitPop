@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_DEVICE_ORIENTATION_PROVIDER_IMPL_H_
 #define CONTENT_BROWSER_DEVICE_ORIENTATION_PROVIDER_IMPL_H_
 
+#include <map>
 #include <set>
 #include <vector>
 
@@ -12,15 +13,11 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time.h"
 #include "content/browser/device_orientation/data_fetcher.h"
-#include "content/browser/device_orientation/orientation.h"
+#include "content/browser/device_orientation/device_data.h"
 #include "content/browser/device_orientation/provider.h"
 #include "content/common/content_export.h"
 
 class MessageLoop;
-
-namespace base {
-class Thread;
-}
 
 namespace device_orientation {
 
@@ -28,59 +25,54 @@ class ProviderImpl : public Provider {
  public:
   typedef DataFetcher* (*DataFetcherFactory)();
 
-  // Create a ProviderImpl that uses the NULL-terminated factories array to find
-  // a DataFetcher that can provide orientation data.
-  CONTENT_EXPORT ProviderImpl(const DataFetcherFactory factories[]);
+  // Create a ProviderImpl that uses the factory to create a DataFetcher that
+  // can provide data. A NULL DataFetcherFactory indicates that there are no
+  // DataFetchers for this OS.
+  CONTENT_EXPORT ProviderImpl(DataFetcherFactory factory);
 
   // From Provider.
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
 
  private:
+  class PollingThread;
+
   virtual ~ProviderImpl();
 
   // Starts or Stops the provider. Called from creator_loop_.
-  void Start();
+  void Start(DeviceData::Type type);
   void Stop();
 
-  // Method for finding a suitable DataFetcher and starting the polling.
-  // Runs on the polling_thread_.
-  void DoInitializePollingThread(
-      const std::vector<DataFetcherFactory>& factories);
-  void ScheduleInitializePollingThread();
+  void ScheduleInitializePollingThread(DeviceData::Type device_data_type);
+  void ScheduleDoAddPollingDataType(DeviceData::Type type);
 
-  // Method for polling a DataFetcher. Runs on the polling_thread_.
-  void DoPoll();
-  void ScheduleDoPoll();
-
-  // Method for notifying observers of an orientation update.
+  // Method for notifying observers of a data update.
   // Runs on the creator_thread_.
-  void DoNotify(const Orientation& orientation);
-  void ScheduleDoNotify(const Orientation& orientation);
+  void DoNotify(const DeviceData* device_data,
+                DeviceData::Type device_data_type);
 
-  static bool SignificantlyDifferent(const Orientation& orientation1,
-                                     const Orientation& orientation2);
-
-  enum { kDesiredSamplingIntervalMs = 100 };
-  base::TimeDelta SamplingInterval() const;
+  static bool ShouldFireEvent(const DeviceData* old_data,
+      const DeviceData* new_data, DeviceData::Type device_data_type);
 
   // The Message Loop on which this object was created.
   // Typically the I/O loop, but may be something else during testing.
   MessageLoop* creator_loop_;
 
   // Members below are only to be used from the creator_loop_.
-  std::vector<DataFetcherFactory> factories_;
+  DataFetcherFactory factory_;
   std::set<Observer*> observers_;
-  Orientation last_notification_;
+  std::map<DeviceData::Type, scoped_refptr<const DeviceData> >
+      last_notifications_map_;
 
   // When polling_thread_ is running, members below are only to be used
   // from that thread.
-  scoped_ptr<DataFetcher> data_fetcher_;
-  Orientation last_orientation_;
   base::WeakPtrFactory<ProviderImpl> weak_factory_;
 
-  // Polling is done on this background thread.
-  scoped_ptr<base::Thread> polling_thread_;
+  // Polling is done on this background thread. PollingThread is owned by
+  // the ProviderImpl object. But its deletion doesn't happen synchronously
+  // along with deletion of the ProviderImpl. Thus this should be a raw
+  // pointer instead of scoped_ptr.
+  PollingThread* polling_thread_;
 };
 
 }  // namespace device_orientation

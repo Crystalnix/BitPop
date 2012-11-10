@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,12 +13,16 @@
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/password_manager/password_store.h"
+#include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 
@@ -79,7 +83,7 @@ bool ProfileWriter::BookmarkEntry::operator==(
 ProfileWriter::ProfileWriter(Profile* profile) : profile_(profile) {}
 
 bool ProfileWriter::BookmarkModelIsLoaded() const {
-  return profile_->GetBookmarkModel()->IsLoaded();
+  return BookmarkModelFactory::GetForProfile(profile_)->IsLoaded();
 }
 
 bool ProfileWriter::TemplateURLServiceIsLoaded() const {
@@ -87,18 +91,20 @@ bool ProfileWriter::TemplateURLServiceIsLoaded() const {
 }
 
 void ProfileWriter::AddPasswordForm(const webkit::forms::PasswordForm& form) {
-  profile_->GetPasswordStore(Profile::EXPLICIT_ACCESS)->AddLogin(form);
+  PasswordStoreFactory::GetForProfile(
+      profile_, Profile::EXPLICIT_ACCESS)->AddLogin(form);
 }
 
 #if defined(OS_WIN)
 void ProfileWriter::AddIE7PasswordInfo(const IE7PasswordInfo& info) {
-  profile_->GetWebDataService(Profile::EXPLICIT_ACCESS)->AddIE7Login(info);
+  WebDataServiceFactory::GetForProfile(
+      profile_, Profile::EXPLICIT_ACCESS)->AddIE7Login(info);
 }
 #endif
 
-void ProfileWriter::AddHistoryPage(const std::vector<history::URLRow>& page,
+void ProfileWriter::AddHistoryPage(const history::URLRows& page,
                                    history::VisitSource visit_source) {
-  profile_->GetHistoryService(Profile::EXPLICIT_ACCESS)->
+  HistoryServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS)->
       AddPagesWithDetails(page, visit_source);
 }
 
@@ -118,7 +124,7 @@ void ProfileWriter::AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
   if (bookmarks.empty())
     return;
 
-  BookmarkModel* model = profile_->GetBookmarkModel();
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile_);
   DCHECK(model->IsLoaded());
 
   // If the bookmark bar is currently empty, we should import directly to it.
@@ -146,7 +152,7 @@ void ProfileWriter::AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
   // for unnecessary nesting.
   bool add_all_to_top_level = import_to_top_level && toolbar_bookmarks.empty();
 
-  model->BeginImportMode();
+  model->BeginExtensiveChanges();
 
   std::set<const BookmarkNode*> folders_added_to;
   const BookmarkNode* top_level_folder = NULL;
@@ -217,7 +223,7 @@ void ProfileWriter::AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
     model->ResetDateFolderModified(*i);
   }
 
-  model->EndImportMode();
+  model->EndExtensiveChanges();
 
   // If the user was previously using a toolbar, we should show the bar.
   if (import_to_top_level && !add_all_to_top_level)
@@ -230,7 +236,7 @@ void ProfileWriter::AddFavicons(
       SetImportedFavicons(favicons);
 }
 
-typedef std::map<std::string, const TemplateURL*> HostPathMap;
+typedef std::map<std::string, TemplateURL*> HostPathMap;
 
 // Returns the key for the map built by BuildHostPathMap. If url_string is not
 // a valid URL, an empty string is returned, otherwise host+path is returned.
@@ -253,25 +259,23 @@ static std::string HostPathKeyForURL(const GURL& url) {
 // the TemplateURL is invalid.
 static std::string BuildHostPathKey(const TemplateURL* t_url,
                                     bool try_url_if_invalid) {
-  if (t_url->url()) {
-    if (try_url_if_invalid && !t_url->url()->IsValid())
-      return HostPathKeyForURL(GURL(t_url->url()->url()));
+  if (try_url_if_invalid && !t_url->url_ref().IsValid())
+    return HostPathKeyForURL(GURL(t_url->url()));
 
-    if (t_url->url()->SupportsReplacement()) {
-      return HostPathKeyForURL(GURL(
-          t_url->url()->ReplaceSearchTerms(
-          *t_url, ASCIIToUTF16("random string"),
-          TemplateURLRef::NO_SUGGESTIONS_AVAILABLE, string16())));
-    }
+  if (t_url->url_ref().SupportsReplacement()) {
+    return HostPathKeyForURL(GURL(
+        t_url->url_ref().ReplaceSearchTerms(
+            TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("x")))));
   }
   return std::string();
 }
 
 // Builds a set that contains an entry of the host+path for each TemplateURL in
 // the TemplateURLService that has a valid search url.
-static void BuildHostPathMap(const TemplateURLService& model,
+static void BuildHostPathMap(TemplateURLService* model,
                              HostPathMap* host_path_map) {
-  std::vector<const TemplateURL*> template_urls = model.GetTemplateURLs();
+  TemplateURLService::TemplateURLVector template_urls =
+      model->GetTemplateURLs();
   for (size_t i = 0; i < template_urls.size(); ++i) {
     const std::string host_path = BuildHostPathKey(template_urls[i], false);
     if (!host_path.empty()) {
@@ -290,32 +294,20 @@ static void BuildHostPathMap(const TemplateURLService& model,
   }
 }
 
-void ProfileWriter::AddKeywords(const std::vector<TemplateURL*>& template_urls,
-                                int default_keyword_index,
+void ProfileWriter::AddKeywords(ScopedVector<TemplateURL> template_urls,
                                 bool unique_on_host_and_path) {
   TemplateURLService* model =
       TemplateURLServiceFactory::GetForProfile(profile_);
   HostPathMap host_path_map;
   if (unique_on_host_and_path)
-    BuildHostPathMap(*model, &host_path_map);
+    BuildHostPathMap(model, &host_path_map);
 
-  for (std::vector<TemplateURL*>::const_iterator i = template_urls.begin();
+  for (ScopedVector<TemplateURL>::iterator i = template_urls.begin();
        i != template_urls.end(); ++i) {
-    TemplateURL* t_url = *i;
-    bool default_keyword =
-        default_keyword_index >= 0 &&
-        (i - template_urls.begin() == default_keyword_index);
-
     // TemplateURLService requires keywords to be unique. If there is already a
     // TemplateURL with this keyword, don't import it again.
-    const TemplateURL* turl_with_keyword =
-        model->GetTemplateURLForKeyword(t_url->keyword());
-    if (turl_with_keyword != NULL) {
-      if (default_keyword)
-        model->SetDefaultSearchProvider(turl_with_keyword);
-      delete t_url;
+    if (model->GetTemplateURLForKeyword((*i)->keyword()) != NULL)
       continue;
-    }
 
     // For search engines if there is already a keyword with the same
     // host+path, we don't import it. This is done to avoid both duplicate
@@ -323,26 +315,13 @@ void ProfileWriter::AddKeywords(const std::vector<TemplateURL*>& template_urls,
     // sure the search engines we provide aren't replaced by those from the
     // imported browser.
     if (unique_on_host_and_path &&
-        host_path_map.find(
-            BuildHostPathKey(t_url, true)) != host_path_map.end()) {
-      if (default_keyword) {
-        const TemplateURL* turl_with_host_path =
-            host_path_map[BuildHostPathKey(t_url, true)];
-        if (turl_with_host_path)
-          model->SetDefaultSearchProvider(turl_with_host_path);
-        else
-          NOTREACHED();  // BuildHostPathMap should only insert non-null values.
-      }
-      delete t_url;
+        (host_path_map.find(BuildHostPathKey(*i, true)) != host_path_map.end()))
       continue;
-    }
-    if (t_url->url() && t_url->url()->IsValid()) {
-      model->Add(t_url);
-      if (default_keyword && TemplateURL::SupportsReplacement(t_url))
-        model->SetDefaultSearchProvider(t_url);
-    } else {
-      // Don't add invalid TemplateURLs to the model.
-      delete t_url;
+
+    // Only add valid TemplateURLs to the model.
+    if ((*i)->url_ref().IsValid()) {
+      model->AddAndSetProfile(*i, profile_);  // Takes ownership.
+      *i = NULL;  // Prevent the vector from deleting *i later.
     }
   }
 }

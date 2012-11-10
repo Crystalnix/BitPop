@@ -4,6 +4,9 @@
 
 #include "chrome/browser/chromeos/offline/offline_load_page.h"
 
+#include "ash/shell.h"
+#include "ash/shell_delegate.h"
+#include "ash/system/tray/system_tray_delegate.h"
 #include "base/i18n/rtl.h"
 #include "base/metrics/histogram.h"
 #include "base/string_piece.h"
@@ -14,23 +17,26 @@
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 
 using content::BrowserThread;
+using content::InterstitialPage;
 using content::WebContents;
 
 namespace {
@@ -50,15 +56,21 @@ namespace chromeos {
 OfflineLoadPage::OfflineLoadPage(WebContents* web_contents,
                                  const GURL& url,
                                  const CompletionCallback& callback)
-    : ChromeInterstitialPage(web_contents, true, url),
-      callback_(callback),
-      proceeded_(false) {
-  net::NetworkChangeNotifier::AddOnlineStateObserver(this);
+    : callback_(callback),
+      proceeded_(false),
+      web_contents_(web_contents),
+      url_(url) {
+  net::NetworkChangeNotifier::AddConnectionTypeObserver(this);
+  interstitial_page_ = InterstitialPage::Create(web_contents, true, url, this);
 }
 
 OfflineLoadPage::~OfflineLoadPage() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  net::NetworkChangeNotifier::RemoveOnlineStateObserver(this);
+  net::NetworkChangeNotifier::RemoveConnectionTypeObserver(this);
+}
+
+void OfflineLoadPage::Show() {
+  interstitial_page_->Show();
 }
 
 std::string OfflineLoadPage::GetHTMLContents() {
@@ -77,20 +89,21 @@ std::string OfflineLoadPage::GetHTMLContents() {
   bool rtl = base::i18n::IsRTL();
   strings.SetString("textdirection", rtl ? "rtl" : "ltr");
 
-  string16 failed_url(ASCIIToUTF16(url().spec()));
+  string16 failed_url(ASCIIToUTF16(url_.spec()));
   if (rtl)
     base::i18n::WrapStringWithLTRFormatting(&failed_url);
   strings.SetString("url", failed_url);
 
   // The offline page for app has icons and slightly different message.
-  Profile* profile = Profile::FromBrowserContext(tab()->GetBrowserContext());
+  Profile* profile = Profile::FromBrowserContext(
+      web_contents_->GetBrowserContext());
   DCHECK(profile);
-  const Extension* extension = NULL;
+  const extensions::Extension* extension = NULL;
   ExtensionService* extensions_service = profile->GetExtensionService();
   // Extension service does not exist in test.
   if (extensions_service)
     extension = extensions_service->extensions()->GetHostedAppByURL(
-        ExtensionURLInfo(url()));
+        ExtensionURLInfo(url_));
 
   if (extension)
     GetAppOfflineStrings(extension, failed_url, &strings);
@@ -99,18 +112,39 @@ std::string OfflineLoadPage::GetHTMLContents() {
 
   base::StringPiece html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
-          IDR_OFFLINE_LOAD_HTML));
+          IDR_OFFLINE_LOAD_HTML, ui::SCALE_FACTOR_NONE));
   return jstemplate_builder::GetI18nTemplateHtml(html, &strings);
 }
 
+ void OfflineLoadPage::OverrideRendererPrefs(
+      content::RendererPreferences* prefs) {
+  Profile* profile = Profile::FromBrowserContext(
+      web_contents_->GetBrowserContext());
+  renderer_preferences_util::UpdateFromSystemSettings(prefs, profile);
+ }
+
+void OfflineLoadPage::OnProceed() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  proceeded_ = true;
+  NotifyBlockingPageComplete(true);
+}
+
+void OfflineLoadPage::OnDontProceed() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  // Ignore if it's already proceeded.
+  if (proceeded_)
+    return;
+  NotifyBlockingPageComplete(false);
+}
+
 void OfflineLoadPage::GetAppOfflineStrings(
-    const Extension* app,
+    const extensions::Extension* app,
     const string16& failed_url,
     DictionaryValue* strings) const {
   strings->SetString("title", app->name());
 
-  GURL icon_url = app->GetIconURL(Extension::EXTENSION_ICON_LARGE,
-                                  ExtensionIconSet::MATCH_EXACTLY);
+  GURL icon_url = app->GetIconURL(ExtensionIconSet::EXTENSION_ICON_LARGE,
+                                  ExtensionIconSet::MATCH_BIGGER);
   if (icon_url.is_empty()) {
     strings->SetString("display_icon", "none");
     strings->SetString("icon", string16());
@@ -129,7 +163,7 @@ void OfflineLoadPage::GetAppOfflineStrings(
 
 void OfflineLoadPage::GetNormalOfflineStrings(
     const string16& failed_url, DictionaryValue* strings) const {
-  strings->SetString("title", tab()->GetTitle());
+  strings->SetString("title", web_contents_->GetTitle());
 
   // No icon for normal web site.
   strings->SetString("display_icon", "none");
@@ -149,17 +183,11 @@ void OfflineLoadPage::CommandReceived(const std::string& cmd) {
   }
   // TODO(oshima): record action for metrics.
   if (command == "proceed") {
-    Proceed();
+    interstitial_page_->Proceed();
   } else if (command == "dontproceed") {
-    DontProceed();
+    interstitial_page_->DontProceed();
   } else if (command == "open_network_settings") {
-    Browser* browser = BrowserList::GetLastActive();
-    DCHECK(browser);
-    browser->ShowOptionsTab(chrome::kInternetOptionsSubPage);
-  } else if (command == "open_activate_broadband") {
-    Browser* browser = BrowserList::GetLastActive();
-    DCHECK(browser);
-    browser->OpenMobilePlanTabAndActivate();
+    ash::Shell::GetInstance()->tray_delegate()->ShowNetworkSettings();
   } else {
     LOG(WARNING) << "Unknown command:" << cmd;
   }
@@ -170,29 +198,15 @@ void OfflineLoadPage::NotifyBlockingPageComplete(bool proceed) {
       BrowserThread::IO, FROM_HERE, base::Bind(callback_, proceed));
 }
 
-void OfflineLoadPage::Proceed() {
+void OfflineLoadPage::OnConnectionTypeChanged(
+    net::NetworkChangeNotifier::ConnectionType type) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  proceeded_ = true;
-  NotifyBlockingPageComplete(true);
-  InterstitialPage::Proceed();
-}
-
-void OfflineLoadPage::DontProceed() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  // Ignore if it's already proceeded.
-  if (proceeded_)
-    return;
-  NotifyBlockingPageComplete(false);
-  InterstitialPage::DontProceed();
-}
-
-void OfflineLoadPage::OnOnlineStateChanged(bool online) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DVLOG(1) << "OnlineStateObserver notification received: state="
+  const bool online = type != net::NetworkChangeNotifier::CONNECTION_NONE;
+  DVLOG(1) << "ConnectionTypeObserver notification received: state="
            << (online ? "online" : "offline");
   if (online) {
-    net::NetworkChangeNotifier::RemoveOnlineStateObserver(this);
-    Proceed();
+    net::NetworkChangeNotifier::RemoveConnectionTypeObserver(this);
+    interstitial_page_->Proceed();
   }
 }
 

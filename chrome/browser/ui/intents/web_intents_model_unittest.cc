@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 #include "chrome/browser/intents/web_intents_registry.h"
 #include "chrome/browser/ui/intents/web_intents_model.h"
 #include "chrome/browser/webdata/web_data_service.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/models/tree_node_model.h"
 
@@ -34,9 +34,12 @@ class WebIntentsModelTest : public testing::Test {
   }
 
   virtual void TearDown() {
-    if (wds_.get())
-      wds_->Shutdown();
-
+    wds_->ShutdownOnUIThread();
+    wds_ = NULL;
+    base::WaitableEvent done(false, false);
+    BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
+        base::Bind(&base::WaitableEvent::Signal, base::Unretained(&done)));
+    done.Wait();
     db_thread_.Stop();
     MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
     MessageLoop::current()->Run();
@@ -49,7 +52,7 @@ class WebIntentsModelTest : public testing::Test {
       service.action = ASCIIToUTF16("SHARE");
       service.type = ASCIIToUTF16("text/url");
       service.title = ASCIIToUTF16("Google");
-      registry_.RegisterIntentProvider(service);
+      registry_.RegisterIntentService(service);
     }
     {
       webkit_glue::WebIntentServiceData service;
@@ -57,7 +60,7 @@ class WebIntentsModelTest : public testing::Test {
       service.action = ASCIIToUTF16("EDIT");
       service.type = ASCIIToUTF16("image/*");
       service.title = ASCIIToUTF16("Picasa");
-      registry_.RegisterIntentProvider(service);
+      registry_.RegisterIntentService(service);
     }
     {
       webkit_glue::WebIntentServiceData service;
@@ -65,7 +68,7 @@ class WebIntentsModelTest : public testing::Test {
       service.action = ASCIIToUTF16("SHARE");
       service.type = ASCIIToUTF16("text/url");
       service.title = ASCIIToUTF16("Digg");
-      registry_.RegisterIntentProvider(service);
+      registry_.RegisterIntentService(service);
     }
   }
 
@@ -189,11 +192,11 @@ TEST_F(WebIntentsModelTest, LoadFromWebData) {
 TEST_F(WebIntentsModelTest, TestMultipleIntentsOnHost) {
   LoadRegistry();
   webkit_glue::WebIntentServiceData service;
-  service.service_url = GURL("http://www.google.com/edit");
-  service.action = ASCIIToUTF16("EDIT");
+  service.service_url = GURL("http://www.google.com/xedit");
+  service.action = ASCIIToUTF16("XEDIT");
   service.type = ASCIIToUTF16("text/plain");
-  service.title = ASCIIToUTF16("Edit");
-  registry_.RegisterIntentProvider(service);
+  service.title = ASCIIToUTF16("XEdit");
+  registry_.RegisterIntentService(service);
 
   WaitingWebIntentsObserver obs;
   WebIntentsModel intents_model(&registry_);
@@ -207,6 +210,6 @@ TEST_F(WebIntentsModelTest, TestMultipleIntentsOnHost) {
   ASSERT_EQ(WebIntentsTreeNode::TYPE_SERVICE, node->Type());
   ASSERT_EQ(WebIntentsTreeNode::TYPE_SERVICE, node->Type());
   ServiceTreeNode* snode = static_cast<ServiceTreeNode*>(node);
-  EXPECT_EQ(ASCIIToUTF16("EDIT"), snode->Action());
-  EXPECT_EQ(ASCIIToUTF16("http://www.google.com/edit"), snode->ServiceUrl());
+  EXPECT_EQ(ASCIIToUTF16("XEDIT"), snode->Action());
+  EXPECT_EQ(ASCIIToUTF16("http://www.google.com/xedit"), snode->ServiceUrl());
 }

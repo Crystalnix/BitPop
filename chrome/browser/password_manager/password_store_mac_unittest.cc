@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,14 +12,15 @@
 #include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/mock_keychain_mac.h"
 #include "chrome/browser/password_manager/password_store_consumer.h"
 #include "chrome/browser/password_manager/password_store_mac.h"
 #include "chrome/browser/password_manager/password_store_mac_internal.h"
 #include "chrome/common/chrome_paths.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
+#include "crypto/mock_keychain_mac.h"
 
 using content::BrowserThread;
+using crypto::MockKeychain;
 using webkit::forms::PasswordForm;
 using testing::_;
 using testing::DoAll;
@@ -912,7 +913,7 @@ class PasswordStoreMacTest : public testing::Test {
   }
 
   virtual void TearDown() {
-    store_->Shutdown();
+    store_->ShutdownOnUIThread();
     MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
     MessageLoop::current()->Run();
   }

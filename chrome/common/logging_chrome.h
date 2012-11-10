@@ -1,15 +1,15 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_COMMON_LOGGING_CHROME_H__
 #define CHROME_COMMON_LOGGING_CHROME_H__
-#pragma once
 
 #include <string>
 #include <vector>
 
 #include "base/logging.h"
+#include "base/time.h"
 
 class CommandLine;
 class FilePath;
@@ -65,6 +65,16 @@ size_t GetFatalAssertions(AssertionList* assertions);
 // Handler to silently dump the current process without crashing.
 void DumpWithoutCrashing();
 
+#if defined(USE_LINUX_BREAKPAD) || defined(OS_MACOSX)
+// Sets a function that'll be invoked to dump the current process when
+// DumpWithoutCrashing() is called.
+void SetDumpWithoutCrashingFunction(void (*function)());
+#endif
+
+// Inserts timestamp before file extension in the format
+// "_yymmdd-hhmmss".
+FilePath GenerateTimestampedName(const FilePath& base_path,
+                                 base::Time timestamp);
 }  // namespace logging
 
 #endif  // CHROME_COMMON_LOGGING_CHROME_H_

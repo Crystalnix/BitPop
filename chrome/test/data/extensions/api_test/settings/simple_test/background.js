@@ -4,8 +4,8 @@
 
 function test(stage0) {
   var apis = [
-    chrome.experimental.storage.sync,
-    chrome.experimental.storage.local
+    chrome.storage.sync,
+    chrome.storage.local
   ];
   apis.forEach(function(api) {
     api.succeed = chrome.test.callbackPass(api.clear.bind(api));
@@ -295,20 +295,17 @@ chrome.test.runTests([
   function quota() {
     // Just check that the constants are defined; no need to be forced to
     // update them here as well if/when they change.
-    chrome.test.assertTrue(chrome.experimental.storage.sync.QUOTA_BYTES > 0);
-    chrome.test.assertTrue(
-        chrome.experimental.storage.sync.QUOTA_BYTES_PER_ITEM > 0);
-    chrome.test.assertTrue(chrome.experimental.storage.sync.MAX_ITEMS > 0);
+    chrome.test.assertTrue(chrome.storage.sync.QUOTA_BYTES > 0);
+    chrome.test.assertTrue(chrome.storage.sync.QUOTA_BYTES_PER_ITEM > 0);
+    chrome.test.assertTrue(chrome.storage.sync.MAX_ITEMS > 0);
 
-    chrome.test.assertTrue(chrome.experimental.storage.local.QUOTA_BYTES > 0);
-    chrome.test.assertEq(
-        'undefined',
-        typeof chrome.experimental.storage.local.QUOTA_BYTES_PER_ITEM);
-    chrome.test.assertEq(
-        'undefined',
-        typeof chrome.experimental.storage.local.MAX_ITEMS);
+    chrome.test.assertTrue(chrome.storage.local.QUOTA_BYTES > 0);
+    chrome.test.assertEq('undefined',
+                         typeof chrome.storage.local.QUOTA_BYTES_PER_ITEM);
+    chrome.test.assertEq('undefined',
+                         typeof chrome.storage.local.MAX_ITEMS);
 
-    var area = chrome.experimental.storage.sync;
+    var area = chrome.storage.sync;
     function stage0() {
       area.getBytesInUse(null, stage1);
     }
@@ -337,24 +334,36 @@ chrome.test.runTests([
   // NOTE: throttling test must come last, since each test runs with a single
   // quota.
   function throttling() {
-    // We can only really test one of the namespaces since they will all get
-    // throttled together.
-    var api = chrome.experimental.storage.sync;
+    // Test script is as so:
+    //   1 - storage.local shouldn't be exceeded.
+    //   2 - storage.sync should be exceeded.
+    //   3 - storage.local still shouldn't be exceeded.
+    //   4 - storage.sync should still be exceeded.
+    //
+    // In general, things should get throttled after 1000 calls (though in
+    // reality will be fewer due to previous tests).
 
-    // Should get throttled after 1000 calls (though in reality will be fewer
-    // due to previous tests).
-    var maxRequests = 1001;
+    function clearNTimes(area, n, whenDone) {
+      if (n <= 0) {
+        whenDone();
+      } else {
+        area.clear(function() {
+          clearNTimes(area, n - 1, whenDone);
+        });
+      }
+    }
 
-    function next() {
-      api.clear((--maxRequests > 0) ? next : done);
-    }
-    function done() {
-      chrome.test.assertEq(
-          "This request exceeds available quota.",
-          chrome.extension.lastError.message);
-      chrome.test.succeed();
-    }
-    api.clear(next);
+    var local = chrome.storage.local;
+    var sync = chrome.storage.sync;
+    var test = chrome.test;
+    var quotaError = "This request exceeds available quota.";
+
+    clearNTimes(local, 1001, test.callbackPass(function() {
+      clearNTimes(sync, 1001, test.callbackFail(quotaError, function() {
+        clearNTimes(local, 1, test.callbackPass(function() {
+          clearNTimes(sync, 1, test.callbackFail(quotaError, test.succeed));
+        }));
+      }));
+    }));
   }
-
 ]);

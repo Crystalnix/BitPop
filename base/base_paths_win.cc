@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
+#include "base/win/scoped_co_mem.h"
 #include "base/win/windows_version.h"
 
 // http://blogs.msdn.com/oldnewthing/archive/2004/10/25/247180.aspx
@@ -89,6 +90,12 @@ bool PathProviderWin(int key, FilePath* result) {
         return false;
       cur = FilePath(system_buffer);
       break;
+    case base::DIR_COMMON_APP_DATA:
+      if (FAILED(SHGetFolderPath(NULL, CSIDL_COMMON_APPDATA, NULL,
+                                 SHGFP_TYPE_CURRENT, system_buffer)))
+        return false;
+      cur = FilePath(system_buffer);
+      break;
     case base::DIR_PROFILE:
       if (FAILED(SHGetFolderPath(NULL, CSIDL_PROFILE, NULL, SHGFP_TYPE_CURRENT,
                                  system_buffer)))
@@ -117,14 +124,18 @@ bool PathProviderWin(int key, FilePath* result) {
       // For example:  chrome/{Debug|Release}/ui_tests.exe
       PathService::Get(base::DIR_EXE, &executableDir);
       cur = executableDir.DirName().DirName();
-      FilePath checkedPath =
-          cur.Append(FILE_PATH_LITERAL("base/base_paths_win.cc"));
-      if (!file_util::PathExists(checkedPath)) {
-        // Check for WebKit-only checkout. Executable files are put into
-        // WebKit/WebKit/chromium/{Debug|Relese}, and we should return
-        // WebKit/WebKit/chromium.
-        cur = executableDir.DirName();
-      }
+      break;
+    }
+    case base::DIR_APP_SHORTCUTS: {
+      if (win::GetVersion() < win::VERSION_WIN8)
+        return false;
+
+      base::win::ScopedCoMem<wchar_t> path_buf;
+      if (FAILED(SHGetKnownFolderPath(FOLDERID_ApplicationShortcuts, 0, NULL,
+                                      &path_buf)))
+        return false;
+
+      cur = FilePath(string16(path_buf));
       break;
     }
     default:

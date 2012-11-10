@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -30,6 +30,7 @@
             'src/common/convert_UTF.c',
             'src/client/mac/handler/breakpad_nlist_64.cc',
             'src/client/mac/handler/dynamic_images.cc',
+            'src/common/mac/bootstrap_compat.cc',
             'src/common/mac/file_id.cc',
             'src/common/mac/MachIPC.mm',
             'src/common/mac/macho_id.cc',
@@ -216,11 +217,158 @@
         },
       ],
     }],
-    [ 'OS=="linux"', {
+    [ 'OS=="linux" or OS=="android"', {
       'conditions': [
+        ['OS=="android"', {
+          'defines': [
+            '__ANDROID__',
+          ],
+        }],
         # Tools needed for archiving build symbols.
         ['linux_breakpad==1', {
           'targets': [
+            {
+              'target_name': 'minidump_stackwalk',
+              'type': 'executable',
+
+              # This uses the system libcurl, so don't use the default 32-bit
+              # compile flags when building on a 64-bit machine.
+              'variables': {
+                'host_arch': '<!(uname -m)',
+              },
+              'conditions': [
+                ['host_arch=="x86_64"', {
+                  'cflags!': ['-m32', '-march=pentium4', '-msse2',
+                              '-mfpmath=sse'],
+                  'ldflags!': ['-m32'],
+                  'cflags': ['-O2'],
+                  'include_dirs!': ['/usr/include32'],
+                }],
+                ['OS=="android"', {
+                  'toolsets': [ 'host' ],
+                }],
+              ],
+              'include_dirs': [
+                'src',
+                'src/third_party',
+                '..',
+              ],
+              'sources': [
+                'src/google_breakpad/procesor/call_stack.h',
+                'src/processor/minidump_stackwalk.cc',
+                'src/processor/stackwalker.cc',
+                'src/processor/stackwalker.h',
+                'src/processor/basic_code_module.h',
+                'src/processor/basic_code_modules.cc',
+                'src/processor/basic_code_modules.h',
+                'src/processor/basic_source_line_resolver.cc',
+                'src/processor/basic_source_line_resolver.h',
+                'src/processor/binarystream.cc',
+                'src/processor/binarystream.h',
+                'src/processor/call_stack.cc',
+                'src/processor/cfi_frame_info.cc',
+                'src/processor/cfi_frame_info.h',
+                'src/processor/disassembler_x86.cc',
+                'src/processor/disassembler_x86.h',
+                'src/processor/exploitability.cc',
+                'src/processor/exploitability.h',
+                'src/processor/exploitability_win.cc',
+                'src/processor/exploitability_win.h',
+                'src/processor/logging.cc',
+                'src/processor/logging.h',
+                'src/processor/minidump.cc',
+                'src/processor/minidump.h',
+                'src/processor/minidump_processor.cc',
+                'src/processor/minidump_processor.h',
+                'src/processor/pathname_stripper.cc',
+                'src/processor/pathname_stripper.h',
+                'src/processor/process_state.cc',
+                'src/processor/process_state.h',
+                'src/processor/simple_symbol_supplier.cc',
+                'src/processor/simple_symbol_supplier.h',
+                'src/processor/source_line_resolver_base.cc',
+                'src/processor/source_line_resolver_base.h',
+                'src/processor/stackwalker.cc',
+                'src/processor/stackwalker.h',
+                'src/processor/stackwalker_amd64.cc',
+                'src/processor/stackwalker_amd64.h',
+                'src/processor/stackwalker_arm.cc',
+                'src/processor/stackwalker_arm.h',
+                'src/processor/stackwalker_ppc.cc',
+                'src/processor/stackwalker_ppc.h',
+                'src/processor/stackwalker_sparc.cc',
+                'src/processor/stackwalker_sparc.h',
+                'src/processor/stackwalker_x86.cc',
+                'src/processor/stackwalker_x86.h',
+                'src/processor/tokenize.cc',
+                'src/processor/tokenize.h',
+                # libdisasm
+                'src/third_party/libdisasm/ia32_implicit.c',
+                'src/third_party/libdisasm/ia32_implicit.h',
+                'src/third_party/libdisasm/ia32_insn.c',
+                'src/third_party/libdisasm/ia32_insn.h',
+                'src/third_party/libdisasm/ia32_invariant.c',
+                'src/third_party/libdisasm/ia32_invariant.h',
+                'src/third_party/libdisasm/ia32_modrm.c',
+                'src/third_party/libdisasm/ia32_modrm.h',
+                'src/third_party/libdisasm/ia32_opcode_tables.c',
+                'src/third_party/libdisasm/ia32_opcode_tables.h',
+                'src/third_party/libdisasm/ia32_operand.c',
+                'src/third_party/libdisasm/ia32_operand.h',
+                'src/third_party/libdisasm/ia32_reg.c',
+                'src/third_party/libdisasm/ia32_reg.h',
+                'src/third_party/libdisasm/ia32_settings.c',
+                'src/third_party/libdisasm/ia32_settings.h',
+                'src/third_party/libdisasm/libdis.h',
+                'src/third_party/libdisasm/qword.h',
+                'src/third_party/libdisasm/x86_disasm.c',
+                'src/third_party/libdisasm/x86_format.c',
+                'src/third_party/libdisasm/x86_imm.c',
+                'src/third_party/libdisasm/x86_imm.h',
+                'src/third_party/libdisasm/x86_insn.c',
+                'src/third_party/libdisasm/x86_misc.c',
+                'src/third_party/libdisasm/x86_operand_list.c',
+                'src/third_party/libdisasm/x86_operand_list.h',
+              ],
+            },
+            {
+              'target_name': 'minidump_dump',
+              'type': 'executable',
+              # This uses the system libcurl, so don't use the default 32-bit
+              # compile flags when building on a 64-bit machine.
+              'variables': {
+                'host_arch': '<!(uname -m)',
+              },
+              'conditions': [
+                ['host_arch=="x86_64"', {
+                  'cflags!': ['-m32', '-march=pentium4', '-msse2',
+                              '-mfpmath=sse'],
+                  'ldflags!': ['-m32'],
+                  'cflags': ['-O2'],
+                  'include_dirs!': ['/usr/include32'],
+                }],
+                ['OS=="android"', {
+                  'toolsets': [ 'host' ],
+                }],
+              ],
+              'sources': [
+                'src/processor/minidump_dump.cc',
+                'src/processor/basic_code_module.h',
+                'src/processor/basic_code_modules.h',
+                'src/processor/basic_code_modules.cc',
+                'src/processor/logging.h',
+                'src/processor/logging.cc',
+                'src/processor/minidump.h',
+                'src/processor/minidump.cc',
+                'src/processor/pathname_stripper.h',
+                'src/processor/pathname_stripper.cc',
+              ],
+              'include_dirs': [
+                'src',
+                'src/third_party',
+                '..',
+              ],
+            },
             {
               'target_name': 'symupload',
               'type': 'executable',
@@ -237,6 +385,9 @@
                   'ldflags!': ['-m32'],
                   'cflags': ['-O2'],
                   'include_dirs!': ['/usr/include32'],
+                }],
+                ['OS=="android"', {
+                  'toolsets': [ 'host' ],
                 }],
               ],
 
@@ -257,6 +408,11 @@
             {
               'target_name': 'dump_syms',
               'type': 'executable',
+              'conditions': [
+                ['OS=="android"', {
+                  'toolsets': [ 'host' ],
+                }],
+              ],
 
               # dwarf2reader.cc uses dynamic_cast. Because we don't typically
               # don't support RTTI, we enable it for this single target. Since
@@ -280,6 +436,8 @@
                 'src/common/linux/dump_symbols.h',
                 'src/common/linux/elf_symbols_to_module.cc',
                 'src/common/linux/elf_symbols_to_module.h',
+                'src/common/linux/elfutils.cc',
+                'src/common/linux/elfutils.h',
                 'src/common/linux/file_id.cc',
                 'src/common/linux/file_id.h',
                 'src/common/linux/memory_mapped_file.cc',
@@ -318,6 +476,8 @@
             'src/client/linux/crash_generation/crash_generation_client.cc',
             'src/client/linux/crash_generation/crash_generation_client.h',
             'src/client/linux/handler/exception_handler.cc',
+            'src/client/linux/log/log.cc',
+            'src/client/linux/log/log.h',
             'src/client/linux/minidump_writer/directory_reader.h',
             'src/client/linux/minidump_writer/line_reader.h',
             'src/client/linux/minidump_writer/linux_core_dumper.cc',
@@ -335,6 +495,8 @@
             'src/common/convert_UTF.h',
             'src/common/linux/elf_core_dump.cc',
             'src/common/linux/elf_core_dump.h',
+            'src/common/linux/elfutils.cc',
+            'src/common/linux/elfutils.h',
             'src/common/linux/file_id.cc',
             'src/common/linux/file_id.h',
             'src/common/linux/google_crashdump_uploader.cc',
@@ -356,6 +518,12 @@
           'conditions': [
             ['target_arch=="arm"', {
               'cflags': ['-Wa,-mimplicit-it=always'],
+            }],
+            ['OS=="android"', {
+              'sources!':[
+                'src/common/linux/elf_core_dump.cc',
+                'src/common/linux/elf_core_dump.h',
+              ],
             }],
           ],
 
@@ -386,6 +554,7 @@
             'src/processor/minidump.cc',
             'src/processor/pathname_stripper.cc',
             'src/processor/pathname_stripper.h',
+            'src/processor/scoped_ptr.h',
           ],
 
           'include_dirs': [
@@ -416,6 +585,8 @@
             'src/client/linux/minidump_writer/linux_core_dumper_unittest.cc',
             'src/client/linux/minidump_writer/linux_ptrace_dumper_unittest.cc',
             'src/client/linux/minidump_writer/minidump_writer_unittest.cc',
+            'src/client/linux/minidump_writer/minidump_writer_unittest_utils.cc',
+            'src/client/linux/minidump_writer/minidump_writer_unittest_utils.h',
             'src/common/linux/elf_core_dump_unittest.cc',
             'src/common/linux/file_id_unittest.cc',
             'src/common/linux/linux_libc_support_unittest.cc',
@@ -442,12 +613,14 @@
           'target_name': 'linux_dumper_unittest_helper',
           'type': 'executable',
           'dependencies': [
+            'breakpad_processor_support',
           ],
           'sources': [
             'src/client/linux/minidump_writer/linux_dumper_unittest_helper.cc',
           ],
 
           'include_dirs': [
+            'src',
             '..',
           ],
         },
@@ -500,6 +673,82 @@
           'include_dirs': [
             '..',
             'src',
+          ],
+        },
+      ],
+    }],
+    [ 'OS=="ios"', {
+      'targets': [
+        {
+          'target_name': 'breakpad_client',
+          'type': '<(library)',
+          'sources': [
+            'src/client/ios/Breakpad.h',
+            'src/client/ios/Breakpad.mm',
+            'src/client/ios/BreakpadController.h',
+            'src/client/ios/BreakpadController.mm',
+            'src/client/ios/handler/ios_exception_minidump_generator.mm',
+            'src/client/ios/handler/ios_exception_minidump_generator.h',
+            'src/client/mac/crash_generation/ConfigFile.h',
+            'src/client/mac/crash_generation/ConfigFile.mm',
+            'src/client/mac/handler/breakpad_nlist_64.cc',
+            'src/client/mac/handler/breakpad_nlist_64.h',
+            'src/client/mac/handler/dynamic_images.cc',
+            'src/client/mac/handler/dynamic_images.h',
+            'src/client/mac/handler/protected_memory_allocator.cc',
+            'src/client/mac/handler/protected_memory_allocator.h',
+            'src/client/mac/handler/exception_handler.cc',
+            'src/client/mac/handler/exception_handler.h',
+            'src/client/mac/handler/minidump_generator.cc',
+            'src/client/mac/handler/minidump_generator.h',
+            'src/client/mac/sender/uploader.h',
+            'src/client/mac/sender/uploader.mm',
+            'src/client/minidump_file_writer.cc',
+            'src/client/minidump_file_writer.h',
+            'src/client/minidump_file_writer-inl.h',
+            'src/common/convert_UTF.c',
+            'src/common/convert_UTF.h',
+            'src/common/mac/file_id.cc',
+            'src/common/mac/file_id.h',
+            'src/common/mac/GTMLogger.m',
+            'src/common/mac/HTTPMultipartUpload.m',
+            'src/common/mac/macho_id.cc',
+            'src/common/mac/macho_id.h',
+            'src/common/mac/macho_utilities.cc',
+            'src/common/mac/macho_utilities.h',
+            'src/common/mac/macho_walker.cc',
+            'src/common/mac/macho_walker.h',
+            'src/common/mac/string_utilities.cc',
+            'src/common/mac/string_utilities.h',
+            'src/common/mac/SimpleStringDictionary.mm',
+            'src/common/mac/SimpleStringDictionary.h',
+            'src/common/md5.cc',
+            'src/common/md5.h',
+            'src/common/string_conversion.cc',
+            'src/common/string_conversion.h',
+            'src/google_breakpad/common/minidump_format.h',
+          ],
+          'xcode_settings': {
+            # With the Xcode 4.2 toolchain (iOS 5.0 SDK), there is a change to
+            # exception handling when building for arm (but not simulator).
+            # __EXCEPTIONS is still defined if objc exceptions are enabled but
+            # c++ exceptions are not.  With Xcode 3.2.6 (iOS 4.3 SDK) for both
+            # device and simulator turning off c++ exceptions caused gcc to
+            # still honor try/catch in .mm files as if they were @try/@catch
+            # due to the new runtime support for exceptions.  The clang arm
+            # compiler in Xcode 4.2 does not do this and exception_defines.h
+            # does not kick in because __EXCEPTIONS is still defined.  So
+            # the compile fails for trying to use try without compiler support
+            # for c++ exceptions.  The simulator build in that setup still
+            # works.  Turning off objc exceptions is just enough to get
+            # __EXCEPTIONS to not be defined and exception_defines.h kicks in
+            # to let the code compile.
+            'GCC_ENABLE_OBJC_EXCEPTIONS': 'NO',
+          },
+          'include_dirs': [
+            'src',
+            'src/client/mac/Framework',
+            'src/common/mac',
           ],
         },
       ],

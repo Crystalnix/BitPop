@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,9 +11,13 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 
-#if defined(OS_WIN)
-#include "ui/base/message_box_win.h"
-#endif
+namespace {
+
+void PrintPackExtensionMessage(const std::string& message) {
+  base::StringPrintf("%s\n", message.c_str());
+}
+
+}  // namespace
 
 ExtensionsStartupUtil::ExtensionsStartupUtil() : pack_job_succeeded_(false) {}
 
@@ -21,31 +25,16 @@ void ExtensionsStartupUtil::OnPackSuccess(
     const FilePath& crx_path,
     const FilePath& output_private_key_path) {
   pack_job_succeeded_ = true;
-  ShowPackExtensionMessage(
-      L"Extension Packaging Success",
-      UTF16ToWideHack(PackExtensionJob::StandardSuccessMessage(
-          crx_path, output_private_key_path)));
+  PrintPackExtensionMessage(
+      UTF16ToUTF8(
+          PackExtensionJob::StandardSuccessMessage(crx_path,
+                                                   output_private_key_path)));
 }
 
-void ExtensionsStartupUtil::OnPackFailure(const std::string& error_message,
-                                          ExtensionCreator::ErrorType type) {
-  ShowPackExtensionMessage(L"Extension Packaging Error",
-                           UTF8ToWide(error_message));
-}
-
-void ExtensionsStartupUtil::ShowPackExtensionMessage(
-    const std::wstring& caption,
-    const std::wstring& message) {
-#if defined(OS_WIN)
-  ui::MessageBox(NULL, message, caption, MB_OK | MB_SETFOREGROUND);
-#else
-  // Just send caption & text to stdout on mac & linux.
-  std::string out_text = WideToASCII(caption);
-  out_text.append("\n\n");
-  out_text.append(WideToASCII(message));
-  out_text.append("\n");
-  printf("%s", out_text.c_str());
-#endif
+void ExtensionsStartupUtil::OnPackFailure(
+    const std::string& error_message,
+    extensions::ExtensionCreator::ErrorType type) {
+  PrintPackExtensionMessage(error_message);
 }
 
 bool ExtensionsStartupUtil::PackExtension(const CommandLine& cmd_line) {
@@ -62,7 +51,7 @@ bool ExtensionsStartupUtil::PackExtension(const CommandLine& cmd_line) {
   // Launch a job to perform the packing on the file thread.  Ignore warnings
   // from the packing process. (e.g. Overwrite any existing crx file.)
   pack_job_ = new PackExtensionJob(this, src_dir, private_key_path,
-                                   ExtensionCreator::kOverwriteCRX);
+                                   extensions::ExtensionCreator::kOverwriteCRX);
   pack_job_->set_asynchronous(false);
   pack_job_->Start();
 

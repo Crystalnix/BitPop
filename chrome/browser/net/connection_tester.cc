@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,18 +10,18 @@
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/importer/firefox_proxy_settings.h"
 #include "chrome/common/chrome_switches.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/cert_verifier.h"
-#include "net/base/cookie_monster.h"
 #include "net/base/host_resolver.h"
-#include "net/base/host_resolver_impl.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/ssl_config_service_defaults.h"
+#include "net/cookies/cookie_monster.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
@@ -35,6 +35,10 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_storage.h"
 
+#if !defined(OS_ANDROID)
+#include "chrome/browser/importer/firefox_proxy_settings.h"
+#endif
+
 namespace {
 
 // ExperimentURLRequestContext ------------------------------------------------
@@ -47,112 +51,23 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
   explicit ExperimentURLRequestContext(
       net::URLRequestContext* proxy_request_context)
       : proxy_request_context_(proxy_request_context),
-        ALLOW_THIS_IN_INITIALIZER_LIST(storage_(this)) {}
+        ALLOW_THIS_IN_INITIALIZER_LIST(storage_(this)),
+        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {}
 
-  int Init(const ConnectionTester::Experiment& experiment) {
-    int rv;
-
-    // Create a custom HostResolver for this experiment.
-    scoped_ptr<net::HostResolver> host_resolver_tmp;
-    rv = CreateHostResolver(experiment.host_resolver_experiment,
-                            &host_resolver_tmp);
-    if (rv != net::OK)
-      return rv;  // Failure.
-    storage_.set_host_resolver(host_resolver_tmp.release());
-
-    // Create a custom ProxyService for this this experiment.
-    scoped_ptr<net::ProxyService> proxy_service_tmp;
-    rv = CreateProxyService(experiment.proxy_settings_experiment,
-                            &proxy_service_tmp);
-    if (rv != net::OK)
-      return rv;  // Failure.
-    storage_.set_proxy_service(proxy_service_tmp.release());
-
-    // The rest of the dependencies are standard, and don't depend on the
-    // experiment being run.
-    storage_.set_cert_verifier(new net::CertVerifier);
-    storage_.set_ftp_transaction_factory(
-        new net::FtpNetworkLayer(host_resolver()));
-    storage_.set_ssl_config_service(new net::SSLConfigServiceDefaults);
-    storage_.set_http_auth_handler_factory(
-        net::HttpAuthHandlerFactory::CreateDefault(host_resolver()));
-    storage_.set_http_server_properties(new net::HttpServerPropertiesImpl);
-
-    net::HttpNetworkSession::Params session_params;
-    session_params.host_resolver = host_resolver();
-    session_params.cert_verifier = cert_verifier();
-    session_params.proxy_service = proxy_service();
-    session_params.http_auth_handler_factory = http_auth_handler_factory();
-    session_params.http_server_properties = http_server_properties();
-    session_params.ssl_config_service = ssl_config_service();
-    scoped_refptr<net::HttpNetworkSession> network_session(
-        new net::HttpNetworkSession(session_params));
-    storage_.set_http_transaction_factory(new net::HttpCache(
-        network_session,
-        net::HttpCache::DefaultBackend::InMemory(0)));
-    // In-memory cookie store.
-    storage_.set_cookie_store(new net::CookieMonster(NULL, NULL));
-
-    return net::OK;
-  }
-
- protected:
-  virtual ~ExperimentURLRequestContext() {
-  }
-
- private:
-  // Creates a host resolver for |experiment|. On success returns net::OK and
-  // fills |host_resolver| with a new pointer. Otherwise returns a network
-  // error code.
-  int CreateHostResolver(
-      ConnectionTester::HostResolverExperiment experiment,
-      scoped_ptr<net::HostResolver>* host_resolver) {
-    // Create a vanilla HostResolver that disables caching.
-    const size_t kMaxJobs = 50u;
-    const size_t kMaxRetryAttempts = 4u;
-    net::HostResolverImpl* impl =
-        new net::HostResolverImpl(NULL, NULL, kMaxJobs, kMaxRetryAttempts,
-                                  NULL);
-
-    host_resolver->reset(impl);
-
-    // Modify it slightly based on the experiment being run.
-    switch (experiment) {
-      case ConnectionTester::HOST_RESOLVER_EXPERIMENT_PLAIN:
-        return net::OK;
-      case ConnectionTester::HOST_RESOLVER_EXPERIMENT_DISABLE_IPV6:
-        impl->SetDefaultAddressFamily(net::ADDRESS_FAMILY_IPV4);
-        return net::OK;
-      case ConnectionTester::HOST_RESOLVER_EXPERIMENT_IPV6_PROBE: {
-        // Note that we don't use impl->ProbeIPv6Support() since that finishes
-        // asynchronously and may not take effect in time for the test.
-        // So instead we will probe synchronously (might take 100-200 ms).
-        net::AddressFamily family = net::IPv6Supported() ?
-            net::ADDRESS_FAMILY_UNSPECIFIED : net::ADDRESS_FAMILY_IPV4;
-        impl->SetDefaultAddressFamily(family);
-        return net::OK;
-      }
-      default:
-        NOTREACHED();
-        return net::ERR_UNEXPECTED;
-    }
-  }
+  virtual ~ExperimentURLRequestContext() {}
 
   // Creates a proxy config service for |experiment|. On success returns net::OK
   // and fills |config_service| with a new pointer. Otherwise returns a network
   // error code.
   int CreateProxyConfigService(
       ConnectionTester::ProxySettingsExperiment experiment,
-      scoped_ptr<net::ProxyConfigService>* config_service) {
-    scoped_ptr<base::ThreadRestrictions::ScopedAllowIO> allow_io;
+      scoped_ptr<net::ProxyConfigService>* config_service,
+      base::Callback<void(int)> callback) {
     switch (experiment) {
       case ConnectionTester::PROXY_EXPERIMENT_USE_SYSTEM_SETTINGS:
         return CreateSystemProxyConfigService(config_service);
       case ConnectionTester::PROXY_EXPERIMENT_USE_FIREFOX_SETTINGS:
-        // http://crbug.com/67664: This call can lead to blocking IO on the IO
-        // thread.  This is a bug and should be fixed.
-        allow_io.reset(new base::ThreadRestrictions::ScopedAllowIO);
-        return CreateFirefoxProxyConfigService(config_service);
+        return CreateFirefoxProxyConfigService(config_service, callback);
       case ConnectionTester::PROXY_EXPERIMENT_USE_AUTO_DETECT:
         config_service->reset(new net::ProxyConfigServiceFixed(
             net::ProxyConfig::CreateAutoDetect()));
@@ -167,18 +82,102 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
     }
   }
 
-  // Creates a proxy service for |experiment|. On success returns net::OK
-  // and fills |config_service| with a new pointer. Otherwise returns a network
-  // error code.
-  int CreateProxyService(
-      ConnectionTester::ProxySettingsExperiment experiment,
-      scoped_ptr<net::ProxyService>* proxy_service) {
-    // Create an appropriate proxy config service.
-    scoped_ptr<net::ProxyConfigService> config_service;
-    int rv = CreateProxyConfigService(experiment, &config_service);
+  int Init(const ConnectionTester::Experiment& experiment,
+           scoped_ptr<net::ProxyConfigService>* proxy_config_service,
+           net::NetLog* net_log) {
+    int rv;
+
+    // Create a custom HostResolver for this experiment.
+    scoped_ptr<net::HostResolver> host_resolver_tmp;
+    rv = CreateHostResolver(experiment.host_resolver_experiment,
+                            &host_resolver_tmp);
     if (rv != net::OK)
       return rv;  // Failure.
+    storage_.set_host_resolver(host_resolver_tmp.release());
 
+    // Create a custom ProxyService for this this experiment.
+    scoped_ptr<net::ProxyService> experiment_proxy_service;
+    rv = CreateProxyService(experiment.proxy_settings_experiment,
+                            proxy_config_service, &experiment_proxy_service);
+    if (rv != net::OK)
+      return rv;  // Failure.
+    storage_.set_proxy_service(experiment_proxy_service.release());
+
+    // The rest of the dependencies are standard, and don't depend on the
+    // experiment being run.
+    storage_.set_cert_verifier(net::CertVerifier::CreateDefault());
+    storage_.set_ftp_transaction_factory(
+        new net::FtpNetworkLayer(host_resolver()));
+    storage_.set_ssl_config_service(new net::SSLConfigServiceDefaults);
+    storage_.set_http_auth_handler_factory(
+        net::HttpAuthHandlerFactory::CreateDefault(host_resolver()));
+    storage_.set_http_server_properties(new net::HttpServerPropertiesImpl);
+
+    net::HttpNetworkSession::Params session_params;
+    session_params.host_resolver = host_resolver();
+    session_params.cert_verifier = cert_verifier();
+    session_params.proxy_service = proxy_service();
+    session_params.ssl_config_service = ssl_config_service();
+    session_params.http_auth_handler_factory = http_auth_handler_factory();
+    session_params.http_server_properties = http_server_properties();
+    session_params.net_log = net_log;
+    scoped_refptr<net::HttpNetworkSession> network_session(
+        new net::HttpNetworkSession(session_params));
+    storage_.set_http_transaction_factory(new net::HttpCache(
+        network_session,
+        net::HttpCache::DefaultBackend::InMemory(0)));
+    // In-memory cookie store.
+    storage_.set_cookie_store(new net::CookieMonster(NULL, NULL));
+
+    return net::OK;
+  }
+
+ private:
+  // Creates a host resolver for |experiment|. On success returns net::OK and
+  // fills |host_resolver| with a new pointer. Otherwise returns a network
+  // error code.
+  int CreateHostResolver(
+      ConnectionTester::HostResolverExperiment experiment,
+      scoped_ptr<net::HostResolver>* host_resolver) {
+    // Create a vanilla HostResolver that disables caching.
+    const size_t kMaxJobs = 50u;
+    const size_t kMaxRetryAttempts = 4u;
+    net::HostResolver* impl = net::CreateNonCachingSystemHostResolver(
+        kMaxJobs,
+        kMaxRetryAttempts,
+        NULL /* NetLog */);
+
+    host_resolver->reset(impl);
+
+    // Modify it slightly based on the experiment being run.
+    switch (experiment) {
+      case ConnectionTester::HOST_RESOLVER_EXPERIMENT_PLAIN:
+        return net::OK;
+      case ConnectionTester::HOST_RESOLVER_EXPERIMENT_DISABLE_IPV6:
+        impl->SetDefaultAddressFamily(net::ADDRESS_FAMILY_IPV4);
+        return net::OK;
+      case ConnectionTester::HOST_RESOLVER_EXPERIMENT_IPV6_PROBE: {
+        // Note that we don't use impl->ProbeIPv6Support() since that finishes
+        // asynchronously and may not take effect in time for the test.
+        // So instead we will probe synchronously (might take 100-200 ms).
+        net::AddressFamily family = net::TestIPv6Support().ipv6_supported ?
+            net::ADDRESS_FAMILY_UNSPECIFIED : net::ADDRESS_FAMILY_IPV4;
+        impl->SetDefaultAddressFamily(family);
+        return net::OK;
+      }
+      default:
+        NOTREACHED();
+        return net::ERR_UNEXPECTED;
+    }
+  }
+
+  // Creates a proxy service for |experiment|. On success returns net::OK
+  // and fills |experiment_proxy_service| with a new pointer. Otherwise returns
+  // a network error code.
+  int CreateProxyService(
+      ConnectionTester::ProxySettingsExperiment experiment,
+      scoped_ptr<net::ProxyConfigService>* proxy_config_service,
+      scoped_ptr<net::ProxyService>* experiment_proxy_service) {
     if (CommandLine::ForCurrentProcess()->HasSwitch(
         switches::kSingleProcess)) {
       // We can't create a standard proxy resolver in single-process mode.
@@ -192,8 +191,9 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
       dhcp_factory.set_enabled(false);
     }
 
-    proxy_service->reset(net::ProxyService::CreateUsingV8ProxyResolver(
-        config_service.release(),
+    experiment_proxy_service->reset(
+        net::ProxyService::CreateUsingV8ProxyResolver(
+        proxy_config_service->release(),
         0u,
         new net::ProxyScriptFetcherImpl(proxy_request_context_),
         dhcp_factory.Create(proxy_request_context_),
@@ -216,36 +216,68 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
 #else
     config_service->reset(
         net::ProxyService::CreateSystemProxyConfigService(
-            MessageLoop::current(), NULL));
+            base::ThreadTaskRunnerHandle::Get(), NULL));
     return net::OK;
 #endif
   }
+
+#if !defined(OS_ANDROID)
+  static int FirefoxProxySettingsTask(
+      FirefoxProxySettings* firefox_settings) {
+    if (!FirefoxProxySettings::GetSettings(firefox_settings))
+      return net::ERR_FILE_NOT_FOUND;
+    return net::OK;
+  }
+
+  void FirefoxProxySettingsReply(
+      scoped_ptr<net::ProxyConfigService>* config_service,
+      FirefoxProxySettings* firefox_settings,
+      base::Callback<void(int)> callback,
+      int rv) {
+    if (rv == net::OK) {
+      if (FirefoxProxySettings::SYSTEM == firefox_settings->config_type()) {
+        rv = CreateSystemProxyConfigService(config_service);
+      } else {
+        net::ProxyConfig config;
+        if (firefox_settings->ToProxyConfig(&config))
+          config_service->reset(new net::ProxyConfigServiceFixed(config));
+        else
+          rv = net::ERR_FAILED;
+      }
+    }
+    callback.Run(rv);
+  }
+#endif
 
   // Creates a fixed proxy config service that is initialized using Firefox's
   // current proxy settings. On success returns net::OK and fills
   // |config_service| with a new pointer. Otherwise returns a network error
   // code.
   int CreateFirefoxProxyConfigService(
-      scoped_ptr<net::ProxyConfigService>* config_service) {
+      scoped_ptr<net::ProxyConfigService>* config_service,
+      base::Callback<void(int)> callback) {
+#if defined(OS_ANDROID)
+    // Chrome on Android does not support Firefox settings.
+    return net::ERR_NOT_IMPLEMENTED;
+#else
     // Fetch Firefox's proxy settings (can fail if Firefox is not installed).
-    FirefoxProxySettings firefox_settings;
-    if (!FirefoxProxySettings::GetSettings(&firefox_settings))
-      return net::ERR_FILE_NOT_FOUND;
-
-    if (FirefoxProxySettings::SYSTEM == firefox_settings.config_type())
-      return CreateSystemProxyConfigService(config_service);
-
-    net::ProxyConfig config;
-    if (firefox_settings.ToProxyConfig(&config)) {
-      config_service->reset(new net::ProxyConfigServiceFixed(config));
-      return net::OK;
-    }
-
-    return net::ERR_FAILED;
+    FirefoxProxySettings* ff_settings = new FirefoxProxySettings();
+    base::Callback<int(void)> task = base::Bind(
+        &FirefoxProxySettingsTask, ff_settings);
+    base::Callback<void(int)> reply = base::Bind(
+        &ExperimentURLRequestContext::FirefoxProxySettingsReply,
+        weak_factory_.GetWeakPtr(), config_service,
+        base::Owned(ff_settings), callback);
+    if (!content::BrowserThread::PostTaskAndReplyWithResult<int>(
+            content::BrowserThread::FILE, FROM_HERE, task, reply))
+      return net::ERR_FAILED;
+    return net::ERR_IO_PENDING;
+#endif
   }
 
-  const scoped_refptr<net::URLRequestContext> proxy_request_context_;
+  net::URLRequestContext* const proxy_request_context_;
   net::URLRequestContextStorage storage_;
+  base::WeakPtrFactory<ExperimentURLRequestContext> weak_factory_;
 };
 
 }  // namespace
@@ -258,9 +290,17 @@ class ConnectionTester::TestRunner : public net::URLRequest::Delegate {
  public:
   // |tester| must remain alive throughout the TestRunner's lifetime.
   // |tester| will be notified of completion.
-  explicit TestRunner(ConnectionTester* tester)
+  TestRunner(ConnectionTester* tester, net::NetLog* net_log)
       : tester_(tester),
+        net_log_(net_log),
         ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {}
+
+  // Finish running |experiment| once a ProxyConfigService has been created.
+  // In the case of a FirefoxProxyConfigService, this will be called back
+  // after disk access has completed.
+  void ProxyConfigServiceCreated(
+    const Experiment& experiment,
+    scoped_ptr<net::ProxyConfigService>* proxy_config_service, int status);
 
   // Starts running |experiment|. Notifies tester->OnExperimentCompleted() when
   // it is done.
@@ -284,7 +324,9 @@ class ConnectionTester::TestRunner : public net::URLRequest::Delegate {
   void OnExperimentCompletedWithResult(int result);
 
   ConnectionTester* tester_;
+  scoped_ptr<ExperimentURLRequestContext> request_context_;
   scoped_ptr<net::URLRequest> request_;
+  net::NetLog* net_log_;
 
   base::WeakPtrFactory<TestRunner> weak_factory_;
 
@@ -346,29 +388,51 @@ void ConnectionTester::TestRunner::OnExperimentCompletedWithResult(int result) {
   tester_->OnExperimentCompleted(result);
 }
 
-void ConnectionTester::TestRunner::Run(const Experiment& experiment) {
-  // Try to create a net::URLRequestContext for this experiment.
-  scoped_refptr<ExperimentURLRequestContext> context(
-      new ExperimentURLRequestContext(tester_->proxy_request_context_));
-  int rv = context->Init(experiment);
-  if (rv != net::OK) {
-    // Complete the experiment with a failure.
-    tester_->OnExperimentCompleted(rv);
+void ConnectionTester::TestRunner::ProxyConfigServiceCreated(
+    const Experiment& experiment,
+    scoped_ptr<net::ProxyConfigService>* proxy_config_service,
+    int status) {
+  if (status == net::OK)
+    status = request_context_->Init(experiment,
+                                    proxy_config_service,
+                                    net_log_);
+  if (status != net::OK) {
+    tester_->OnExperimentCompleted(status);
     return;
   }
-
   // Fetch a request using the experimental context.
-  request_.reset(new net::URLRequest(experiment.url, this));
-  request_->set_context(context);
+  request_.reset(new net::URLRequest(experiment.url,
+                                     this,
+                                     request_context_.get()));
   request_->Start();
+}
+
+void ConnectionTester::TestRunner::Run(const Experiment& experiment) {
+  // Try to create a net::URLRequestContext for this experiment.
+  request_context_.reset(
+      new ExperimentURLRequestContext(tester_->proxy_request_context_));
+  scoped_ptr<net::ProxyConfigService>* proxy_config_service =
+      new scoped_ptr<net::ProxyConfigService>();
+  base::Callback<void(int)> config_service_callback =
+      base::Bind(
+          &TestRunner::ProxyConfigServiceCreated, weak_factory_.GetWeakPtr(),
+          experiment, base::Owned(proxy_config_service));
+  int rv = request_context_->CreateProxyConfigService(
+      experiment.proxy_settings_experiment,
+      proxy_config_service, config_service_callback);
+  if (rv != net::ERR_IO_PENDING)
+    ProxyConfigServiceCreated(experiment, proxy_config_service, rv);
 }
 
 // ConnectionTester ----------------------------------------------------------
 
 ConnectionTester::ConnectionTester(
     Delegate* delegate,
-    net::URLRequestContext* proxy_request_context)
-    : delegate_(delegate), proxy_request_context_(proxy_request_context) {
+    net::URLRequestContext* proxy_request_context,
+    net::NetLog* net_log)
+    : delegate_(delegate),
+      proxy_request_context_(proxy_request_context),
+      net_log_(net_log) {
   DCHECK(delegate);
   DCHECK(proxy_request_context);
 }
@@ -448,7 +512,7 @@ void ConnectionTester::StartNextExperiment() {
 
   delegate_->OnStartConnectionTestExperiment(current_experiment());
 
-  current_test_runner_.reset(new TestRunner(this));
+  current_test_runner_.reset(new TestRunner(this, net_log_));
   current_test_runner_->Run(current_experiment());
 }
 

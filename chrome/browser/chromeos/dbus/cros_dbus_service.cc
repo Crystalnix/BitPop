@@ -1,19 +1,27 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/chromeos/dbus/cros_dbus_service.h"
 
+#include "base/bind.h"
+#include "base/chromeos/chromeos_version.h"
 #include "base/stl_util.h"
 #include "base/threading/platform_thread.h"
 #include "chrome/browser/chromeos/dbus/proxy_resolution_service_provider.h"
-#include "chrome/browser/chromeos/system/runtime_environment.h"
-#include "content/public/browser/browser_thread.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
 #include "dbus/bus.h"
 #include "dbus/exported_object.h"
+#include "dbus/object_path.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace chromeos {
+
+namespace {
+
+CrosDBusService* g_cros_dbus_service = NULL;
+
+}  // namespace
 
 // The CrosDBusService implementation used in production, and unit tests.
 class CrosDBusServiceImpl : public CrosDBusService {
@@ -28,8 +36,8 @@ class CrosDBusServiceImpl : public CrosDBusService {
     STLDeleteElements(&service_providers_);
   }
 
-  // CrosDBusService override.
-  virtual void Start() {
+  // Starts the D-Bus service.
+  void Start() {
     // Make sure we're running on the origin thread (i.e. the UI thread in
     // production).
     DCHECK(OnOriginThread());
@@ -38,9 +46,12 @@ class CrosDBusServiceImpl : public CrosDBusService {
     if (service_started_)
       return;
 
+    bus_->RequestOwnership(kLibCrosServiceName,
+                           base::Bind(&CrosDBusServiceImpl::OnOwnership,
+                                      base::Unretained(this)));
+
     exported_object_ = bus_->GetExportedObject(
-        kLibCrosServiceName,
-        kLibCrosServicePath);
+        dbus::ObjectPath(kLibCrosServicePath));
 
     for (size_t i = 0; i < service_providers_.size(); ++i)
       service_providers_[i]->Start(exported_object_);
@@ -62,6 +73,12 @@ class CrosDBusServiceImpl : public CrosDBusService {
     return base::PlatformThread::CurrentId() == origin_thread_id_;
   }
 
+  // Called when an ownership request is completed.
+  void OnOwnership(const std::string& service_name,
+                   bool success) {
+    LOG_IF(ERROR, !success) << "Failed to own: " << service_name;
+  }
+
   bool service_started_;
   base::PlatformThreadId origin_thread_id_;
   dbus::Bus* bus_;
@@ -80,30 +97,46 @@ class CrosDBusServiceStubImpl : public CrosDBusService {
 
   virtual ~CrosDBusServiceStubImpl() {
   }
-
-  // CrosDBusService override.
-  virtual void Start() {
-  }
 };
 
 // static
-CrosDBusService* CrosDBusService::Create(dbus::Bus* bus) {
-  if (system::runtime_environment::IsRunningOnChromeOS()) {
+void CrosDBusService::Initialize() {
+  if (g_cros_dbus_service) {
+    LOG(WARNING) << "CrosDBusService was already initialized";
+    return;
+  }
+  if (base::chromeos::IsRunningOnChromeOS()) {
+    dbus::Bus* bus = DBusThreadManager::Get()->GetSystemBus();
     CrosDBusServiceImpl* service = new CrosDBusServiceImpl(bus);
     service->RegisterServiceProvider(ProxyResolutionServiceProvider::Create());
-    return service;
+    g_cros_dbus_service = service;
+    service->Start();
   } else {
-    return new CrosDBusServiceStubImpl;
+    g_cros_dbus_service = new CrosDBusServiceStubImpl;
   }
+  VLOG(1) << "CrosDBusService initialized";
 }
 
 // static
-CrosDBusService* CrosDBusService::CreateForTesting(
+void CrosDBusService::InitializeForTesting(
     dbus::Bus* bus,
     ServiceProviderInterface* proxy_resolution_service) {
+  if (g_cros_dbus_service) {
+    LOG(WARNING) << "CrosDBusService was already initialized";
+    return;
+  }
   CrosDBusServiceImpl* service =  new CrosDBusServiceImpl(bus);
   service->RegisterServiceProvider(proxy_resolution_service);
-  return service;
+  service->Start();
+  g_cros_dbus_service = service;
+  VLOG(1) << "CrosDBusService initialized";
+}
+
+// static
+void CrosDBusService::Shutdown() {
+  delete g_cros_dbus_service;
+  g_cros_dbus_service = NULL;
+  VLOG(1) << "CrosDBusService Shutdown completed";
 }
 
 CrosDBusService::~CrosDBusService() {

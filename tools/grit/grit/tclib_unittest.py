@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 import sys
 import os.path
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '..'))
 
 import types
 import unittest
@@ -22,9 +22,11 @@ import grit.extern.tclib
 
 class TclibUnittest(unittest.TestCase):
   def testInit(self):
-    msg = tclib.Message(text=u'Hello Earthlings')
-    self.failUnless(msg.GetPresentableContent() == 'Hello Earthlings')
+    msg = tclib.Message(text=u'Hello Earthlings',
+                        description='Greetings\n\t      message')
+    self.failUnlessEqual(msg.GetPresentableContent(), 'Hello Earthlings')
     self.failUnless(isinstance(msg.GetPresentableContent(), types.StringTypes))
+    self.failUnlessEqual(msg.GetDescription(), 'Greetings message')
 
   def testGetAttr(self):
     msg = tclib.Message()
@@ -161,6 +163,17 @@ class TclibUnittest(unittest.TestCase):
       raise Exception("We shouldn't get here")
     except exception.InvalidPlaceholderName:
       pass  # Expect exception to be thrown because presentation contained space
+
+  def testTagsWithCommonSubstring(self):
+    word = 'ABCDEFGHIJ'
+    text = ' '.join([word[:i] for i in range(1, 11)])
+    phs = [tclib.Placeholder(word[:i], str(i), str(i)) for i in range(1, 11)]
+    try:
+      msg = tclib.Message(text=text, placeholders=phs)
+      self.failUnless(msg.GetRealContent() == '1 2 3 4 5 6 7 8 9 10')
+    except:
+      self.fail('tclib.Message() should handle placeholders that are '
+                'substrings of each other')
 
 if __name__ == '__main__':
   unittest.main()

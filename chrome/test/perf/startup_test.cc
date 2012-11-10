@@ -19,6 +19,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/env_vars.h"
 #include "chrome/test/automation/automation_proxy.h"
+#include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chrome/test/perf/perf_test.h"
@@ -35,7 +36,9 @@ class StartupTest : public UIPerfTest {
   StartupTest() {
     show_window_ = true;
   }
-  void SetUp() {}
+  void SetUp() {
+    collect_profiling_stats_ = false;
+  }
   void TearDown() {}
 
   enum TestColdness {
@@ -56,6 +59,16 @@ class StartupTest : public UIPerfTest {
         FilePath(FILE_PATH_LITERAL("simple.html")));
     ASSERT_TRUE(file_util::PathExists(file_url));
     launch_arguments_.AppendArgPath(file_url);
+  }
+
+  // Setup the command line arguments to capture profiling data for tasks.
+  void SetUpWithProfiling() {
+    profiling_file_ = ui_test_utils::GetTestFilePath(
+        FilePath(FilePath::kCurrentDirectory),
+        FilePath(FILE_PATH_LITERAL("task_profile.json")));
+    launch_arguments_.AppendSwitchPath(switches::kProfilingOutputFile,
+                                       profiling_file_);
+    collect_profiling_stats_ = true;
   }
 
   // Load a complex html file on startup represented by |which_tab|.
@@ -92,9 +105,11 @@ class StartupTest : public UIPerfTest {
     if (profile_type_ != UITestBase::COMPLEX_THEME)
       return;
 
-    const FilePath pref_template_path(user_data_dir().AppendASCII("Default").
+    const FilePath pref_template_path(user_data_dir().
+        AppendASCII("Default").
         AppendASCII("PreferencesTemplate"));
-    const FilePath pref_path(user_data_dir().AppendASCII("Default").
+    const FilePath pref_path(user_data_dir().
+        AppendASCII(TestingProfile::kTestUserProfileDir).
         AppendASCII("Preferences"));
 
     // Read in preferences template.
@@ -201,7 +216,7 @@ class StartupTest : public UIPerfTest {
         ASSERT_TRUE(browser_proxy.get());
 
         if (browser_proxy->GetInitialLoadTimes(
-              TestTimeouts::action_max_timeout_ms(),
+              TestTimeouts::action_max_timeout(),
               &min_start,
               &max_stop,
               &times) &&
@@ -278,6 +293,9 @@ class StartupTest : public UIPerfTest {
       }
     }
   }
+
+  FilePath profiling_file_;
+  bool collect_profiling_stats_;
 };
 
 TEST_F(StartupTest, PerfWarm) {
@@ -316,7 +334,7 @@ void StartupTest::RunPerfTestWithManyTabs(const char* graph, const char* trace,
     // Start the browser with these urls so we can save the session and exit.
     UITest::SetUp();
     // Set flags to ensure profile is saved and can be restored.
-#if defined(OS_MACOSX)
+#if defined(OS_CHROMEOS) || defined(OS_MACOSX)
     set_shutdown_type(ProxyLauncher::USER_QUIT);
 #endif
     clear_profile_ = false;
@@ -343,7 +361,7 @@ void StartupTest::RunPerfTestWithManyTabs(const char* graph, const char* trace,
 
 // http://crbug.com/101591
 #if defined(OS_WIN) && !defined(NDEBUG)
-#define MAYBE_PerfFewTabs FLAKY_PerfFewTabs
+#define MAYBE_PerfFewTabs DISABLED_PerfFewTabs
 #else
 #define MAYBE_PerfFewTabs PerfFewTabs
 #endif
@@ -368,21 +386,22 @@ TEST_F(StartupTest, PerfRestoreFewTabsReference) {
 
 #if defined(OS_MACOSX)
 // http://crbug.com/46609
-#define MAYBE_PerfSeveralTabsReference FLAKY_PerfSeveralTabsReference
-#define MAYBE_PerfSeveralTabs FLAKY_PerfSeveralTabs
+#define MAYBE_PerfSeveralTabsReference DISABLED_PerfSeveralTabsReference
+#define MAYBE_PerfSeveralTabs DISABLED_PerfSeveralTabs
 // http://crbug.com/52858
-#define MAYBE_PerfRestoreSeveralTabs FLAKY_PerfRestoreSeveralTabs
-#define MAYBE_PerfExtensionContentScript50 FLAKY_PerfExtensionContentScript50
+#define MAYBE_PerfRestoreSeveralTabs DISABLED_PerfRestoreSeveralTabs
+#define MAYBE_PerfExtensionContentScript50 DISABLED_PerfExtensionContentScript50
 #elif defined(OS_WIN)
 // http://crbug.com/46609
 #if !defined(NDEBUG)
+// This test is disabled on Windows Debug. See bug http://crbug.com/132279
+#define MAYBE_PerfRestoreSeveralTabs DISABLED_PerfRestoreSeveralTabs
+#else
+#define MAYBE_PerfRestoreSeveralTabs PerfRestoreSeveralTabs
+#endif  // !defined(NDEBUG)
 // http://crbug.com/102584
 #define MAYBE_PerfSeveralTabs DISABLED_PerfSeveralTabs
-#else
-#define MAYBE_PerfSeveralTabs FLAKY_PerfSeveralTabs
-#endif
 #define MAYBE_PerfSeveralTabsReference PerfSeveralTabsReference
-#define MAYBE_PerfRestoreSeveralTabs PerfRestoreSeveralTabs
 #define MAYBE_PerfExtensionContentScript50 PerfExtensionContentScript50
 #else
 #define MAYBE_PerfSeveralTabsReference PerfSeveralTabsReference
@@ -393,7 +412,7 @@ TEST_F(StartupTest, PerfRestoreFewTabsReference) {
 
 // http://crbug.com/99604
 #if defined(OS_WIN) && !defined(NDEBUG)
-#define MAYBE_PerfComplexTheme FLAKY_PerfComplexTheme
+#define MAYBE_PerfComplexTheme DISABLED_PerfComplexTheme
 #else
 #define MAYBE_PerfComplexTheme PerfComplexTheme
 #endif
@@ -442,7 +461,14 @@ TEST_F(StartupTest, MAYBE_PerfComplexTheme) {
                  UITestBase::COMPLEX_THEME, 0, 0);
 }
 
-#if defined(TOOLKIT_USES_GTK)
+TEST_F(StartupTest, ProfilingScript1) {
+  SetUpWithFileURL();
+  SetUpWithProfiling();
+  RunStartupTest("warm", "profiling_scripts1", WARM, NOT_IMPORTANT,
+                 UITestBase::DEFAULT_THEME, 1, 0);
+}
+
+#if defined(TOOLKIT_GTK)
 TEST_F(StartupTest, PerfGtkTheme) {
   RunStartupTest("warm", "gtk-theme", WARM, NOT_IMPORTANT,
                  UITestBase::NATIVE_THEME, 0, 0);

@@ -1,16 +1,16 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_BASE_KEYCODES_KEYBOARD_CODES_WIN_H_
 #define UI_BASE_KEYCODES_KEYBOARD_CODES_WIN_H_
-#pragma once
 
 #include <windows.h>
+#include <ime.h>
 
 namespace ui {
 
-typedef enum {
+enum KeyboardCode {
   VKEY_BACK = VK_BACK,
   VKEY_TAB = VK_TAB,
   VKEY_CLEAR = VK_CLEAR,
@@ -169,6 +169,8 @@ typedef enum {
   VKEY_OEM_102 = VK_OEM_102,
   VKEY_PROCESSKEY = VK_PROCESSKEY,
   VKEY_PACKET = VK_PACKET,
+  VKEY_DBE_SBCSCHAR = VK_DBE_SBCSCHAR,
+  VKEY_DBE_DBCSCHAR = VK_DBE_DBCSCHAR,
   VKEY_ATTN = VK_ATTN,
   VKEY_CRSEL = VK_CRSEL,
   VKEY_EXSEL = VK_EXSEL,
@@ -179,7 +181,7 @@ typedef enum {
   VKEY_PA1 = VK_PA1,
   VKEY_OEM_CLEAR = VK_OEM_CLEAR,
   VKEY_UNKNOWN = 0
-} KeyboardCode;
+};
 
 }  // namespace ui
 

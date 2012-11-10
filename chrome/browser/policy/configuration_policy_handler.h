@@ -4,13 +4,13 @@
 
 #ifndef CHROME_BROWSER_POLICY_CONFIGURATION_POLICY_HANDLER_H_
 #define CHROME_BROWSER_POLICY_CONFIGURATION_POLICY_HANDLER_H_
-#pragma once
 
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/values.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
+#include "chrome/common/content_settings.h"
 
 class PrefValueMap;
 
@@ -26,10 +26,10 @@ class ConfigurationPolicyHandler {
   ConfigurationPolicyHandler();
   virtual ~ConfigurationPolicyHandler();
 
-  // Returns true if the policy settings handled by this
-  // ConfigurationPolicyHandler can be applied and false otherwise. Fills
-  // |errors| with error messages or warnings. |errors| may contain error
-  // messages even when |CheckPolicySettings()| returns true.
+  // Returns whether the policy settings handled by this
+  // ConfigurationPolicyHandler can be applied.  Fills |errors| with error
+  // messages or warnings.  |errors| may contain error messages even when
+  // |CheckPolicySettings()| returns true.
   virtual bool CheckPolicySettings(const PolicyMap& policies,
                                    PolicyErrorMap* errors) = 0;
 
@@ -97,6 +97,55 @@ class SimplePolicyHandler : public TypeCheckingPolicyHandler {
   const char* pref_path_;
 
   DISALLOW_COPY_AND_ASSIGN(SimplePolicyHandler);
+};
+
+// Implements additional checks for policies that are lists of extension IDs.
+class ExtensionListPolicyHandler : public TypeCheckingPolicyHandler {
+ public:
+  ExtensionListPolicyHandler(const char* policy_name,
+                             const char* pref_path,
+                             bool allow_wildcards);
+  virtual ~ExtensionListPolicyHandler();
+
+  // ConfigurationPolicyHandler methods:
+  virtual bool CheckPolicySettings(const PolicyMap& policies,
+                                   PolicyErrorMap* errors) OVERRIDE;
+  virtual void ApplyPolicySettings(const PolicyMap& policies,
+                                   PrefValueMap* prefs) OVERRIDE;
+
+ protected:
+  const char* pref_path() const;
+
+  // Runs sanity checks on the policy value and returns it in |extension_ids|.
+  bool CheckAndGetList(const PolicyMap& policies,
+                       PolicyErrorMap* errors,
+                       const base::ListValue** extension_ids);
+
+ private:
+  const char* pref_path_;
+  bool allow_wildcards_;
+
+  DISALLOW_COPY_AND_ASSIGN(ExtensionListPolicyHandler);
+};
+
+// Implements additional checks for policies that are lists of extension
+// URLPatterns.
+class ExtensionURLPatternListPolicyHandler : public TypeCheckingPolicyHandler {
+ public:
+  ExtensionURLPatternListPolicyHandler(const char* policy_name,
+                                       const char* pref_path);
+  virtual ~ExtensionURLPatternListPolicyHandler();
+
+  // ConfigurationPolicyHandler methods:
+  virtual bool CheckPolicySettings(const PolicyMap& policies,
+                                   PolicyErrorMap* errors) OVERRIDE;
+  virtual void ApplyPolicySettings(const PolicyMap& policies,
+                                   PrefValueMap* prefs) OVERRIDE;
+
+ private:
+  const char* pref_path_;
+
+  DISALLOW_COPY_AND_ASSIGN(ExtensionURLPatternListPolicyHandler);
 };
 
 // ConfigurationPolicyHandler for the SyncDisabled policy.
@@ -216,26 +265,25 @@ class DefaultSearchPolicyHandler : public ConfigurationPolicyHandler {
 
  private:
   // Calls |CheckPolicySettings()| on each of the handlers in |handlers_|
-  // and returns true if all of the calls return true and false otherwise.
+  // and returns whether all of the calls succeeded.
   bool CheckIndividualPolicies(const PolicyMap& policies,
                                PolicyErrorMap* errors);
 
-  // Returns true if there is a value for |policy_name| in |policies| and false
-  // otherwise.
+  // Returns whether there is a value for |policy_name| in |policies|.
   bool HasDefaultSearchPolicy(const PolicyMap& policies,
                               const char* policy_name);
 
-  // Returns true if any default search policies are specified in |policies| and
-  // false otherwise.
+  // Returns whether any default search policies are specified in |policies|.
   bool AnyDefaultSearchPoliciesSpecified(const PolicyMap& policies);
 
-  // Returns true if the default search provider is disabled and false
-  // otherwise.
+  // Returns whether the default search provider is disabled.
   bool DefaultSearchProviderIsDisabled(const PolicyMap& policies);
 
-  // Returns true if the default search URL was set and is valid and false
-  // otherwise.
-  bool DefaultSearchURLIsValid(const PolicyMap& policies);
+  // Returns whether the default search URL is set and valid.  On success, both
+  // outparams (which must be non-NULL) are filled with the search URL.
+  bool DefaultSearchURLIsValid(const PolicyMap& policies,
+                               const Value** url_value,
+                               std::string* url_string);
 
   // Make sure that the |path| if present in |prefs_|.  If not, set it to
   // a blank string.
@@ -282,8 +330,8 @@ class ProxyPolicyHandler : public ConfigurationPolicyHandler {
                                    const char* policy_name);
 
   // Converts the deprecated ProxyServerMode policy value to a ProxyMode value
-  // and places the result in |mode_value|. Returns true if the conversion
-  // succeeded and false otherwise.
+  // and places the result in |mode_value|. Returns whether the conversion
+  // succeeded.
   bool CheckProxyModeAndServerMode(const PolicyMap& policies,
                                    PolicyErrorMap* errors,
                                    std::string* mode_value);
@@ -291,7 +339,7 @@ class ProxyPolicyHandler : public ConfigurationPolicyHandler {
   DISALLOW_COPY_AND_ASSIGN(ProxyPolicyHandler);
 };
 
-//
+// Handles JavaScript policies.
 class JavascriptPolicyHandler : public ConfigurationPolicyHandler {
  public:
   JavascriptPolicyHandler();
@@ -305,6 +353,50 @@ class JavascriptPolicyHandler : public ConfigurationPolicyHandler {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(JavascriptPolicyHandler);
+};
+
+// Handles the (deprecated) ClearSiteDataOnExit policy.
+// TODO(mnissler): Remove the policy eventually (http://crbug.com/133291).
+class ClearSiteDataOnExitPolicyHandler : public TypeCheckingPolicyHandler {
+ public:
+  ClearSiteDataOnExitPolicyHandler();
+  virtual ~ClearSiteDataOnExitPolicyHandler();
+
+  // ConfigurationPolicyHandler methods:
+  virtual bool CheckPolicySettings(const PolicyMap& policies,
+                                   PolicyErrorMap* errors) OVERRIDE;
+  virtual void ApplyPolicySettings(const PolicyMap& policies,
+                                   PrefValueMap* prefs) OVERRIDE;
+
+ private:
+  // Checks whether the clear site data policy is enabled in |policies|.
+  bool ClearSiteDataEnabled(const PolicyMap& policies);
+
+  // Checks |policies| for the cookies setting and returns it in
+  // |content_setting|. Returns true if the setting is found, false if not.
+  static bool GetContentSetting(const PolicyMap& policies,
+                                ContentSetting* content_setting);
+
+  DISALLOW_COPY_AND_ASSIGN(ClearSiteDataOnExitPolicyHandler);
+};
+
+// Handles RestoreOnStartup policy.
+class RestoreOnStartupPolicyHandler : public TypeCheckingPolicyHandler {
+ public:
+  RestoreOnStartupPolicyHandler();
+  virtual ~RestoreOnStartupPolicyHandler();
+
+  // ConfigurationPolicyHandler methods:
+  virtual bool CheckPolicySettings(const PolicyMap& policies,
+                                   PolicyErrorMap* errors) OVERRIDE;
+  virtual void ApplyPolicySettings(const PolicyMap& policies,
+                                   PrefValueMap* prefs) OVERRIDE;
+
+ private:
+  void ApplyPolicySettingsFromHomePage(const PolicyMap& policies,
+                                       PrefValueMap* prefs);
+
+  DISALLOW_COPY_AND_ASSIGN(RestoreOnStartupPolicyHandler);
 };
 
 }  // namespace policy

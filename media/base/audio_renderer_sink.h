@@ -8,7 +8,6 @@
 #include <vector>
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/media_export.h"
 
@@ -28,25 +27,20 @@ class AudioRendererSink
     // continuous stream). That actual number of frames is passed to host
     // together with PCM audio data and host is free to use or ignore it.
     // TODO(crogers): use base:Callback instead.
-    virtual size_t Render(const std::vector<float*>& audio_data,
-                          size_t number_of_frames,
-                          size_t audio_delay_milliseconds) = 0;
+    virtual int Render(const std::vector<float*>& audio_data,
+                       int number_of_frames,
+                       int audio_delay_milliseconds) = 0;
 
     // Signals an error has occurred.
-    virtual void OnError() = 0;
+    virtual void OnRenderError() = 0;
 
    protected:
     virtual ~RenderCallback() {}
   };
 
-  virtual ~AudioRendererSink() {}
-
   // Sets important information about the audio stream format.
   // It must be called before any of the other methods.
-  virtual void Initialize(size_t buffer_size,
-                          int channels,
-                          double sample_rate,
-                          AudioParameters::Format latency_format,
+  virtual void Initialize(const AudioParameters& params,
                           RenderCallback* callback) = 0;
 
   // Starts audio playback.
@@ -65,8 +59,9 @@ class AudioRendererSink
   // Returns |true| on success.
   virtual bool SetVolume(double volume) = 0;
 
-  // Gets the playback volume, with range [0.0, 1.0] inclusive.
-  virtual void GetVolume(double* volume) = 0;
+ protected:
+  friend class base::RefCountedThreadSafe<AudioRendererSink>;
+  virtual ~AudioRendererSink() {}
 };
 
 }  // namespace media

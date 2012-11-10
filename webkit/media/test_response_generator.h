@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,7 @@ class TestResponseGenerator {
     kNoAcceptRanges = 1 << 0,   // Don't include Accept-Ranges in 206 response.
     kNoContentRange = 1 << 1,   // Don't include Content-Range in 206 response.
     kNoContentLength = 1 << 2,  // Don't include Content-Length in 206 response.
+    kNoContentRangeInstanceSize = 1 << 3,  // Content-Range: N-M/* in 206.
   };
 
   // Build an HTTP response generator for the given URL. |content_length| is
@@ -44,7 +45,13 @@ class TestResponseGenerator {
   // Generates a regular HTTP 404 response.
   WebKit::WebURLResponse Generate404();
 
-  const GURL& gurl() { return gurl_; }
+  // Generates a file:// response starting from |first_byte_offset| until the
+  // end of the resource.
+  //
+  // If |first_byte_offset| is negative a response containing no content length
+  // will be returned.
+  WebKit::WebURLResponse GenerateFileResponse(int64 first_byte_offset);
+
   int64 content_length() { return content_length_; }
 
  private:

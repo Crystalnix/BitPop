@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,16 +6,14 @@ var SourceTracker = (function() {
   'use strict';
 
   /**
-   * This class keeps track of all NetLog events.
-   * It receives events from the browser and when loading a log file, and passes
+   * This class keeps track of all NetLog events, grouped into per-source
+   * streams. It receives events from EventsTracker, and passes
    * them on to all its observers.
    *
    * @constructor
    */
   function SourceTracker() {
-    // Observers that are sent all events as they happen.  This allows for easy
-    // watching for particular events.
-    this.logEntryObservers_ = [];
+    assertFirstConstructorCall(SourceTracker);
 
     // Observers that only want to receive lists of updated SourceEntries.
     this.sourceEntryObservers_ = [];
@@ -26,7 +24,11 @@ var SourceTracker = (function() {
     this.enableSecurityStripping_ = true;
 
     this.clearEntries_();
+
+    EventsTracker.getInstance().addLogEntryObserver(this);
   }
+
+  cr.addSingletonGetter(SourceTracker);
 
   SourceTracker.prototype = {
     /**
@@ -37,10 +39,8 @@ var SourceTracker = (function() {
       this.maxReceivedSourceId_ = 0;
 
       // Next unique id to be assigned to a log entry without a source.
-      // Needed to simplify deletion, identify associated GUI elements, etc.
+      // Needed to identify associated GUI elements, etc.
       this.nextSourcelessEventId_ = -1;
-
-      this.numPassivelyCapturedEvents_ = 0;
 
       // Ordered list of log entries.  Needed to maintain original order when
       // generating log dumps
@@ -50,33 +50,10 @@ var SourceTracker = (function() {
     },
 
     /**
-     * Returns a list of all captured events.
-     */
-    getAllCapturedEvents: function() {
-      return this.capturedEvents_;
-    },
-
-    /**
      * Returns a list of all SourceEntries.
      */
     getAllSourceEntries: function() {
       return this.sourceEntries_;
-    },
-
-    /**
-     * Returns the number of events that were captured while we were
-     * listening for events.
-     */
-    getNumActivelyCapturedEvents: function() {
-      return this.capturedEvents_.length - this.numPassivelyCapturedEvents_;
-    },
-
-    /**
-     * Returns the number of events that were captured passively by the
-     * browser prior to when the net-internals page was started.
-     */
-    getNumPassivelyCapturedEvents: function() {
-      return this.numPassivelyCapturedEvents_;
     },
 
     /**
@@ -97,28 +74,6 @@ var SourceTracker = (function() {
       return this.sourceEntries_[id];
     },
 
-    onReceivedPassiveLogEntries: function(logEntries) {
-      // Due to an expected race condition, it is possible to receive actively
-      // captured log entries before the passively logged entries are received.
-      //
-      // When that happens, we create a copy of the actively logged entries,
-      // delete all entries, and, after handling all the passively logged
-      // entries, add back the deleted actively logged entries.
-      var earlyActivelyCapturedEvents = this.capturedEvents_.slice(0);
-      if (earlyActivelyCapturedEvents.length > 0)
-        this.deleteAllSourceEntries();
-
-      this.numPassivelyCapturedEvents_ = logEntries.length;
-      for (var i = 0; i < logEntries.length; ++i)
-        logEntries[i].wasPassivelyCaptured = true;
-
-      this.onReceivedLogEntries(logEntries);
-
-      // Add back early actively captured events, if any.
-      if (earlyActivelyCapturedEvents.length)
-        this.onReceivedLogEntries(earlyActivelyCapturedEvents);
-    },
-
     /**
      * Sends each entry to all observers and updates |capturedEvents_|.
      * Also assigns unique ids to log entries without a source.
@@ -134,6 +89,8 @@ var SourceTracker = (function() {
         var logEntry = logEntries[e];
 
         // Assign unique ID, if needed.
+        // TODO(mmenke):  Remove this, and all other code to handle 0 source
+        //                IDs when M19 hits stable.
         if (logEntry.source.id == 0) {
           logEntry.source.id = this.nextSourcelessEventId_;
           --this.nextSourcelessEventId_;
@@ -162,45 +119,15 @@ var SourceTracker = (function() {
         this.sourceEntryObservers_[i].onSourceEntriesUpdated(
             updatedSourceEntries);
       }
-      for (var i = 0; i < this.logEntryObservers_.length; ++i)
-        this.logEntryObservers_[i].onReceivedLogEntries(logEntries);
     },
 
     /**
-     * Deletes captured events with source IDs in |sourceEntryIds|.
+     * Called when all log events have been deleted.
      */
-    deleteSourceEntries: function(sourceEntryIds) {
-      var sourceIdDict = {};
-      for (var i = 0; i < sourceEntryIds.length; i++) {
-        sourceIdDict[sourceEntryIds[i]] = true;
-        delete this.sourceEntries_[sourceEntryIds[i]];
-      }
-
-      var newEventList = [];
-      for (var i = 0; i < this.capturedEvents_.length; ++i) {
-        var id = this.capturedEvents_[i].source.id;
-        if (id in sourceIdDict) {
-          if (this.capturedEvents_[i].wasPassivelyCaptured)
-            --this.numPassivelyCapturedEvents_;
-          continue;
-        }
-        newEventList.push(this.capturedEvents_[i]);
-      }
-      this.capturedEvents_ = newEventList;
-
-      for (var i = 0; i < this.sourceEntryObservers_.length; ++i)
-        this.sourceEntryObservers_[i].onSourceEntriesDeleted(sourceEntryIds);
-    },
-
-    /**
-     * Deletes all captured events.
-     */
-    deleteAllSourceEntries: function() {
+    onAllLogEntriesDeleted: function() {
       this.clearEntries_();
       for (var i = 0; i < this.sourceEntryObservers_.length; ++i)
         this.sourceEntryObservers_[i].onAllSourceEntriesDeleted();
-      for (var i = 0; i < this.logEntryObservers_.length; ++i)
-        this.logEntryObservers_[i].onAllLogEntriesDeleted();
     },
 
     /**
@@ -229,23 +156,11 @@ var SourceTracker = (function() {
      * security stripping changes:
      *
      *   observer.onSourceEntriesUpdated(sourceEntries)
-     *   observer.onSourceEntriesDeleted(sourceEntryIds)
      *   ovserver.onAllSourceEntriesDeleted()
      *   observer.onSecurityStrippingChanged()
      */
     addSourceEntryObserver: function(observer) {
       this.sourceEntryObservers_.push(observer);
-    },
-
-    /**
-     * Adds a listener of log entries. |observer| will be called back when new
-     * log data arrives or all entries are deleted:
-     *
-     *   observer.onReceivedLogEntries(entries)
-     *   ovserver.onAllLogEntriesDeleted()
-     */
-    addLogEntryObserver: function(observer) {
-      this.logEntryObservers_.push(observer);
     }
   };
 

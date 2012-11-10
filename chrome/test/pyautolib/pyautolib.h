@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -7,17 +7,19 @@
 
 #ifndef CHROME_TEST_PYAUTOLIB_PYAUTOLIB_H_
 #define CHROME_TEST_PYAUTOLIB_PYAUTOLIB_H_
-#pragma once
 
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
 #include "base/test/test_timeouts.h"
+#include "base/time.h"
 #include "chrome/test/ui/ui_test.h"
 #include "chrome/test/ui/ui_test_suite.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
 #endif
+
+class AutomationProxy;
 
 // The C++ style guide forbids using default arguments but I'm taking the
 // liberty of allowing it in this file. The sole purpose of this (and the
@@ -67,69 +69,7 @@ class PyUITestBase : public UITestBase {
   virtual void SetUp() OVERRIDE;
   virtual void TearDown() OVERRIDE;
 
-  // Navigate to the given URL in the active tab. Blocks until page loaded.
-  void NavigateToURL(const char* url_string);
-
-  // Navigate to the given URL in the active tab in the given window.
-  void NavigateToURL(const char* url_string, int window_index);
-
-  // Navigate to the given URL in given tab in the given window.
-  // Blocks until page loaded.
-  void NavigateToURL(const char* url_string, int window_index, int tab_index);
-
-  // Reloads the active tab in the given window.
-  // Blocks until page reloaded.
-  void ReloadActiveTab(int window_index = 0);
-
-  // Get the URL of the active tab.
-  GURL GetActiveTabURL(int window_index = 0);
-
-  int GetTabCount(int window_index = 0);
-
-  // Appends a new tab with the given URL in the given or first browser window.
-  bool AppendTab(const GURL& tab_url, int window_index = 0);
-
-  // Activate the tab at the given zero-based index in the given or first
-  // browser window.  Also brings the window to front.
-  bool ActivateTab(int tab_index, int window_index = 0);
-
-  // Apply the accelerator with given id (IDC_BACK, IDC_NEWTAB ...) to the
-  // browser window at the given or first index.
-  // The list can be found at chrome/app/chrome_command_ids.h
-  // Returns true if the call was successful.
-  bool ApplyAccelerator(int id, int window_index = 0);
-
-  // Like ApplyAccelerator except that it waits for the command to execute.
-  bool RunCommand(int browser_command, int window_index = 0);
-
-  // Returns true if the given command id is enabled on the given window.
-  bool IsMenuCommandEnabled(int browser_command, int window_index = 0);
-
-  // Shows or hides the download shelf.
-  void SetDownloadShelfVisible(bool is_visible, int window_index = 0);
-
-  // Determines the visibility of the download shelf
-  bool IsDownloadShelfVisible(int window_index = 0);
-
-  // Open the Find box
-  void OpenFindInPage(int window_index = 0);
-
-  // Determines the visibility of the Find box
-  bool IsFindInPageVisible(int window_index = 0);
-
-  // Get the path to the downloads directory
-  FilePath GetDownloadDirectory();
-
   // AutomationProxy methods
-
-  // Open a new browser window. Returns false on failure.
-  bool OpenNewBrowserWindow(bool show);
-
-  // Close a browser window. Returns false on failure.
-  bool CloseBrowserWindow(int window_index);
-
-  // Fetch the number of browser windows. Includes popups.
-  int GetBrowserWindowCount();
 
   // Returns bookmark bar visibility state.
   bool GetBookmarkBarVisibility();
@@ -144,10 +84,11 @@ class PyUITestBase : public UITestBase {
   // Wait for the bookmark bar animation to complete.
   // If |wait_for_open| is true, wait for it to open.
   // If |wait_for_open| is false, wait for it to close.
-  bool WaitForBookmarkBarVisibilityChange(bool wait_for_open);
+  bool WaitForBookmarkBarVisibilityChange(bool wait_for_open,
+                                          int window_index = 0);
 
   // Get the bookmarks as a JSON string.  Internal method.
-  std::string _GetBookmarksAsJSON();
+  std::string _GetBookmarksAsJSON(int window_index = 0);
 
   // Editing of the bookmark model.  Bookmarks are referenced by id.
   // The id is a std::wstring, not an int64, for convenience, since
@@ -157,16 +98,19 @@ class PyUITestBase : public UITestBase {
   // is unnecessary.  URLs are strings and not GURLs for a similar reason.
   // Bookmark or group (folder) creation:
   bool AddBookmarkGroup(std::wstring& parent_id, int index,
-                        std::wstring& title);
+                        std::wstring& title, int window_index = 0);
   bool AddBookmarkURL(std::wstring& parent_id, int index,
-                      std::wstring& title, std::wstring& url);
+                      std::wstring& title, std::wstring& url,
+                      int window_index = 0);
   // Bookmark editing:
   bool ReparentBookmark(std::wstring& id, std::wstring& new_parent_id,
-                        int index);
-  bool SetBookmarkTitle(std::wstring& id, std::wstring& title);
-  bool SetBookmarkURL(std::wstring& id, std::wstring& url);
+                        int index, int window_index = 0);
+  bool SetBookmarkTitle(std::wstring& id, std::wstring& title,
+                        int window_index = 0);
+  bool SetBookmarkURL(std::wstring& id, std::wstring& url,
+                      int window_index = 0);
   // Finally, bookmark deletion:
-  bool RemoveBookmark(std::wstring& id);
+  bool RemoveBookmark(std::wstring& id, int window_index = 0);
 
   // Get a handle to browser window at the given index, or NULL on failure.
   scoped_refptr<BrowserProxy> GetBrowserWindow(int window_index);
@@ -180,9 +124,6 @@ class PyUITestBase : public UITestBase {
                                const std::string& request,
                                int timeout);
 
-  // Resets to the default theme. Returns true on success.
-  bool ResetToDefaultTheme();
-
   // Sets a cookie value for a url. Returns true on success.
   bool SetCookie(const GURL& cookie_url, const std::string& value,
                  int window_index = 0, int tab_index = 0);
@@ -190,17 +131,41 @@ class PyUITestBase : public UITestBase {
   std::string GetCookie(const GURL& cookie_url, int window_index = 0,
                         int tab_index = 0);
 
+  base::TimeDelta action_max_timeout() const {
+    return TestTimeouts::action_max_timeout();
+  }
+
   int action_max_timeout_ms() const {
-    return TestTimeouts::action_max_timeout_ms();
+    return action_max_timeout().InMilliseconds();
+  }
+
+  base::TimeDelta large_test_timeout() const {
+    return TestTimeouts::large_test_timeout();
   }
 
   int large_test_timeout_ms() const {
-    return TestTimeouts::large_test_timeout_ms();
+    return large_test_timeout().InMilliseconds();
   }
 
+ protected:
+  // Gets the automation proxy and checks that it exists.
+  virtual AutomationProxy* automation() const OVERRIDE;
+
+  virtual void SetLaunchSwitches() OVERRIDE;
+
  private:
+  // Create JSON error responses.
+  void ErrorResponse(const std::string& error_string,
+                     const std::string& request,
+                     std::string* response);
+  void RequestFailureResponse(
+      const std::string& request,
+      const base::TimeDelta& duration,
+      const base::TimeDelta& timeout,
+      std::string* response);
+
   // Gets the current state of the bookmark bar. Returns false if it failed.
-  bool GetBookmarkBarState(bool* visible, bool* detached);
+  bool GetBookmarkBarState(bool* visible, bool* detached, int window_index = 0);
 
   // Enables PostTask to main thread.
   // Should be shared across multiple instances of PyUITestBase so that this

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,7 +51,7 @@ bool IsRedirect(int32_t status) {
 }  // namespace
 
 PPB_URLResponseInfo_Impl::PPB_URLResponseInfo_Impl(PP_Instance instance)
-    : Resource(instance),
+    : Resource(::ppapi::OBJECT_IS_IMPL, instance),
       status_code_(-1) {
 }
 
@@ -74,7 +74,9 @@ bool PPB_URLResponseInfo_Impl::Initialize(const WebURLResponse& response) {
   WebString file_path = response.downloadFilePath();
   if (!file_path.isEmpty()) {
     body_ = PPB_FileRef_Impl::CreateExternal(
-        pp_instance(), webkit_glue::WebStringToFilePath(file_path));
+        pp_instance(),
+        webkit_glue::WebStringToFilePath(file_path),
+        std::string());
   }
   return true;
 }

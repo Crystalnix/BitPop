@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "net/base/sys_addrinfo.h"
 #include "net/base/test_completion_callback.h"
 #include "net/socket/tcp_server_socket.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -31,12 +30,13 @@ TEST(TCPClientSocketTest, BindLoopbackToLoopback) {
   IPEndPoint server_address;
   ASSERT_EQ(OK, server.GetLocalAddress(&server_address));
 
-  TCPClientSocket socket(
-      AddressList::CreateFromIPAddress(server_address.address(),
-                                       server_address.port()),
-      NULL, NetLog::Source());
+  TCPClientSocket socket(AddressList(server_address), NULL, NetLog::Source());
 
   EXPECT_EQ(OK, socket.Bind(IPEndPoint(lo_address, 0)));
+
+  IPEndPoint local_address_result;
+  EXPECT_EQ(OK, socket.GetLocalAddress(&local_address_result));
+  EXPECT_EQ(lo_address, local_address_result.address());
 
   TestCompletionCallback connect_callback;
   EXPECT_EQ(ERR_IO_PENDING, socket.Connect(connect_callback.callback()));
@@ -49,6 +49,12 @@ TEST(TCPClientSocketTest, BindLoopbackToLoopback) {
   ASSERT_EQ(OK, result);
 
   EXPECT_EQ(OK, connect_callback.WaitForResult());
+
+  EXPECT_TRUE(socket.IsConnected());
+  socket.Disconnect();
+  EXPECT_FALSE(socket.IsConnected());
+  EXPECT_EQ(ERR_SOCKET_NOT_CONNECTED,
+            socket.GetLocalAddress(&local_address_result));
 }
 
 // Try to bind socket to the loopback interface and connect to an
@@ -88,10 +94,7 @@ TEST(TCPClientSocketTest, BindLoopbackToIPv6) {
 
   IPEndPoint server_address;
   ASSERT_EQ(OK, server.GetLocalAddress(&server_address));
-  TCPClientSocket socket(
-      AddressList::CreateFromIPAddress(server_address.address(),
-                                       server_address.port()),
-      NULL, NetLog::Source());
+  TCPClientSocket socket(AddressList(server_address), NULL, NetLog::Source());
 
   IPAddressNumber ipv4_lo_ip;
   ASSERT_TRUE(ParseIPLiteralToNumber("127.0.0.1", &ipv4_lo_ip));

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -23,12 +23,12 @@
 
 #ifndef CHROME_BROWSER_PREFS_PREF_MEMBER_H_
 #define CHROME_BROWSER_PREFS_PREF_MEMBER_H_
-#pragma once
 
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/file_path.h"
+#include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/values.h"
 #include "content/public/browser/browser_thread.h"
@@ -115,8 +115,8 @@ class PrefMemberBase : public content::NotificationObserver {
 
   virtual Internal* internal() const = 0;
 
- // Ordered the members to compact the class instance.
  private:
+  // Ordered the members to compact the class instance.
   std::string pref_name_;
   content::NotificationObserver* observer_;
   PrefService* prefs_;

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "base/threading/thread_local.h"
 #include "content/common/appcache/appcache_dispatcher.h"
 #include "content/common/db_message_filter.h"
+#include "content/common/indexed_db/indexed_db_message_filter.h"
 #include "content/common/web_database_observer_impl.h"
 #include "content/common/worker_messages.h"
 #include "content/public/common/content_switches.h"
@@ -34,10 +35,14 @@ WorkerThread::WorkerThread() {
 
   appcache_dispatcher_.reset(new AppCacheDispatcher(this));
 
-  web_database_observer_impl_.reset(new WebDatabaseObserverImpl(this));
+  web_database_observer_impl_.reset(
+      new WebDatabaseObserverImpl(sync_message_filter()));
   WebKit::WebDatabase::setObserver(web_database_observer_impl_.get());
   db_message_filter_ = new DBMessageFilter();
   channel()->AddFilter(db_message_filter_.get());
+
+  indexed_db_message_filter_ = new IndexedDBMessageFilter;
+  channel()->AddFilter(indexed_db_message_filter_.get());
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
@@ -61,10 +66,15 @@ WorkerThread::WorkerThread() {
 
   WebRuntimeFeatures::enableFileSystem(
       !command_line.HasSwitch(switches::kDisableFileSystem));
+
+  WebRuntimeFeatures::enableIndexedDatabase(true);
 }
 
 WorkerThread::~WorkerThread() {
   // Shutdown in reverse of the initialization order.
+  channel()->RemoveFilter(indexed_db_message_filter_.get());
+  indexed_db_message_filter_ = NULL;
+
   channel()->RemoveFilter(db_message_filter_.get());
   db_message_filter_ = NULL;
 

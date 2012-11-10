@@ -12,7 +12,6 @@
 #include "remoting/base/constants.h"
 #include "remoting/host/host_config.h"
 #include "remoting/jingle_glue/iq_sender.h"
-#include "remoting/jingle_glue/jingle_thread.h"
 #include "remoting/jingle_glue/signal_strategy.h"
 #include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
 #include "third_party/libjingle/source/talk/xmpp/constants.h"
@@ -58,11 +57,11 @@ void RegisterSupportHostRequest::OnSignalStrategyStateChange(
   if (state == SignalStrategy::CONNECTED) {
     DCHECK(!callback_.is_null());
 
-    request_.reset(iq_sender_->SendIq(
+    request_ = iq_sender_->SendIq(
         buzz::STR_SET, kChromotingBotJid,
-        CreateRegistrationRequest(signal_strategy_->GetLocalJid()),
+        CreateRegistrationRequest(signal_strategy_->GetLocalJid()).Pass(),
         base::Bind(&RegisterSupportHostRequest::ProcessResponse,
-                   base::Unretained(this))));
+                   base::Unretained(this)));
   } else if (state == SignalStrategy::DISCONNECTED) {
     // We will reach here if signaling fails to connect.
     CallCallback(false, std::string(), base::TimeDelta());
@@ -74,22 +73,22 @@ bool RegisterSupportHostRequest::OnSignalStrategyIncomingStanza(
   return false;
 }
 
-XmlElement* RegisterSupportHostRequest::CreateRegistrationRequest(
+scoped_ptr<XmlElement> RegisterSupportHostRequest::CreateRegistrationRequest(
     const std::string& jid) {
-  XmlElement* query = new XmlElement(
-      QName(kChromotingXmlNamespace, kRegisterQueryTag));
+  scoped_ptr<XmlElement> query(new XmlElement(
+      QName(kChromotingXmlNamespace, kRegisterQueryTag)));
   XmlElement* public_key = new XmlElement(
       QName(kChromotingXmlNamespace, kPublicKeyTag));
   public_key->AddText(key_pair_->GetPublicKey());
   query->AddElement(public_key);
-  query->AddElement(CreateSignature(jid));
-  return query;
+  query->AddElement(CreateSignature(jid).release());
+  return query.Pass();
 }
 
-XmlElement* RegisterSupportHostRequest::CreateSignature(
+scoped_ptr<XmlElement> RegisterSupportHostRequest::CreateSignature(
     const std::string& jid) {
-  XmlElement* signature_tag = new XmlElement(
-      QName(kChromotingXmlNamespace, kSignatureTag));
+  scoped_ptr<XmlElement> signature_tag(new XmlElement(
+      QName(kChromotingXmlNamespace, kSignatureTag)));
 
   int64 time = static_cast<int64>(base::Time::Now().ToDoubleT());
   std::string time_str(base::Int64ToString(time));
@@ -100,7 +99,7 @@ XmlElement* RegisterSupportHostRequest::CreateSignature(
   std::string signature(key_pair_->GetSignature(message));
   signature_tag->AddText(signature);
 
-  return signature_tag;
+  return signature_tag.Pass();
 }
 
 bool RegisterSupportHostRequest::ParseResponse(const XmlElement* response,
@@ -161,7 +160,8 @@ bool RegisterSupportHostRequest::ParseResponse(const XmlElement* response,
   return true;
 }
 
-void RegisterSupportHostRequest::ProcessResponse(const XmlElement* response) {
+void RegisterSupportHostRequest::ProcessResponse(IqRequest* request,
+                                                 const XmlElement* response) {
   std::string support_id;
   base::TimeDelta lifetime;
   bool success = ParseResponse(response, &support_id, &lifetime);

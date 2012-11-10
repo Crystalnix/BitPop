@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autofill/autofill_profile.h"
 #include "chrome/browser/autofill/credit_card.h"
+#include "chrome/browser/intents/default_web_intent_service.h"
 #include "chrome/browser/webdata/autofill_change.h"
 #include "chrome/browser/webdata/autofill_entry.h"
 #include "chrome/browser/webdata/web_data_service.h"
@@ -26,11 +27,10 @@
 #include "chrome/browser/webdata/web_intents_table.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/guid.h"
 #include "chrome/test/base/thread_observer_helper.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/forms/form_field.h"
@@ -56,6 +56,8 @@ ACTION_P(SignalEvent, event) {
 
 class AutofillDBThreadObserverHelper : public DBThreadObserverHelper {
  protected:
+  virtual ~AutofillDBThreadObserverHelper() {}
+
   virtual void RegisterObservers() {
     registrar_.Add(&observer_,
                    chrome::NOTIFICATION_AUTOFILL_ENTRIES_CHANGED,
@@ -85,8 +87,12 @@ class WebDataServiceTest : public testing::Test {
   }
 
   virtual void TearDown() {
-    if (wds_.get())
-      wds_->Shutdown();
+    wds_->ShutdownOnUIThread();
+    wds_ = NULL;
+    base::WaitableEvent done(false, false);
+    BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
+        base::Bind(&base::WaitableEvent::Signal, base::Unretained(&done)));
+    done.Wait();
 
     db_thread_.Stop();
     MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
@@ -146,8 +152,15 @@ class WebDataServiceAutofillTest : public WebDataServiceTest {
   WaitableEvent done_event_;
 };
 
-// Simple consumer for WebIntents data. Stores the result data and quits UI
-// message loop when callback is invoked.
+// Run the current message loop. OnWebDataServiceRequestDone will invoke
+// MessageLoop::Quit on completion, so this call will finish at that point.
+static void WaitUntilCalled() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  MessageLoop::current()->Run();
+}
+
+// Simple consumer for WebIntents service data. Stores the result data and
+// quits UI message loop when callback is invoked.
 class WebIntentsConsumer : public WebDataServiceConsumer {
  public:
   virtual void OnWebDataServiceRequestDone(WebDataService::Handle h,
@@ -164,15 +177,30 @@ class WebIntentsConsumer : public WebDataServiceConsumer {
     MessageLoop::current()->Quit();
   }
 
-  // Run the current message loop. OnWebDataServiceRequestDone will invoke
-  // MessageLoop::Quit on completion, so this call will finish at that point.
-  static void WaitUntilCalled() {
+  // Result data from completion callback.
+  std::vector<WebIntentServiceData> services_;
+};
+
+// Simple consumer for WebIntents defaults data. Stores the result data and
+// quits UI message loop when callback is invoked.
+class WebIntentsDefaultsConsumer : public WebDataServiceConsumer {
+ public:
+  virtual void OnWebDataServiceRequestDone(WebDataService::Handle h,
+                                           const WDTypedResult* result) {
+    services_.clear();
+    if (result) {
+      DCHECK(result->GetType() == WEB_INTENTS_DEFAULTS_RESULT);
+      services_ = static_cast<
+          const WDResult<std::vector<DefaultWebIntentService> >*>(result)->
+              GetValue();
+    }
+
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    MessageLoop::current()->Run();
+    MessageLoop::current()->Quit();
   }
 
   // Result data from completion callback.
-  std::vector<WebIntentServiceData> services_;
+  std::vector<DefaultWebIntentService> services_;
 };
 
 // Simple consumer for Keywords data. Stores the result data and quits UI
@@ -193,13 +221,6 @@ class KeywordsConsumer : public WebDataServiceConsumer {
 
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     MessageLoop::current()->Quit();
-  }
-
-  // Run the current message loop. OnWebDataServiceRequestDone will invoke
-  // MessageLoop::Quit on completion, so this call will finish at that point.
-  static void WaitUntilCalled() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    MessageLoop::current()->Run();
   }
 
   // True if keywords data was loaded successfully.
@@ -635,7 +656,7 @@ TEST_F(WebDataServiceTest, WebIntents) {
   WebIntentsConsumer consumer;
 
   wds_->GetWebIntentServices(ASCIIToUTF16("share"), &consumer);
-  WebIntentsConsumer::WaitUntilCalled();
+  WaitUntilCalled();
   EXPECT_EQ(0U, consumer.services_.size());
 
   WebIntentServiceData service;
@@ -652,7 +673,7 @@ TEST_F(WebDataServiceTest, WebIntents) {
   wds_->AddWebIntentService(service);
 
   wds_->GetWebIntentServices(ASCIIToUTF16("share"), &consumer);
-  WebIntentsConsumer::WaitUntilCalled();
+  WaitUntilCalled();
   ASSERT_EQ(2U, consumer.services_.size());
 
   if (consumer.services_[0].type != ASCIIToUTF16("image/*"))
@@ -669,7 +690,7 @@ TEST_F(WebDataServiceTest, WebIntents) {
   wds_->RemoveWebIntentService(service);
 
   wds_->GetWebIntentServices(ASCIIToUTF16("share"), &consumer);
-  WebIntentsConsumer::WaitUntilCalled();
+  WaitUntilCalled();
   ASSERT_EQ(1U, consumer.services_.size());
 
   service.type = ASCIIToUTF16("video/*");
@@ -694,7 +715,7 @@ TEST_F(WebDataServiceTest, WebIntentsForURL) {
   wds_->GetWebIntentServicesForURL(
       UTF8ToUTF16(service.service_url.spec()),
       &consumer);
-  WebIntentsConsumer::WaitUntilCalled();
+  WaitUntilCalled();
   ASSERT_EQ(2U, consumer.services_.size());
   EXPECT_EQ(service, consumer.services_[0]);
   service.action = ASCIIToUTF16("share1");
@@ -714,7 +735,7 @@ TEST_F(WebDataServiceTest, WebIntentsGetAll) {
   wds_->AddWebIntentService(service);
 
   wds_->GetAllWebIntentServices(&consumer);
-  WebIntentsConsumer::WaitUntilCalled();
+  WaitUntilCalled();
   ASSERT_EQ(2U, consumer.services_.size());
 
   if (consumer.services_[0].action != ASCIIToUTF16("edit"))
@@ -725,11 +746,57 @@ TEST_F(WebDataServiceTest, WebIntentsGetAll) {
   EXPECT_EQ(service, consumer.services_[1]);
 }
 
+TEST_F(WebDataServiceTest, WebIntentsDefaultsTest) {
+  WebIntentsDefaultsConsumer consumer;
+
+  wds_->GetDefaultWebIntentServicesForAction(ASCIIToUTF16("share"), &consumer);
+  WaitUntilCalled();
+  EXPECT_EQ(0U, consumer.services_.size());
+
+  DefaultWebIntentService default_service;
+  default_service.action = ASCIIToUTF16("share");
+  default_service.type = ASCIIToUTF16("type");
+  default_service.user_date = 1;
+  default_service.suppression = 4;
+  default_service.service_url = "service_url";
+  wds_->AddDefaultWebIntentService(default_service);
+
+  default_service.action = ASCIIToUTF16("share2");
+  default_service.service_url = "service_url_2";
+  wds_->AddDefaultWebIntentService(default_service);
+
+  wds_->GetDefaultWebIntentServicesForAction(ASCIIToUTF16("share"), &consumer);
+  WaitUntilCalled();
+  ASSERT_EQ(1U, consumer.services_.size());
+  EXPECT_EQ("service_url", consumer.services_[0].service_url);
+
+  wds_->GetAllDefaultWebIntentServices(&consumer);
+  WaitUntilCalled();
+  EXPECT_EQ(2U, consumer.services_.size());
+
+  default_service.action = ASCIIToUTF16("share");
+  wds_->RemoveDefaultWebIntentService(default_service);
+
+  wds_->GetDefaultWebIntentServicesForAction(ASCIIToUTF16("share"), &consumer);
+  WaitUntilCalled();
+  EXPECT_EQ(0U, consumer.services_.size());
+
+  wds_->GetDefaultWebIntentServicesForAction(ASCIIToUTF16("share2"), &consumer);
+  WaitUntilCalled();
+  ASSERT_EQ(1U, consumer.services_.size());
+  EXPECT_EQ("service_url_2", consumer.services_[0].service_url);
+
+  wds_->GetAllDefaultWebIntentServices(&consumer);
+  WaitUntilCalled();
+  ASSERT_EQ(1U, consumer.services_.size());
+  EXPECT_EQ("service_url_2", consumer.services_[0].service_url);
+}
+
 TEST_F(WebDataServiceTest, DidDefaultSearchProviderChangeOnNewProfile) {
   KeywordsConsumer consumer;
   wds_->GetKeywords(&consumer);
-  KeywordsConsumer::WaitUntilCalled();
+  WaitUntilCalled();
   ASSERT_TRUE(consumer.load_succeeded);
   EXPECT_FALSE(consumer.keywords_result.did_default_search_provider_change);
-  EXPECT_EQ(NULL, consumer.keywords_result.default_search_provider_backup);
+  EXPECT_FALSE(consumer.keywords_result.backup_valid);
 }

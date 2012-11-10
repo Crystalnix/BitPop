@@ -1,53 +1,40 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/message_loop.h"
 #include "content/common/media/audio_messages.h"
 #include "content/renderer/media/audio_message_filter.h"
+#include "media/audio/audio_output_ipc.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
 
-class MockAudioDelegate : public AudioMessageFilter::Delegate {
+class MockAudioDelegate : public media::AudioOutputIPCDelegate {
  public:
   MockAudioDelegate() {
     Reset();
   }
 
-  virtual void OnRequestPacket(AudioBuffersState buffers_state) {
-    request_packet_received_ = true;
-    buffers_state_ = buffers_state;
-  }
-
-  virtual void OnStateChanged(AudioStreamState state) {
+  virtual void OnStateChanged(
+      media::AudioOutputIPCDelegate::State state) OVERRIDE {
     state_changed_received_ = true;
     state_ = state;
   }
 
-  virtual void OnCreated(base::SharedMemoryHandle handle, uint32 length) {
+  virtual void OnStreamCreated(base::SharedMemoryHandle handle,
+                               base::SyncSocket::Handle,
+                               int length) OVERRIDE {
     created_received_ = true;
     handle_ = handle;
     length_ = length;
   }
 
-  virtual void OnLowLatencyCreated(base::SharedMemoryHandle handle,
-                                   base::SyncSocket::Handle,
-                                   uint32 length) {
-  }
-
-  virtual void OnVolume(double volume) {
-    volume_received_ = true;
-    volume_ = volume;
-  }
+  virtual void OnIPCClosed() OVERRIDE {}
 
   void Reset() {
-    request_packet_received_ = false;
-    buffers_state_ = AudioBuffersState();
-    buffers_state_.timestamp = base::Time();
-
     state_changed_received_ = false;
-    state_ = kAudioStreamError;
+    state_ = media::AudioOutputIPCDelegate::kError;
 
     created_received_ = false;
     handle_ = base::SharedMemory::NULLHandle();
@@ -57,29 +44,20 @@ class MockAudioDelegate : public AudioMessageFilter::Delegate {
     volume_ = 0;
   }
 
-  bool request_packet_received() { return request_packet_received_; }
-  AudioBuffersState buffers_state() { return buffers_state_; }
-
   bool state_changed_received() { return state_changed_received_; }
-  AudioStreamState state() { return state_; }
+  media::AudioOutputIPCDelegate::State state() { return state_; }
 
   bool created_received() { return created_received_; }
   base::SharedMemoryHandle handle() { return handle_; }
   uint32 length() { return length_; }
 
-  bool volume_received() { return volume_received_; }
-  double volume() { return volume_; }
-
  private:
-  bool request_packet_received_;
-  AudioBuffersState buffers_state_;
-
   bool state_changed_received_;
-  AudioStreamState state_;
+  media::AudioOutputIPCDelegate::State state_;
 
   bool created_received_;
   base::SharedMemoryHandle handle_;
-  uint32 length_;
+  int length_;
 
   bool volume_received_;
   double volume_;
@@ -97,48 +75,34 @@ TEST(AudioMessageFilterTest, Basic) {
   MockAudioDelegate delegate;
   int stream_id = filter->AddDelegate(&delegate);
 
-  // AudioMsg_RequestPacket
-  const int kSizeInBuffer = 1024;
-  AudioBuffersState buffers_state(kSizeInBuffer, 0);
-
-  EXPECT_FALSE(delegate.request_packet_received());
-  filter->OnMessageReceived(AudioMsg_RequestPacket(stream_id, buffers_state));
-  EXPECT_TRUE(delegate.request_packet_received());
-  EXPECT_EQ(kSizeInBuffer, delegate.buffers_state().pending_bytes);
-  EXPECT_EQ(0, delegate.buffers_state().hardware_delay_bytes);
-  EXPECT_TRUE(buffers_state.timestamp == delegate.buffers_state().timestamp);
-  delegate.Reset();
-
-  // AudioMsg_NotifyStreamStateChanged
-  EXPECT_FALSE(delegate.state_changed_received());
-  filter->OnMessageReceived(
-      AudioMsg_NotifyStreamStateChanged(stream_id, kAudioStreamPlaying));
-  EXPECT_TRUE(delegate.state_changed_received());
-  EXPECT_TRUE(kAudioStreamPlaying == delegate.state());
-  delegate.Reset();
-
   // AudioMsg_NotifyStreamCreated
+#if defined(OS_WIN)
+  base::SyncSocket::Handle socket_handle;
+#else
+  base::FileDescriptor socket_handle;
+#endif
   const uint32 kLength = 1024;
   EXPECT_FALSE(delegate.created_received());
   filter->OnMessageReceived(
-      AudioMsg_NotifyStreamCreated(stream_id,
-                                   base::SharedMemory::NULLHandle(),
-                                   kLength));
+      AudioMsg_NotifyStreamCreated(
+          stream_id, base::SharedMemory::NULLHandle(),
+          socket_handle, kLength));
   EXPECT_TRUE(delegate.created_received());
   EXPECT_FALSE(base::SharedMemory::IsHandleValid(delegate.handle()));
   EXPECT_EQ(kLength, delegate.length());
   delegate.Reset();
 
-  // AudioMsg_NotifyStreamVolume
-  const double kVolume = 1.0;
-  EXPECT_FALSE(delegate.volume_received());
+  // AudioMsg_NotifyStreamStateChanged
+  EXPECT_FALSE(delegate.state_changed_received());
   filter->OnMessageReceived(
-      AudioMsg_NotifyStreamVolume(stream_id, kVolume));
-  EXPECT_TRUE(delegate.volume_received());
-  EXPECT_EQ(kVolume, delegate.volume());
+      AudioMsg_NotifyStreamStateChanged(
+          stream_id, media::AudioOutputIPCDelegate::kPlaying));
+  EXPECT_TRUE(delegate.state_changed_received());
+  EXPECT_EQ(media::AudioOutputIPCDelegate::kPlaying, delegate.state());
   delegate.Reset();
 
   message_loop.RunAllPending();
+  filter->RemoveDelegate(stream_id);
 }
 
 TEST(AudioMessageFilterTest, Delegates) {
@@ -153,34 +117,26 @@ TEST(AudioMessageFilterTest, Delegates) {
   int stream_id2 = filter->AddDelegate(&delegate2);
 
   // Send an IPC message. Make sure the correct delegate gets called.
-  EXPECT_FALSE(delegate1.request_packet_received());
-  EXPECT_FALSE(delegate2.request_packet_received());
+  EXPECT_FALSE(delegate1.state_changed_received());
+  EXPECT_FALSE(delegate2.state_changed_received());
   filter->OnMessageReceived(
-      AudioMsg_RequestPacket(stream_id1, AudioBuffersState()));
-  EXPECT_TRUE(delegate1.request_packet_received());
-  EXPECT_FALSE(delegate2.request_packet_received());
+      AudioMsg_NotifyStreamStateChanged(
+          stream_id1, media::AudioOutputIPCDelegate::kPlaying));
+  EXPECT_TRUE(delegate1.state_changed_received());
+  EXPECT_FALSE(delegate2.state_changed_received());
   delegate1.Reset();
 
-  EXPECT_FALSE(delegate1.request_packet_received());
-  EXPECT_FALSE(delegate2.request_packet_received());
+  EXPECT_FALSE(delegate1.state_changed_received());
+  EXPECT_FALSE(delegate2.state_changed_received());
   filter->OnMessageReceived(
-      AudioMsg_RequestPacket(stream_id2, AudioBuffersState()));
-  EXPECT_FALSE(delegate1.request_packet_received());
-  EXPECT_TRUE(delegate2.request_packet_received());
+      AudioMsg_NotifyStreamStateChanged(
+          stream_id2, media::AudioOutputIPCDelegate::kPlaying));
+  EXPECT_FALSE(delegate1.state_changed_received());
+  EXPECT_TRUE(delegate2.state_changed_received());
   delegate2.Reset();
 
-  // Remove the delegates. Make sure they won't get called.
-  filter->RemoveDelegate(stream_id1);
-  EXPECT_FALSE(delegate1.request_packet_received());
-  filter->OnMessageReceived(
-      AudioMsg_RequestPacket(stream_id1, AudioBuffersState()));
-  EXPECT_FALSE(delegate1.request_packet_received());
-
-  filter->RemoveDelegate(stream_id2);
-  EXPECT_FALSE(delegate2.request_packet_received());
-  filter->OnMessageReceived(
-      AudioMsg_RequestPacket(stream_id2, AudioBuffersState()));
-  EXPECT_FALSE(delegate2.request_packet_received());
-
   message_loop.RunAllPending();
+
+  filter->RemoveDelegate(stream_id1);
+  filter->RemoveDelegate(stream_id2);
 }

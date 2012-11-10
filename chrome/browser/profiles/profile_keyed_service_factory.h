@@ -6,9 +6,12 @@
 #define CHROME_BROWSER_PROFILES_PROFILE_KEYED_SERVICE_FACTORY_H_
 
 #include <map>
-#include <set>
 
-class PrefService;
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "chrome/browser/profiles/profile_keyed_base_factory.h"
+#include "chrome/browser/profiles/profile_keyed_service.h"
+
 class Profile;
 class ProfileDependencyManager;
 class ProfileKeyedService;
@@ -21,35 +24,24 @@ class ProfileKeyedService;
 // We do this because services depend on each other and we need to control
 // shutdown/destruction order. In each derived classes' constructors, the
 // implementors must explicitly state which services are depended on.
-class ProfileKeyedServiceFactory {
+class ProfileKeyedServiceFactory : public ProfileKeyedBaseFactory {
  public:
+  // A function that supplies the instance of a ProfileKeyedService for a given
+  // Profile. This is used primarily for testing, where we want to feed a
+  // specific mock into the PKSF system.
   typedef ProfileKeyedService* (*FactoryFunction)(Profile* profile);
 
   // Associates |factory| with |profile| so that |factory| is used to create
-  // the ProfileKeyedService when requested.
-  //
-  // |factory| can be NULL to signal that ProfileKeyedService should be NULL. A
-  // second call to SetTestingFactory() is allowed. If the FactoryFunction is
-  // changed AND an instance of the PKSF already exists for |profile|, that
-  // service is destroyed.
+  // the ProfileKeyedService when requested.  |factory| can be NULL to signal
+  // that ProfileKeyedService should be NULL. Multiple calls to
+  // SetTestingFactory() are allowed; previous services will be shut down.
   void SetTestingFactory(Profile* profile, FactoryFunction factory);
 
   // Associates |factory| with |profile| and immediately returns the created
   // ProfileKeyedService. Since the factory will be used immediately, it may
-  // not be NULL;
+  // not be NULL.
   ProfileKeyedService* SetTestingFactoryAndUse(Profile* profile,
                                                FactoryFunction factory);
-
-  // Registers preferences used in this service on the pref service of
-  // |profile|. This is the public interface and is safe to be called multiple
-  // times because testing code can have multiple services of the same type
-  // attached to a single |profile|.
-  void RegisterUserPrefsOnProfile(Profile* profile);
-
-#ifndef NDEBUG
-  // Returns our name. We don't keep track of this in release mode.
-  const char* name() const { return service_name_; }
-#endif
 
  protected:
   // ProfileKeyedServiceFactories must communicate with a
@@ -61,52 +53,25 @@ class ProfileKeyedServiceFactory {
   //         "MyService",
   //         ProfileDependencyManager::GetInstance())
   //   {}
-  explicit ProfileKeyedServiceFactory(const char* name,
-                                      ProfileDependencyManager* manager);
+  ProfileKeyedServiceFactory(const char* name,
+                             ProfileDependencyManager* manager);
   virtual ~ProfileKeyedServiceFactory();
 
   // Common implementation that maps |profile| to some service object. Deals
   // with incognito profiles per subclass instructions with
-  // ServiceRedirectedInIncognito() and ServiceHasOwnInstanceInIncognito().
-  // If |create| is true, the service will be created using
-  // BuildServiceInstanceFor() if it doesn't already exist.
+  // ServiceRedirectedInIncognito() and ServiceHasOwnInstanceInIncognito()
+  // through the GetProfileToUse() method on the base.  If |create| is true,
+  // the service will be created using BuildServiceInstanceFor() if it doesn't
+  // already exist.
   ProfileKeyedService* GetServiceForProfile(Profile* profile, bool create);
 
-  // The main public interface for declaring dependencies between services
-  // created by factories.
-  void DependsOn(ProfileKeyedServiceFactory* rhs);
-
-  // Maps |profile| to |provider| with debug checks to prevent duplication.
+  // Maps |profile| to |service| with debug checks to prevent duplication.
   void Associate(Profile* profile, ProfileKeyedService* service);
 
-  // Returns a new instance of the service, casted to void* for our common
-  // storage.
+  // All subclasses of ProfileKeyedServiceFactory must return a
+  // ProfileKeyedService instead of just a ProfileKeyedBase.
   virtual ProfileKeyedService* BuildServiceInstanceFor(
       Profile* profile) const = 0;
-
-  // Register any user preferences on this service. This is called during
-  // CreateProfileService() since preferences are registered on a per Profile
-  // basis.
-  virtual void RegisterUserPrefs(PrefService* user_prefs) {}
-
-  // By default, if we are asked for a service with an Incognito profile, we
-  // pass back NULL. To redirect to the Incognito's original profile or to
-  // create another instance, even for Incognito windows, override one of the
-  // following methods:
-  virtual bool ServiceRedirectedInIncognito();
-  virtual bool ServiceHasOwnInstanceInIncognito();
-
-  // By default, we create instances of a service lazily and wait until
-  // GetForProfile() is called on our subclass. Some services need to be
-  // created as soon as the Profile has been brought up.
-  virtual bool ServiceIsCreatedWithProfile();
-
-  // By default, TestingProfiles will be treated like normal profiles. You can
-  // override this so that by default, the service associated with the
-  // TestingProfile is NULL. (This is just a shortcut around
-  // SetTestingFactory() to make sure our profiles don't directly refer to the
-  // services they use.)
-  virtual bool ServiceIsNULLWhileTesting();
 
   // A helper object actually listens for notifications about Profile
   // destruction, calculates the order in which things are destroyed and then
@@ -119,8 +84,11 @@ class ProfileKeyedServiceFactory {
   //
   // Secondly, ProfileDestroyed() is called on every ServiceFactory and the
   // default implementation removes it from |mapping_| and deletes the pointer.
-  virtual void ProfileShutdown(Profile* profile);
-  virtual void ProfileDestroyed(Profile* profile);
+  virtual void ProfileShutdown(Profile* profile) OVERRIDE;
+  virtual void ProfileDestroyed(Profile* profile) OVERRIDE;
+
+  virtual void SetEmptyTestingFactory(Profile* profile) OVERRIDE;
+  virtual void CreateServiceNow(Profile* profile) OVERRIDE;
 
  private:
   friend class ProfileDependencyManager;
@@ -132,20 +100,7 @@ class ProfileKeyedServiceFactory {
   // The mapping between a Profile and its overridden FactoryFunction.
   std::map<Profile*, FactoryFunction> factories_;
 
-  // Profiles that have this service's preferences registered on them.
-  std::set<Profile*> registered_preferences_;
-
-  // Which ProfileDependencyManager we should communicate with. In real code,
-  // this will always be ProfileDependencyManager::GetInstance(), but unit
-  // tests will want to use their own copy.
-  ProfileDependencyManager* dependency_manager_;
-
-#if !defined(NDEBUG)
-  // A static string passed in to our constructor. Should be unique across all
-  // services. This is used only for debugging in debug mode. (We can print
-  // pretty graphs with GraphViz with this information.)
-  const char* service_name_;
-#endif
+  DISALLOW_COPY_AND_ASSIGN(ProfileKeyedServiceFactory);
 };
 
 #endif  // CHROME_BROWSER_PROFILES_PROFILE_KEYED_SERVICE_FACTORY_H_

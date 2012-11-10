@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 import os
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../../../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../../../..'))
 
 import unittest
 
@@ -107,7 +107,7 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     expected_output = (
         TEMPLATE_HEADER +
         '  // Example String Policy\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Example String Policy\n\n'
         '  //"StringPolicy": "hello, world!"\n\n'
         '}')
@@ -134,7 +134,7 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     expected_output = (
         TEMPLATE_HEADER +
         '  // Example Int Policy\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Example Int Policy\n\n'
         '  //"IntPolicy": 15\n\n'
         '}')
@@ -165,7 +165,7 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     expected_output = (
         TEMPLATE_HEADER +
         '  // Example Int Enum\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Example Int Enum\n\n'
         '  //"EnumPolicy": 1\n\n'
         '}')
@@ -198,7 +198,7 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     expected_output = (
         TEMPLATE_HEADER +
         '  // Example String Enum\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Example String Enum\n\n'
         '  //"EnumPolicy": "one"\n\n'
         '}')
@@ -225,9 +225,49 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     expected_output = (
         TEMPLATE_HEADER +
         '  // Example List\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Example List\n\n'
         '  //"ListPolicy": ["foo", "bar"]\n\n'
+        '}')
+    self.CompareOutputs(output, expected_output)
+
+  def testDictionaryPolicy(self):
+    # Tests a policy group with a single policy of type 'dict'.
+    example = {
+      'bool': True,
+      'int': 10,
+      'string': 'abc',
+      'list': [1, 2, 3],
+      'dict': {
+        'a': 1,
+        'b': 2,
+      }
+    }
+    # Encode |value| here, to make sure the string encoded within the reg_writer
+    # and the expected value are the same.
+    value = str(example)
+    grd = self.PrepareTest(
+        '{'
+        '  "policy_definitions": ['
+        '    {'
+        '      "name": "DictionaryPolicy",'
+        '      "type": "dict",'
+        '      "caption": "Example Dictionary Policy",'
+        '      "desc": "Example Dictionary Policy",'
+        '      "supported_on": ["chrome.linux:8-"],'
+        '      "example_value": ' + value +
+        '    },'
+        '  ],'
+        '  "placeholders": [],'
+        '  "messages": {},'
+        '}')
+    output = self.GetOutput(grd, 'fr', {'_chromium' : '1'}, 'json', 'en')
+    expected_output = (
+        TEMPLATE_HEADER +
+        '  // Example Dictionary Policy\n' +
+        HEADER_DELIMETER +
+        '  // Example Dictionary Policy\n\n'
+        '  //"DictionaryPolicy": ' + str(eval(value)) + '\n\n'
         '}')
     self.CompareOutputs(output, expected_output)
 
@@ -287,11 +327,11 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     expected_output = (
         TEMPLATE_HEADER +
         '  // Policy One\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Policy One\n\n'
         '  //"Policy1": ["a", "b"],\n\n'
         '  // Policy Two\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Policy Two\n\n'
         '  //"Policy2": "c"\n\n'
         '}')

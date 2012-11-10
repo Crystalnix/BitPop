@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -689,8 +689,8 @@ class WebSocketServerSocketImpl : public net::WebSocketServerSocket {
     }
 
     char challenge[4 + 4 + sizeof(key3)];
-    int32 part1 = htonl(key_number1 / spaces1);
-    int32 part2 = htonl(key_number2 / spaces2);
+    int32 part1 = base::HostToNet32(key_number1 / spaces1);
+    int32 part2 = base::HostToNet32(key_number2 / spaces2);
     memcpy(challenge, &part1, 4);
     memcpy(challenge + 4, &part2, 4);
     memcpy(challenge + 4 + 4, key3, sizeof(key3));
@@ -726,7 +726,7 @@ class WebSocketServerSocketImpl : public net::WebSocketServerSocket {
       }
 
       operator net::DrainableIOBuffer*() {
-        return new net::DrainableIOBuffer(io_buf_.release(), bytes_written_);
+        return new net::DrainableIOBuffer(io_buf_.get(), bytes_written_);
       }
 
       bool is_ok() { return is_ok_; }

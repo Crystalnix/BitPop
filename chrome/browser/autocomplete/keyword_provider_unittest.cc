@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -80,8 +80,7 @@ void KeywordProviderTest::RunTest(
   }
 }
 
-// http://crbug.com/80612
-TEST_F(KeywordProviderTest, DISABLED_Edit) {
+TEST_F(KeywordProviderTest, Edit) {
   test_data<string16> edit_cases[] = {
     // Searching for a nonexistent prefix should give nothing.
     {ASCIIToUTF16("Not Found"),       0, {}},
@@ -201,12 +200,12 @@ TEST_F(KeywordProviderTest, DISABLED_Description) {
 }
 
 TEST_F(KeywordProviderTest, AddKeyword) {
-  TemplateURL* template_url = new TemplateURL();
+  TemplateURLData data;
+  data.short_name = ASCIIToUTF16("Test");
   string16 keyword(ASCIIToUTF16("foo"));
-  std::string url("http://www.google.com/foo?q={searchTerms}");
-  template_url->SetURL(url, 0, 0);
-  template_url->set_keyword(keyword);
-  template_url->set_short_name(ASCIIToUTF16("Test"));
+  data.SetKeyword(keyword);
+  data.SetURL("http://www.google.com/foo?q={searchTerms}");
+  TemplateURL* template_url = new TemplateURL(NULL, data);
   model_->Add(template_url);
   ASSERT_TRUE(template_url == model_->GetTemplateURLForKeyword(keyword));
 }
@@ -216,3 +215,13 @@ TEST_F(KeywordProviderTest, RemoveKeyword) {
   model_->Remove(model_->GetTemplateURLForKeyword(ASCIIToUTF16("aaaa")));
   ASSERT_TRUE(model_->GetTemplateURLForKeyword(ASCIIToUTF16("aaaa")) == NULL);
 }
+
+TEST_F(KeywordProviderTest, GetKeywordForInput) {
+  EXPECT_EQ(ASCIIToUTF16("aa"),
+      kw_provider_->GetKeywordForText(ASCIIToUTF16("aa")));
+  EXPECT_EQ(string16(),
+      kw_provider_->GetKeywordForText(ASCIIToUTF16("aafoo")));
+  EXPECT_EQ(string16(),
+      kw_provider_->GetKeywordForText(ASCIIToUTF16("aa foo")));
+}
+

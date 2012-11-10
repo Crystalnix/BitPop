@@ -4,7 +4,6 @@
 
 #ifndef BASE_MAC_FOUNDATION_UTIL_H_
 #define BASE_MAC_FOUNDATION_UTIL_H_
-#pragma once
 
 #include <CoreFoundation/CoreFoundation.h>
 
@@ -18,9 +17,16 @@
 #if defined(__OBJC__)
 #import <Foundation/Foundation.h>
 #else  // __OBJC__
+#include <CoreFoundation/CoreFoundation.h>
 class NSBundle;
 class NSString;
 #endif  // __OBJC__
+
+#if defined(OS_IOS)
+#include <CoreText/CoreText.h>
+#else
+#include <ApplicationServices/ApplicationServices.h>
+#endif
 
 class FilePath;
 
@@ -33,6 +39,9 @@ typedef unsigned int NSSearchPathDirectory;
 typedef unsigned int NSSearchPathDomainMask;
 #endif
 
+typedef struct OpaqueSecTrustRef* SecACLRef;
+typedef struct OpaqueSecTrustedApplicationRef* SecTrustedApplicationRef;
+
 namespace base {
 namespace mac {
 
@@ -44,7 +53,7 @@ BASE_EXPORT void SetOverrideAmIBundled(bool value);
 BASE_EXPORT bool IsBackgroundOnlyProcess();
 
 // Returns the path to a resource within the framework bundle.
-FilePath PathForFrameworkBundleResource(CFStringRef resourceName);
+BASE_EXPORT FilePath PathForFrameworkBundleResource(CFStringRef resourceName);
 
 // Returns the creator code associated with the CFBundleRef at bundle.
 OSType CreatorCodeForCFBundleRef(CFBundleRef bundle);
@@ -60,9 +69,9 @@ BASE_EXPORT OSType CreatorCodeForApplication();
 // Searches for directories for the given key in only the given |domain_mask|.
 // If found, fills result (which must always be non-NULL) with the
 // first found directory and returns true.  Otherwise, returns false.
-bool GetSearchPathDirectory(NSSearchPathDirectory directory,
-                            NSSearchPathDomainMask domain_mask,
-                            FilePath* result);
+BASE_EXPORT bool GetSearchPathDirectory(NSSearchPathDirectory directory,
+                                        NSSearchPathDomainMask domain_mask,
+                                        FilePath* result);
 
 // Searches for directories for the given key in only the local domain.
 // If found, fills result (which must always be non-NULL) with the
@@ -87,7 +96,7 @@ BASE_EXPORT FilePath GetUserLibraryPath();
 BASE_EXPORT FilePath GetAppBundlePath(const FilePath& exec_name);
 
 #define TYPE_NAME_FOR_CF_TYPE_DECL(TypeCF) \
-std::string TypeNameForCFType(TypeCF##Ref);
+BASE_EXPORT std::string TypeNameForCFType(TypeCF##Ref);
 
 TYPE_NAME_FOR_CF_TYPE_DECL(CFArray);
 TYPE_NAME_FOR_CF_TYPE_DECL(CFBag);
@@ -99,6 +108,11 @@ TYPE_NAME_FOR_CF_TYPE_DECL(CFNull);
 TYPE_NAME_FOR_CF_TYPE_DECL(CFNumber);
 TYPE_NAME_FOR_CF_TYPE_DECL(CFSet);
 TYPE_NAME_FOR_CF_TYPE_DECL(CFString);
+
+TYPE_NAME_FOR_CF_TYPE_DECL(CGColor);
+
+TYPE_NAME_FOR_CF_TYPE_DECL(CTFont);
+TYPE_NAME_FOR_CF_TYPE_DECL(CTRun);
 
 #undef TYPE_NAME_FOR_CF_TYPE_DECL
 
@@ -220,11 +234,40 @@ namespace mac {
 //
 // CFTypeRef hello = CFSTR("hello world");
 // CFStringRef some_string = base::mac::CFCastStrict<CFStringRef>(hello);
-BASE_EXPORT template<typename T>
+
+template<typename T>
 T CFCast(const CFTypeRef& cf_val);
 
-BASE_EXPORT template<typename T>
+template<typename T>
 T CFCastStrict(const CFTypeRef& cf_val);
+
+#define CF_CAST_DECL(TypeCF) \
+template<> BASE_EXPORT TypeCF##Ref \
+CFCast<TypeCF##Ref>(const CFTypeRef& cf_val);\
+\
+template<> BASE_EXPORT TypeCF##Ref \
+CFCastStrict<TypeCF##Ref>(const CFTypeRef& cf_val);
+
+CF_CAST_DECL(CFArray);
+CF_CAST_DECL(CFBag);
+CF_CAST_DECL(CFBoolean);
+CF_CAST_DECL(CFData);
+CF_CAST_DECL(CFDate);
+CF_CAST_DECL(CFDictionary);
+CF_CAST_DECL(CFNull);
+CF_CAST_DECL(CFNumber);
+CF_CAST_DECL(CFSet);
+CF_CAST_DECL(CFString);
+
+CF_CAST_DECL(CGColor);
+
+CF_CAST_DECL(CTFont);
+CF_CAST_DECL(CTRun);
+
+CF_CAST_DECL(SecACL);
+CF_CAST_DECL(SecTrustedApplication);
+
+#undef CF_CAST_DECL
 
 #if defined(__OBJC__)
 
@@ -250,7 +293,7 @@ T CFCastStrict(const CFTypeRef& cf_val);
 //
 // NSString* str = base::mac::ObjCCastStrict<NSString>(
 //     [ns_arr_of_ns_strs objectAtIndex:0]);
-BASE_EXPORT template<typename T>
+template<typename T>
 T* ObjCCast(id objc_val) {
   if ([objc_val isKindOfClass:[T class]]) {
     return reinterpret_cast<T*>(objc_val);
@@ -258,7 +301,7 @@ T* ObjCCast(id objc_val) {
   return nil;
 }
 
-BASE_EXPORT template<typename T>
+template<typename T>
 T* ObjCCastStrict(id objc_val) {
   T* rv = ObjCCast<T>(objc_val);
   DCHECK(objc_val == nil || rv);
@@ -269,12 +312,12 @@ T* ObjCCastStrict(id objc_val) {
 
 // Helper function for GetValueFromDictionary to create the error message
 // that appears when a type mismatch is encountered.
-std::string GetValueFromDictionaryErrorMessage(
+BASE_EXPORT std::string GetValueFromDictionaryErrorMessage(
     CFStringRef key, const std::string& expected_type, CFTypeRef value);
 
 // Utility function to pull out a value from a dictionary, check its type, and
 // return it. Returns NULL if the key is not present or of the wrong type.
-BASE_EXPORT template<typename T>
+template<typename T>
 T GetValueFromDictionary(CFDictionaryRef dict, CFStringRef key) {
   CFTypeRef value = CFDictionaryGetValue(dict, key);
   T value_specific = CFCast<T>(value);
@@ -288,6 +331,12 @@ T GetValueFromDictionary(CFDictionaryRef dict, CFStringRef key) {
 
   return value_specific;
 }
+
+// Converts |path| to an autoreleased NSString. Returns nil if |path| is empty.
+BASE_EXPORT NSString* FilePathToNSString(const FilePath& path);
+
+// Converts |str| to a FilePath. Returns an empty path if |str| is nil.
+BASE_EXPORT FilePath NSStringToFilePath(NSString* str);
 
 }  // namespace mac
 }  // namespace base

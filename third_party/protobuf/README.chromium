@@ -1,9 +1,11 @@
 Name: Protocol Buffers
 Short Name: protobuf
 URL: http://protobuf.googlecode.com/svn/trunk
+License: BSD
 License File: COPYING.txt
 Version: unknown
-Revision: r371
+Revision: r423
+Security Critical: yes
 
 Local files (not taken from upstream):
 README.chromium

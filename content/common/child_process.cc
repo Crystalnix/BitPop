@@ -4,18 +4,23 @@
 
 #include "content/common/child_process.h"
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
 #include <signal.h>  // For SigUSR1Handler below.
 #endif
 
 #include "base/message_loop.h"
+#include "base/metrics/statistics_recorder.h"
 #include "base/process_util.h"
 #include "base/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
 #include "content/common/child_thread.h"
 
-#if defined(OS_POSIX)
+#if defined(OS_ANDROID)
+#include "base/debug/debugger.h"
+#endif
+
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
 static void SigUSR1Handler(int signal) { }
 #endif
 
@@ -27,6 +32,8 @@ ChildProcess::ChildProcess()
       io_thread_("Chrome_ChildIOThread") {
   DCHECK(!child_process_);
   child_process_ = this;
+
+  base::StatisticsRecorder::Initialize();
 
   // We can't recover from failing to start the IO thread.
   CHECK(io_thread_.StartWithOptions(
@@ -95,13 +102,18 @@ void ChildProcess::WaitForDebugger(const std::string& label) {
   ::MessageBox(NULL, UTF8ToWide(message).c_str(), UTF8ToWide(title).c_str(),
                MB_OK | MB_SETFOREGROUND);
 #elif defined(OS_POSIX)
+#if defined(OS_ANDROID)
+  LOG(ERROR) << label << " waiting for GDB.";
+  // Wait 24 hours for a debugger to be attached to the current process.
+  base::debug::WaitForDebugger(24 * 60 * 60, false);
+#else
   // TODO(playmobil): In the long term, overriding this flag doesn't seem
   // right, either use our own flag or open a dialog we can use.
   // This is just to ease debugging in the interim.
-  DLOG(ERROR) << label
-              << " ("
-              << getpid()
-              << ") paused waiting for debugger to attach @ pid";
+  LOG(ERROR) << label
+             << " ("
+             << getpid()
+             << ") paused waiting for debugger to attach @ pid";
   // Install a signal handler so that pause can be woken.
   struct sigaction sa;
   memset(&sa, 0, sizeof(sa));
@@ -109,5 +121,6 @@ void ChildProcess::WaitForDebugger(const std::string& label) {
   sigaction(SIGUSR1, &sa, NULL);
 
   pause();
+#endif  // defined(OS_ANDROID)
 #endif  // defined(OS_POSIX)
 }

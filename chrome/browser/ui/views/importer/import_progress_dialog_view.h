@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_UI_VIEWS_IMPORTER_IMPORT_PROGRESS_DIALOG_VIEW_H_
 #define CHROME_BROWSER_UI_VIEWS_IMPORTER_IMPORT_PROGRESS_DIALOG_VIEW_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -29,8 +28,7 @@ class ImportProgressDialogView : public views::DialogDelegateView,
   // |items| is a bitmask of importer::ImportItem being imported.
   // |bookmark_import| is true if we're importing bookmarks from a
   // bookmarks.html file.
-  ImportProgressDialogView(HWND parent_window,
-                           uint16 items,
+  ImportProgressDialogView(uint16 items,
                            ImporterHost* importer_host,
                            ImporterObserver* importer_observer,
                            const string16& importer_name,
@@ -47,7 +45,6 @@ class ImportProgressDialogView : public views::DialogDelegateView,
   // views::DialogDelegate:
   virtual int GetDialogButtons() const OVERRIDE;
   virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
-  virtual ui::ModalType GetModalType() const OVERRIDE;
   virtual string16 GetWindowTitle() const OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
@@ -61,9 +58,6 @@ class ImportProgressDialogView : public views::DialogDelegateView,
   virtual void ImportItemStarted(importer::ImportItem item) OVERRIDE;
   virtual void ImportItemEnded(importer::ImportItem item) OVERRIDE;
   virtual void ImportEnded() OVERRIDE;
-
-  // The native window that we are parented to. Can be NULL.
-  HWND parent_window_;
 
   // Various dialog controls.
   scoped_ptr<views::CheckmarkThrobber> state_bookmarks_;

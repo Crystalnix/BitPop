@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 #define GPU_COMMAND_BUFFER_SERVICE_GL_UTILS_H_
 
 #include "build/build_config.h"
-#include "ui/gfx/gl/gl_bindings.h"
+#include "ui/gl/gl_bindings.h"
 
 // GLES2 defines not part of Desktop GL
 // Shader Precision-Specified Types
@@ -42,6 +42,13 @@
 // GL_ANGLE_translated_shader_source
 #define GL_TRANSLATED_SHADER_SOURCE_LENGTH_ANGLE 0x93A0
 
+// GL_CHROMIUM_flipy
+#define GL_UNPACK_FLIP_Y_CHROMIUM             0x9240
+
+#define GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM     0x9241
+#define GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM   0x9242
+#define GL_UNPACK_COLORSPACE_CONVERSION_CHROMIUM 0x9243
+
 // GL_ANGLE_pack_reverse_row_order
 #define GL_PACK_REVERSE_ROW_ORDER_ANGLE    0x93A4
 
@@ -66,7 +73,42 @@
 #define GL_LUMINANCE_ALPHA16F_EXT              0x881F
 #define GL_BGRA8_EXT                           0x93A1
 
+// GL_ANGLE_instanced_arrays
+#define GL_VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE   0x88FE
+
+// GL_EXT_occlusion_query_boolean
+#define GL_ANY_SAMPLES_PASSED_EXT              0x8C2F
+#define GL_ANY_SAMPLES_PASSED_CONSERVATIVE_EXT 0x8D6A
+#define GL_CURRENT_QUERY_EXT                   0x8865
+#define GL_QUERY_RESULT_EXT                    0x8866
+#define GL_QUERY_RESULT_AVAILABLE_EXT          0x8867
+
+// GL_CHROMIUM_command_buffer_query
+#define GL_COMMANDS_ISSUED_CHROMIUM            0x84F2
+
+/* GL_CHROMIUM_get_error_query */
+#define GL_GET_ERROR_QUERY_CHROMIUM            0x84F3
+
+// GL_OES_texure_3D
+#define GL_SAMPLER_3D_OES                      0x8B5F
+
+// GL_OES_depth24
+#define GL_DEPTH_COMPONENT24_OES               0x81A6
+
+// GL_OES_depth32
+#define GL_DEPTH_COMPONENT32_OES               0x81A7
+
+// GL_OES_packed_depth_stencil
+#define GL_DEPTH24_STENCIL8_OES                0x88F0
+
 #define GL_GLEXT_PROTOTYPES 1
+
+// GL_ARB_get_program_binary
+#define PROGRAM_BINARY_RETRIEVABLE_HINT        0x8257
+// GL_OES_get_program_binary
+#define GL_PROGRAM_BINARY_LENGTH_OES           0x8741
+#define GL_NUM_PROGRAM_BINARY_FORMATS_OES      0x87FE
+#define GL_PROGRAM_BINARY_FORMATS_OES          0x87FF
 
 // Define this for extra GL error debugging (slower).
 // #define GL_ERROR_DEBUGGING

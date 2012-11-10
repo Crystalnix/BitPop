@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,7 +22,6 @@ StreamConnectionTester::StreamConnectionTester(net::StreamSocket* client_socket,
       host_socket_(host_socket),
       client_socket_(client_socket),
       message_size_(message_size),
-      message_count_(message_count),
       test_data_size_(message_size * message_count),
       done_(false),
       write_errors_(0),
@@ -203,8 +202,10 @@ void DatagramConnectionTester::HandleWriteResult(int result) {
   } else if (result > 0) {
     EXPECT_EQ(message_size_, result);
     packets_sent_++;
-    message_loop_->PostDelayedTask(FROM_HERE, base::Bind(
-        &DatagramConnectionTester::DoWrite, base::Unretained(this)), delay_ms_);
+    message_loop_->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&DatagramConnectionTester::DoWrite, base::Unretained(this)),
+        base::TimeDelta::FromMilliseconds(delay_ms_));
   }
 }
 

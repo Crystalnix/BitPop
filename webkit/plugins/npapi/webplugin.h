@@ -9,9 +9,9 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "ui/gfx/gl/gpu_preference.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
+#include "ui/gl/gpu_preference.h"
 #include "webkit/plugins/webkit_plugins_export.h"
 
 // TODO(port): this typedef is obviously incorrect on non-Windows
@@ -157,7 +157,7 @@ class WebPlugin {
 
   // Returns the accelerated surface abstraction for accelerated plugins.
   virtual WebPluginAcceleratedSurface* GetAcceleratedSurface(
-      gfx::GpuPreference gpu_preference);
+      gfx::GpuPreference gpu_preference) = 0;
 
   // Composited Core Animation plugin support.
   virtual void AcceleratedPluginEnabledRendering() = 0;
@@ -176,6 +176,7 @@ class WebPlugin {
 class WebPluginResourceClient {
  public:
   virtual ~WebPluginResourceClient() {}
+
   virtual void WillSendRequest(const GURL& url, int http_status_code) = 0;
   // The request_is_seekable parameter indicates whether byte range requests
   // can be issued for the underlying stream.

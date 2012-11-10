@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,10 +6,10 @@
 #define MEDIA_TOOLS_SHADER_BENCH_GPU_PAINTER_H_
 
 #include "media/tools/shader_bench/painter.h"
-#include "ui/gfx/gl/gl_bindings.h"
-#include "ui/gfx/gl/gl_context.h"
-#include "ui/gfx/gl/gl_implementation.h"
-#include "ui/gfx/gl/gl_surface.h"
+#include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_context.h"
+#include "ui/gl/gl_implementation.h"
+#include "ui/gl/gl_surface.h"
 
 // Class that renders video frames to a window via GPU.
 class GPUPainter : public Painter {
@@ -19,7 +19,6 @@ class GPUPainter : public Painter {
 
   // Returns a reference to the GL context.
   gfx::GLSurface* surface() const { return surface_; }
-  gfx::GLContext* context() const { return context_; }
 
   // Sets context for subsequent gl calls in this painter.
   virtual void SetGLContext(gfx::GLSurface* surface, gfx::GLContext* context);

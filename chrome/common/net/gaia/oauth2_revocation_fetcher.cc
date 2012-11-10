@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,15 +14,16 @@
 #include "base/values.h"
 #include "chrome/common/net/gaia/gaia_urls.h"
 #include "chrome/common/net/gaia/google_service_auth_error.h"
-#include "chrome/common/net/http_return.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
+#include "net/http/http_status_code.h"
+#include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
 
-using content::URLFetcher;
-using content::URLFetcherDelegate;
 using net::ResponseCookies;
+using net::URLFetcher;
+using net::URLFetcherDelegate;
 using net::URLRequestContextGetter;
 using net::URLRequestStatus;
 
@@ -53,7 +54,7 @@ static URLFetcher* CreateFetcher(URLRequestContextGetter* getter,
                                  const std::string& body,
                                  URLFetcherDelegate* delegate) {
   bool empty_body = body.empty();
-  URLFetcher* result = URLFetcher::Create(
+  URLFetcher* result = net::URLFetcher::Create(
       0, url,
       empty_body ? URLFetcher::GET : URLFetcher::POST,
       delegate);
@@ -105,7 +106,7 @@ void OAuth2RevocationFetcher::StartRevocation() {
   fetcher_->Start();  // OnURLFetchComplete will be called.
 }
 
-void OAuth2RevocationFetcher::EndRevocation(const URLFetcher* source) {
+void OAuth2RevocationFetcher::EndRevocation(const net::URLFetcher* source) {
   CHECK_EQ(REVOCATION_STARTED, state_);
   state_ = REVOCATION_DONE;
 
@@ -115,7 +116,7 @@ void OAuth2RevocationFetcher::EndRevocation(const URLFetcher* source) {
     return;
   }
 
-  if (source->GetResponseCode() != RC_REQUEST_OK_EMPTY_BODY) {
+  if (source->GetResponseCode() != net::HTTP_NO_CONTENT) {
     OnRevocationFailure(GoogleServiceAuthError(
         GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
     return;
@@ -134,7 +135,8 @@ void OAuth2RevocationFetcher::OnRevocationFailure(
   consumer_->OnRevocationFailure(error);
 }
 
-void OAuth2RevocationFetcher::OnURLFetchComplete(const URLFetcher* source) {
+void OAuth2RevocationFetcher::OnURLFetchComplete(
+    const net::URLFetcher* source) {
   CHECK(source);
   EndRevocation(source);
 }

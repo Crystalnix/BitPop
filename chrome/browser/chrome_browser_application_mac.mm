@@ -1,22 +1,23 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "chrome/browser/chrome_browser_application_mac.h"
 
+#import "base/auto_reset.h"
 #import "base/logging.h"
 #include "base/mac/crash_logging.h"
 #import "base/mac/scoped_nsexception_enabler.h"
-#import "base/metrics/histogram.h"
 #import "base/memory/scoped_nsobject.h"
+#import "base/metrics/histogram.h"
 #import "base/sys_string_conversions.h"
 #import "chrome/browser/app_controller_mac.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #import "chrome/common/mac/objc_method_swizzle.h"
 #import "chrome/common/mac/objc_zombie.h"
-#include "content/browser/accessibility/browser_accessibility_state.h"
-#include "content/browser/renderer_host/render_view_host.h"
+#include "content/public/browser/browser_accessibility_state.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 
 // The implementation of NSExceptions break various assumptions in the
@@ -206,6 +207,21 @@ void SwizzleInit() {
 
 }  // namespace
 
+// These methods are being exposed for the purposes of overriding.
+// Used to determine when a Panel window can become the key window.
+@interface NSApplication (PanelsCanBecomeKey)
+- (void)_cycleWindowsReversed:(BOOL)arg1;
+- (id)_removeWindow:(NSWindow*)window;
+- (id)_setKeyWindow:(NSWindow*)window;
+@end
+
+@interface BrowserCrApplication (PrivateInternal)
+
+// This must be called under the protection of previousKeyWindowsLock_.
+- (void)removePreviousKeyWindow:(NSWindow*)window;
+
+@end
+
 @implementation BrowserCrApplication
 
 + (void)initialize {
@@ -219,6 +235,15 @@ void SwizzleInit() {
   if ((self = [super init])) {
     eventHooks_.reset([[NSMutableArray alloc] init]);
   }
+
+  // Sanity check to alert if overridden methods are not supported.
+  DCHECK([NSApplication
+      instancesRespondToSelector:@selector(_cycleWindowsReversed:)]);
+  DCHECK([NSApplication
+      instancesRespondToSelector:@selector(_removeWindow:)]);
+  DCHECK([NSApplication
+      instancesRespondToSelector:@selector(_setKeyWindow:)]);
+
   return self;
 }
 
@@ -477,15 +502,79 @@ void SwizzleInit() {
     for (TabContentsIterator it;
          !it.done();
          ++it) {
-      if (TabContentsWrapper* contents = *it) {
-        if (RenderViewHost* rvh =
+      if (TabContents* contents = *it) {
+        if (content::RenderViewHost* rvh =
                 contents->web_contents()->GetRenderViewHost()) {
-          rvh->EnableRendererAccessibility();
+          rvh->EnableFullAccessibilityMode();
         }
       }
     }
   }
   return [super accessibilitySetValue:value forAttribute:attribute];
+}
+
+- (void)_cycleWindowsReversed:(BOOL)arg1 {
+  AutoReset<BOOL> pin(&cyclingWindows_, YES);
+  [super _cycleWindowsReversed:arg1];
+}
+
+- (BOOL)isCyclingWindows {
+  return cyclingWindows_;
+}
+
+- (id)_removeWindow:(NSWindow*)window {
+  {
+    base::AutoLock lock(previousKeyWindowsLock_);
+    [self removePreviousKeyWindow:window];
+  }
+  id result = [super _removeWindow:window];
+
+  // Ensure app has a key window after a window is removed.
+  // OS wants to make a panel browser window key after closing an app window
+  // because panels use a higher priority window level, but panel windows may
+  // refuse to become key, leaving the app with no key window. The OS does
+  // not seem to consider other windows after the first window chosen refuses
+  // to become key. Force consideration of other windows here.
+  if ([self isActive] && [self keyWindow] == nil) {
+    NSWindow* key =
+        [self makeWindowsPerform:@selector(canBecomeKeyWindow) inOrder:YES];
+    [key makeKeyWindow];
+  }
+
+  // Return result from the super class. It appears to be the app that
+  // owns the removed window (determined via experimentation).
+  return result;
+}
+
+- (id)_setKeyWindow:(NSWindow*)window {
+  // |window| is nil when the current key window is being closed.
+  // A separate call follows with a new value when a new key window is set.
+  // Closed windows are not tracked in previousKeyWindows_.
+  if (window != nil) {
+    base::AutoLock lock(previousKeyWindowsLock_);
+    [self removePreviousKeyWindow:window];
+    NSWindow* currentKeyWindow = [self keyWindow];
+    if (currentKeyWindow != nil && currentKeyWindow != window)
+      previousKeyWindows_.push_back(currentKeyWindow);
+  }
+
+  return [super _setKeyWindow:window];
+}
+
+- (NSWindow*)previousKeyWindow {
+  base::AutoLock lock(previousKeyWindowsLock_);
+  return previousKeyWindows_.empty() ? nil : previousKeyWindows_.back();
+}
+
+- (void)removePreviousKeyWindow:(NSWindow*)window {
+  previousKeyWindowsLock_.AssertAcquired();
+  std::vector<NSWindow*>::iterator window_iterator =
+      std::find(previousKeyWindows_.begin(),
+                previousKeyWindows_.end(),
+                window);
+  if (window_iterator != previousKeyWindows_.end()) {
+    previousKeyWindows_.erase(window_iterator);
+  }
 }
 
 @end

@@ -4,11 +4,11 @@
 //
 // Download utility implementation
 
+#define _USE_MATH_DEFINES  // For VC++ to get M_PI. This has to be first.
+
 #include "chrome/browser/download/download_util.h"
 
-#if defined(OS_WIN)
-#include <shobjidl.h>
-#endif
+#include <cmath>
 #include <string>
 
 #include "base/file_util.h"
@@ -24,21 +24,18 @@
 #include "base/utf_string_conversions.h"
 #include "base/value_conversions.h"
 #include "base/values.h"
-#include "base/win/windows_version.h"
 #include "chrome/browser/download/download_extensions.h"
 #include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/time_format.h"
-#include "content/browser/download/download_create_info.h"
-#include "content/browser/download/download_file.h"
-#include "content/browser/download/download_types.h"
-#include "content/browser/renderer_host/render_view_host.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/common/url_constants.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -51,46 +48,48 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/bytes_formatting.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
 
-#if defined(TOOLKIT_VIEWS)
-#include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/views/drag_utils.h"
+#if defined(OS_WIN)
+#include <shobjidl.h>
+
+#include "base/win/windows_version.h"
 #endif
 
-#if defined(TOOLKIT_USES_GTK)
 #if defined(TOOLKIT_VIEWS)
 #include "ui/base/dragdrop/drag_drop_types.h"
-#include "ui/views/widget/native_widget_gtk.h"
-#elif defined(TOOLKIT_GTK)
+#include "ui/base/dragdrop/drag_utils.h"
+#include "ui/base/dragdrop/os_exchange_data.h"
+#include "ui/gfx/screen.h"
+#include "ui/views/widget/widget.h"
+#endif
+
+#if defined(TOOLKIT_GTK)
 #include "chrome/browser/ui/gtk/custom_drag.h"
 #include "chrome/browser/ui/gtk/unity_service.h"
 #endif  // defined(TOOLKIT_GTK)
-#endif  // defined(TOOLKIT_USES_GTK)
 
 #if defined(OS_WIN) && !defined(USE_AURA)
 #include "base/win/scoped_comptr.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/views/frame/browser_view.h"
 #include "ui/base/dragdrop/drag_source.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
 #endif
 
-// TODO(phajdan.jr): Find some standard location for this, maintaining
-// the same value on all platforms.
-static const double PI = 3.141592653589793;
-
-using content::DownloadFile;
-using content::DownloadItem;
+#if defined(USE_AURA)
+#include "ui/aura/client/drag_drop_client.h"
+#include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
+#endif
 
 namespace {
 
 // Returns a string constant to be used as the |danger_type| value in
 // CreateDownloadItemValue().  We only return strings for DANGEROUS_FILE,
-// DANGEROUS_URL and DANGEROUS_CONTENT because the |danger_type| value is only
-// defined if the value of |state| is |DANGEROUS|.
+// DANGEROUS_URL, DANGEROUS_CONTENT, and UNCOMMON_CONTENT because the
+// |danger_type| value is only defined if the value of |state| is |DANGEROUS|.
 const char* GetDangerTypeString(content::DownloadDangerType danger_type) {
   switch (danger_type) {
     case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE:
@@ -99,6 +98,8 @@ const char* GetDangerTypeString(content::DownloadDangerType danger_type) {
       return "DANGEROUS_URL";
     case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
       return "DANGEROUS_CONTENT";
+    case content::DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT:
+      return "UNCOMMON_CONTENT";
     default:
       // We shouldn't be returning a danger type string if it is
       // NOT_DANGEROUS or MAYBE_DANGEROUS_CONTENT.
@@ -107,13 +108,24 @@ const char* GetDangerTypeString(content::DownloadDangerType danger_type) {
   }
 }
 
+// Get the opacity based on |animation_progress|, with values in [0.0, 1.0].
+// Range of return value is [0, 255].
+int GetOpacity(double animation_progress) {
+  DCHECK(animation_progress >= 0 && animation_progress <= 1);
+
+  // How many times to cycle the complete animation. This should be an odd
+  // number so that the animation ends faded out.
+  static const int kCompleteAnimationCycles = 5;
+  double temp = animation_progress * kCompleteAnimationCycles * M_PI + M_PI_2;
+  temp = sin(temp) / 2 + 0.5;
+  return static_cast<int>(255.0 * temp);
+}
+
 }  // namespace
 
 namespace download_util {
 
-// How many times to cycle the complete animation. This should be an odd number
-// so that the animation ends faded out.
-static const int kCompleteAnimationCycles = 5;
+using content::DownloadItem;
 
 // Download temporary file creation --------------------------------------------
 
@@ -126,6 +138,8 @@ class DefaultDownloadDirectory {
       NOTREACHED();
     }
     if (DownloadPathIsDangerous(path_)) {
+      // This is only useful on platforms that support
+      // DIR_DEFAULT_DOWNLOADS_SAFE.
       if (!PathService::Get(chrome::DIR_DEFAULT_DOWNLOADS_SAFE, &path_)) {
         NOTREACHED();
       }
@@ -142,37 +156,38 @@ const FilePath& GetDefaultDownloadDirectory() {
   return g_default_download_directory.Get().path();
 }
 
+// Consider downloads 'dangerous' if they go to the home directory on Linux and
+// to the desktop on any platform.
 bool DownloadPathIsDangerous(const FilePath& download_path) {
+#if defined(OS_LINUX)
+  FilePath home_dir = file_util::GetHomeDir();
+  if (download_path == home_dir) {
+    return true;
+  }
+#endif
+
+#if defined(OS_ANDROID)
+  // Android does not have a desktop dir.
+  return false;
+#else
   FilePath desktop_dir;
   if (!PathService::Get(chrome::DIR_USER_DESKTOP, &desktop_dir)) {
     NOTREACHED();
     return false;
   }
   return (download_path == desktop_dir);
-}
-
-void GenerateFileNameFromRequest(const DownloadItem& download_item,
-                                 FilePath* generated_name) {
-  std::string default_file_name(
-      l10n_util::GetStringUTF8(IDS_DEFAULT_DOWNLOAD_FILENAME));
-
-  *generated_name = net::GenerateFileName(download_item.GetURL(),
-                                          download_item.GetContentDisposition(),
-                                          download_item.GetReferrerCharset(),
-                                          download_item.GetSuggestedFilename(),
-                                          download_item.GetMimeType(),
-                                          default_file_name);
+#endif
 }
 
 // Download progress painting --------------------------------------------------
 
-// Common bitmaps used for download progress animations. We load them once the
+// Common images used for download progress animations. We load them once the
 // first time we do a progress paint, then reuse them as they are always the
 // same.
-SkBitmap* g_foreground_16 = NULL;
-SkBitmap* g_background_16 = NULL;
-SkBitmap* g_foreground_32 = NULL;
-SkBitmap* g_background_32 = NULL;
+gfx::ImageSkia* g_foreground_16 = NULL;
+gfx::ImageSkia* g_background_16 = NULL;
+gfx::ImageSkia* g_foreground_32 = NULL;
+gfx::ImageSkia* g_background_32 = NULL;
 
 void PaintDownloadProgress(gfx::Canvas* canvas,
 #if defined(TOOLKIT_VIEWS)
@@ -183,42 +198,42 @@ void PaintDownloadProgress(gfx::Canvas* canvas,
                            int start_angle,
                            int percent_done,
                            PaintDownloadProgressSize size) {
-  // Load up our common bitmaps
+  // Load up our common images.
   if (!g_background_16) {
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-    g_foreground_16 = rb.GetBitmapNamed(IDR_DOWNLOAD_PROGRESS_FOREGROUND_16);
-    g_background_16 = rb.GetBitmapNamed(IDR_DOWNLOAD_PROGRESS_BACKGROUND_16);
-    g_foreground_32 = rb.GetBitmapNamed(IDR_DOWNLOAD_PROGRESS_FOREGROUND_32);
-    g_background_32 = rb.GetBitmapNamed(IDR_DOWNLOAD_PROGRESS_BACKGROUND_32);
+    g_foreground_16 = rb.GetImageSkiaNamed(IDR_DOWNLOAD_PROGRESS_FOREGROUND_16);
+    g_background_16 = rb.GetImageSkiaNamed(IDR_DOWNLOAD_PROGRESS_BACKGROUND_16);
+    g_foreground_32 = rb.GetImageSkiaNamed(IDR_DOWNLOAD_PROGRESS_FOREGROUND_32);
+    g_background_32 = rb.GetImageSkiaNamed(IDR_DOWNLOAD_PROGRESS_BACKGROUND_32);
+    DCHECK_EQ(g_foreground_16->width(), g_background_16->width());
+    DCHECK_EQ(g_foreground_16->height(), g_background_16->height());
+    DCHECK_EQ(g_foreground_32->width(), g_background_32->width());
+    DCHECK_EQ(g_foreground_32->height(), g_background_32->height());
   }
 
-  SkBitmap* background = (size == BIG) ? g_background_32 : g_background_16;
-  SkBitmap* foreground = (size == BIG) ? g_foreground_32 : g_foreground_16;
+  gfx::ImageSkia* background =
+      (size == BIG) ? g_background_32 : g_background_16;
+  gfx::ImageSkia* foreground =
+      (size == BIG) ? g_foreground_32 : g_foreground_16;
 
   const int kProgressIconSize = (size == BIG) ? kBigProgressIconSize :
                                                 kSmallProgressIconSize;
 
-  // We start by storing the bounds of the background and foreground bitmaps
-  // so that it is easy to mirror the bounds if the UI layout is RTL.
-  gfx::Rect background_bounds(origin_x, origin_y,
-                              background->width(), background->height());
-  gfx::Rect foreground_bounds(origin_x, origin_y,
-                              foreground->width(), foreground->height());
+  // We start by storing the bounds of the images so that it is easy to mirror
+  // the bounds if the UI layout is RTL.
+  gfx::Rect bounds(origin_x, origin_y,
+                   background->width(), background->height());
 
 #if defined(TOOLKIT_VIEWS)
   // Mirror the positions if necessary.
-  int mirrored_x = containing_view->GetMirroredXForRect(background_bounds);
-  background_bounds.set_x(mirrored_x);
-  mirrored_x = containing_view->GetMirroredXForRect(foreground_bounds);
-  foreground_bounds.set_x(mirrored_x);
+  int mirrored_x = containing_view->GetMirroredXForRect(bounds);
+  bounds.set_x(mirrored_x);
 #endif
 
   // Draw the background progress image.
-  SkPaint background_paint;
-  canvas->DrawBitmapInt(*background,
-                        background_bounds.x(),
-                        background_bounds.y(),
-                        background_paint);
+  canvas->DrawImageInt(*background,
+                       bounds.x(),
+                       bounds.y());
 
   // Layer the foreground progress image in an arc proportional to the download
   // progress. The arc grows clockwise, starting in the midnight position, as
@@ -238,39 +253,28 @@ void PaintDownloadProgress(gfx::Canvas* canvas,
   // a clipping region if it would round to 360 (really 0) degrees, since that
   // would eliminate the foreground completely and be quite confusing (it would
   // look like 0% complete when it should be almost 100%).
-  SkPaint foreground_paint;
+  canvas->Save();
   if (sweep_angle < static_cast<float>(kMaxDegrees - 1)) {
     SkRect oval;
-    oval.set(SkIntToScalar(foreground_bounds.x()),
-             SkIntToScalar(foreground_bounds.y()),
-             SkIntToScalar(foreground_bounds.x() + kProgressIconSize),
-             SkIntToScalar(foreground_bounds.y() + kProgressIconSize));
+    oval.set(SkIntToScalar(bounds.x()),
+             SkIntToScalar(bounds.y()),
+             SkIntToScalar(bounds.x() + kProgressIconSize),
+             SkIntToScalar(bounds.y() + kProgressIconSize));
     SkPath path;
     path.arcTo(oval,
                SkFloatToScalar(start_pos),
                SkFloatToScalar(sweep_angle), false);
-    path.lineTo(SkIntToScalar(foreground_bounds.x() + kProgressIconSize / 2),
-                SkIntToScalar(foreground_bounds.y() + kProgressIconSize / 2));
+    path.lineTo(SkIntToScalar(bounds.x() + kProgressIconSize / 2),
+                SkIntToScalar(bounds.y() + kProgressIconSize / 2));
 
-    SkShader* shader =
-        SkShader::CreateBitmapShader(*foreground,
-                                     SkShader::kClamp_TileMode,
-                                     SkShader::kClamp_TileMode);
-    SkMatrix shader_scale;
-    shader_scale.setTranslate(SkIntToScalar(foreground_bounds.x()),
-                              SkIntToScalar(foreground_bounds.y()));
-    shader->setLocalMatrix(shader_scale);
-    foreground_paint.setShader(shader);
-    foreground_paint.setAntiAlias(true);
-    shader->unref();
-    canvas->GetSkCanvas()->drawPath(path, foreground_paint);
-    return;
+    // gfx::Canvas::ClipPath does not provide for anti-aliasing.
+    canvas->sk_canvas()->clipPath(path, SkRegion::kIntersect_Op, true);
   }
 
-  canvas->DrawBitmapInt(*foreground,
-                        foreground_bounds.x(),
-                        foreground_bounds.y(),
-                        foreground_paint);
+  canvas->DrawImageInt(*foreground,
+                       bounds.x(),
+                       bounds.y());
+  canvas->Restore();
 }
 
 void PaintDownloadComplete(gfx::Canvas* canvas,
@@ -281,14 +285,14 @@ void PaintDownloadComplete(gfx::Canvas* canvas,
                            int origin_y,
                            double animation_progress,
                            PaintDownloadProgressSize size) {
-  // Load up our common bitmaps.
+  // Load up our common images.
   if (!g_foreground_16) {
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-    g_foreground_16 = rb.GetBitmapNamed(IDR_DOWNLOAD_PROGRESS_FOREGROUND_16);
-    g_foreground_32 = rb.GetBitmapNamed(IDR_DOWNLOAD_PROGRESS_FOREGROUND_32);
+    g_foreground_16 = rb.GetImageSkiaNamed(IDR_DOWNLOAD_PROGRESS_FOREGROUND_16);
+    g_foreground_32 = rb.GetImageSkiaNamed(IDR_DOWNLOAD_PROGRESS_FOREGROUND_32);
   }
 
-  SkBitmap* complete = (size == BIG) ? g_foreground_32 : g_foreground_16;
+  gfx::ImageSkia* complete = (size == BIG) ? g_foreground_32 : g_foreground_16;
 
   gfx::Rect complete_bounds(origin_x, origin_y,
                             complete->width(), complete->height());
@@ -299,12 +303,9 @@ void PaintDownloadComplete(gfx::Canvas* canvas,
 
   // Start at full opacity, then loop back and forth five times before ending
   // at zero opacity.
-  double opacity = sin(animation_progress * PI * kCompleteAnimationCycles +
-                   PI/2) / 2 + 0.5;
-
-  canvas->SaveLayerAlpha(static_cast<int>(255.0 * opacity), complete_bounds);
-  canvas->GetSkCanvas()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
-  canvas->DrawBitmapInt(*complete, complete_bounds.x(), complete_bounds.y());
+  canvas->SaveLayerAlpha(GetOpacity(animation_progress), complete_bounds);
+  canvas->sk_canvas()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
+  canvas->DrawImageInt(*complete, complete_bounds.x(), complete_bounds.y());
   canvas->Restore();
 }
 
@@ -316,14 +317,14 @@ void PaintDownloadInterrupted(gfx::Canvas* canvas,
                               int origin_y,
                               double animation_progress,
                               PaintDownloadProgressSize size) {
-  // Load up our common bitmaps.
+  // Load up our common images.
   if (!g_foreground_16) {
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-    g_foreground_16 = rb.GetBitmapNamed(IDR_DOWNLOAD_PROGRESS_FOREGROUND_16);
-    g_foreground_32 = rb.GetBitmapNamed(IDR_DOWNLOAD_PROGRESS_FOREGROUND_32);
+    g_foreground_16 = rb.GetImageSkiaNamed(IDR_DOWNLOAD_PROGRESS_FOREGROUND_16);
+    g_foreground_32 = rb.GetImageSkiaNamed(IDR_DOWNLOAD_PROGRESS_FOREGROUND_32);
   }
 
-  SkBitmap* complete = (size == BIG) ? g_foreground_32 : g_foreground_16;
+  gfx::ImageSkia* complete = (size == BIG) ? g_foreground_32 : g_foreground_16;
 
   gfx::Rect complete_bounds(origin_x, origin_y,
                             complete->width(), complete->height());
@@ -334,13 +335,9 @@ void PaintDownloadInterrupted(gfx::Canvas* canvas,
 
   // Start at zero opacity, then loop back and forth five times before ending
   // at full opacity.
-  double opacity = sin(
-      (1.0 - animation_progress) * PI * kCompleteAnimationCycles + PI/2) / 2 +
-          0.5;
-
-  canvas->SaveLayerAlpha(static_cast<int>(255.0 * opacity), complete_bounds);
-  canvas->GetSkCanvas()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
-  canvas->DrawBitmapInt(*complete, complete_bounds.x(), complete_bounds.y());
+  canvas->SaveLayerAlpha(GetOpacity(1.0 - animation_progress), complete_bounds);
+  canvas->sk_canvas()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
+  canvas->DrawImageInt(*complete, complete_bounds.x(), complete_bounds.y());
   canvas->Restore();
 }
 
@@ -377,7 +374,7 @@ void DragDownload(const DownloadItem* download,
 
   if (icon) {
     drag_utils::CreateDragImageForFile(
-        download->GetFileNameToReportUser(), *icon, &data);
+        download->GetFileNameToReportUser(), icon->ToImageSkia(), &data);
   }
 
   const FilePath full_path = download->GetFullPath();
@@ -393,17 +390,26 @@ void DragDownload(const DownloadItem* download,
                 download->GetFileNameToReportUser().LossyDisplayName());
   }
 
+#if !defined(TOOLKIT_GTK)
 #if defined(USE_AURA)
-  // TODO(beng):
-  NOTIMPLEMENTED();
-#elif defined(OS_WIN)
-  scoped_refptr<ui::DragSource> drag_source(new ui::DragSource);
+  aura::RootWindow* root_window = view->GetRootWindow();
+  if (!root_window || !aura::client::GetDragDropClient(root_window))
+    return;
 
+  gfx::Point location = gfx::Screen::GetCursorScreenPoint();
+  aura::client::GetDragDropClient(root_window)->StartDragAndDrop(data, location,
+      ui::DragDropTypes::DRAG_COPY | ui::DragDropTypes::DRAG_LINK);
+#else  // We are on WIN without AURA
+  // We cannot use Widget::RunShellDrag on WIN since the |view| is backed by a
+  // TabContentsViewWin, not a NativeWidgetWin.
+  scoped_refptr<ui::DragSource> drag_source(new ui::DragSource);
   // Run the drag and drop loop
   DWORD effects;
   DoDragDrop(ui::OSExchangeDataProviderWin::GetIDataObject(data),
              drag_source.get(), DROPEFFECT_COPY | DROPEFFECT_LINK, &effects);
-#elif defined(TOOLKIT_USES_GTK)
+#endif
+
+#else
   GtkWidget* root = gtk_widget_get_toplevel(view);
   if (!root)
     return;
@@ -415,7 +421,7 @@ void DragDownload(const DownloadItem* download,
 
   widget->DoDrag(data,
                  ui::DragDropTypes::DRAG_COPY | ui::DragDropTypes::DRAG_LINK);
-#endif  // OS_WIN
+#endif  // TOOLKIT_GTK
 }
 #elif defined(USE_X11)
 void DragDownload(const DownloadItem* download,
@@ -461,7 +467,9 @@ DictionaryValue* CreateDownloadItemValue(DownloadItem* download, int id) {
              download->GetDangerType() ==
                  content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL ||
              download->GetDangerType() ==
-                 content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT);
+                 content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT ||
+             download->GetDangerType() ==
+                 content::DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT);
       const char* danger_type_value =
           GetDangerTypeString(download->GetDangerType());
       file_value->SetString("danger_type", danger_type_value);
@@ -488,6 +496,9 @@ DictionaryValue* CreateDownloadItemValue(DownloadItem* download, int id) {
         static_cast<int>(download->PercentComplete()));
     file_value->SetInteger("received",
         static_cast<int>(download->GetReceivedBytes()));
+    file_value->SetString("last_reason_text",
+        BaseDownloadItemModel::InterruptReasonMessage(
+            download->GetLastReason()));
   } else if (download->IsCancelled()) {
     file_value->SetString("state", "CANCELLED");
   } else if (download->IsComplete()) {
@@ -577,7 +588,7 @@ void UpdateAppIconDownloadProgress(int download_count,
     BrowserWindow* window = browser->window();
     if (!window)
       continue;
-    HWND frame = window->GetNativeHandle();
+    HWND frame = window->GetNativeWindow();
     if (download_count == 0 || progress == 1.0f)
       taskbar->SetProgressState(frame, TBPF_NOPROGRESS);
     else if (!progress_known)
@@ -592,19 +603,13 @@ void UpdateAppIconDownloadProgress(int download_count,
 }
 #endif
 
-int GetUniquePathNumberWithCrDownload(const FilePath& path) {
-  return DownloadFile::GetUniquePathNumberWithSuffix(
-      path, FILE_PATH_LITERAL(".crdownload"));
-}
-
 FilePath GetCrDownloadPath(const FilePath& suggested_path) {
-  return DownloadFile::AppendSuffixToPath(
-      suggested_path, FILE_PATH_LITERAL(".crdownload"));
+  return FilePath(suggested_path.value() + FILE_PATH_LITERAL(".crdownload"));
 }
 
 bool IsSavableURL(const GURL& url) {
-  for (int i = 0; chrome::GetSavableSchemes()[i] != NULL; ++i) {
-    if (url.SchemeIs(chrome::GetSavableSchemes()[i])) {
+  for (int i = 0; content::GetSavableSchemes()[i] != NULL; ++i) {
+    if (url.SchemeIs(content::GetSavableSchemes()[i])) {
       return true;
     }
   }
@@ -632,7 +637,12 @@ void RecordShelfClose(int size, int in_progress, bool autoclose) {
 
 void RecordDownloadCount(ChromeDownloadCountTypes type) {
   UMA_HISTOGRAM_ENUMERATION(
-      "Download.CountsChrome", type, DOWNLOAD_COUNT_TYPES_LAST_ENTRY);
+      "Download.CountsChrome", type, CHROME_DOWNLOAD_COUNT_TYPES_LAST_ENTRY);
+}
+
+void RecordDownloadSource(ChromeDownloadSource source) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Download.SourcesChrome", source, CHROME_DOWNLOAD_SOURCE_LAST_ENTRY);
 }
 
 }  // namespace download_util

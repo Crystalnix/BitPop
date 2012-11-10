@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_CHROMEOS_INPUT_METHOD_INPUT_METHOD_UTIL_H_
 #define CHROME_BROWSER_CHROMEOS_INPUT_METHOD_INPUT_METHOD_UTIL_H_
-#pragma once
 
 #include <cstddef>
 #include <map>
@@ -14,7 +13,7 @@
 #include "base/string16.h"
 #include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/chromeos/input_method/ibus_controller.h"
+#include "chrome/browser/chromeos/input_method/input_method_descriptor.h"
 
 namespace chromeos {
 namespace input_method {
@@ -48,24 +47,6 @@ class InputMethodUtil {
   // Non-UI threads are not allowed to call them.
   string16 TranslateString(const std::string& english_string) const;
 
-  // Normalizes the language code and returns the normalized version.  The
-  // function normalizes the given language code to be compatible with the
-  // one used in Chrome's application locales. Otherwise, returns the
-  // given language code as-is.
-  //
-  // Examples:
-  //
-  // - "zh_CN" => "zh-CN" (Use - instead of _)
-  // - "jpn"   => "ja"    (Use two-letter code)
-  // - "t"     => "t"     (Return as-is if unknown)
-  std::string NormalizeLanguageCode(const std::string& language_code) const;
-
-  // Gets the language code from the given input method descriptor.  This
-  // encapsulates differences between the language codes used in
-  // InputMethodDescriptor and Chrome's application locale codes.
-  std::string GetLanguageCodeFromDescriptor(
-      const InputMethodDescriptor& descriptor) const;
-
   // Gets the keyboard layout name from the given input method ID.
   // If the ID is invalid, an empty string will be returned.
   // This function only supports xkb layouts.
@@ -89,6 +70,10 @@ class InputMethodUtil {
   // Examples: "pinyin" => "Pinyin"
   std::string GetInputMethodDisplayNameFromId(
       const std::string& input_method_id) const;
+
+  string16 GetInputMethodShortName(
+      const InputMethodDescriptor& input_method) const;
+  string16 GetInputMethodLongName(const InputMethodDescriptor& ime) const;
 
   // Converts an input method ID to an input method descriptor. Returns NULL
   // when |input_method_id| is unknown.
@@ -132,15 +117,25 @@ class InputMethodUtil {
       const std::vector<std::string>& input_method_ids,
       std::vector<std::string>* out_language_codes) const;
 
-  // Returns the input method ID of the hardware keyboard.
+  // Returns the input method ID of the hardware keyboard. e.g. "xkb:us::eng"
+  // for the US Qwerty keyboard.
   std::string GetHardwareInputMethodId() const;
 
   // This function should be called when Chrome's application locale is
   // changed, so that the internal maps of this library is reloaded.
   void OnLocaleChanged();
 
+  // Sets an input method ID of the hardware keyboard for testing.
+  void SetHardwareInputMethodIdForTesting(const std::string& input_method_id);
+
+  // Returns true if the given input method id is supported.
+  bool IsValidInputMethodId(const std::string& input_method_id) const;
+
   // Returns true if the given input method id is for a keyboard layout.
   static bool IsKeyboardLayout(const std::string& input_method_id);
+
+  // Returns true if the given input method id is for an extension input method.
+  static bool IsExtensionInputMethod(const std::string& input_method_id);
 
   // Converts a language code to a language display name, using the
   // current application locale. MaybeRewriteLanguageName() is called
@@ -179,12 +174,13 @@ class InputMethodUtil {
   static void SortLanguageCodesByNames(
       std::vector<std::string>* language_codes);
 
+  // All input methods that are supported, including ones not active.
+  // protected: for testing.
+  scoped_ptr<InputMethodDescriptors> supported_input_methods_;
+
  private:
   bool TranslateStringInternal(const std::string& english_string,
                                string16 *out_string) const;
-
-  // All input methods that are supported, including ones not active.
-  scoped_ptr<InputMethodDescriptors> supported_input_methods_;
 
   // Map from language code to associated input method IDs, etc.
   typedef std::multimap<std::string, std::string> LanguageCodeToIdsMap;
@@ -201,6 +197,8 @@ class InputMethodUtil {
 
   typedef base::hash_map<std::string, int> HashType;
   HashType english_to_resource_id_;
+
+  std::string hardware_input_method_id_for_testing_;
 };
 
 }  // namespace input_method

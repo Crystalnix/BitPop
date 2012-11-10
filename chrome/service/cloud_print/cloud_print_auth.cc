@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,9 +29,6 @@ CloudPrintAuth::CloudPrintAuth(
     // It is possible to have no print settings specified.
     print_system_settings_.reset(print_sys_settings->DeepCopy());
   }
-}
-
-CloudPrintAuth::~CloudPrintAuth() {
 }
 
 void CloudPrintAuth::AuthenticateWithLsid(
@@ -137,8 +134,8 @@ void CloudPrintAuth::OnRefreshTokenResponse(const std::string& access_token,
   // Schedule a task to refresh the access token again when it is about to
   // expire.
   DCHECK(expires_in_seconds > kTokenRefreshGracePeriodSecs);
-  int64 refresh_delay =
-      (expires_in_seconds - kTokenRefreshGracePeriodSecs)*1000;
+  base::TimeDelta refresh_delay = base::TimeDelta::FromSeconds(
+      expires_in_seconds - kTokenRefreshGracePeriodSecs);
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE, base::Bind(&CloudPrintAuth::RefreshAccessToken, this),
       refresh_delay);
@@ -158,7 +155,7 @@ void CloudPrintAuth::OnNetworkError(int response_code) {
 }
 
 CloudPrintURLFetcher::ResponseAction CloudPrintAuth::HandleJSONData(
-    const content::URLFetcher* source,
+    const net::URLFetcher* source,
     const GURL& url,
     base::DictionaryValue* json_data,
     bool succeeded) {
@@ -202,4 +199,6 @@ std::string CloudPrintAuth::GetAuthHeader() {
   header += client_login_token_;
   return header;
 }
+
+CloudPrintAuth::~CloudPrintAuth() {}
 

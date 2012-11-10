@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,9 +12,11 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/common/net/x509_certificate_model.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
+#include "ui/base/dialogs/select_file_dialog.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::BrowserThread;
@@ -59,7 +61,7 @@ std::string GetBase64String(net::X509Certificate::OSCertHandle cert) {
 ////////////////////////////////////////////////////////////////////////////////
 // General utility functions.
 
-class Exporter : public SelectFileDialog::Listener {
+class Exporter : public ui::SelectFileDialog::Listener {
  public:
   Exporter(WebContents* web_contents, gfx::NativeWindow parent,
            net::X509Certificate::OSCertHandle cert);
@@ -70,7 +72,7 @@ class Exporter : public SelectFileDialog::Listener {
                             int index, void* params);
   virtual void FileSelectionCanceled(void* params);
  private:
-  scoped_refptr<SelectFileDialog> select_file_dialog_;
+  scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
 
   // The certificate hierarchy (leaf cert first).
   net::X509Certificate::OSCertHandles cert_chain_list_;
@@ -79,7 +81,8 @@ class Exporter : public SelectFileDialog::Listener {
 Exporter::Exporter(WebContents* web_contents,
                    gfx::NativeWindow parent,
                    net::X509Certificate::OSCertHandle cert)
-    : select_file_dialog_(SelectFileDialog::Create(this)) {
+    : select_file_dialog_(ui::SelectFileDialog::Create(
+        this, new ChromeSelectFilePolicy(web_contents))) {
   x509_certificate_model::GetCertChainFromCert(cert, &cert_chain_list_);
 
   // TODO(mattm): should this default to some directory?
@@ -90,9 +93,8 @@ Exporter::Exporter(WebContents* web_contents,
     suggested_path = FilePath(cert_title);
 
   ShowCertSelectFileDialog(select_file_dialog_.get(),
-                           SelectFileDialog::SELECT_SAVEAS_FILE,
+                           ui::SelectFileDialog::SELECT_SAVEAS_FILE,
                            suggested_path,
-                           web_contents,
                            parent,
                            NULL);
 }
@@ -141,13 +143,12 @@ void Exporter::FileSelectionCanceled(void* params) {
 
 } // namespace
 
-void ShowCertSelectFileDialog(SelectFileDialog* select_file_dialog,
-                              SelectFileDialog::Type type,
+void ShowCertSelectFileDialog(ui::SelectFileDialog* select_file_dialog,
+                              ui::SelectFileDialog::Type type,
                               const FilePath& suggested_path,
-                              WebContents* web_contents,
                               gfx::NativeWindow parent,
                               void* params) {
-  SelectFileDialog::FileTypeInfo file_type_info;
+  ui::SelectFileDialog::FileTypeInfo file_type_info;
   file_type_info.extensions.resize(5);
   file_type_info.extensions[0].push_back(FILE_PATH_LITERAL("pem"));
   file_type_info.extensions[0].push_back(FILE_PATH_LITERAL("crt"));
@@ -170,7 +171,7 @@ void ShowCertSelectFileDialog(SelectFileDialog* select_file_dialog,
   select_file_dialog->SelectFile(
       type, string16(),
       suggested_path, &file_type_info, 1,
-      FILE_PATH_LITERAL("crt"), web_contents,
+      FILE_PATH_LITERAL("crt"),
       parent, params);
 }
 

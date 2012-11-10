@@ -2,7 +2,7 @@
   "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html>
   <!--
-  Copyright (c) 2011 The Chromium Authors. All rights reserved.
+  Copyright (c) 2012 The Chromium Authors. All rights reserved.
   Use of this source code is governed by a BSD-style license that can be
   found in the LICENSE file.
   -->
@@ -21,6 +21,16 @@
 //<![CDATA[
 
 function declareTests(tester) {
+  // PNaCl may have slightly different error messages (pexe instead of nexe).
+  var test_args = getTestArguments({'is_pnacl': '0'});
+  var could_not_load_nexe;
+  if (parseInt(test_args['is_pnacl'])) {
+    could_not_load_nexe = (
+      'NaCl module load failed: PnaclCoordinator: pexe load failed.');
+  } else {
+    could_not_load_nexe = 'NaCl module load failed: could not load nexe url.';
+  }
+
   // 'bad_magic' loads a manifest, then loads a nexe that tests as invalid.
   badLoadTest(
       tester,
@@ -33,7 +43,7 @@ function declareTests(tester) {
       tester,
       'cross_origin',
       'ppapi_bad_crossorigin.nmf',
-      'NaCl module load failed: could not load nexe url.');
+      could_not_load_nexe);
 
   // 'cross_manifest' tries to load a cross-origin manifest.
   badLoadTest(
@@ -48,7 +58,7 @@ function declareTests(tester) {
       tester,
       'nonexistent_nexe',
       'ppapi_bad_doesnotexist.nmf',
-      'NaCl module load failed: could not load nexe url.');
+      could_not_load_nexe);
 
   // 'nonexistent_nexe_only' loads a manifest, then tries to load a nonexistent
   // nexe, given only a nexe to choose from.
@@ -84,7 +94,7 @@ function declareTests(tester) {
       tester,
       'bad_manifest_bad_files',
       'ppapi_bad_manifest_bad_files.nmf',
-      'NaCl module load failed: manifest: file \'file.txt\' no version given for current arch and no portable version found.');
+      'NaCl module load failed: manifest: file file.txt no version given for current arch and no portable version found.');
 
   //////////////////////////////////////
   // Initialization errors begin here //

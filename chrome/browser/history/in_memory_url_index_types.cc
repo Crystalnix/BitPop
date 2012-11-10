@@ -5,15 +5,27 @@
 #include "chrome/browser/history/in_memory_url_index_types.h"
 
 #include <algorithm>
+#include <functional>
 #include <iterator>
+#include <numeric>
 #include <set>
 
 #include "base/i18n/break_iterator.h"
 #include "base/i18n/case_conversion.h"
 #include "base/string_util.h"
-#include "base/utf_string_conversions.h"
 
 namespace history {
+
+// The maximum score any candidate result can achieve.
+const int kMaxTotalScore = 1425;
+
+// Score ranges used to get a 'base' score for each of the scoring factors
+// (such as recency of last visit, times visited, times the URL was typed,
+// and the quality of the string match). There is a matching value range for
+// each of these scores for each factor. Note that the top score is greater
+// than |kMaxTotalScore|. The score for each candidate will be capped in the
+// final calculation.
+const int kScoreRank[] = { 1450, 1200, 900, 400 };
 
 // Matches within URL and Title Strings ----------------------------------------
 
@@ -75,39 +87,24 @@ TermMatches ReplaceOffsetsInTermMatches(const TermMatches& matches,
   return new_matches;
 }
 
-// ScoredHistoryMatch ----------------------------------------------------------
-
-ScoredHistoryMatch::ScoredHistoryMatch()
-    : raw_score(0),
-      can_inline(false) {}
-
-ScoredHistoryMatch::ScoredHistoryMatch(const URLRow& url_info)
-    : HistoryMatch(url_info, 0, false, false),
-      raw_score(0),
-      can_inline(false) {}
-
-ScoredHistoryMatch::~ScoredHistoryMatch() {}
-
-// Comparison function for sorting ScoredMatches by their scores.
-bool ScoredHistoryMatch::MatchScoreGreater(const ScoredHistoryMatch& m1,
-                                           const ScoredHistoryMatch& m2) {
-  return m1.raw_score > m2.raw_score;
-}
-
 // Utility Functions -----------------------------------------------------------
 
-String16Set String16SetFromString16(const string16& uni_string) {
-  const size_t kMaxWordLength = 64;
-  String16Vector words = String16VectorFromString16(uni_string, false);
+String16Set String16SetFromString16(const string16& uni_string,
+                                    WordStarts* word_starts) {
+  String16Vector words =
+      String16VectorFromString16(uni_string, false, word_starts);
   String16Set word_set;
   for (String16Vector::const_iterator iter = words.begin(); iter != words.end();
        ++iter)
-    word_set.insert(base::i18n::ToLower(*iter).substr(0, kMaxWordLength));
+    word_set.insert(base::i18n::ToLower(*iter).substr(0, kMaxSignificantChars));
   return word_set;
 }
 
 String16Vector String16VectorFromString16(const string16& uni_string,
-                                          bool break_on_space) {
+                                          bool break_on_space,
+                                          WordStarts* word_starts) {
+  if (word_starts)
+    word_starts->clear();
   base::i18n::BreakIterator iter(uni_string,
       break_on_space ? base::i18n::BreakIterator::BREAK_SPACE :
           base::i18n::BreakIterator::BREAK_WORD);
@@ -116,11 +113,22 @@ String16Vector String16VectorFromString16(const string16& uni_string,
     return words;
   while (iter.Advance()) {
     if (break_on_space || iter.IsWord()) {
-      string16 word = iter.GetString();
-      if (break_on_space)
-        TrimWhitespace(word, TRIM_ALL, &word);
-      if (!word.empty())
-        words.push_back(word);
+      string16 word(iter.GetString());
+      size_t initial_whitespace = 0;
+      if (break_on_space) {
+        string16 trimmed_word;
+        TrimWhitespace(word, TRIM_LEADING, &trimmed_word);
+        initial_whitespace = word.length() - trimmed_word.length();
+        TrimWhitespace(trimmed_word, TRIM_TRAILING, &word);
+      }
+      if (word.empty())
+        continue;
+      words.push_back(word);
+      if (!word_starts)
+        continue;
+      size_t word_start = iter.prev() + initial_whitespace;
+      if (word_start < kMaxSignificantChars)
+        word_starts->push_back(word_start);
     }
   }
   return words;
@@ -133,18 +141,14 @@ Char16Set Char16SetFromString16(const string16& term) {
   return characters;
 }
 
-bool IsInlineablePrefix(const string16& prefix) {
-  CR_DEFINE_STATIC_LOCAL(std::set<string16>, prefixes, ());
-  if (prefixes.empty()) {
-    prefixes.insert(ASCIIToUTF16("ftp://ftp."));
-    prefixes.insert(ASCIIToUTF16("ftp://www."));
-    prefixes.insert(ASCIIToUTF16("ftp://"));
-    prefixes.insert(ASCIIToUTF16("https://www."));
-    prefixes.insert(ASCIIToUTF16("https://"));
-    prefixes.insert(ASCIIToUTF16("http://www."));
-    prefixes.insert(ASCIIToUTF16("http://"));
-  }
-  return prefixes.count(prefix) != 0;
+// RowWordStarts ---------------------------------------------------------------
+
+RowWordStarts::RowWordStarts() {}
+RowWordStarts::~RowWordStarts() {}
+
+void RowWordStarts::Clear() {
+  url_word_starts_.clear();
+  title_word_starts_.clear();
 }
 
 }  // namespace history

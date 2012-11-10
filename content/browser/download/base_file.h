@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_DOWNLOAD_BASE_FILE_H_
 #define CONTENT_BROWSER_DOWNLOAD_BASE_FILE_H_
-#pragma once
 
 #include <string>
 
@@ -13,11 +12,11 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
-#include "content/browser/power_save_blocker.h"
 #include "content/common/content_export.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/file_stream.h"
 #include "net/base/net_errors.h"
+#include "net/base/net_log.h"
 
 namespace crypto {
 class SecureHash;
@@ -36,7 +35,8 @@ class CONTENT_EXPORT BaseFile {
            int64 received_bytes,
            bool calculate_hash,
            const std::string& hash_state,
-           const linked_ptr<net::FileStream>& file_stream);
+           const linked_ptr<net::FileStream>& file_stream,
+           const net::BoundNetLog& bound_net_log);
   virtual ~BaseFile();
 
   // Returns net::OK on success, or a network error code on failure.
@@ -103,6 +103,8 @@ class CONTENT_EXPORT BaseFile {
   // Resets the current state of the hash to the contents of |hash_state_bytes|.
   virtual bool SetHashState(const std::string& hash_state_bytes);
 
+  net::Error ClearStream(net::Error error);
+
   static const size_t kSha256HashLen = 32;
   static const unsigned char kEmptySha256Hash[kSha256HashLen];
 
@@ -121,9 +123,6 @@ class CONTENT_EXPORT BaseFile {
   // Start time for calculating speed.
   base::TimeTicks start_tick_;
 
-  // RAII handle to keep the system from sleeping while we're downloading.
-  PowerSaveBlocker power_save_blocker_;
-
   // Indicates if hash should be calculated for the file.
   bool calculate_hash_;
 
@@ -136,6 +135,8 @@ class CONTENT_EXPORT BaseFile {
   // Indicates that this class no longer owns the associated file, and so
   // won't delete it on destruction.
   bool detached_;
+
+  net::BoundNetLog bound_net_log_;
 
   DISALLOW_COPY_AND_ASSIGN(BaseFile);
 };

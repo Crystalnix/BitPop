@@ -20,9 +20,9 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/scoped_gobject.h"
 #include "ui/base/x/x11_util.h"
-#include "ui/gfx/canvas_skia.h"
-#include "ui/gfx/gtk_util.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/size.h"
 
 namespace ui {
@@ -179,9 +179,32 @@ void GdkPixbufFree(guchar* pixels, gpointer data) {
   free(pixels);
 }
 
+// Makes a copy of |pixels| with the ordering changed from BGRA to RGBA.
+// The caller is responsible for free()ing the data. If |stride| is 0, it's
+// assumed to be 4 * |width|.
+uint8_t* BGRAToRGBA(const uint8_t* pixels, int width, int height, int stride) {
+  if (stride == 0)
+    stride = width * 4;
+
+  uint8_t* new_pixels = static_cast<uint8_t*>(malloc(height * stride));
+
+  // We have to copy the pixels and swap from BGRA to RGBA.
+  for (int i = 0; i < height; ++i) {
+    for (int j = 0; j < width; ++j) {
+      int idx = i * stride + j * 4;
+      new_pixels[idx] = pixels[idx + 2];
+      new_pixels[idx + 1] = pixels[idx + 1];
+      new_pixels[idx + 2] = pixels[idx];
+      new_pixels[idx + 3] = pixels[idx + 3];
+    }
+  }
+
+  return new_pixels;
+}
+
 }  // namespace
 
-Clipboard::FormatType::FormatType() {
+Clipboard::FormatType::FormatType() : data_(GDK_NONE) {
 }
 
 Clipboard::FormatType::FormatType(const std::string& format_string)
@@ -210,15 +233,18 @@ bool Clipboard::FormatType::Equals(const FormatType& other) const {
 }
 
 Clipboard::Clipboard() : clipboard_data_(NULL) {
+  DCHECK(CalledOnValidThread());
   clipboard_ = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
   primary_selection_ = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
 }
 
 Clipboard::~Clipboard() {
+  DCHECK(CalledOnValidThread());
   gtk_clipboard_store(clipboard_);
 }
 
-void Clipboard::WriteObjects(const ObjectMap& objects) {
+void Clipboard::WriteObjects(Buffer buffer, const ObjectMap& objects) {
+  DCHECK(CalledOnValidThread());
   clipboard_data_ = new TargetMap();
 
   for (ObjectMap::const_iterator iter = objects.begin();
@@ -226,19 +252,20 @@ void Clipboard::WriteObjects(const ObjectMap& objects) {
     DispatchObject(static_cast<ObjectType>(iter->first), iter->second);
   }
 
-  SetGtkClipboard();
+  SetGtkClipboard(buffer);
 }
 
 // When a URL is copied from a render view context menu (via "copy link
 // location", for example), we additionally stick it in the X clipboard. This
 // matches other linux browsers.
 void Clipboard::DidWriteURL(const std::string& utf8_text) {
+  DCHECK(CalledOnValidThread());
   gtk_clipboard_set_text(primary_selection_, utf8_text.c_str(),
                          utf8_text.length());
 }
 
 // Take ownership of the GTK clipboard and inform it of the targets we support.
-void Clipboard::SetGtkClipboard() {
+void Clipboard::SetGtkClipboard(Buffer buffer) {
   scoped_array<GtkTargetEntry> targets(
       new GtkTargetEntry[clipboard_data_->size()]);
 
@@ -250,11 +277,13 @@ void Clipboard::SetGtkClipboard() {
     targets[i].info = 0;
   }
 
-  if (gtk_clipboard_set_with_data(clipboard_, targets.get(),
+  GtkClipboard *clipboard = LookupBackingClipboard(buffer);
+
+  if (gtk_clipboard_set_with_data(clipboard, targets.get(),
                                   clipboard_data_->size(),
                                   GetData, ClearData,
                                   clipboard_data_)) {
-    gtk_clipboard_set_can_store(clipboard_,
+    gtk_clipboard_set_can_store(clipboard,
                                 targets.get(),
                                 clipboard_data_->size());
   }
@@ -293,6 +322,10 @@ void Clipboard::WriteHTML(const char* markup_data,
   InsertMapping(kMimeTypeHTML, data, total_len);
 }
 
+void Clipboard::WriteRTF(const char* rtf_data, size_t data_len) {
+  WriteData(GetRtfFormatType(), rtf_data, data_len);
+}
+
 // Write an extra flavor that signifies WebKit was the last to modify the
 // pasteboard. This flavor has no data.
 void Clipboard::WriteWebSmartPaste() {
@@ -302,9 +335,8 @@ void Clipboard::WriteWebSmartPaste() {
 void Clipboard::WriteBitmap(const char* pixel_data, const char* size_data) {
   const gfx::Size* size = reinterpret_cast<const gfx::Size*>(size_data);
 
-  guchar* data =
-      gfx::BGRAToRGBA(reinterpret_cast<const uint8_t*>(pixel_data),
-                      size->width(), size->height(), 0);
+  guchar* data = BGRAToRGBA(reinterpret_cast<const uint8_t*>(pixel_data),
+                            size->width(), size->height(), 0);
 
   GdkPixbuf* pixbuf =
       gdk_pixbuf_new_from_data(data, GDK_COLORSPACE_RGB, TRUE,
@@ -347,6 +379,7 @@ void Clipboard::WriteData(const FormatType& format,
 // and does not always refresh the cache when it is appropriate.
 bool Clipboard::IsFormatAvailable(const Clipboard::FormatType& format,
                                   Clipboard::Buffer buffer) const {
+  DCHECK(CalledOnValidThread());
   GtkClipboard* clipboard = LookupBackingClipboard(buffer);
   if (clipboard == NULL)
     return false;
@@ -360,7 +393,10 @@ bool Clipboard::IsFormatAvailable(const Clipboard::FormatType& format,
     // This tries a number of common text targets.
     if (data) {
       retval = gtk_selection_data_targets_include_text(data);
-    } else {
+    }
+    // Some programs like Java decide to set an empty TARGETS list, so even if
+    // data is not NULL, we still have to fall back.
+    if (!retval) {
       // Some programs post data to the clipboard without any targets. If this
       // is the case we attempt to make sense of the contents as text. This is
       // pretty unfortunate since it means we have to actually copy the data to
@@ -393,9 +429,18 @@ bool Clipboard::IsFormatAvailable(const Clipboard::FormatType& format,
   return retval;
 }
 
+void Clipboard::Clear(Clipboard::Buffer buffer) {
+  DCHECK(CalledOnValidThread());
+  GtkClipboard* clipboard = LookupBackingClipboard(buffer);
+  if (clipboard == NULL)
+    return;
+  gtk_clipboard_clear(clipboard);
+}
+
 void Clipboard::ReadAvailableTypes(Clipboard::Buffer buffer,
                                    std::vector<string16>* types,
                                    bool* contains_filenames) const {
+  DCHECK(CalledOnValidThread());
   if (!types || !contains_filenames) {
     NOTREACHED();
     return;
@@ -406,6 +451,8 @@ void Clipboard::ReadAvailableTypes(Clipboard::Buffer buffer,
     types->push_back(UTF8ToUTF16(kMimeTypeText));
   if (IsFormatAvailable(GetHtmlFormatType(), buffer))
     types->push_back(UTF8ToUTF16(kMimeTypeHTML));
+  if (IsFormatAvailable(GetRtfFormatType(), buffer))
+    types->push_back(UTF8ToUTF16(kMimeTypeRTF));
   if (IsFormatAvailable(GetBitmapFormatType(), buffer))
     types->push_back(UTF8ToUTF16(kMimeTypePNG));
   *contains_filenames = false;
@@ -426,6 +473,7 @@ void Clipboard::ReadAvailableTypes(Clipboard::Buffer buffer,
 
 
 void Clipboard::ReadText(Clipboard::Buffer buffer, string16* result) const {
+  DCHECK(CalledOnValidThread());
   GtkClipboard* clipboard = LookupBackingClipboard(buffer);
   if (clipboard == NULL)
     return;
@@ -443,6 +491,7 @@ void Clipboard::ReadText(Clipboard::Buffer buffer, string16* result) const {
 
 void Clipboard::ReadAsciiText(Clipboard::Buffer buffer,
                               std::string* result) const {
+  DCHECK(CalledOnValidThread());
   GtkClipboard* clipboard = LookupBackingClipboard(buffer);
   if (clipboard == NULL)
     return;
@@ -457,15 +506,12 @@ void Clipboard::ReadAsciiText(Clipboard::Buffer buffer,
   g_free(text);
 }
 
-void Clipboard::ReadFile(FilePath* file) const {
-  *file = FilePath();
-}
-
 // TODO(estade): handle different charsets.
 // TODO(port): set *src_url.
 void Clipboard::ReadHTML(Clipboard::Buffer buffer, string16* markup,
                          std::string* src_url, uint32* fragment_start,
                          uint32* fragment_end) const {
+  DCHECK(CalledOnValidThread());
   markup->clear();
   if (src_url)
     src_url->clear();
@@ -505,27 +551,35 @@ void Clipboard::ReadHTML(Clipboard::Buffer buffer, string16* markup,
   gtk_selection_data_free(data);
 }
 
+void Clipboard::ReadRTF(Buffer buffer, std::string* result) const {
+  DCHECK(CalledOnValidThread());
+  ReadData(GetRtfFormatType(), result);
+}
+
 SkBitmap Clipboard::ReadImage(Buffer buffer) const {
+  DCHECK(CalledOnValidThread());
   ScopedGObject<GdkPixbuf>::Type pixbuf(
       gtk_clipboard_wait_for_image(clipboard_));
   if (!pixbuf.get())
     return SkBitmap();
 
-  gfx::CanvasSkia canvas(gfx::Size(gdk_pixbuf_get_width(pixbuf.get()),
-                                   gdk_pixbuf_get_height(pixbuf.get())),
-                         false);
+  gfx::Canvas canvas(gfx::Size(gdk_pixbuf_get_width(pixbuf.get()),
+                               gdk_pixbuf_get_height(pixbuf.get())),
+                     ui::SCALE_FACTOR_100P,
+                     false);
   {
     skia::ScopedPlatformPaint scoped_platform_paint(canvas.sk_canvas());
     cairo_t* context = scoped_platform_paint.GetPlatformSurface();
     gdk_cairo_set_source_pixbuf(context, pixbuf.get(), 0.0, 0.0);
     cairo_paint(context);
   }
-  return canvas.ExtractBitmap();
+  return canvas.ExtractImageRep().sk_bitmap();
 }
 
 void Clipboard::ReadCustomData(Buffer buffer,
                                const string16& type,
                                string16* result) const {
+  DCHECK(CalledOnValidThread());
   GtkClipboard* clipboard = LookupBackingClipboard(buffer);
   if (!clipboard)
     return;
@@ -546,6 +600,7 @@ void Clipboard::ReadBookmark(string16* title, std::string* url) const {
 }
 
 void Clipboard::ReadData(const FormatType& format, std::string* result) const {
+  DCHECK(CalledOnValidThread());
   GtkSelectionData* data =
       gtk_clipboard_wait_for_contents(clipboard_, format.ToGdkAtom());
   if (!data)
@@ -557,6 +612,7 @@ void Clipboard::ReadData(const FormatType& format, std::string* result) const {
 }
 
 uint64 Clipboard::GetSequenceNumber(Buffer buffer) {
+  DCHECK(CalledOnValidThread());
   if (buffer == BUFFER_STANDARD)
     return SelectionChangeObserver::GetInstance()->clipboard_sequence_number();
   else
@@ -582,8 +638,24 @@ const Clipboard::FormatType& Clipboard::GetPlainTextWFormatType() {
 }
 
 // static
+const Clipboard::FormatType& Clipboard::GetUrlFormatType() {
+  return GetPlainTextFormatType();
+}
+
+// static
+const Clipboard::FormatType& Clipboard::GetUrlWFormatType() {
+  return GetPlainTextWFormatType();
+}
+
+// static
 const Clipboard::FormatType& Clipboard::GetHtmlFormatType() {
   CR_DEFINE_STATIC_LOCAL(FormatType, type, (kMimeTypeHTML));
+  return type;
+}
+
+// static
+const Clipboard::FormatType& Clipboard::GetRtfFormatType() {
+  CR_DEFINE_STATIC_LOCAL(FormatType, type, (kMimeTypeRTF));
   return type;
 }
 

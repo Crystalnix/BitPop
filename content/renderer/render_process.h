@@ -1,10 +1,9 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_RENDERER_RENDER_PROCESS_H_
 #define CONTENT_RENDERER_RENDER_PROCESS_H_
-#pragma once
 
 #include "content/common/child_process.h"
 #include "skia/ext/platform_canvas.h"
@@ -47,6 +46,18 @@ class RenderProcess : public ChildProcess {
 
   // Returns true if plugisn should be loaded in-process.
   virtual bool UseInProcessPlugins() const = 0;
+
+  // Keep track of the cumulative set of enabled bindings for this process,
+  // across any view.
+  virtual void AddBindings(int bindings) = 0;
+
+  // The cumulative set of enabled bindings for this process.
+  virtual int GetEnabledBindings() const = 0;
+
+  // Create a new transport DIB of, at least, the given size. Return NULL on
+  // error.
+  virtual TransportDIB* CreateTransportDIB(size_t size) = 0;
+  virtual void FreeTransportDIB(TransportDIB*) = 0;
 
   // Returns a pointer to the RenderProcess singleton instance. Assuming that
   // we're actually a renderer or a renderer test, this static cast will

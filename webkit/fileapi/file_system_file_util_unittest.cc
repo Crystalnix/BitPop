@@ -5,12 +5,14 @@
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop.h"
 #include "base/platform_file.h"
 #include "base/scoped_temp_dir.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_operation_context.h"
-#include "webkit/fileapi/file_system_test_helper.h"
+#include "webkit/fileapi/file_util_helper.h"
+#include "webkit/fileapi/local_file_system_test_helper.h"
 #include "webkit/fileapi/native_file_util.h"
 #include "webkit/fileapi/obfuscated_file_util.h"
 #include "webkit/fileapi/test_file_set.h"
@@ -33,7 +35,8 @@ class FileSystemFileUtilTest : public testing::Test {
   void SetUp() {
   }
 
-  FileSystemOperationContext* NewContext(FileSystemTestOriginHelper* helper) {
+  FileSystemOperationContext* NewContext(
+      LocalFileSystemTestOriginHelper* helper) {
     FileSystemOperationContext* context = helper->NewOperationContext();
     // We need to allocate quota for paths for
     // TestCrossFileSystemCopyMoveHelper, since it calls into OFSFU, which
@@ -48,69 +51,76 @@ class FileSystemFileUtilTest : public testing::Test {
       bool copy) {
     ScopedTempDir base_dir;
     ASSERT_TRUE(base_dir.CreateUniqueTempDir());
-    scoped_refptr<ObfuscatedFileUtil> file_util(
-        new ObfuscatedFileUtil(base_dir.path(), new NativeFileUtil()));
-    FileSystemTestOriginHelper src_helper(src_origin, src_type);
+    scoped_ptr<ObfuscatedFileUtil> file_util(
+        new ObfuscatedFileUtil(base_dir.path()));
+    LocalFileSystemTestOriginHelper src_helper(src_origin, src_type);
     src_helper.SetUp(base_dir.path(),
                      false,  // unlimited quota
                      NULL,  // quota::QuotaManagerProxy
                      file_util.get());
-    FileSystemTestOriginHelper dest_helper(dest_origin, dest_type);
-    dest_helper.SetUp(src_helper.file_system_context(), NULL);
+
+    LocalFileSystemTestOriginHelper dest_helper(dest_origin, dest_type);
+    dest_helper.SetUp(src_helper.file_system_context(), file_util.get());
 
     // Set up all the source data.
     scoped_ptr<FileSystemOperationContext> context;
-    FilePath test_root(FILE_PATH_LITERAL("root directory"));
+    FileSystemURL src_root = src_helper.CreateURLFromUTF8("root directory");
 
     for (size_t i = 0; i < test::kRegularTestCaseSize; ++i) {
       const test::TestCaseRecord& test_case = test::kRegularTestCases[i];
-      FilePath path = test_root.Append(test_case.path);
+      FileSystemURL url = src_root.WithPath(
+          src_root.path().Append(test_case.path));
       if (test_case.is_directory) {
         context.reset(NewContext(&src_helper));
         ASSERT_EQ(base::PLATFORM_FILE_OK,
-            file_util->CreateDirectory(context.get(), path, true, true));
+            file_util->CreateDirectory(context.get(), url, true, true));
       } else {
         context.reset(NewContext(&src_helper));
         bool created = false;
         ASSERT_EQ(base::PLATFORM_FILE_OK,
-            file_util->EnsureFileExists(context.get(), path, &created));
+            file_util->EnsureFileExists(context.get(), url, &created));
         ASSERT_TRUE(created);
         context.reset(NewContext(&src_helper));
         ASSERT_EQ(base::PLATFORM_FILE_OK, file_util->Truncate(
-            context.get(), path, test_case.data_file_size));
+            context.get(), url, test_case.data_file_size));
       }
     }
 
-    // Do the actual copy or move.
-    FileSystemContext* file_system_context = dest_helper.file_system_context();
-    scoped_ptr<FileSystemOperationContext> copy_context(
-        new FileSystemOperationContext(file_system_context, NULL));
-    copy_context->set_src_file_util(file_util);
-    copy_context->set_dest_file_util(file_util);
-    copy_context->set_src_origin_url(src_helper.origin());
-    copy_context->set_dest_origin_url(dest_helper.origin());
-    copy_context->set_src_type(src_helper.type());
-    copy_context->set_dest_type(dest_helper.type());
-    copy_context->set_allowed_bytes_growth(1024 * 1024); // OFSFU path quota.
+    FileSystemURL dest_root = dest_helper.CreateURLFromUTF8("root directory");
 
-    if (copy)
-      ASSERT_EQ(base::PLATFORM_FILE_OK,
-          file_util->Copy(copy_context.get(), test_root, test_root));
-    else
-      ASSERT_EQ(base::PLATFORM_FILE_OK,
-          file_util->Move(copy_context.get(), test_root, test_root));
+    // Do the actual copy or move.
+    scoped_ptr<FileSystemOperationContext> copy_context(
+        src_helper.NewOperationContext());
+    copy_context->set_allowed_bytes_growth(1024 * 1024);  // OFSFU path quota.
+
+    if (copy) {
+      ASSERT_EQ(
+          base::PLATFORM_FILE_OK,
+          FileUtilHelper::Copy(
+              copy_context.get(),
+              src_helper.file_util(), dest_helper.file_util(),
+              src_root, dest_root));
+    } else {
+      ASSERT_EQ(
+          base::PLATFORM_FILE_OK,
+          FileUtilHelper::Move(
+              copy_context.get(),
+              src_helper.file_util(), dest_helper.file_util(),
+              src_root, dest_root));
+    }
 
     // Validate that the destination paths are correct.
     for (size_t i = 0; i < test::kRegularTestCaseSize; ++i) {
       const test::TestCaseRecord& test_case = test::kRegularTestCases[i];
-      FilePath path = test_root.Append(test_case.path);
+      FileSystemURL url = dest_root.WithPath(
+          dest_root.path().Append(test_case.path));
 
       base::PlatformFileInfo dest_file_info;
       FilePath data_path;
       context.reset(NewContext(&dest_helper));
       EXPECT_EQ(base::PLATFORM_FILE_OK,
           file_util->GetFileInfo(
-              context.get(), path, &dest_file_info, &data_path));
+              context.get(), url, &dest_file_info, &data_path));
       if (test_case.is_directory) {
         EXPECT_TRUE(dest_file_info.is_directory);
       } else {
@@ -127,7 +137,8 @@ class FileSystemFileUtilTest : public testing::Test {
     // a move].
     for (size_t i = 0; i < test::kRegularTestCaseSize; ++i) {
       const test::TestCaseRecord& test_case = test::kRegularTestCases[i];
-      FilePath path = test_root.Append(test_case.path);
+      FileSystemURL url = src_root.WithPath(
+          src_root.path().Append(test_case.path));
       base::PlatformFileInfo src_file_info;
       FilePath data_path;
       context.reset(NewContext(&src_helper));
@@ -138,11 +149,12 @@ class FileSystemFileUtilTest : public testing::Test {
         expected_result = base::PLATFORM_FILE_ERROR_NOT_FOUND;
       EXPECT_EQ(expected_result,
           file_util->GetFileInfo(
-              context.get(), path, &src_file_info, &data_path));
+              context.get(), url, &src_file_info, &data_path));
     }
   }
 
  private:
+  MessageLoop message_loop_;
   DISALLOW_COPY_AND_ASSIGN(FileSystemFileUtilTest);
 };
 

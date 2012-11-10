@@ -1,13 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_VIEWS_EXAMPLES_TEXT_EXAMPLE_H_
 #define UI_VIEWS_EXAMPLES_TEXT_EXAMPLE_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_vector.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/combobox/combobox_listener.h"
 #include "ui/views/examples/example_base.h"
@@ -17,6 +17,8 @@ class Checkbox;
 class GridLayout;
 
 namespace examples {
+
+class ExampleComboboxModel;
 
 class TextExample : public ExampleBase,
                     public ButtonListener,
@@ -32,7 +34,7 @@ class TextExample : public ExampleBase,
   // Creates and adds a check box to the layout.
   Checkbox* AddCheckbox(GridLayout* layout, const char* name);
 
-  // Creates and adds a combo box to the layout.
+  // Creates and adds a combobox to the layout.
   Combobox* AddCombobox(GridLayout* layout,
                         const char* name,
                         const char** strings,
@@ -42,10 +44,7 @@ class TextExample : public ExampleBase,
   virtual void ButtonPressed(Button* button, const Event& event) OVERRIDE;
 
   // Overridden from ComboboxListener:
-  virtual void ItemChanged(Combobox* combo_box,
-                           int prev_index,
-                           int new_index) OVERRIDE;
-
+  virtual void OnSelectedIndexChanged(Combobox* combobox) OVERRIDE;
 
   class TextExampleView;
   // The content of the scroll view.
@@ -83,6 +82,10 @@ class TextExample : public ExampleBase,
 
   // Check box to enable/disable underline style.
   Checkbox* underline_checkbox_;
+
+  // We create a model for each of the combobox, so we need to keep them
+  // around until destruction time.
+  ScopedVector<ExampleComboboxModel> example_combobox_model_;
 
   DISALLOW_COPY_AND_ASSIGN(TextExample);
 };

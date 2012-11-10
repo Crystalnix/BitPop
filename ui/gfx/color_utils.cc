@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -53,7 +53,7 @@ double ConvertSRGB(double eight_bit_component) {
       (component / 12.92) : pow((component + 0.055) / 1.055, 2.4);
 }
 
-SkColor LumaInvertColor(const SkColor& color) {
+SkColor LumaInvertColor(SkColor color) {
   HSL hsl;
   SkColorToHSL(color, &hsl);
   hsl.l = 1.0 - hsl.l;
@@ -212,7 +212,7 @@ SkColor GetAverageColorOfFavicon(SkBitmap* favicon, SkAlpha alpha) {
     return SkColorSetARGB(alpha, 0, 0, 0);
 
   // Assume ARGB_8888 format.
-  DCHECK(favicon->getConfig() == SkBitmap::kARGB_8888_Config);
+  DCHECK(favicon->config() == SkBitmap::kARGB_8888_Config);
   SkColor* current_color = pixels;
 
   DCHECK(favicon->width() <= 16 && favicon->height() <= 16);
@@ -242,18 +242,18 @@ SkColor GetAverageColorOfFavicon(SkBitmap* favicon, SkAlpha alpha) {
       SkColorSetARGB(alpha, 0, 0, 0);
 }
 
-void BuildLumaHistogram(SkBitmap* bitmap, int histogram[256]) {
-  SkAutoLockPixels bitmap_lock(*bitmap);
-  if (!bitmap->getPixels())
+void BuildLumaHistogram(const SkBitmap& bitmap, int histogram[256]) {
+  SkAutoLockPixels bitmap_lock(bitmap);
+  if (!bitmap.getPixels())
     return;
 
   // Assume ARGB_8888 format.
-  DCHECK(bitmap->getConfig() == SkBitmap::kARGB_8888_Config);
+  DCHECK(bitmap.config() == SkBitmap::kARGB_8888_Config);
 
-  int pixel_width = bitmap->width();
-  int pixel_height = bitmap->height();
+  int pixel_width = bitmap.width();
+  int pixel_height = bitmap.height();
   for (int y = 0; y < pixel_height; ++y) {
-    SkColor* current_color = static_cast<uint32_t*>(bitmap->getAddr32(0, y));
+    SkColor* current_color = static_cast<uint32_t*>(bitmap.getAddr32(0, y));
     for (int x = 0; x < pixel_width; ++x, ++current_color)
       histogram[GetLuminanceForColor(*current_color)]++;
   }
@@ -294,6 +294,14 @@ SkColor GetReadableColor(SkColor foreground, SkColor background) {
   return (ContrastRatio(RelativeLuminance(foreground), background_luminance) >=
           ContrastRatio(RelativeLuminance(foreground2), background_luminance)) ?
       foreground : foreground2;
+}
+
+SkColor InvertColor(SkColor color) {
+  return SkColorSetARGB(
+      SkColorGetA(color),
+      255 - SkColorGetR(color),
+      255 - SkColorGetG(color),
+      255 - SkColorGetB(color));
 }
 
 SkColor GetSysSkColor(int which) {

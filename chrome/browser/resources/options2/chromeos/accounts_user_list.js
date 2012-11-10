@@ -1,11 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('options.accounts', function() {
-  const List = cr.ui.List;
-  const ListItem = cr.ui.ListItem;
-  const ArrayDataModel = cr.ui.ArrayDataModel;
+  /** @const */ var List = cr.ui.List;
+  /** @const */ var ListItem = cr.ui.ListItem;
+  /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
 
   /**
    * Creates a new user list.
@@ -104,7 +104,7 @@ cr.define('options.accounts', function() {
 
   /**
    * Creates a new user list item.
-   * @param user The user account this represents.
+   * @param {Object} user The user account this represents.
    * @constructor
    * @extends {cr.ui.ListItem}
    */
@@ -144,7 +144,7 @@ cr.define('options.accounts', function() {
       var labelName = this.ownerDocument.createElement('span');
       labelName.className = 'user-name-label';
       labelName.textContent = this.user.owner ?
-          localStrings.getStringF('username_format', this.user.name) :
+          loadTimeData.getStringF('username_format', this.user.name) :
           this.user.name;
 
       var emailNameBlock = this.ownerDocument.createElement('div');
@@ -152,7 +152,7 @@ cr.define('options.accounts', function() {
       emailNameBlock.appendChild(labelEmail);
       emailNameBlock.appendChild(labelName);
       emailNameBlock.title = this.user.owner ?
-          localStrings.getStringF('username_format', this.user.email) :
+          loadTimeData.getStringF('username_format', this.user.email) :
           this.user.email;
 
       this.appendChild(this.icon_);

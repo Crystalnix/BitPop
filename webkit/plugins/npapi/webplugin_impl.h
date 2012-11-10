@@ -89,6 +89,7 @@ class WEBKIT_PLUGINS_EXPORT WebPluginImpl :
   virtual void didFailLoadingFrameRequest(
       const WebKit::WebURL& url, void* notify_data,
       const WebKit::WebURLError& error);
+  virtual bool isPlaceholder() OVERRIDE;
 
   // WebPlugin implementation:
   virtual void SetWindow(gfx::PluginWindowHandle window) OVERRIDE;
@@ -113,6 +114,8 @@ class WEBKIT_PLUGINS_EXPORT WebPluginImpl :
                                  const GURL& first_party_for_cookies) OVERRIDE;
   virtual void URLRedirectResponse(bool allow, int resource_id) OVERRIDE;
 #if defined(OS_MACOSX)
+  virtual WebPluginAcceleratedSurface* GetAcceleratedSurface(
+      gfx::GpuPreference gpu_preference) OVERRIDE;
   virtual void AcceleratedPluginEnabledRendering() OVERRIDE;
   virtual void AcceleratedPluginAllocatedIOSurface(int32 width,
                                                    int32 height,

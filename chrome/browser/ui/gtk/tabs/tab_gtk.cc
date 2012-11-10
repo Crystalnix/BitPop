@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,7 @@
 #include "grit/theme_resources.h"
 #include "ui/base/accelerators/accelerator_gtk.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
-#include "ui/base/gtk/scoped_handle_gtk.h"
+#include "ui/base/gtk/scoped_region.h"
 #include "ui/gfx/path.h"
 
 using content::WebContents;
@@ -279,7 +279,7 @@ void TabGtk::SetBounds(const gfx::Rect& bounds) {
 
   if (gtk_input_event_box_get_window(GTK_INPUT_EVENT_BOX(event_box_))) {
     gfx::Path mask;
-    TabResources::GetHitTestMask(bounds.width(), bounds.height(), &mask);
+    TabResources::GetHitTestMask(bounds.width(), bounds.height(), false, &mask);
     ui::ScopedRegion region(mask.CreateNativeRegion());
     gdk_window_input_shape_combine_region(
         gtk_input_event_box_get_window(GTK_INPUT_EVENT_BOX(event_box_)),
@@ -326,6 +326,11 @@ void TabGtk::DestroyDragWidget() {
 }
 
 void TabGtk::StartDragging(gfx::Point drag_offset) {
+  // If the drag is processed after the selection change it's possible
+  // that the tab has been deselected, in which case we don't want to drag.
+  if (!IsSelected())
+    return;
+
   CreateDragWidget();
 
   GtkTargetList* list = ui::GetTargetListFromCodeMask(ui::CHROME_TAB);

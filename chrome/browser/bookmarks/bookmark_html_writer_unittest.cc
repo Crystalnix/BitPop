@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,9 +15,11 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_html_writer.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/importer/firefox2_importer.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "grit/generated_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -147,7 +149,7 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
   profile.CreateFaviconService();
   profile.CreateBookmarkModel(true);
   profile.BlockUntilBookmarkModelLoaded();
-  BookmarkModel* model = profile.GetBookmarkModel();
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(&profile);
 
   // Create test PNG representing favicon for url1.
   SkBitmap bitmap;
@@ -191,8 +193,8 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
   const BookmarkNode* f1 = model->AddFolder(
       model->bookmark_bar_node(), 0, f1_title);
   model->AddURLWithCreationTime(f1, 0, url1_title, url1, t1);
-  profile.GetHistoryService(Profile::EXPLICIT_ACCESS)->AddPage(url1,
-      history::SOURCE_BROWSED);
+  HistoryServiceFactory::GetForProfile(&profile, Profile::EXPLICIT_ACCESS)->
+      AddPage(url1, history::SOURCE_BROWSED);
   profile.GetFaviconService(Profile::EXPLICIT_ACCESS)->SetFavicon(url1,
       url1_favicon, icon_data, history::FAVICON);
   message_loop.RunAllPending();

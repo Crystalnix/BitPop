@@ -1,4 +1,5 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -6,10 +7,6 @@
 
 
 import os
-import sys
-if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../../../..'))
-
 import tempfile
 import unittest
 import StringIO
@@ -45,9 +42,8 @@ class WriterUnittestCommon(unittest.TestCase):
     tmp_file_name = 'test.json'
     tmp_dir_name = tempfile.gettempdir()
     json_file_path = tmp_dir_name + '/' + tmp_file_name
-    f = open(json_file_path, 'w')
-    f.write(policy_json.strip())
-    f.close()
+    with open(json_file_path, 'w') as f:
+      f.write(policy_json.strip())
     # Then assemble the grit tree.
     grd_text = '''
     <grit base_dir="." latest_public_release="0" current_release="1" source_lang_id="en">
@@ -60,6 +56,7 @@ class WriterUnittestCommon(unittest.TestCase):
     grd_string_io = StringIO.StringIO(grd_text)
     # Parse the grit tree and load the policies' JSON with a gatherer.
     grd = grd_reader.Parse(grd_string_io, dir=tmp_dir_name)
+    grd.SetOutputLanguage('en')
     grd.RunGatherers(recursive=True)
     # Remove the policies' JSON.
     os.unlink(json_file_path)
@@ -79,7 +76,8 @@ class WriterUnittestCommon(unittest.TestCase):
     Returns:
       The string of the tamplete created by the writer.
     '''
-    grd.SetOutputContext(env_lang, env_defs)
+    grd.SetOutputLanguage(env_lang)
+    grd.SetDefines(env_defs)
     buf = StringIO.StringIO()
     build.RcBuilder.ProcessNode(grd, DummyOutput(out_type, out_lang), buf)
     return buf.getvalue()

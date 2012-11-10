@@ -45,8 +45,8 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/thumbnail_score.h"
 #include "chrome/tools/profiles/thumbnail-inl.h"
-#include "content/browser/download/download_persistent_store_info.h"
 #include "content/public/browser/download_item.h"
+#include "content/public/browser/download_persistent_store_info.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "sql/connection.h"
@@ -58,6 +58,7 @@
 using base::Time;
 using base::TimeDelta;
 using content::DownloadItem;
+using content::DownloadPersistentStoreInfo;
 
 namespace history {
 class HistoryTest;
@@ -93,6 +94,8 @@ class BackendDelegate : public HistoryBackend::Delegate {
                                       HistoryDetails* details) OVERRIDE;
   virtual void DBLoaded(int backend_id) OVERRIDE {}
   virtual void StartTopSitesMigration(int backend_id) OVERRIDE {}
+  virtual void NotifyVisitDBObserversOnAddVisit(
+      const BriefVisitInfo& info) OVERRIDE {}
  private:
   HistoryTest* history_test_;
 };
@@ -114,8 +117,8 @@ class HistoryTest : public testing::Test {
   // Creates the HistoryBackend and HistoryDatabase on the current thread,
   // assigning the values to backend_ and db_.
   void CreateBackendAndDatabase() {
-    backend_ =
-        new HistoryBackend(history_dir_, 0, new BackendDelegate(this), NULL);
+    backend_ = new HistoryBackend(history_dir_, 0, new BackendDelegate(this),
+                                  NULL);
     backend_->Init(std::string(), false);
     db_ = backend_->db_.get();
     DCHECK(in_mem_backend_.get()) << "Mem backend should have been set by "
@@ -124,7 +127,7 @@ class HistoryTest : public testing::Test {
 
   void OnSegmentUsageAvailable(CancelableRequestProvider::Handle handle,
                                std::vector<PageUsageData*>* data) {
-    page_usage_data_->swap(*data);
+    page_usage_data_.swap(*data);
     MessageLoop::current()->Quit();
   }
 
@@ -720,7 +723,7 @@ TEST_F(HistoryTest, Segments) {
   // Wait for processing.
   MessageLoop::current()->Run();
 
-  ASSERT_EQ(1U, page_usage_data_->size());
+  ASSERT_EQ(1U, page_usage_data_.size());
   EXPECT_TRUE(page_usage_data_[0]->GetURL() == existing_url);
   EXPECT_DOUBLE_EQ(3.0, page_usage_data_[0]->GetScore());
 
@@ -740,7 +743,7 @@ TEST_F(HistoryTest, Segments) {
   MessageLoop::current()->Run();
 
   // Make sure we still have one segment.
-  ASSERT_EQ(1U, page_usage_data_->size());
+  ASSERT_EQ(1U, page_usage_data_.size());
   EXPECT_TRUE(page_usage_data_[0]->GetURL() == existing_url);
 
   // Add a page linked from existing_url.
@@ -758,7 +761,7 @@ TEST_F(HistoryTest, Segments) {
   MessageLoop::current()->Run();
 
   // Make sure we still have one segment.
-  ASSERT_EQ(1U, page_usage_data_->size());
+  ASSERT_EQ(1U, page_usage_data_.size());
   EXPECT_TRUE(page_usage_data_[0]->GetURL() == existing_url);
 
   // However, the score should have increased.

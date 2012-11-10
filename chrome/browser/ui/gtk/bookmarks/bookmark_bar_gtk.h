@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_GTK_BOOKMARKS_BOOKMARK_BAR_GTK_H_
 #define CHROME_BROWSER_UI_GTK_BOOKMARKS_BOOKMARK_BAR_GTK_H_
-#pragma once
 
 #include <gtk/gtk.h>
 
@@ -18,7 +17,7 @@
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
 #include "chrome/browser/prefs/pref_member.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
-#include "chrome/browser/ui/gtk/bookmarks/bookmark_bar_instructions_gtk.h"
+#include "chrome/browser/ui/bookmarks/bookmark_bar_instructions_delegate.h"
 #include "chrome/browser/ui/gtk/menu_bar_helper.h"
 #include "chrome/browser/ui/gtk/view_id_util.h"
 #include "content/public/browser/notification_observer.h"
@@ -31,6 +30,7 @@
 #include "ui/gfx/point.h"
 #include "ui/gfx/size.h"
 
+class BookmarkBarInstructionsGtk;
 class BookmarkMenuController;
 class Browser;
 class BrowserWindowGtk;
@@ -46,7 +46,7 @@ class BookmarkBarGtk : public ui::AnimationDelegate,
                        public BookmarkModelObserver,
                        public MenuBarHelper::Delegate,
                        public content::NotificationObserver,
-                       public BookmarkBarInstructionsGtk::Delegate,
+                       public chrome::BookmarkBarInstructionsDelegate,
                        public BookmarkContextMenuControllerDelegate {
  public:
   // The NTP needs to have access to this.
@@ -169,7 +169,7 @@ class BookmarkBarGtk : public ui::AnimationDelegate,
   void PaintEventBox();
 
   // Finds the size of the current tab contents, if it exists and sets |size|
-  // to the correct value. Returns false if there isn't a TabContents, a
+  // to the correct value. Returns false if there isn't a WebContents, a
   // condition that can happen during testing.
   bool GetTabContentsSize(gfx::Size* size);
 
@@ -293,7 +293,7 @@ class BookmarkBarGtk : public ui::AnimationDelegate,
   // |throbbing_widget_| callback.
   CHROMEGTK_CALLBACK_0(BookmarkBarGtk, void, OnThrobbingWidgetDestroy);
 
-  // Overriden from BookmarkBarInstructionsGtk::Delegate.
+  // Overriden from chrome::BookmarkBarInstructionsDelegate:
   virtual void ShowImportDialog() OVERRIDE;
 
   // Updates the drag&drop state when |edit_bookmarks_enabled_| changes.

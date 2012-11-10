@@ -6,10 +6,13 @@
 
 #import <Security/Security.h>
 
+#include "base/base64.h"
 #include "base/mac/mac_logging.h"
-#include "chrome/browser/keychain_mac.h"
-#include "chrome/common/random.h"
+#include "base/rand_util.h"
+#include "crypto/keychain_mac.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using crypto::MacKeychain;
 
 namespace {
 
@@ -19,7 +22,10 @@ namespace {
 std::string AddRandomPasswordToKeychain(const MacKeychain& keychain,
                                         const std::string& service_name,
                                         const std::string& account_name) {
-  std::string password = Generate128BitRandomBase64String();
+  // Generate a password with 128 bits of randomness.
+  const int kBytes = 128 / 8;
+  std::string password;
+  base::Base64Encode(base::RandBytesAsString(kBytes), &password);
   void* password_data =
       const_cast<void*>(static_cast<const void*>(password.data()));
 

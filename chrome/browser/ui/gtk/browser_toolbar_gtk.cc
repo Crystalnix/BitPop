@@ -1,12 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/gtk/browser_toolbar_gtk.h"
 
-#include <X11/XF86keysym.h>
 #include <gdk/gdkkeysyms.h>
 #include <gtk/gtk.h>
+#include <X11/XF86keysym.h>
 
 #include "base/base_paths.h"
 #include "base/command_line.h"
@@ -21,14 +21,16 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/global_error_service.h"
-#include "chrome/browser/ui/global_error_service_factory.h"
+#include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/global_error/global_error_service.h"
+#include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/gtk/accelerators_gtk.h"
 #include "chrome/browser/ui/gtk/back_forward_button_gtk.h"
 #include "chrome/browser/ui/gtk/bookmarks/bookmark_sub_menu_model_gtk.h"
 #include "chrome/browser/ui/gtk/browser_actions_toolbar_gtk.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
 #include "chrome/browser/ui/gtk/custom_button.h"
+#include "chrome/browser/ui/gtk/event_utils.h"
 #include "chrome/browser/ui/gtk/gtk_chrome_button.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
@@ -42,6 +44,7 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
@@ -49,7 +52,6 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/theme_resources_standard.h"
 #include "ui/base/accelerators/accelerator_gtk.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -101,10 +103,10 @@ BrowserToolbarGtk::BrowserToolbarGtk(Browser* browser, BrowserWindowGtk* window)
       window_(window) {
   wrench_menu_model_.reset(new WrenchMenuModel(this, browser_));
 
-  browser_->command_updater()->AddCommandObserver(IDC_BACK, this);
-  browser_->command_updater()->AddCommandObserver(IDC_FORWARD, this);
-  browser_->command_updater()->AddCommandObserver(IDC_HOME, this);
-  browser_->command_updater()->AddCommandObserver(IDC_BOOKMARK_PAGE, this);
+  chrome::AddCommandObserver(browser_, IDC_BACK, this);
+  chrome::AddCommandObserver(browser_, IDC_FORWARD, this);
+  chrome::AddCommandObserver(browser_, IDC_HOME, this);
+  chrome::AddCommandObserver(browser_, IDC_BOOKMARK_PAGE, this);
 
   registrar_.Add(this,
                  chrome::NOTIFICATION_UPGRADE_RECOMMENDED,
@@ -115,10 +117,10 @@ BrowserToolbarGtk::BrowserToolbarGtk(Browser* browser, BrowserWindowGtk* window)
 }
 
 BrowserToolbarGtk::~BrowserToolbarGtk() {
-  browser_->command_updater()->RemoveCommandObserver(IDC_BACK, this);
-  browser_->command_updater()->RemoveCommandObserver(IDC_FORWARD, this);
-  browser_->command_updater()->RemoveCommandObserver(IDC_HOME, this);
-  browser_->command_updater()->RemoveCommandObserver(IDC_BOOKMARK_PAGE, this);
+  chrome::RemoveCommandObserver(browser_, IDC_BACK, this);
+  chrome::RemoveCommandObserver(browser_, IDC_FORWARD, this);
+  chrome::RemoveCommandObserver(browser_, IDC_HOME, this);
+  chrome::RemoveCommandObserver(browser_, IDC_BOOKMARK_PAGE, this);
 
   offscreen_entry_.Destroy();
 
@@ -234,7 +236,8 @@ void BrowserToolbarGtk::Init(GtkWindow* top_level_window) {
   wrench_menu_model_->bookmark_sub_menu_model()->SetMenuGtk(wrench_menu_.get());
 
   registrar_.Add(this, content::NOTIFICATION_ZOOM_LEVEL_CHANGED,
-      content::Source<HostZoomMap>(profile->GetHostZoomMap()));
+      content::Source<HostZoomMap>(
+          HostZoomMap::GetForBrowserContext(profile)));
 
   if (ShouldOnlyShowLocation()) {
     gtk_widget_show(event_box_);
@@ -299,7 +302,7 @@ void BrowserToolbarGtk::ShowAppMenu() {
   wrench_menu_->PopupAsFromKeyEvent(wrench_menu_button_->widget());
 }
 
-// CommandUpdater::CommandObserver ---------------------------------------------
+// CommandObserver -------------------------------------------------------------
 
 void BrowserToolbarGtk::EnabledStateChangedForCommand(int id, bool enabled) {
   GtkWidget* widget = NULL;
@@ -477,7 +480,7 @@ gboolean BrowserToolbarGtk::OnAlignmentExpose(GtkWidget* widget,
   if (theme_service_->UsingNativeTheme())
     return FALSE;
 
-  cairo_t* cr = gdk_cairo_create(GDK_DRAWABLE(widget->window));
+  cairo_t* cr = gdk_cairo_create(gtk_widget_get_window(widget));
   gdk_cairo_rectangle(cr, &e->area);
   cairo_clip(cr);
 
@@ -592,14 +595,14 @@ gboolean BrowserToolbarGtk::OnLocationHboxExpose(GtkWidget* location_hbox,
 
 void BrowserToolbarGtk::OnButtonClick(GtkWidget* button) {
   if ((button == back_->widget()) || (button == forward_->widget())) {
-    if (gtk_util::DispositionForCurrentButtonPressEvent() == CURRENT_TAB)
+    if (event_utils::DispositionForCurrentButtonPressEvent() == CURRENT_TAB)
       location_bar_->Revert();
     return;
   }
 
   DCHECK(home_.get() && button == home_->widget()) <<
       "Unexpected button click callback";
-  browser_->Home(gtk_util::DispositionForCurrentButtonPressEvent());
+  chrome::Home(browser_, event_utils::DispositionForCurrentButtonPressEvent());
 }
 
 gboolean BrowserToolbarGtk::OnMenuButtonPressEvent(GtkWidget* button,
@@ -624,7 +627,7 @@ void BrowserToolbarGtk::OnDragDataReceived(GtkWidget* widget,
     return;
   }
 
-  GURL url(reinterpret_cast<char*>(data->data));
+  GURL url(reinterpret_cast<const char*>(gtk_selection_data_get_data(data)));
   if (!url.is_valid())
     return;
 
@@ -656,6 +659,8 @@ bool BrowserToolbarGtk::ShouldOnlyShowLocation() const {
 void BrowserToolbarGtk::RebuildWrenchMenu() {
   wrench_menu_model_.reset(new WrenchMenuModel(this, browser_));
   wrench_menu_.reset(new MenuGtk(this, wrench_menu_model_.get()));
+  // The bookmark menu model needs to be able to force the wrench menu to close.
+  wrench_menu_model_->bookmark_sub_menu_model()->SetMenuGtk(wrench_menu_.get());
   is_wrench_menu_model_valid_ = true;
 }
 
@@ -682,9 +687,9 @@ gboolean BrowserToolbarGtk::OnWrenchMenuButtonExpose(GtkWidget* sender,
   gfx::CanvasSkiaPaint canvas(expose, false);
   int x_offset = base::i18n::IsRTL() ? 0 : allocation.width - badge->width();
   int y_offset = 0;
-  canvas.DrawBitmapInt(*badge,
-                       allocation.x + x_offset,
-                       allocation.y + y_offset);
+  canvas.DrawImageInt(*badge,
+                      allocation.x + x_offset,
+                      allocation.y + y_offset);
 
   return FALSE;
 }

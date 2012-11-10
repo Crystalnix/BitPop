@@ -1,8 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
+#include "base/utf_string_conversions.h"
 #include "net/base/mime_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -59,15 +60,22 @@ TEST(MimeUtilTest, FileTest) {
 }
 
 TEST(MimeUtilTest, LookupTypes) {
+  EXPECT_FALSE(IsUnsupportedTextMimeType("text/banana"));
+  EXPECT_TRUE(IsUnsupportedTextMimeType("text/vcard"));
+
   EXPECT_TRUE(IsSupportedImageMimeType("image/jpeg"));
   EXPECT_FALSE(IsSupportedImageMimeType("image/lolcat"));
   EXPECT_TRUE(IsSupportedNonImageMimeType("text/html"));
-  EXPECT_FALSE(IsSupportedNonImageMimeType("text/virus"));
+  EXPECT_TRUE(IsSupportedNonImageMimeType("text/banana"));
+  EXPECT_FALSE(IsSupportedNonImageMimeType("text/vcard"));
+  EXPECT_FALSE(IsSupportedNonImageMimeType("application/virus"));
 
   EXPECT_TRUE(IsSupportedMimeType("image/jpeg"));
   EXPECT_FALSE(IsSupportedMimeType("image/lolcat"));
   EXPECT_TRUE(IsSupportedMimeType("text/html"));
-  EXPECT_FALSE(IsSupportedMimeType("text/virus"));
+  EXPECT_TRUE(IsSupportedMimeType("text/banana"));
+  EXPECT_FALSE(IsSupportedMimeType("text/vcard"));
+  EXPECT_FALSE(IsSupportedMimeType("application/virus"));
 }
 
 TEST(MimeUtilTest, MatchesMimeType) {
@@ -104,26 +112,60 @@ TEST(MimeUtilTest, ParseCodecString) {
     { "\"mp4v.20.240, mp4a.40.2\"", 2, { "mp4v",   "mp4a" }   },
     { "mp4v.20.8, samr",            2, { "mp4v",   "samr" }   },
     { "\"theora, vorbis\"",         2, { "theora", "vorbis" } },
-    { "",                           1, { "" }                 },
-    { "\"\"",                       1, { "" }                 },
+    { "",                           0, { }                    },
+    { "\"\"",                       0, { }                    },
+    { "\"   \"",                    0, { }                    },
     { ",",                          2, { "", "" }             },
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
     std::vector<std::string> codecs_out;
     ParseCodecString(tests[i].original, &codecs_out, true);
-    EXPECT_EQ(tests[i].expected_size, codecs_out.size());
-    for (size_t j = 0; j < tests[i].expected_size; ++j) {
+    ASSERT_EQ(tests[i].expected_size, codecs_out.size());
+    for (size_t j = 0; j < tests[i].expected_size; ++j)
       EXPECT_EQ(tests[i].results[j], codecs_out[j]);
-    }
   }
 
   // Test without stripping the codec type.
   std::vector<std::string> codecs_out;
   ParseCodecString("avc1.42E01E, mp4a.40.2", &codecs_out, false);
-  EXPECT_EQ(2u, codecs_out.size());
-  EXPECT_STREQ("avc1.42E01E", codecs_out[0].c_str());
-  EXPECT_STREQ("mp4a.40.2", codecs_out[1].c_str());
+  ASSERT_EQ(2u, codecs_out.size());
+  EXPECT_EQ("avc1.42E01E", codecs_out[0]);
+  EXPECT_EQ("mp4a.40.2", codecs_out[1]);
+}
+
+TEST(MimeUtilTest, TestIsMimeType) {
+  std::string nonAscii("application/nonutf8");
+  EXPECT_TRUE(IsMimeType(nonAscii));
+#if defined(OS_WIN)
+  nonAscii.append(WideToUTF8(std::wstring(L"\u2603")));
+#else
+  nonAscii.append("\u2603");  // unicode snowman
+#endif
+  EXPECT_FALSE(IsMimeType(nonAscii));
+
+  EXPECT_TRUE(IsMimeType("application/mime"));
+  EXPECT_TRUE(IsMimeType("audio/mime"));
+  EXPECT_TRUE(IsMimeType("example/mime"));
+  EXPECT_TRUE(IsMimeType("image/mime"));
+  EXPECT_TRUE(IsMimeType("message/mime"));
+  EXPECT_TRUE(IsMimeType("model/mime"));
+  EXPECT_TRUE(IsMimeType("multipart/mime"));
+  EXPECT_TRUE(IsMimeType("text/mime"));
+  EXPECT_TRUE(IsMimeType("TEXT/mime"));
+  EXPECT_TRUE(IsMimeType("Text/mime"));
+  EXPECT_TRUE(IsMimeType("TeXt/mime"));
+  EXPECT_TRUE(IsMimeType("video/mime"));
+  EXPECT_TRUE(IsMimeType("video/mime;parameter"));
+  EXPECT_TRUE(IsMimeType("*/*"));
+  EXPECT_TRUE(IsMimeType("*"));
+
+  EXPECT_TRUE(IsMimeType("x-video/mime"));
+  EXPECT_TRUE(IsMimeType("X-Video/mime"));
+  EXPECT_FALSE(IsMimeType("x-video/"));
+  EXPECT_FALSE(IsMimeType("x-/mime"));
+  EXPECT_FALSE(IsMimeType("mime/looking"));
+  EXPECT_FALSE(IsMimeType("text/"));
 }
 
 }  // namespace net

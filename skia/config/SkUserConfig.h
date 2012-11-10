@@ -16,21 +16,20 @@
 
 #ifndef SkUserConfig_DEFINED
 #define SkUserConfig_DEFINED
-#pragma once
 
 /*  SkTypes.h, the root of the public header files, does the following trick:
- 
+
     #include <SkPreConfig.h>
     #include <SkUserConfig.h>
     #include <SkPostConfig.h>
- 
+
     SkPreConfig.h runs first, and it is responsible for initializing certain
     skia defines.
- 
+
     SkPostConfig.h runs last, and its job is to just check that the final
     defines are consistent (i.e. that we don't have mutually conflicting
     defines).
- 
+
     SkUserConfig.h (this file) runs in the middle. It gets to change or augment
     the list of flags initially set in preconfig, and then postconfig checks
     that everything still makes sense.
@@ -60,13 +59,6 @@
  */
 //#define SK_CAN_USE_FLOAT
 
-/*  Temporarily turn on SK_USE_FLOATBITS so critical float->int conversions in Skia
-    are done with saturation.
-    TODO(wjmaclean@chromium.org): Remove this once saturating float->int implemented
-    throughout Skia.
- */
-#define SK_USE_FLOATBITS
-
 /*  For some performance-critical scalar operations, skia will optionally work
     around the standard float operators if it knows that the CPU does not have
     native support for floats. If your environment uses software floating point,
@@ -79,7 +71,7 @@
     parameter checking, but sometimes it can be quite intrusive (e.g. check that
     each 32bit pixel is in premultiplied form). This code can be very useful
     during development, but will slow things down in a shipping product.
- 
+
     By default, these mutually exclusive flags are defined in SkPreConfig.h,
     based on the presence or absence of NDEBUG, but that decision can be changed
     here.
@@ -156,6 +148,18 @@
 #define SK_SUPPORT_UNITTEST
 #endif
 
+/* If your system embeds skia and has complex event logging, define this
+   symbol to name a file that maps the following macros to your system's
+   equivalents:
+       SK_TRACE_EVENT0(event)
+       SK_TRACE_EVENT1(event, name1, value1)
+       SK_TRACE_EVENT2(event, name1, value1, name2, value2)
+   src/utils/SkDebugTrace.h has a trivial implementation that writes to
+   the debug output stream. If SK_USER_TRACE_INCLUDE_FILE is not defined,
+   SkTrace.h will define the above three macros to do nothing.
+*/
+#undef SK_USER_TRACE_INCLUDE_FILE
+
 /* If this is not defined, skia dithers gradients. Turning this on will make
    gradients look better, but might have a performance impact. When it's turned
    on, several webkit pixel tests will need to be rebaselined, too.
@@ -182,11 +186,12 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
     "%s:%d: failed assertion \"%s\"\n", \
     __FILE__, __LINE__, #cond); } } while (false)
 
-// All little-endian Chrome platforms agree:  BGRA is the optimal pixel layout.
+#if !defined(ANDROID)   // On Android, we use the skia default settings.
 #define SK_A32_SHIFT    24
 #define SK_R32_SHIFT    16
 #define SK_G32_SHIFT    8
 #define SK_B32_SHIFT    0
+#endif
 
 #if defined(SK_BUILD_FOR_WIN32)
 
@@ -215,8 +220,9 @@ typedef unsigned uint32_t;
 
 #elif defined(SK_BUILD_FOR_UNIX)
 
-// Prefer FreeType's emboldening algorithm to Skia's (which does a hairline
-// outline and doesn't look very good).
+// Prefer FreeType's emboldening algorithm to Skia's
+// TODO: skia used to just use hairline, but has improved since then, so
+// we should revisit this choice...
 #define SK_USE_FREETYPE_EMBOLDEN
 
 #ifdef SK_CPU_BENDIAN
@@ -236,6 +242,10 @@ typedef unsigned uint32_t;
 // problems. Instead, pipe this through to the logging function as a fatal
 // assertion.
 #define SK_CRASH() SkDebugf_FileLine(__FILE__, __LINE__, true, "SK_CRASH")
+
+// Uncomment the following line to forward skia trace events to Chrome
+// tracing.
+// #define SK_USER_TRACE_INCLUDE_FILE "skia/ext/skia_trace_shim.h"
 
 // ===== End Chrome-specific definitions =====
 

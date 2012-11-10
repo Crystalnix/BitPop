@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_VIEWS_TABS_TAB_H_
 #define CHROME_BROWSER_UI_VIEWS_TABS_TAB_H_
-#pragma once
 
 #include <string>
 
@@ -51,6 +50,9 @@ class Tab : public BaseTab {
   // available.
   static gfx::Size GetStandardSize();
 
+  // Returns the width for touch tabs.
+  static int GetTouchWidth();
+
   // Returns the width for mini-tabs. Mini-tabs always have this width.
   static int GetMiniWidth();
 
@@ -76,10 +78,12 @@ class Tab : public BaseTab {
   virtual void OnMouseMoved(const views::MouseEvent& event) OVERRIDE;
 
   // Paint various portions of the Tab
+  gfx::ImageSkia* GetTabBackgroundImage(chrome::search::Mode::Type mode) const;
   void PaintTabBackground(gfx::Canvas* canvas);
   void PaintInactiveTabBackgroundWithTitleChange(gfx::Canvas* canvas);
   void PaintInactiveTabBackground(gfx::Canvas* canvas);
-  void PaintActiveTabBackground(gfx::Canvas* canvas);
+  void PaintActiveTabBackground(gfx::Canvas* canvas,
+                                gfx::ImageSkia* tab_background);
 
   // Returns the number of favicon-size elements that can fit in the tab's
   // current size.
@@ -96,6 +100,10 @@ class Tab : public BaseTab {
   // Performs a one-time initialization of static resources such as tab images.
   static void InitTabResources();
 
+  // Returns the minimum possible size of a single unselected Tab, not
+  // including considering touch mode.
+  static gfx::Size GetBasicMinimumUnselectedSize();
+
   // Loads the images to be used for the tab background.
   static void LoadTabImages();
 
@@ -110,14 +118,15 @@ class Tab : public BaseTab {
   scoped_ptr<ui::MultiAnimation> mini_title_animation_;
 
   struct TabImage {
-    SkBitmap* image_l;
-    SkBitmap* image_c;
-    SkBitmap* image_r;
+    gfx::ImageSkia* image_l;
+    gfx::ImageSkia* image_c;
+    gfx::ImageSkia* image_r;
     int l_width;
     int r_width;
     int y_offset;
   };
   static TabImage tab_active_;
+  static TabImage tab_active_search_;
   static TabImage tab_inactive_;
   static TabImage tab_alpha_;
 
@@ -131,8 +140,6 @@ class Tab : public BaseTab {
 
   // The current color of the close button.
   SkColor close_button_color_;
-
-  static bool initialized_;
 
   DISALLOW_COPY_AND_ASSIGN(Tab);
 };

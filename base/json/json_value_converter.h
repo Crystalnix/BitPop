@@ -4,7 +4,6 @@
 
 #ifndef BASE_JSON_JSON_VALUE_CONVERTER_H_
 #define BASE_JSON_JSON_VALUE_CONVERTER_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -205,6 +204,25 @@ class BasicValueConverter<bool> : public ValueConverter<bool> {
 };
 
 template <typename FieldType>
+class ValueFieldConverter : public ValueConverter<FieldType> {
+ public:
+  typedef bool(*ConvertFunc)(const base::Value* value, FieldType* field);
+
+  ValueFieldConverter(ConvertFunc convert_func)
+      : convert_func_(convert_func) {}
+
+  virtual bool Convert(const base::Value& value,
+                       FieldType* field) const OVERRIDE {
+    return convert_func_(&value, field);
+  }
+
+ private:
+  ConvertFunc convert_func_;
+
+  DISALLOW_COPY_AND_ASSIGN(ValueFieldConverter);
+};
+
+template <typename FieldType>
 class CustomFieldConverter : public ValueConverter<FieldType> {
  public:
   typedef bool(*ConvertFunc)(const StringPiece& value, FieldType* field);
@@ -255,7 +273,7 @@ class RepeatedValueConverter : public ValueConverter<ScopedVector<Element> > {
 
     field->reserve(list->GetSize());
     for (size_t i = 0; i < list->GetSize(); ++i) {
-      base::Value* element = NULL;
+      const base::Value* element = NULL;
       if (!list->Get(i, &element))
         continue;
 
@@ -289,7 +307,7 @@ class RepeatedMessageConverter
 
     field->reserve(list->GetSize());
     for (size_t i = 0; i < list->GetSize(); ++i) {
-      base::Value* element = NULL;
+      const base::Value* element = NULL;
       if (!list->Get(i, &element))
         continue;
 
@@ -308,6 +326,44 @@ class RepeatedMessageConverter
   JSONValueConverter<NestedType> converter_;
   DISALLOW_COPY_AND_ASSIGN(RepeatedMessageConverter);
 };
+
+template <typename NestedType>
+class RepeatedCustomValueConverter
+    : public ValueConverter<ScopedVector<NestedType> > {
+ public:
+  typedef bool(*ConvertFunc)(const base::Value* value, NestedType* field);
+
+  RepeatedCustomValueConverter(ConvertFunc convert_func)
+      : convert_func_(convert_func) {}
+
+  virtual bool Convert(const base::Value& value,
+                       ScopedVector<NestedType>* field) const OVERRIDE {
+    const base::ListValue* list = NULL;
+    if (!value.GetAsList(&list))
+      return false;
+
+    field->reserve(list->GetSize());
+    for (size_t i = 0; i < list->GetSize(); ++i) {
+      const base::Value* element = NULL;
+      if (!list->Get(i, &element))
+        continue;
+
+      scoped_ptr<NestedType> nested(new NestedType);
+      if ((*convert_func_)(element, nested.get())) {
+        field->push_back(nested.release());
+      } else {
+        DVLOG(1) << "failure at " << i << "-th element";
+        return false;
+      }
+    }
+    return true;
+  }
+
+ private:
+  ConvertFunc convert_func_;
+  DISALLOW_COPY_AND_ASSIGN(RepeatedCustomValueConverter);
+};
+
 
 }  // namespace internal
 
@@ -368,6 +424,17 @@ class JSONValueConverter {
         new internal::CustomFieldConverter<FieldType>(convert_func)));
   }
 
+  template <typename FieldType>
+  void RegisterCustomValueField(
+      const std::string& field_name,
+      FieldType StructType::* field,
+      bool (*convert_func)(const base::Value*, FieldType*)) {
+    fields_.push_back(new internal::FieldConverter<StructType, FieldType>(
+        field_name,
+        field,
+        new internal::ValueFieldConverter<FieldType>(convert_func)));
+  }
+
   void RegisterRepeatedInt(const std::string& field_name,
                            ScopedVector<int> StructType::* field) {
     fields_.push_back(
@@ -408,6 +475,19 @@ class JSONValueConverter {
   }
 
   template <class NestedType>
+  void RegisterRepeatedCustomValue(
+      const std::string& field_name,
+      ScopedVector<NestedType> StructType::* field,
+      bool (*convert_func)(const base::Value*, NestedType*)) {
+    fields_.push_back(
+        new internal::FieldConverter<StructType, ScopedVector<NestedType> >(
+            field_name,
+            field,
+            new internal::RepeatedCustomValueConverter<NestedType>(
+                convert_func)));
+  }
+
+  template <class NestedType>
   void RegisterRepeatedMessage(const std::string& field_name,
                                ScopedVector<NestedType> StructType::* field) {
     fields_.push_back(
@@ -425,7 +505,7 @@ class JSONValueConverter {
     for(size_t i = 0; i < fields_.size(); ++i) {
       const internal::FieldConverterBase<StructType>* field_converter =
           fields_[i];
-      base::Value* field = NULL;
+      const base::Value* field = NULL;
       if (dictionary_value->Get(field_converter->field_path(), &field)) {
         if (!field_converter->ConvertField(*field, output)) {
           DVLOG(1) << "failure at field " << field_converter->field_path();

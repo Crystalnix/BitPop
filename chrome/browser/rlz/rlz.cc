@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -8,19 +8,11 @@
 
 #include "chrome/browser/rlz/rlz.h"
 
-#include <windows.h>
-#include <process.h>
-
 #include <algorithm>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
-#include "base/file_path.h"
 #include "base/message_loop.h"
-#include "base/path_service.h"
 #include "base/string_util.h"
-#include "base/synchronization/lock.h"
-#include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
@@ -29,12 +21,30 @@
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/chrome_paths.h"
-#include "chrome/common/env_vars.h"
-#include "chrome/installer/util/google_update_settings.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
+
+#if defined(OS_WIN)
+#include "chrome/installer/util/google_update_settings.h"
+#else
+namespace GoogleUpdateSettings {
+static bool GetLanguage(string16* language) {
+  // TODO(thakis): Implement.
+  NOTIMPLEMENTED();
+  return false;
+}
+
+// The referral program is defunct and not used. No need to implement these
+// functions on mac.
+static bool GetReferral(string16* referral) {
+  return true;
+}
+static bool ClearReferral() {
+  return true;
+}
+}  // namespace GoogleUpdateSettings
+#endif
 
 using content::BrowserThread;
 using content::NavigationEntry;
@@ -49,39 +59,39 @@ void RecordProductEvents(bool first_run, bool google_default_search,
                          bool google_default_homepage, bool already_ran,
                          bool omnibox_used, bool homepage_used) {
   // Record the installation of chrome. We call this all the time but the rlz
-  // lib should ingore all but the first one.
+  // lib should ignore all but the first one.
   rlz_lib::RecordProductEvent(rlz_lib::CHROME,
-                              rlz_lib::CHROME_OMNIBOX,
+                              RLZTracker::CHROME_OMNIBOX,
                               rlz_lib::INSTALL);
   rlz_lib::RecordProductEvent(rlz_lib::CHROME,
-                              rlz_lib::CHROME_HOME_PAGE,
+                              RLZTracker::CHROME_HOME_PAGE,
                               rlz_lib::INSTALL);
 
   if (!already_ran) {
     // Do the initial event recording if is the first run or if we have an
     // empty rlz which means we haven't got a chance to do it.
     char omnibox_rlz[rlz_lib::kMaxRlzLength + 1];
-    if (!rlz_lib::GetAccessPointRlz(rlz_lib::CHROME_OMNIBOX, omnibox_rlz,
-                                    rlz_lib::kMaxRlzLength, NULL)) {
+    if (!rlz_lib::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, omnibox_rlz,
+                                    rlz_lib::kMaxRlzLength)) {
       omnibox_rlz[0] = 0;
     }
 
     // Record if google is the initial search provider and/or home page.
     if ((first_run || omnibox_rlz[0] == 0) && google_default_search) {
       rlz_lib::RecordProductEvent(rlz_lib::CHROME,
-                                  rlz_lib::CHROME_OMNIBOX,
+                                  RLZTracker::CHROME_OMNIBOX,
                                   rlz_lib::SET_TO_GOOGLE);
     }
 
     char homepage_rlz[rlz_lib::kMaxRlzLength + 1];
-    if (!rlz_lib::GetAccessPointRlz(rlz_lib::CHROME_HOME_PAGE, homepage_rlz,
-                                    rlz_lib::kMaxRlzLength, NULL)) {
+    if (!rlz_lib::GetAccessPointRlz(RLZTracker::CHROME_HOME_PAGE, homepage_rlz,
+                                    rlz_lib::kMaxRlzLength)) {
       homepage_rlz[0] = 0;
     }
 
     if ((first_run || homepage_rlz[0] == 0) && google_default_homepage) {
       rlz_lib::RecordProductEvent(rlz_lib::CHROME,
-                                  rlz_lib::CHROME_HOME_PAGE,
+                                  RLZTracker::CHROME_HOME_PAGE,
                                   rlz_lib::SET_TO_GOOGLE);
     }
   }
@@ -90,7 +100,7 @@ void RecordProductEvents(bool first_run, bool google_default_search,
   // time but the rlz lib should ingore all but the first one.
   if (omnibox_used) {
     rlz_lib::RecordProductEvent(rlz_lib::CHROME,
-                                rlz_lib::CHROME_OMNIBOX,
+                                RLZTracker::CHROME_OMNIBOX,
                                 rlz_lib::FIRST_SEARCH);
   }
 
@@ -98,7 +108,7 @@ void RecordProductEvents(bool first_run, bool google_default_search,
   // time but the rlz lib should ingore all but the first one.
   if (homepage_used) {
     rlz_lib::RecordProductEvent(rlz_lib::CHROME,
-                                rlz_lib::CHROME_HOME_PAGE,
+                                RLZTracker::CHROME_HOME_PAGE,
                                 rlz_lib::FIRST_SEARCH);
   }
 }
@@ -106,17 +116,33 @@ void RecordProductEvents(bool first_run, bool google_default_search,
 bool SendFinancialPing(const std::string& brand,
                        const string16& lang,
                        const string16& referral) {
-  rlz_lib::AccessPoint points[] = {rlz_lib::CHROME_OMNIBOX,
-                                   rlz_lib::CHROME_HOME_PAGE,
+  rlz_lib::AccessPoint points[] = {RLZTracker::CHROME_OMNIBOX,
+                                   RLZTracker::CHROME_HOME_PAGE,
                                    rlz_lib::NO_ACCESS_POINT};
-  std::string lang_ascii(WideToASCII(lang));
-  std::string referral_ascii(WideToASCII(referral));
+  std::string lang_ascii(UTF16ToASCII(lang));
+  std::string referral_ascii(UTF16ToASCII(referral));
   return rlz_lib::SendFinancialPing(rlz_lib::CHROME, points, "chrome",
                                     brand.c_str(), referral_ascii.c_str(),
-                                    lang_ascii.c_str(), false, NULL, true);
+                                    lang_ascii.c_str(), false, true);
 }
 
 }  // namespace
+
+#if !defined(OS_MACOSX)
+// static
+const rlz_lib::AccessPoint RLZTracker::CHROME_OMNIBOX =
+    rlz_lib::CHROME_OMNIBOX;
+// static
+const rlz_lib::AccessPoint RLZTracker::CHROME_HOME_PAGE =
+    rlz_lib::CHROME_HOME_PAGE;
+#else
+// static
+const rlz_lib::AccessPoint RLZTracker::CHROME_OMNIBOX =
+    rlz_lib::CHROME_MAC_OMNIBOX;
+// static
+const rlz_lib::AccessPoint RLZTracker::CHROME_HOME_PAGE =
+    rlz_lib::CHROME_MAC_HOME_PAGE;
+#endif
 
 RLZTracker* RLZTracker::tracker_ = NULL;
 
@@ -169,20 +195,24 @@ bool RLZTracker::Init(bool first_run, int delay, bool google_default_search,
   delay = (delay < kMinDelay) ? kMinDelay : delay;
   delay = (delay > kMaxDelay) ? kMaxDelay : delay;
 
-  // Register for notifications from the omnibox so that we can record when
-  // the user performs a first search.
-  registrar_.Add(this, chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
-                 content::NotificationService::AllSources());
-  // If instant is enabled we'll start searching as soon as the user starts
-  // typing in the omnibox (which triggers INSTANT_CONTROLLER_UPDATED).
-  registrar_.Add(this, chrome::NOTIFICATION_INSTANT_CONTROLLER_UPDATED,
-                 content::NotificationService::AllSources());
+  std::string brand;
+  if (google_util::GetBrand(&brand) && !IsBrandOrganic(brand)) {
+    // Register for notifications from the omnibox so that we can record when
+    // the user performs a first search.
+    registrar_.Add(this, chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
+                   content::NotificationService::AllSources());
+    // If instant is enabled we'll start searching as soon as the user starts
+    // typing in the omnibox (which triggers INSTANT_CONTROLLER_UPDATED).
+    registrar_.Add(this, chrome::NOTIFICATION_INSTANT_CONTROLLER_UPDATED,
+                   content::NotificationService::AllSources());
 
-  // Register for notifications from navigations, to see if the user has used
-  // the home page.
-  registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_PENDING,
-                 content::NotificationService::AllSources());
+    // Register for notifications from navigations, to see if the user has used
+    // the home page.
+    registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_PENDING,
+                   content::NotificationService::AllSources());
+  }
 
+  rlz_lib::SetURLRequestContext(g_browser_process->system_request_context());
   ScheduleDelayedInit(delay);
 
   return true;
@@ -191,14 +221,17 @@ bool RLZTracker::Init(bool first_run, int delay, bool google_default_search,
 void RLZTracker::ScheduleDelayedInit(int delay) {
   // The RLZTracker is a singleton object that outlives any runnable tasks
   // that will be queued up.
+  // TODO: Move to SequencedWorkerPool once http://crbug.com/119657 is fixed.
   BrowserThread::PostDelayedTask(
       BrowserThread::FILE,
       FROM_HERE,
       base::Bind(&RLZTracker::DelayedInit, base::Unretained(this)),
-      delay);
+      base::TimeDelta::FromMilliseconds(delay));
 }
 
 void RLZTracker::DelayedInit() {
+  worker_pool_token_ = BrowserThread::GetBlockingPool()->GetSequenceToken();
+
   bool schedule_ping = false;
 
   // For organic brandcodes do not use rlz at all. Empty brandcode usually
@@ -216,8 +249,7 @@ void RLZTracker::DelayedInit() {
   std::string reactivation_brand;
   if (google_util::GetReactivationBrand(&reactivation_brand) &&
       !IsBrandOrganic(reactivation_brand)) {
-    string16 reactivation_brand16 = UTF8ToUTF16(reactivation_brand);
-    rlz_lib::SupplementaryBranding branding(reactivation_brand16.c_str());
+    rlz_lib::SupplementaryBranding branding(reactivation_brand.c_str());
     RecordProductEvents(first_run_, google_default_search_,
                         google_default_homepage_, already_ran_,
                         omnibox_used_, homepage_used_);
@@ -231,25 +263,17 @@ void RLZTracker::DelayedInit() {
 }
 
 void RLZTracker::ScheduleFinancialPing() {
-  // Investigate why _beginthread() is used here, and not chrome's threading
-  // API.  Tracked in bug http://crbug.com/106213
-  _beginthread(PingNow, 0, this);
-}
-
-// static
-void _cdecl RLZTracker::PingNow(void* arg) {
-  RLZTracker* tracker = reinterpret_cast<RLZTracker*>(arg);
-  tracker->PingNowImpl();
+  BrowserThread::GetBlockingPool()->PostSequencedWorkerTask(
+      worker_pool_token_,
+      FROM_HERE,
+      base::Bind(&RLZTracker::PingNowImpl, base::Unretained(this)));
 }
 
 void RLZTracker::PingNowImpl() {
-  // This is the entry point of a background thread, so I/O is allowed.
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
-
   string16 lang;
   GoogleUpdateSettings::GetLanguage(&lang);
   if (lang.empty())
-    lang = L"en";
+    lang = ASCIIToUTF16("en");
   string16 referral;
   GoogleUpdateSettings::GetReferral(&referral);
 
@@ -264,15 +288,14 @@ void RLZTracker::PingNowImpl() {
     }
 
     // Prime the RLZ cache for the access points we are interested in.
-    GetAccessPointRlz(rlz_lib::CHROME_OMNIBOX, NULL);
-    GetAccessPointRlz(rlz_lib::CHROME_HOME_PAGE, NULL);
+    GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, NULL);
+    GetAccessPointRlz(RLZTracker::CHROME_HOME_PAGE, NULL);
   }
 
   std::string reactivation_brand;
   if (google_util::GetReactivationBrand(&reactivation_brand) &&
       !IsBrandOrganic(reactivation_brand)) {
-    string16 reactivation_brand16 = UTF8ToUTF16(reactivation_brand);
-    rlz_lib::SupplementaryBranding branding(reactivation_brand16.c_str());
+    rlz_lib::SupplementaryBranding branding(reactivation_brand.c_str());
     SendFinancialPing(reactivation_brand, lang, referral);
   }
 }
@@ -296,7 +319,7 @@ void RLZTracker::Observe(int type,
   switch (type) {
     case chrome::NOTIFICATION_OMNIBOX_OPENED_URL:
     case chrome::NOTIFICATION_INSTANT_CONTROLLER_UPDATED:
-      point = rlz_lib::CHROME_OMNIBOX;
+      point = RLZTracker::CHROME_OMNIBOX;
       record_used = &omnibox_used_;
       call_record = true;
 
@@ -311,7 +334,7 @@ void RLZTracker::Observe(int type,
       if (entry != NULL &&
           ((entry->GetTransitionType() &
             content::PAGE_TRANSITION_HOME_PAGE) != 0)) {
-        point = rlz_lib::CHROME_HOME_PAGE;
+        point = RLZTracker::CHROME_HOME_PAGE;
         record_used = &homepage_used_;
         call_record = true;
 
@@ -330,7 +353,7 @@ void RLZTracker::Observe(int type,
     // attempt the ping.
     if (!RecordProductEvent(rlz_lib::CHROME, point, rlz_lib::FIRST_SEARCH))
       *record_used = true;
-    else if (send_ping_immediately_ && point == rlz_lib::CHROME_OMNIBOX) {
+    else if (send_ping_immediately_ && point == RLZTracker::CHROME_OMNIBOX) {
       ScheduleDelayedInit(0);
     }
   }
@@ -344,8 +367,7 @@ bool RLZTracker::RecordProductEvent(rlz_lib::Product product,
   // If chrome has been reactivated, record the event for this brand as well.
   std::string reactivation_brand;
   if (google_util::GetReactivationBrand(&reactivation_brand)) {
-    string16 reactivation_brand16 = UTF8ToUTF16(reactivation_brand);
-    rlz_lib::SupplementaryBranding branding(reactivation_brand16.c_str());
+    rlz_lib::SupplementaryBranding branding(reactivation_brand.c_str());
     ret &= rlz_lib::RecordProductEvent(product, point, event_id);
   }
 
@@ -380,10 +402,10 @@ bool RLZTracker::GetAccessPointRlzImpl(rlz_lib::AccessPoint point,
     return false;
 
   char str_rlz[rlz_lib::kMaxRlzLength + 1];
-  if (!rlz_lib::GetAccessPointRlz(point, str_rlz, rlz_lib::kMaxRlzLength, NULL))
+  if (!rlz_lib::GetAccessPointRlz(point, str_rlz, rlz_lib::kMaxRlzLength))
     return false;
 
-  string16 rlz_local(ASCIIToWide(std::string(str_rlz)));
+  string16 rlz_local(ASCIIToUTF16(std::string(str_rlz)));
   if (rlz)
     *rlz = rlz_local;
 
@@ -397,8 +419,9 @@ bool RLZTracker::ScheduleGetAccessPointRlz(rlz_lib::AccessPoint point) {
     return false;
 
   string16* not_used = NULL;
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
+  BrowserThread::GetBlockingPool()->PostSequencedWorkerTask(
+      worker_pool_token_,
+      FROM_HERE,
       base::Bind(base::IgnoreResult(&RLZTracker::GetAccessPointRlz), point,
                  not_used));
   return true;

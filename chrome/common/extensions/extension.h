@@ -4,11 +4,13 @@
 
 #ifndef CHROME_COMMON_EXTENSIONS_EXTENSION_H_
 #define CHROME_COMMON_EXTENSIONS_EXTENSION_H_
-#pragma once
 
+#include <algorithm>
+#include <iosfwd>
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/file_path.h"
@@ -18,17 +20,19 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "chrome/common/extensions/command.h"
+#include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/extension_permission_set.h"
-#include "chrome/common/extensions/manifest.h"
+#include "chrome/common/extensions/permissions/api_permission.h"
+#include "chrome/common/extensions/permissions/permission_message.h"
 #include "chrome/common/extensions/user_script.h"
 #include "chrome/common/extensions/url_pattern.h"
 #include "chrome/common/extensions/url_pattern_set.h"
 #include "googleurl/src/gurl.h"
+#include "ui/base/accelerators/accelerator.h"
 #include "ui/gfx/size.h"
 
-class ExtensionAction;
 class ExtensionResource;
 class FileBrowserHandler;
 class SkBitmap;
@@ -43,12 +47,24 @@ namespace webkit_glue {
 struct WebIntentServiceData;
 }
 
+FORWARD_DECLARE_TEST(TabStripModelTest, Apps);
+
+namespace extensions {
+
+class Manifest;
+class PermissionSet;
+
+typedef std::set<std::string> OAuth2Scopes;
+
 // Represents a Chrome extension.
 class Extension : public base::RefCountedThreadSafe<Extension> {
  public:
+  struct InstallWarning;
+
   typedef std::map<const std::string, GURL> URLOverrideMap;
   typedef std::vector<std::string> ScriptingWhitelist;
   typedef std::vector<linked_ptr<FileBrowserHandler> > FileBrowserHandlerList;
+  typedef std::vector<InstallWarning> InstallWarningVector;
 
   // What an extension was loaded from.
   // NOTE: These values are stored as integers in the preferences and used
@@ -81,22 +97,21 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     NUM_STATES
   };
 
+  // Used to record the reason an extension was disabled.
+  enum DisableReason {
+    DISABLE_UNKNOWN,
+    DISABLE_USER_ACTION,
+    DISABLE_PERMISSIONS_INCREASE,
+    DISABLE_RELOAD,
+    DISABLE_LAST,  // Not used.
+  };
+
   enum InstallType {
     INSTALL_ERROR,
     DOWNGRADE,
     REINSTALL,
     UPGRADE,
     NEW_INSTALL
-  };
-
-  // NOTE: If you change this list, you should also change kIconSizes in the cc
-  // file.
-  enum Icons {
-    EXTENSION_ICON_LARGE = 128,
-    EXTENSION_ICON_MEDIUM = 48,
-    EXTENSION_ICON_SMALL = 32,
-    EXTENSION_ICON_SMALLISH = 24,
-    EXTENSION_ICON_BITTY = 16,
   };
 
   // Do not change the order of entries or remove entries in this list
@@ -132,7 +147,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   enum InputComponentType {
     INPUT_COMPONENT_TYPE_NONE = -1,
     INPUT_COMPONENT_TYPE_IME,
-    INPUT_COMPONENT_TYPE_VIRTUAL_KEYBOARD,
     INPUT_COMPONENT_TYPE_COUNT
   };
 
@@ -164,6 +178,32 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     std::set<std::string> event_types;
   };
 
+  // OAuth2 info included in the extension.
+  struct OAuth2Info {
+    OAuth2Info();
+    ~OAuth2Info();
+
+    OAuth2Scopes GetScopesAsSet();
+
+    std::string client_id;
+    std::vector<std::string> scopes;
+  };
+
+  struct InstallWarning {
+    enum Format {
+      // IMPORTANT: Do not build HTML strings from user or developer-supplied
+      // input.
+      FORMAT_TEXT,
+      FORMAT_HTML,
+    };
+    InstallWarning(Format format, const std::string& message)
+        : format(format), message(message) {
+    }
+    bool operator==(const InstallWarning& other) const;
+    Format format;
+    std::string message;
+  };
+
   enum InitFromValueFlags {
     NO_FLAGS = 0,
 
@@ -178,30 +218,27 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     // manifest version that Chrome understands.
     REQUIRE_MODERN_MANIFEST_VERSION = 1 << 1,
 
-    // |STRICT_ERROR_CHECKS| enables extra error checking, such as
-    // checks that URL patterns do not contain ports.  This error
-    // checking may find an error that a previous version of
-    // Chrome did not flag.  To avoid errors in installed extensions
-    // when Chrome is upgraded, strict error checking is only enabled
-    // when loading extensions as a developer would (such as loading
-    // an unpacked extension), or when loading an extension that is
-    // tied to a specific version of Chrome (such as a component
-    // extension).  Most callers will set the |STRICT_ERROR_CHECKS| bit when
-    // Extension::ShouldDoStrictErrorChecking(location) returns true.
-    STRICT_ERROR_CHECKS = 1 << 2,
-
     // |ALLOW_FILE_ACCESS| indicates that the user is allowing this extension
     // to have file access. If it's not present, then permissions and content
     // scripts that match file:/// URLs will be filtered out.
-    ALLOW_FILE_ACCESS = 1 << 3,
+    ALLOW_FILE_ACCESS = 1 << 2,
 
     // |FROM_WEBSTORE| indicates that the extension was installed from the
     // Chrome Web Store.
-    FROM_WEBSTORE = 1 << 4,
+    FROM_WEBSTORE = 1 << 3,
 
     // |FROM_BOOKMARK| indicates the extension was created using a mock App
     // created from a bookmark.
-    FROM_BOOKMARK = 1 << 5,
+    FROM_BOOKMARK = 1 << 4,
+
+    // |FOLLOW_SYMLINKS_ANYWHERE| means that resources can be symlinks to
+    // anywhere in the filesystem, rather than being restricted to the
+    // extension directory.
+    FOLLOW_SYMLINKS_ANYWHERE = 1 << 5,
+
+    // |ERROR_ON_PRIVATE_KEY| means that private keys inside an
+    // extension should be errors rather than warnings.
+    ERROR_ON_PRIVATE_KEY = 1 << 6,
   };
 
   static scoped_refptr<Extension> Create(const FilePath& path,
@@ -213,19 +250,16 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // In a few special circumstances, we want to create an Extension and give it
   // an explicit id. Most consumers should just use the other Create() method.
   static scoped_refptr<Extension> Create(const FilePath& path,
-                                         Location location,
-                                         const base::DictionaryValue& value,
-                                         int flags,
-                                         const std::string& explicit_id,
-                                         std::string* error);
+      Location location,
+      const base::DictionaryValue& value,
+      int flags,
+      const std::string& explicit_id,
+      std::string* error);
 
   // Given two install sources, return the one which should take priority
   // over the other. If an extension is installed from two sources A and B,
   // its install source should be set to GetHigherPriorityLocation(A, B).
   static Location GetHigherPriorityLocation(Location loc1, Location loc2);
-
-  // Icon sizes used by the extension system.
-  static const int kIconSizes[];
 
   // Max size (both dimensions) for browser and page actions.
   static const int kPageActionIconMaxSize;
@@ -281,22 +315,13 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
            IsExternalLocation(location);
   }
 
-  // Whether extensions with |location| can be uninstalled or not. Policy
-  // controlled extensions are silently auto-installed and updated, and cannot
-  // be disabled by the user. The same applies for internal components.
-  static inline bool UserMayDisable(Location location) {
-    return location != Extension::EXTERNAL_POLICY_DOWNLOAD &&
-           location != Extension::COMPONENT;
-  }
-
-  // Whether extensions with |location| should be loaded with strict
-  // error checking.  Strict error checks may flag errors older versions
-  // of chrome did not detect.  To avoid breaking installed extensions,
-  // strict checks are disabled unless the location indicates that the
-  // developer is loading the extension, or the extension is a component
-  // of chrome.
-  static inline bool ShouldDoStrictErrorChecking(Location location) {
-    return location == Extension::LOAD ||
+  // Policy-required extensions are silently auto-installed and updated, and
+  // cannot be disabled or modified by the user in any way. The same applies
+  // to internal components.
+  // This method is not generally called directly; instead, it is accessed
+  // through the ManagementPolicy held by the ExtensionSystem.
+  static inline bool IsRequired(Location location) {
+    return location == Extension::EXTERNAL_POLICY_DOWNLOAD ||
            location == Extension::COMPONENT;
   }
 
@@ -305,6 +330,10 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   static inline bool ShouldAlwaysAllowFileAccess(Location location) {
     return location == Extension::LOAD;
   }
+
+  // Fills the |info| dictionary with basic information about the extension.
+  // |enabled| is injected for easier testing.
+  void GetBasicInfo(bool enabled, base::DictionaryValue* info) const;
 
   // See Type definition above.
   Type GetType() const;
@@ -320,8 +349,21 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     return GetResourceURL(url(), relative_path);
   }
 
+  // Returns true if the resource matches a pattern in the pattern_set.
+  bool ResourceMatches(const URLPatternSet& pattern_set,
+                       const std::string& resource) const;
+
   // Returns true if the specified resource is web accessible.
   bool IsResourceWebAccessible(const std::string& relative_path) const;
+
+  // Returns true if the specified page is sandboxed (served in a unique
+  // origin).
+  bool IsSandboxedPage(const std::string& relative_path) const;
+
+  // Returns the Content Security Policy that the specified resource should be
+  // served with.
+  std::string GetResourceContentSecurityPolicy(const std::string& relative_path)
+      const;
 
   // Returns true when 'web_accessible_resources' are defined for the extension.
   bool HasWebAccessibleResources() const;
@@ -353,12 +395,21 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
                                      std::string* output,
                                      bool is_public);
 
+  // Given an extension, icon size, and match type, read a valid icon if present
+  // and decode it into result. In the browser process, this will DCHECK if not
+  // called on the file thread. To easily load extension images on the UI
+  // thread, see ImageLoadingTracker.
+  static void DecodeIcon(const Extension* extension,
+                         ExtensionIconSet::Icons icon_size,
+                         ExtensionIconSet::MatchType match_type,
+                         scoped_ptr<SkBitmap>* result);
+
   // Given an extension and icon size, read it if present and decode it into
   // result. In the browser process, this will DCHECK if not called on the
   // file thread. To easily load extension images on the UI thread, see
   // ImageLoadingTracker.
   static void DecodeIcon(const Extension* extension,
-                         Icons icon_size,
+                         ExtensionIconSet::Icons icon_size,
                          scoped_ptr<SkBitmap>* result);
 
   // Given an icon_path and icon size, read it if present and decode it into
@@ -366,7 +417,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // file thread. To easily load extension images on the UI thread, see
   // ImageLoadingTracker.
   static void DecodeIconFromPath(const FilePath& icon_path,
-                                 Icons icon_size,
+                                 ExtensionIconSet::Icons icon_size,
                                  scoped_ptr<SkBitmap>* result);
 
   // Returns the default extension/app icon (for extensions or apps that don't
@@ -381,16 +432,15 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   static const ScriptingWhitelist* GetScriptingWhitelist();
 
   // Parses the host and api permissions from the specified permission |key|
-  // in the manifest |source|.
-  bool ParsePermissions(const extensions::Manifest* source,
-                        const char* key,
-                        int flags,
+  // from |manifest_|.
+  bool ParsePermissions(const char* key,
                         string16* error,
-                        ExtensionAPIPermissionSet* api_permissions,
+                        APIPermissionSet* api_permissions,
                         URLPatternSet* host_permissions);
 
-  bool HasAPIPermission(ExtensionAPIPermission::ID permission) const;
+  bool HasAPIPermission(APIPermission::ID permission) const;
   bool HasAPIPermission(const std::string& function_name) const;
+  bool HasAPIPermissionForTab(int tab_id, APIPermission::ID permission) const;
 
   const URLPatternSet& GetEffectiveHostPermissions() const;
 
@@ -418,7 +468,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
 
   // Returns the full list of permission messages that this extension
   // should display at install time.
-  ExtensionPermissionMessages GetPermissionMessages() const;
+  PermissionMessages GetPermissionMessages() const;
 
   // Returns the full list of permission messages that this extension
   // should display at install time. The messages are returned as strings
@@ -426,18 +476,13 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   std::vector<string16> GetPermissionMessageStrings() const;
 
   // Sets the active |permissions|.
-  void SetActivePermissions(const ExtensionPermissionSet* permissions) const;
+  void SetActivePermissions(const PermissionSet* permissions) const;
 
   // Gets the extension's active permission set.
-  scoped_refptr<const ExtensionPermissionSet> GetActivePermissions() const;
+  scoped_refptr<const PermissionSet> GetActivePermissions() const;
 
   // Whether context menu should be shown for page and browser actions.
   bool ShowConfigureContextMenus() const;
-
-  // Whether network requests should be delayed on browser startup until the
-  // extension's background page has loaded, even if the extension doesn't
-  // explicitly request a delay.
-  bool ImplicitlyDelaysNetworkStartup() const;
 
   // Returns the Homepage URL for this extension. If homepage_url was not
   // specified in the manifest, this returns the Google Gallery URL. For
@@ -476,6 +521,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // This method is also aware of certain special pages that extensions are
   // usually not allowed to run script on.
   bool CanExecuteScriptOnPage(const GURL& page_url,
+                              int tab_id,
                               const UserScript* script,
                               std::string* error) const;
 
@@ -487,7 +533,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // page as an image.  Since a page may contain sensitive information, this
   // is restricted to the extension's host permissions as well as the
   // extension page itself.
-  bool CanCaptureVisiblePage(const GURL& page_url, std::string* error) const;
+  bool CanCaptureVisiblePage(const GURL& page_url,
+                             int tab_id,
+                             std::string* error) const;
 
   // Returns true if this extension updates itself using the extension
   // gallery.
@@ -505,15 +553,40 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // Returns true if the extension should be displayed in the launcher.
   bool ShouldDisplayInLauncher() const;
 
+  // Returns true if the extension should be displayed in the extension
+  // settings page (i.e. chrome://extensions).
+  bool ShouldDisplayInExtensionSettings() const;
+
+  // Returns true if the extension has a content script declared at |url|.
+  bool HasContentScriptAtURL(const GURL& url) const;
+
+  // Gets the tab-specific host permissions of |tab_id|, or NULL if there
+  // aren't any.
+  scoped_refptr<const PermissionSet> GetTabSpecificPermissions(int tab_id)
+      const;
+
+  // Updates the tab-specific permissions of |tab_id| to include those from
+  // |permissions|.
+  void UpdateTabSpecificPermissions(
+      int tab_id,
+      scoped_refptr<const PermissionSet> permissions) const;
+
+  // Clears the tab-specific permissions of |tab_id|.
+  void ClearTabSpecificPermissions(int tab_id) const;
+
   // Accessors:
 
   const FilePath& path() const { return path_; }
   const GURL& url() const { return extension_url_; }
-  Location location() const { return location_; }
-  const std::string& id() const { return id_; }
+  Location location() const;
+  const std::string& id() const;
   const Version* version() const { return version_.get(); }
   const std::string VersionString() const;
   const std::string& name() const { return name_; }
+  const std::string& non_localized_name() const { return non_localized_name_; }
+  // Base64-encoded version of the key used to sign this extension.
+  // In pseudocode, returns
+  // base::Base64Encode(RSAPrivateKey(pem_file).ExportPublicKey()).
   const std::string& public_key() const { return public_key_; }
   const std::string& description() const { return description_; }
   int manifest_version() const { return manifest_version_; }
@@ -521,6 +594,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     return converted_from_user_script_;
   }
   const UserScriptList& content_scripts() const { return content_scripts_; }
+  ExtensionAction* script_badge() const { return script_badge_.get(); }
   ExtensionAction* page_action() const { return page_action_.get(); }
   ExtensionAction* browser_action() const { return browser_action_.get(); }
   const FileBrowserHandlerList* file_browser_handlers() const {
@@ -533,20 +607,57 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   const std::vector<InputComponentInfo>& input_components() const {
     return input_components_;
   }
+  // The browser action command that the extension wants to use, which is not
+  // necessarily the one it can use, as it might be inactive (see also
+  // GetBrowserActionCommand in CommandService).
+  const extensions::Command* browser_action_command() const {
+    return browser_action_command_.get();
+  }
+  // The page action command that the extension wants to use, which is not
+  // necessarily the one it can use, as it might be inactive (see also
+  // GetPageActionCommand in CommandService).
+  const extensions::Command* page_action_command() const {
+    return page_action_command_.get();
+  }
+  // The script badge command that the extension wants to use, which is not
+  // necessarily the one it can use, as it might be inactive (see also
+  // GetScriptBadgeCommand in CommandService).
+  const extensions::Command* script_badge_command() const {
+    return script_badge_command_.get();
+  }
+  // The map (of command names to commands) that the extension wants to use,
+  // which is not necessarily the one it can use, as they might be inactive
+  // (see also GetNamedCommands in CommandService).
+  const extensions::CommandMap& named_commands() const {
+    return named_commands_;
+  }
   bool has_background_page() const {
     return background_url_.is_valid() || !background_scripts_.empty();
+  }
+  bool allow_background_js_access() const {
+    return allow_background_js_access_;
   }
   const std::vector<std::string>& background_scripts() const {
     return background_scripts_;
   }
-  bool background_page_persists() const { return background_page_persists_; }
+  bool has_persistent_background_page() const {
+    return has_background_page() && background_page_is_persistent_;
+  }
+  bool has_lazy_background_page() const {
+    return has_background_page() && !background_page_is_persistent_;
+  }
   const GURL& options_url() const { return options_url_; }
   const GURL& devtools_url() const { return devtools_url_; }
-  const ExtensionPermissionSet* optional_permission_set() const {
+  const PermissionSet* optional_permission_set() const {
     return optional_permission_set_.get();
   }
-  const ExtensionPermissionSet* required_permission_set() const {
+  const PermissionSet* required_permission_set() const {
     return required_permission_set_.get();
+  }
+  // Appends |new_warnings| to install_warnings().
+  void AddInstallWarnings(const InstallWarningVector& new_warnings);
+  const InstallWarningVector& install_warnings() const {
+    return install_warnings_;
   }
   const GURL& update_url() const { return update_url_; }
   const ExtensionIconSet& icons() const { return icons_; }
@@ -561,6 +672,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool incognito_split_mode() const { return incognito_split_mode_; }
   bool offline_enabled() const { return offline_enabled_; }
   const std::vector<TtsVoice>& tts_voices() const { return tts_voices_; }
+  const OAuth2Info& oauth2_info() const { return oauth2_info_; }
   const std::vector<webkit_glue::WebIntentServiceData>&
       intents_services() const {
     return intents_services_;
@@ -571,18 +683,14 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool from_webstore() const { return (creation_flags_ & FROM_WEBSTORE) != 0; }
   bool from_bookmark() const { return (creation_flags_ & FROM_BOOKMARK) != 0; }
 
-  const std::string& content_security_policy() const {
-    return content_security_policy_;
-  }
-
   // App-related.
   bool is_app() const {
     return is_packaged_app() || is_hosted_app() || is_platform_app();
   }
-  bool is_platform_app() const { return manifest()->IsPlatformApp(); }
-  bool is_hosted_app() const { return manifest()->IsHostedApp(); }
-  bool is_packaged_app() const { return manifest()->IsPackagedApp(); }
-  bool is_storage_isolated() const { return is_app() && is_storage_isolated_; }
+  bool is_platform_app() const;
+  bool is_hosted_app() const;
+  bool is_packaged_app() const;
+  bool is_storage_isolated() const { return is_storage_isolated_; }
   const URLPatternSet& web_extent() const { return extent_; }
   const std::string& launch_local_path() const { return launch_local_path_; }
   const std::string& launch_web_url() const { return launch_web_url_; }
@@ -593,7 +701,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   int launch_height() const { return launch_height_; }
 
   // Theme-related.
-  bool is_theme() const { return manifest()->IsTheme(); }
+  bool is_theme() const;
   base::DictionaryValue* GetThemeImages() const { return theme_images_.get(); }
   base::DictionaryValue* GetThemeColors() const {return theme_colors_.get(); }
   base::DictionaryValue* GetThemeTints() const { return theme_tints_.get(); }
@@ -615,16 +723,36 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   class RuntimeData {
    public:
     RuntimeData();
-    explicit RuntimeData(const ExtensionPermissionSet* active);
+    explicit RuntimeData(const PermissionSet* active);
     ~RuntimeData();
 
-    void SetActivePermissions(const ExtensionPermissionSet* active);
-    scoped_refptr<const ExtensionPermissionSet> GetActivePermissions() const;
+    void SetActivePermissions(const PermissionSet* active);
+    scoped_refptr<const PermissionSet> GetActivePermissions() const;
+
+    scoped_refptr<const PermissionSet> GetTabSpecificPermissions(int tab_id)
+        const;
+    void UpdateTabSpecificPermissions(
+        int tab_id,
+        scoped_refptr<const PermissionSet> permissions);
+    void ClearTabSpecificPermissions(int tab_id);
 
    private:
     friend class base::RefCountedThreadSafe<RuntimeData>;
-    scoped_refptr<const ExtensionPermissionSet> active_permissions_;
+
+    scoped_refptr<const PermissionSet> active_permissions_;
+
+    typedef std::map<int, scoped_refptr<const PermissionSet> >
+        TabPermissionsMap;
+    TabPermissionsMap tab_specific_permissions_;
   };
+
+  // Chooses the extension ID for an extension based on a variety of criteria.
+  // The chosen ID will be set in |manifest|.
+  static bool InitExtensionID(extensions::Manifest* manifest,
+                              const FilePath& path,
+                              const std::string& explicit_id,
+                              int creation_flags,
+                              string16* error);
 
   // Normalize the path for use by the extension. On Windows, this will make
   // sure the drive letter is uppercase.
@@ -633,13 +761,102 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // Returns true if this extension id is from a trusted provider.
   static bool IsTrustedId(const std::string& id);
 
-  Extension(const FilePath& path, Location location);
+  Extension(const FilePath& path, scoped_ptr<extensions::Manifest> manifest);
   ~Extension();
 
   // Initialize the extension from a parsed manifest.
-  // Takes ownership of the manifest |value|.
-  bool InitFromValue(extensions::Manifest* value, int flags,
-                     string16* error);
+  // TODO(aa): Rename to just Init()? There's no Value here anymore.
+  // TODO(aa): It is really weird the way this class essentially contains a copy
+  // of the underlying DictionaryValue in its members. We should decide to
+  // either wrap the DictionaryValue and go with that only, or we should parse
+  // into strong types and discard the value. But doing both is bad.
+  bool InitFromValue(int flags, string16* error);
+
+  // The following are helpers for InitFromValue to load various features of the
+  // extension from the manifest.
+
+  bool CheckMinimumChromeVersion(string16* error);
+  bool LoadAppIsolation(const APIPermissionSet& api_permissions,
+                        string16* error);
+
+  bool LoadRequiredFeatures(string16* error);
+  bool LoadName(string16* error);
+  bool LoadVersion(string16* error);
+
+  bool LoadAppFeatures(string16* error);
+  bool LoadExtent(const char* key,
+                  URLPatternSet* extent,
+                  const char* list_error,
+                  const char* value_error,
+                  string16* error);
+  bool LoadLaunchContainer(string16* error);
+  bool LoadLaunchURL(string16* error);
+
+  bool LoadSharedFeatures(const APIPermissionSet& api_permissions,
+                          string16* error);
+  bool LoadDescription(string16* error);
+  bool LoadManifestVersion(string16* error);
+  bool LoadHomepageURL(string16* error);
+  bool LoadUpdateURL(string16* error);
+  bool LoadIcons(string16* error);
+  bool LoadCommands(string16* error);
+  bool LoadPlugins(string16* error);
+  bool LoadNaClModules(string16* error);
+  bool LoadWebAccessibleResources(string16* error);
+  bool LoadSandboxedPages(string16* error);
+  bool CheckRequirements(string16* error);
+  bool LoadDefaultLocale(string16* error);
+  bool LoadOfflineEnabled(string16* error);
+  bool LoadOptionsPage(string16* error);
+  bool LoadBackgroundScripts(string16* error);
+  bool LoadBackgroundScripts(const std::string& key, string16* error);
+  bool LoadBackgroundPage(const APIPermissionSet& api_permissions,
+                          string16* error);
+  bool LoadBackgroundPage(const std::string& key,
+                          const APIPermissionSet& api_permissions,
+                          string16* error);
+  bool LoadBackgroundPersistent(
+      const APIPermissionSet& api_permissions,
+      string16* error);
+  bool LoadBackgroundAllowJSAccess(
+      const APIPermissionSet& api_permissions,
+      string16* error);
+  // Parses a single action in the manifest.
+  bool LoadWebIntentAction(const std::string& action_name,
+                           const base::DictionaryValue& intent_service,
+                           string16* error);
+  bool LoadWebIntentServices(string16* error);
+  bool LoadExtensionFeatures(const APIPermissionSet& api_permissions,
+                             string16* error);
+  bool LoadDevToolsPage(string16* error);
+  bool LoadInputComponents(const APIPermissionSet& api_permissions,
+                           string16* error);
+  bool LoadContentScripts(string16* error);
+  bool LoadPageAction(string16* error);
+  bool LoadBrowserAction(string16* error);
+  bool LoadScriptBadge(string16* error);
+  bool LoadFileBrowserHandlers(string16* error);
+  // Helper method to load a FileBrowserHandlerList from the manifest.
+  FileBrowserHandlerList* LoadFileBrowserHandlersHelper(
+      const base::ListValue* extension_actions, string16* error);
+  // Helper method to load an FileBrowserHandler from manifest.
+  FileBrowserHandler* LoadFileBrowserHandler(
+      const base::DictionaryValue* file_browser_handlers, string16* error);
+  bool LoadChromeURLOverrides(string16* error);
+  bool LoadOmnibox(string16* error);
+  bool LoadTextToSpeechVoices(string16* error);
+  bool LoadIncognitoMode(string16* error);
+  bool LoadContentSecurityPolicy(string16* error);
+
+  bool LoadThemeFeatures(string16* error);
+  bool LoadThemeImages(const base::DictionaryValue* theme_value,
+                       string16* error);
+  bool LoadThemeColors(const base::DictionaryValue* theme_value,
+                       string16* error);
+  bool LoadThemeTints(const base::DictionaryValue* theme_value,
+                      string16* error);
+  bool LoadThemeDisplayProperties(const base::DictionaryValue* theme_value,
+                                  string16* error);
 
   // Helper function for implementing HasCachedImage/GetCachedImage. A return
   // value of NULL means there is no matching image cached (we allow caching an
@@ -651,7 +868,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // dictionary in the content_script list of the manifest.
   bool LoadUserScriptHelper(const base::DictionaryValue* content_script,
                             int definition_index,
-                            int flags,
                             string16* error,
                             UserScript* result);
 
@@ -664,42 +880,15 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
                        void(UserScript::*add_method)(const std::string& glob),
                        UserScript *instance);
 
-  // Helpers to load various chunks of the manifest.
-  bool LoadExtent(const extensions::Manifest* manifest,
-                  const char* key,
-                  URLPatternSet* extent,
-                  const char* list_error,
-                  const char* value_error,
-                  string16* error);
-  bool LoadLaunchContainer(const extensions::Manifest* manifest,
-                           string16* error);
-  bool LoadLaunchURL(const extensions::Manifest* manifest,
-                     string16* error);
-  bool LoadAppIsolation(const extensions::Manifest* manifest,
-                        string16* error);
-  bool LoadWebIntentServices(const extensions::Manifest* manifest,
-                             string16* error);
-  bool LoadBackgroundScripts(const extensions::Manifest* manifest,
-                             string16* error);
-  bool LoadBackgroundPage(const extensions::Manifest* manifest,
-                          const ExtensionAPIPermissionSet& api_permissions,
-                          string16* error);
-  bool LoadBackgroundPersistent(
-      const extensions::Manifest* manifest,
-      const ExtensionAPIPermissionSet& api_permissions,
-      string16* error);
-
   // Helper method to load an ExtensionAction from the page_action or
   // browser_action entries in the manifest.
-  ExtensionAction* LoadExtensionActionHelper(
-      const base::DictionaryValue* extension_action, string16* error);
+  scoped_ptr<ExtensionAction> LoadExtensionActionHelper(
+      const base::DictionaryValue* extension_action,
+      ExtensionAction::Type action_type,
+      string16* error);
 
-  // Helper method to load an FileBrowserHandlerList from the manifest.
-  FileBrowserHandlerList* LoadFileBrowserHandlers(
-      const base::ListValue* extension_actions, string16* error);
-  // Helper method to load an FileBrowserHandler from manifest.
-  FileBrowserHandler* LoadFileBrowserHandler(
-      const base::DictionaryValue* file_browser_handlers, string16* error);
+  // Helper method that loads the OAuth2 info from the 'oauth2' manifest key.
+  bool LoadOAuth2Info(string16* error);
 
   // Returns true if the extension has more than one "UI surface". For example,
   // an extension that has a browser action and a page action.
@@ -709,25 +898,24 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // |override_url|.
   void OverrideLaunchUrl(const GURL& override_url);
 
-  // Returns true if this extension can specify |api|.
-  bool CanSpecifyAPIPermission(const ExtensionAPIPermission* api,
-                               string16* error) const;
+  // Custom checks for the experimental permission that can't be expressed in
+  // _permission_features.json.
   bool CanSpecifyExperimentalPermission() const;
 
   // Checks whether the host |pattern| is allowed for this extension, given API
   // permissions |permissions|.
   bool CanSpecifyHostPermission(const URLPattern& pattern,
-      const ExtensionAPIPermissionSet& permissions) const;
+      const APIPermissionSet& permissions) const;
+
+  // Check that platform app features are valid. Called after InitFromValue.
+  bool CheckPlatformAppFeatures(std::string* utf8_error);
+
+  // Check that features don't conflict. Called after InitFromValue.
+  bool CheckConflictingFeatures(std::string* utf8_error);
 
   // Cached images for this extension. This should only be touched on the UI
   // thread.
   mutable ImageCache image_cache_;
-
-  // A persistent, globally unique ID. An extension's ID is used in things
-  // like directory structures and URLs, and is expected to not change across
-  // versions. It is generated as a SHA-256 hash of the extension's public
-  // key, or as a hash of the path in the case of unpacked extensions.
-  std::string id_;
 
   // The extension's human-readable name. Name is used for display purpose. It
   // might be wrapped with unicode bidi control characters so that it is
@@ -735,8 +923,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // NOTE: Name is UTF-8 and may contain non-ascii characters.
   std::string name_;
 
-  // The absolute path to the directory the extension is stored in.
-  FilePath path_;
+  // A non-localized version of the extension's name. This is useful for
+  // debug output.
+  std::string non_localized_name_;
 
   // The version of this extension's manifest. We increase the manifest
   // version when making breaking changes to the extension system.
@@ -745,6 +934,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // this member variable to 0 to distinguish the "uninitialized" case from
   // the case when we know the manifest version actually is 1.
   int manifest_version_;
+
+  // The absolute path to the directory the extension is stored in.
+  FilePath path_;
 
   // Default locale for fall back. Can be empty if extension is not localized.
   std::string default_locale_;
@@ -764,19 +956,19 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   mutable RuntimeData runtime_data_;
 
   // The set of permissions the extension can request at runtime.
-  scoped_refptr<const ExtensionPermissionSet> optional_permission_set_;
+  scoped_refptr<const PermissionSet> optional_permission_set_;
 
   // The extension's required / default set of permissions.
-  scoped_refptr<const ExtensionPermissionSet> required_permission_set_;
+  scoped_refptr<const PermissionSet> required_permission_set_;
+
+  // Any warnings that occurred when trying to create/parse the extension.
+  InstallWarningVector install_warnings_;
 
   // The icons for the extension.
   ExtensionIconSet icons_;
 
   // The base extension url for the extension.
   GURL extension_url_;
-
-  // The location the extension was loaded from.
-  Location location_;
 
   // The extension's version.
   scoped_ptr<Version> version_;
@@ -797,6 +989,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // The extension's browser action, if any.
   scoped_ptr<ExtensionAction> browser_action_;
 
+  // The extension's script badge.  Never NULL.
+  scoped_ptr<ExtensionAction> script_badge_;
+
   // The extension's file browser actions, if any.
   scoped_ptr<FileBrowserHandlerList> file_browser_handlers_;
 
@@ -809,8 +1004,23 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // Optional list of input components and associated properties.
   std::vector<InputComponentInfo> input_components_;
 
+  // Optional list of commands (keyboard shortcuts).
+  scoped_ptr<extensions::Command> browser_action_command_;
+  scoped_ptr<extensions::Command> page_action_command_;
+  scoped_ptr<extensions::Command> script_badge_command_;
+  extensions::CommandMap named_commands_;
+
   // Optional list of web accessible extension resources.
-  base::hash_set<std::string> web_accessible_resources_;
+  URLPatternSet web_accessible_resources_;
+
+  // Optional list of extension pages that are sandboxed (served from a unique
+  // origin with a different Content Security Policy).
+  URLPatternSet sandboxed_pages_;
+
+  // Content Security Policy that should be used to enforce the sandbox used
+  // by sandboxed pages (guaranteed to have the "sandbox" directive without the
+  // "allow-same-origin" token).
+  std::string sandboxed_pages_content_security_policy_;
 
   // Optional URL to a master page of which a single instance should be always
   // loaded in the background.
@@ -822,7 +1032,13 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
 
   // True if the background page should stay loaded forever; false if it should
   // load on-demand (when it needs to handle an event). Defaults to true.
-  bool background_page_persists_;
+  bool background_page_is_persistent_;
+
+  // True if the background page can be scripted by pages of the app or
+  // extension, in which case all such pages must run in the same process.
+  // False if such pages are not permitted to script the background page,
+  // allowing them to run in different processes.
+  bool allow_background_js_access_;
 
   // Optional URL to a page for setting options/preferences.
   GURL options_url_;
@@ -852,8 +1068,8 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // URL for fetching an update manifest
   GURL update_url_;
 
-  // The manifest that this extension was created from.
-  scoped_ptr<extensions::Manifest> manifest_;
+  // The manifest from which this extension was created.
+  scoped_ptr<Manifest> manifest_;
 
   // A map of chrome:// hostnames (newtab, downloads, etc.) to Extension URLs
   // which override the handling of those URLs. (see ExtensionOverrideUI).
@@ -887,6 +1103,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // List of text-to-speech voices that this extension provides, if any.
   std::vector<TtsVoice> tts_voices_;
 
+  // The OAuth2 client id and scopes, if specified by the extension.
+  OAuth2Info oauth2_info_;
+
   // List of intent services that this extension provides, if any.
   std::vector<webkit_glue::WebIntentServiceData> intents_services_;
 
@@ -903,16 +1122,17 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // vulnerabilities.
   std::string content_security_policy_;
 
-  FRIEND_TEST_ALL_PREFIXES(ExtensionServiceTest,
-                           UpdateExtensionPreservesLocation);
   FRIEND_TEST_ALL_PREFIXES(ExtensionTest, LoadPageActionHelper);
-  FRIEND_TEST_ALL_PREFIXES(TabStripModelTest, Apps);
+  FRIEND_TEST_ALL_PREFIXES(::TabStripModelTest, Apps);
 
   DISALLOW_COPY_AND_ASSIGN(Extension);
 };
 
 typedef std::vector< scoped_refptr<const Extension> > ExtensionList;
 typedef std::set<std::string> ExtensionIdSet;
+
+// Let gtest print InstallWarnings.
+void PrintTo(const Extension::InstallWarning&, ::std::ostream* os);
 
 // Handy struct to pass core extension info around.
 struct ExtensionInfo {
@@ -948,8 +1168,8 @@ struct UnloadedExtensionInfo {
 // The details sent for EXTENSION_PERMISSIONS_UPDATED notifications.
 struct UpdatedExtensionPermissionsInfo {
   enum Reason {
-    ADDED,   // The permissions were added to the extension.
-    REMOVED, // The permissions were removed from the extension.
+    ADDED,    // The permissions were added to the extension.
+    REMOVED,  // The permissions were removed from the extension.
   };
 
   Reason reason;
@@ -960,12 +1180,14 @@ struct UpdatedExtensionPermissionsInfo {
   // The permissions that have changed. For Reason::ADDED, this would contain
   // only the permissions that have added, and for Reason::REMOVED, this would
   // only contain the removed permissions.
-  const ExtensionPermissionSet* permissions;
+  const PermissionSet* permissions;
 
   UpdatedExtensionPermissionsInfo(
       const Extension* extension,
-      const ExtensionPermissionSet* permissions,
+      const PermissionSet* permissions,
       Reason reason);
 };
+
+} // namespace extensions
 
 #endif  // CHROME_COMMON_EXTENSIONS_EXTENSION_H_

@@ -1,20 +1,23 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+#include "chrome/browser/autocomplete/history_contents_provider.h"
 
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/autocomplete/history_contents_provider.h"
+#include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
@@ -35,7 +38,7 @@ struct TestEntry {
 };
 
 class HistoryContentsProviderTest : public testing::Test,
-                                    public ACProviderListener {
+                                    public AutocompleteProviderListener {
  public:
   HistoryContentsProviderTest()
       : ui_thread_(BrowserThread::UI, &message_loop_),
@@ -65,7 +68,8 @@ class HistoryContentsProviderTest : public testing::Test,
     profile_->CreateHistoryService(false, false);
 
     HistoryService* history_service =
-        profile_->GetHistoryService(Profile::EXPLICIT_ACCESS);
+        HistoryServiceFactory::GetForProfile(profile_.get(),
+                                             Profile::EXPLICIT_ACCESS);
 
     // Populate history.
     for (size_t i = 0; i < arraysize(test_entries); i++) {
@@ -94,8 +98,8 @@ class HistoryContentsProviderTest : public testing::Test,
     profile_.reset(NULL);
   }
 
-  // ACProviderListener
-  virtual void OnProviderUpdate(bool updated_matches) {
+  // AutocompleteProviderListener:
+  virtual void OnProviderUpdate(bool updated_matches) OVERRIDE {
     // We must quit the message loop (if running) to return control to the test.
     // Note, calling Quit() directly will checkfail if the loop isn't running,
     // so we post a task, which is safe for either case.
@@ -197,9 +201,10 @@ TEST_F(HistoryContentsProviderTest, Bookmarks) {
 
   // Add a bookmark.
   GURL bookmark_url("http://www.google.com/4");
-  bookmark_utils::AddIfNotBookmarked(profile()->GetBookmarkModel(),
-                                     bookmark_url,
-                                     ASCIIToUTF16("bar"));
+  bookmark_utils::AddIfNotBookmarked(
+        BookmarkModelFactory::GetForProfile(profile()),
+        bookmark_url,
+        ASCIIToUTF16("bar"));
 
   // Ask for synchronous. This should only get the bookmark.
   AutocompleteInput sync_input(ASCIIToUTF16("bar"), string16(), true, false,
@@ -256,9 +261,10 @@ TEST_F(HistoryContentsProviderTest, DeleteStarredMatch) {
 
   // Bookmark a history item.
   GURL bookmark_url(test_entries[2].url);
-  bookmark_utils::AddIfNotBookmarked(profile()->GetBookmarkModel(),
-                                     bookmark_url,
-                                     ASCIIToUTF16("bar"));
+  bookmark_utils::AddIfNotBookmarked(
+      BookmarkModelFactory::GetForProfile(profile()),
+      bookmark_url,
+      ASCIIToUTF16("bar"));
 
   // Get the match to delete its history
   AutocompleteInput input(ASCIIToUTF16("bar"), string16(), true, false, true,

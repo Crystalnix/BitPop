@@ -1,3 +1,7 @@
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 [
   {
     "namespace": "windows",
@@ -13,7 +17,7 @@
           "left": {"type": "integer", "description": "The offset of the window from the left edge of the screen in pixels."},
           "width": {"type": "integer", "description": "The width of the window in pixels."},
           "height": {"type": "integer", "description": "The height of the window in pixels."},
-          "tabs": {"type": "array", "items": { "$ref": "Tab" }, "optional": true, "description": "Array of $ref:Tab objects representing the current tabs in the window."},
+          "tabs": {"type": "array", "items": { "$ref": "tabs.Tab" }, "optional": true, "description": "Array of $ref:tabs.Tab objects representing the current tabs in the window."},
           "incognito": {"type": "boolean", "description": "Whether the window is incognito."},
           "type": {
             "type": "string",
@@ -23,20 +27,19 @@
           "state": {
             "type": "string",
             "description": "The state of this browser window.",
-            "enum": ["normal", "minimized", "maximized"]
-            }
+            "enum": ["normal", "minimized", "maximized", "fullscreen"]
+          },
+          "alwaysOnTop": {"type": "boolean", "description": "Whether the window is set to be always on top."}
         }
       }
     ],
     "properties": {
       "WINDOW_ID_NONE": {
-        "type": "integer",
-        "value": "-1",
+        "value": -1,
         "description": "The windowId value that represents the absence of a chrome browser window."
       },
       "WINDOW_ID_CURRENT": {
-        "type": "integer",
-        "value": "-2",
+        "value": -2,
         "description": "The windowId value that represents the <a href='windows.html#current-window'>current window</a>."
       }
     },
@@ -53,7 +56,7 @@
             "optional": true,
             "description": "",
             "properties": {
-              "populate": {"type": "boolean", "optional": true, "description": "If true, the window object will have a <var>tabs</var> property that contains a list of the $ref:Tab objects" }
+              "populate": {"type": "boolean", "optional": true, "description": "If true, the window object will have a <var>tabs</var> property that contains a list of the $ref:tabs.Tab objects" }
             }
           },
           {
@@ -78,7 +81,7 @@
             "optional": true,
             "description": "",
             "properties": {
-              "populate": {"type": "boolean", "optional": true, "description": "If true, the window object will have a <var>tabs</var> property that contains a list of the $ref:Tab objects" }
+              "populate": {"type": "boolean", "optional": true, "description": "If true, the window object will have a <var>tabs</var> property that contains a list of the $ref:tabs.Tab objects" }
             }
           },
           {
@@ -103,7 +106,7 @@
             "optional": true,
             "description": "",
             "properties": {
-              "populate": {"type": "boolean", "optional": true, "description": "If true, the window object will have a <var>tabs</var> property that contains a list of the $ref:Tab objects" }
+              "populate": {"type": "boolean", "optional": true, "description": "If true, the window object will have a <var>tabs</var> property that contains a list of the $ref:tabs.Tab objects" }
             }
           },
           {
@@ -128,7 +131,7 @@
             "optional": true,
             "description": "",
             "properties": {
-              "populate": {"type": "boolean", "optional": true, "description": "If true, each window object will have a <var>tabs</var> property that contains a list of the $ref:Tab objects for that window." }
+              "populate": {"type": "boolean", "optional": true, "description": "If true, each window object will have a <var>tabs</var> property that contains a list of the $ref:tabs.Tab objects for that window." }
             }
           },
           {
@@ -161,8 +164,8 @@
                 ]
               },
               "tabId": {"type": "integer", "minimum": 0, "optional": true, "description": "The id of the tab for which you want to adopt to the new window."},
-              "left": {"type": "integer", "optional": true, "description": "The number of pixels to position the new window from the left edge of the screen. If not specified, the new window is offset naturally from the last focusd window. This value is ignored for panels."},
-              "top": {"type": "integer", "optional": true, "description": "The number of pixels to position the new window from the top edge of the screen. If not specified, the new window is offset naturally from the last focusd window. This value is ignored for panels."},
+              "left": {"type": "integer", "optional": true, "description": "The number of pixels to position the new window from the left edge of the screen. If not specified, the new window is offset naturally from the last focused window. This value is ignored for panels."},
+              "top": {"type": "integer", "optional": true, "description": "The number of pixels to position the new window from the top edge of the screen. If not specified, the new window is offset naturally from the last focused window. This value is ignored for panels."},
               "width": {"type": "integer", "minimum": 0, "optional": true, "description": "The width in pixels of the new window. If not specified defaults to a natural width."},
               "height": {"type": "integer", "minimum": 0, "optional": true, "description": "The height in pixels of the new window. If not specified defaults to a natural height."},
               "focused": {"type": "boolean", "optional": true, "description": "If true, opens an active window. If false, opens an inactive window."},
@@ -208,8 +211,8 @@
               "state": {
                 "type": "string",
                 "optional": true,
-                "description": "The new state of the window. The 'minimized' and 'maximized' states cannot be combined with 'left', 'top', 'width' or 'height'.",
-                "enum": ["normal", "minimized", "maximized"]
+                "description": "The new state of the window. The 'minimized', 'maximized' and 'fullscreen' states cannot be combined with 'left', 'top', 'width' or 'height'.",
+                "enum": ["normal", "minimized", "maximized", "fullscreen"]
               }
             }
           },

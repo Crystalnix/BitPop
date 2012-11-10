@@ -4,10 +4,11 @@
 
 #include "webkit/chromeos/fileapi/cros_mount_point_provider.h"
 
+#include "base/chromeos/chromeos_version.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/path_service.h"
 #include "base/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/utf_string_conversions.h"
@@ -16,67 +17,59 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebFileSystem.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "webkit/chromeos/fileapi/file_access_permissions.h"
-#include "webkit/fileapi/file_system_callback_dispatcher.h"
-#include "webkit/fileapi/file_system_operation.h"
+#include "webkit/chromeos/fileapi/remote_file_stream_writer.h"
+#include "webkit/chromeos/fileapi/remote_file_system_operation.h"
+#include "webkit/fileapi/file_system_file_stream_reader.h"
+#include "webkit/fileapi/file_system_operation_context.h"
+#include "webkit/fileapi/file_system_url.h"
 #include "webkit/fileapi/file_system_util.h"
-#include "webkit/fileapi/native_file_util.h"
+#include "webkit/fileapi/local_file_stream_writer.h"
+#include "webkit/fileapi/local_file_system_operation.h"
 #include "webkit/glue/webkit_glue.h"
 
-namespace chromeos {
-
-typedef struct {
-  const char* local_root_path;
-  const char* web_root_path;
-} FixedExposedPaths;
+namespace {
 
 const char kChromeUIScheme[] = "chrome";
 
-// Top level file system elements exposed in FileAPI in ChromeOS:
-FixedExposedPaths fixed_exposed_paths[] = {
-    {"/home/chronos/user/", "Downloads"},
-    {"/media",              "archive"},
-    {"/media",              "removable"},
-};
+}  // namespace
+
+namespace chromeos {
+
+CrosMountPointProvider::MountPoint::MountPoint(
+    const FilePath& in_web_root_path,
+    const FilePath& in_local_root_path,
+    FileSystemLocation in_location,
+    fileapi::RemoteFileSystemProxyInterface* in_proxy)
+        : web_root_path(in_web_root_path), local_root_path(in_local_root_path),
+          location(in_location), remote_proxy(in_proxy) {
+}
+
+CrosMountPointProvider::MountPoint::~MountPoint() {
+}
 
 CrosMountPointProvider::CrosMountPointProvider(
     scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy)
     : special_storage_policy_(special_storage_policy),
       file_access_permissions_(new FileAccessPermissions()),
-      local_file_util_(
-          new fileapi::LocalFileUtil(new fileapi::NativeFileUtil())) {
-  for (size_t i = 0; i < arraysize(fixed_exposed_paths); i++) {
-    mount_point_map_.insert(std::pair<std::string, FilePath>(
-        std::string(fixed_exposed_paths[i].web_root_path),
-        FilePath(std::string(fixed_exposed_paths[i].local_root_path))));
-  }
+      local_file_util_(new fileapi::LocalFileUtil()) {
+  FilePath home_path;
+  if (PathService::Get(base::DIR_HOME, &home_path))
+    AddLocalMountPoint(home_path.AppendASCII("Downloads"));
+  AddLocalMountPoint(FilePath(FILE_PATH_LITERAL("/media/archive")));
+  AddLocalMountPoint(FilePath(FILE_PATH_LITERAL("/media/removable")));
 }
 
 CrosMountPointProvider::~CrosMountPointProvider() {
 }
 
-// TODO(zelidrag) share with SandboxMountPointProvider impl.
-std::string GetOriginIdentifierFromURL(
-    const GURL& url) {
-  WebKit::WebSecurityOrigin web_security_origin =
-      WebKit::WebSecurityOrigin::createFromString(UTF8ToUTF16(url.spec()));
-  return web_security_origin.databaseIdentifier().utf8();
-}
-
 bool CrosMountPointProvider::GetRootForVirtualPath(
     const FilePath& virtual_path, FilePath* root_path) {
-  std::vector<FilePath::StringType> components;
-  virtual_path.GetComponents(&components);
-  if (components.size() < 1) {
+  const MountPoint* mount_point = GetMountPoint(virtual_path);
+  if (!mount_point)
     return false;
-  }
 
-  base::AutoLock locker(lock_);
-  // Check if this root mount point is exposed by this provider.
-  MountPointMap::iterator iter = mount_point_map_.find(components[0]);
-  if (iter == mount_point_map_.end()) {
-    return false;
-  }
-  *root_path = iter->second;
+  DCHECK(root_path);
+  *root_path = mount_point->local_root_path;
   return true;
 }
 
@@ -127,15 +120,56 @@ bool CrosMountPointProvider::IsRestrictedFileName(const FilePath& path) const {
   return false;
 }
 
-void CrosMountPointProvider::AddMountPoint(FilePath mount_point) {
-  base::AutoLock locker(lock_);
-  mount_point_map_.erase(mount_point.BaseName().value());
-  mount_point_map_.insert(std::pair<std::string, FilePath>(
-      mount_point.BaseName().value(), mount_point.DirName()));
+fileapi::FileSystemQuotaUtil* CrosMountPointProvider::GetQuotaUtil() {
+  // No quota support.
+  return NULL;
 }
 
-void CrosMountPointProvider::RemoveMountPoint(FilePath mount_point) {
-  base::AutoLock locker(lock_);
+void CrosMountPointProvider::DeleteFileSystem(
+    const GURL& origin_url,
+    fileapi::FileSystemType type,
+    fileapi::FileSystemContext* context,
+    const DeleteFileSystemCallback& callback) {
+  NOTREACHED();
+  callback.Run(base::PLATFORM_FILE_ERROR_INVALID_OPERATION);
+}
+
+bool CrosMountPointProvider::HasMountPoint(const FilePath& mount_point) {
+  base::AutoLock locker(mount_point_map_lock_);
+  MountPointMap::const_iterator iter = mount_point_map_.find(
+      mount_point.BaseName().value());
+  DCHECK(iter == mount_point_map_.end() ||
+         iter->second.local_root_path == mount_point.DirName());
+  return iter != mount_point_map_.end();
+}
+
+void CrosMountPointProvider::AddLocalMountPoint(const FilePath& mount_point) {
+  base::AutoLock locker(mount_point_map_lock_);
+  mount_point_map_.erase(mount_point.BaseName().value());
+  mount_point_map_.insert(std::make_pair(
+      mount_point.BaseName().value(),
+      MountPoint(mount_point.BaseName(),
+                 mount_point.DirName(),
+                 LOCAL,
+                 NULL)));
+}
+
+void CrosMountPointProvider::AddRemoteMountPoint(
+    const FilePath& mount_point,
+    fileapi::RemoteFileSystemProxyInterface* remote_proxy) {
+  DCHECK(remote_proxy);
+  base::AutoLock locker(mount_point_map_lock_);
+  mount_point_map_.erase(mount_point.BaseName().value());
+  mount_point_map_.insert(std::make_pair(
+      mount_point.BaseName().value(),
+      MountPoint(mount_point.BaseName(),
+                 mount_point.DirName(),
+                 REMOTE,
+                 remote_proxy)));
+}
+
+void CrosMountPointProvider::RemoveMountPoint(const FilePath& mount_point) {
+  base::AutoLock locker(mount_point_map_lock_);
   mount_point_map_.erase(mount_point.BaseName().value());
 }
 
@@ -170,27 +204,85 @@ std::vector<FilePath> CrosMountPointProvider::GetRootDirectories() const {
   for (MountPointMap::const_iterator iter = mount_point_map_.begin();
        iter != mount_point_map_.end();
        ++iter) {
-    root_dirs.push_back(iter->second.Append(iter->first));
+    root_dirs.push_back(iter->second.local_root_path.Append(iter->first));
   }
   return root_dirs;
 }
 
-fileapi::FileSystemFileUtil* CrosMountPointProvider::GetFileUtil() {
+fileapi::FileSystemFileUtil* CrosMountPointProvider::GetFileUtil(
+    fileapi::FileSystemType type) {
   return local_file_util_.get();
+}
+
+FilePath CrosMountPointProvider::GetPathForPermissionsCheck(
+    const FilePath& virtual_path) const {
+  const MountPoint* mount_point = GetMountPoint(virtual_path);
+  if (!mount_point)
+    return FilePath();
+
+  FilePath root_path = mount_point->local_root_path;
+
+  return root_path.Append(virtual_path);
+}
+
+const CrosMountPointProvider::MountPoint*
+CrosMountPointProvider::GetMountPoint(const FilePath& virtual_path) const {
+  std::vector<FilePath::StringType> components;
+  virtual_path.GetComponents(&components);
+  if (components.empty())
+    return NULL;
+
+  base::AutoLock locker(
+      const_cast<CrosMountPointProvider*>(this)->mount_point_map_lock_);
+  // Check if this root mount point is exposed by this provider.
+  MountPointMap::const_iterator iter = mount_point_map_.find(components[0]);
+  if (iter == mount_point_map_.end())
+    return NULL;
+
+  return &(iter->second);
 }
 
 fileapi::FileSystemOperationInterface*
 CrosMountPointProvider::CreateFileSystemOperation(
-    const GURL& origin_url,
-    fileapi::FileSystemType file_system_type,
-    const FilePath& virtual_path,
-    scoped_ptr<fileapi::FileSystemCallbackDispatcher> dispatcher,
-    base::MessageLoopProxy* file_proxy,
+    const fileapi::FileSystemURL& url,
     fileapi::FileSystemContext* context) const {
-  // TODO(satorux,zel): instantiate appropriate FileSystemOperation that
-  // implements async/remote operations.
-  return new fileapi::FileSystemOperation(
-      dispatcher.Pass(), file_proxy, context);
+  const MountPoint* mount_point = GetMountPoint(url.path());
+  if (mount_point && mount_point->location == REMOTE)
+    return new chromeos::RemoteFileSystemOperation(mount_point->remote_proxy);
+
+  scoped_ptr<fileapi::FileSystemOperationContext> operation_context(
+      new fileapi::FileSystemOperationContext(context));
+  return new fileapi::LocalFileSystemOperation(context,
+                                               operation_context.Pass());
+}
+
+webkit_blob::FileStreamReader* CrosMountPointProvider::CreateFileStreamReader(
+    const fileapi::FileSystemURL& url,
+    int64 offset,
+    fileapi::FileSystemContext* context) const {
+  // For now we return a generic Reader implementation which utilizes
+  // CreateSnapshotFile internally (i.e. will download everything first).
+  // TODO(satorux,zel): implement more efficient reader for remote cases.
+  return new fileapi::FileSystemFileStreamReader(context, url, offset);
+}
+
+fileapi::FileStreamWriter* CrosMountPointProvider::CreateFileStreamWriter(
+    const fileapi::FileSystemURL& url,
+    int64 offset,
+    fileapi::FileSystemContext* context) const {
+  if (!url.is_valid())
+    return NULL;
+  const MountPoint* mount_point = GetMountPoint(url.path());
+  if (!mount_point)
+    return NULL;
+  if (mount_point->location == REMOTE) {
+    return new fileapi::RemoteFileStreamWriter(mount_point->remote_proxy,
+                                               url,
+                                               offset);
+  }
+  FilePath root_path = mount_point->local_root_path;
+  return new fileapi::LocalFileStreamWriter(
+      root_path.Append(url.path()), offset);
 }
 
 bool CrosMountPointProvider::GetVirtualPath(const FilePath& filesystem_path,
@@ -198,7 +290,7 @@ bool CrosMountPointProvider::GetVirtualPath(const FilePath& filesystem_path,
   for (MountPointMap::const_iterator iter = mount_point_map_.begin();
        iter != mount_point_map_.end();
        ++iter) {
-    FilePath mount_prefix = iter->second.Append(iter->first);
+    FilePath mount_prefix = iter->second.local_root_path.Append(iter->first);
     *virtual_path = FilePath(iter->first);
     if (mount_prefix == filesystem_path) {
       return true;

@@ -7,27 +7,23 @@ body {
 }
 
 #main-content {
+  bottom: 0;
   display: -webkit-box;
-  position: absolute;
   left: 0;
+  position: absolute;
   right: 0;
   top: 0;
-  bottom: 0;
 }
 
 #mainview {
   -webkit-box-align: stretch;
+  bottom: 0;
+  left: 0;
   margin: 0;
   position: absolute;
-  left: 0;
   right: 0;
   top: 0;
-  bottom: 0;
   z-index: 1;
-}
-
-html.hide-menu #mainview {
-  -webkit-padding-start: 0;
 }
 
 #mainview-content {
@@ -36,121 +32,55 @@ html.hide-menu #mainview {
 }
 
 #page-container {
-  -webkit-padding-end: 24px;
   box-sizing: border-box;
   max-width: 888px;
   min-width: 600px;
 }
 
+body.uber-frame #searchBox {
+  position: fixed;
+  z-index: 4;
+}
+
 div.disabled {
-  color: #888;
+  color: #999;
 }
 
-/* TODO(jhawkins): Refactor back into button.css once more pages are converted.
- */
-/* Note |link-button| has no additional styling for focus, hover, or active. */
-.link-button {
-  color: #303942;
-  padding-left: 0;
-  padding-right: 0;
-}
-
-/* TEXT */
-input[type='password'],
-input[type='text'],
-input[type='url'],
-input:not([type]) {
-  -webkit-border-radius: 2px;
-  border: 1px solid #aaa;
-  font-size: inherit;
-  padding: 3px;
-}
-
-input[type='text']:disabled {
-  color: #888;
+.settings-row {
+  display: block;
+  margin: 0.65em 0;
 }
 
 .hbox {
-  display: -webkit-box;
   -webkit-box-orient: horizontal;
+  display: -webkit-box;
 }
 
 .vbox {
-  display: -webkit-box;
   -webkit-box-orient: vertical;
+  display: -webkit-box;
+}
+
+.box-align-center {
+  -webkit-box-align: center;
 }
 
 .stretch {
   -webkit-box-flex: 1;
 }
 
-.frozen,
-.subpage-sheet-container.frozen {
+.frozen {
   position: fixed;
 }
 
-.search-field-container {
-  position: absolute;
-  right: 18px;
-  top: 18px;
-}
-
-html[dir="rtl"] .search-field-container {
-  left: 18px;
-  right: auto;
-}
-
-#search-field {
-  -webkit-appearance: none;
-  -webkit-margin-end: 18px;
-  border: 1px solid rgba(0, 0, 0, 0.25);
-  border-radius: 2px;
-  font: normal 12px 'Open Sans';
-  margin: 0;
-  /* NOTE: Keep a relatively high min-width for this so we don't obscure the end
-   * of the default text in relatively spacious languages (i.e. German). */
-  min-width: 160px;
-}
-
-/*
- * Add padding to increase the touchable area of search box. Use original font
- * size to avoid the width of search box exceeding the width of navbar.
- */
-html[touch-optimized] #search-field {
-  font-size: 13px;
-  padding: 5px;
-}
-html[touch-optimized] #search-field::-webkit-search-cancel-button {
-  -webkit-transform: scale(1.5);
-}
-
-/*
- * For touch-optimized UI, make the radio/checkbox input boxes in
- * options/preference pages easier to touch.
- * TODO(rbyers): We need to solve this more generally for all web pages
- * (crbug.com/99981), and perhaps temporarily for all WebUI (crbug.com/102482).
- */
-html[touch-optimized] div.radio > label > span,
-html[touch-optimized] div.checkbox > label > span {
-  -webkit-padding-start: 5px;
-}
-
-html[touch-optimized] label > input[type=checkbox],
-html[touch-optimized] label > input[type=radio] {
-  -webkit-transform: scale(1.4);
-}
-
-/*
- * Override the font-size rule in shared_options.css file.
- * 16 px font-size proved to be more touch friendly. It increases the touchable
- * area for buttons and input boxes.
- */
-html[touch-optimized] body {
-  font-size: 16px;
-}
-
-#overlay {
+#overlay-container-1 {
   z-index: 11;
+}
+#overlay-container-2 {
+  z-index: 12;
+}
+#overlay-container-3 {
+  z-index: 13;
 }
 
 .raw-button,
@@ -164,196 +94,24 @@ html[touch-optimized] body {
   padding: 1px 6px;
 }
 
-.close-subpage {
-  background-image: url('../../../../ui/resources/close_bar.png');
-  height: 16px;
-  min-width: 0;
-  position: relative;
-  top: 16px;
-  width: 16px;
-}
-
-.close-subpage:hover {
-  background-image: url('../../../../ui/resources/close_bar_h.png');
-}
-
-.close-subpage:active {
-  background-image: url('../../../../ui/resources/close_bar_p.png');
-}
-
-html[dir='ltr'] .close-subpage {
-  float: right;
-  right: 20px;
-}
-
-html[dir='rtl'] .close-subpage {
-  float: left;
-  left: 20px;
-}
-
-html.hide-menu .close-subpage {
-  display: none
-}
-
 .bottom-strip {
+  border-top: none;
+  bottom: 0;
   padding: 12px;
   position: absolute;
   right: 0;
-  bottom: 0;
-  border-top: none;
 }
 
-#mainview-content .page {
-  padding-bottom: 20px;
-}
-
-#subpage-backdrop {
-  background: black;
-  cursor: pointer;
-  opacity: 0.3;
-}
-
-#subpage-backdrop:hover {
-  background: #424242;
-}
-
-.subpage-sheet-container {
-  -webkit-transition: 250ms opacity, 100ms padding-left, 100ms padding-right;
-  box-sizing: border-box;
-  min-height: 100%;
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-}
-
-/* Omit top padding (currently only on #browserPage) whenever the search page is
- * showing. */
-#searchPage:not([hidden]) + #browserPage {
+/* Omit top padding (currently only on #settings) whenever the search page is
+ * showing.
+ */
+#searchPage:not([hidden]) + #settings {
   padding-top: 0;
-}
-
-#subpage-sheet-container-1 {
-  -webkit-padding-start: 40px;
-  z-index: 5;
-}
-
-#subpage-sheet-container-2 {
-  -webkit-padding-start: 80px;
-  z-index: 7;
-}
-
-#subpage-sheet-container-3 {
-  -webkit-padding-start: 120px;
-  z-index: 9;
-}
-
-#subpage-sheet-container-1 header {
-  left: 60px;
-  right: 60px;
-}
-
-#subpage-sheet-container-2 header {
-  left: 100px;
-  right: 100px;
-}
-
-#subpage-sheet-container-3 header {
-  left: 140px;
-  right: 140px;
-}
-
-.subpage-sheet {
-  -webkit-margin-start: -155px;
-  background-color: white;
-  box-shadow: #666 0 2px 5px;
-  box-sizing: border-box;
-  min-height: 100%;
-  min-width: 651px;
-}
-
-/* Special shadow for only first subpage sheet. */
-#subpage-sheet-1 {
-  box-shadow: 0 0 17px rgba(0, 0, 0, 0.3), 0 0 57px rgba(0, 0, 0, 0.3);
-}
-
-.subpage-sheet-contents {
-  box-sizing: border-box;
-  min-height: 100%;
-  max-width: 900px;
-  min-width: 650px;
-  padding: 0 20px;
-  width: 95%;
-}
-
-.subpage-sheet-contents .page {
-  z-index: 1;
-}
-
-.managed-prefs-banner {
-  background: -webkit-linear-gradient(#fff2b7, #fae691 97%, #878787);
-  height: 31px;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  position: relative;
-  vertical-align: middle;
-  z-index: 9;
-}
-
-.managed-prefs-banner.clickable:active {
-  background: -webkit-linear-gradient(#878787, #fae691 3%, #fff2b7);
-}
-
-.managed-prefs-icon {
-  background-image: url("chrome://theme/IDR_WARNING");
-  background-repeat: no-repeat;
-  background-position:center;
-  display: inline-block;
-  padding: 5px;
-  height: 21px;
-  vertical-align: middle;
-  width: 24px;
-}
-
-.managed-prefs-text {
-  vertical-align: middle;
-}
-
-.overlay .page h1 {
-  background: -webkit-linear-gradient(white, #F8F8F8);
-  border-bottom: 1px solid rgba(188, 193, 208, .5);
-  font-size: 105%;
-  font-weight: bold;
-  padding: 10px 15px 8px 15px;
 }
 
 .page list {
   /* Min height is a multiple of the list item height (32) */
   min-height: 192px;
-}
-
-section {
-  -webkit-padding-start: 18px;
-  margin-top: 8px;
-  margin-bottom: 24px;
-  max-width: 600px;
-}
-
-section > h3 {
-  -webkit-margin-start: -18px;
-  color: black;
-  font-size: 14px;
-  font-weight: normal;
-  margin-bottom: 4px;
-}
-
-section > div:only-of-type {
-  -webkit-box-flex: 1;
-}
-
-.section-description {
-  margin-top: 4px;
 }
 
 .option {
@@ -385,11 +143,11 @@ section > div:only-of-type {
 list > * {
   -webkit-box-align: center;
   -webkit-transition: 150ms background-color;
+  border: none;
+  border-radius: 0;  /* TODO(dbeam): Is this necessary? */
   box-sizing: border-box;
-  border-radius: 0;
   display: -webkit-box;
   height: 32px;
-  border: none;
   margin: 0;
 }
 
@@ -401,7 +159,7 @@ list > .spacer {
 }
 
 list:not([disabled]) > :hover {
-  background-color: #e4ecf7;
+  background-color: rgb(228, 236, 247);
 }
 
 /* TODO(stuartmorgan): Once this becomes the list style for other WebUI pages
@@ -418,14 +176,14 @@ list[hasElementFocus] > [selected],
 list[hasElementFocus] > [lead][selected],
 list:not([hasElementFocus]) > [selected]:hover,
 list:not([hasElementFocus]) > [selected][lead]:hover {
-  background-color: #bbcee9;
+  background-color: rgb(187, 206, 233);
   background-image: none;
 }
 
 list[hasElementFocus] > [lead],
 list[hasElementFocus] > [lead][selected] {
-  border-top: 1px solid #7892b4;
-  border-bottom: 1px solid #7892b4;
+  border-bottom: 1px solid rgb(120, 146, 180);
+  border-top: 1px solid rgb(120, 146, 180);
 }
 
 list[hasElementFocus] > [lead]:nth-child(2),
@@ -448,7 +206,7 @@ list[disabled] {
 }
 
 list > .heading {
-  color: #666666;
+  color: #666;
 }
 
 list > .heading:hover {
@@ -467,11 +225,13 @@ list .deletable-item > :first-child {
   display: -webkit-box;
 }
 
-list .close-button {
+list .row-delete-button {
   -webkit-transition: 150ms opacity;
   background-color: transparent;
   /* TODO(stuartmorgan): Replace with real images once they are available. */
-  background-image: url("../../../../ui/resources/close_bar.png");
+  background-image: -webkit-image-set(
+      url('../../../../ui/resources/default_100_percent/close_bar.png') 1x,
+      url('../../../../ui/resources/default_200_percent/close_bar.png') 2x);
   border: none;
   display: block;
   height: 16px;
@@ -479,21 +239,35 @@ list .close-button {
   width: 16px;
 }
 
-list > *:not(:hover):not([lead]) .close-button,
-list > *:not(:hover):not([selected]) .close-button,
-list:not([hasElementFocus]) > *:not(:hover) .close-button,
-list[disabled] .close-button,
-list .close-button[disabled] {
+list > *:not(:hover):not([selected]):not([lead]) .row-delete-button,
+list:not([hasElementFocus]) > *:not(:hover):not([selected]) .row-delete-button,
+list[disabled] .row-delete-button,
+list .row-delete-button[disabled] {
   opacity: 0;
   pointer-events: none;
 }
 
-list .close-button:hover {
-  background-image: url("../../../../ui/resources/close_bar_h.png");
+/* HostedApp entries use the disabled closing button to display the App's
+ * favicon, as an indicator that instead of deleting the permission here
+ * the user has to remove the hosted app.*/
+list div[role='listitem'][managedby='HostedApp'] .row-delete-button {
+  opacity: 1;
 }
 
-list .close-button:active {
-  background-image: url("../../../../ui/resources/close_bar_p.png");
+list .row-delete-button:hover {
+  background-image: -webkit-image-set(
+      url('../../../../ui/resources/default_100_percent/close_bar_hover.png')
+          1x,
+      url('../../../../ui/resources/default_200_percent/close_bar_hover.png')
+          2x);
+}
+
+list .row-delete-button:active {
+  background-image: -webkit-image-set(
+      url('../../../../ui/resources/default_100_percent/close_bar_pressed.png')
+          1x,
+      url('../../../../ui/resources/default_200_percent/close_bar_pressed.png')
+          2x);
 }
 
 list .static-text {
@@ -508,17 +282,32 @@ list[inlineeditable] input {
   width: 100%;
 }
 
-list > :not([editing]) [displaymode="edit"] {
+list > :not([editing]) [displaymode='edit'] {
   display: none;
 }
 
-list > [editing] [displaymode="static"] {
+list > [editing] [displaymode='static'] {
   display: none;
 }
 
 list > [editing] input:invalid {
   /* TODO(stuartmorgan): Replace with validity badge */
   background-color: pink;
+}
+
+.list-inline-button {
+  -webkit-appearance: none;
+  -webkit-transition: opacity 150ms;
+  background: rgb(138, 170, 237);
+  border: none;
+  border-radius: 2px;
+  color: white;
+  font-weight: bold;
+  opacity: 0.7;
+}
+
+.list-inline-button:hover {
+  opacity: 1;
 }
 
 .option-name {
@@ -535,7 +324,7 @@ html[dir=rtl].option-name {
   background-repeat: no-repeat;
 }
 
-input[type="url"].favicon-cell {
+input[type='url'].favicon-cell {
   -webkit-padding-start: 22px;
   background-position-x: 4px;
 }
@@ -551,8 +340,8 @@ list .favicon-cell {
   -webkit-margin-start: 7px;
   -webkit-padding-start: 26px;
   display: block;
-  text-overflow: ellipsis;
   overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -567,25 +356,22 @@ html[enable-background-mode=false] #background-mode-section {
 /* UI Controls */
 
 /* LIST */
-html:not([os=mac]) list[hasElementFocus] {
+list[hasElementFocus] {
+<if expr="not is_macosx">
   outline: 1px solid rgba(0, 128, 256, 0.5);
   outline-offset: -2px;
-}
-
-/* This matches the native list outline on Mac */
-html[os=mac] list[hasElementFocus] {
-  outline-color: #759ad9;
+</if>
+<if expr="is_macosx">
+  /* This matches the native list outline on Mac */
+  outline-color: rgb(117, 154, 217);
   outline-offset: -1px;
   outline-style: auto;
   outline-width: 5px;
+</if>
 }
 
 .suboption {
   -webkit-margin-start: 23px;
-}
-
-.informational-text {
-  color: grey;
 }
 
 list.autocomplete-suggestions {
@@ -604,7 +390,7 @@ list.autocomplete-suggestions > div {
 
 list.autocomplete-suggestions:not([hasElementFocus]) > [selected],
 list.autocomplete-suggestions:not([hasElementFocus]) > [lead][selected] {
-  background-color: #bbcee9;
+  background-color: rgb(187, 206, 233);
 }
 
 html:not([hasFlashPlugin]) .flash-plugin-area,
@@ -613,7 +399,8 @@ html:not([hasFlashPlugin]) .flash-plugin-area,
  */
 html[flashPluginSupportsClearSiteData] .flash-plugin-area,
 html:not([flashPluginSupportsClearSiteData]) .clear-plugin-lso-data-enabled,
-html[flashPluginSupportsClearSiteData] .clear-plugin-lso-data-disabled {
+html[flashPluginSupportsClearSiteData] .clear-plugin-lso-data-disabled,
+html:not([enablePepperFlashSettings]) .pepper-flash-settings {
   display: none;
 }
 
@@ -638,38 +425,44 @@ html[flashPluginSupportsClearSiteData] .clear-plugin-lso-data-disabled {
 .controlled-setting-indicator[controlled-by='policy'] summary {
   background-image:
       url('chrome://theme/IDR_CONTROLLED_SETTING_MANDATORY_GRAY');
+  background-size: 16px;
 }
 
 .controlled-setting-indicator[controlled-by='policy'] summary:hover {
   background-image:
       url('chrome://theme/IDR_CONTROLLED_SETTING_MANDATORY');
+  background-size: 16px;
 }
 
 .controlled-setting-indicator[controlled-by='extension'] summary {
   background-image:
       url('chrome://theme/IDR_CONTROLLED_SETTING_EXTENSION_GRAY');
+  background-size: 16px;
 }
 
 .controlled-setting-indicator[controlled-by='extension'] summary:hover {
   background-image:
       url('chrome://theme/IDR_CONTROLLED_SETTING_EXTENSION');
+  background-size: 16px;
 }
 
 .controlled-setting-indicator[controlled-by='recommended'] summary {
   background-image:
       url('chrome://theme/IDR_CONTROLLED_SETTING_RECOMMENDED_GRAY');
+  background-size: 16px;
 }
 
 .controlled-setting-indicator[controlled-by='recommended'] summary:hover {
   background-image:
       url('chrome://theme/IDR_CONTROLLED_SETTING_RECOMMENDED');
+  background-size: 16px;
 }
 
 .controlled-setting-bubble {
   -webkit-margin-start: -20px;
   background-color: white;
-  border-radius: 4px;
   border: 1px solid #ccc;
+  border-radius: 4px;
   box-shadow: 0 2px 2px #ddd;
   margin-top: 10px;
   padding: 10px;
@@ -718,18 +511,21 @@ html[dir='rtl'] .controlled-setting-bubble {
     .controlled-setting-bubble-text {
   background-image:
       url('chrome://theme/IDR_CONTROLLED_SETTING_MANDATORY_LARGE');
+  background-size: 22px;
 }
 
 .controlled-setting-indicator[controlled-by='extension']
     .controlled-setting-bubble-text {
   background-image:
       url('chrome://theme/IDR_CONTROLLED_SETTING_EXTENSION_LARGE');
+  background-size: 22px;
 }
 
 .controlled-setting-indicator[controlled-by='recommended']
     .controlled-setting-bubble-text {
   background-image:
       url('chrome://theme/IDR_CONTROLLED_SETTING_RECOMMENDED_LARGE');
+  background-size: 22px;
 }
 
 html[dir='rtl'] .controlled-setting-bubble-text {

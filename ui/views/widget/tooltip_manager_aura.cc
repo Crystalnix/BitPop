@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,7 +30,7 @@ gfx::Font TooltipManager::GetDefaultFont() {
 // static
 int TooltipManager::GetMaxWidth(int x, int y) {
   gfx::Rect monitor_bounds =
-      gfx::Screen::GetMonitorAreaNearestPoint(gfx::Point(x, y));
+      gfx::Screen::GetDisplayNearestPoint(gfx::Point(x, y)).bounds();
   return (monitor_bounds.width() + 1) / 2;
 }
 
@@ -51,42 +51,40 @@ TooltipManagerAura::~TooltipManagerAura() {
 // TooltipManagerAura, TooltipManager implementation:
 
 void TooltipManagerAura::UpdateTooltip() {
-  if (aura::client::GetTooltipClient()) {
-    gfx::Point view_point =
-        aura::RootWindow::GetInstance()->last_mouse_location();
-    aura::Window::ConvertPointToWindow(aura::RootWindow::GetInstance(),
-        native_widget_aura_->GetNativeView(), &view_point);
+  aura::Window* window = native_widget_aura_->GetNativeView();
+  aura::RootWindow* root_window = window->GetRootWindow();
+  if (aura::client::GetTooltipClient(root_window)) {
+    gfx::Point view_point = root_window->GetLastMouseLocationInRoot();
+    aura::Window::ConvertPointToWindow(root_window, window, &view_point);
     View* view = GetViewUnderPoint(view_point);
     if (view) {
       View::ConvertPointFromWidget(view, &view_point);
       if (!view->GetTooltipText(view_point, &tooltip_text_))
-          tooltip_text_.clear();
+        tooltip_text_.clear();
     } else {
       tooltip_text_.clear();
     }
-    aura::client::GetTooltipClient()->UpdateTooltip(
-        native_widget_aura_->GetNativeView());
+    aura::client::GetTooltipClient(root_window)->UpdateTooltip(window);
   }
 }
 
 void TooltipManagerAura::TooltipTextChanged(View* view)  {
-  if (aura::client::GetTooltipClient()) {
-    gfx::Point view_point =
-        aura::RootWindow::GetInstance()->last_mouse_location();
-    aura::Window::ConvertPointToWindow(aura::RootWindow::GetInstance(),
-        native_widget_aura_->GetNativeView(), &view_point);
+  aura::Window* window = native_widget_aura_->GetNativeView();
+  aura::RootWindow* root_window = window->GetRootWindow();
+  if (aura::client::GetTooltipClient(root_window)) {
+    gfx::Point view_point = root_window->GetLastMouseLocationInRoot();
+    aura::Window::ConvertPointToWindow(root_window, window, &view_point);
     View* target = GetViewUnderPoint(view_point);
     if (target != view)
       return;
     if (target) {
       View::ConvertPointFromWidget(view, &view_point);
       if (!view->GetTooltipText(view_point, &tooltip_text_))
-          tooltip_text_.clear();
+        tooltip_text_.clear();
     } else {
       tooltip_text_.clear();
     }
-    aura::client::GetTooltipClient()->UpdateTooltip(
-        native_widget_aura_->GetNativeView());
+    aura::client::GetTooltipClient(root_window)->UpdateTooltip(window);
   }
 }
 

@@ -1,111 +1,183 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /*
 This component extension test does the following:
 
-1. Creates a txt file on the local file system with some random text.
-2. Finds a registered task (file item context menu) and invokes it with url
-   of the test file.
+1. Creates an abc and log file on the local file system with some random text.
+2. Finds a registered task (file item context menu) for abc file and invokes it
+   with url of the test file.
 3. Listens for a message from context menu handler and makes sure its payload
    matches the random text from the test file.
 */
 
-// The ID of this extension.
-var fileBrowserExtensionId = "ddammdhioacbehjngdmkjcjbnfginlla";
+var cleanupError = 'Got unexpected error while cleaning up test directory.';
 
-var fileSystem = null;
-var testDirName = "tmp/test_dir_" + Math.floor(Math.random()*10000);
-var testFileName = "test_file_" + Math.floor(Math.random()*10000)+".Txt";
-var fileUrl = "filesystem:chrome-extension://" + fileBrowserExtensionId +
-              "/external/" + testDirName + "/" + testFileName;
-var testDirectory = null;
-var randomText = "random file text " + Math.floor(Math.random()*10000);
+// Class specified by the client running the TestRunner.
+// |expectedTasks| should contain list of actions defined for abc files defined
+//     by filesystem_handler part of the test.
+// |fileVerifierFunction| method that will verify test results received from the
+//     filesystem_handler part of the test.
+//     The method will be passed received fileEntry object, original file
+//     content, response received from filesystem_handler and callback
+//     function that will expect error object as its argument (or undefined on
+//     success).
+// TODO(tbarzic): Rename this to TestParams, or something similar.
+var TestExpectations = function(fileExtension, expectedTasks,
+    fileVerifierFunction) {
+  this.fileText_ = undefined;
+  this.file_ = undefined;
+  this.expectedTasks_ = expectedTasks;
+  this.fileExtension_ = fileExtension;
+  this.fileVerifierFunction_ = fileVerifierFunction;
+};
 
-function onFileSystemFetched(fs) {
-  if (!fs) {
-    errorCallback(chrome.extensions.lastError);
-    return;
-  }
-  fileSystem = fs;
-  console.log("DONE requesting local filesystem: " + fileSystem.name);
-  console.log("Creating directory : " + testDirName);
-  fileSystem.root.getDirectory(testDirName, {create:true},
-                               directoryCreateCallback, errorCallback);
-}
+// This has to be called before verifyHandlerRequest.
+TestExpectations.prototype.setFileAndFileText = function(file, fileText) {
+  this.file_ = file;
+  this.fileText_ = fileText;
+};
 
-function directoryCreateCallback(directory) {
-  testDirectory = directory;
-  console.log("DONE creating directory: " + directory.fullPath);
-  directory.getFile(testFileName, {create:true}, fileCreatedCallback,
-                    errorCallback);
-}
+TestExpectations.prototype.getFileExtension = function() {
+  return this.fileExtension_;
+};
 
-function fileCreatedCallback(fileEntry) {
-  console.log("DONE creating file: " + fileEntry.fullPath);
-  fileEntry.createWriter(onGetFileWriter);
-}
-
-function onGetFileWriter(writer) {
-  // Start
-  console.log("Got file writer");
-  writer.onerror = errorCallback;
-  writer.onwrite = onFileWriteCompleted;
-  var bb = new WebKitBlobBuilder();
-  bb.append(randomText);
-  writer.write(bb.getBlob('text/plain'));
-}
-
-function onFileWriteCompleted(e) {
-  // Start
-  console.log("DONE writing file content");
-  console.log("Get registered tasks now...");
-  chrome.fileBrowserPrivate.getFileTasks([fileUrl], onGetTasks);
-
-}
-
-function onGetTasks(tasks) {
-  console.log("Tasks: ");
-  console.log(tasks);
-  if (!tasks || !tasks.length) {
-    chrome.test.fail("No tasks registered");
+TestExpectations.prototype.verifyHandlerRequest = function(request, callback) {
+  if (!request) {
+    callback({message: "Request from handler not defined."});
     return;
   }
 
-  var expected_tasks = {'TextAction': ['filesystem:*.txt'],
-                        'BaseAction': ['filesystem:*', 'filesystem:*.*']};
+  if (!request.fileContent) {
+    var error = request.error || {message: "Undefined error."};
+    callback(error);
+    return;
+  }
 
-  console.log("DONE fetching " + tasks.length + " tasks");
+  if (!this.file_ || !this.fileText_ || !this.fileVerifierFunction_) {
+    callback({message: "Test expectations not set properly."});
+    return;
+  }
 
-  if (tasks.length != 2)
-    chrome.test.fail('Wrong number of tasks found.');
+  this.fileVerifierFunction_(this.file_, this.fileText_, request,
+                             callback);
+};
+
+// Verifies that list of tasks |tasks| contains tasks specified in
+// expectedTasks_. |successCallback| expects to be passed |tasks|.
+// |errorCallback| expects error object.
+TestExpectations.prototype.verifyTasks = function(tasks,
+                                                  successCallback,
+                                                  errorCallback) {
+  if (tasks.length != Object.keys(this.expectedTasks_).length) {
+    errorCallback({message: 'Wrong number of tasks found.'});
+    return;
+  }
 
   for (var i = 0; i < tasks.length; ++i) {
-    var task_name = /^.*[|](\w+)$/.exec(tasks[i].taskId)[1];
+    var taskName = /^.*[|](\w+)$/.exec(tasks[i].taskId)[1];
     var patterns = tasks[i].patterns;
-    var expected_patterns = expected_tasks[task_name];
-    if (!expected_patterns)
-      chrome.test.fail('Wrong task from getFileTasks(): ' + task_name);
+    var expectedPatterns = this.expectedTasks_[taskName];
+    if (!expectedPatterns) {
+      errorCallback({message: 'Wrong task from getFileTasks(): ' + task_name});
+      return;
+    }
     patterns = patterns.sort();
-    expected_patterns = expected_patterns.sort();
+    expectedPatterns = expectedPatterns.sort();
     for (var j = 0; j < patterns.length; ++j) {
-      if (patterns[j] != expected_patterns[j])
-        chrome.test.fail('Wrong patterns set for task ' + task_name + '. ' +
-                         'Got: ' + patterns +
-                         ' expected: ' + expected_patterns);
+      var translatedPattern = expectedPatterns[j].replace(
+          /^filesystem:/, "chrome-extension://*/");
+      if (patterns[j] != translatedPattern) {
+        errorCallback({message: 'Wrong patterns set for task ' +
+                                taskName + '. ' +
+                                'Got: ' + patterns +
+                                ' expected: ' + expectedPatterns});
+        return;
+      }
     }
   }
+  successCallback(tasks);
+};
 
-  chrome.fileBrowserPrivate.executeTask(tasks[0].taskId, [fileUrl]);
+// Class that is in charge for running the test.
+var TestRunner = function(expectations) {
+  this.expectations_ = expectations;
+  this.fileCreator_ = new TestFileCreator("tmp", true /* shouldRandomize */);
+  this.listener_ = this.onHandlerRequest_.bind(this);
+};
+
+// Starts the test.
+TestRunner.prototype.runTest = function() {
+  // Get local FS, create dir with a file in it.
+  console.log('Requesting local file system...');
+  chrome.extension.onRequestExternal.addListener(this.listener_);
+  chrome.fileBrowserPrivate.requestLocalFileSystem(
+      this.onFileSystemFetched_.bind(this));
+};
+
+TestRunner.prototype.onFileSystemFetched_ = function(fs) {
+  if (!fs) {
+    this.errorCallback_(chrome.extensions.lastError);
+    return;
+  }
+
+  this.fileCreator_.init(fs, this.onFileCreatorInit_.bind(this),
+                             this.errorCallback_.bind(this));
+};
+
+TestRunner.prototype.onFileCreatorInit_ = function() {
+  var ext = this.expectations_.getFileExtension();
+  if (!ext) {
+    this.errorCallback_({message: "Test file extension not set."});
+    return;
+  }
+console.log(this.fileExtension);
+  var self = this;
+  this.fileCreator_.createFile('.log',
+      function(file, text) {
+        self.fileCreator_.createFile(ext,
+            self.onFileCreated_.bind(self),
+            self.errorCallback_.bind(self));
+      },
+      this.errorCallback_.bind(this));
+};
+
+TestRunner.prototype.onFileCreated_ = function(file, text) {
+  // Start
+  console.log('Get registered tasks now...');
+  this.expectations_.setFileAndFileText(file, text);
+  var fileUrl = file.toURL();
+
+  chrome.fileBrowserPrivate.getFileTasks([fileUrl],
+                                         this.onGetTasks_.bind(this, fileUrl));
+};
+
+TestRunner.prototype.onGetTasks_ = function(fileUrl, tasks) {
+  console.log('Tasks: ');
+  console.log(tasks);
+  if (!tasks || !tasks.length) {
+    this.errorCallback_({message: 'No tasks registered'});
+    return;
+  }
+
+  console.log('DONE fetching ' + tasks.length + ' tasks');
+
+  this.expectations_.verifyTasks(tasks,
+                                 this.onTasksVerified_.bind(this, fileUrl),
+                                 this.errorCallback_.bind(this));
 }
 
-function errorCallback(e) {
+TestRunner.prototype.onTasksVerified_ = function(fileUrl, tasks) {
+  chrome.fileBrowserPrivate.executeTask(tasks[0].taskId, [fileUrl]);
+};
+
+TestRunner.prototype.errorCallback_ = function(error) {
   var msg = '';
-  if (!e.code) {
-    msg = e.message;
+  if (!error.code) {
+    msg = error.message;
   } else {
-    switch (e.code) {
+    switch (error.code) {
       case FileError.QUOTA_EXCEEDED_ERR:
         msg = 'QUOTA_EXCEEDED_ERR';
         break;
@@ -126,31 +198,38 @@ function errorCallback(e) {
         break;
     };
   }
-  chrome.test.fail("Got unexpected error: " + msg);
-  console.log('Error: ' + msg);
-  alert('Error: ' + msg);
-}
 
-function onCleanupFinished(entry) {
+  this.fileCreator_.cleanupAndEndTest(
+      this.reportFail_.bind(this, 'Got unexpected error: ' + msg),
+      this.reportFail_.bind(this, 'Got unexpected error: ' + msg));
+};
+
+TestRunner.prototype.reportSuccess_ = function(entry) {
   chrome.test.succeed();
-}
+};
 
-// For simple requests:
-chrome.extension.onRequestExternal.addListener(
-  function(request, sender, sendResponse) {
-    if (request.fileContent && request.fileContent == randomText) {
-      sendResponse({success: true});
-      testDirectory.removeRecursively(onCleanupFinished, errorCallback);
-    } else {
-      sendResponse({success: false});
-      console.log('Error message received');
-      console.log(request);
-      chrome.test.fail("Got error: " + request.error);
-    }
-  });
+TestRunner.prototype.reportFail_ = function(message) {
+  chrome.test.fail(message);
+};
 
-chrome.test.runTests([function tab() {
-  // Get local FS, create dir with a file in it.
-  console.log("Requesting local file system...");
-  chrome.fileBrowserPrivate.requestLocalFileSystem(onFileSystemFetched);
-}]);
+// Listens for the request from the filesystem_handler extension. When the
+// event is received, it verifies it and stops listening for further events.
+TestRunner.prototype.onHandlerRequest_ =
+    function(request, sender, sendResponse) {
+  this.expectations_.verifyHandlerRequest(
+      request,
+      this.verifyRequestCallback_.bind(this, sendResponse));
+  chrome.extension.onRequestExternal.removeListener(this.listener_);
+};
+
+TestRunner.prototype.verifyRequestCallback_ = function(sendResponse, error) {
+  if (!error) {
+    sendResponse({success: true});
+    this.fileCreator_.cleanupAndEndTest(this.reportSuccess_.bind(this),
+                                        this.reportFail_.bind(this,
+                                                              cleanupError));
+  } else {
+    sendResponse({success: false});
+    this.errorCallback_(error);
+  }
+};

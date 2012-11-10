@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,11 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
-#include "jingle/notifier/base/mock_task.h"
-#include "jingle/notifier/base/task_pump.h"
+#include "jingle/glue/mock_task.h"
+#include "jingle/glue/task_pump.h"
 #include "jingle/notifier/base/weak_xmpp_client.h"
 #include "net/base/cert_verifier.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -32,32 +33,6 @@ class SocketAddress;
 class Task;
 }  // namespace talk_base
 
-namespace {
-// TODO(sanjeevr): Move this to net_test_support.
-// Used to return a dummy context.
-class TestURLRequestContextGetter : public net::URLRequestContextGetter {
- public:
-  TestURLRequestContextGetter()
-      : message_loop_proxy_(base::MessageLoopProxy::current()) {
-  }
-  virtual ~TestURLRequestContextGetter() { }
-
-  // net::URLRequestContextGetter:
-  virtual net::URLRequestContext* GetURLRequestContext() {
-    if (!context_)
-      context_ = new TestURLRequestContext();
-    return context_.get();
-  }
-  virtual scoped_refptr<base::MessageLoopProxy> GetIOMessageLoopProxy() const {
-    return message_loop_proxy_;
-  }
-
- private:
-  scoped_refptr<net::URLRequestContext> context_;
-  scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
-};
-}  // namespace
-
 namespace notifier {
 
 using ::testing::_;
@@ -72,17 +47,19 @@ class MockPreXmppAuth : public buzz::PreXmppAuth {
                std::string(const std::vector<std::string>&, bool));
   MOCK_METHOD1(CreateSaslMechanism,
                buzz::SaslMechanism*(const std::string&));
-  MOCK_METHOD4(StartPreXmppAuth,
+  MOCK_METHOD5(StartPreXmppAuth,
                void(const buzz::Jid&,
                     const talk_base::SocketAddress&,
                     const talk_base::CryptString&,
+                    const std::string&,
                     const std::string&));
   MOCK_CONST_METHOD0(IsAuthDone, bool());
   MOCK_CONST_METHOD0(IsAuthorized, bool());
   MOCK_CONST_METHOD0(HadError, bool());
   MOCK_CONST_METHOD0(GetError, int());
   MOCK_CONST_METHOD0(GetCaptchaChallenge, buzz::CaptchaChallenge());
-  MOCK_CONST_METHOD0(GetAuthCookie, std::string());
+  MOCK_CONST_METHOD0(GetAuthToken, std::string());
+  MOCK_CONST_METHOD0(GetAuthMechanism, std::string());
 };
 
 class MockXmppConnectionDelegate : public XmppConnection::Delegate {
@@ -98,7 +75,8 @@ class XmppConnectionTest : public testing::Test {
  protected:
   XmppConnectionTest()
       : mock_pre_xmpp_auth_(new MockPreXmppAuth()),
-        url_request_context_getter_(new TestURLRequestContextGetter()) {}
+        url_request_context_getter_(new TestURLRequestContextGetter(
+            message_loop_.message_loop_proxy())) {}
 
   virtual ~XmppConnectionTest() {}
 
@@ -137,7 +115,7 @@ TEST_F(XmppConnectionTest, ImmediateFailure) {
 }
 
 TEST_F(XmppConnectionTest, PreAuthFailure) {
-  EXPECT_CALL(*mock_pre_xmpp_auth_, StartPreXmppAuth(_, _, _, _));
+  EXPECT_CALL(*mock_pre_xmpp_auth_, StartPreXmppAuth(_, _, _, _,_));
   EXPECT_CALL(*mock_pre_xmpp_auth_, IsAuthDone()).WillOnce(Return(true));
   EXPECT_CALL(*mock_pre_xmpp_auth_, IsAuthorized()).WillOnce(Return(false));
   EXPECT_CALL(*mock_pre_xmpp_auth_, HadError()).WillOnce(Return(true));
@@ -156,10 +134,11 @@ TEST_F(XmppConnectionTest, PreAuthFailure) {
 }
 
 TEST_F(XmppConnectionTest, FailureAfterPreAuth) {
-  EXPECT_CALL(*mock_pre_xmpp_auth_, StartPreXmppAuth(_, _, _, _));
+  EXPECT_CALL(*mock_pre_xmpp_auth_, StartPreXmppAuth(_, _, _, _,_));
   EXPECT_CALL(*mock_pre_xmpp_auth_, IsAuthDone()).WillOnce(Return(true));
   EXPECT_CALL(*mock_pre_xmpp_auth_, IsAuthorized()).WillOnce(Return(true));
-  EXPECT_CALL(*mock_pre_xmpp_auth_, GetAuthCookie()).WillOnce(Return(""));
+  EXPECT_CALL(*mock_pre_xmpp_auth_, GetAuthMechanism()).WillOnce(Return(""));
+  EXPECT_CALL(*mock_pre_xmpp_auth_, GetAuthToken()).WillOnce(Return(""));
 
   EXPECT_CALL(mock_xmpp_connection_delegate_,
               OnError(buzz::XmppEngine::ERROR_NONE, 0, NULL));
@@ -252,7 +231,8 @@ TEST_F(XmppConnectionTest, TasksDontRunAfterXmppConnectionDestructor) {
                                    url_request_context_getter_,
                                    &mock_xmpp_connection_delegate_, NULL);
 
-    MockTask* task = new MockTask(xmpp_connection.task_pump_.get());
+    jingle_glue::MockTask* task =
+        new jingle_glue::MockTask(xmpp_connection.task_pump_.get());
     // We have to do this since the state enum is protected in
     // talk_base::Task.
     const int TASK_STATE_ERROR = 3;

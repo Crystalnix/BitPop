@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,7 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/extension_resource.h"
+#include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/url_pattern.h"
 #include "chrome/common/web_apps.h"
 #include "googleurl/src/gurl.h"
@@ -105,7 +106,7 @@ TEST(ExtensionFromWebApp, Basic) {
     web_app.icons.push_back(GetIconInfo(icon_url, sizes[i]));
   }
 
-  scoped_refptr<Extension> extension = ConvertWebAppToExtension(
+  scoped_refptr<extensions::Extension> extension = ConvertWebAppToExtension(
       web_app, GetTestTime(1978, 12, 11, 0, 0, 0, 0));
   ASSERT_TRUE(extension.get());
 
@@ -148,7 +149,7 @@ TEST(ExtensionFromWebApp, Minimal) {
   web_app.title = ASCIIToUTF16("Gearpad");
   web_app.app_url = GURL("http://aaronboodman.com/gearpad/");
 
-  scoped_refptr<Extension> extension = ConvertWebAppToExtension(
+  scoped_refptr<extensions::Extension> extension = ConvertWebAppToExtension(
       web_app, GetTestTime(1978, 12, 11, 0, 0, 0, 0));
   ASSERT_TRUE(extension.get());
 

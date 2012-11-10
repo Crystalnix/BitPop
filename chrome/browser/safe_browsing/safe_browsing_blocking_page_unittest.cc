@@ -8,13 +8,19 @@
 #include "chrome/browser/safe_browsing/safe_browsing_blocking_page.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
-#include "content/browser/tab_contents/test_tab_contents.h"
+#include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
+#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/web_contents_tester.h"
 
 using content::BrowserThread;
+using content::InterstitialPage;
 using content::NavigationEntry;
 using content::WebContents;
+using content::WebContentsTester;
 using content::WebContentsView;
 
 static const char* kGoogleURL = "http://www.google.com/";
@@ -22,6 +28,8 @@ static const char* kGoodURL = "http://www.goodguys.com/";
 static const char* kBadURL = "http://www.badguys.com/";
 static const char* kBadURL2 = "http://www.badguys2.com/";
 static const char* kBadURL3 = "http://www.badguys3.com/";
+
+namespace {
 
 // A SafeBrowingBlockingPage class that does not create windows.
 class TestSafeBrowsingBlockingPage :  public SafeBrowsingBlockingPage {
@@ -32,18 +40,14 @@ class TestSafeBrowsingBlockingPage :  public SafeBrowsingBlockingPage {
       : SafeBrowsingBlockingPage(service, web_contents, unsafe_resources) {
     // Don't delay details at all for the unittest.
     malware_details_proceed_delay_ms_ = 0;
-  }
 
-  // Overriden from InterstitialPage.  Don't create a view.
-  virtual WebContentsView* CreateWebContentsView() {
-    return NULL;
+    // Don't create a view.
+    interstitial_page()->DontCreateViewForTesting();
   }
 };
 
 class TestSafeBrowsingService: public SafeBrowsingService {
  public:
-  virtual ~TestSafeBrowsingService() {}
-
   virtual void SendSerializedMalwareDetails(const std::string& serialized) {
     details_.push_back(serialized);
   }
@@ -51,6 +55,9 @@ class TestSafeBrowsingService: public SafeBrowsingService {
   std::list<std::string>* GetDetails() {
     return &details_;
   }
+
+ private:
+  virtual ~TestSafeBrowsingService() {}
 
   std::list<std::string> details_;
 };
@@ -70,6 +77,8 @@ class TestSafeBrowsingBlockingPageFactory
   }
 };
 
+}  // namespace
+
 class SafeBrowsingBlockingPageTest : public ChromeRenderViewHostTestHarness {
  public:
   // The decision the user made.
@@ -81,6 +90,8 @@ class SafeBrowsingBlockingPageTest : public ChromeRenderViewHostTestHarness {
 
   SafeBrowsingBlockingPageTest()
       : ui_thread_(BrowserThread::UI, MessageLoop::current()),
+        file_user_blocking_thread_(
+            BrowserThread::FILE_USER_BLOCKING, MessageLoop::current()),
         io_thread_(BrowserThread::IO, MessageLoop::current()) {
     ResetUserResponse();
     service_ = new TestSafeBrowsingService();
@@ -107,7 +118,7 @@ class SafeBrowsingBlockingPageTest : public ChromeRenderViewHostTestHarness {
   }
 
   void Navigate(const char* url, int page_id) {
-    contents()->TestDidNavigate(
+    WebContentsTester::For(contents())->TestDidNavigate(
         contents()->GetRenderViewHost(), page_id, GURL(url),
         content::PAGE_TRANSITION_TYPED);
   }
@@ -118,11 +129,14 @@ class SafeBrowsingBlockingPageTest : public ChromeRenderViewHostTestHarness {
     contents()->GetController().GoBack();
 
     // The pending RVH should commit for cross-site navigations.
-    RenderViewHost* rvh = is_cross_site ?
-        contents()->pending_rvh() :
+    content::RenderViewHost* rvh = is_cross_site ?
+        WebContentsTester::For(contents())->GetPendingRenderViewHost() :
         contents()->GetRenderViewHost();
-    contents()->TestDidNavigate(rvh, entry->GetPageID(), GURL(entry->GetURL()),
-                                content::PAGE_TRANSITION_TYPED);
+    WebContentsTester::For(contents())->TestDidNavigate(
+        rvh,
+        entry->GetPageID(),
+        GURL(entry->GetURL()),
+        content::PAGE_TRANSITION_TYPED);
   }
 
   void ShowInterstitial(bool is_subresource, const char* url) {
@@ -138,7 +152,8 @@ class SafeBrowsingBlockingPageTest : public ChromeRenderViewHostTestHarness {
         InterstitialPage::GetInterstitialPage(contents());
     if (!interstitial)
       return NULL;
-    return  static_cast<SafeBrowsingBlockingPage*>(interstitial);
+    return  static_cast<SafeBrowsingBlockingPage*>(
+        interstitial->GetDelegateForTesting());
   }
 
   UserResponse user_response() const { return user_response_; }
@@ -146,14 +161,14 @@ class SafeBrowsingBlockingPageTest : public ChromeRenderViewHostTestHarness {
 
   static void ProceedThroughInterstitial(
       SafeBrowsingBlockingPage* sb_interstitial) {
-    sb_interstitial->Proceed();
+    sb_interstitial->interstitial_page_->Proceed();
     // Proceed() posts a task to update the SafeBrowsingService::Client.
     MessageLoop::current()->RunAllPending();
   }
 
   static void DontProceedThroughInterstitial(
       SafeBrowsingBlockingPage* sb_interstitial) {
-    sb_interstitial->DontProceed();
+    sb_interstitial->interstitial_page_->DontProceed();
     // DontProceed() posts a task to update the SafeBrowsingService::Client.
     MessageLoop::current()->RunAllPending();
   }
@@ -181,12 +196,13 @@ class SafeBrowsingBlockingPageTest : public ChromeRenderViewHostTestHarness {
     resource->threat_type = SafeBrowsingService::URL_MALWARE;
     resource->render_process_host_id = contents()->GetRenderProcessHost()->
         GetID();
-    resource->render_view_id = contents()->GetRenderViewHost()->routing_id();
+    resource->render_view_id = contents()->GetRenderViewHost()->GetRoutingID();
   }
 
   UserResponse user_response_;
   TestSafeBrowsingBlockingPageFactory factory_;
   content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_user_blocking_thread_;
   content::TestBrowserThread io_thread_;
 };
 
@@ -540,8 +556,8 @@ TEST_F(SafeBrowsingBlockingPageTest, ProceedThenDontProceed) {
 
   // Simulate the user clicking "proceed" then "don't proceed" (before the
   // interstitial is shown).
-  sb_interstitial->Proceed();
-  sb_interstitial->DontProceed();
+  sb_interstitial->interstitial_page_->Proceed();
+  sb_interstitial->interstitial_page_->DontProceed();
   // Proceed() and DontProceed() post a task to update the
   // SafeBrowsingService::Client.
   MessageLoop::current()->RunAllPending();

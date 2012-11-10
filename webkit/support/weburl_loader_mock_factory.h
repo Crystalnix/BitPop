@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -43,6 +43,11 @@ class WebURLLoaderMockFactory {
                    const WebKit::WebURLResponse& response,
                    const WebKit::WebString& filePath);
 
+  // Registers an error to be served when the specified URL is requested.
+  void RegisterErrorURL(const WebKit::WebURL& url,
+                        const WebKit::WebURLResponse& response,
+                        const WebKit::WebURLError& error);
+
   // Unregisters |url| so it will no longer be mocked.
   void UnregisterURL(const WebKit::WebURL& url);
 
@@ -51,6 +56,9 @@ class WebURLLoaderMockFactory {
 
   // Serves all the pending asynchronous requests.
   void ServeAsynchronousRequests();
+
+  // Returns the last request handled by |ServeAsynchronousRequests()|.
+  WebKit::WebURLRequest GetLastHandledAsynchronousRequest();
 
   // Returns true if |url| was registered for being mocked.
   bool IsMockedURL(const WebKit::WebURL& url);
@@ -76,6 +84,9 @@ class WebURLLoaderMockFactory {
                    WebKit::WebURLError* error,
                    WebKit::WebData* data);
 
+  // Checks if the loader is pending. Otherwise, it may have been deleted.
+  bool IsPending(WebURLLoaderMock* loader);
+
   // Reads |m_filePath| and puts its content in |data|.
   // Returns true if it successfully read the file.
   static bool ReadFile(const FilePath& file_path, WebKit::WebData* data);
@@ -84,9 +95,14 @@ class WebURLLoaderMockFactory {
   typedef std::map<WebURLLoaderMock*, WebKit::WebURLRequest> LoaderToRequestMap;
   LoaderToRequestMap pending_loaders_;
 
+  typedef std::map<WebKit::WebURL, WebKit::WebURLError> URLToErrorMap;
+  URLToErrorMap url_to_error_info_;
+
   // Table of the registered URLs and the responses that they should receive.
   typedef std::map<WebKit::WebURL, ResponseInfo> URLToResponseMap;
   URLToResponseMap url_to_reponse_info_;
+
+  WebKit::WebURLRequest last_handled_asynchronous_request_;
 
   DISALLOW_COPY_AND_ASSIGN(WebURLLoaderMockFactory);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,45 +9,50 @@
 #include "remoting/host/chromoting_host.h"
 #include "remoting/host/local_input_monitor_thread_win.h"
 
+namespace remoting {
+
 namespace {
 
-class LocalInputMonitorWin : public remoting::LocalInputMonitor {
+class LocalInputMonitorWin : public LocalInputMonitor {
  public:
   LocalInputMonitorWin();
   ~LocalInputMonitorWin();
 
-  virtual void Start(remoting::ChromotingHost* host) OVERRIDE;
+  virtual void Start(MouseMoveObserver* mouse_move_observer,
+                     const base::Closure& disconnect_callback) OVERRIDE;
   virtual void Stop() OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(LocalInputMonitorWin);
 
-  remoting::ChromotingHost* chromoting_host_;
+  MouseMoveObserver* mouse_move_observer_;
 };
 
-}  // namespace
-
-
-LocalInputMonitorWin::LocalInputMonitorWin() : chromoting_host_(NULL) {
+LocalInputMonitorWin::LocalInputMonitorWin()
+    : mouse_move_observer_(NULL) {
 }
 
 LocalInputMonitorWin::~LocalInputMonitorWin() {
-  DCHECK(chromoting_host_ == NULL);
+  DCHECK(!mouse_move_observer_);
 }
 
-void LocalInputMonitorWin::Start(remoting::ChromotingHost* host) {
-  DCHECK(chromoting_host_ == NULL);
-  chromoting_host_ = host;
-  remoting::LocalInputMonitorThread::AddHostToInputMonitor(chromoting_host_);
+void LocalInputMonitorWin::Start(MouseMoveObserver* mouse_move_observer,
+                                 const base::Closure& disconnect_callback) {
+  DCHECK(!mouse_move_observer_);
+  mouse_move_observer_ = mouse_move_observer;
+  LocalInputMonitorThread::AddMouseMoveObserver(mouse_move_observer_);
 }
 
 void LocalInputMonitorWin::Stop() {
-  DCHECK(chromoting_host_ != NULL);
-  remoting::LocalInputMonitorThread::RemoveHostFromInputMonitor(
-      chromoting_host_);
-  chromoting_host_ = NULL;
+  DCHECK(mouse_move_observer_);
+  LocalInputMonitorThread::RemoveMouseMoveObserver(mouse_move_observer_);
+  mouse_move_observer_ = NULL;
 }
 
-remoting::LocalInputMonitor* remoting::LocalInputMonitor::Create() {
-  return new LocalInputMonitorWin;
+}  // namespace
+
+scoped_ptr<LocalInputMonitor> LocalInputMonitor::Create() {
+  return scoped_ptr<LocalInputMonitor>(new LocalInputMonitorWin());
 }
+
+}  // namespace remoting

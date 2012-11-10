@@ -12,11 +12,11 @@
 #include "base/i18n/break_iterator.h"
 #include "base/logging.h"
 #include "third_party/skia/include/core/SkTypeface.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/base/text/utf16_indexing.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
+#include "ui/gfx/font_render_params_linux.h"
 #include "ui/gfx/pango_util.h"
-#include "unicode/uchar.h"
-#include "unicode/ustring.h"
 
 namespace gfx {
 
@@ -46,6 +46,21 @@ bool IndexInRange(const ui::Range& range, size_t index) {
   return index >= range.start() && index < range.end();
 }
 
+// Sets underline metrics on |renderer| according to Pango font |desc|.
+void SetPangoUnderlineMetrics(PangoFontDescription *desc,
+                              internal::SkiaTextRenderer* renderer) {
+  PangoFontMetrics* metrics = GetPangoFontMetrics(desc);
+  int thickness = pango_font_metrics_get_underline_thickness(metrics);
+  // Pango returns the position "above the baseline". Change its sign to convert
+  // it to a vertical offset from the baseline.
+  int position = -pango_font_metrics_get_underline_position(metrics);
+  pango_quantize_line_geometry(&thickness, &position);
+  // Note: pango_quantize_line_geometry() guarantees pixel boundaries, so
+  //       PANGO_PIXELS() is safe to use.
+  renderer->SetUnderlineMetrics(PANGO_PIXELS(thickness),
+                                PANGO_PIXELS(position));
+}
+
 }  // namespace
 
 // TODO(xji): index saved in upper layer is utf16 index. Pango uses utf8 index.
@@ -65,143 +80,100 @@ RenderTextLinux::~RenderTextLinux() {
   ResetLayout();
 }
 
-RenderText* RenderText::CreateRenderText() {
-  return new RenderTextLinux;
+Size RenderTextLinux::GetStringSize() {
+  EnsureLayout();
+  int width = 0, height = 0;
+  pango_layout_get_pixel_size(layout_, &width, &height);
+  return Size(width, height);
 }
 
-base::i18n::TextDirection RenderTextLinux::GetTextDirection() {
+int RenderTextLinux::GetBaseline() {
   EnsureLayout();
-
-  PangoDirection base_dir = pango_find_base_dir(layout_text_, -1);
-  if (base_dir == PANGO_DIRECTION_RTL || base_dir == PANGO_DIRECTION_WEAK_RTL)
-    return base::i18n::RIGHT_TO_LEFT;
-  return base::i18n::LEFT_TO_RIGHT;
-}
-
-int RenderTextLinux::GetStringWidth() {
-  EnsureLayout();
-  int width;
-  pango_layout_get_pixel_size(layout_, &width, NULL);
-  return width;
+  return PANGO_PIXELS(pango_layout_get_baseline(layout_));
 }
 
 SelectionModel RenderTextLinux::FindCursorPosition(const Point& point) {
   EnsureLayout();
 
   if (text().empty())
-    return SelectionModel(0, 0, SelectionModel::LEADING);
+    return SelectionModel(0, CURSOR_FORWARD);
 
   Point p(ToTextPoint(point));
 
   // When the point is outside of text, return HOME/END position.
   if (p.x() < 0)
     return EdgeSelectionModel(CURSOR_LEFT);
-  else if (p.x() > GetStringWidth())
+  else if (p.x() > GetStringSize().width())
     return EdgeSelectionModel(CURSOR_RIGHT);
 
-  int caret_pos, trailing;
+  int caret_pos = 0, trailing = 0;
   pango_layout_xy_to_index(layout_, p.x() * PANGO_SCALE, p.y() * PANGO_SCALE,
                            &caret_pos, &trailing);
 
-  size_t selection_end = caret_pos;
+  DCHECK_GE(trailing, 0);
   if (trailing > 0) {
-    const char* ch = g_utf8_offset_to_pointer(layout_text_ + caret_pos,
-                                              trailing);
-    DCHECK_GE(ch, layout_text_);
-    DCHECK_LE(ch, layout_text_ + layout_text_len_);
-    selection_end = ch - layout_text_;
+    caret_pos = g_utf8_offset_to_pointer(layout_text_ + caret_pos,
+                                         trailing) - layout_text_;
+    DCHECK_LE(static_cast<size_t>(caret_pos), layout_text_len_);
   }
 
-  return SelectionModel(
-      Utf8IndexToUtf16Index(selection_end),
-      Utf8IndexToUtf16Index(caret_pos),
-      trailing > 0 ? SelectionModel::TRAILING : SelectionModel::LEADING);
+  return SelectionModel(LayoutIndexToTextIndex(caret_pos),
+                        (trailing > 0) ? CURSOR_BACKWARD : CURSOR_FORWARD);
 }
 
-Rect RenderTextLinux::GetCursorBounds(const SelectionModel& selection,
-                                      bool insert_mode) {
+std::vector<RenderText::FontSpan> RenderTextLinux::GetFontSpansForTesting() {
   EnsureLayout();
 
-  size_t caret_pos = insert_mode ? selection.caret_pos() :
-                                   selection.selection_end();
-  PangoRectangle pos;
-  pango_layout_index_to_pos(layout_, Utf16IndexToUtf8Index(caret_pos), &pos);
+  std::vector<RenderText::FontSpan> spans;
+  for (GSList* it = current_line_->runs; it; it = it->next) {
+    PangoItem* item = reinterpret_cast<PangoLayoutRun*>(it->data)->item;
+    const int start = LayoutIndexToTextIndex(item->offset);
+    const int end = LayoutIndexToTextIndex(item->offset + item->length);
+    const ui::Range range(start, end);
 
-  SelectionModel::CaretPlacement caret_placement = selection.caret_placement();
-  int x = pos.x;
-  if ((insert_mode && caret_placement == SelectionModel::TRAILING) ||
-      (!insert_mode && pos.width < 0))
-    x += pos.width;
-  x = PANGO_PIXELS(x);
+    ScopedPangoFontDescription desc(pango_font_describe(item->analysis.font));
+    spans.push_back(RenderText::FontSpan(Font(desc.get()), range));
+  }
 
-  int h = std::min(display_rect().height(), PANGO_PIXELS(pos.height));
-  Rect bounds(x, (display_rect().height() - h) / 2, 0, h);
-  bounds.set_origin(ToViewPoint(bounds.origin()));
-
-  if (!insert_mode)
-    bounds.set_width(PANGO_PIXELS(std::abs(pos.width)));
-
-  return bounds;
+  return spans;
 }
 
-// Assume caret_pos in |current| is n, 'l' represents leading in
-// caret_placement and 't' represents trailing in caret_placement. Following
-// is the calculation from (caret_pos, caret_placement) in |current| to
-// (selection_end, caret_pos, caret_placement) when moving cursor left/right by
-// one grapheme (for simplicity, assume each grapheme is one character).
-// If n is in LTR (if moving left) or RTL (if moving right) run,
-// (n, t) --> (n, n, l).
-// (n, l) --> (n-1, n-1, l) if n is inside run (not at boundary).
-// (n, l) --> goto across run case if n is at run boundary.
-// Otherwise,
-// (n, l) --> (n+1, n, t).
-// (n, t) --> (n+2, n+1, t) if n is inside run.
-// (n, t) --> goto across run case if n is at run boundary.
-// If n is at run boundary, get its visually left/right run,
-// If left/right run is LTR/RTL run,
-// (n, t) --> (left/right run's end, left/right run's end, l).
-// Otherwise,
-// (n, t) --> (left/right run's begin + 1, left/right run's begin, t).
 SelectionModel RenderTextLinux::AdjacentCharSelectionModel(
     const SelectionModel& selection,
     VisualCursorDirection direction) {
-  size_t caret = selection.caret_pos();
-  SelectionModel::CaretPlacement caret_placement = selection.caret_placement();
-  GSList* run = GetRunContainingPosition(caret);
-  DCHECK(run);
-
-  PangoLayoutRun* layout_run = reinterpret_cast<PangoLayoutRun*>(run->data);
-  PangoItem* item = layout_run->item;
-  size_t run_start = Utf8IndexToUtf16Index(item->offset);
-  size_t run_end = Utf8IndexToUtf16Index(item->offset + item->length);
-
-  if (!IsForwardMotion(direction, item)) {
-    if (caret_placement == SelectionModel::TRAILING)
-      return SelectionModel(caret, caret, SelectionModel::LEADING);
-    else if (caret > run_start) {
-      caret = IndexOfAdjacentGrapheme(caret, CURSOR_BACKWARD);
-      return SelectionModel(caret, caret, SelectionModel::LEADING);
-    }
+  GSList* run = GetRunContainingCaret(selection);
+  if (!run) {
+    // The cursor is not in any run: we're at the visual and logical edge.
+    SelectionModel edge = EdgeSelectionModel(direction);
+    if (edge.caret_pos() == selection.caret_pos())
+      return edge;
+    else
+      run = (direction == CURSOR_RIGHT) ?
+          current_line_->runs : g_slist_last(current_line_->runs);
   } else {
-    if (caret_placement == SelectionModel::LEADING) {
-      size_t cursor = IndexOfAdjacentGrapheme(caret, CURSOR_FORWARD);
-      return SelectionModel(cursor, caret, SelectionModel::TRAILING);
-    } else if (selection.selection_end() < run_end) {
-      caret = IndexOfAdjacentGrapheme(caret, CURSOR_FORWARD);
-      size_t cursor = IndexOfAdjacentGrapheme(caret, CURSOR_FORWARD);
-      return SelectionModel(cursor, caret, SelectionModel::TRAILING);
+    // If the cursor is moving within the current run, just move it by one
+    // grapheme in the appropriate direction.
+    PangoItem* item = reinterpret_cast<PangoLayoutRun*>(run->data)->item;
+    size_t caret = selection.caret_pos();
+    if (IsForwardMotion(direction, item)) {
+      if (caret < LayoutIndexToTextIndex(item->offset + item->length)) {
+        caret = IndexOfAdjacentGrapheme(caret, CURSOR_FORWARD);
+        return SelectionModel(caret, CURSOR_BACKWARD);
+      }
+    } else {
+      if (caret > LayoutIndexToTextIndex(item->offset)) {
+        caret = IndexOfAdjacentGrapheme(caret, CURSOR_BACKWARD);
+        return SelectionModel(caret, CURSOR_FORWARD);
+      }
     }
+    // The cursor is at the edge of a run; move to the visually adjacent run.
+    // TODO(xji): Keep a vector of runs to avoid using a singly-linked list.
+    run = (direction == CURSOR_RIGHT) ?
+        run->next : GSListPrevious(current_line_->runs, run);
+    if (!run)
+      return EdgeSelectionModel(direction);
   }
-
-  // The character is at the edge of its run; advance to the adjacent visual
-  // run.
-  // TODO(xji): Keep a vector of runs to avoid using a singly-linked list.
-  GSList* adjacent_run = (direction == CURSOR_RIGHT) ?
-      run->next : GSListPrevious(current_line_->runs, run);
-  if (!adjacent_run)
-    return EdgeSelectionModel(direction);
-
-  item = reinterpret_cast<PangoLayoutRun*>(adjacent_run->data)->item;
+  PangoItem* item = reinterpret_cast<PangoLayoutRun*>(run->data)->item;
   return IsForwardMotion(direction, item) ?
       FirstSelectionModelInsideRun(item) : LastSelectionModelInsideRun(item);
 }
@@ -209,323 +181,71 @@ SelectionModel RenderTextLinux::AdjacentCharSelectionModel(
 SelectionModel RenderTextLinux::AdjacentWordSelectionModel(
     const SelectionModel& selection,
     VisualCursorDirection direction) {
+  if (is_obscured())
+    return EdgeSelectionModel(direction);
+
   base::i18n::BreakIterator iter(text(), base::i18n::BreakIterator::BREAK_WORD);
   bool success = iter.Init();
   DCHECK(success);
   if (!success)
     return selection;
 
-  SelectionModel end = EdgeSelectionModel(direction);
   SelectionModel cur(selection);
-  while (!cur.Equals(end)) {
+  for (;;) {
     cur = AdjacentCharSelectionModel(cur, direction);
-    size_t caret = cur.caret_pos();
-    GSList* run = GetRunContainingPosition(caret);
-    DCHECK(run);
+    GSList* run = GetRunContainingCaret(cur);
+    if (!run)
+      break;
     PangoItem* item = reinterpret_cast<PangoLayoutRun*>(run->data)->item;
-    size_t cursor = cur.selection_end();
+    size_t cursor = cur.caret_pos();
     if (IsForwardMotion(direction, item) ?
         iter.IsEndOfWord(cursor) : iter.IsStartOfWord(cursor))
-      return cur;
+      break;
   }
 
-  return end;
-}
-
-SelectionModel RenderTextLinux::EdgeSelectionModel(
-    VisualCursorDirection direction) {
-  if (direction == GetVisualDirectionOfLogicalEnd()) {
-    // Advance to the logical end of the text.
-    GSList* run = current_line_->runs;
-    if (direction == CURSOR_RIGHT)
-      run = g_slist_last(run);
-    if (run) {
-      PangoLayoutRun* end_run = reinterpret_cast<PangoLayoutRun*>(run->data);
-      PangoItem* item = end_run->item;
-      if (IsForwardMotion(direction, item)) {
-        size_t caret = Utf8IndexToUtf16Index(
-            Utf8IndexOfAdjacentGrapheme(item->offset + item->length,
-                                        CURSOR_BACKWARD));
-        return SelectionModel(text().length(), caret, SelectionModel::TRAILING);
-      } else {
-        size_t caret = Utf8IndexToUtf16Index(item->offset);
-        return SelectionModel(text().length(), caret, SelectionModel::LEADING);
-      }
-    }
-  }
-  return SelectionModel(0, 0, SelectionModel::LEADING);
+  return cur;
 }
 
 void RenderTextLinux::SetSelectionModel(const SelectionModel& model) {
-  if (GetSelectionStart() != model.selection_start() ||
-      GetCursorPosition() != model.selection_end()) {
+  if (selection() != model.selection())
     selection_visual_bounds_.clear();
-  }
 
   RenderText::SetSelectionModel(model);
 }
 
-std::vector<Rect> RenderTextLinux::GetSubstringBounds(size_t from, size_t to) {
-  DCHECK(from <= text().length());
-  DCHECK(to <= text().length());
+void RenderTextLinux::GetGlyphBounds(size_t index,
+                                     ui::Range* xspan,
+                                     int* height) {
+  PangoRectangle pos;
+  pango_layout_index_to_pos(layout_, TextIndexToLayoutIndex(index), &pos);
+  // TODO(derat): Support fractional ranges for subpixel positioning?
+  *xspan = ui::Range(PANGO_PIXELS(pos.x), PANGO_PIXELS(pos.x + pos.width));
+  *height = PANGO_PIXELS(pos.height);
+}
 
-  if (from == to)
+std::vector<Rect> RenderTextLinux::GetSubstringBounds(ui::Range range) {
+  DCHECK_LE(range.GetMax(), text().length());
+
+  if (range.is_empty())
     return std::vector<Rect>();
 
   EnsureLayout();
-
-  if (from == GetSelectionStart() && to == GetCursorPosition())
+  if (range == selection())
     return GetSelectionBounds();
-  else
-    return CalculateSubstringBounds(from, to);
+  return CalculateSubstringBounds(range);
 }
 
 bool RenderTextLinux::IsCursorablePosition(size_t position) {
   if (position == 0 && text().empty())
     return true;
+  if (position >= text().length())
+    return position == text().length();
+  if (!ui::IsValidCodePointIndex(text(), position))
+    return false;
 
   EnsureLayout();
-  return (position < static_cast<size_t>(num_log_attrs_) &&
-          log_attrs_[position].is_cursor_position);
-}
-
-void RenderTextLinux::UpdateLayout() {
-  ResetLayout();
-}
-
-void RenderTextLinux::EnsureLayout() {
-  if (layout_ == NULL) {
-    CanvasSkia canvas(display_rect().size(), false);
-    skia::ScopedPlatformPaint scoped_platform_paint(canvas.sk_canvas());
-    cairo_t* cr = scoped_platform_paint.GetPlatformSurface();
-
-    layout_ = pango_cairo_create_layout(cr);
-    SetupPangoLayoutWithFontDescription(
-        layout_,
-        text(),
-        font_list().GetFontDescriptionString(),
-        display_rect().width(),
-        base::i18n::GetFirstStrongCharacterDirection(text()),
-        CanvasSkia::DefaultCanvasTextAlignment());
-
-    // No width set so that the x-axis position is relative to the start of the
-    // text. ToViewPoint and ToTextPoint take care of the position conversion
-    // between text space and view spaces.
-    pango_layout_set_width(layout_, -1);
-    // TODO(xji): If RenderText will be used for displaying purpose, such as
-    // label, we will need to remove the single-line-mode setting.
-    pango_layout_set_single_paragraph_mode(layout_, true);
-    SetupPangoAttributes(layout_);
-
-    current_line_ = pango_layout_get_line_readonly(layout_, 0);
-    pango_layout_line_ref(current_line_);
-
-    pango_layout_get_log_attrs(layout_, &log_attrs_, &num_log_attrs_);
-
-    layout_text_ = pango_layout_get_text(layout_);
-    layout_text_len_ = strlen(layout_text_);
-  }
-}
-
-void RenderTextLinux::SetupPangoAttributes(PangoLayout* layout) {
-  PangoAttrList* attrs = pango_attr_list_new();
-
-  int default_font_style = font_list().GetFontStyle();
-  for (StyleRanges::const_iterator i = style_ranges().begin();
-       i < style_ranges().end(); ++i) {
-    // In Pango, different fonts means different runs, and it breaks Arabic
-    // shaping across run boundaries. So, set font only when it is different
-    // from the default font.
-    // TODO(xji): We'll eventually need to split up StyleRange into components
-    // (ColorRange, FontRange, etc.) so that we can combine adjacent ranges
-    // with the same Fonts (to avoid unnecessarily splitting up runs).
-    if (i->font_style != default_font_style) {
-      FontList derived_font_list = font_list().DeriveFontList(i->font_style);
-      PangoFontDescription* desc = pango_font_description_from_string(
-          derived_font_list.GetFontDescriptionString().c_str());
-
-      PangoAttribute* pango_attr = pango_attr_font_desc_new(desc);
-      pango_attr->start_index = Utf16IndexToUtf8Index(i->range.start());
-      pango_attr->end_index = Utf16IndexToUtf8Index(i->range.end());
-      pango_attr_list_insert(attrs, pango_attr);
-      pango_font_description_free(desc);
-    }
-  }
-
-  pango_layout_set_attributes(layout, attrs);
-  pango_attr_list_unref(attrs);
-}
-
-void RenderTextLinux::DrawVisualText(Canvas* canvas) {
-  DCHECK(layout_);
-
-  Point offset(GetOriginForSkiaDrawing());
-  SkScalar x = SkIntToScalar(offset.x());
-  SkScalar y = SkIntToScalar(offset.y());
-
-  std::vector<SkPoint> pos;
-  std::vector<uint16> glyphs;
-
-  StyleRanges styles(style_ranges());
-  ApplyCompositionAndSelectionStyles(&styles);
-
-  // Pre-calculate UTF8 indices from UTF16 indices.
-  // TODO(asvitkine): Can we cache these?
-  std::vector<ui::Range> style_ranges_utf8;
-  style_ranges_utf8.reserve(styles.size());
-  size_t start_index = 0;
-  for (size_t i = 0; i < styles.size(); ++i) {
-    size_t end_index = Utf16IndexToUtf8Index(styles[i].range.end());
-    style_ranges_utf8.push_back(ui::Range(start_index, end_index));
-    start_index = end_index;
-  }
-
-  internal::SkiaTextRenderer renderer(canvas);
-  ApplyFadeEffects(&renderer);
-
-  for (GSList* it = current_line_->runs; it; it = it->next) {
-    PangoLayoutRun* run = reinterpret_cast<PangoLayoutRun*>(it->data);
-    int glyph_count = run->glyphs->num_glyphs;
-    if (glyph_count == 0)
-      continue;
-
-    size_t run_start = run->item->offset;
-    size_t first_glyph_byte_index = run_start + run->glyphs->log_clusters[0];
-    size_t style_increment = IsForwardMotion(CURSOR_RIGHT, run->item) ? 1 : -1;
-
-    // Find the initial style for this run.
-    // TODO(asvitkine): Can we avoid looping here, e.g. by caching this per run?
-    int style = -1;
-    for (size_t i = 0; i < style_ranges_utf8.size(); ++i) {
-      if (IndexInRange(style_ranges_utf8[i], first_glyph_byte_index)) {
-        style = i;
-        break;
-      }
-    }
-    DCHECK_GE(style, 0);
-
-    PangoFontDescription* native_font =
-        pango_font_describe(run->item->analysis.font);
-
-    const char* family_name = pango_font_description_get_family(native_font);
-    SkAutoTUnref<SkTypeface> typeface(
-        SkTypeface::CreateFromName(family_name, SkTypeface::kNormal));
-    renderer.SetTypeface(typeface.get());
-    renderer.SetTextSize(GetPangoFontSizeInPixels(native_font));
-
-    pango_font_description_free(native_font);
-
-    SkScalar glyph_x = x;
-    SkScalar start_x = x;
-    int start = 0;
-
-    glyphs.resize(glyph_count);
-    pos.resize(glyph_count);
-
-    for (int i = 0; i < glyph_count; ++i) {
-      const PangoGlyphInfo& glyph = run->glyphs->glyphs[i];
-      glyphs[i] = static_cast<uint16>(glyph.glyph);
-      pos[i].set(glyph_x + PANGO_PIXELS(glyph.geometry.x_offset),
-                 y + PANGO_PIXELS(glyph.geometry.y_offset));
-      glyph_x += PANGO_PIXELS(glyph.geometry.width);
-
-      // If this glyph is beyond the current style, draw the glyphs so far and
-      // advance to the next style.
-      size_t glyph_byte_index = run_start + run->glyphs->log_clusters[i];
-      DCHECK_GE(style, 0);
-      DCHECK_LT(style, static_cast<int>(styles.size()));
-      if (!IndexInRange(style_ranges_utf8[style], glyph_byte_index)) {
-        // TODO(asvitkine): For cases like "fi", where "fi" is a single glyph
-        //                  but can span multiple styles, Pango splits the
-        //                  styles evenly over the glyph. We can do this too by
-        //                  clipping and drawing the glyph several times.
-        renderer.SetForegroundColor(styles[style].foreground);
-        renderer.SetFontStyle(styles[style].font_style);
-        renderer.DrawPosText(&pos[start], &glyphs[start], i - start);
-        renderer.DrawDecorations(start_x, y, glyph_x - start_x, styles[style]);
-
-        start = i;
-        start_x = glyph_x;
-        // Loop to find the next style, in case the glyph spans multiple styles.
-        do {
-          style += style_increment;
-        } while (style >= 0 && style < static_cast<int>(styles.size()) &&
-                 !IndexInRange(style_ranges_utf8[style], glyph_byte_index));
-      }
-    }
-
-    // Draw the remaining glyphs.
-    renderer.SetForegroundColor(styles[style].foreground);
-    renderer.SetFontStyle(styles[style].font_style);
-    renderer.DrawPosText(&pos[start], &glyphs[start], glyph_count - start);
-    renderer.DrawDecorations(start_x, y, glyph_x - start_x, styles[style]);
-    x = glyph_x;
-  }
-}
-
-size_t RenderTextLinux::IndexOfAdjacentGrapheme(
-    size_t index,
-    LogicalCursorDirection direction) {
-  if (index > text().length())
-    return text().length();
-  EnsureLayout();
-  return Utf8IndexToUtf16Index(
-      Utf8IndexOfAdjacentGrapheme(Utf16IndexToUtf8Index(index), direction));
-}
-
-GSList* RenderTextLinux::GetRunContainingPosition(size_t position) const {
-  GSList* run = current_line_->runs;
-  while (run) {
-    PangoItem* item = reinterpret_cast<PangoLayoutRun*>(run->data)->item;
-    size_t run_start = Utf8IndexToUtf16Index(item->offset);
-    size_t run_end = Utf8IndexToUtf16Index(item->offset + item->length);
-
-    if (position >= run_start && position < run_end)
-      return run;
-    run = run->next;
-  }
-  return NULL;
-}
-
-size_t RenderTextLinux::Utf8IndexOfAdjacentGrapheme(
-    size_t utf8_index_of_current_grapheme,
-    LogicalCursorDirection direction) const {
-  const char* ch = layout_text_ + utf8_index_of_current_grapheme;
-  int char_offset = static_cast<int>(g_utf8_pointer_to_offset(layout_text_,
-                                                              ch));
-  int start_char_offset = char_offset;
-  if (direction == CURSOR_BACKWARD) {
-    if (char_offset > 0) {
-      do {
-        --char_offset;
-      } while (char_offset > 0 && !log_attrs_[char_offset].is_cursor_position);
-    }
-  } else {  // direction == CURSOR_FORWARD
-    if (char_offset < num_log_attrs_ - 1) {
-      do {
-        ++char_offset;
-      } while (char_offset < num_log_attrs_ - 1 &&
-               !log_attrs_[char_offset].is_cursor_position);
-    }
-  }
-
-  ch = g_utf8_offset_to_pointer(ch, char_offset - start_char_offset);
-  return static_cast<size_t>(ch - layout_text_);
-}
-
-SelectionModel RenderTextLinux::FirstSelectionModelInsideRun(
-    const PangoItem* item) const {
-  size_t caret = Utf8IndexToUtf16Index(item->offset);
-  size_t cursor = Utf8IndexToUtf16Index(
-      Utf8IndexOfAdjacentGrapheme(item->offset, CURSOR_FORWARD));
-  return SelectionModel(cursor, caret, SelectionModel::TRAILING);
-}
-
-SelectionModel RenderTextLinux::LastSelectionModelInsideRun(
-    const PangoItem* item) const {
-  size_t caret = Utf8IndexToUtf16Index(Utf8IndexOfAdjacentGrapheme(
-      item->offset + item->length, CURSOR_BACKWARD));
-  return SelectionModel(caret, caret, SelectionModel::LEADING);
+  ptrdiff_t offset = ui::UTF16IndexToOffset(text(), 0, position);
+  return (offset < num_log_attrs_ && log_attrs_[offset].is_cursor_position);
 }
 
 void RenderTextLinux::ResetLayout() {
@@ -550,41 +270,251 @@ void RenderTextLinux::ResetLayout() {
   layout_text_len_ = 0;
 }
 
-size_t RenderTextLinux::Utf16IndexToUtf8Index(size_t index) const {
-  int32_t utf8_index = 0;
-  UErrorCode ec = U_ZERO_ERROR;
-  u_strToUTF8(NULL, 0, &utf8_index, text().data(), index, &ec);
-  // Even given a destination buffer as NULL and destination capacity as 0,
-  // if the output length is equal to or greater than the capacity, then the
-  // UErrorCode is set to U_STRING_NOT_TERMINATED_WARNING or
-  // U_BUFFER_OVERFLOW_ERROR respectively.
-  // Please refer to
-  // http://userguide.icu-project.org/strings#TOC-Using-C-Strings:-NUL-Terminated-vs
-  // for detail (search for "Note that" below "Preflighting").
-  DCHECK(ec == U_BUFFER_OVERFLOW_ERROR ||
-         ec == U_STRING_NOT_TERMINATED_WARNING);
-  return utf8_index;
+void RenderTextLinux::EnsureLayout() {
+  if (layout_ == NULL) {
+    cairo_surface_t* surface =
+        cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 0, 0);
+    cairo_t* cr = cairo_create(surface);
+
+    layout_ = pango_cairo_create_layout(cr);
+    cairo_destroy(cr);
+    cairo_surface_destroy(surface);
+
+    SetupPangoLayoutWithFontDescription(layout_,
+                                        GetDisplayText(),
+                                        font_list().GetFontDescriptionString(),
+                                        display_rect().width(),
+                                        GetTextDirection(),
+                                        Canvas::DefaultCanvasTextAlignment());
+
+    // No width set so that the x-axis position is relative to the start of the
+    // text. ToViewPoint and ToTextPoint take care of the position conversion
+    // between text space and view spaces.
+    pango_layout_set_width(layout_, -1);
+    // TODO(xji): If RenderText will be used for displaying purpose, such as
+    // label, we will need to remove the single-line-mode setting.
+    pango_layout_set_single_paragraph_mode(layout_, true);
+
+    // These are used by SetupPangoAttributes.
+    layout_text_ = pango_layout_get_text(layout_);
+    layout_text_len_ = strlen(layout_text_);
+
+    SetupPangoAttributes(layout_);
+
+    current_line_ = pango_layout_get_line_readonly(layout_, 0);
+    pango_layout_line_ref(current_line_);
+
+    pango_layout_get_log_attrs(layout_, &log_attrs_, &num_log_attrs_);
+  }
 }
 
-size_t RenderTextLinux::Utf8IndexToUtf16Index(size_t index) const {
-  int32_t utf16_index = 0;
-  UErrorCode ec = U_ZERO_ERROR;
-  u_strFromUTF8(NULL, 0, &utf16_index, layout_text_, index, &ec);
-  DCHECK(ec == U_BUFFER_OVERFLOW_ERROR ||
-         ec == U_STRING_NOT_TERMINATED_WARNING);
-  return utf16_index;
+void RenderTextLinux::SetupPangoAttributes(PangoLayout* layout) {
+  PangoAttrList* attrs = pango_attr_list_new();
+
+  int default_font_style = font_list().GetFontStyle();
+  for (StyleRanges::const_iterator i = style_ranges().begin();
+       i < style_ranges().end(); ++i) {
+    // In Pango, different fonts means different runs, and it breaks Arabic
+    // shaping across run boundaries. So, set font only when it is different
+    // from the default font.
+    // TODO(xji): We'll eventually need to split up StyleRange into components
+    // (ColorRange, FontRange, etc.) so that we can combine adjacent ranges
+    // with the same Fonts (to avoid unnecessarily splitting up runs).
+    if (i->font_style != default_font_style) {
+      FontList derived_font_list = font_list().DeriveFontList(i->font_style);
+      ScopedPangoFontDescription desc(pango_font_description_from_string(
+          derived_font_list.GetFontDescriptionString().c_str()));
+
+      PangoAttribute* pango_attr = pango_attr_font_desc_new(desc.get());
+      pango_attr->start_index = TextIndexToLayoutIndex(i->range.start());
+      pango_attr->end_index = TextIndexToLayoutIndex(i->range.end());
+      pango_attr_list_insert(attrs, pango_attr);
+    }
+  }
+
+  pango_layout_set_attributes(layout, attrs);
+  pango_attr_list_unref(attrs);
 }
 
-std::vector<Rect> RenderTextLinux::CalculateSubstringBounds(size_t from,
-                                                            size_t to) {
+void RenderTextLinux::DrawVisualText(Canvas* canvas) {
+  DCHECK(layout_);
+
+  Point offset(GetOriginForDrawing());
+  // Skia will draw glyphs with respect to the baseline.
+  offset.Offset(0, PANGO_PIXELS(pango_layout_get_baseline(layout_)));
+
+  SkScalar x = SkIntToScalar(offset.x());
+  SkScalar y = SkIntToScalar(offset.y());
+
+  std::vector<SkPoint> pos;
+  std::vector<uint16> glyphs;
+
+  StyleRanges styles(style_ranges());
+  ApplyCompositionAndSelectionStyles(&styles);
+
+  // Pre-calculate UTF8 indices from UTF16 indices.
+  // TODO(asvitkine): Can we cache these?
+  std::vector<ui::Range> style_ranges_utf8;
+  style_ranges_utf8.reserve(styles.size());
+  size_t start_index = 0;
+  for (size_t i = 0; i < styles.size(); ++i) {
+    size_t end_index = TextIndexToLayoutIndex(styles[i].range.end());
+    style_ranges_utf8.push_back(ui::Range(start_index, end_index));
+    start_index = end_index;
+  }
+
+  internal::SkiaTextRenderer renderer(canvas);
+  ApplyFadeEffects(&renderer);
+  ApplyTextShadows(&renderer);
+
+  // TODO(derat): Use font-specific params: http://crbug.com/125235
+  const gfx::FontRenderParams& render_params =
+      gfx::GetDefaultFontRenderParams();
+  const bool use_subpixel_rendering =
+      render_params.subpixel_rendering !=
+          gfx::FontRenderParams::SUBPIXEL_RENDERING_NONE;
+  renderer.SetFontSmoothingSettings(
+      render_params.antialiasing,
+      use_subpixel_rendering && !background_is_transparent());
+
+  for (GSList* it = current_line_->runs; it; it = it->next) {
+    PangoLayoutRun* run = reinterpret_cast<PangoLayoutRun*>(it->data);
+    int glyph_count = run->glyphs->num_glyphs;
+    if (glyph_count == 0)
+      continue;
+
+    size_t run_start = run->item->offset;
+    size_t first_glyph_byte_index = run_start + run->glyphs->log_clusters[0];
+    size_t style_increment = IsForwardMotion(CURSOR_RIGHT, run->item) ? 1 : -1;
+
+    // Find the initial style for this run.
+    // TODO(asvitkine): Can we avoid looping here, e.g. by caching this per run?
+    int style = -1;
+    for (size_t i = 0; i < style_ranges_utf8.size(); ++i) {
+      if (IndexInRange(style_ranges_utf8[i], first_glyph_byte_index)) {
+        style = i;
+        break;
+      }
+    }
+    DCHECK_GE(style, 0);
+
+    ScopedPangoFontDescription desc(
+        pango_font_describe(run->item->analysis.font));
+
+    const std::string family_name =
+        pango_font_description_get_family(desc.get());
+    renderer.SetTextSize(GetPangoFontSizeInPixels(desc.get()));
+
+    SkScalar glyph_x = x;
+    SkScalar start_x = x;
+    int start = 0;
+
+    glyphs.resize(glyph_count);
+    pos.resize(glyph_count);
+
+    for (int i = 0; i < glyph_count; ++i) {
+      const PangoGlyphInfo& glyph = run->glyphs->glyphs[i];
+      glyphs[i] = static_cast<uint16>(glyph.glyph);
+      // Use pango_units_to_double() rather than PANGO_PIXELS() here so that
+      // units won't get rounded to the pixel grid if we're using subpixel
+      // positioning.
+      pos[i].set(glyph_x + pango_units_to_double(glyph.geometry.x_offset),
+                 y + pango_units_to_double(glyph.geometry.y_offset));
+
+      // If this glyph is beyond the current style, draw the glyphs so far and
+      // advance to the next style.
+      size_t glyph_byte_index = run_start + run->glyphs->log_clusters[i];
+      DCHECK_GE(style, 0);
+      DCHECK_LT(style, static_cast<int>(styles.size()));
+      if (!IndexInRange(style_ranges_utf8[style], glyph_byte_index)) {
+        // TODO(asvitkine): For cases like "fi", where "fi" is a single glyph
+        //                  but can span multiple styles, Pango splits the
+        //                  styles evenly over the glyph. We can do this too by
+        //                  clipping and drawing the glyph several times.
+        renderer.SetForegroundColor(styles[style].foreground);
+        renderer.SetFontFamilyWithStyle(family_name, styles[style].font_style);
+        renderer.DrawPosText(&pos[start], &glyphs[start], i - start);
+        if (styles[style].underline)
+          SetPangoUnderlineMetrics(desc.get(), &renderer);
+        renderer.DrawDecorations(start_x, y, glyph_x - start_x, styles[style]);
+
+        start = i;
+        start_x = glyph_x;
+        // Loop to find the next style, in case the glyph spans multiple styles.
+        do {
+          style += style_increment;
+        } while (style >= 0 && style < static_cast<int>(styles.size()) &&
+                 !IndexInRange(style_ranges_utf8[style], glyph_byte_index));
+      }
+
+      glyph_x += pango_units_to_double(glyph.geometry.width);
+    }
+
+    // Draw the remaining glyphs.
+    renderer.SetForegroundColor(styles[style].foreground);
+    renderer.SetFontFamilyWithStyle(family_name, styles[style].font_style);
+    renderer.DrawPosText(&pos[start], &glyphs[start], glyph_count - start);
+    if (styles[style].underline)
+      SetPangoUnderlineMetrics(desc.get(), &renderer);
+    renderer.DrawDecorations(start_x, y, glyph_x - start_x, styles[style]);
+    x = glyph_x;
+  }
+}
+
+GSList* RenderTextLinux::GetRunContainingCaret(
+    const SelectionModel& caret) const {
+  size_t position = TextIndexToLayoutIndex(caret.caret_pos());
+  LogicalCursorDirection affinity = caret.caret_affinity();
+  GSList* run = current_line_->runs;
+  while (run) {
+    PangoItem* item = reinterpret_cast<PangoLayoutRun*>(run->data)->item;
+    ui::Range item_range(item->offset, item->offset + item->length);
+    if (RangeContainsCaret(item_range, position, affinity))
+      return run;
+    run = run->next;
+  }
+  return NULL;
+}
+
+SelectionModel RenderTextLinux::FirstSelectionModelInsideRun(
+    const PangoItem* item) {
+  size_t caret = IndexOfAdjacentGrapheme(
+      LayoutIndexToTextIndex(item->offset), CURSOR_FORWARD);
+  return SelectionModel(caret, CURSOR_BACKWARD);
+}
+
+SelectionModel RenderTextLinux::LastSelectionModelInsideRun(
+    const PangoItem* item) {
+  size_t caret = IndexOfAdjacentGrapheme(
+      LayoutIndexToTextIndex(item->offset + item->length), CURSOR_BACKWARD);
+  return SelectionModel(caret, CURSOR_FORWARD);
+}
+
+size_t RenderTextLinux::TextIndexToLayoutIndex(size_t text_index) const {
+  // If the text is obscured then |layout_text_| is not the same as |text()|,
+  // but whether or not the text is obscured, the character (code point) offset
+  // in |layout_text_| is the same as that in |text()|.
+  DCHECK(layout_);
+  ptrdiff_t offset = ui::UTF16IndexToOffset(text(), 0, text_index);
+  const char* layout_pointer = g_utf8_offset_to_pointer(layout_text_, offset);
+  return (layout_pointer - layout_text_);
+}
+
+size_t RenderTextLinux::LayoutIndexToTextIndex(size_t layout_index) const {
+  // See |TextIndexToLayoutIndex()|.
+  DCHECK(layout_);
+  const char* layout_pointer = layout_text_ + layout_index;
+  long offset = g_utf8_pointer_to_offset(layout_text_, layout_pointer);
+  return ui::UTF16OffsetToIndex(text(), 0, offset);
+}
+
+std::vector<Rect> RenderTextLinux::CalculateSubstringBounds(ui::Range range) {
   int* ranges;
   int n_ranges;
-  size_t from_in_utf8 = Utf16IndexToUtf8Index(from);
-  size_t to_in_utf8 = Utf16IndexToUtf8Index(to);
   pango_layout_line_get_x_ranges(
       current_line_,
-      std::min(from_in_utf8, to_in_utf8),
-      std::max(from_in_utf8, to_in_utf8),
+      TextIndexToLayoutIndex(range.GetMin()),
+      TextIndexToLayoutIndex(range.GetMax()),
       &ranges,
       &n_ranges);
 
@@ -595,6 +525,7 @@ std::vector<Rect> RenderTextLinux::CalculateSubstringBounds(size_t from,
 
   std::vector<Rect> bounds;
   for (int i = 0; i < n_ranges; ++i) {
+    // TODO(derat): Support fractional bounds for subpixel positioning?
     int x = PANGO_PIXELS(ranges[2 * i]);
     int width = PANGO_PIXELS(ranges[2 * i + 1]) - x;
     Rect rect(x, y, width, height);
@@ -607,9 +538,12 @@ std::vector<Rect> RenderTextLinux::CalculateSubstringBounds(size_t from,
 
 std::vector<Rect> RenderTextLinux::GetSelectionBounds() {
   if (selection_visual_bounds_.empty())
-    selection_visual_bounds_ =
-        CalculateSubstringBounds(GetSelectionStart(), GetCursorPosition());
+    selection_visual_bounds_ = CalculateSubstringBounds(selection());
   return selection_visual_bounds_;
+}
+
+RenderText* RenderText::CreateInstance() {
+  return new RenderTextLinux;
 }
 
 }  // namespace gfx

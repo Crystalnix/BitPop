@@ -1,11 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('options.search_engines', function() {
-  const InlineEditableItemList = options.InlineEditableItemList;
-  const InlineEditableItem = options.InlineEditableItem;
-  const ListSelectionController = cr.ui.ListSelectionController;
+  /** @const */ var InlineEditableItemList = options.InlineEditableItemList;
+  /** @const */ var InlineEditableItem = options.InlineEditableItem;
+  /** @const */ var ListSelectionController = cr.ui.ListSelectionController;
 
   /**
    * Creates a new search engine list item.
@@ -122,9 +122,9 @@ cr.define('options.search_engines', function() {
       // is implemented. When this is removed, remove the extra div above.
       if (engine['canBeDefault']) {
         var makeDefaultButtonEl = this.ownerDocument.createElement('button');
-        makeDefaultButtonEl.className = 'raw-button custom-appearance';
+        makeDefaultButtonEl.className = 'custom-appearance list-inline-button';
         makeDefaultButtonEl.textContent =
-            templateData.makeDefaultSearchEngineButton;
+            loadTimeData.getString('makeDefaultSearchEngineButton');
         makeDefaultButtonEl.onclick = function(e) {
           chrome.send('managerSetDefaultSearchEngine', [engine['modelIndex']]);
         };
@@ -147,14 +147,14 @@ cr.define('options.search_engines', function() {
 
       if (this.isPlaceholder) {
         this.nameField_.placeholder =
-            localStrings.getString('searchEngineTableNamePlaceholder');
+            loadTimeData.getString('searchEngineTableNamePlaceholder');
         this.keywordField_.placeholder =
-            localStrings.getString('searchEngineTableKeywordPlaceholder');
+            loadTimeData.getString('searchEngineTableKeywordPlaceholder');
         this.urlField_.placeholder =
-            localStrings.getString('searchEngineTableURLPlaceholder');
+            loadTimeData.getString('searchEngineTableURLPlaceholder');
       }
 
-      var fields = [ this.nameField_, this.keywordField_, this.urlField_ ];
+      var fields = [this.nameField_, this.keywordField_, this.urlField_];
         for (var i = 0; i < fields.length; i++) {
         fields[i].oninput = this.startFieldValidation_.bind(this);
       }
@@ -224,9 +224,9 @@ cr.define('options.search_engines', function() {
      * @return {array} The current input field values.
      */
     getInputFieldValues_: function() {
-      return [ this.nameField_.value,
-               this.keywordField_.value,
-               this.urlField_.value ];
+      return [this.nameField_.value,
+              this.keywordField_.value,
+              this.urlField_.value];
     },
 
     /**
@@ -248,29 +248,28 @@ cr.define('options.search_engines', function() {
       this.waitingForValidation_ = false;
       // TODO(stuartmorgan): Implement the full validation UI with
       // checkmark/exclamation mark icons and tooltips showing the errors.
-      if (validity['name']) {
+      if (validity.name) {
         this.nameField_.setCustomValidity('');
       } else {
         this.nameField_.setCustomValidity(
-            templateData.editSearchEngineInvalidTitleToolTip);
+            loadTimeData.getString('editSearchEngineInvalidTitleToolTip'));
       }
 
-      if (validity['keyword']) {
+      if (validity.keyword) {
         this.keywordField_.setCustomValidity('');
       } else {
         this.keywordField_.setCustomValidity(
-            templateData.editSearchEngineInvalidKeywordToolTip);
+            loadTimeData.getString('editSearchEngineInvalidKeywordToolTip'));
       }
 
-      if (validity['url']) {
+      if (validity.url) {
         this.urlField_.setCustomValidity('');
       } else {
         this.urlField_.setCustomValidity(
-            templateData.editSearchEngineInvalidURLToolTip);
+            loadTimeData.getString('editSearchEngineInvalidURLToolTip'));
       }
 
-      this.currentlyValid_ = validity['name'] && validity['keyword'] &&
-          validity['url'];
+      this.currentlyValid_ = validity.name && validity.keyword && validity.url;
     },
   };
 
@@ -286,7 +285,7 @@ cr.define('options.search_engines', function() {
 
     /** @inheritDoc */
     deleteItemAtIndex: function(index) {
-      var modelIndex = this.dataModel.item(index)['modelIndex']
+      var modelIndex = this.dataModel.item(index)['modelIndex'];
       chrome.send('removeSearchEngine', [String(modelIndex)]);
     },
 

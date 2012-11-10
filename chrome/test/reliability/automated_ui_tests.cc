@@ -18,6 +18,7 @@
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -27,7 +28,6 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/env_vars.h"
-#include "chrome/common/libxml_utils.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
@@ -670,7 +670,7 @@ bool AutomatedUITest::FuzzyTestDialog(int num_actions) {
 
 bool AutomatedUITest::ForceCrash() {
   scoped_refptr<TabProxy> tab(GetActiveTab());
-  GURL test_url(chrome::kAboutCrashURL);
+  GURL test_url(chrome::kChromeUICrashURL);
   AutomationMsg_NavigationResponseValues result = tab->NavigateToURL(test_url);
   if (result != AUTOMATION_MSG_NAVIGATION_SUCCESS) {
     AddErrorAttribute("navigation_failed");
@@ -681,7 +681,8 @@ bool AutomatedUITest::ForceCrash() {
 
 bool AutomatedUITest::SimulateKeyPressInActiveWindow(ui::KeyboardCode key,
                                                      int flags) {
-  scoped_refptr<WindowProxy> window(automation()->GetActiveWindow());
+  scoped_refptr<BrowserProxy> browser(active_browser());
+  scoped_refptr<WindowProxy> window(browser->GetWindow());
   if (window.get() == NULL) {
     AddErrorAttribute("active_window_not_found");
     return false;

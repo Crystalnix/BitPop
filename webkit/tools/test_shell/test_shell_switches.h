@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,21 +20,16 @@ extern const char kStartupDialog[];
 extern const char kGPFaultErrorBox[];
 extern const char kJavaScriptFlags[];
 extern const char kMultipleLoads[];
-extern const char kRecordMode[];
-extern const char kPlaybackMode[];
-extern const char kNoEvents[];
 extern const char kDumpStatsTable[];
 extern const char kCacheDir[];
 extern const char kEnableFileCookies[];
 extern const char kAllowScriptsToCloseWindows[];
 extern const char kCheckLayoutTestSystemDeps[];
 extern const char kGDB[];
-extern const char kProfiler[];
-extern const char kHeapProfiler[];
 extern const char kAllowExternalPages[];
 extern const char kEnableAccel2DCanvas[];
 extern const char kEnableAccelCompositing[];
-extern const char kDartFlags[];
+extern const char kEnableSmoothScrolling[];
 
 }  // namespace test_shell
 

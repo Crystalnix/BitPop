@@ -1,22 +1,24 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_GTK_GTK_CHROME_COOKIE_VIEW_H_
 #define CHROME_BROWSER_UI_GTK_GTK_CHROME_COOKIE_VIEW_H_
-#pragma once
 
 #include <gtk/gtk.h>
 
 #include <string>
 
-#include "chrome/browser/browsing_data_appcache_helper.h"
-#include "chrome/browser/browsing_data_database_helper.h"
-#include "chrome/browser/browsing_data_indexed_db_helper.h"
-#include "chrome/browser/browsing_data_local_storage_helper.h"
-#include "net/base/cookie_monster.h"
+#include "chrome/browser/browsing_data/browsing_data_appcache_helper.h"
+#include "chrome/browser/browsing_data/browsing_data_database_helper.h"
+#include "chrome/browser/browsing_data/browsing_data_indexed_db_helper.h"
+#include "chrome/browser/browsing_data/browsing_data_local_storage_helper.h"
 
 class GURL;
+
+namespace net {
+class CanonicalCookie;
+}
 
 G_BEGIN_DECLS
 
@@ -140,7 +142,7 @@ G_END_DECLS
 void gtk_chrome_cookie_view_display_cookie(
     GtkChromeCookieView* widget,
     const std::string& domain,
-    const net::CookieMonster::CanonicalCookie& cookie);
+    const net::CanonicalCookie& cookie);
 
 // Looks up the cookie_line in CookieMonster and displays that.
 void gtk_chrome_cookie_view_display_cookie_string(

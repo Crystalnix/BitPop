@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/mac/mac_util.h"
 #include "base/message_loop.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -15,17 +16,19 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_command_controller.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/browser_window_state.h"
 #import "chrome/browser/ui/cocoa/browser/avatar_button_controller.h"
 #import "chrome/browser/ui/cocoa/browser/avatar_menu_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/browser/edit_search_engine_cocoa_controller.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/browser_window_utils.h"
 #import "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
-#import "chrome/browser/ui/cocoa/content_settings/collected_cookies_mac.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
 #include "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
-#import "chrome/browser/ui/cocoa/html_dialog_window_controller.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #import "chrome/browser/ui/cocoa/nsmenuitem_additions.h"
@@ -33,21 +36,26 @@
 #include "chrome/browser/ui/cocoa/status_bubble_mac.h"
 #include "chrome/browser/ui/cocoa/task_manager_mac.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
+#import "chrome/browser/ui/cocoa/web_dialog_window_controller.h"
+#import "chrome/browser/ui/cocoa/website_settings_bubble_controller.h"
 #include "chrome/browser/ui/page_info_bubble.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "chrome/browser/ui/webui/chrome_web_ui.h"
-#include "chrome/browser/ui/webui/task_manager_dialog.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
-#include "content/public/browser/notification_source.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/gfx/rect.h"
 
+#if defined(ENABLE_ONE_CLICK_SIGNIN)
+#import "chrome/browser/ui/cocoa/one_click_signin_bubble_controller.h"
+#endif
+
+using content::NativeWebKeyboardEvent;
 using content::SSLStatus;
 using content::WebContents;
 
@@ -81,7 +89,7 @@ BrowserWindowCocoa::BrowserWindowCocoa(Browser* browser,
   pref_change_registrar_.Init(browser_->profile()->GetPrefs());
   pref_change_registrar_.Add(prefs::kShowBookmarkBar, this);
 
-  initial_show_state_ = browser_->GetSavedWindowShowState();
+  initial_show_state_ = chrome::GetSavedWindowShowState(browser_);
 }
 
 BrowserWindowCocoa::~BrowserWindowCocoa() {
@@ -117,6 +125,8 @@ void BrowserWindowCocoa::Show() {
   if (initial_show_state_ == ui::SHOW_STATE_MINIMIZED) {
     [window() orderOut:controller_];
     [window() miniaturize:controller_];
+  } else if (initial_show_state_ == ui::SHOW_STATE_FULLSCREEN) {
+    chrome::ToggleFullscreenMode(browser_);
   }
   initial_show_state_ = ui::SHOW_STATE_DEFAULT;
 
@@ -141,7 +151,7 @@ void BrowserWindowCocoa::SetBounds(const gfx::Rect& bounds) {
   // Flip coordinates based on the primary screen.
   NSScreen* screen = [[NSScreen screens] objectAtIndex:0];
   cocoa_bounds.origin.y =
-      [screen frame].size.height - real_bounds.height() - real_bounds.y();
+      NSHeight([screen frame]) - real_bounds.height() - real_bounds.y();
 
   [window() setFrame:cocoa_bounds display:YES];
 }
@@ -187,11 +197,15 @@ void BrowserWindowCocoa::FlashFrame(bool flash) {
   }
 }
 
+bool BrowserWindowCocoa::IsAlwaysOnTop() const {
+  return false;
+}
+
 bool BrowserWindowCocoa::IsActive() const {
   return [window() isKeyWindow];
 }
 
-gfx::NativeWindow BrowserWindowCocoa::GetNativeHandle() {
+gfx::NativeWindow BrowserWindowCocoa::GetNativeWindow() {
   return window();
 }
 
@@ -201,14 +215,6 @@ BrowserWindowTesting* BrowserWindowCocoa::GetBrowserWindowTesting() {
 
 StatusBubble* BrowserWindowCocoa::GetStatusBubble() {
   return [controller_ statusBubble];
-}
-
-void BrowserWindowCocoa::ToolbarSizeChanged(bool is_animating) {
-  // According to beng, this is an ugly method that comes from the days when the
-  // download shelf was a ChromeView attached to the WebContents, and as its
-  // size changed via animation it notified through TCD/etc to the browser view
-  // to relayout for each tick of the animation. We don't need anything of the
-  // sort on Mac.
 }
 
 void BrowserWindowCocoa::UpdateTitleBar() {
@@ -228,7 +234,7 @@ void BrowserWindowCocoa::BookmarkBarStateChanged(
 
 void BrowserWindowCocoa::UpdateDevTools() {
   [controller_ updateDevToolsForContents:
-      browser_->GetSelectedWebContents()];
+      chrome::GetActiveWebContents(browser_)];
 }
 
 void BrowserWindowCocoa::SetDevToolsDockSide(DevToolsDockSide side) {
@@ -243,12 +249,24 @@ void BrowserWindowCocoa::SetStarredState(bool is_starred) {
   [controller_ setStarredState:is_starred ? YES : NO];
 }
 
+void BrowserWindowCocoa::SetZoomIconState(ZoomController::ZoomIconState state) {
+  // TODO(khorimoto): Find someone to implement this.
+}
+
+void BrowserWindowCocoa::SetZoomIconTooltipPercent(int zoom_percent) {
+  // TODO(khorimoto): Find someone to implement this.
+}
+
+void BrowserWindowCocoa::ShowZoomBubble(int zoom_percent) {
+  // TODO(khorimoto): Find someone to implement this.
+}
+
 gfx::Rect BrowserWindowCocoa::GetRestoredBounds() const {
   // Flip coordinates based on the primary screen.
   NSScreen* screen = [[NSScreen screens] objectAtIndex:0];
   NSRect frame = [controller_ regularWindowFrame];
-  gfx::Rect bounds(frame.origin.x, 0, frame.size.width, frame.size.height);
-  bounds.set_y([screen frame].size.height - frame.origin.y - frame.size.height);
+  gfx::Rect bounds(frame.origin.x, 0, NSWidth(frame), NSHeight(frame));
+  bounds.set_y(NSHeight([screen frame]) - NSMaxY(frame));
   return bounds;
 }
 
@@ -306,7 +324,7 @@ bool BrowserWindowCocoa::IsFullscreenBubbleVisible() const {
 }
 
 void BrowserWindowCocoa::ConfirmAddSearchProvider(
-    const TemplateURL* template_url,
+    TemplateURL* template_url,
     Profile* profile) {
   // The controller will release itself when the window closes.
   EditSearchEngineCocoaController* editor =
@@ -332,7 +350,7 @@ void BrowserWindowCocoa::UpdateReloadStopState(bool is_loading, bool force) {
   [controller_ setIsLoading:is_loading force:force];
 }
 
-void BrowserWindowCocoa::UpdateToolbar(TabContentsWrapper* contents,
+void BrowserWindowCocoa::UpdateToolbar(TabContents* contents,
                                        bool should_restore_state) {
   [controller_ updateToolbarWithContents:contents->web_contents()
                       shouldRestoreState:should_restore_state ? YES : NO];
@@ -354,9 +372,6 @@ void BrowserWindowCocoa::FocusBookmarksToolbar() {
   // Not needed on the Mac.
 }
 
-void BrowserWindowCocoa::FocusChromeOSStatus() {
-  // Not needed on the Mac.
-}
 
 bool BrowserWindowCocoa::IsBookmarkBarVisible() const {
   return browser_->profile()->GetPrefs()->GetBoolean(prefs::kShowBookmarkBar);
@@ -399,39 +414,16 @@ void BrowserWindowCocoa::AddFindBar(
   [controller_ addFindBar:find_bar_cocoa_controller];
 }
 
-void BrowserWindowCocoa::ShowAboutChromeDialog() {
-  // Go through AppController's implementation to bring up the branded panel.
-  [[NSApp delegate] orderFrontStandardAboutPanel:nil];
-}
-
 void BrowserWindowCocoa::ShowUpdateChromeDialog() {
   restart_browser::RequestRestart(window());
 }
 
 void BrowserWindowCocoa::ShowTaskManager() {
-#if defined(WEBUI_TASK_MANAGER)
-  TaskManagerDialog::Show();
-#else
-  // Uses WebUI TaskManager when swiches is set. It is beta feature.
-  if (chrome_web_ui::IsMoreWebUI()) {
-    TaskManagerDialog::Show();
-  } else {
-    TaskManagerMac::Show(false);
-  }
-#endif  // defined(WEBUI_TASK_MANAGER)
+  TaskManagerMac::Show(false);
 }
 
 void BrowserWindowCocoa::ShowBackgroundPages() {
-#if defined(WEBUI_TASK_MANAGER)
-  TaskManagerDialog::ShowBackgroundPages();
-#else
-  // Uses WebUI TaskManager when swiches is set. It is beta feature.
-  if (chrome_web_ui::IsMoreWebUI()) {
-    TaskManagerDialog::ShowBackgroundPages();
-  } else {
-    TaskManagerMac::Show(true);
-  }
-#endif  // defined(WEBUI_TASK_MANAGER)
+  TaskManagerMac::Show(true);
 }
 
 void BrowserWindowCocoa::ShowBookmarkBubble(const GURL& url,
@@ -440,6 +432,21 @@ void BrowserWindowCocoa::ShowBookmarkBubble(const GURL& url,
                       alreadyBookmarked:(already_bookmarked ? YES : NO)];
 }
 
+void BrowserWindowCocoa::ShowChromeToMobileBubble() {
+  [controller_ showChromeToMobileBubble];
+}
+
+#if defined(ENABLE_ONE_CLICK_SIGNIN)
+void BrowserWindowCocoa::ShowOneClickSigninBubble(
+      const StartSyncCallback& start_sync_callback) {
+  OneClickSigninBubbleController* bubble_controller =
+      [[OneClickSigninBubbleController alloc]
+        initWithBrowserWindowController:cocoa_controller()
+                    start_sync_callback:start_sync_callback];
+  [bubble_controller showWindow:nil];
+}
+#endif
+
 bool BrowserWindowCocoa::IsDownloadShelfVisible() const {
   return [controller_ isDownloadShelfVisible] != NO;
 }
@@ -447,12 +454,6 @@ bool BrowserWindowCocoa::IsDownloadShelfVisible() const {
 DownloadShelf* BrowserWindowCocoa::GetDownloadShelf() {
   DownloadShelfController* shelfController = [controller_ downloadShelf];
   return [shelfController bridge];
-}
-
-void BrowserWindowCocoa::ShowCollectedCookiesDialog(
-    TabContentsWrapper* wrapper) {
-  // Deletes itself on close.
-  new CollectedCookiesMac(GetNativeHandle(), wrapper);
 }
 
 // We allow closing the window here since the real quit decision on Mac is made
@@ -478,11 +479,22 @@ void BrowserWindowCocoa::WebContentsFocused(WebContents* contents) {
   NOTIMPLEMENTED();
 }
 
-void BrowserWindowCocoa::ShowPageInfo(Profile* profile,
+void BrowserWindowCocoa::ShowPageInfo(WebContents* web_contents,
                                       const GURL& url,
                                       const SSLStatus& ssl,
                                       bool show_history) {
-  browser::ShowPageInfoBubble(window(), profile, url, ssl, show_history);
+  chrome::ShowPageInfoBubble(window(), web_contents, url, ssl, show_history,
+                             browser_);
+}
+
+void BrowserWindowCocoa::ShowWebsiteSettings(
+    Profile* profile,
+    TabContents* tab_contents,
+    const GURL& url,
+    const content::SSLStatus& ssl,
+    bool show_history) {
+  WebsiteSettingsUIBridge::Show(
+      window(), profile, tab_contents, url, ssl);
 }
 
 void BrowserWindowCocoa::ShowAppMenu() {
@@ -498,7 +510,7 @@ bool BrowserWindowCocoa::PreHandleKeyboardEvent(
   if (id == -1)
     return false;
 
-  if (browser_->IsReservedCommandOrKey(id, event)) {
+  if (browser_->command_controller()->IsReservedCommandOrKey(id, event)) {
       return [BrowserWindowUtils handleKeyboardEvent:event.os_event
                                             inWindow:window()];
   }
@@ -514,13 +526,8 @@ void BrowserWindowCocoa::HandleKeyboardEvent(
     [BrowserWindowUtils handleKeyboardEvent:event.os_event inWindow:window()];
 }
 
-void BrowserWindowCocoa::ShowCreateWebAppShortcutsDialog(
-    TabContentsWrapper* tab_contents) {
-  NOTIMPLEMENTED();
-}
-
 void BrowserWindowCocoa::ShowCreateChromeAppShortcutsDialog(
-    Profile* profile, const Extension* app) {
+    Profile* profile, const extensions::Extension* app) {
   NOTIMPLEMENTED();
 }
 
@@ -555,7 +562,7 @@ bool BrowserWindowCocoa::InPresentationMode() {
   return [controller_ inPresentationMode];
 }
 
-void BrowserWindowCocoa::ShowInstant(TabContentsWrapper* preview) {
+void BrowserWindowCocoa::ShowInstant(TabContents* preview) {
   [controller_ showInstant:preview->web_contents()];
 }
 
@@ -575,6 +582,9 @@ gfx::Rect BrowserWindowCocoa::GetInstantBounds() {
 
 WindowOpenDisposition BrowserWindowCocoa::GetDispositionForPopupBounds(
     const gfx::Rect& bounds) {
+  // In Lion fullscreen mode, convert popups into tabs.
+  if (base::mac::IsOSLionOrLater() && IsFullscreen())
+    return NEW_FOREGROUND_TAB;
   return NEW_POPUP;
 }
 

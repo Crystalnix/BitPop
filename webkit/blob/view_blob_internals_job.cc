@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/escape.h"
+#include "net/base/net_errors.h"
 #include "net/url_request/url_request.h"
 #include "webkit/blob/blob_data.h"
 #include "webkit/blob/blob_storage_controller.h"
@@ -39,7 +40,7 @@ void StartHTML(std::string* out) {
       "<!DOCTYPE HTML>"
       "<html><title>Blob Storage Internals</title>"
       "<meta http-equiv=\"X-WebKit-CSP\""
-      "  content=\"obejct-src 'none'; script-src 'none'\">\n"
+      "  content=\"object-src 'none'; script-src 'none'\">\n"
       "<style>\n"
       "body { font-family: sans-serif; font-size: 0.8em; }\n"
       "tt, code, pre { font-family: WebKitHack, monospace; }\n"
@@ -142,9 +143,11 @@ void ViewBlobInternalsJob::DoWorkAsync() {
   StartAsync();
 }
 
-bool ViewBlobInternalsJob::GetData(std::string* mime_type,
-                                   std::string* charset,
-                                   std::string* data) const {
+int ViewBlobInternalsJob::GetData(
+    std::string* mime_type,
+    std::string* charset,
+    std::string* data,
+    const net::CompletionCallback& callback) const {
   mime_type->assign("text/html");
   charset->assign("UTF-8");
 
@@ -155,7 +158,7 @@ bool ViewBlobInternalsJob::GetData(std::string* mime_type,
   else
     GenerateHTML(data);
   EndHTML(data);
-  return true;
+  return net::OK;
 }
 
 void ViewBlobInternalsJob::GenerateHTML(std::string* out) const {

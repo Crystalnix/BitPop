@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/screen_observer.h"
+#include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -36,10 +37,14 @@ NetworkScreen::NetworkScreen(ScreenObserver* screen_observer,
       is_network_subscribed_(false),
       continue_pressed_(false),
       actor_(actor) {
-  actor_->SetDelegate(this);
+  DCHECK(actor_);
+  if (actor_)
+    actor_->SetDelegate(this);
 }
 
 NetworkScreen::~NetworkScreen() {
+  if (actor_)
+    actor_->SetDelegate(NULL);
   connection_timer_.Stop();
   UnsubscribeNetworkNotification();
 }
@@ -48,16 +53,23 @@ NetworkScreen::~NetworkScreen() {
 // NetworkScreen, WizardScreen implementation:
 
 void NetworkScreen::PrepareToShow() {
-  actor_->PrepareToShow();
+  if (actor_)
+    actor_->PrepareToShow();
 }
 
 void NetworkScreen::Show() {
-  actor_->Show();
+  if (actor_)
+    actor_->Show();
   Refresh();
 }
 
 void NetworkScreen::Hide() {
-  actor_->Hide();
+  if (actor_)
+    actor_->Hide();
+}
+
+std::string NetworkScreen::GetName() const {
+  return WizardController::kNetworkScreenName;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -77,6 +89,11 @@ void NetworkScreen::Refresh() {
 
 ///////////////////////////////////////////////////////////////////////////////
 // NetworkScreen, NetworkScreenActor::Delegate implementation:
+
+void NetworkScreen::OnActorDestroyed(NetworkScreenActor* actor) {
+  if (actor_ == actor)
+    actor_ = NULL;
+}
 
 void NetworkScreen::OnContinuePressed() {
   NetworkLibrary* network = CrosLibrary::Get()->GetNetworkLibrary();
@@ -119,12 +136,12 @@ void NetworkScreen::OnConnectionTimeout() {
   NetworkLibrary* network = CrosLibrary::Get()->GetNetworkLibrary();
   bool is_connected = network && network->Connected();
 
-  if (!is_connected) {
+  if (!is_connected && actor_) {
     // Show error bubble.
     actor_->ShowError(
         l10n_util::GetStringFUTF16(
             IDS_NETWORK_SELECTION_ERROR,
-            l10n_util::GetStringUTF16(IDS_PRODUCT_OS_NAME),
+            l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_OS_NAME),
             network_id_));
   }
 }
@@ -158,8 +175,10 @@ void NetworkScreen::StopWaitingForConnection(const string16& network_id) {
   connection_timer_.Stop();
 
   network_id_ = network_id;
-  actor_->ShowConnectingStatus(false, network_id_);
-  actor_->EnableContinue(is_connected);
+  if (actor_) {
+    actor_->ShowConnectingStatus(false, network_id_);
+    actor_->EnableContinue(is_connected);
+  }
 }
 
 void NetworkScreen::WaitForConnection(const string16& network_id) {
@@ -172,9 +191,10 @@ void NetworkScreen::WaitForConnection(const string16& network_id) {
   }
 
   network_id_ = network_id;
-  actor_->ShowConnectingStatus(continue_pressed_, network_id_);
-
-  actor_->EnableContinue(false);
+  if (actor_) {
+    actor_->ShowConnectingStatus(continue_pressed_, network_id_);
+    actor_->EnableContinue(false);
+  }
 }
 
 }  // namespace chromeos

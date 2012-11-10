@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_UI_GTK_INFOBARS_EXTENSION_INFOBAR_GTK_H_
 #define CHROME_BROWSER_UI_GTK_INFOBARS_EXTENSION_INFOBAR_GTK_H_
-#pragma once
 
 #include "base/compiler_specific.h"
 #include "chrome/browser/extensions/extension_infobar_delegate.h"
@@ -36,8 +35,9 @@ class ExtensionInfoBarGtk : public InfoBarGtk,
                               double* r, double* g, double* b) OVERRIDE;
 
   // Overridden from ImageLoadingTracker::Observer:
-  virtual void OnImageLoaded(
-      SkBitmap* image, const ExtensionResource& resource, int index) OVERRIDE;
+  virtual void OnImageLoaded(const gfx::Image& image,
+                             const std::string& extension_id,
+                             int index) OVERRIDE;
 
   // Overridden from MenuGtk::Delegate:
   virtual void StoppedShowing() OVERRIDE;

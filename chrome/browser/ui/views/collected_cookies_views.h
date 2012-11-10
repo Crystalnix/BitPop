@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_UI_VIEWS_COLLECTED_COOKIES_VIEWS_H_
 #define CHROME_BROWSER_UI_VIEWS_COLLECTED_COOKIES_VIEWS_H_
-#pragma once
 
 #include "base/compiler_specific.h"
 #include "chrome/common/content_settings.h"
@@ -19,7 +18,6 @@ class CookieInfoView;
 class CookiesTreeModel;
 class InfobarView;
 class TabContents;
-class TabContentsWrapper;
 
 namespace views {
 class Label;
@@ -31,7 +29,7 @@ class TreeView;
 //
 // CollectedCookiesViews is a dialog that displays the allowed and blocked
 // cookies of the current tab contents. To display the dialog, invoke
-// ShowCollectedCookiesDialog() on the delegate of the tab contents wrapper's
+// ShowCollectedCookiesDialog() on the delegate of the TabContents's
 // content settings tab helper.
 class CollectedCookiesViews : public views::DialogDelegateView,
                               public content::NotificationObserver,
@@ -40,7 +38,7 @@ class CollectedCookiesViews : public views::DialogDelegateView,
                               public views::TreeViewController {
  public:
   // Use BrowserWindow::ShowCollectedCookiesDialog to show.
-  explicit CollectedCookiesViews(TabContentsWrapper* wrapper);
+  explicit CollectedCookiesViews(TabContents* tab_contents);
 
   // views::DialogDelegate:
   virtual string16 GetWindowTitle() const OVERRIDE;
@@ -55,10 +53,10 @@ class CollectedCookiesViews : public views::DialogDelegateView,
                              const views::Event& event) OVERRIDE;
 
   // views::TabbedPaneListener:
-  virtual void TabSelectedAt(int index);
+  virtual void TabSelectedAt(int index) OVERRIDE;
 
   // views::TreeViewController:
-  virtual void OnTreeViewSelectionChanged(views::TreeView* tree_view);
+  virtual void OnTreeViewSelectionChanged(views::TreeView* tree_view) OVERRIDE;
 
   // views::View:
   virtual void ViewHierarchyChanged(bool is_add,
@@ -90,7 +88,7 @@ class CollectedCookiesViews : public views::DialogDelegateView,
   ConstrainedWindow* window_;
 
   // The tab contents.
-  TabContentsWrapper* wrapper_;
+  TabContents* tab_contents_;
 
   // Assorted views.
   views::Label* allowed_label_;

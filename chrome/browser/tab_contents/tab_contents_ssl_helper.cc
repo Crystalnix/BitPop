@@ -21,16 +21,15 @@
 #include "chrome/browser/ssl_client_certificate_selector.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/tab_contents/simple_alert_infobar_delegate.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "content/browser/ssl/ssl_client_auth_handler.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources_standard.h"
+#include "grit/theme_resources.h"
 #include "net/base/net_errors.h"
 #include "net/base/x509_certificate.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -101,7 +100,9 @@ string16 SSLCertAddedInfoBarDelegate::GetButtonLabel(
 
 bool SSLCertAddedInfoBarDelegate::Accept() {
   ShowCertificateViewer(
-      owner()->web_contents()->GetView()->GetTopLevelNativeWindow(), cert_);
+      owner()->web_contents(),
+      owner()->web_contents()->GetView()->GetTopLevelNativeWindow(),
+      cert_);
   return false;  // Hiding the infobar just as the dialog opens looks weird.
 }
 
@@ -113,7 +114,7 @@ bool SSLCertAddedInfoBarDelegate::Accept() {
 class TabContentsSSLHelper::SSLAddCertData
     : public content::NotificationObserver {
  public:
-  explicit SSLAddCertData(TabContentsWrapper* tab_contents);
+  explicit SSLAddCertData(TabContents* tab_contents);
   virtual ~SSLAddCertData();
 
   // Displays |delegate| as an infobar in |tab_|, replacing our current one if
@@ -130,7 +131,7 @@ class TabContentsSSLHelper::SSLAddCertData
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details);
 
-  TabContentsWrapper* tab_contents_;
+  TabContents* tab_contents_;
   InfoBarDelegate* infobar_delegate_;
   content::NotificationRegistrar registrar_;
 
@@ -138,7 +139,7 @@ class TabContentsSSLHelper::SSLAddCertData
 };
 
 TabContentsSSLHelper::SSLAddCertData::SSLAddCertData(
-    TabContentsWrapper* tab_contents)
+    TabContents* tab_contents)
     : tab_contents_(tab_contents),
       infobar_delegate_(NULL) {
   content::Source<InfoBarTabHelper> source(tab_contents_->infobar_tab_helper());
@@ -183,7 +184,7 @@ void TabContentsSSLHelper::SSLAddCertData::Observe(
 
 // TabContentsSSLHelper -------------------------------------------------------
 
-TabContentsSSLHelper::TabContentsSSLHelper(TabContentsWrapper* tab_contents)
+TabContentsSSLHelper::TabContentsSSLHelper(TabContents* tab_contents)
     : tab_contents_(tab_contents) {
 }
 
@@ -191,9 +192,11 @@ TabContentsSSLHelper::~TabContentsSSLHelper() {
 }
 
 void TabContentsSSLHelper::ShowClientCertificateRequestDialog(
-    scoped_refptr<SSLClientAuthHandler> handler) {
-  browser::ShowSSLClientCertificateSelector(
-      tab_contents_, handler->cert_request_info(), handler);
+    const net::HttpNetworkSession* network_session,
+    net::SSLCertRequestInfo* cert_request_info,
+    const base::Callback<void(net::X509Certificate*)>& callback) {
+  chrome::ShowSSLClientCertificateSelector(
+      tab_contents_, network_session, cert_request_info, callback);
 }
 
 void TabContentsSSLHelper::OnVerifyClientCertificateError(

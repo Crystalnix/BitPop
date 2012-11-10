@@ -1,74 +1,84 @@
 <!DOCTYPE html>
-<html i18n-values="dir:textdirection;">
+<html i18n-values="dir:textdirection;" class="loading">
 <head>
 <meta charset="utf-8">
 
 <link rel="icon" href="chrome://theme/IDR_EXTENSIONS_FAVICON">
+<link rel="stylesheet" href="extension_commands_overlay.css">
 <link rel="stylesheet" href="extensions.css">
 <link rel="stylesheet" href="pack_extension_overlay.css">
-<link rel="stylesheet" href="../shared/css/button.css">
-<link rel="stylesheet" href="../shared/css/checkbox.css">
-<link rel="stylesheet" href="../shared/css/chrome_shared2.css">
-<link rel="stylesheet" href="../shared/css/overlay.css">
-<link rel="stylesheet" href="../shared/css/trash.css">
+<link rel="stylesheet" href="chrome://resources/css/alert_overlay.css">
+<link rel="stylesheet" href="chrome://resources/css/chrome_shared.css">
+<link rel="stylesheet" href="chrome://resources/css/overlay.css">
+<link rel="stylesheet" href="chrome://resources/css/trash.css">
 <link rel="stylesheet" href="../uber/uber_shared.css">
 
 <script src="chrome://resources/js/cr.js"></script>
-<script src="chrome://resources/js/local_strings.js"></script>
+<script src="chrome://resources/js/load_time_data.js"></script>
 <script src="chrome://resources/js/util.js"></script>
 <script src="chrome://resources/js/cr/ui.js"></script>
 <script src="chrome://resources/js/cr/ui/alert_overlay.js"></script>
+<script src="chrome://resources/js/cr/ui/focus_manager.js"></script>
+<script src="chrome://resources/js/cr/ui/overlay.js"></script>
 
 <script src="chrome://extensions-frame/extensions.js"></script>
 </head>
 
-<body class="uber-frame">
+<body class="uber-frame"
+    i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
 
 <div id="overlay" class="overlay" hidden>
+  <include src="extension_commands_overlay.html">
   <include src="pack_extension_overlay.html">
   <include src="../shared/html/alert_overlay.html">
+  <div id="dropTargetOverlay" class="page">
+    <div i18n-content="extensionSettingsInstallDropTarget"></div>
+  </div>
 </div>
 
 <div class="page" id="extension-settings">
-  <header id="page-header"><h1 i18n-content="extensionSettings"></h1></header>
-  <div id="dev-toggle">
-    <input id="toggle-dev-on" type="checkbox" value="off">
-    <label for="toggle-dev-on" i18n-content="extensionSettingsDeveloperMode">
-    </label>
+  <header id="page-header"><h1 i18n-content="extensionSettings"></h1>
+    <div id="dev-toggle" class="checkbox header-extras"><label>
+      <input id="toggle-dev-on" type="checkbox">
+      <span i18n-content="extensionSettingsDeveloperMode">
+    </label></div>
+    <div id="managed-mode-banner"
+        class="page-banner managed-mode-banner">
+      <div class="page-banner-gradient">
+        <span id="managed-prefs-text" class="page-banner-text"
+            i18n-content="extensionSettingsManagedMode"></span>
+      </div>
+    </div>
+  </header>
+  <div id="dev-controls" hidden>
+    <button id="load-unpacked"
+        i18n-content="extensionSettingsLoadUnpackedButton"></button>
+    <button id="pack-extension"
+        i18n-content="extensionSettingsPackButton"></button>
+    <div id="dev-controls-spacer"></div>
+    <button id="update-extensions-now"
+        i18n-content="extensionSettingsUpdateButton"></button>
   </div>
-  <div class="displaytable">
-    <div id="dev" class="dev-closed">
-      <table id="dev-table" width="100%">
-        <tr>
-          <td>
-            <button id="load-unpacked"
-                i18n-content="extensionSettingsLoadUnpackedButton"></button>
-            <button id="pack-extension"
-                i18n-content="extensionSettingsPackButton"></button>
-          </td>
-          <td align="right">
-            <button id="update-extensions-now"
-                i18n-content="extensionSettingsUpdateButton"></button>
-          </td>
-        </tr>
-      </table>
-    </div>
-    <section class="extension-settings-content">
-      <div id="extension-settings-list"></div>
-    </section>
+  <div id="extension-settings-list" class="empty-extension-list"></div>
+  <div id="no-extensions">
+    <span id="no-extensions-message"
+        i18n-content="extensionSettingsNoExtensions"></span>
+    <span id="suggest-gallery" class="more-extensions-link"
+        i18n-values=".innerHTML:extensionSettingsSuggestGallery">
+    </span>
   </div>
-  <section>
-    <div>
-      <strong id="no-extensions" i18n-content="extensionSettingsNoExtensions"
-          hidden></strong>
-    </div>
-    <div id="suggest-gallery" hidden></div>
-    <div id="get-more-extensions-container" hidden>
-      <img src="chrome://theme/IDR_WEBSTORE_ICON_32">
-      <div id="get-more-extensions"></div>
-    </div>
-  </section>
+  <div id="footer-section">
+    <a target="blank_" class="more-extensions-link"
+        i18n-values="href:extensionSettingsGetMoreExtensionsUrl"
+        i18n-content="extensionSettingsGetMoreExtensions"></a>
+    <a target="blank_" hidden
+        class="extension-commands-config"
+        i18n-content="extensionSettingsCommandsLink"
+        href="#"></a>
+  </div>
 </div>
+
+<span id="font-measuring-div"></span>
 
 <div id="template-collection" hidden>
 
@@ -80,7 +90,7 @@
           <span class="extension-version"></span>
         </div>
         <p class="extension-description"></p>
-        <div class="developer-extras" hidden>
+        <div class="developer-extras">
           <div>
             <span i18n-content="extensionSettingsExtensionId"></span>
             <span class="extension-id"></span>
@@ -96,23 +106,32 @@
             <span i18n-content="extensionSettingsInspectViews"></span>
             <a href="#"></a>
           </div>
+          <div class="extension-warnings" hidden>
+            <span i18n-content="extensionSettingsWarningsTitle"></span>
+            <ul></ul>
+          </div>
+          <div class="install-warnings" hidden>
+            <span i18n-content="extensionSettingsInstallWarnings"></span>
+            <ul></ul>
+          </div>
         </div>
         <div class="optional-controls">
           <button class="show-button"
-              i18n-content="extensionSettingsShowButton" hidden ></button>
-          <label class="incognito-control">
+              i18n-content="extensionSettingsShowButton" hidden></button>
+          <div class="checkbox"><label class="incognito-control">
             <input type="checkbox">
             <span i18n-content="extensionSettingsEnableIncognito"></span>
-          </label>
+          </label></div>
           <label class="file-access-control" hidden>
             <input type="checkbox">
             <span i18n-content="extensionSettingsAllowFileAccess"></span>
           </label>
           <a class="options-link" i18n-content="extensionSettingsOptions"
-              href="#"></a>
-          <a class="store-link" i18n-content="extensionSettingsVisitWebsite"
-              target="_parent" hidden></a>
-          <a class="reload-link" i18n-content="extensionSettingsReload"
+              href="#" hidden></a>
+          <a class="activity-link" i18n-content="extensionSettingsActivity"
+              href="#" hidden></a>
+          <a class="site-link" target="_parent" hidden></a>
+          <a class="reload-link" i18n-content="extensionSettingsReloadUnpacked"
               href="#" hidden></a>
         </div>
         <div class="butter-bar"
@@ -121,16 +140,16 @@
       </div>
       <div class="enable-controls">
         <a class="terminated-reload-link" href="#"
-            i18n-content="extensionSettingsReload" hidden></a>
-        <label class="enable-checkbox" hidden>
+            i18n-content="extensionSettingsReloadTerminated" hidden></a>
+        <div class="checkbox enable-checkbox" hidden><label>
           <input type="checkbox">
-          <div class="enable-checkbox-text">
+          <span class="enable-checkbox-text">
             <span class="enabled-text" i18n-content="extensionSettingsEnabled">
             </span>
             <span class="enable-text" i18n-content="extensionSettingsEnable">
             </span>
-          </div>
-        </label>
+          </span>
+        </label></div>
       </div>
     </div>
   </div>
@@ -140,8 +159,7 @@
 </div>
 
 <script src="chrome://extensions-frame/strings.js"></script>
-<script src="chrome://resources/js/i18n_template.js"></script>
-<script src="chrome://resources/js/i18n_process.js"></script>
+<script src="chrome://resources/js/i18n_template2.js"></script>
 
 </body>
 </html>

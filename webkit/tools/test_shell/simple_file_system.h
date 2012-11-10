@@ -10,6 +10,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_temp_dir.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebFileSystem.h"
+#include "webkit/fileapi/file_system_context.h"
+#include "webkit/fileapi/file_system_operation_interface.h"
 #include "webkit/fileapi/file_system_types.h"
 #include <vector>
 
@@ -21,7 +23,11 @@ class WebURL;
 
 namespace fileapi {
 class FileSystemContext;
-class FileSystemOperationInterface;
+class FileSystemURL;
+}
+
+namespace webkit_blob {
+class BlobStorageController;
 }
 
 class SimpleFileSystem
@@ -78,11 +84,61 @@ class SimpleFileSystem
       WebKit::WebFileSystemCallbacks*) OVERRIDE;
   virtual WebKit::WebFileWriter* createFileWriter(
       const WebKit::WebURL& path, WebKit::WebFileWriterClient*) OVERRIDE;
+  virtual void createSnapshotFileAndReadMetadata(
+      const WebKit::WebURL& blobURL,
+      const WebKit::WebURL& path,
+      WebKit::WebFileSystemCallbacks* callbacks) OVERRIDE;
+
+  static void InitializeOnIOThread(
+      webkit_blob::BlobStorageController* blob_storage_controller);
+  static void CleanupOnIOThread();
 
  private:
+  enum FilePermission {
+    FILE_PERMISSION_READ,
+    FILE_PERMISSION_WRITE,
+    FILE_PERMISSION_CREATE,
+  };
+
   // Helpers.
+  bool HasFilePermission(const fileapi::FileSystemURL& url,
+                         FilePermission permission);
   fileapi::FileSystemOperationInterface* GetNewOperation(
-      const WebKit::WebURL& path, WebKit::WebFileSystemCallbacks* callbacks);
+      const fileapi::FileSystemURL& url);
+
+  // Callback Handlers
+  fileapi::FileSystemOperationInterface::StatusCallback FinishHandler(
+      WebKit::WebFileSystemCallbacks* callbacks);
+  fileapi::FileSystemOperationInterface::GetMetadataCallback GetMetadataHandler(
+      WebKit::WebFileSystemCallbacks* callbacks);
+  fileapi::FileSystemOperationInterface::ReadDirectoryCallback
+      ReadDirectoryHandler(WebKit::WebFileSystemCallbacks* callbacks);
+  fileapi::FileSystemContext::OpenFileSystemCallback OpenFileSystemHandler(
+      WebKit::WebFileSystemCallbacks* callbacks);
+  fileapi::FileSystemOperationInterface::SnapshotFileCallback
+      SnapshotFileHandler(const GURL& blob_url,
+                          WebKit::WebFileSystemCallbacks* callbacks);
+  void DidFinish(WebKit::WebFileSystemCallbacks* callbacks,
+                 base::PlatformFileError result);
+  void DidGetMetadata(WebKit::WebFileSystemCallbacks* callbacks,
+                      base::PlatformFileError result,
+                      const base::PlatformFileInfo& info,
+                      const FilePath& platform_path);
+  void DidReadDirectory(
+      WebKit::WebFileSystemCallbacks* callbacks,
+      base::PlatformFileError result,
+      const std::vector<base::FileUtilProxy::Entry>& entries,
+      bool has_more);
+  void DidOpenFileSystem(WebKit::WebFileSystemCallbacks* callbacks,
+                         base::PlatformFileError result,
+                         const std::string& name, const GURL& root);
+  void DidCreateSnapshotFile(
+      const GURL& blob_url,
+      WebKit::WebFileSystemCallbacks* callbacks,
+      base::PlatformFileError result,
+      const base::PlatformFileInfo& info,
+      const FilePath& platform_path,
+      const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref);
 
   // A temporary directory for FileSystem API.
   ScopedTempDir file_system_dir_;

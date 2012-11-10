@@ -1,14 +1,15 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/test/mock_render_process.h"
 
 #include "ui/gfx/rect.h"
-#include "ui/gfx/surface/transport_dib.h"
+#include "ui/surface/transport_dib.h"
 
 MockRenderProcess::MockRenderProcess()
-    : transport_dib_next_sequence_number_(0) {
+    : transport_dib_next_sequence_number_(0),
+      enabled_bindings_(0) {
 }
 
 MockRenderProcess::~MockRenderProcess() {
@@ -37,8 +38,19 @@ bool MockRenderProcess::UseInProcessPlugins() const {
   return true;
 }
 
-bool MockRenderProcess::HasInitializedMediaLibrary() const {
-  return false;
+void MockRenderProcess::AddBindings(int bindings) {
+  enabled_bindings_ |= bindings;
 }
 
+int MockRenderProcess::GetEnabledBindings() const {
+  return enabled_bindings_;
+}
+
+TransportDIB* MockRenderProcess::CreateTransportDIB(size_t size) {
+  return TransportDIB::Create(size, transport_dib_next_sequence_number_++);
+}
+
+void MockRenderProcess::FreeTransportDIB(TransportDIB* dib) {
+  delete dib;
+}
 

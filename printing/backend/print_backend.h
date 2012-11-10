@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef PRINTING_BACKEND_PRINT_BACKEND_H_
 #define PRINTING_BACKEND_PRINT_BACKEND_H_
-#pragma once
 
 #include <map>
 #include <string>
@@ -53,8 +52,6 @@ struct PRINTING_EXPORT PrinterCapsAndDefaults {
 class PRINTING_EXPORT PrintBackend
     : public base::RefCountedThreadSafe<PrintBackend> {
  public:
-  virtual ~PrintBackend();
-
   // Enumerates the list of installed local and network printers.
   virtual bool EnumeratePrinters(PrinterList* printer_list) = 0;
 
@@ -66,6 +63,10 @@ class PRINTING_EXPORT PrintBackend
       const std::string& printer_name,
       PrinterCapsAndDefaults* printer_info) = 0;
 
+  // Gets the information about driver for a specific printer.
+  virtual std::string GetPrinterDriverInfo(
+      const std::string& printer_name) = 0;
+
   // Returns true if printer_name points to a valid printer.
   virtual bool IsValidPrinter(const std::string& printer_name) = 0;
 
@@ -74,6 +75,10 @@ class PRINTING_EXPORT PrintBackend
   // Return NULL if no print backend available.
   static scoped_refptr<PrintBackend> CreateInstance(
       const base::DictionaryValue* print_backend_settings);
+
+ protected:
+  friend class base::RefCountedThreadSafe<PrintBackend>;
+  virtual ~PrintBackend();
 };
 
 }  // namespace printing

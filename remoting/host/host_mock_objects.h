@@ -6,44 +6,46 @@
 #define REMOTING_HOST_HOST_MOCK_OBJECTS_H_
 
 #include "net/base/ip_endpoint.h"
-#include "remoting/host/capturer.h"
-#include "remoting/host/curtain.h"
+#include "remoting/host/video_frame_capturer.h"
 #include "remoting/host/chromoting_host_context.h"
 #include "remoting/host/client_session.h"
 #include "remoting/host/continue_window.h"
 #include "remoting/host/disconnect_window.h"
 #include "remoting/host/event_executor.h"
+#include "remoting/host/host_status_observer.h"
 #include "remoting/host/local_input_monitor.h"
 #include "remoting/host/user_authenticator.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace remoting {
 
-class MockCapturer : public Capturer {
+class MockCaptureCompletedCallback {
  public:
-  MockCapturer();
-  virtual ~MockCapturer();
+  MockCaptureCompletedCallback();
+  virtual ~MockCaptureCompletedCallback();
 
-  MOCK_METHOD0(ScreenConfigurationChanged, void());
+  MOCK_METHOD1(CaptureCompletedPtr, void(CaptureData* capture_data));
+  void CaptureCompleted(scoped_refptr<CaptureData> capture_data);
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockCaptureCompletedCallback);
+};
+
+class MockVideoFrameCapturer : public VideoFrameCapturer {
+ public:
+  MockVideoFrameCapturer();
+  virtual ~MockVideoFrameCapturer();
+
+  MOCK_METHOD1(Start, void(const CursorShapeChangedCallback& callback));
+  MOCK_METHOD0(Stop, void());
   MOCK_CONST_METHOD0(pixel_format, media::VideoFrame::Format());
-  MOCK_METHOD0(ClearInvalidRegion, void());
   MOCK_METHOD1(InvalidateRegion, void(const SkRegion& invalid_region));
-  MOCK_METHOD1(InvalidateScreen, void(const SkISize&));
-  MOCK_METHOD0(InvalidateFullScreen, void());
   MOCK_METHOD1(CaptureInvalidRegion,
                void(const CaptureCompletedCallback& callback));
   MOCK_CONST_METHOD0(size_most_recent, const SkISize&());
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(MockCapturer);
-};
-
-class MockCurtain : public Curtain {
- public:
-  MockCurtain();
-  virtual ~MockCurtain();
-
-  MOCK_METHOD1(EnableCurtainMode, void(bool enable));
+  DISALLOW_COPY_AND_ASSIGN(MockVideoFrameCapturer);
 };
 
 class MockDisconnectWindow : public DisconnectWindow {
@@ -51,7 +53,8 @@ class MockDisconnectWindow : public DisconnectWindow {
   MockDisconnectWindow();
   virtual ~MockDisconnectWindow();
 
-  MOCK_METHOD2(Show, void(remoting::ChromotingHost* host,
+  MOCK_METHOD3(Show, void(remoting::ChromotingHost* host,
+                          const DisconnectCallback& disconnect_callback,
                           const std::string& username));
   MOCK_METHOD0(Hide, void());
 };
@@ -61,7 +64,8 @@ class MockLocalInputMonitor : public LocalInputMonitor {
   MockLocalInputMonitor();
   virtual ~MockLocalInputMonitor();
 
-  MOCK_METHOD1(Start, void(remoting::ChromotingHost* host));
+  MOCK_METHOD2(Start, void(MouseMoveObserver* mouse_move_observer,
+                           const base::Closure& disconnect_callback));
   MOCK_METHOD0(Stop, void());
 };
 
@@ -81,13 +85,13 @@ class MockChromotingHostContext : public ChromotingHostContext {
   MockChromotingHostContext();
   virtual ~MockChromotingHostContext();
 
-  MOCK_METHOD0(Start, void());
+  MOCK_METHOD0(Start, bool());
   MOCK_METHOD0(Stop, void());
-  MOCK_METHOD0(jingle_thread, JingleThread*());
-  MOCK_METHOD0(ui_message_loop, base::MessageLoopProxy*());
-  MOCK_METHOD0(main_message_loop, MessageLoop*());
-  MOCK_METHOD0(encode_message_loop, MessageLoop*());
-  MOCK_METHOD0(network_message_loop, base::MessageLoopProxy*());
+  MOCK_METHOD0(ui_task_runner, base::SingleThreadTaskRunner*());
+  MOCK_METHOD0(capture_task_runner, base::SingleThreadTaskRunner*());
+  MOCK_METHOD0(encode_task_runner, base::SingleThreadTaskRunner*());
+  MOCK_METHOD0(network_task_runner, base::SingleThreadTaskRunner*());
+  MOCK_METHOD0(io_task_runner, base::SingleThreadTaskRunner*());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockChromotingHostContext);
@@ -99,14 +103,15 @@ class MockClientSessionEventHandler : public ClientSession::EventHandler {
   virtual ~MockClientSessionEventHandler();
 
   MOCK_METHOD1(OnSessionAuthenticated, void(ClientSession* client));
+  MOCK_METHOD1(OnSessionChannelsConnected, void(ClientSession* client));
   MOCK_METHOD1(OnSessionAuthenticationFailed, void(ClientSession* client));
   MOCK_METHOD1(OnSessionClosed, void(ClientSession* client));
-  MOCK_METHOD1(OnSessionFailed, void(ClientSession* client));
   MOCK_METHOD2(OnSessionSequenceNumber, void(ClientSession* client,
                                              int64 sequence_number));
-  MOCK_METHOD3(OnSessionIpAddress, void(ClientSession* client,
-                                        const std::string& channel_name,
-                                        const net::IPEndPoint& end_point));
+  MOCK_METHOD3(OnSessionRouteChange, void(
+      ClientSession* client,
+      const std::string& channel_name,
+      const protocol::TransportRoute& route));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockClientSessionEventHandler);
@@ -117,11 +122,34 @@ class MockEventExecutor : public EventExecutor {
   MockEventExecutor();
   virtual ~MockEventExecutor();
 
+  MOCK_METHOD1(InjectClipboardEvent,
+               void(const protocol::ClipboardEvent& event));
   MOCK_METHOD1(InjectKeyEvent, void(const protocol::KeyEvent& event));
   MOCK_METHOD1(InjectMouseEvent, void(const protocol::MouseEvent& event));
+  MOCK_METHOD1(OnSessionStartedPtr,
+               void(protocol::ClipboardStub* client_clipboard));
+  MOCK_METHOD0(OnSessionFinished, void());
+
+  void OnSessionStarted(scoped_ptr<protocol::ClipboardStub> client_clipboard);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockEventExecutor);
+};
+
+class MockHostStatusObserver : public HostStatusObserver {
+ public:
+  MockHostStatusObserver();
+  virtual ~MockHostStatusObserver();
+
+  MOCK_METHOD1(OnAccessDenied, void(const std::string& jid));
+  MOCK_METHOD1(OnClientAuthenticated, void(const std::string& jid));
+  MOCK_METHOD1(OnClientConnected, void(const std::string& jid));
+  MOCK_METHOD1(OnClientDisconnected, void(const std::string& jid));
+  MOCK_METHOD3(OnClientRouteChange,
+               void(const std::string& jid,
+                    const std::string& channel_name,
+                    const protocol::TransportRoute& route));
+  MOCK_METHOD0(OnShutdown, void());
 };
 
 class MockUserAuthenticator : public UserAuthenticator {

@@ -8,6 +8,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -15,7 +16,7 @@
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_cocoa_controller.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "skia/ext/skia_utils_mac.h"
+#include "grit/ui_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -171,7 +172,7 @@ void BookmarkMenuBridge::ObserveBookmarkModel() {
 BookmarkModel* BookmarkMenuBridge::GetBookmarkModel() {
   if (!profile_)
     return NULL;
-  return profile_->GetBookmarkModel();
+  return BookmarkModelFactory::GetForProfile(profile_);
 }
 
 Profile* BookmarkMenuBridge::GetProfile() {
@@ -305,14 +306,15 @@ void BookmarkMenuBridge::ConfigureMenuItem(const BookmarkNode* node,
   NSImage* favicon = nil;
   BookmarkModel* model = GetBookmarkModel();
   if (model) {
-    const SkBitmap& bitmap = model->GetFavicon(node);
-    if (!bitmap.isNull())
-      favicon = gfx::SkBitmapToNSImage(bitmap);
+    const gfx::Image& image = model->GetFavicon(node);
+    if (!image.IsEmpty())
+      favicon = image.ToNSImage();
   }
-  // Either we do not have a loaded favicon or the conversion from SkBitmap
-  // failed. Use the default site image instead.
-  if (!favicon)
-    favicon = gfx::GetCachedImageWithName(@"nav.pdf");
+  // If we do not have a loaded favicon, use the default site image instead.
+  if (!favicon) {
+    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    favicon = rb.GetNativeImageNamed(IDR_DEFAULT_FAVICON);
+  }
   [item setImage:favicon];
 }
 

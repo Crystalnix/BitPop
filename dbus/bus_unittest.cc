@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/threading/thread.h"
 #include "dbus/exported_object.h"
+#include "dbus/object_path.h"
 #include "dbus/object_proxy.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -30,20 +31,53 @@ TEST(BusTest, GetObjectProxy) {
 
   dbus::ObjectProxy* object_proxy1 =
       bus->GetObjectProxy("org.chromium.TestService",
-                          "/org/chromium/TestObject");
+                          dbus::ObjectPath("/org/chromium/TestObject"));
   ASSERT_TRUE(object_proxy1);
 
   // This should return the same object.
   dbus::ObjectProxy* object_proxy2 =
       bus->GetObjectProxy("org.chromium.TestService",
-                          "/org/chromium/TestObject");
+                          dbus::ObjectPath("/org/chromium/TestObject"));
   ASSERT_TRUE(object_proxy2);
   EXPECT_EQ(object_proxy1, object_proxy2);
 
   // This should not.
   dbus::ObjectProxy* object_proxy3 =
-      bus->GetObjectProxy("org.chromium.TestService",
-                          "/org/chromium/DifferentTestObject");
+      bus->GetObjectProxy(
+          "org.chromium.TestService",
+          dbus::ObjectPath("/org/chromium/DifferentTestObject"));
+  ASSERT_TRUE(object_proxy3);
+  EXPECT_NE(object_proxy1, object_proxy3);
+
+  bus->ShutdownAndBlock();
+}
+
+TEST(BusTest, GetObjectProxyIgnoreUnknownService) {
+  dbus::Bus::Options options;
+  scoped_refptr<dbus::Bus> bus = new dbus::Bus(options);
+
+  dbus::ObjectProxy* object_proxy1 =
+      bus->GetObjectProxyWithOptions(
+          "org.chromium.TestService",
+          dbus::ObjectPath("/org/chromium/TestObject"),
+          dbus::ObjectProxy::IGNORE_SERVICE_UNKNOWN_ERRORS);
+  ASSERT_TRUE(object_proxy1);
+
+  // This should return the same object.
+  dbus::ObjectProxy* object_proxy2 =
+      bus->GetObjectProxyWithOptions(
+          "org.chromium.TestService",
+          dbus::ObjectPath("/org/chromium/TestObject"),
+          dbus::ObjectProxy::IGNORE_SERVICE_UNKNOWN_ERRORS);
+  ASSERT_TRUE(object_proxy2);
+  EXPECT_EQ(object_proxy1, object_proxy2);
+
+  // This should not.
+  dbus::ObjectProxy* object_proxy3 =
+      bus->GetObjectProxyWithOptions(
+          "org.chromium.TestService",
+          dbus::ObjectPath("/org/chromium/DifferentTestObject"),
+          dbus::ObjectProxy::IGNORE_SERVICE_UNKNOWN_ERRORS);
   ASSERT_TRUE(object_proxy3);
   EXPECT_NE(object_proxy1, object_proxy3);
 
@@ -55,25 +89,55 @@ TEST(BusTest, GetExportedObject) {
   scoped_refptr<dbus::Bus> bus = new dbus::Bus(options);
 
   dbus::ExportedObject* object_proxy1 =
-      bus->GetExportedObject("org.chromium.TestService",
-                             "/org/chromium/TestObject");
+      bus->GetExportedObject(dbus::ObjectPath("/org/chromium/TestObject"));
   ASSERT_TRUE(object_proxy1);
 
   // This should return the same object.
   dbus::ExportedObject* object_proxy2 =
-      bus->GetExportedObject("org.chromium.TestService",
-                             "/org/chromium/TestObject");
+      bus->GetExportedObject(dbus::ObjectPath("/org/chromium/TestObject"));
   ASSERT_TRUE(object_proxy2);
   EXPECT_EQ(object_proxy1, object_proxy2);
 
   // This should not.
   dbus::ExportedObject* object_proxy3 =
-      bus->GetExportedObject("org.chromium.TestService",
-                             "/org/chromium/DifferentTestObject");
+      bus->GetExportedObject(
+          dbus::ObjectPath("/org/chromium/DifferentTestObject"));
   ASSERT_TRUE(object_proxy3);
   EXPECT_NE(object_proxy1, object_proxy3);
 
   bus->ShutdownAndBlock();
+}
+
+// http://crbug.com/137846
+TEST(BusTest, FLAKY_UnregisterExportedObject) {
+  // Start the D-Bus thread.
+  base::Thread::Options thread_options;
+  thread_options.message_loop_type = MessageLoop::TYPE_IO;
+  base::Thread dbus_thread("D-Bus thread");
+  dbus_thread.StartWithOptions(thread_options);
+
+  // Create the bus.
+  dbus::Bus::Options options;
+  options.dbus_thread_message_loop_proxy = dbus_thread.message_loop_proxy();
+  scoped_refptr<dbus::Bus> bus = new dbus::Bus(options);
+  ASSERT_FALSE(bus->shutdown_completed());
+
+  dbus::ExportedObject* object_proxy1 =
+      bus->GetExportedObject(dbus::ObjectPath("/org/chromium/TestObject"));
+  ASSERT_TRUE(object_proxy1);
+
+  bus->UnregisterExportedObject(dbus::ObjectPath("/org/chromium/TestObject"));
+
+  // This should return a new object.
+  dbus::ExportedObject* object_proxy2 =
+      bus->GetExportedObject(dbus::ObjectPath("/org/chromium/TestObject"));
+  ASSERT_TRUE(object_proxy2);
+  EXPECT_NE(object_proxy1, object_proxy2);
+
+  // Shut down synchronously.
+  bus->ShutdownOnDBusThreadAndBlock();
+  EXPECT_TRUE(bus->shutdown_completed());
+  dbus_thread.Stop();
 }
 
 TEST(BusTest, ShutdownAndBlock) {

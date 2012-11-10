@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <limits>
 
+#include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
@@ -15,24 +16,29 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/theme_resources.h"
-#include "grit/theme_resources_standard.h"
 #include "grit/ui_resources.h"
 #include "net/base/file_stream.h"
 #include "net/base/net_errors.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/base/resource/data_pack.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/skbitmap_operations.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_operations.h"
+#include "ui/gfx/screen.h"
 
 using content::BrowserThread;
+using extensions::Extension;
 
 namespace {
 
 // Version number of the current theme pack. We just throw out and rebuild
-// theme packs that aren't int-equal to this.
-const int kThemePackVersion = 18;
+// theme packs that aren't int-equal to this. Increment this number if you
+// change default theme assets.
+const int kThemePackVersion = 24;
 
 // IDs that are in the DataPack won't clash with the positive integer
 // uint16. kHeaderID should always have the maximum value because we want the
@@ -45,6 +51,7 @@ const int kTintsID = kMaxID - 2;
 const int kColorsID = kMaxID - 3;
 const int kDisplayPropertiesID = kMaxID - 4;
 const int kSourceImagesID = kMaxID - 5;
+const int kScaleFactorsID = kMaxID - 6;
 
 // Static size of the tint/color/display property arrays that are mmapped.
 const int kTintArraySize = 6;
@@ -153,9 +160,10 @@ PersistingImagesTable kPersistingImages[] = {
   { 44, IDR_THROBBER_WAITING, NULL },
   { 45, IDR_THROBBER_LIGHT, NULL },
 };
+size_t kPersistingImagesLength = arraysize(kPersistingImages);
 
 int GetPersistentIDByName(const std::string& key) {
-  for (size_t i = 0; i < arraysize(kPersistingImages); ++i) {
+  for (size_t i = 0; i < kPersistingImagesLength; ++i) {
     if (kPersistingImages[i].key != NULL &&
         base::strcasecmp(key.c_str(), kPersistingImages[i].key) == 0) {
       return kPersistingImages[i].persistent_id;
@@ -166,13 +174,45 @@ int GetPersistentIDByName(const std::string& key) {
 }
 
 int GetPersistentIDByIDR(int idr) {
-  for (size_t i = 0; i < arraysize(kPersistingImages); ++i) {
-    if (kPersistingImages[i].idr_id == idr) {
-      return kPersistingImages[i].persistent_id;
+  static std::map<int,int>* lookup_table = new std::map<int,int>();
+  if (lookup_table->empty()) {
+    for (size_t i = 0; i < kPersistingImagesLength; ++i) {
+      int idr = kPersistingImages[i].idr_id;
+      int prs_id = kPersistingImages[i].persistent_id;
+      (*lookup_table)[idr] = prs_id;
     }
   }
+  std::map<int,int>::iterator it = lookup_table->find(idr);
+  return (it == lookup_table->end()) ? -1 : it->second;
+}
 
-  return -1;
+// Returns true if the scales in |input| match those in |expected|.
+// The order must match as the index is used in determining the raw id.
+bool InputScalesValid(const base::StringPiece& input,
+                      const std::vector<ui::ScaleFactor>& expected) {
+  size_t scales_size = static_cast<size_t>(input.size() / sizeof(float));
+  if (scales_size != expected.size())
+    return false;
+  scoped_array<float> scales(new float[scales_size]);
+  // Do a memcpy to avoid misaligned memory access.
+  memcpy(scales.get(), input.data(), input.size());
+  for (size_t index = 0; index < scales_size; ++index) {
+    if (scales[index] != ui::GetScaleFactorScale(expected[index]))
+      return false;
+  }
+  return true;
+}
+
+// Returns |scale_factors| as a string to be written to disk.
+std::string GetScaleFactorsAsString(
+    const std::vector<ui::ScaleFactor>& scale_factors) {
+  scoped_array<float> scales(new float[scale_factors.size()]);
+  for (size_t i = 0; i < scale_factors.size(); ++i)
+    scales[i] = ui::GetScaleFactorScale(scale_factors[i]);
+  std::string out_string = std::string(
+      reinterpret_cast<const char*>(scales.get()),
+      scale_factors.size() * sizeof(float));
+  return out_string;
 }
 
 struct StringToIntTable {
@@ -284,11 +324,11 @@ const int kPreloadIDs[] = {
 };
 
 // Returns a piece of memory with the contents of the file |path|.
-RefCountedMemory* ReadFileData(const FilePath& path) {
+base::RefCountedMemory* ReadFileData(const FilePath& path) {
   if (!path.empty()) {
-    net::FileStream file;
+    net::FileStream file(NULL);
     int flags = base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ;
-    if (file.Open(path, flags) == net::OK) {
+    if (file.OpenSync(path, flags) == net::OK) {
       int64 avail = file.Available();
       if (avail > 0 && avail < INT_MAX) {
         size_t size = static_cast<size_t>(avail);
@@ -296,7 +336,7 @@ RefCountedMemory* ReadFileData(const FilePath& path) {
         raw_data.resize(size);
         char* data = reinterpret_cast<char*>(&(raw_data.front()));
         if (file.ReadUntilComplete(data, size) == avail)
-          return RefCountedBytes::TakeVector(&raw_data);
+          return base::RefCountedBytes::TakeVector(&raw_data);
       }
     }
   }
@@ -304,18 +344,54 @@ RefCountedMemory* ReadFileData(const FilePath& path) {
   return NULL;
 }
 
-// Shifts a bitmap's HSL values. The caller is responsible for deleting
+// Shifts an image's HSL values. The caller is responsible for deleting
 // the returned image.
 gfx::Image* CreateHSLShiftedImage(const gfx::Image& image,
                                   const color_utils::HSL& hsl_shift) {
-  std::vector<const SkBitmap*> bitmaps;
-  for (size_t i = 0; i < image.GetNumberOfSkBitmaps(); ++i) {
-    const SkBitmap* bitmap = image.GetSkBitmapAtIndex(i);
-    bitmaps.push_back(new SkBitmap(SkBitmapOperations::CreateHSLShiftedBitmap(
-        *bitmap, hsl_shift)));
-  }
-  return new gfx::Image(bitmaps);
+  const gfx::ImageSkia* src_image = image.ToImageSkia();
+  return new gfx::Image(gfx::ImageSkiaOperations::CreateHSLShiftedImage(
+      *src_image, hsl_shift));
 }
+
+class TabBackgroundImageSource: public gfx::CanvasImageSource {
+ public:
+  TabBackgroundImageSource(const gfx::ImageSkia& image_to_tint,
+                           const gfx::ImageSkia& overlay,
+                           const color_utils::HSL& hsl_shift,
+                           int vertical_offset)
+      : gfx::CanvasImageSource(image_to_tint.size(), false),
+        image_to_tint_(image_to_tint),
+        overlay_(overlay),
+        hsl_shift_(hsl_shift),
+        vertical_offset_(vertical_offset) {
+  }
+
+  virtual ~TabBackgroundImageSource() {
+  }
+
+  // Overridden from CanvasImageSource:
+  virtual void Draw(gfx::Canvas* canvas) OVERRIDE {
+    gfx::ImageSkia bg_tint =
+        gfx::ImageSkiaOperations::CreateHSLShiftedImage(image_to_tint_,
+            hsl_shift_);
+    canvas->TileImageInt(bg_tint, 0, vertical_offset_, 0, 0,
+        size().width(), size().height());
+
+    // If they've provided a custom image, overlay it.
+    if (!overlay_.isNull()) {
+      canvas->TileImageInt(overlay_, 0, 0, size().width(),
+                           overlay_.height());
+    }
+  }
+
+ private:
+  const gfx::ImageSkia image_to_tint_;
+  const gfx::ImageSkia overlay_;
+  const color_utils::HSL hsl_shift_;
+  const int vertical_offset_;
+
+  DISALLOW_COPY_AND_ASSIGN(TabBackgroundImageSource);
+};
 
 }  // namespace
 
@@ -328,18 +404,18 @@ BrowserThemePack::~BrowserThemePack() {
     delete [] source_images_;
   }
 
-  STLDeleteValues(&prepared_images_);
-  STLDeleteValues(&loaded_images_);
+  STLDeleteValues(&images_on_ui_thread_);
+  STLDeleteValues(&images_on_file_thread_);
 }
 
 // static
-BrowserThemePack* BrowserThemePack::BuildFromExtension(
+scoped_refptr<BrowserThemePack> BrowserThemePack::BuildFromExtension(
     const Extension* extension) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(extension);
   DCHECK(extension->is_theme());
 
-  scoped_refptr<BrowserThemePack> pack = new BrowserThemePack;
+  scoped_refptr<BrowserThemePack> pack(new BrowserThemePack);
   pack->BuildHeader(extension);
   pack->BuildTintsFromJSON(extension->GetThemeTints());
   pack->BuildColorsFromJSON(extension->GetThemeColors());
@@ -352,34 +428,38 @@ BrowserThemePack* BrowserThemePack::BuildFromExtension(
                                 &file_paths);
   pack->BuildSourceImagesArray(file_paths);
 
-  if (!pack->LoadRawBitmapsTo(file_paths, &pack->prepared_images_)) {
-    delete pack;
+  if (!pack->LoadRawBitmapsTo(file_paths, &pack->images_on_ui_thread_))
     return NULL;
-  }
 
-  pack->GenerateFrameImages(&pack->prepared_images_);
+  pack->CopyImagesTo(pack->images_on_ui_thread_, &pack->images_on_file_thread_);
 
-  pack->GenerateTintedButtons(
-      pack->GetTintInternal(ThemeService::TINT_BUTTONS),
-      &pack->prepared_images_);
+  pack->CreateImages(&pack->images_on_ui_thread_);
+  pack->CreateImages(&pack->images_on_file_thread_);
 
-  pack->GenerateTabBackgroundImages(&pack->prepared_images_);
+  // For M22, as it is not possible to easily determine which scale factors are
+  // in use, assume that the 1x scale factor is in use.
+  std::vector<ui::ScaleFactor> scale_factors_in_use;
+  scale_factors_in_use.push_back(ui::SCALE_FACTOR_100P);
+  pack->GenerateImageReps(scale_factors_in_use);
 
   // The BrowserThemePack is now in a consistent state.
-  return pack.release();
+  return pack;
 }
 
 // static
 scoped_refptr<BrowserThemePack> BrowserThemePack::BuildFromDataPack(
-    FilePath path, const std::string& expected_id) {
+    const FilePath& path, const std::string& expected_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // Allow IO on UI thread due to deep-seated theme design issues.
   // (see http://crbug.com/80206)
   base::ThreadRestrictions::ScopedAllowIO allow_io;
   scoped_refptr<BrowserThemePack> pack(new BrowserThemePack);
-  pack->data_pack_.reset(new ui::DataPack);
+  // Scale factor parameter is moot as data pack has image resources for all
+  // supported scale factors.
+  pack->data_pack_.reset(
+      new ui::DataPack(ui::SCALE_FACTOR_NONE));
 
-  if (!pack->data_pack_->Load(path)) {
+  if (!pack->data_pack_->LoadFromPath(path)) {
     LOG(ERROR) << "Failed to load theme data pack.";
     return NULL;
   }
@@ -423,10 +503,17 @@ scoped_refptr<BrowserThemePack> BrowserThemePack::BuildFromDataPack(
   pack->source_images_ = reinterpret_cast<int*>(
       const_cast<char*>(pointer.data()));
 
+  if (!pack->data_pack_->GetStringPiece(kScaleFactorsID, &pointer))
+    return NULL;
+
+  if (!InputScalesValid(pointer, pack->scale_factors_)) {
+    DLOG(ERROR) << "BuildFromDataPack failure! The pack scale factors differ "
+                << "from those supported by platform.";
+  }
   return pack;
 }
 
-bool BrowserThemePack::WriteToDisk(FilePath path) const {
+bool BrowserThemePack::WriteToDisk(const FilePath& path) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   // Add resources for each of the property arrays.
   RawDataForWriting resources;
@@ -449,10 +536,15 @@ bool BrowserThemePack::WriteToDisk(FilePath path) const {
       reinterpret_cast<const char*>(source_images_),
       source_count * sizeof(*source_images_));
 
+  // Store results of GetScaleFactorsAsString() in std::string as
+  // base::StringPiece does not copy data in constructor.
+  std::string scale_factors_string = GetScaleFactorsAsString(scale_factors_);
+  resources[kScaleFactorsID] = scale_factors_string;
+
   AddRawImagesTo(image_memory_, &resources);
 
   RawImages reencoded_images;
-  RepackImages(prepared_images_, &reencoded_images);
+  RepackImages(images_on_file_thread_, &reencoded_images);
   AddRawImagesTo(reencoded_images, &resources);
 
   return ui::DataPack::WritePack(path, resources, ui::DataPack::BINARY);
@@ -504,12 +596,10 @@ SkBitmap* BrowserThemePack::GetBitmapNamed(int idr_id) const {
   if (!image)
     return NULL;
 
-  const SkBitmap* bitmap = *image;
-
   // TODO(sail): This cast should be removed. Currently we use this const_cast
   // to avoid changing the BrowserThemePack::GetBitmapNamed API. Once we
   // switch to using gfx::Image everywhere this can be removed.
-  return const_cast<SkBitmap*>(bitmap);
+  return const_cast<SkBitmap*>(image->ToSkBitmap());
 }
 
 const gfx::Image* BrowserThemePack::GetImageNamed(int idr_id) const {
@@ -517,54 +607,53 @@ const gfx::Image* BrowserThemePack::GetImageNamed(int idr_id) const {
   if (prs_id == -1)
     return NULL;
 
-  // Check our cache of prepared images, first.
-  ImageCache::const_iterator image_iter = prepared_images_.find(prs_id);
-  if (image_iter != prepared_images_.end())
+  // Check if the image is cached.
+  ImageCache::const_iterator image_iter = images_on_ui_thread_.find(prs_id);
+  if (image_iter != images_on_ui_thread_.end())
     return image_iter->second;
 
-  // Check if we've already loaded this image.
-  image_iter = loaded_images_.find(prs_id);
-  if (image_iter != loaded_images_.end())
-    return image_iter->second;
+  // TODO(pkotwicz): Do something better than loading the bitmaps
+  // for all the scale factors associated with |idr_id|.
+  gfx::ImageSkia image_skia;
+  for (size_t i = 0; i < scale_factors_.size(); ++i) {
+    scoped_refptr<base::RefCountedMemory> memory =
+        GetRawData(idr_id, scale_factors_[i]);
 
-  scoped_refptr<RefCountedMemory> memory;
-  if (data_pack_.get()) {
-    memory = data_pack_->GetStaticMemory(prs_id);
-  } else {
-    RawImages::const_iterator it = image_memory_.find(prs_id);
-    if (it != image_memory_.end()) {
-      memory = it->second;
+    if (memory.get()) {
+      // Decode the PNG.
+      SkBitmap bitmap;
+      if (!gfx::PNGCodec::Decode(memory->front(), memory->size(),
+                                 &bitmap)) {
+        NOTREACHED() << "Unable to decode theme image resource " << idr_id
+                     << " from saved DataPack.";
+        return NULL;
+      }
+      image_skia.AddRepresentation(
+          gfx::ImageSkiaRep(bitmap, scale_factors_[i]));
     }
   }
 
-  if (memory.get()) {
-    // Decode the PNG.
-    SkBitmap bitmap;
-    if (!gfx::PNGCodec::Decode(memory->front(), memory->size(),
-                               &bitmap)) {
-      NOTREACHED() << "Unable to decode theme image resource " << idr_id
-                   << " from saved DataPack.";
-      return NULL;
-    }
-
-    gfx::Image* ret = new gfx::Image(new SkBitmap(bitmap));
-    loaded_images_[prs_id] = ret;
-
+  if (!image_skia.isNull()) {
+    gfx::Image* ret = new gfx::Image(image_skia);
+    images_on_ui_thread_[prs_id] = ret;
     return ret;
   }
 
   return NULL;
 }
 
-RefCountedMemory* BrowserThemePack::GetRawData(int idr_id) const {
-  RefCountedMemory* memory = NULL;
+base::RefCountedMemory* BrowserThemePack::GetRawData(
+    int idr_id,
+    ui::ScaleFactor scale_factor) const {
+  base::RefCountedMemory* memory = NULL;
   int prs_id = GetPersistentIDByIDR(idr_id);
+  int raw_id = GetRawIDByPersistentID(prs_id, scale_factor);
 
-  if (prs_id != -1) {
+  if (raw_id != -1) {
     if (data_pack_.get()) {
-      memory = data_pack_->GetStaticMemory(prs_id);
+      memory = data_pack_->GetStaticMemory(raw_id);
     } else {
-      RawImages::const_iterator it = image_memory_.find(prs_id);
+      RawImages::const_iterator it = image_memory_.find(raw_id);
       if (it != image_memory_.end()) {
         memory = it->second;
       }
@@ -596,6 +685,11 @@ BrowserThemePack::BrowserThemePack()
       colors_(NULL),
       display_properties_(NULL),
       source_images_(NULL) {
+#if defined(OS_MACOSX)
+  scale_factors_ = ui::GetSupportedScaleFactors();
+#else
+  scale_factors_.push_back(ui::SCALE_FACTOR_100P);
+#endif
 }
 
 void BrowserThemePack::BuildHeader(const Extension* extension) {
@@ -862,39 +956,40 @@ void BrowserThemePack::BuildSourceImagesArray(const FilePathMap& file_paths) {
 
 bool BrowserThemePack::LoadRawBitmapsTo(
     const FilePathMap& file_paths,
-    ImageCache* raw_bitmaps) {
+    ImageCache* image_cache) {
   // Themes should be loaded on the file thread, not the UI thread.
   // http://crbug.com/61838
   base::ThreadRestrictions::ScopedAllowIO allow_io;
 
   for (FilePathMap::const_iterator it = file_paths.begin();
        it != file_paths.end(); ++it) {
-    scoped_refptr<RefCountedMemory> raw_data(ReadFileData(it->second));
+    scoped_refptr<base::RefCountedMemory> raw_data(ReadFileData(it->second));
     if (!raw_data.get()) {
       LOG(ERROR) << "Could not load theme image";
       return false;
     }
 
-    int id = it->first;
+    int prs_id = it->first;
 
     // Some images need to go directly into |image_memory_|. No modification is
     // necessary or desirable.
     bool is_copyable = false;
     for (size_t i = 0; i < arraysize(kPreloadIDs); ++i) {
-      if (kPreloadIDs[i] == id) {
+      if (kPreloadIDs[i] == prs_id) {
         is_copyable = true;
         break;
       }
     }
 
     if (is_copyable) {
-      image_memory_[id] = raw_data;
+      int raw_id = GetRawIDByPersistentID(prs_id, ui::SCALE_FACTOR_100P);
+      image_memory_[raw_id] = raw_data;
     } else if (raw_data.get() && raw_data->size()) {
       // Decode the PNG.
       SkBitmap bitmap;
       if (gfx::PNGCodec::Decode(raw_data->front(), raw_data->size(),
                                 &bitmap)) {
-        (*raw_bitmaps)[it->first] = new gfx::Image(new SkBitmap(bitmap));
+        (*image_cache)[prs_id] = new gfx::Image(bitmap);
       } else {
         NOTREACHED() << "Unable to decode theme image resource " << it->first;
       }
@@ -904,11 +999,17 @@ bool BrowserThemePack::LoadRawBitmapsTo(
   return true;
 }
 
-void BrowserThemePack::GenerateFrameImages(ImageCache* bitmaps) const {
+void BrowserThemePack::CreateImages(ImageCache* images) const {
+  CreateFrameImages(images);
+  CreateTintedButtons(GetTintInternal(ThemeService::TINT_BUTTONS), images);
+  CreateTabBackgroundImages(images);
+}
+
+void BrowserThemePack::CreateFrameImages(ImageCache* images) const {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
-  // Create all the output bitmaps in a separate cache and move them back into
-  // the input bitmaps because there can be name collisions.
+  // Create all the output images in a separate cache and move them back into
+  // the input images because there can be name collisions.
   ImageCache temp_output;
 
   for (size_t i = 0; i < arraysize(kFrameTintMap); ++i) {
@@ -920,25 +1021,25 @@ void BrowserThemePack::GenerateFrameImages(ImageCache* bitmaps) const {
     int prs_base_id;
 
     if (prs_id == PRS_THEME_FRAME_INCOGNITO_INACTIVE) {
-      prs_base_id = bitmaps->count(PRS_THEME_FRAME_INCOGNITO) ?
+      prs_base_id = images->count(PRS_THEME_FRAME_INCOGNITO) ?
                     PRS_THEME_FRAME_INCOGNITO : PRS_THEME_FRAME;
     } else if (prs_id == PRS_THEME_FRAME_OVERLAY_INACTIVE) {
       prs_base_id = PRS_THEME_FRAME_OVERLAY;
     } else if (prs_id == PRS_THEME_FRAME_INACTIVE) {
       prs_base_id = PRS_THEME_FRAME;
     } else if (prs_id == PRS_THEME_FRAME_INCOGNITO &&
-               !bitmaps->count(PRS_THEME_FRAME_INCOGNITO)) {
+               !images->count(PRS_THEME_FRAME_INCOGNITO)) {
       prs_base_id = PRS_THEME_FRAME;
     } else {
       prs_base_id = prs_id;
     }
 
-    if (bitmaps->count(prs_id)) {
-      frame = (*bitmaps)[prs_id];
-    } else if (prs_base_id != prs_id && bitmaps->count(prs_base_id)) {
-      frame = (*bitmaps)[prs_base_id];
+    if (images->count(prs_id)) {
+      frame = (*images)[prs_id];
+    } else if (prs_base_id != prs_id && images->count(prs_base_id)) {
+      frame = (*images)[prs_base_id];
     } else if (prs_base_id == PRS_THEME_FRAME_OVERLAY &&
-               bitmaps->count(PRS_THEME_FRAME)) {
+               images->count(PRS_THEME_FRAME)) {
       // If there is no theme overlay, don't tint the default frame,
       // because it will overwrite the custom frame image when we cache and
       // reload from disk.
@@ -954,13 +1055,12 @@ void BrowserThemePack::GenerateFrameImages(ImageCache* bitmaps) const {
           *frame, GetTintInternal(kFrameTintMap[i].value));
     }
   }
-
-  MergeImageCaches(temp_output, bitmaps);
+  MergeImageCaches(temp_output, images);
 }
 
-void BrowserThemePack::GenerateTintedButtons(
+void BrowserThemePack::CreateTintedButtons(
     const color_utils::HSL& button_tint,
-    ImageCache* processed_bitmaps) const {
+    ImageCache* processed_images) const {
   if (button_tint.h != -1 || button_tint.s != -1 || button_tint.l != -1) {
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
     const std::set<int>& idr_ids =
@@ -974,13 +1074,13 @@ void BrowserThemePack::GenerateTintedButtons(
       gfx::Image& button = rb.GetImageNamed(*it);
 
       // but save a version with the persistent ID.
-      (*processed_bitmaps)[prs_id] =
+      (*processed_images)[prs_id] =
           CreateHSLShiftedImage(button, button_tint);
     }
   }
 }
 
-void BrowserThemePack::GenerateTabBackgroundImages(ImageCache* bitmaps) const {
+void BrowserThemePack::CreateTabBackgroundImages(ImageCache* images) const {
   ImageCache temp_output;
   for (size_t i = 0; i < arraysize(kTabBackgroundMap); ++i) {
     int prs_id = kTabBackgroundMap[i].key;
@@ -988,49 +1088,91 @@ void BrowserThemePack::GenerateTabBackgroundImages(ImageCache* bitmaps) const {
 
     // We only need to generate the background tab images if we were provided
     // with a PRS_THEME_FRAME.
-    ImageCache::const_iterator it = bitmaps->find(prs_base_id);
-    if (it != bitmaps->end()) {
-      const gfx::Image& image_to_tint = *(it->second);
-      std::vector<const SkBitmap*> tinted_bitmaps;
-      for (size_t j = 0; j < image_to_tint.GetNumberOfSkBitmaps(); ++j) {
-        SkBitmap bg_tint = SkBitmapOperations::CreateHSLShiftedBitmap(
-            *image_to_tint.GetSkBitmapAtIndex(j), GetTintInternal(
-                ThemeService::TINT_BACKGROUND_TAB));
-        int vertical_offset = bitmaps->count(prs_id)
-                              ? kRestoredTabVerticalOffset : 0;
-        SkBitmap* bg_tab = new SkBitmap(SkBitmapOperations::CreateTiledBitmap(
-            bg_tint, 0, vertical_offset, bg_tint.width(), bg_tint.height()));
+    ImageCache::const_iterator it = images->find(prs_base_id);
+    if (it != images->end()) {
+      const gfx::ImageSkia* image_to_tint = (it->second)->ToImageSkia();
+      color_utils::HSL hsl_shift = GetTintInternal(
+          ThemeService::TINT_BACKGROUND_TAB);
+      int vertical_offset = images->count(prs_id)
+                            ? kRestoredTabVerticalOffset : 0;
 
-        // If they've provided a custom image, overlay it.
-        ImageCache::const_iterator overlay_it = bitmaps->find(prs_id);
-        if (overlay_it != bitmaps->end()) {
-          const SkBitmap* overlay = *(overlay_it->second);
-          SkCanvas canvas(*bg_tab);
-          for (int x = 0; x < bg_tab->width(); x += overlay->width())
-            canvas.drawBitmap(*overlay, static_cast<SkScalar>(x), 0, NULL);
-        }
-        tinted_bitmaps.push_back(bg_tab);
-      }
+      gfx::ImageSkia overlay;
+      ImageCache::const_iterator overlay_it = images->find(prs_id);
+      if (overlay_it != images->end())
+        overlay = *overlay_it->second->ToImageSkia();
 
-      gfx::Image* tinted_image = new gfx::Image(tinted_bitmaps);
-      temp_output[prs_id] = tinted_image;
+      gfx::ImageSkiaSource* source = new TabBackgroundImageSource(
+          *image_to_tint, overlay, hsl_shift, vertical_offset);
+      // ImageSkia takes ownership of |source|.
+      temp_output[prs_id] = new gfx::Image(gfx::ImageSkia(source,
+          image_to_tint->size()));
     }
   }
-
-  MergeImageCaches(temp_output, bitmaps);
+  MergeImageCaches(temp_output, images);
 }
 
 void BrowserThemePack::RepackImages(const ImageCache& images,
                                     RawImages* reencoded_images) const {
+
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  typedef std::vector<ui::ScaleFactor> ScaleFactors;
   for (ImageCache::const_iterator it = images.begin();
        it != images.end(); ++it) {
-    std::vector<unsigned char> image_data;
-    if (!gfx::PNGCodec::EncodeBGRASkBitmap(*(it->second), false, &image_data)) {
-      NOTREACHED() << "Image file for resource " << it->first
-                   << " could not be encoded.";
-    } else {
-      (*reencoded_images)[it->first] = RefCountedBytes::TakeVector(&image_data);
+    gfx::ImageSkia image_skia = *it->second->ToImageSkia();
+
+    // Attempt to generate image reps for all supported scale factors.
+    for (ScaleFactors::const_iterator factor_it = scale_factors_.begin();
+         factor_it != scale_factors_.end(); ++factor_it) {
+      // Ask for representation to force the representation to be generated
+      // if it wasn't already.
+      image_skia.GetRepresentation(*factor_it);
+    }
+
+    typedef std::vector<gfx::ImageSkiaRep> ImageSkiaReps;
+    ImageSkiaReps image_reps = image_skia.image_reps();
+    if (image_reps.empty()) {
+      NOTREACHED() << "No image reps for resource " << it->first << ".";
+    }
+    for (ImageSkiaReps::iterator rep_it = image_reps.begin();
+         rep_it != image_reps.end(); ++rep_it) {
+      std::vector<unsigned char> bitmap_data;
+      if (!gfx::PNGCodec::EncodeBGRASkBitmap(rep_it->sk_bitmap(), false,
+                                             &bitmap_data)) {
+        NOTREACHED() << "Image file for resource " << it->first
+                     << " could not be encoded.";
+      }
+      int raw_id = GetRawIDByPersistentID(it->first, rep_it->scale_factor());
+      (*reencoded_images)[raw_id] =
+          base::RefCountedBytes::TakeVector(&bitmap_data);
+    }
+  }
+}
+
+void BrowserThemePack::GenerateImageReps(
+    const std::vector<ui::ScaleFactor>& scale_factors) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  for (ImageCache::const_iterator it = images_on_ui_thread_.begin();
+       it != images_on_ui_thread_.end();
+       ++it) {
+    const gfx::ImageSkia* image1 = it->second->ToImageSkia();
+    const gfx::ImageSkia* image2 =
+        images_on_file_thread_[it->first]->ToImageSkia();
+
+    // Ensure that image reps are generated and cached in |image1| by
+    // calling GetRepresentation().
+    for (size_t i = 0; i < scale_factors.size(); ++i)
+      image1->GetRepresentation(scale_factors[i]);
+
+    // |image1| and |image2| have ImageSkiaSources which produce pixel
+    // equivalent output. Instead of regenerating again, copy the image reps
+    // which were generated for |image1| into |image2|.
+    // Don't do a deep copy of the SkBitmaps as SkBitmap is thread safe.
+    std::vector<gfx::ImageSkiaRep> image1_reps = image1->image_reps();
+    for (size_t i = 0; i < image1_reps.size(); ++i) {
+      gfx::ImageSkiaRep image1_rep = image1_reps[i];
+      const_cast<gfx::ImageSkia*>(image2)->AddRepresentation(gfx::ImageSkiaRep(
+          image1_rep.sk_bitmap(), image1_rep.scale_factor()));
     }
   }
 }
@@ -1039,11 +1181,19 @@ void BrowserThemePack::MergeImageCaches(
     const ImageCache& source, ImageCache* destination) const {
   for (ImageCache::const_iterator it = source.begin(); it != source.end();
        ++it) {
-    ImageCache::const_iterator bitmap_it = destination->find(it->first);
-    if (bitmap_it != destination->end())
-      delete bitmap_it->second;
+    ImageCache::const_iterator image_it = destination->find(it->first);
+    if (image_it != destination->end())
+      delete image_it->second;
 
     (*destination)[it->first] = it->second;
+  }
+}
+
+void BrowserThemePack::CopyImagesTo(const ImageCache& source,
+                                    ImageCache* destination) const {
+  for (ImageCache::const_iterator it = source.begin(); it != source.end();
+       ++it) {
+    (*destination)[it->first] = new gfx::Image(*it->second);
   }
 }
 
@@ -1071,4 +1221,17 @@ color_utils::HSL BrowserThemePack::GetTintInternal(int id) const {
   }
 
   return ThemeService::GetDefaultTint(id);
+}
+
+int BrowserThemePack::GetRawIDByPersistentID(
+    int prs_id,
+    ui::ScaleFactor scale_factor) const {
+  if (prs_id < 0)
+    return -1;
+
+  for (size_t i = 0; i < scale_factors_.size(); ++i) {
+    if (scale_factors_[i] == scale_factor)
+      return static_cast<int>(kPersistingImagesLength * i) + prs_id;
+  }
+  return -1;
 }

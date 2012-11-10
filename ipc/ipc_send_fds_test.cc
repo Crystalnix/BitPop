@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,7 @@ extern "C" {
 #include "base/message_loop.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_message_utils.h"
+#include "ipc/ipc_multiprocess_test.h"
 #include "testing/multiprocess_func_list.h"
 
 #if defined(OS_POSIX)
@@ -45,14 +46,14 @@ static void VerifyAndCloseDescriptor(int fd, ino_t inode_num) {
   ASSERT_EQ(inode_num, st.st_ino);
 }
 
-class MyChannelDescriptorListener : public IPC::Channel::Listener {
+class MyChannelDescriptorListener : public IPC::Listener {
  public:
   MyChannelDescriptorListener(ino_t expected_inode_num)
       : expected_inode_num_(expected_inode_num),
         num_fds_received_(0) {}
 
   virtual bool OnMessageReceived(const IPC::Message& message) {
-    void* iter = NULL;
+    PickleIterator iter(message);
 
     ++num_fds_received_;
     base::FileDescriptor descriptor;
@@ -105,7 +106,8 @@ void TestDescriptorServer(IPC::Channel &chan,
   chan.Close();
 
   // Cleanup child process.
-  EXPECT_TRUE(base::WaitForSingleProcess(process_handle, 5000));
+  EXPECT_TRUE(base::WaitForSingleProcess(
+      process_handle, base::TimeDelta::FromSeconds(5)));
 }
 
 int TestDescriptorClient(ino_t expected_inode_num) {
@@ -132,7 +134,7 @@ int TestDescriptorClient(ino_t expected_inode_num) {
 // ---------------------------------------------------------------------------
 #if defined(OS_MACOSX)
 // TODO(port): Make this test cross-platform.
-MULTIPROCESS_TEST_MAIN(RunTestDescriptorClientSandboxed) {
+MULTIPROCESS_IPC_TEST_MAIN(RunTestDescriptorClientSandboxed) {
   struct stat st;
   const int fd = open(kDevZeroPath, O_RDONLY);
   fstat(fd, &st);
@@ -177,7 +179,7 @@ TEST_F(IPCChannelTest, DescriptorTestSandboxed) {
 }
 #endif  // defined(OS_MACOSX)
 
-MULTIPROCESS_TEST_MAIN(RunTestDescriptorClient) {
+MULTIPROCESS_IPC_TEST_MAIN(RunTestDescriptorClient) {
   struct stat st;
   const int fd = open(kDevZeroPath, O_RDONLY);
   fstat(fd, &st);

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,19 +12,19 @@ namespace printing {
 class PrintBackendChromeOS : public PrintBackend {
  public:
   PrintBackendChromeOS();
-  virtual ~PrintBackendChromeOS() {}
 
   // PrintBackend implementation.
-  virtual bool EnumeratePrinters(PrinterList* printer_list);
+  virtual bool EnumeratePrinters(PrinterList* printer_list) OVERRIDE;
+  virtual std::string GetDefaultPrinterName() OVERRIDE;
+  virtual bool GetPrinterCapsAndDefaults(
+      const std::string& printer_name,
+      PrinterCapsAndDefaults* printer_info) OVERRIDE;
+  virtual std::string GetPrinterDriverInfo(
+      const std::string& printer_name) OVERRIDE;
+  virtual bool IsValidPrinter(const std::string& printer_name) OVERRIDE;
 
-  virtual std::string GetDefaultPrinterName();
-
-  virtual bool GetPrinterCapsAndDefaults(const std::string& printer_name,
-                                         PrinterCapsAndDefaults* printer_info);
-
-  virtual bool IsValidPrinter(const std::string& printer_name);
-
- private:
+ protected:
+  virtual ~PrintBackendChromeOS() {}
 };
 
 PrintBackendChromeOS::PrintBackendChromeOS() {}
@@ -40,6 +40,12 @@ bool PrintBackendChromeOS::GetPrinterCapsAndDefaults(
     PrinterCapsAndDefaults* printer_info) {
   NOTREACHED();
   return false;
+}
+
+std::string PrintBackendChromeOS::GetPrinterDriverInfo(
+    const std::string& printer_name) {
+  NOTREACHED();
+  return std::string();
 }
 
 std::string PrintBackendChromeOS::GetDefaultPrinterName() {

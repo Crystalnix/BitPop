@@ -5,19 +5,21 @@
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/synchronization/waitable_event.h"
 #include "chrome/browser/safe_browsing/browser_feature_extractor.h"
 #include "chrome/browser/safe_browsing/client_side_detection_host.h"
 #include "chrome/browser/safe_browsing/client_side_detection_service.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "chrome/browser/ui/tab_contents/test_tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tab_contents/test_tab_contents.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
 #include "chrome/common/safe_browsing/safebrowsing_messages.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/browser/tab_contents/test_tab_contents.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/test/mock_render_process_host.h"
+#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_renderer_host.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_test_sink.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -37,6 +39,8 @@ using ::testing::SaveArg;
 using ::testing::SetArgumentPointee;
 using ::testing::StrictMock;
 using content::BrowserThread;
+using content::RenderViewHostTester;
+using content::WebContents;
 
 namespace {
 const bool kFalse = false;
@@ -97,7 +101,6 @@ class MockClientSideDetectionService : public ClientSideDetectionService {
 class MockSafeBrowsingService : public SafeBrowsingService {
  public:
   MockSafeBrowsingService() {}
-  virtual ~MockSafeBrowsingService() {}
 
   MOCK_METHOD1(DoDisplayBlockingPage, void(const UnsafeResource& resource));
   MOCK_METHOD1(MatchCsdWhitelistUrl, bool(const GURL&));
@@ -113,6 +116,9 @@ class MockSafeBrowsingService : public SafeBrowsingService {
     callback.Run(false);
   }
 
+ protected:
+  virtual ~MockSafeBrowsingService() {}
+
  private:
   DISALLOW_COPY_AND_ASSIGN(MockSafeBrowsingService);
 };
@@ -122,13 +128,13 @@ class MockTestingProfile : public TestingProfile {
   MockTestingProfile() {}
   virtual ~MockTestingProfile() {}
 
-  MOCK_METHOD0(IsOffTheRecord, bool());
+  MOCK_CONST_METHOD0(IsOffTheRecord, bool());
 };
 
 class MockBrowserFeatureExtractor : public BrowserFeatureExtractor {
  public:
   explicit MockBrowserFeatureExtractor(
-      TabContents* tab,
+      WebContents* tab,
       ClientSideDetectionService* service)
       : BrowserFeatureExtractor(tab, service) {}
   virtual ~MockBrowserFeatureExtractor() {}
@@ -148,7 +154,7 @@ void QuitUIMessageLoopFromIO() {
 }
 }  // namespace
 
-class ClientSideDetectionHostTest : public TabContentsWrapperTestHarness {
+class ClientSideDetectionHostTest : public TabContentsTestHarness {
  public:
   virtual void SetUp() {
     // Set custom profile object so that we can mock calls to IsOffTheRecord.
@@ -159,23 +165,31 @@ class ClientSideDetectionHostTest : public TabContentsWrapperTestHarness {
 
     ui_thread_.reset(new content::TestBrowserThread(BrowserThread::UI,
                                                     &message_loop_));
+    file_user_blocking_thread_.reset(
+        new content::TestBrowserThread(BrowserThread::FILE_USER_BLOCKING,
+        &message_loop_));
     // Note: we're starting a real IO thread to make sure our DCHECKs that
     // verify which thread is running are actually tested.
     io_thread_.reset(new content::TestBrowserThread(BrowserThread::IO));
     ASSERT_TRUE(io_thread_->Start());
 
-    TabContentsWrapperTestHarness::SetUp();
+    TabContentsTestHarness::SetUp();
 
     // Inject service classes.
     csd_service_.reset(new StrictMock<MockClientSideDetectionService>());
     sb_service_ = new StrictMock<MockSafeBrowsingService>();
     csd_host_.reset(safe_browsing::ClientSideDetectionHost::Create(
-        contents_wrapper()->web_contents()));
+        tab_contents()->web_contents()));
     csd_host_->set_client_side_detection_service(csd_service_.get());
     csd_host_->set_safe_browsing_service(sb_service_.get());
     // We need to create this here since we don't call
     // DidNavigateMainFramePostCommit in this test.
     csd_host_->browse_info_.reset(new BrowseInfo);
+  }
+
+  static void RunAllPendingOnIO(base::WaitableEvent* event) {
+    MessageLoop::current()->RunAllPending();
+    event->Signal();
   }
 
   virtual void TearDown() {
@@ -185,8 +199,16 @@ class ClientSideDetectionHostTest : public TabContentsWrapperTestHarness {
                               csd_host_.release());
     sb_service_ = NULL;
     message_loop_.RunAllPending();
-    TabContentsWrapperTestHarness::TearDown();
+    TabContentsTestHarness::TearDown();
+
+    // Let the tasks on the IO thread run to avoid memory leaks.
+    base::WaitableEvent done(false, false);
+    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+        base::Bind(RunAllPendingOnIO, &done));
+    done.Wait();
     io_thread_.reset();
+    message_loop_.RunAllPending();
+    file_user_blocking_thread_.reset();
     ui_thread_.reset();
   }
 
@@ -264,7 +286,7 @@ class ClientSideDetectionHostTest : public TabContentsWrapperTestHarness {
     resource.callback = base::Bind(&EmptyUrlCheckCallback);
     resource.render_process_host_id = contents()->GetRenderProcessHost()->
         GetID();
-    resource.render_view_id = contents()->GetRenderViewHost()->routing_id();
+    resource.render_view_id = contents()->GetRenderViewHost()->GetRoutingID();
     csd_host_->OnSafeBrowsingHit(resource);
     resource.callback.Reset();
     ASSERT_TRUE(csd_host_->DidShowSBInterstitial());
@@ -290,6 +312,7 @@ class ClientSideDetectionHostTest : public TabContentsWrapperTestHarness {
 
  private:
   scoped_ptr<content::TestBrowserThread> ui_thread_;
+  scoped_ptr<content::TestBrowserThread> file_user_blocking_thread_;
   scoped_ptr<content::TestBrowserThread> io_thread_;
 };
 
@@ -409,7 +432,7 @@ TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneShowInterstitial) {
             resource.threat_type);
   EXPECT_EQ(contents()->GetRenderProcessHost()->GetID(),
             resource.render_process_host_id);
-  EXPECT_EQ(contents()->GetRenderViewHost()->routing_id(),
+  EXPECT_EQ(contents()->GetRenderViewHost()->GetRoutingID(),
             resource.render_view_id);
 
   // Make sure the client object will be deleted.
@@ -501,7 +524,7 @@ TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneMultiplePings) {
             resource.threat_type);
   EXPECT_EQ(contents()->GetRenderProcessHost()->GetID(),
             resource.render_process_host_id);
-  EXPECT_EQ(contents()->GetRenderViewHost()->routing_id(),
+  EXPECT_EQ(contents()->GetRenderViewHost()->GetRoutingID(),
             resource.render_view_id);
 
   // Make sure the client object will be deleted.
@@ -516,7 +539,8 @@ TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneMultiplePings) {
   FlushIOMessageLoop();
 }
 
-TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneVerdictNotPhishing) {
+TEST_F(ClientSideDetectionHostTest,
+       OnPhishingDetectionDoneVerdictNotPhishing) {
   // Case 6: renderer sends a verdict string that isn't phishing.
   MockBrowserFeatureExtractor* mock_extractor = new MockBrowserFeatureExtractor(
       contents(),
@@ -562,6 +586,12 @@ TEST_F(ClientSideDetectionHostTest,
   EXPECT_TRUE(Mock::VerifyAndClear(csd_service_.get()));
 }
 
+#if defined(OS_WIN)
+// Flaky on Windows: crbug.com/134918
+#define MAYBE_NavigationCancelsShouldClassifyUrl DISABLED_NavigationCancelsShouldClassifyUrl
+#else
+#define MAYBE_NavigationCancelsShouldClassifyUrl NavigationCancelsShouldClassifyUrl
+#endif
 TEST_F(ClientSideDetectionHostTest, NavigationCancelsShouldClassifyUrl) {
   // Test that canceling pending should classify requests works as expected.
 
@@ -595,7 +625,7 @@ TEST_F(ClientSideDetectionHostTest, ShouldClassifyUrl) {
   Tuple1<GURL> actual_url;
   SafeBrowsingMsg_StartPhishingDetection::Read(msg, &actual_url);
   EXPECT_EQ(url, actual_url.a);
-  EXPECT_EQ(rvh()->routing_id(), msg->routing_id());
+  EXPECT_EQ(rvh()->GetRoutingID(), msg->routing_id());
   process()->sink().ClearMessages();
 
   // Now try an in-page navigation.  This should not trigger an IPC.
@@ -614,7 +644,7 @@ TEST_F(ClientSideDetectionHostTest, ShouldClassifyUrl) {
   // same domain as the previous URL, otherwise it will create a new
   // RenderViewHost that won't have the mime type set.
   url = GURL("http://host.com/xhtml");
-  rvh()->set_contents_mime_type("application/xhtml+xml");
+  rvh_tester()->SetContentsMimeType("application/xhtml+xml");
   ExpectPreClassificationChecks(url, &kFalse, &kFalse, &kFalse, &kFalse,
                                 &kFalse, &kFalse);
   NavigateAndCommit(url);
@@ -624,7 +654,7 @@ TEST_F(ClientSideDetectionHostTest, ShouldClassifyUrl) {
   ASSERT_TRUE(msg);
   SafeBrowsingMsg_StartPhishingDetection::Read(msg, &actual_url);
   EXPECT_EQ(url, actual_url.a);
-  EXPECT_EQ(rvh()->routing_id(), msg->routing_id());
+  EXPECT_EQ(rvh()->GetRoutingID(), msg->routing_id());
   process()->sink().ClearMessages();
 
   // Navigate to a new host, which should cause another IPC.
@@ -638,7 +668,7 @@ TEST_F(ClientSideDetectionHostTest, ShouldClassifyUrl) {
   ASSERT_TRUE(msg);
   SafeBrowsingMsg_StartPhishingDetection::Read(msg, &actual_url);
   EXPECT_EQ(url, actual_url.a);
-  EXPECT_EQ(rvh()->routing_id(), msg->routing_id());
+  EXPECT_EQ(rvh()->GetRoutingID(), msg->routing_id());
   process()->sink().ClearMessages();
 
   // If the mime type is not one that we support, no IPC should be triggered.
@@ -646,7 +676,7 @@ TEST_F(ClientSideDetectionHostTest, ShouldClassifyUrl) {
   // same domain as the previous URL, otherwise it will create a new
   // RenderViewHost that won't have the mime type set.
   url = GURL("http://host2.com/image.jpg");
-  rvh()->set_contents_mime_type("image/jpeg");
+  rvh_tester()->SetContentsMimeType("image/jpeg");
   ExpectPreClassificationChecks(url, NULL, NULL, NULL, NULL, NULL, NULL);
   NavigateAndCommit(url);
   WaitAndCheckPreClassificationChecks();
@@ -695,7 +725,7 @@ TEST_F(ClientSideDetectionHostTest, ShouldClassifyUrl) {
   ASSERT_TRUE(msg);
   SafeBrowsingMsg_StartPhishingDetection::Read(msg, &actual_url);
   EXPECT_EQ(url, actual_url.a);
-  EXPECT_EQ(rvh()->routing_id(), msg->routing_id());
+  EXPECT_EQ(rvh()->GetRoutingID(), msg->routing_id());
   process()->sink().ClearMessages();
 
   // If the url isn't in the cache and we are over the reporting limit, we

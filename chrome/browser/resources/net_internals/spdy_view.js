@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -88,7 +88,7 @@ var SpdyView = (function() {
 
       if (!hasNoSession) {
         var tablePrinter = createSessionTablePrinter(spdySessionInfo);
-        tablePrinter.toHTML(this.spdySessionDiv_, 'styledTable');
+        tablePrinter.toHTML(this.spdySessionDiv_, 'styled-table');
       }
 
       return true;
@@ -123,7 +123,7 @@ var SpdyView = (function() {
         var tabPrinter = createAlternateProtocolMappingsTablePrinter(
                 spdyAlternateProtocolMappings);
         tabPrinter.toHTML(
-            this.spdyAlternateProtocolMappingsDiv_, 'styledTable');
+            this.spdyAlternateProtocolMappingsDiv_, 'styled-table');
       } else {
         this.spdyAlternateProtocolMappingsDiv_.innerHTML = 'None';
       }
@@ -139,6 +139,7 @@ var SpdyView = (function() {
     tablePrinter.addHeaderCell('Host');
     tablePrinter.addHeaderCell('Proxy');
     tablePrinter.addHeaderCell('ID');
+    tablePrinter.addHeaderCell('Protocol Negotiatied');
     tablePrinter.addHeaderCell('Active streams');
     tablePrinter.addHeaderCell('Unclaimed pushed');
     tablePrinter.addHeaderCell('Max');
@@ -156,12 +157,16 @@ var SpdyView = (function() {
       var session = spdySessions[i];
       tablePrinter.addRow();
 
-      tablePrinter.addCell(session.host_port_pair);
+      var host = session.host_port_pair;
+      if (session.aliases)
+        host += ' ' + session.aliases.join(' ');
+      tablePrinter.addCell(host);
       tablePrinter.addCell(session.proxy);
 
       var idCell = tablePrinter.addCell(session.source_id);
       idCell.link = '#events&q=id:' + session.source_id;
 
+      tablePrinter.addCell(session.protocol_negotiated);
       tablePrinter.addCell(session.active_streams);
       tablePrinter.addCell(session.unclaimed_pushed_streams);
       tablePrinter.addCell(session.max_concurrent_streams);

@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_IO_THREAD_H_
 #define CHROME_BROWSER_IO_THREAD_H_
-#pragma once
 
 #include <string>
 
@@ -20,11 +19,18 @@
 #include "net/base/network_change_notifier.h"
 
 class ChromeNetLog;
-class ExtensionEventRouterForwarder;
-class MediaInternals;
 class PrefProxyConfigTrackerImpl;
 class PrefService;
 class SystemURLRequestContextGetter;
+
+namespace chrome_browser_net {
+class CacheStats;
+class HttpPipeliningCompatibilityClient;
+}
+
+namespace extensions {
+class EventRouterForwarder;
+}
 
 namespace net {
 class CertVerifier;
@@ -35,7 +41,7 @@ class HttpAuthHandlerFactory;
 class HttpServerProperties;
 class HttpTransactionFactory;
 class NetworkDelegate;
-class OriginBoundCertService;
+class ServerBoundCertService;
 class ProxyConfigService;
 class ProxyService;
 class SdchManager;
@@ -43,6 +49,7 @@ class SSLConfigService;
 class TransportSecurityState;
 class URLRequestContext;
 class URLRequestContextGetter;
+class URLRequestThrottlerManager;
 class URLSecurityManager;
 }  // namespace net
 
@@ -55,15 +62,17 @@ class URLSecurityManager;
 class IOThread : public content::BrowserThreadDelegate {
  public:
   struct Globals {
+    class SystemRequestContextLeakChecker {
+     public:
+      explicit SystemRequestContextLeakChecker(Globals* globals);
+      ~SystemRequestContextLeakChecker();
+
+     private:
+      Globals* const globals_;
+    };
+
     Globals();
     ~Globals();
-
-    struct MediaGlobals {
-      MediaGlobals();
-      ~MediaGlobals();
-      // MediaInternals singleton used to aggregate media information.
-      scoped_ptr<MediaInternals> media_internals;
-    } media;
 
     // The "system" NetworkDelegate, used for Profile-agnostic network events.
     scoped_ptr<net::NetworkDelegate> system_network_delegate;
@@ -81,30 +90,35 @@ class IOThread : public content::BrowserThreadDelegate {
         proxy_script_fetcher_http_transaction_factory;
     scoped_ptr<net::FtpTransactionFactory>
         proxy_script_fetcher_ftp_transaction_factory;
+    scoped_ptr<net::URLRequestThrottlerManager> throttler_manager;
     scoped_ptr<net::URLSecurityManager> url_security_manager;
-    // We use a separate URLRequestContext for PAC fetches, in order to break
-    // the reference cycle:
-    // URLRequestContext=>PAC fetch=>URLRequest=>URLRequestContext.
+    // TODO(willchan): Remove proxy script fetcher context since it's not
+    // necessary now that I got rid of refcounting URLRequestContexts.
+    //
     // The first URLRequestContext is |system_url_request_context|. We introduce
     // |proxy_script_fetcher_context| for the second context. It has a direct
     // ProxyService, since we always directly connect to fetch the PAC script.
-    scoped_refptr<net::URLRequestContext> proxy_script_fetcher_context;
+    scoped_ptr<net::URLRequestContext> proxy_script_fetcher_context;
     scoped_ptr<net::ProxyService> system_proxy_service;
     scoped_ptr<net::HttpTransactionFactory> system_http_transaction_factory;
     scoped_ptr<net::FtpTransactionFactory> system_ftp_transaction_factory;
-    scoped_refptr<net::URLRequestContext> system_request_context;
-    // |system_cookie_store| and |system_origin_bound_cert_service| are shared
+    scoped_ptr<net::URLRequestContext> system_request_context;
+    SystemRequestContextLeakChecker system_request_context_leak_checker;
+    // |system_cookie_store| and |system_server_bound_cert_service| are shared
     // between |proxy_script_fetcher_context| and |system_request_context|.
     scoped_refptr<net::CookieStore> system_cookie_store;
-    scoped_ptr<net::OriginBoundCertService> system_origin_bound_cert_service;
-    scoped_refptr<ExtensionEventRouterForwarder>
+    scoped_ptr<net::ServerBoundCertService> system_server_bound_cert_service;
+    scoped_refptr<extensions::EventRouterForwarder>
         extension_event_router_forwarder;
+    scoped_ptr<chrome_browser_net::HttpPipeliningCompatibilityClient>
+        http_pipelining_compatibility_client;
+    scoped_ptr<chrome_browser_net::CacheStats> cache_stats;
   };
 
   // |net_log| must either outlive the IOThread or be NULL.
   IOThread(PrefService* local_state,
            ChromeNetLog* net_log,
-           ExtensionEventRouterForwarder* extension_event_router_forwarder);
+           extensions::EventRouterForwarder* extension_event_router_forwarder);
 
   virtual ~IOThread();
 
@@ -159,9 +173,9 @@ class IOThread : public content::BrowserThreadDelegate {
   // threads during shutdown, but is used most frequently on the IOThread.
   ChromeNetLog* net_log_;
 
-  // The ExtensionEventRouterForwarder allows for sending events to extensions
-  // from the IOThread.
-  ExtensionEventRouterForwarder* extension_event_router_forwarder_;
+  // The extensions::EventRouterForwarder allows for sending events to
+  // extensions from the IOThread.
+  extensions::EventRouterForwarder* extension_event_router_forwarder_;
 
   // These member variables are basically global, but their lifetimes are tied
   // to the IOThread.  IOThread owns them all, despite not using scoped_ptr.
@@ -174,8 +188,8 @@ class IOThread : public content::BrowserThreadDelegate {
   Globals* globals_;
 
   // Observer that logs network changes to the ChromeNetLog.
-  scoped_ptr<net::NetworkChangeNotifier::IPAddressObserver>
-      network_change_observer_;
+  class LoggingNetworkChangeObserver;
+  scoped_ptr<LoggingNetworkChangeObserver> network_change_observer_;
 
   BooleanPrefMember system_enable_referrers_;
 

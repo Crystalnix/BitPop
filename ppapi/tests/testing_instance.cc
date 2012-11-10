@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,9 +29,12 @@ TestingInstance::TestingInstance(PP_Instance instance)
     : pp::InstancePrivate(instance),
 #endif
       current_case_(NULL),
-      progress_cookie_number_(0),
       executed_tests_(false),
-      nacl_mode_(false) {
+      number_tests_executed_(0),
+      nacl_mode_(false),
+      ssl_server_port_(-1),
+      websocket_port_(-1),
+      remove_plugin_(true) {
   callback_factory_.Initialize(this);
 }
 
@@ -47,9 +50,13 @@ bool TestingInstance::Init(uint32_t argc,
     if (std::strcmp(argn[i], "mode") == 0) {
       if (std::strcmp(argv[i], "nacl") == 0)
         nacl_mode_ = true;
-    }
-    else if (std::strcmp(argn[i], "protocol") == 0)
+    } else if (std::strcmp(argn[i], "protocol") == 0) {
       protocol_ = argv[i];
+    } else if (std::strcmp(argn[i], "websocket_port") == 0) {
+      websocket_port_ = atoi(argv[i]);
+    } else if (std::strcmp(argn[i], "ssl_server_port") == 0) {
+      ssl_server_port_ = atoi(argv[i]);
+    }
   }
   // Create the proper test case from the argument.
   for (uint32_t i = 0; i < argc; i++) {
@@ -102,24 +109,20 @@ bool TestingInstance::HandleInputEvent(const pp::InputEvent& event) {
 }
 
 void TestingInstance::EvalScript(const std::string& script) {
-  std::string message("TESTING_MESSAGE:EvalScript:");
-  message.append(script);
-  PostMessage(pp::Var(message));
+  SendTestCommand("EvalScript", script);
 }
 
 void TestingInstance::SetCookie(const std::string& name,
                                 const std::string& value) {
-  std::string message("TESTING_MESSAGE:SetCookie:");
-  message.append(name);
-  message.append("=");
-  message.append(value);
-  PostMessage(pp::Var(message));
+  SendTestCommand("SetCookie", name + "=" + value);
 }
 
 void TestingInstance::LogTest(const std::string& test_name,
                               const std::string& error_message) {
   // Tell the browser we're still working.
   ReportProgress(kProgressSignal);
+
+  number_tests_executed_++;
 
   std::string html;
   html.append("<div class=\"test_line\"><span class=\"test_name\">");
@@ -150,7 +153,7 @@ void TestingInstance::ExecuteTests(int32_t unused) {
   ReportProgress(kProgressSignal);
 
   // Clear the console.
-  PostMessage(pp::Var("TESTING_MESSAGE:ClearConsole"));
+  SendTestCommand("ClearConsole");
 
   if (!errors_.empty()) {
     // Catch initialization errors and output the current error string to
@@ -161,15 +164,26 @@ void TestingInstance::ExecuteTests(int32_t unused) {
     errors_.append("FAIL: Only listed tests");
   } else {
     current_case_->RunTests(test_filter_);
-    // Automated PyAuto tests rely on finding the exact strings below.
-    LogHTML(errors_.empty() ?
-            "<span class=\"pass\">[SHUTDOWN]</span> All tests passed." :
-            "<span class=\"fail\">[SHUTDOWN]</span> Some tests failed.");
+
+    if (number_tests_executed_ == 0) {
+      errors_.append("No tests executed. The test filter might be too "
+                     "restrictive: '" + test_filter_ + "'.");
+      LogError(errors_);
+    }
+    else {
+      // Automated PyAuto tests rely on finding the exact strings below.
+      LogHTML(errors_.empty() ?
+              "<span class=\"pass\">[SHUTDOWN]</span> All tests passed." :
+              "<span class=\"fail\">[SHUTDOWN]</span> Some tests failed.");
+    }
   }
 
   // Declare we're done by setting a cookie to either "PASS" or the errors.
   ReportProgress(errors_.empty() ? "PASS" : errors_);
-  PostMessage(pp::Var("TESTING_MESSAGE:DidExecuteTests"));
+  if (remove_plugin_)
+    SendTestCommand("DidExecuteTests");
+  // Note, DidExecuteTests unloads the plugin. We can't really do anthing after
+  // this point.
 }
 
 TestCase* TestingInstance::CaseForTestName(const std::string& name) {
@@ -189,6 +203,18 @@ std::string TestingInstance::FilterForTestName(const std::string& name) {
     return name.substr(delim+1);
   return "";
 }
+
+void TestingInstance::SendTestCommand(const std::string& command) {
+  std::string msg("TESTING_MESSAGE:");
+  msg += command;
+  PostMessage(pp::Var(msg));
+}
+
+void TestingInstance::SendTestCommand(const std::string& command,
+                                      const std::string& params) {
+  SendTestCommand(command + ":" + params);
+}
+
 
 void TestingInstance::LogAvailableTests() {
   // Print out a listing of all tests.
@@ -226,17 +252,19 @@ void TestingInstance::LogError(const std::string& text) {
 }
 
 void TestingInstance::LogHTML(const std::string& html) {
-  std::string message("TESTING_MESSAGE:LogHTML:");
-  message.append(html);
-  PostMessage(pp::Var(message));
+  SendTestCommand("LogHTML", html);
 }
 
 void TestingInstance::ReportProgress(const std::string& progress_value) {
   // Use streams since nacl doesn't compile base yet (for StringPrintf).
-  std::ostringstream cookie_name;
-  cookie_name << "PPAPI_PROGRESS_" << progress_cookie_number_;
-  SetCookie(cookie_name.str(), progress_value);
-  progress_cookie_number_++;
+  std::ostringstream script;
+  script << "window.domAutomationController.setAutomationId(0);" <<
+            "window.domAutomationController.send(\"" << progress_value << "\")";
+  EvalScript(script.str());
+}
+
+void TestingInstance::AddPostCondition(const std::string& script) {
+  SendTestCommand("AddPostCondition", script);
 }
 
 class Module : public pp::Module {

@@ -4,25 +4,22 @@
 
 #ifndef CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_MANAGER_H_
 #define CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_MANAGER_H_
-#pragma once
 
 #include <vector>
 
 #include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
+#include "content/common/accessibility_node_data.h"
 #include "content/common/content_export.h"
 #include "ui/gfx/native_widget_types.h"
-#include "webkit/glue/webaccessibility.h"
 
 class BrowserAccessibility;
 #if defined(OS_WIN)
 class BrowserAccessibilityManagerWin;
 #endif
 
-using webkit_glue::WebAccessibility;
-
-struct ViewHostMsg_AccessibilityNotification_Params;
+struct AccessibilityHostMsg_NotificationParams;
 
 // Class that can perform actions on behalf of the BrowserAccessibilityManager.
 class CONTENT_EXPORT BrowserAccessibilityDelegate {
@@ -56,7 +53,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
   // to the caller.
   static BrowserAccessibilityManager* Create(
     gfx::NativeView parent_view,
-    const WebAccessibility& src,
+    const content::AccessibilityNodeData& src,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory = new BrowserAccessibilityFactory());
 
@@ -64,14 +61,14 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
   // to the caller.
   static BrowserAccessibilityManager* CreateEmptyDocument(
     gfx::NativeView parent_view,
-    WebAccessibility::State state,
+    content::AccessibilityNodeData::State state,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory = new BrowserAccessibilityFactory());
 
   virtual ~BrowserAccessibilityManager();
 
-  // Type is a ViewHostMsg_AccessibilityNotification_Type::int.
-  // We pass it as int so that we don't include the render message declaration
+  // Type is enum AccessibilityNotification.
+  // We pass it as int so that we don't include the message declaration
   // header here.
   virtual void NotifyAccessibilityEvent(
       int type,
@@ -114,7 +111,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
       const BrowserAccessibility& node, gfx::Rect subfocus);
 
   // Tell the renderer to scroll such that |node| is at |point|,
-  // where |point| is in global coordinates of the tab contents.
+  // where |point| is in global coordinates of the WebContents.
   void ScrollToPoint(
       const BrowserAccessibility& node, gfx::Point point);
 
@@ -128,12 +125,12 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
   // Called when the renderer process has notified us of about tree changes.
   // Send a notification to MSAA clients of the change.
   void OnAccessibilityNotifications(
-      const std::vector<ViewHostMsg_AccessibilityNotification_Params>& params);
+      const std::vector<AccessibilityHostMsg_NotificationParams>& params);
 
   gfx::NativeView GetParentView();
 
 #if defined(OS_WIN)
-  BrowserAccessibilityManagerWin* toBrowserAccessibilityManagerWin();
+  BrowserAccessibilityManagerWin* ToBrowserAccessibilityManagerWin();
 #endif
 
   // Return the object that has focus, if it's a descandant of the
@@ -143,22 +140,23 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
  protected:
   BrowserAccessibilityManager(
       gfx::NativeView parent_view,
-      const WebAccessibility& src,
+      const content::AccessibilityNodeData& src,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory);
 
  private:
-  // Update an accessibility node with an updated WebAccessibility node
+  // Update an accessibility node with an updated AccessibilityNodeData node
   // received from the renderer process. When |include_children| is true
   // the node's children will also be updated, otherwise only the node
   // itself is updated.
-  void UpdateNode(const WebAccessibility& src, bool include_children);
+  void UpdateNode(const content::AccessibilityNodeData& src,
+                  bool include_children);
 
   // Recursively build a tree of BrowserAccessibility objects from
-  // the WebAccessibility tree received from the renderer process.
+  // the AccessibilityNodeData tree received from the renderer process.
   BrowserAccessibility* CreateAccessibilityTree(
       BrowserAccessibility* parent,
-      const WebAccessibility& src,
+      const content::AccessibilityNodeData& src,
       int index_in_parent,
       bool send_show_events);
 

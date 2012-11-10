@@ -1,14 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
 #include "base/stringprintf.h"
 #include "chrome/browser/sync/profile_sync_service_harness.h"
-#include "chrome/browser/sync/sessions/sync_session_context.h"
 #include "chrome/browser/sync/test/integration/performance/sync_timing_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/sync/test/integration/typed_urls_helper.h"
+#include "sync/sessions/sync_session_context.h"
 
 using typed_urls_helper::AddUrlToHistory;
 using typed_urls_helper::AssertAllProfilesHaveSameURLsAsVerifier;
@@ -23,10 +23,10 @@ static const int kNumUrls = 163;
 // This compile assert basically asserts that kNumUrls is right in the
 // middle between two multiples of kDefaultMaxCommitBatchSize.
 COMPILE_ASSERT(
-    ((kNumUrls % browser_sync::kDefaultMaxCommitBatchSize) >=
-     (browser_sync::kDefaultMaxCommitBatchSize / 2)) &&
-    ((kNumUrls % browser_sync::kDefaultMaxCommitBatchSize) <=
-     ((browser_sync::kDefaultMaxCommitBatchSize + 1) / 2)),
+    ((kNumUrls % syncer::kDefaultMaxCommitBatchSize) >=
+     (syncer::kDefaultMaxCommitBatchSize / 2)) &&
+    ((kNumUrls % syncer::kDefaultMaxCommitBatchSize) <=
+     ((syncer::kDefaultMaxCommitBatchSize + 1) / 2)),
     kNumUrlsShouldBeBetweenTwoMultiplesOfkDefaultMaxCommitBatchSize);
 
 class TypedUrlsSyncPerfTest : public SyncTest {
@@ -65,18 +65,18 @@ void TypedUrlsSyncPerfTest::AddURLs(int profile, int num_urls) {
 }
 
 void TypedUrlsSyncPerfTest::UpdateURLs(int profile) {
-  std::vector<history::URLRow> urls = GetTypedUrlsFromClient(profile);
-  for (std::vector<history::URLRow>::const_iterator it = urls.begin();
-       it != urls.end(); ++it) {
+  history::URLRows urls = GetTypedUrlsFromClient(profile);
+  for (history::URLRows::const_iterator it = urls.begin(); it != urls.end();
+       ++it) {
     AddUrlToHistory(profile, it->url());
   }
 }
 
 void TypedUrlsSyncPerfTest::RemoveURLs(int profile) {
-  const std::vector<history::URLRow>& urls = GetTypedUrlsFromClient(profile);
+  const history::URLRows& urls = GetTypedUrlsFromClient(profile);
   std::vector<GURL> gurls;
-  for (std::vector<history::URLRow>::const_iterator it = urls.begin();
-       it != urls.end(); ++it) {
+  for (history::URLRows::const_iterator it = urls.begin(); it != urls.end();
+       ++it) {
     gurls.push_back(it->url());
   }
   DeleteUrlsFromHistory(profile, gurls);

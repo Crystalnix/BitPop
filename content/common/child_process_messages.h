@@ -1,15 +1,59 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // Common IPC messages used for child processes.
 // Multiply-included message file, hence no include guard.
 
+#include <string>
+#include <vector>
+
 #include "base/shared_memory.h"
+#include "base/tracked_objects.h"
 #include "base/values.h"
 #include "content/common/content_export.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
+
+IPC_ENUM_TRAITS(tracked_objects::ThreadData::Status)
+
+IPC_STRUCT_TRAITS_BEGIN(tracked_objects::LocationSnapshot)
+  IPC_STRUCT_TRAITS_MEMBER(file_name)
+  IPC_STRUCT_TRAITS_MEMBER(function_name)
+  IPC_STRUCT_TRAITS_MEMBER(line_number)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(tracked_objects::BirthOnThreadSnapshot)
+  IPC_STRUCT_TRAITS_MEMBER(location)
+  IPC_STRUCT_TRAITS_MEMBER(thread_name)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(tracked_objects::DeathDataSnapshot)
+  IPC_STRUCT_TRAITS_MEMBER(count)
+  IPC_STRUCT_TRAITS_MEMBER(run_duration_sum)
+  IPC_STRUCT_TRAITS_MEMBER(run_duration_max)
+  IPC_STRUCT_TRAITS_MEMBER(run_duration_sample)
+  IPC_STRUCT_TRAITS_MEMBER(queue_duration_sum)
+  IPC_STRUCT_TRAITS_MEMBER(queue_duration_max)
+  IPC_STRUCT_TRAITS_MEMBER(queue_duration_sample)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(tracked_objects::TaskSnapshot)
+  IPC_STRUCT_TRAITS_MEMBER(birth)
+  IPC_STRUCT_TRAITS_MEMBER(death_data)
+  IPC_STRUCT_TRAITS_MEMBER(death_thread_name)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(tracked_objects::ParentChildPairSnapshot)
+  IPC_STRUCT_TRAITS_MEMBER(parent)
+  IPC_STRUCT_TRAITS_MEMBER(child)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(tracked_objects::ProcessDataSnapshot)
+  IPC_STRUCT_TRAITS_MEMBER(tasks)
+  IPC_STRUCT_TRAITS_MEMBER(descendants)
+  IPC_STRUCT_TRAITS_MEMBER(process_id)
+IPC_STRUCT_TRAITS_END()
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -41,16 +85,24 @@ IPC_MESSAGE_CONTROL0(ChildProcessMsg_GetTraceBufferPercentFull)
 
 // Tell the child process to enable or disable the profiler status.
 IPC_MESSAGE_CONTROL1(ChildProcessMsg_SetProfilerStatus,
-                     bool /* profiler status */)
+                     tracked_objects::ThreadData::Status /* profiler status */)
 
 // Send to all the child processes to send back profiler data (ThreadData in
 // tracked_objects).
-IPC_MESSAGE_CONTROL2(ChildProcessMsg_GetChildProfilerData,
-                     int,         /* sequence number. */
-                     std::string  /* pickled Value of process type. */)
+IPC_MESSAGE_CONTROL1(ChildProcessMsg_GetChildProfilerData,
+                     int /* sequence_number */)
+
+// Send to all the child processes to send back histogram data.
+IPC_MESSAGE_CONTROL1(ChildProcessMsg_GetChildHistogramData,
+                     int /* sequence_number */)
 
 // Sent to child processes to dump their handle table.
 IPC_MESSAGE_CONTROL0(ChildProcessMsg_DumpHandles)
+
+#if defined(USE_TCMALLOC)
+// Sent to child process to request tcmalloc stats.
+IPC_MESSAGE_CONTROL0(ChildProcessMsg_GetTcmallocStats)
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // Messages sent from the child process to the browser.
@@ -77,8 +129,13 @@ IPC_MESSAGE_CONTROL1(ChildProcessHostMsg_TraceBufferPercentFullReply,
 
 // Send back profiler data (ThreadData in tracked_objects).
 IPC_MESSAGE_CONTROL2(ChildProcessHostMsg_ChildProfilerData,
-                     int, /* sequence number. */
-                     DictionaryValue /* profiler data. */)
+                     int, /* sequence_number */
+                     tracked_objects::ProcessDataSnapshot /* profiler_data */)
+
+// Send back histograms as vector of pickled-histogram strings.
+IPC_MESSAGE_CONTROL2(ChildProcessHostMsg_ChildHistogramData,
+                     int, /* sequence_number */
+                     std::vector<std::string> /* histogram_data */)
 
 // Reply to ChildProcessMsg_DumpHandles when handle table dump is complete.
 IPC_MESSAGE_CONTROL0(ChildProcessHostMsg_DumpHandlesDone)
@@ -98,3 +155,9 @@ IPC_MESSAGE_CONTROL0(ChildProcessHostMsg_ReleaseCachedFonts)
 IPC_SYNC_MESSAGE_CONTROL1_1(ChildProcessHostMsg_SyncAllocateSharedMemory,
                             uint32 /* buffer size */,
                             base::SharedMemoryHandle)
+
+#if defined(USE_TCMALLOC)
+// Reply to ChildProcessMsg_GetTcmallocStats.
+IPC_MESSAGE_CONTROL1(ChildProcessHostMsg_TcmallocStats,
+                     std::string /* output */)
+#endif

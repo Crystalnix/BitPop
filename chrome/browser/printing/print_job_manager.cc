@@ -4,17 +4,12 @@
 
 #include "chrome/browser/printing/print_job_manager.h"
 
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/browser/printing/printer_query.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/pref_names.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "printing/printed_document.h"
 #include "printing/printed_page.h"
-
-using content::BrowserThread;
 
 namespace printing {
 
@@ -28,22 +23,8 @@ PrintJobManager::~PrintJobManager() {
   queued_queries_.clear();
 }
 
-void PrintJobManager::InitOnUIThread(PrefService* prefs) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  printing_enabled_.Init(prefs::kPrintingEnabled, prefs, NULL);
-  printing_enabled_.MoveToThread(BrowserThread::IO);
-}
-
 void PrintJobManager::OnQuit() {
-#if defined(OS_MACOSX)
-  // OnQuit is too late to try to wait for jobs on the Mac, since the runloop
-  // has already been torn down; instead, StopJobs(true) is called earlier in
-  // the shutdown process, and this is just here in case something sneaks
-  // in after that.
-  StopJobs(false);
-#else
   StopJobs(true);
-#endif
   registrar_.RemoveAll();
 }
 
@@ -58,13 +39,18 @@ void PrintJobManager::StopJobs(bool wait_for_finish) {
       PrintJob* job = current_jobs[i];
       if (!job)
         continue;
-      // Wait for 120 seconds for the print job to be spooled.
+      // Wait for two minutes for the print job to be spooled.
       if (wait_for_finish)
-        job->FlushJob(120000);
+        job->FlushJob(base::TimeDelta::FromMinutes(2));
       job->Stop();
     }
   }
   current_jobs_.clear();
+}
+
+void PrintJobManager::SetPrintDestination(
+    PrintDestinationInterface* destination) {
+  destination_ = destination;
 }
 
 void PrintJobManager::QueuePrinterQuery(PrinterQuery* job) {
@@ -89,11 +75,6 @@ void PrintJobManager::PopPrinterQuery(int document_cookie,
       return;
     }
   }
-}
-
-// static
-void PrintJobManager::RegisterPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kPrintingEnabled, true);
 }
 
 void PrintJobManager::Observe(int type,
@@ -133,6 +114,7 @@ void PrintJobManager::OnPrintJobEvent(
       DCHECK(current_jobs_.end() == std::find(current_jobs_.begin(),
                                               current_jobs_.end(),
                                               print_job));
+      destination_ = NULL;
       break;
     }
     case JobEventDetails::FAILED: {
@@ -164,10 +146,6 @@ void PrintJobManager::OnPrintJobEvent(
       break;
     }
   }
-}
-
-bool PrintJobManager::printing_enabled() const {
-  return *printing_enabled_;
 }
 
 }  // namespace printing

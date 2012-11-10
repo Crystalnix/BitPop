@@ -9,8 +9,8 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/global_error_service.h"
-#include "chrome/browser/ui/global_error_service_factory.h"
+#include "chrome/browser/ui/global_error/global_error_service.h"
+#include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -111,7 +111,7 @@ void ExtensionWarningSet::SetWarning(ExtensionWarningSet::WarningType type,
 void ExtensionWarningSet::ClearWarnings(
     const std::set<ExtensionWarningSet::WarningType>& types) {
   bool deleted_anything = false;
-  for (const_iterator i = warnings_.begin(); i != warnings_.end();) {
+  for (iterator i = warnings_.begin(); i != warnings_.end();) {
     if (types.find(i->warning_type()) != types.end()) {
       deleted_anything = true;
       warnings_.erase(i++);
@@ -144,6 +144,7 @@ void ExtensionWarningSet::NotifyWarningsOnUI(
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   Profile* profile = reinterpret_cast<Profile*>(profile_id);
   if (!profile ||
+      !g_browser_process->profile_manager() ||
       !g_browser_process->profile_manager()->IsValidProfile(profile)) {
     return;
   }

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,17 +26,18 @@ class SecureHashSHA256NSS : public SecureHash {
   virtual ~SecureHashSHA256NSS() {
   }
 
-  virtual void Update(const void* input, size_t len) {
+  // SecureHash implementation:
+  virtual void Update(const void* input, size_t len) OVERRIDE {
     SHA256_Update(&ctx_, static_cast<const unsigned char*>(input), len);
   }
 
-  virtual void Finish(void* output, size_t len) {
+  virtual void Finish(void* output, size_t len) OVERRIDE {
     SHA256_End(&ctx_, static_cast<unsigned char*>(output), NULL,
                static_cast<unsigned int>(len));
   }
 
-  virtual bool Serialize(Pickle* pickle);
-  virtual bool Deserialize(void** data_iterator, Pickle* pickle);
+  virtual bool Serialize(Pickle* pickle) OVERRIDE;
+  virtual bool Deserialize(PickleIterator* data_iterator) OVERRIDE;
 
  private:
   SHA256Context ctx_;
@@ -55,26 +56,23 @@ bool SecureHashSHA256NSS::Serialize(Pickle* pickle) {
   return true;
 }
 
-bool SecureHashSHA256NSS::Deserialize(void** data_iterator, Pickle* pickle) {
-  if (!pickle)
-    return false;
-
+bool SecureHashSHA256NSS::Deserialize(PickleIterator* data_iterator) {
   int version;
-  if (!pickle->ReadInt(data_iterator, &version))
+  if (!data_iterator->ReadInt(&version))
     return false;
 
   if (version > kSecureHashVersion)
     return false;  // We don't know how to deal with this.
 
   std::string type;
-  if (!pickle->ReadString(data_iterator, &type))
+  if (!data_iterator->ReadString(&type))
     return false;
 
   if (type != kSHA256Descriptor)
     return false;  // It's the wrong kind.
 
   const char* data = NULL;
-  if (!pickle->ReadBytes(data_iterator, &data, sizeof(ctx_)))
+  if (!data_iterator->ReadBytes(&data, sizeof(ctx_)))
     return false;
 
   memcpy(&ctx_, data, sizeof(ctx_));

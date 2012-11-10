@@ -11,15 +11,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/threading/thread.h"
+#include "net/base/backoff_entry.h"
 #include "remoting/base/encoder.h"
-#include "remoting/host/capturer.h"
 #include "remoting/host/client_session.h"
 #include "remoting/host/desktop_environment.h"
 #include "remoting/host/host_key_pair.h"
 #include "remoting/host/host_status_observer.h"
+#include "remoting/host/mouse_move_observer.h"
 #include "remoting/host/ui_strings.h"
-#include "remoting/jingle_glue/jingle_thread.h"
-#include "remoting/jingle_glue/signal_strategy.h"
 #include "remoting/protocol/authenticator.h"
 #include "remoting/protocol/session_manager.h"
 #include "remoting/protocol/connection_to_client.h"
@@ -32,11 +31,13 @@ class SessionConfig;
 class CandidateSessionConfig;
 }  // namespace protocol
 
-class Capturer;
+class AudioEncoder;
+class AudioScheduler;
 class ChromotingHostContext;
 class DesktopEnvironment;
 class Encoder;
 class ScreenRecorder;
+class VideoFrameCapturer;
 
 // A class to implement the functionality of a host process.
 //
@@ -48,7 +49,7 @@ class ScreenRecorder;
 //
 // 2. We listen for incoming connection using libjingle. We will create
 //    a ConnectionToClient object that wraps around linjingle for transport.
-//    A ScreenRecorder is created with an Encoder and a Capturer.
+//    A ScreenRecorder is created with an Encoder and a VideoFrameCapturer.
 //    A ConnectionToClient is added to the ScreenRecorder for transporting
 //    the screen captures. An InputStub is created and registered with the
 //    ConnectionToClient to receive mouse / keyboard events from the remote
@@ -63,14 +64,15 @@ class ScreenRecorder;
 //    incoming connection.
 class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
                        public ClientSession::EventHandler,
-                       public protocol::SessionManager::Listener {
+                       public protocol::SessionManager::Listener,
+                       public MouseMoveObserver {
  public:
   // The caller must ensure that |context|, |signal_strategy| and
   // |environment| out-live the host.
   ChromotingHost(ChromotingHostContext* context,
                  SignalStrategy* signal_strategy,
                  DesktopEnvironment* environment,
-                 const protocol::NetworkSettings& network_settings);
+                 scoped_ptr<protocol::SessionManager> session_manager);
 
   // Asynchronously start the host process.
   //
@@ -89,7 +91,7 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
   void AddStatusObserver(HostStatusObserver* observer);
   void RemoveStatusObserver(HostStatusObserver* observer);
 
-  // This method may be called only form
+  // This method may be called only from
   // HostStatusObserver::OnClientAuthenticated() to reject the new
   // client.
   void RejectAuthenticatingClient();
@@ -103,16 +105,22 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
   void SetAuthenticatorFactory(
       scoped_ptr<protocol::AuthenticatorFactory> authenticator_factory);
 
+  // Sets the maximum duration of any session. By default, a session has no
+  // maximum duration.
+  void SetMaximumSessionDuration(const base::TimeDelta& max_session_duration);
+
   ////////////////////////////////////////////////////////////////////////////
   // ClientSession::EventHandler implementation.
   virtual void OnSessionAuthenticated(ClientSession* client) OVERRIDE;
+  virtual void OnSessionChannelsConnected(ClientSession* client) OVERRIDE;
   virtual void OnSessionAuthenticationFailed(ClientSession* client) OVERRIDE;
   virtual void OnSessionClosed(ClientSession* session) OVERRIDE;
   virtual void OnSessionSequenceNumber(ClientSession* session,
                                        int64 sequence_number) OVERRIDE;
-  virtual void OnSessionIpAddress(ClientSession* session,
-                                  const std::string& channel_name,
-                                  const net::IPEndPoint& end_point) OVERRIDE;
+  virtual void OnSessionRouteChange(
+      ClientSession* session,
+      const std::string& channel_name,
+      const protocol::TransportRoute& route) OVERRIDE;
 
   // SessionManager::Listener implementation.
   virtual void OnSessionManagerReady() OVERRIDE;
@@ -120,17 +128,22 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
       protocol::Session* session,
       protocol::SessionManager::IncomingSessionResponse* response) OVERRIDE;
 
+  // MouseMoveObserver interface.
+  virtual void OnLocalMouseMoved(const SkIPoint& new_pos) OVERRIDE;
+
   // Sets desired configuration for the protocol. Ownership of the
   // |config| is transferred to the object. Must be called before Start().
   void set_protocol_config(protocol::CandidateSessionConfig* config);
 
-  // Notify all active client sessions that local input has been detected, and
-  // that remote input should be ignored for a short time.
-  void LocalMouseMoved(const SkIPoint& new_pos);
-
   // Pause or unpause the session. While the session is paused, remote input
-  // is ignored.
+  // is ignored. Can be called from any thread.
   void PauseSession(bool pause);
+
+  // Disconnects all active clients. Clients are disconnected
+  // asynchronously when this method is called on a thread other than
+  // the network thread. Potentically this may cause disconnection of
+  // clients that were not connected when this method is called.
+  void DisconnectAllClients();
 
   const UiStrings& ui_strings() { return ui_strings_; }
 
@@ -153,16 +166,15 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
   // Creates encoder for the specified configuration.
   static Encoder* CreateEncoder(const protocol::SessionConfig& config);
 
+  // Creates an audio encoder for the specified configuration.
+  static scoped_ptr<AudioEncoder> CreateAudioEncoder(
+      const protocol::SessionConfig& config);
+
   virtual ~ChromotingHost();
 
-  std::string GenerateHostAuthToken(const std::string& encoded_client_token);
-
-  void AddAuthenticatedClient(ClientSession* client,
-                              const protocol::SessionConfig& config,
-                              const std::string& jid);
-
   void StopScreenRecorder();
-  void OnScreenRecorderStopped();
+  void StopAudioScheduler();
+  void OnRecorderStopped();
 
   // Called from Shutdown() or OnScreenRecorderStopped() to finish shutdown.
   void ShutdownFinish();
@@ -173,20 +185,10 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
   // Parameters specified when the host was created.
   ChromotingHostContext* context_;
   DesktopEnvironment* desktop_environment_;
-  protocol::NetworkSettings network_settings_;
-
-  // TODO(lambroslambrou): The following is a temporary fix for Me2Me
-  // (crbug.com/105995), pending the AuthenticatorFactory work.
-  // Cache the shared secret, in case SetSharedSecret() is called before the
-  // session manager has been created.
-  // The |have_shared_secret_| flag is to distinguish SetSharedSecret() not
-  // being called at all, from being called with an empty string.
-  std::string shared_secret_;
-  bool have_shared_secret_;
+  scoped_ptr<protocol::SessionManager> session_manager_;
 
   // Connection objects.
   SignalStrategy* signal_strategy_;
-  scoped_ptr<protocol::SessionManager> session_manager_;
 
   // Must be used on the network thread only.
   ObserverList<HostStatusObserver> status_observers_;
@@ -194,14 +196,14 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
   // The connections to remote clients.
   ClientList clients_;
 
-  // Session manager for the host process.
-  // TODO(sergeyu): Do we need to have one screen recorder per client?
+  // Schedulers for audio and video capture.
+  // TODO(sergeyu): Do we need to have one set of schedulers per client?
   scoped_refptr<ScreenRecorder> recorder_;
+  scoped_refptr<AudioScheduler> audio_scheduler_;
 
-  // Number of screen recorders that are currently being
-  // stopped. Normally set to 0 or 1, but in some cases it may be
-  // greater than 1, particularly if when second client can connect
-  // immediately after previous one disconnected.
+  // Number of screen recorders and audio schedulers that are currently being
+  // stopped. Used to delay shutdown if one or more recorders/schedulers are
+  // asynchronously shutting down.
   int stopping_recorders_;
 
   // Tracks the internal state of the host.
@@ -209,6 +211,9 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
 
   // Configuration of the protocol.
   scoped_ptr<protocol::CandidateSessionConfig> protocol_config_;
+
+  // Login backoff state.
+  net::BackoffEntry login_backoff_;
 
   // Flags used for RejectAuthenticatingClient().
   bool authenticating_client_;
@@ -221,6 +226,9 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
   // TODO(sergeyu): The following members do not belong to
   // ChromotingHost and should be moved elsewhere.
   UiStrings ui_strings_;
+
+  // The maximum duration of any session.
+  base::TimeDelta max_session_duration_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromotingHost);
 };

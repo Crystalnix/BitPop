@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,13 +11,14 @@
 #include "content/renderer/p2p/host_address_request.h"
 #include "content/renderer/p2p/socket_client.h"
 #include "content/renderer/render_view_impl.h"
+#include "webkit/glue/network_list_observer.h"
 
 namespace content {
 
 class P2PSocketDispatcher::AsyncMessageSender
     : public base::RefCountedThreadSafe<AsyncMessageSender> {
  public:
-  explicit AsyncMessageSender(IPC::Message::Sender* message_sender)
+  explicit AsyncMessageSender(IPC::Sender* message_sender)
       : message_loop_(base::MessageLoopProxy::current()),
         message_sender_(message_sender) {
   }
@@ -33,6 +34,9 @@ class P2PSocketDispatcher::AsyncMessageSender
   }
 
  private:
+  friend class base::RefCountedThreadSafe<AsyncMessageSender>;
+  ~AsyncMessageSender() {}
+
   void DoSend(IPC::Message* msg) {
     DCHECK(message_loop_->BelongsToCurrentThread());
     if (message_sender_)
@@ -40,7 +44,7 @@ class P2PSocketDispatcher::AsyncMessageSender
   }
 
   scoped_refptr<base::MessageLoopProxy> message_loop_;
-  IPC::Message::Sender* message_sender_;
+  IPC::Sender* message_sender_;
 
   DISALLOW_COPY_AND_ASSIGN(AsyncMessageSender);
 };
@@ -50,11 +54,14 @@ P2PSocketDispatcher::P2PSocketDispatcher(RenderViewImpl* render_view)
       message_loop_(base::MessageLoopProxy::current()),
       network_notifications_started_(false),
       network_list_observers_(
-          new ObserverListThreadSafe<NetworkListObserver>()),
+          new ObserverListThreadSafe<webkit_glue::NetworkListObserver>()),
       async_message_sender_(new AsyncMessageSender(this)) {
 }
 
 P2PSocketDispatcher::~P2PSocketDispatcher() {
+  FOR_EACH_OBSERVER(P2PSocketDispatcherDestructionObserver,
+                    destruction_observer_, OnSocketDispatcherDestroyed());
+  network_list_observers_->AssertEmpty();
   if (network_notifications_started_)
     Send(new P2PHostMsg_StopNetworkNotifications(routing_id()));
   for (IDMap<P2PSocketClient>::iterator i(&clients_); !i.IsAtEnd();
@@ -65,7 +72,7 @@ P2PSocketDispatcher::~P2PSocketDispatcher() {
 }
 
 void P2PSocketDispatcher::AddNetworkListObserver(
-    NetworkListObserver* network_list_observer) {
+    webkit_glue::NetworkListObserver* network_list_observer) {
   network_list_observers_->AddObserver(network_list_observer);
   network_notifications_started_ = true;
   async_message_sender_->Send(
@@ -73,8 +80,18 @@ void P2PSocketDispatcher::AddNetworkListObserver(
 }
 
 void P2PSocketDispatcher::RemoveNetworkListObserver(
-    NetworkListObserver* network_list_observer) {
+    webkit_glue::NetworkListObserver* network_list_observer) {
   network_list_observers_->RemoveObserver(network_list_observer);
+}
+
+void P2PSocketDispatcher::AddDestructionObserver(
+    P2PSocketDispatcherDestructionObserver* observer) {
+  destruction_observer_.AddObserver(observer);
+}
+
+void P2PSocketDispatcher::RemoveDestructionObserver(
+    P2PSocketDispatcherDestructionObserver* observer) {
+  destruction_observer_.RemoveObserver(observer);
 }
 
 bool P2PSocketDispatcher::OnMessageReceived(const IPC::Message& message) {
@@ -119,8 +136,8 @@ void P2PSocketDispatcher::UnregisterHostAddressRequest(int id) {
 
 void P2PSocketDispatcher::OnNetworkListChanged(
     const net::NetworkInterfaceList& networks) {
-  network_list_observers_->Notify(&NetworkListObserver::OnNetworkListChanged,
-                                  networks);
+  network_list_observers_->Notify(
+      &webkit_glue::NetworkListObserver::OnNetworkListChanged, networks);
 }
 
 void P2PSocketDispatcher::OnGetHostAddressResult(

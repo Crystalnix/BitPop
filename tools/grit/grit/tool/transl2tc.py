@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,12 +7,10 @@
 '''
 
 
-import getopt
-
-from grit.tool import interface
-from grit.tool import rc2grd
 from grit import grd_reader
 from grit import util
+from grit.tool import interface
+from grit.tool import rc2grd
 
 from grit.extern import tclib
 
@@ -60,9 +58,7 @@ Bulk Translation Upload tool.
     self.rc2grd.SetOptions(globopt)
     self.limits = None
     if len(args) and args[0] == '-l':
-      limit_file = file(args[1])
-      self.limits = limit_file.read().split('\n')
-      limit_file.close()
+      self.limits = util.ReadFile(args[1], util.RAW_TEXT).split('\n')
       args = args[2:]
     return self.rc2grd.ParseOptions(args)
 
@@ -79,17 +75,14 @@ Bulk Translation Upload tool.
     grd = grd_reader.Parse(self.o.input, debug=self.o.extra_verbose)
     grd.RunGatherers(recursive = True)
 
-    source_rc = util.WrapInputStream(file(args[0], 'r'), self.rc2grd.input_encoding)
-    transl_rc = util.WrapInputStream(file(args[1], 'r'), self.rc2grd.input_encoding)
+    source_rc = util.ReadFile(args[0], self.rc2grd.input_encoding)
+    transl_rc = util.ReadFile(args[1], self.rc2grd.input_encoding)
     translations = self.ExtractTranslations(grd,
-                                            source_rc.read(), args[0],
-                                            transl_rc.read(), args[1])
-    transl_rc.close()
-    source_rc.close()
+                                            source_rc, args[0],
+                                            transl_rc, args[1])
 
-    output_file = util.WrapOutputStream(file(args[2], 'w'))
-    self.WriteTranslations(output_file, translations.items())
-    output_file.close()
+    with util.WrapOutputStream(open(args[2], 'w')) as output_file:
+      self.WriteTranslations(output_file, translations.items())
 
     self.Out('Wrote output file %s' % args[2])
 
@@ -115,8 +108,12 @@ Bulk Translation Upload tool.
     '''
     source_grd = self.rc2grd.Process(source_rc, source_path)
     self.VerboseOut('Read %s into GRIT format, running gatherers.\n' % source_path)
+    source_grd.SetOutputLanguage(current_grd.output_language)
+    source_grd.SetDefines(current_grd.defines)
     source_grd.RunGatherers(recursive=True, debug=self.o.extra_verbose)
     transl_grd = self.rc2grd.Process(transl_rc, transl_path)
+    transl_grd.SetOutputLanguage(current_grd.output_language)
+    transl_grd.SetDefines(current_grd.defines)
     self.VerboseOut('Read %s into GRIT format, running gatherers.\n' % transl_path)
     transl_grd.RunGatherers(recursive=True, debug=self.o.extra_verbose)
     self.VerboseOut('Done running gatherers for %s.\n' % transl_path)
@@ -231,14 +228,14 @@ Bulk Translation Upload tool.
 
     return id2transl
 
-  # static method
+  @staticmethod
   def WriteTranslations(output_file, translations):
     '''Writes the provided list of translations to the provided output file
     in the format used by the TC's Bulk Translation Upload tool.  The file
     must be UTF-8 encoded.
 
     Args:
-      output_file: util.WrapOutputStream(file('bingo.out', 'w'))
+      output_file: util.WrapOutputStream(open('bingo.out', 'w'))
       translations: [ [id1, text1], ['12345678', 'Hello USERNAME, howzit?'] ]
 
     Return:
@@ -250,5 +247,4 @@ Bulk Translation Upload tool.
       output_file.write(' ')
       output_file.write(text)
       output_file.write('\n')
-  WriteTranslations = staticmethod(WriteTranslations)
 

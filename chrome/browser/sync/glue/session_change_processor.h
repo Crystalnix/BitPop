@@ -4,11 +4,11 @@
 
 #ifndef CHROME_BROWSER_SYNC_GLUE_SESSION_CHANGE_PROCESSOR_H_
 #define CHROME_BROWSER_SYNC_GLUE_SESSION_CHANGE_PROCESSOR_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/sync/glue/change_processor.h"
+#include "chrome/browser/sync/glue/data_type_error_handler.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
@@ -18,10 +18,10 @@ class Profile;
 namespace browser_sync {
 
 class SessionModelAssociator;
-class UnrecoverableErrorHandler;
+class DataTypeErrorHandler;
 
 // This class is responsible for taking changes from the
-// SessionService and applying them to the sync_api 'syncable'
+// SessionService and applying them to the sync API 'syncable'
 // model, and vice versa. All operations and use of this class are
 // from the UI thread.
 class SessionChangeProcessor : public ChangeProcessor,
@@ -29,26 +29,26 @@ class SessionChangeProcessor : public ChangeProcessor,
  public:
   // Does not take ownership of either argument.
   SessionChangeProcessor(
-      UnrecoverableErrorHandler* error_handler,
+      DataTypeErrorHandler* error_handler,
       SessionModelAssociator* session_model_associator);
   // For testing only.
   SessionChangeProcessor(
-      UnrecoverableErrorHandler* error_handler,
+      DataTypeErrorHandler* error_handler,
       SessionModelAssociator* session_model_associator,
       bool setup_for_test);
   virtual ~SessionChangeProcessor();
 
   // content::NotificationObserver implementation.
-  // BrowserSessionProvider -> sync_api model change application.
+  // BrowserSessionProvider -> sync API model change application.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
   // ChangeProcessor implementation.
-  // sync_api model -> BrowserSessionProvider change application.
+  // sync API model -> BrowserSessionProvider change application.
   virtual void ApplyChangesFromSyncModel(
-      const sync_api::BaseTransaction* trans,
-      const sync_api::ImmutableChangeRecordList& changes) OVERRIDE;
+      const syncer::BaseTransaction* trans,
+      const syncer::ImmutableChangeRecordList& changes) OVERRIDE;
 
  protected:
   // ChangeProcessor implementation.

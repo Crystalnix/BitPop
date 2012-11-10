@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,11 +8,9 @@
 
 
 import re
-import types
 
-from grit import clique
 from grit import exception
-from grit import util
+from grit import lazy_re
 from grit import tclib
 
 from grit.gather import regexp
@@ -23,10 +21,10 @@ from grit.gather import regexp
 # a \ followed by a \n.
 # TODO(joi) Handle ampersands if we decide to change them into <ph>
 # TODO(joi) May need to handle other control characters than \n
-_NEED_UNESCAPE = re.compile(r'""|\\\\|\\n|\\t')
+_NEED_UNESCAPE = lazy_re.compile(r'""|\\\\|\\n|\\t')
 
 # Find portions that need escaping to encode string as a resource string.
-_NEED_ESCAPE = re.compile(r'"|\n|\t|\\|\&nbsp\;')
+_NEED_ESCAPE = lazy_re.compile(r'"|\n|\t|\\|\&nbsp\;')
 
 # How to escape certain characters
 _ESCAPE_CHARS = {
@@ -45,55 +43,41 @@ _UNESCAPE_CHARS = dict([[value, key] for key, value in _ESCAPE_CHARS.items()])
 class Section(regexp.RegexpGatherer):
   '''A section from a resource file.'''
 
-  def __init__(self, section_text):
-    '''Creates a new object.
-
-    Args:
-      section_text: 'ID_SECTION_ID SECTIONTYPE\n.....\nBEGIN\n.....\nEND'
-    '''
-    regexp.RegexpGatherer.__init__(self, section_text)
-
-  # static method
+  @staticmethod
   def Escape(text):
     '''Returns a version of 'text' with characters escaped that need to be
     for inclusion in a resource section.'''
     def Replace(match):
       return _ESCAPE_CHARS[match.group()]
     return _NEED_ESCAPE.sub(Replace, text)
-  Escape = staticmethod(Escape)
 
-  # static method
+  @staticmethod
   def UnEscape(text):
     '''Returns a version of 'text' with escaped characters unescaped.'''
     def Replace(match):
       return _UNESCAPE_CHARS[match.group()]
     return _NEED_UNESCAPE.sub(Replace, text)
-  UnEscape = staticmethod(UnEscape)
 
   def _RegExpParse(self, rexp, text_to_parse):
     '''Overrides _RegExpParse to add shortcut group handling.  Otherwise
     the same.
     '''
-    regexp.RegexpGatherer._RegExpParse(self, rexp, text_to_parse)
+    super(Section, self)._RegExpParse(rexp, text_to_parse)
 
-    if not self.IsSkeleton() and len(self.GetTextualIds()) > 0:
+    if not self.is_skeleton and len(self.GetTextualIds()) > 0:
       group_name = self.GetTextualIds()[0]
       for c in self.GetCliques():
         c.AddToShortcutGroup(group_name)
 
-  # Static method
-  def FromFileImpl(rc_file, extkey, encoding, type):
-    '''Implementation of FromFile.  Need to keep separate so we can have
-    a FromFile in this class that has its type set to Section by default.
-    '''
-    if isinstance(rc_file, types.StringTypes):
-      rc_file = util.WrapInputStream(file(rc_file, 'r'), encoding)
+  def ReadSection(self):
+    rc_text = self._LoadInputFile()
 
     out = ''
     begin_count = 0
-    for line in rc_file.readlines():
-      if len(out) > 0 or (line.strip().startswith(extkey) and
-                          line.strip().split()[0] == extkey):
+    assert self.extkey
+    first_line_re = re.compile(r'\s*' + self.extkey + r'\b')
+    for line in rc_text.splitlines(True):
+      if out or first_line_re.match(line):
         out += line
 
       # we stop once we reach the END for the outermost block.
@@ -106,34 +90,9 @@ class Section(regexp.RegexpGatherer):
         break
 
     if len(out) == 0:
-      raise exception.SectionNotFound('%s in file %s' % (extkey, rc_file))
+      raise exception.SectionNotFound('%s in file %s' % (self.extkey, self.rc_file))
 
-    return type(out)
-  FromFileImpl = staticmethod(FromFileImpl)
-
-  # static method
-  def FromFile(rc_file, extkey, encoding='cp1252'):
-    '''Retrieves the section of 'rc_file' that has the key 'extkey'.  This is
-    matched against the start of a line, and that line and the rest of that
-    section in the RC file is returned.
-
-    If 'rc_file' is a filename, it will be opened for reading using 'encoding'.
-    Otherwise the 'encoding' parameter is ignored.
-
-    This method instantiates an object of type 'type' with the text from the
-    file.
-
-    Args:
-      rc_file: file('') | 'filename.rc'
-      extkey: 'ID_MY_DIALOG'
-      encoding: 'utf-8'
-      type: class to instantiate with text of section
-
-    Return:
-      type(text_of_section)
-    '''
-    return Section.FromFileImpl(rc_file, extkey, encoding, Section)
-  FromFile = staticmethod(FromFile)
+    self.text_ = out.strip()
 
 
 class Dialog(Section):
@@ -160,7 +119,7 @@ class Dialog(Section):
   # group in alphabetical order. We also assume that there cannot be
   # more than one description per regular expression match.
   # If that's not the case some descriptions will be clobbered.
-  dialog_re_ = re.compile('''
+  dialog_re_ = lazy_re.compile('''
     # The dialog's ID in the first line
     (?P<id1>[A-Z0-9_]+)\s+DIALOG(EX)?
     |
@@ -187,12 +146,8 @@ class Dialog(Section):
 
   def Parse(self):
     '''Knows how to parse dialog resource sections.'''
+    self.ReadSection()
     self._RegExpParse(self.dialog_re_, self.text_)
-
-  # static method
-  def FromFile(rc_file, extkey, encoding = 'cp1252'):
-    return Section.FromFileImpl(rc_file, extkey, encoding, Dialog)
-  FromFile = staticmethod(FromFile)
 
 
 class Menu(Section):
@@ -230,7 +185,7 @@ class Menu(Section):
 
   # A dandy regexp to suck all the IDs and translateables out of a menu
   # resource
-  menu_re_ = re.compile('''
+  menu_re_ = lazy_re.compile('''
     # Match the MENU ID on the first line
     ^(?P<id1>[A-Z0-9_]+)\s+MENU
     |
@@ -247,13 +202,9 @@ class Menu(Section):
     message with placeholders to break up the different menu items, rather than
     return a single message per menu item.  we also add an automatic description
     with instructions for the translators.'''
+    self.ReadSection()
     self.single_message_ = tclib.Message(description=self.MENU_MESSAGE_DESCRIPTION)
     self._RegExpParse(self.menu_re_, self.text_)
-
-  # static method
-  def FromFile(rc_file, extkey, encoding = 'cp1252'):
-    return Section.FromFileImpl(rc_file, extkey, encoding, Menu)
-  FromFile = staticmethod(FromFile)
 
 
 class Version(Section):
@@ -298,7 +249,7 @@ class Version(Section):
   # In addition to the above fields, VALUE fields named "Comments" and
   # "LegalTrademarks" may also be translateable.
 
-  version_re_ = re.compile('''
+  version_re_ = lazy_re.compile('''
     # Match the ID on the first line
     ^(?P<id1>[A-Z0-9_]+)\s+VERSIONINFO
     |
@@ -312,15 +263,12 @@ class Version(Section):
 
   def Parse(self):
     '''Knows how to parse VERSIONINFO resource sections.'''
+    self.ReadSection()
     self._RegExpParse(self.version_re_, self.text_)
 
   # TODO(joi) May need to override the Translate() method to change the
   # "Translation" VALUE block to indicate the correct language code.
 
-  # static method
-  def FromFile(rc_file, extkey, encoding = 'cp1252'):
-    return Section.FromFileImpl(rc_file, extkey, encoding, Version)
-  FromFile = staticmethod(FromFile)
 
 class RCData(Section):
   '''A resource section that contains some data .'''
@@ -329,29 +277,25 @@ class RCData(Section):
   #
   # IDR_BLAH        RCDATA      { 1, 2, 3, 4 }
 
-  dialog_re_ = re.compile('''
+  dialog_re_ = lazy_re.compile('''
     ^(?P<id1>[A-Z0-9_]+)\s+RCDATA\s+(DISCARDABLE)?\s+\{.*?\}
     ''', re.MULTILINE | re.VERBOSE | re.DOTALL)
 
   def Parse(self):
-    '''Knows how to parse RCDATA resource sections.'''
-    self._RegExpParse(self.dialog_re_, self.text_)
-
-  # static method
-  def FromFile(rc_file, extkey, encoding = 'cp1252'):
-    '''Implementation of FromFile for resource types w/braces (not BEGIN/END)
+    '''Implementation for resource types w/braces (not BEGIN/END)
     '''
-    if isinstance(rc_file, types.StringTypes):
-      rc_file = util.WrapInputStream(file(rc_file, 'r'), encoding)
+    rc_text = self._LoadInputFile()
 
     out = ''
     begin_count = 0
     openbrace_count = 0
-    for line in rc_file.readlines():
-      if len(out) > 0 or line.strip().startswith(extkey):
+    assert self.extkey
+    first_line_re = re.compile(r'\s*' + self.extkey + r'\b')
+    for line in rc_text.splitlines(True):
+      if out or first_line_re.match(line):
         out += line
 
-      # we stop once balance the braces (could happen on one line)
+      # We stop once the braces balance (could happen in one line).
       begin_count_was = begin_count
       if len(out) > 0:
         openbrace_count += line.count('{')
@@ -362,10 +306,11 @@ class RCData(Section):
         break
 
     if len(out) == 0:
-      raise exception.SectionNotFound('%s in file %s' % (extkey, rc_file))
+      raise exception.SectionNotFound('%s in file %s' % (self.extkey, self.rc_file))
 
-    return RCData(out)
-  FromFile = staticmethod(FromFile)
+    self.text_ = out
+
+    self._RegExpParse(self.dialog_re_, out)
 
 
 class Accelerators(Section):
@@ -381,7 +326,7 @@ class Accelerators(Section):
   #   VK_INSERT,      ID_ACCELERATOR32772,    VIRTKEY, CONTROL, NOINVERT
   # END
 
-  accelerators_re_ = re.compile('''
+  accelerators_re_ = lazy_re.compile('''
     # Match the ID on the first line
     ^(?P<id1>[A-Z0-9_]+)\s+ACCELERATORS\s+
     |
@@ -394,10 +339,5 @@ class Accelerators(Section):
 
   def Parse(self):
     '''Knows how to parse ACCELERATORS resource sections.'''
+    self.ReadSection()
     self._RegExpParse(self.accelerators_re_, self.text_)
-
-  # static method
-  def FromFile(rc_file, extkey, encoding = 'cp1252'):
-    return Section.FromFileImpl(rc_file, extkey, encoding, Accelerators)
-  FromFile = staticmethod(FromFile)
-

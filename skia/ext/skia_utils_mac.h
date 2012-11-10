@@ -1,20 +1,19 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef SKIA_EXT_SKIA_UTILS_MAC_H_
 #define SKIA_EXT_SKIA_UTILS_MAC_H_
-#pragma once
 
 #include <ApplicationServices/ApplicationServices.h>
 #include <vector>
 
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
 
 struct SkIRect;
 struct SkPoint;
 struct SkRect;
-class SkBitmap;
 class SkCanvas;
 class SkMatrix;
 #ifdef __LP64__
@@ -24,10 +23,12 @@ typedef struct _NSSize NSSize;
 #endif
 
 #ifdef __OBJC__
+@class NSBitmapImageRep;
 @class NSImage;
 @class NSImageRep;
 @class NSColor;
 #else
+class NSBitmapImageRep;
 class NSImage;
 class NSImageRep;
 class NSColor;
@@ -48,24 +49,28 @@ inline const SkPoint& CGPointToSkPoint(const CGPoint& point) {
 }
 
 // Matrix converters.
-CGAffineTransform SkMatrixToCGAffineTransform(const SkMatrix& matrix);
+SK_API CGAffineTransform SkMatrixToCGAffineTransform(const SkMatrix& matrix);
 
 // Rectangle converters.
 SkRect CGRectToSkRect(const CGRect& rect);
-SkIRect CGRectToSkIRect(const CGRect& rect);
 
 // Converts a Skia rect to a CoreGraphics CGRect.
 CGRect SkIRectToCGRect(const SkIRect& rect);
 CGRect SkRectToCGRect(const SkRect& rect);
 
 // Converts CGColorRef to the ARGB layout Skia expects.
-SkColor CGColorRefToSkColor(CGColorRef color);
+SK_API SkColor CGColorRefToSkColor(CGColorRef color);
 
 // Converts ARGB to CGColorRef.
-CGColorRef SkColorToCGColorRef(SkColor color);
+SK_API CGColorRef CGColorCreateFromSkColor(SkColor color);
+
+// Converts NSColor to ARGB. Returns raw rgb values and does no colorspace
+// conversion. Only valid for colors in calibrated and device color spaces.
+SK_API SkColor NSDeviceColorToSkColor(NSColor* color);
 
 // Converts ARGB to NSColor.
 SK_API NSColor* SkColorToCalibratedNSColor(SkColor color);
+SK_API NSColor* SkColorToDeviceNSColor(SkColor color);
 
 // Converts a CGImage to a SkBitmap.
 SK_API SkBitmap CGImageToSkBitmap(CGImageRef image);
@@ -77,6 +82,10 @@ SK_API SkBitmap NSImageToSkBitmap(NSImage* image, NSSize size, bool is_opaque);
 SK_API SkBitmap NSImageRepToSkBitmap(
     NSImageRep* image, NSSize size, bool is_opaque);
 
+// Given an SkBitmap, return an autoreleased NSBitmapImageRep in the generic
+// color space.
+SK_API NSBitmapImageRep* SkBitmapToNSBitmapImageRep(const SkBitmap& image);
+
 // Given an SkBitmap and a color space, return an autoreleased NSImage.
 SK_API NSImage* SkBitmapToNSImageWithColorSpace(const SkBitmap& icon,
                                                 CGColorSpaceRef colorSpace);
@@ -86,15 +95,8 @@ SK_API NSImage* SkBitmapToNSImageWithColorSpace(const SkBitmap& icon,
 // TODO(thakis): Remove this -- http://crbug.com/69432
 SK_API NSImage* SkBitmapToNSImage(const SkBitmap& icon);
 
-// Given a vector of SkBitmaps, return an NSImage with each bitmap added
-// as a representation.
-SK_API NSImage* SkBitmapsToNSImage(const std::vector<const SkBitmap*>& bitmaps);
-
-// Returns |[NSImage imageNamed:@"NSApplicationIcon"]| as SkBitmap.
-SK_API SkBitmap AppplicationIconAtSize(int size);
-
 // Converts a SkCanvas temporarily to a CGContext
-class SkiaBitLocker {
+class SK_API SkiaBitLocker {
  public:
   explicit SkiaBitLocker(SkCanvas* canvas);
   ~SkiaBitLocker();
@@ -104,6 +106,8 @@ class SkiaBitLocker {
   void releaseIfNeeded();
   SkCanvas* canvas_;
   CGContextRef cgContext_;
+  SkBitmap bitmap_;
+  bool useDeviceBits_;
 };
 
 

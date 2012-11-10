@@ -1,15 +1,15 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
 
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper_delegate.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "chrome/browser/ui/webui/chrome_web_ui.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/navigation_controller.h"
@@ -27,10 +27,10 @@ bool CanShowBookmarkBar(content::WebUI* ui) {
 
 }  // namespace
 
-BookmarkTabHelper::BookmarkTabHelper(TabContentsWrapper* tab_contents)
+BookmarkTabHelper::BookmarkTabHelper(TabContents* tab_contents)
     : content::WebContentsObserver(tab_contents->web_contents()),
       is_starred_(false),
-      tab_contents_wrapper_(tab_contents),
+      tab_contents_(tab_contents),
       delegate_(NULL),
       bookmark_drag_(NULL) {
   // Register for notifications about URL starredness changing on any profile.
@@ -49,7 +49,7 @@ bool BookmarkTabHelper::ShouldShowBookmarkBar() {
   if (web_contents()->ShowingInterstitialPage())
     return false;
 
-  // See TabContents::GetWebUIForCurrentState() comment for more info. This case
+  // See WebContents::GetWebUIForCurrentState() comment for more info. This case
   // is very similar, but for non-first loads, we want to use the committed
   // entry. This is so the bookmarks bar disappears at the same time the page
   // does.
@@ -81,7 +81,7 @@ void BookmarkTabHelper::Observe(int type,
       // Ignore notifications for profiles other than our current one.
       Profile* source_profile = content::Source<Profile>(source).ptr();
       if (!source_profile ||
-          !source_profile->IsSameProfile(tab_contents_wrapper_->profile()))
+          !source_profile->IsSameProfile(tab_contents_->profile()))
         return;
 
       UpdateStarredStateForCurrentURL();
@@ -106,10 +106,10 @@ BookmarkTabHelper::BookmarkDrag*
 void BookmarkTabHelper::UpdateStarredStateForCurrentURL() {
   Profile* profile =
       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
-  BookmarkModel* model = profile->GetBookmarkModel();
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
   const bool old_state = is_starred_;
   is_starred_ = (model && model->IsBookmarked(web_contents()->GetURL()));
 
   if (is_starred_ != old_state && delegate())
-    delegate()->URLStarredChanged(tab_contents_wrapper_, is_starred_);
+    delegate()->URLStarredChanged(tab_contents_, is_starred_);
 }

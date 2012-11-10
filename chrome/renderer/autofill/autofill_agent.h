@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_RENDERER_AUTOFILL_AUTOFILL_AGENT_H_
 #define CHROME_RENDERER_AUTOFILL_AUTOFILL_AGENT_H_
-#pragma once
 
 #include <vector>
 
@@ -65,6 +64,8 @@ class AutofillAgent : public content::RenderViewObserver,
   virtual void FrameWillClose(WebKit::WebFrame* frame) OVERRIDE;
   virtual void WillSubmitForm(WebKit::WebFrame* frame,
                               const WebKit::WebFormElement& form) OVERRIDE;
+  virtual void ZoomLevelChanged() OVERRIDE;
+  virtual void DidChangeScrollOffset(WebKit::WebFrame* frame) OVERRIDE;
 
   // PageClickListener:
   virtual bool InputElementClicked(const WebKit::WebInputElement& element,
@@ -76,12 +77,12 @@ class AutofillAgent : public content::RenderViewObserver,
   virtual void didAcceptAutofillSuggestion(const WebKit::WebNode& node,
                                            const WebKit::WebString& value,
                                            const WebKit::WebString& label,
-                                           int unique_id,
+                                           int item_id,
                                            unsigned index) OVERRIDE;
   virtual void didSelectAutofillSuggestion(const WebKit::WebNode& node,
                                            const WebKit::WebString& value,
                                            const WebKit::WebString& label,
-                                           int unique_id) OVERRIDE;
+                                           int item_id) OVERRIDE;
   virtual void didClearAutofillSelection(const WebKit::WebNode& node) OVERRIDE;
   virtual void removeAutocompleteSuggestion(
       const WebKit::WebString& name,
@@ -105,6 +106,13 @@ class AutofillAgent : public content::RenderViewObserver,
 
   // For external Autofill selection.
   void OnSelectAutofillSuggestionAtIndex(int listIndex);
+  void OnSetAutofillActionFill();
+  void OnClearForm();
+  void OnSetAutofillActionPreview();
+  void OnClearPreviewedForm();
+  void OnSetNodeText(const string16& value);
+  void OnAcceptDataListSuggestion(const string16& value);
+  void OnAcceptPasswordAutofillSuggestion(const string16& value);
 
   // Called in a posted task by textFieldDidChange() to work-around a WebKit bug
   // http://bugs.webkit.org/show_bug.cgi?id=16976
@@ -131,6 +139,18 @@ class AutofillAgent : public content::RenderViewObserver,
   void QueryAutofillSuggestions(const WebKit::WebInputElement& element,
                                 bool display_warning_if_disabled);
 
+  // Combines DataList suggestion entries with the autofill ones and show them
+  // to the user.
+  void CombineDataListEntriesAndShow(const WebKit::WebInputElement& element,
+                                     const std::vector<string16>& values,
+                                     const std::vector<string16>& labels,
+                                     const std::vector<string16>& icons,
+                                     const std::vector<int>& item_ids,
+                                     bool has_autofill_item);
+
+  // Sets the element value to reflect the selected |suggested_value|.
+  void AcceptDataListSuggestion(const string16& suggested_value);
+
   // Queries the AutofillManager for form data for the form containing |node|.
   // |value| is the current text in the field, and |unique_id| is the selected
   // profile's unique ID.  |action| specifies whether to Fill or Preview the
@@ -146,6 +166,9 @@ class AutofillAgent : public content::RenderViewObserver,
       webkit::forms::FormData* form,
       webkit::forms::FormField* field) WARN_UNUSED_RESULT;
 
+  // Set |node| to display the given |value|.
+  void SetNodeText(const string16& value, WebKit::WebInputElement* node);
+
   FormCache form_cache_;
 
   PasswordAutofillManager* password_autofill_manager_;  // WEAK reference.
@@ -155,7 +178,7 @@ class AutofillAgent : public content::RenderViewObserver,
   int autofill_query_id_;
 
   // The element corresponding to the last request sent for form field Autofill.
-  WebKit::WebInputElement autofill_query_element_;
+  WebKit::WebInputElement element_;
 
   // The action to take when receiving Autofill data from the AutofillManager.
   AutofillAction autofill_action_;
@@ -166,15 +189,12 @@ class AutofillAgent : public content::RenderViewObserver,
   // Was the query node autofilled prior to previewing the form?
   bool was_query_node_autofilled_;
 
-  // The menu index of the "Clear" menu item.
-  int suggestions_clear_index_;
-
-  // The menu index of the "Autofill options..." menu item.
-  int suggestions_options_index_;
-
   // Have we already shown Autofill suggestions for the field the user is
   // currently editing?  Used to keep track of state for metrics logging.
   bool has_shown_autofill_popup_for_current_edit_;
+
+  // If true we just set the node text so we shouldn't show the popup.
+  bool did_set_node_text_;
 
   base::WeakPtrFactory<AutofillAgent> weak_ptr_factory_;
 

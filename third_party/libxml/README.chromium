@@ -1,7 +1,8 @@
 Name: libxml
 URL: http://xmlsoft.org
 Version: 2.7.7
-License File: src/COPYING
+License: MIT
+License File: src/Copyright
 Security Critical: yes
 
 Description:
@@ -12,6 +13,7 @@ See the files in that directory for discussion of their effects.
 Current version: 2.7.7.
 
 Modifications:
+- Converted to utf-8 with: vim +"argdo write ++enc=utf-8" *.c
 - Import XPath fix http://git.gnome.org/browse/libxml2/commit/?id=91d19754d46acd4a639a8b9e31f50f31c78f8c9c
 - Import follow-on for above commit: http://git.gnome.org/browse/libxml2/commit/?id=ea90b894146030c214a7df6d8375310174f134b9
 - Import additional XPath fix http://git.gnome.org/browse/libxml2/commit/?id=df83c17e5a2646bd923f75e5e507bc80d73c9722
@@ -22,6 +24,13 @@ Modifications:
 - Add fix for entities, commit upstream is http://git.gnome.org/browse/libxml2/commit/?id=5bd3c061823a8499b27422aee04ea20aae24f03e
 - Import UTF-8 fix from upstream: http://git.gnome.org/browse/libxml2/commit/?id=0795348aeb86648723bc391e4d02e20631c10bca
 - Import XPath fix http://git.gnome.org/browse/libxml2/commit/xpath.c?id=2ddecc23862bab1a9a9e51e097aefc92ec305e28
+- Merge clang warning fix http://git.gnome.org/browse/libxml2/commit/?id=aae48e64dfbf2b46b157a4c1857e30645116388f
+- Add a fix for proper escaping of xpointer expressions, commit upstream is pending.
+- Add helper classes in chromium/libxml_utils.cc and chromium/include/libxml/libxml_utils.h.
+- Add a tweak to limit problems caused by excessive strings and buffers.
+- Change the xmlNs struct a little bit, so it looks like it has no children
+if treated as a generic xmlNode object.
+- Fix pretty harmless use-after-free in generate-id function.
 
 To import a new snapshot of libxml:
 

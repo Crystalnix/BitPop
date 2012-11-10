@@ -1,9 +1,8 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('options', function() {
-
   var OptionsPage = options.OptionsPage;
 
   /////////////////////////////////////////////////////////////////////////////
@@ -54,7 +53,7 @@ cr.define('options', function() {
     this.backupAllButton = $(id + '-backup-all');
     if (this.backupAllButton !== null) {
       this.backupAllButton.onclick = function(e) {
-        chrome.send('exportAllPersonalCertificates', []);
+        chrome.send('exportAllPersonalCertificates');
       }
     }
 
@@ -66,11 +65,11 @@ cr.define('options', function() {
         }
       } else if (id == 'serverCertsTab') {
         this.importButton.onclick = function(e) {
-          chrome.send('importServerCertificate', []);
+          chrome.send('importServerCertificate');
         }
       } else if (id == 'caCertsTab') {
         this.importButton.onclick = function(e) {
-          chrome.send('importCaCertificate', []);
+          chrome.send('importCaCertificate');
         }
       }
     }
@@ -96,10 +95,10 @@ cr.define('options', function() {
     this.deleteButton.onclick = function(e) {
       var data = tree.selectedItem.data;
       AlertOverlay.show(
-          localStrings.getStringF(id + 'DeleteConfirm', data.name),
-          localStrings.getString(id + 'DeleteImpact'),
-          localStrings.getString('ok'),
-          localStrings.getString('cancel'),
+          loadTimeData.getStringF(id + 'DeleteConfirm', data.name),
+          loadTimeData.getString(id + 'DeleteImpact'),
+          loadTimeData.getString('ok'),
+          loadTimeData.getString('cancel'),
           function() {
             tree.selectedItem = null;
             chrome.send('deleteCertificate', [data.id]);
@@ -115,14 +114,15 @@ cr.define('options', function() {
      * @param {!Object} data The data of the selected item.
      */
     updateButtonState: function(data) {
-      var isCert = !!data && data.id.substr(0, 5) == 'cert-';
+      var isCert = !!data && data.isCert;
       var readOnly = !!data && data.readonly;
+      var extractable = !!data && data.extractable;
       var hasChildren = this.tree.items.length > 0;
       this.viewButton.disabled = !isCert;
       if (this.editButton !== null)
         this.editButton.disabled = !isCert;
       if (this.backupButton !== null)
-        this.backupButton.disabled = !isCert;
+        this.backupButton.disabled = !isCert || !extractable;
       if (this.backupAllButton !== null)
         this.backupAllButton.disabled = !hasChildren;
       if (this.exportButton !== null)
@@ -143,8 +143,7 @@ cr.define('options', function() {
 
       this.updateButtonState(data);
     },
-
-  }
+  };
 
   // TODO(xiyuan): Use notification from backend instead of polling.
   // TPM token check polling timer.
@@ -175,7 +174,7 @@ cr.define('options', function() {
    */
   function CertificateManager(model) {
     OptionsPage.call(this, 'certificates',
-                     templateData.certificateManagerPageTabTitle,
+                     loadTimeData.getString('certificateManagerPageTabTitle'),
                      'certificateManagerPage');
   }
 
@@ -193,6 +192,10 @@ cr.define('options', function() {
       this.otherTab = new CertificateManagerTab('otherCertsTab');
 
       this.addEventListener('visibleChange', this.handleVisibleChange_);
+
+      $('certificate-confirm').onclick = function() {
+        OptionsPage.closeOverlay();
+      };
     },
 
     initalized_: false,
@@ -249,5 +252,4 @@ cr.define('options', function() {
     CertificateManagerTab: CertificateManagerTab,
     CertificateManager: CertificateManager
   };
-
 });

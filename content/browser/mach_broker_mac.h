@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_MACH_BROKER_MAC_H_
 #define CONTENT_BROWSER_MACH_BROKER_MAC_H_
-#pragma once
 
 #include <map>
 #include <string>
@@ -32,7 +31,7 @@
 //
 // Since this data arrives over a separate channel, it is not available
 // immediately after a child process has been started.
-class MachBroker : public base::ProcessMetrics::PortProvider,
+class CONTENT_EXPORT MachBroker : public base::ProcessMetrics::PortProvider,
                    public content::NotificationObserver {
  public:
   // Returns the global MachBroker.

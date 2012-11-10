@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,8 +19,10 @@ class RenderWidgetFullscreen : public RenderWidget {
   virtual void show(WebKit::WebNavigationPolicy);
 
  protected:
+  RenderWidgetFullscreen(const WebKit::WebScreenInfo& screen_info);
+  virtual ~RenderWidgetFullscreen();
+
   virtual WebKit::WebWidget* CreateWebWidget();
-  RenderWidgetFullscreen();
 
   void Init(int32 opener_id);
 };

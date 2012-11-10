@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/mac/cocoa_protocols.h"
 #import "chrome/browser/ui/cocoa/tracking_area.h"
 
 @class CrTrackingArea;
@@ -16,7 +15,8 @@
 
 // A class that works as a custom titlebar for Panels. It is placed on top of
 // the regular Cocoa titlebar. We paint theme image on it, and it's
-// the place for the close button, wrench button, page favicon, title label.
+// the place for the close button, page favicon, title label and a button to
+// minimize/restore the panel.
 // It also facilitates dragging and minimization of the panels, and changes
 // color as 'new activity' indicator.
 // One way to have custom titlebar would be to use NSBorderlessWindow,
@@ -33,6 +33,16 @@ enum PanelDragState {
   PANEL_DRAG_SUPPRESSED  // Ignore drag events until PANEL_DRAG_CAN_START.
 };
 
+// This view overlays the titlebar on top. It is used to intercept
+// mouse input to prevent reordering of the other browser windows when clicking
+// on the titlebar (to minimize or reorder) while in a docked strip.
+@interface PanelTitlebarOverlayView : NSView {
+ @private
+  IBOutlet PanelWindowControllerCocoa* controller_;
+  BOOL disableReordering_;
+}
+@end
+
 @interface RepaintAnimation : NSAnimation {
  @private
   NSView* targetView_;
@@ -46,10 +56,9 @@ enum PanelDragState {
   IBOutlet PanelWindowControllerCocoa* controller_;
   IBOutlet NSView* icon_;
   IBOutlet NSTextField* title_;
-  // Since HoverImageButton manages its own alpha value, we wrap it in a subview
-  // so we can animate it with a fade in/fade out effect.
-  IBOutlet NSView* settingsButtonWrapper_;
-  IBOutlet HoverImageButton* settingsButton_;
+  IBOutlet HoverImageButton* minimizeButton_;
+  IBOutlet HoverImageButton* restoreButton_;
+  IBOutlet HoverImageButton* customCloseButton_;
   // Transparent view on top of entire titlebar. It catches mouse events to
   // prevent window activation by the system on mouseDown.
   IBOutlet NSView* overlay_;
@@ -58,20 +67,22 @@ enum PanelDragState {
   ScopedCrTrackingArea closeButtonTrackingArea_;
   PanelDragState dragState_;
   BOOL isDrawingAttention_;
-  NSPoint dragStartLocation_;
+
   // "Glint" animation is used in "Draw Attention" mode.
   scoped_nsobject<RepaintAnimation> glintAnimation_;
   scoped_nsobject<NSTimer> glintAnimationTimer_;
   double glintInterval_;
+
+  // Drag support.
+  NSPoint dragStartLocation_;  // In cocoa's screen coordinates.
 }
 
-  // Callback from Close button.
+// Callbacks from Close, Minimize, and Restore buttons.
 - (void)onCloseButtonClick:(id)sender;
+- (void)onMinimizeButtonClick:(id)sender;
+- (void)onRestoreButtonClick:(id)sender;
 
-  // Callback from Settings button.
-- (void)onSettingsButtonClick:(id)sender;
-
-  // Attaches this view to the controller_'s window as a titlebar.
+// Attaches this view to the controller_'s window as a titlebar.
 - (void)attach;
 
 - (void)setTitle:(NSString*)newTitle;
@@ -79,8 +90,12 @@ enum PanelDragState {
 
 - (NSView*)icon;
 
-  // Should be called when size of the titlebar changes.
-- (void)updateCloseButtonLayout;
+// Set the visibility of the minimize and restore buttons.
+- (void)setMinimizeButtonVisibility:(BOOL)visible;
+- (void)setRestoreButtonVisibility:(BOOL)visible;
+
+// Should be called when size of the titlebar changes.
+- (void)updateCustomButtonsLayout;
 - (void)updateIconAndTitleLayout;
 
 // Various events that we'll need to redraw our titlebar for.
@@ -89,13 +104,10 @@ enum PanelDragState {
 - (void)didChangeMainWindow:(NSNotification*)notification;
 
 // Helpers to control title drag operation, called from more then one place.
-- (void)startDrag;
+// |mouseLocation| is in Cocoa's screen coordinates.
+- (void)startDrag:(NSPoint)mouseLocation;
 - (void)endDrag:(BOOL)cancelled;
-- (void)dragWithDeltaX:(int)deltaX;
-
-  // Update the visibility of settings button.
-- (void)updateSettingsButtonVisibility:(BOOL)mouseOverWindow;
-- (void)checkMouseAndUpdateSettingsButtonVisibility;
+- (void)drag:(NSPoint)mouseLocation;
 
 // Draw Attention methods - change appearance of titlebar to attract user.
 - (void)drawAttention;
@@ -113,15 +125,19 @@ enum PanelDragState {
 - (PanelWindowControllerCocoa*)controller;
 
 - (NSTextField*)title;
+- (NSButton*)closeButton;
+- (NSButton*)minimizeButton;
+- (NSButton*)restoreButton;
 
 // Simulates click on a close button. Used to test panel closing.
 - (void)simulateCloseButtonClick;
 
 // NativePanelTesting support.
-- (void)pressLeftMouseButtonTitlebar;
-- (void)releaseLeftMouseButtonTitlebar;
-- (void)dragTitlebarDeltaX:(double)delta_x
-                    deltaY:(double)delta_y;
+// |mouseLocation| is in Cocoa's screen coordinates.
+- (void)pressLeftMouseButtonTitlebar:(NSPoint)mouseLocation
+                           modifiers:(int)modifierFlags;
+- (void)releaseLeftMouseButtonTitlebar:(int)modifierFlags;
+- (void)dragTitlebar:(NSPoint)mouseLocation;
 - (void)cancelDragTitlebar;
 - (void)finishDragTitlebar;
 

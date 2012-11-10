@@ -2,10 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-cr.define('ntp4', function() {
+cr.define('ntp', function() {
   'use strict';
-
-  var localStrings = new LocalStrings;
 
   var APP_LAUNCH = {
     // The histogram buckets (keep in sync with extension_constants.h).
@@ -16,6 +14,7 @@ cr.define('ntp4', function() {
     NTP_RECENTLY_CLOSED: 4,
     NTP_APP_RE_ENABLE: 16,
     NTP_WEBSTORE_FOOTER: 18,
+    NTP_WEBSTORE_PLUS_ICON: 19,
   };
 
   // Histogram buckets for UMA tracking of where a DnD drop came from.
@@ -94,7 +93,7 @@ cr.define('ntp4', function() {
       this.menu.appendChild(button);
       cr.ui.decorate(button, cr.ui.MenuItem);
       if (textId)
-        button.textContent = localStrings.getString(textId);
+        button.textContent = loadTimeData.getString(textId);
       return button;
     },
 
@@ -106,10 +105,10 @@ cr.define('ntp4', function() {
      */
     forAllLaunchTypes_: function(f) {
       // Order matters: index matches launchType id.
-      var launchTypes = [ this.launchPinnedTab_,
-                          this.launchRegularTab_,
-                          this.launchFullscreen_,
-                          this.launchNewWindow_ ];
+      var launchTypes = [this.launchPinnedTab_,
+                         this.launchRegularTab_,
+                         this.launchFullscreen_,
+                         this.launchNewWindow_];
 
       for (var i = 0; i < launchTypes.length; ++i) {
         if (!launchTypes[i])
@@ -133,8 +132,8 @@ cr.define('ntp4', function() {
         launchTypeButton.checked = app.appData.launch_type == id;
       });
 
-      this.options_.disabled = !app.appData.options_url || !app.appData.enabled;
-      this.uninstall_.disabled = !app.appData.can_uninstall;
+      this.options_.disabled = !app.appData.optionsUrl || !app.appData.enabled;
+      this.uninstall_.disabled = !app.appData.mayDisable;
 
       this.disableNotifications_.hidden = true;
       var notificationsDisabled = app.appData.notifications_disabled;
@@ -165,7 +164,7 @@ cr.define('ntp4', function() {
       });
     },
     onShowOptions_: function(e) {
-      window.location = this.app_.appData.options_url;
+      window.location = this.app_.appData.optionsUrl;
     },
     onDisableNotifications_: function(e) {
       var app = this.app_;
@@ -258,12 +257,9 @@ cr.define('ntp4', function() {
       this.appContents_.addEventListener('contextmenu',
                                          cr.ui.contextMenuHandler);
 
-      if (this.appData_.is_webstore)
-        this.createAppsPromoExtras_();
-
       this.addEventListener('mousedown', this.onMousedown_, true);
       this.addEventListener('keydown', this.onKeydown_);
-      this.addEventListener('blur', this.onBlur_, true);
+      this.addEventListener('keyup', this.onKeyup_);
     },
 
     /**
@@ -294,7 +290,7 @@ cr.define('ntp4', function() {
       var src = this.useSmallIcon_ ? this.appData_.icon_small :
                                      this.appData_.icon_big;
       if (!this.appData_.enabled ||
-          (!this.appData_.offline_enabled && !navigator.onLine)) {
+          (!this.appData_.offlineEnabled && !navigator.onLine)) {
         src += '?grayscale=true';
       }
 
@@ -312,6 +308,7 @@ cr.define('ntp4', function() {
         this.appImg_.classList.remove('invisible');
         this.appImgSrc_ = null;
       }
+
       this.classList.remove('icon-loading');
     },
 
@@ -387,49 +384,6 @@ cr.define('ntp4', function() {
     },
 
     /**
-     * Creates the apps-promo section of the app (should only be called for the
-     * webstore app).
-     * @private
-     */
-    createAppsPromoExtras_: function() {
-      this.classList.add('webstore');
-
-      this.appsPromoExtras_ = $('apps-promo-extras-template').cloneNode(true);
-      this.appsPromoExtras_.id = '';
-      this.appsPromoHeading_ =
-          this.appsPromoExtras_.querySelector('.apps-promo-heading');
-      this.appsPromoLink_ =
-          this.appsPromoExtras_.querySelector('.apps-promo-link');
-      this.appsPromoLink_.addEventListener('click', this.onClick_.bind(this));
-
-      this.appsPromoLogo_ = this.ownerDocument.createElement('img');
-      this.appsPromoLogo_.className = 'apps-promo-logo';
-      this.appImgContainer_.appendChild(this.appsPromoLogo_);
-
-      this.appendChild(this.appsPromoExtras_);
-    },
-
-    /**
-     * Sets the apps promo appearance. If |data| is null, there is no promo. If
-     * |data| is non-null, it contains strings to be shown for the promo. The
-     * promo is only shown when the webstore app icon is alone on a page.
-     * @param {Object} data A dictionary that contains apps promo strings.
-     */
-    setAppsPromoData: function(data) {
-      if (data) {
-        this.classList.add('has-promo');
-      } else {
-        this.classList.remove('has-promo');
-        return;
-      }
-
-      this.appsPromoHeading_.textContent = data.promoHeader;
-      this.appsPromoLink_.href = data.promoLink;
-      this.appsPromoLink_.textContent = data.promoButton;
-      this.appsPromoLogo_.src = data.promoLogo;
-    },
-
-    /**
      * Set the size and position of the app tile.
      * @param {number} size The total size of |this|.
      * @param {number} x The x-position.
@@ -439,24 +393,24 @@ cr.define('ntp4', function() {
     setBounds: function(size, x, y) {
       var imgSize = size * APP_IMG_SIZE_FRACTION;
       this.appImgContainer_.style.width = this.appImgContainer_.style.height =
-          this.useSmallIcon_ ? '16px' : imgSize + 'px';
+          toCssPx(this.useSmallIcon_ ? 16 : imgSize);
       if (this.useSmallIcon_) {
         // 3/4 is the ratio of 96px to 128px (the used height and full height
         // of icons in apps).
-        var iconSize = imgSize * 3/4;
+        var iconSize = imgSize * 3 / 4;
         // The -2 is for the div border to improve the visual alignment for the
         // icon div.
         this.imgDiv_.style.width = this.imgDiv_.style.height =
-            (iconSize - 2) + 'px';
+            toCssPx(iconSize - 2);
         // Margins set to get the icon placement right and the text to line up.
         this.imgDiv_.style.marginTop = this.imgDiv_.style.marginBottom =
-            ((imgSize - iconSize) / 2) + 'px';
+            toCssPx((imgSize - iconSize) / 2);
       }
 
-      this.style.width = this.style.height = size + 'px';
-      this.style.left = x + 'px';
-      this.style.right = x + 'px';
-      this.style.top = y + 'px';
+      this.style.width = this.style.height = toCssPx(size);
+      this.style.left = toCssPx(x);
+      this.style.right = toCssPx(x);
+      this.style.top = toCssPx(y);
 
       if (this.currentBubbleShowing_)
         this.currentBubbleShowing_.resizeAndReposition();
@@ -468,13 +422,10 @@ cr.define('ntp4', function() {
      * @private
      */
     onClick_: function(e) {
-      var is_promo = this.appsPromoExtras_ &&
-          window.getComputedStyle(this.appsPromoExtras_).display != 'none';
       var url = !this.appData_.is_webstore ? '' :
-          is_promo ? this.appsPromoLink_.href :
-                     appendParam(this.appData_.url,
-                                 'utm_source',
-                                 'chrome-ntp-icon');
+          appendParam(this.appData_.url,
+                      'utm_source',
+                      'chrome-ntp-icon');
 
       chrome.send('launchApp',
                   [this.appId, APP_LAUNCH.NTP_APPS_MAXIMIZED, url,
@@ -496,6 +447,33 @@ cr.define('ntp4', function() {
                      0, e.altKey, e.ctrlKey, e.metaKey, e.shiftKey]);
         e.preventDefault();
         e.stopPropagation();
+      }
+      this.onKeyboardUsed_(e.keyCode);
+    },
+
+    /**
+     * Invoked when the user releases a key while the app is focused.
+     * @param {Event} e The key event.
+     * @private
+     */
+    onKeyup_: function(e) {
+      this.onKeyboardUsed_(e.keyCode);
+    },
+
+    /**
+     * Called when the keyboard has been used (key down or up). The .click-focus
+     * hack is removed if the user presses a key that can change focus.
+     * @param {number} keyCode The key code of the keyboard event.
+     * @private
+     */
+    onKeyboardUsed_: function(keyCode) {
+      switch (keyCode) {
+        case 9:  // Tab.
+        case 37:  // Left arrow.
+        case 38:  // Up arrow.
+        case 39:  // Right arrow.
+        case 40:  // Down arrow.
+          this.classList.remove('click-focus');
       }
     },
 
@@ -530,14 +508,6 @@ cr.define('ntp4', function() {
       // This class is here so we don't show the focus state for apps that
       // gain keyboard focus via mouse clicking.
       this.classList.add('click-focus');
-    },
-
-    /**
-     * This app is losing keyboard focus.
-     * @param {Event} e The event.
-     */
-    onBlur_: function(e) {
-      this.classList.remove('click-focus');
     },
 
     /**
@@ -583,7 +553,7 @@ cr.define('ntp4', function() {
      * @return {boolean} True if the app can be uninstalled.
      */
     canBeRemoved: function() {
-      return this.appData_.can_uninstall;
+      return this.appData_.mayDisable;
     },
 
     /**
@@ -606,7 +576,7 @@ cr.define('ntp4', function() {
     },
   };
 
-  var TilePage = ntp4.TilePage;
+  var TilePage = ntp.TilePage;
 
   // The fraction of the app tile size that the icon uses.
   var APP_IMG_SIZE_FRACTION = 4 / 5;
@@ -660,19 +630,32 @@ cr.define('ntp4', function() {
     },
 
     /**
-     * Creates an app DOM element and places it at the last position on the
-     * page.
+     * Highlight a newly installed app as it's added to the NTP.
      * @param {Object} appData The data object that describes the app.
-     * @param {boolean=} animate If true, the app tile plays an animation.
      */
-    appendApp: function(appData, animate) {
-      if (animate) {
-        // Select the page and scroll all the way down so the animation is
-        // visible.
-        ntp4.getCardSlider().selectCardByValue(this);
-        this.content_.scrollTop = this.content_.scrollHeight;
+    insertAndHighlightApp: function(appData) {
+      ntp.getCardSlider().selectCardByValue(this);
+      this.content_.scrollTop = this.content_.scrollHeight;
+      this.insertApp(appData, true);
+    },
+
+    /**
+     * Similar to appendApp, but it respects the app_launch_ordinal field of
+     * |appData|.
+     * @param {Object} appData The data that describes the app.
+     * @param {boolean} animate Whether to animate the insertion.
+     */
+    insertApp: function(appData, animate) {
+      var index = this.tileElements_.length;
+      for (var i = 0; i < this.tileElements_.length; i++) {
+        if (appData.app_launch_ordinal <
+            this.tileElements_[i].firstChild.appData.app_launch_ordinal) {
+          index = i;
+          break;
+        }
       }
-      this.appendTile(new App(appData), animate);
+
+      this.addTileAt(new App(appData), index, animate);
     },
 
     /**
@@ -746,27 +729,32 @@ cr.define('ntp4', function() {
         }
     },
 
-    /** @inheritdoc */
+    /** @inheritDoc */
     doDragOver: function(e) {
-      var tile = ntp4.getCurrentlyDraggingTile();
-      if (tile && !tile.querySelector('.app')) {
+      // Only animatedly re-arrange if the user is currently dragging an app.
+      var tile = ntp.getCurrentlyDraggingTile();
+      if (tile && tile.querySelector('.app')) {
+        TilePage.prototype.doDragOver.call(this, e);
+      } else {
         e.preventDefault();
         this.setDropEffect(e.dataTransfer);
-      } else {
-        TilePage.prototype.doDragOver.call(this, e);
       }
     },
 
     /** @inheritDoc */
     shouldAcceptDrag: function(e) {
-      return !!ntp4.getCurrentlyDraggingTile() ||
-          (e.dataTransfer && e.dataTransfer.types.indexOf('url') != -1);
+      if (ntp.getCurrentlyDraggingTile())
+        return true;
+      if (!e.dataTransfer || !e.dataTransfer.types)
+        return false;
+      return Array.prototype.indexOf.call(e.dataTransfer.types,
+                                          'text/uri-list') != -1;
     },
 
     /** @inheritDoc */
     addDragData: function(dataTransfer, index) {
       var sourceId = -1;
-      var currentlyDraggingTile = ntp4.getCurrentlyDraggingTile();
+      var currentlyDraggingTile = ntp.getCurrentlyDraggingTile();
       if (currentlyDraggingTile) {
         var tileContents = currentlyDraggingTile.firstChild;
         if (tileContents.classList.contains('app')) {
@@ -836,7 +824,7 @@ cr.define('ntp4', function() {
     generateAppForLink: function(data) {
       assert(data.url != undefined);
       assert(data.title != undefined);
-      var pageIndex = ntp4.getAppsPageIndex(this);
+      var pageIndex = ntp.getAppsPageIndex(this);
       chrome.send('generateAppForLink', [data.url, data.title, pageIndex]);
     },
 
@@ -845,7 +833,7 @@ cr.define('ntp4', function() {
       if (!(draggedTile.firstChild instanceof App))
         return;
 
-      var pageIndex = ntp4.getAppsPageIndex(this);
+      var pageIndex = ntp.getAppsPageIndex(this);
       chrome.send('setPageIndex', [draggedTile.firstChild.appId, pageIndex]);
 
       var appIds = [];
@@ -860,18 +848,12 @@ cr.define('ntp4', function() {
 
     /** @inheritDoc */
     setDropEffect: function(dataTransfer) {
-      var tile = ntp4.getCurrentlyDraggingTile();
+      var tile = ntp.getCurrentlyDraggingTile();
       if (tile && tile.querySelector('.app'))
-        ntp4.setCurrentDropEffect(dataTransfer, 'move');
+        ntp.setCurrentDropEffect(dataTransfer, 'move');
       else
-        ntp4.setCurrentDropEffect(dataTransfer, 'copy');
+        ntp.setCurrentDropEffect(dataTransfer, 'copy');
     },
-  };
-
-  AppsPage.setPromo = function(data) {
-    var store = document.querySelector('.webstore');
-    if (store)
-      store.setAppsPromoData(data);
   };
 
   /**
@@ -897,8 +879,3 @@ cr.define('ntp4', function() {
     launchAppAfterEnable: launchAppAfterEnable,
   };
 });
-
-// TODO(estade): update the content handlers to use ntp namespace instead of
-// making these global.
-var appNotificationChanged = ntp4.appNotificationChanged;
-var launchAppAfterEnable = ntp4.launchAppAfterEnable;

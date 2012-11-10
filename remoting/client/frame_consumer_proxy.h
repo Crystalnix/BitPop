@@ -11,10 +11,11 @@
 #define REMOTING_CLIENT_FRAME_CONSUMER_PROXY_H_
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "remoting/client/frame_consumer.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }  // namespace base
 
 namespace remoting {
@@ -25,28 +26,27 @@ class FrameConsumerProxy
  public:
   // Constructs a proxy for |frame_consumer| which will trampoline invocations
   // to |frame_consumer_message_loop|.
-  FrameConsumerProxy(FrameConsumer* frame_consumer,
-                     base::MessageLoopProxy* frame_consumer_message_loop);
-  virtual ~FrameConsumerProxy();
+  FrameConsumerProxy(scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
   // FrameConsumer implementation.
-  virtual void AllocateFrame(media::VideoFrame::Format format,
-                             const SkISize& size,
-                             scoped_refptr<media::VideoFrame>* frame_out,
-                             const base::Closure& done) OVERRIDE;
-  virtual void ReleaseFrame(media::VideoFrame* frame) OVERRIDE;
-  virtual void OnPartialFrameOutput(media::VideoFrame* frame,
-                                    SkRegion* region,
-                                    const base::Closure& done) OVERRIDE;
+  virtual void ApplyBuffer(const SkISize& view_size,
+                           const SkIRect& clip_area,
+                           pp::ImageData* buffer,
+                           const SkRegion& region) OVERRIDE;
+  virtual void ReturnBuffer(pp::ImageData* buffer) OVERRIDE;
+  virtual void SetSourceSize(const SkISize& source_size,
+                             const SkIPoint& dpi) OVERRIDE;
 
-  // Detaches from |frame_consumer_|, ensuring no further calls reach it.
+  // Attaches to |frame_consumer_|.
   // This must only be called from |frame_consumer_message_loop_|.
-  void Detach();
+  void Attach(const base::WeakPtr<FrameConsumer>& frame_consumer);
 
  private:
-  FrameConsumer* frame_consumer_;
+  friend class base::RefCountedThreadSafe<FrameConsumerProxy>;
+  virtual ~FrameConsumerProxy();
 
-  scoped_refptr<base::MessageLoopProxy> frame_consumer_message_loop_;
+  base::WeakPtr<FrameConsumer> frame_consumer_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(FrameConsumerProxy);
 };

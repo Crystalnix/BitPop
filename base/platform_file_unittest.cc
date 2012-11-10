@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -259,13 +259,8 @@ TEST(PlatformFile, TruncatePlatformFile) {
   base::ClosePlatformFile(file);
 }
 
-#if defined(OS_MACOSX)
 // Flakily fails: http://crbug.com/86494
-#define MAYBE_TouchGetInfoPlatformFile FLAKY_TouchGetInfoPlatformFile
-#else
-#define MAYBE_TouchGetInfoPlatformFile TouchGetInfoPlatformFile
-#endif
-TEST(PlatformFile, MAYBE_TouchGetInfoPlatformFile) {
+TEST(PlatformFile, DISABLED_TouchGetInfoPlatformFile) {
   ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   base::PlatformFile file = base::CreatePlatformFile(

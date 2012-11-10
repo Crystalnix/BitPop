@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,6 +23,7 @@ struct PP_NetAddress_Private;
 namespace ppapi {
 
 class HostResource;
+class PPB_X509Certificate_Fields;
 
 namespace proxy {
 
@@ -39,18 +40,18 @@ class SerializedVar;
 namespace IPC {
 
 template<>
-struct ParamTraits<PP_Bool> {
+struct PPAPI_PROXY_EXPORT ParamTraits<PP_Bool> {
   typedef PP_Bool param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<PP_FileInfo> {
+struct PPAPI_PROXY_EXPORT ParamTraits<PP_FileInfo> {
   typedef PP_FileInfo param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
@@ -58,97 +59,111 @@ template <>
 struct PPAPI_PROXY_EXPORT ParamTraits<PP_NetAddress_Private> {
   typedef PP_NetAddress_Private param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* p);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<PP_ObjectProperty> {
+struct PPAPI_PROXY_EXPORT ParamTraits<PP_ObjectProperty> {
   typedef PP_ObjectProperty param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<ppapi::proxy::PPBFlash_DrawGlyphs_Params> {
+struct PPAPI_PROXY_EXPORT ParamTraits<
+    ppapi::proxy::PPBFlash_DrawGlyphs_Params> {
   typedef ppapi::proxy::PPBFlash_DrawGlyphs_Params param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<ppapi::PPB_FileRef_CreateInfo> {
+struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::PPB_FileRef_CreateInfo> {
   typedef ppapi::PPB_FileRef_CreateInfo param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<ppapi::proxy::PPBURLLoader_UpdateProgress_Params> {
+struct PPAPI_PROXY_EXPORT ParamTraits<
+    ppapi::proxy::PPBURLLoader_UpdateProgress_Params> {
   typedef ppapi::proxy::PPBURLLoader_UpdateProgress_Params param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<ppapi::proxy::SerializedDirEntry> {
+struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::proxy::SerializedDirEntry> {
   typedef ppapi::proxy::SerializedDirEntry param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<ppapi::proxy::SerializedFontDescription> {
+struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::proxy::SerializedFontDescription> {
   typedef ppapi::proxy::SerializedFontDescription param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<ppapi::HostResource> {
+struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::HostResource> {
   typedef ppapi::HostResource param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<ppapi::proxy::SerializedVar> {
+struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::proxy::SerializedVar> {
   typedef ppapi::proxy::SerializedVar param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits< std::vector<ppapi::proxy::SerializedVar> > {
+struct PPAPI_PROXY_EXPORT ParamTraits<
+    std::vector<ppapi::proxy::SerializedVar> > {
   typedef std::vector<ppapi::proxy::SerializedVar> param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits< std::vector<ppapi::PPB_FileRef_CreateInfo> > {
+struct PPAPI_PROXY_EXPORT ParamTraits< std::vector<
+    ppapi::PPB_FileRef_CreateInfo> > {
   typedef std::vector<ppapi::PPB_FileRef_CreateInfo> param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+#if !defined(OS_NACL)
+template<>
+struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::proxy::SerializedFlashMenu> {
+  typedef ppapi::proxy::SerializedFlashMenu param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<ppapi::proxy::SerializedFlashMenu> {
-  typedef ppapi::proxy::SerializedFlashMenu param_type;
+struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::PPB_X509Certificate_Fields> {
+  typedef ppapi::PPB_X509Certificate_Fields param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
+#endif  // !defined(OS_NACL)
 
 }  // namespace IPC
 

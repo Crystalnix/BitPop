@@ -1,4 +1,5 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -80,12 +81,23 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
 
     <category displayName="$(string.chromium)" name="chromium"/>
 
+    Each parent node can have only one category with a given name. Adding the
+    same category again with the same attributes is ignored, but adding it
+    again with different attributes is an error.
+
     Args:
       parent: The parent node to which all generated elements are added.
       name: Name of the category.
       display_name: Display name of the category.
       parent_category_name: Name of the parent category. Defaults to None.
     '''
+    existing = filter(lambda e: e.getAttribute('name') == name,
+                      parent.getElementsByTagName('category'))
+    if existing:
+      assert len(existing) == 1
+      assert existing[0].getAttribute('name') == name
+      assert existing[0].getAttribute('displayName') == display_name
+      return
     attributes = {
       'name': name,
       'displayName': display_name,
@@ -260,7 +272,8 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
     if policy_type == 'main':
       self.AddAttribute(policy_elem, 'valueName', policy_name)
       self._AddMainPolicy(policy_elem)
-    elif policy_type == 'string':
+    elif policy_type in ('string', 'dict'):
+      # 'dict' policies are configured as JSON-encoded strings on Windows.
       parent = self._GetElements(policy_elem)
       self._AddStringPolicy(parent, policy_name)
     elif policy_type == 'int':

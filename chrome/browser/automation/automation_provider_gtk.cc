@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/automation/automation_browser_tracker.h"
 #include "chrome/browser/automation/automation_window_tracker.h"
-#include "chrome/browser/automation/ui_controls.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
@@ -20,6 +19,7 @@
 #include "chrome/common/automation_messages.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
+#include "ui/ui_controls/ui_controls.h"
 
 namespace {
 
@@ -45,7 +45,7 @@ void AutomationProvider::WindowSimulateDrag(
     IPC::Message* reply_message) {
   // TODO(estade): don't ignore |flags| or |escape_en_route|.
   gfx::NativeWindow window =
-      browser_tracker_->GetResource(handle)->window()->GetNativeHandle();
+      browser_tracker_->GetResource(handle)->window()->GetNativeWindow();
   if (window && (drag_path.size() > 1)) {
     int x, y;
     gdk_window_get_position(gtk_widget_get_window(GTK_WIDGET(window)), &x, &y);
@@ -79,8 +79,8 @@ void AutomationProvider::WindowSimulateDrag(
         ui_controls::LEFT, ui_controls::DOWN, move_chain_cb);
 
     ui_controls::SendMouseMoveNotifyWhenDone(x + drag_path[0].x(),
-                                             y + drag_path[0].y(),
-                                             move_chain_cb);
+                                          y + drag_path[0].y(),
+                                          move_chain_cb);
   } else {
     AutomationMsg_WindowDrag::WriteReplyParams(reply_message, false);
     Send(reply_message);

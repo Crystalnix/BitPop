@@ -1,23 +1,26 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_PUBLIC_BROWSER_RENDER_VIEW_HOST_OBSERVER_H_
 #define CONTENT_PUBLIC_BROWSER_RENDER_VIEW_HOST_OBSERVER_H_
-#pragma once
 
-#include "ipc/ipc_channel.h"
+#include "base/compiler_specific.h"
+#include "ipc/ipc_listener.h"
+#include "ipc/ipc_sender.h"
 #include "content/common/content_export.h"
 
 class GURL;
-class RenderViewHost;
 
 namespace content {
 
+class RenderViewHost;
+class RenderViewHostImpl;
+
 // An observer API implemented by classes which want to filter IPC messages from
 // RenderViewHost.
-class CONTENT_EXPORT RenderViewHostObserver : public IPC::Channel::Listener,
-                                              public IPC::Message::Sender {
+class CONTENT_EXPORT RenderViewHostObserver : public IPC::Listener,
+                                              public IPC::Sender {
  public:
 
  protected:
@@ -38,23 +41,23 @@ class CONTENT_EXPORT RenderViewHostObserver : public IPC::Channel::Listener,
   // Notifies that a navigation is starting.
   virtual void Navigate(const GURL& url);
 
-  // IPC::Channel::Listener implementation.
+  // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
-  // IPC::Message::Sender implementation.
+  // IPC::Sender implementation.
   virtual bool Send(IPC::Message* message) OVERRIDE;
 
-  RenderViewHost* render_view_host() const { return render_view_host_; }
+  RenderViewHost* render_view_host() const;
   int routing_id() { return routing_id_; }
 
  private:
-  friend class ::RenderViewHost;
+  friend class RenderViewHostImpl;
 
   // Invoked from RenderViewHost. Invokes RenderViewHostDestroyed and NULL out
   // |render_view_host_|.
   void RenderViewHostDestruction();
 
-  RenderViewHost* render_view_host_;
+  RenderViewHostImpl* render_view_host_;
 
   // The routing ID of the associated RenderViewHost.
   int routing_id_;

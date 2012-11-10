@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -78,6 +78,10 @@ SHA256_0 = hashlib.sha256('0').digest()
 # List of bad machine identifiers that trigger the |valid_serial_number_missing|
 # flag to be set set in the policy fetch response.
 BAD_MACHINE_IDS = [ '123490EN400015' ];
+
+# List of machines that trigger the server to send kiosk enrollment response
+# for the register request.
+KIOSK_MACHINE_IDS = [ 'KIOSK' ];
 
 class RequestHandler(object):
   """Decodes and handles device management requests from clients.
@@ -209,6 +213,7 @@ class RequestHandler(object):
     response.register_response.device_management_token = (
         token_info['device_token'])
     response.register_response.machine_name = token_info['machine_name']
+    response.register_response.enrollment_type = token_info['enrollment_mode']
 
     self.DumpMessage('Response', response)
 
@@ -272,6 +277,8 @@ class RequestHandler(object):
       2: replies with a new modulus, 4.
       4: replies with a new modulus, 2.
       8: fails with error 400.
+      16: replies with a new modulus, 16.
+      32: replies with a new modulus, 1.
       anything else: replies with no new modulus and an empty list of hashes
 
     These allow the client to pick the testing scenario its wants to simulate.
@@ -292,6 +299,10 @@ class RequestHandler(object):
       auto_enrollment_response.expected_modulus = 2
     elif msg.modulus == 8:
       return (400, 'Server error')
+    elif msg.modulus == 16:
+      auto_enrollment_response.expected_modulus = 16
+    elif msg.modulus == 32:
+      auto_enrollment_response.expected_modulus = 1
 
     response = dm.DeviceManagementResponse()
     response.auto_enrollment_response.CopyFrom(auto_enrollment_response)
@@ -309,8 +320,21 @@ class RequestHandler(object):
     if field.label == field.LABEL_REPEATED:
       assert type(field_value) == list
       entries = group_message.__getattribute__(field.name)
-      for list_item in field_value:
-        entries.append(list_item)
+      if field.message_type is None:
+        for list_item in field_value:
+          entries.append(list_item)
+      else:
+        # This field is itself a protobuf.
+        sub_type = field.message_type
+        for sub_value in field_value:
+          assert type(sub_value) == dict
+          # Add a new sub-protobuf per list entry.
+          sub_message = entries.add()
+          # Now iterate over its fields and recursively add them.
+          for sub_field in sub_message.DESCRIPTOR.fields:
+            if sub_field.name in sub_value:
+              value = sub_value[sub_field.name]
+              self.SetProtobufMessageField(sub_message, sub_field, value)
       return
     elif field.type == field.TYPE_BOOL:
       assert type(field_value) == bool
@@ -600,12 +624,17 @@ class TestServer(object):
       dm.DeviceRegisterRequest.DEVICE: ['google/chromeos/device'],
       dm.DeviceRegisterRequest.TT: ['google/chromeos/user'],
     }
+    if machine_id in KIOSK_MACHINE_IDS:
+      enrollment_mode = dm.DeviceRegisterResponse.RETAIL
+    else:
+      enrollment_mode = dm.DeviceRegisterResponse.ENTERPRISE
     self._registered_tokens[dmtoken] = {
       'device_id': device_id,
       'device_token': dmtoken,
       'allowed_policy_types': allowed_policy_types[type],
       'machine_name': 'chromeos-' + machine_id,
       'machine_id': machine_id,
+      'enrollment_mode': enrollment_mode,
     }
     return self._registered_tokens[dmtoken]
 

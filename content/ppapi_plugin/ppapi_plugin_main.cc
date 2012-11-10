@@ -1,9 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
+#include "base/i18n/rtl.h"
 #include "base/message_loop.h"
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
@@ -12,13 +13,14 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "ppapi/proxy/proxy_module.h"
+#include "ui/base/ui_base_switches.h"
 
 #if defined(OS_WIN)
-#include "sandbox/src/sandbox.h"
+#include "sandbox/win/src/sandbox.h"
 #endif
 
-#if defined(OS_MACOSX)
-#include "third_party/WebKit/Source/WebKit/mac/WebCoreSupport/WebSystemInterface.h"
+#if defined(OS_LINUX)
+#include "content/public/common/sandbox_init.h"
 #endif
 
 #if defined(OS_WIN)
@@ -45,20 +47,24 @@ int PpapiPluginMain(const content::MainFunctionParams& parameters) {
       ChildProcess::WaitForDebugger("Ppapi");
   }
 
-#if defined(OS_MACOSX)
-  // TODO(viettrungluu): This is called in different places in processes that
-  // will run WebKit. This is stupid and error-prone.
-  InitWebCoreSystemInterface();
-#endif
+  // Set the default locale to be the current UI language. WebKit uses ICU's
+  // default locale for some font settings (especially switching between
+  // Japanese and Chinese fonts for the same characters).
+  if (command_line.HasSwitch(switches::kLang)) {
+    std::string locale = command_line.GetSwitchValueASCII(switches::kLang);
+    base::i18n::SetICUDefaultLocale(locale);
+  }
 
   MessageLoop main_message_loop;
   base::PlatformThread::SetName("CrPPAPIMain");
 
-  ChildProcess ppapi_process;
-  ppapi_process.set_main_thread(new PpapiThread(false));  // Not a broker.
+#if defined(OS_LINUX)
+  content::InitializeSandbox();
+#endif
 
-  ppapi::proxy::ProxyModule::GetInstance()->SetFlashCommandLineArgs(
-      command_line.GetSwitchValueASCII(switches::kPpapiFlashArgs));
+  ChildProcess ppapi_process;
+  ppapi_process.set_main_thread(
+      new PpapiThread(parameters.command_line, false));  // Not a broker.
 
   main_message_loop.Run();
   return 0;

@@ -13,6 +13,7 @@ import copy
 import operator
 import pickle
 import random
+import string
 import sys
 import threading
 import time
@@ -23,6 +24,7 @@ import app_setting_specifics_pb2
 import app_specifics_pb2
 import autofill_specifics_pb2
 import bookmark_specifics_pb2
+import get_updates_caller_info_pb2
 import extension_setting_specifics_pb2
 import extension_specifics_pb2
 import nigori_specifics_pb2
@@ -37,7 +39,7 @@ import typed_url_specifics_pb2
 
 # An enumeration of the various kinds of data that can be synced.
 # Over the wire, this enumeration is not used: a sync object's type is
-# inferred by which EntitySpecifics extension it has.  But in the context
+# inferred by which EntitySpecifics field it has.  But in the context
 # of a program, it is useful to have an enumeration.
 ALL_TYPES = (
     TOP_LEVEL,  # The type of the 'Google Chrome' folder.
@@ -57,27 +59,36 @@ ALL_TYPES = (
     TYPED_URL,
     EXTENSION_SETTINGS) = range(16)
 
+# An eumeration on the frequency at which the server should send errors
+# to the client. This would be specified by the url that triggers the error.
+# Note: This enum should be kept in the same order as the enum in sync_test.h.
+SYNC_ERROR_FREQUENCY = (
+    ERROR_FREQUENCY_NONE,
+    ERROR_FREQUENCY_ALWAYS,
+    ERROR_FREQUENCY_TWO_THIRDS) = range(3)
+
 # Well-known server tag of the top level 'Google Chrome' folder.
 TOP_LEVEL_FOLDER_TAG = 'google_chrome'
 
-# Given a sync type from ALL_TYPES, find the extension token corresponding
+# Given a sync type from ALL_TYPES, find the FieldDescriptor corresponding
 # to that datatype.  Note that TOP_LEVEL has no such token.
-SYNC_TYPE_TO_EXTENSION = {
-    APP_NOTIFICATION: app_notification_specifics_pb2.app_notification,
-    APP_SETTINGS: app_setting_specifics_pb2.app_setting,
-    APPS: app_specifics_pb2.app,
-    AUTOFILL: autofill_specifics_pb2.autofill,
-    AUTOFILL_PROFILE: autofill_specifics_pb2.autofill_profile,
-    BOOKMARK: bookmark_specifics_pb2.bookmark,
-    EXTENSION_SETTINGS: extension_setting_specifics_pb2.extension_setting,
-    EXTENSIONS: extension_specifics_pb2.extension,
-    NIGORI: nigori_specifics_pb2.nigori,
-    PASSWORD: password_specifics_pb2.password,
-    PREFERENCE: preference_specifics_pb2.preference,
-    SEARCH_ENGINE: search_engine_specifics_pb2.search_engine,
-    SESSION: session_specifics_pb2.session,
-    THEME: theme_specifics_pb2.theme,
-    TYPED_URL: typed_url_specifics_pb2.typed_url,
+SYNC_TYPE_FIELDS = sync_pb2.EntitySpecifics.DESCRIPTOR.fields_by_name
+SYNC_TYPE_TO_DESCRIPTOR = {
+    APP_NOTIFICATION: SYNC_TYPE_FIELDS['app_notification'],
+    APP_SETTINGS: SYNC_TYPE_FIELDS['app_setting'],
+    APPS: SYNC_TYPE_FIELDS['app'],
+    AUTOFILL: SYNC_TYPE_FIELDS['autofill'],
+    AUTOFILL_PROFILE: SYNC_TYPE_FIELDS['autofill_profile'],
+    BOOKMARK: SYNC_TYPE_FIELDS['bookmark'],
+    EXTENSION_SETTINGS: SYNC_TYPE_FIELDS['extension_setting'],
+    EXTENSIONS: SYNC_TYPE_FIELDS['extension'],
+    NIGORI: SYNC_TYPE_FIELDS['nigori'],
+    PASSWORD: SYNC_TYPE_FIELDS['password'],
+    PREFERENCE: SYNC_TYPE_FIELDS['preference'],
+    SEARCH_ENGINE: SYNC_TYPE_FIELDS['search_engine'],
+    SESSION: SYNC_TYPE_FIELDS['session'],
+    THEME: SYNC_TYPE_FIELDS['theme'],
+    TYPED_URL: SYNC_TYPE_FIELDS['typed_url'],
     }
 
 # The parent ID used to indicate a top-level node.
@@ -87,12 +98,15 @@ ROOT_ID = '0'
 # Jan 1 1970, 00:00:00, non-dst.
 UNIX_TIME_EPOCH = (1970, 1, 1, 0, 0, 0, 3, 1, 0)
 
+# The number of characters in the server-generated encryption key.
+KEYSTORE_KEY_LENGTH = 16
+
 class Error(Exception):
   """Error class for this module."""
 
 
-class ProtobufExtensionNotUnique(Error):
-  """An entry should not have more than one protobuf extension present."""
+class ProtobufDataTypeFieldNotUnique(Error):
+  """An entry should not have more than one data type present."""
 
 
 class DataTypeIdNotRecognized(Error):
@@ -122,6 +136,10 @@ class SyncInducedError(Error):
   """The client would be sent an error."""
 
 
+class InducedErrorFrequencyNotDefined(Error):
+  """The error frequency defined is not handled."""
+
+
 def GetEntryType(entry):
   """Extract the sync type from a SyncEntry.
 
@@ -131,7 +149,8 @@ def GetEntryType(entry):
     An enum value from ALL_TYPES if the entry's type can be determined, or None
     if the type cannot be determined.
   Raises:
-    ProtobufExtensionNotUnique: More than one type was indicated by the entry.
+    ProtobufDataTypeFieldNotUnique: More than one type was indicated by
+    the entry.
   """
   if entry.server_defined_unique_tag == TOP_LEVEL_FOLDER_TAG:
     return TOP_LEVEL
@@ -142,14 +161,14 @@ def GetEntryType(entry):
   # If there is more than one, either there's a bug, or else the caller
   # should use GetEntryTypes.
   if len(entry_types) > 1:
-    raise ProtobufExtensionNotUnique
+    raise ProtobufDataTypeFieldNotUnique
   return entry_types[0]
 
 
 def GetEntryTypesFromSpecifics(specifics):
-  """Determine the sync types indicated by an EntitySpecifics's extension(s).
+  """Determine the sync types indicated by an EntitySpecifics's field(s).
 
-  If the specifics have more than one recognized extension (as commonly
+  If the specifics have more than one recognized data type field (as commonly
   happens with the requested_types field of GetUpdatesMessage), all types
   will be returned.  Callers must handle the possibility of the returned
   value having more than one item.
@@ -161,20 +180,20 @@ def GetEntryTypesFromSpecifics(specifics):
     A list of the sync types (values from ALL_TYPES) associated with each
     recognized extension of the specifics message.
   """
-  return [data_type for data_type, extension
-          in SYNC_TYPE_TO_EXTENSION.iteritems()
-          if specifics.HasExtension(extension)]
+  return [data_type for data_type, field_descriptor
+          in SYNC_TYPE_TO_DESCRIPTOR.iteritems()
+          if specifics.HasField(field_descriptor.name)]
 
 
 def SyncTypeToProtocolDataTypeId(data_type):
   """Convert from a sync type (python enum) to the protocol's data type id."""
-  return SYNC_TYPE_TO_EXTENSION[data_type].number
+  return SYNC_TYPE_TO_DESCRIPTOR[data_type].number
 
 
 def ProtocolDataTypeIdToSyncType(protocol_data_type_id):
   """Convert from the protocol's data type id to a sync type (python enum)."""
-  for data_type, protocol_extension in SYNC_TYPE_TO_EXTENSION.iteritems():
-    if protocol_extension.number == protocol_data_type_id:
+  for data_type, field_descriptor in SYNC_TYPE_TO_DESCRIPTOR.iteritems():
+    if field_descriptor.number == protocol_data_type_id:
       return data_type
   raise DataTypeIdNotRecognized
 
@@ -189,21 +208,22 @@ def DataTypeStringToSyncTypeLoose(data_type_string):
   if data_type_string.isdigit():
     return ProtocolDataTypeIdToSyncType(int(data_type_string))
   name = data_type_string.lower().rstrip('s')
-  for data_type, protocol_extension in SYNC_TYPE_TO_EXTENSION.iteritems():
-    if protocol_extension.name.lower().rstrip('s') == name:
+  for data_type, field_descriptor in SYNC_TYPE_TO_DESCRIPTOR.iteritems():
+    if field_descriptor.name.lower().rstrip('s') == name:
       return data_type
   raise DataTypeIdNotRecognized
 
 
 def SyncTypeToString(data_type):
   """Formats a sync type enum (from ALL_TYPES) to a human-readable string."""
-  return SYNC_TYPE_TO_EXTENSION[data_type].name
+  return SYNC_TYPE_TO_DESCRIPTOR[data_type].name
 
 
 def CallerInfoToString(caller_info_source):
   """Formats a GetUpdatesSource enum value to a readable string."""
-  return sync_pb2.GetUpdatesCallerInfo.DESCRIPTOR.enum_types_by_name[
-      'GetUpdatesSource'].values_by_number[caller_info_source].name
+  return get_updates_caller_info_pb2.GetUpdatesCallerInfo \
+      .DESCRIPTOR.enum_types_by_name['GetUpdatesSource'] \
+      .values_by_number[caller_info_source].name
 
 
 def ShortDatatypeListSummary(data_types):
@@ -229,11 +249,11 @@ def ShortDatatypeListSummary(data_types):
 
 
 def GetDefaultEntitySpecifics(data_type):
-  """Get an EntitySpecifics having a sync type's default extension value."""
+  """Get an EntitySpecifics having a sync type's default field value."""
   specifics = sync_pb2.EntitySpecifics()
-  if data_type in SYNC_TYPE_TO_EXTENSION:
-    extension_handle = SYNC_TYPE_TO_EXTENSION[data_type]
-    specifics.Extensions[extension_handle].SetInParent()
+  if data_type in SYNC_TYPE_TO_DESCRIPTOR:
+    descriptor = SYNC_TYPE_TO_DESCRIPTOR[data_type]
+    getattr(specifics, descriptor.name).SetInParent()
   return specifics
 
 
@@ -250,13 +270,18 @@ class PermanentItem(object):
     sync_type: A value from ALL_TYPES, giving the datatype of this permanent
       item.  This controls which types of client GetUpdates requests will
       cause the permanent item to be created and returned.
+    create_by_default: Whether the permanent item is created at startup or not.
+      This value is set to True in the default case. Non-default permanent items
+      are those that are created only when a client explicitly tells the server
+      to do so.
   """
 
-  def __init__(self, tag, name, parent_tag, sync_type):
+  def __init__(self, tag, name, parent_tag, sync_type, create_by_default=True):
     self.tag = tag
     self.name = name
     self.parent_tag = parent_tag
     self.sync_type = sync_type
+    self.create_by_default = create_by_default
 
 
 class MigrationHistory(object):
@@ -395,6 +420,9 @@ class SyncDataModel(object):
                     parent_tag='google_chrome_bookmarks', sync_type=BOOKMARK),
       PermanentItem('other_bookmarks', name='Other Bookmarks',
                     parent_tag='google_chrome_bookmarks', sync_type=BOOKMARK),
+      PermanentItem('synced_bookmarks', name='Synced Bookmarks',
+                    parent_tag='google_chrome_bookmarks', sync_type=BOOKMARK,
+                    create_by_default=False),
       PermanentItem('google_chrome_preferences', name='Preferences',
                     parent_tag='google_chrome', sync_type=PREFERENCE),
       PermanentItem('google_chrome_autofill', name='Autofill',
@@ -441,6 +469,11 @@ class SyncDataModel(object):
     self.migration_history = MigrationHistory()
 
     self.induced_error = sync_pb2.ClientToServerResponse.Error()
+    self.induced_error_frequency = 0
+    self.sync_count_before_errors = 0
+
+    self._key = ''.join(random.choice(string.ascii_uppercase + string.digits)
+        for x in xrange(KEYSTORE_KEY_LENGTH))
 
   def _SaveEntry(self, entry):
     """Insert or update an entry in the change log, and give it a new version.
@@ -466,9 +499,6 @@ class SyncDataModel(object):
       entry.originator_client_item_id = base_entry.originator_client_item_id
 
     self._entries[entry.id_string] = copy.deepcopy(entry)
-    # Store the current time since the Unix epoch in milliseconds.
-    self._entries[entry.id_string].mtime = (int((time.mktime(time.gmtime()) -
-        time.mktime(UNIX_TIME_EPOCH))*1000))
 
   def _ServerTagToId(self, tag):
     """Determine the server ID from a server-unique tag.
@@ -582,15 +612,15 @@ class SyncDataModel(object):
     self._WritePosition(entry, self._ServerTagToId(spec.parent_tag))
     self._SaveEntry(entry)
 
-  def _CreatePermanentItems(self, requested_types):
-    """Ensure creation of all permanent items for a given set of sync types.
+  def _CreateDefaultPermanentItems(self, requested_types):
+    """Ensure creation of all default permanent items for a given set of types.
 
     Args:
       requested_types: A list of sync data types from ALL_TYPES.
-        Permanent items of only these types will be created.
+        All default permanent items of only these types will be created.
     """
     for spec in self._PERMANENT_ITEM_SPECS:
-      if spec.sync_type in requested_types:
+      if spec.sync_type in requested_types and spec.create_by_default:
         self._CreatePermanentItem(spec)
 
   def ResetStoreBirthday(self):
@@ -621,7 +651,7 @@ class SyncDataModel(object):
     if not sieve.HasAnyTimestamp():
       return (0, [], 0)
     min_timestamp = sieve.GetMinTimestamp()
-    self._CreatePermanentItems(sieve.GetFirstTimeTypes())
+    self._CreateDefaultPermanentItems(sieve.GetFirstTimeTypes())
     change_log = sorted(self._entries.values(),
                         key=operator.attrgetter('version'))
     new_changes = [x for x in change_log if x.version > min_timestamp]
@@ -640,6 +670,11 @@ class SyncDataModel(object):
     # The new client timestamp is the timestamp of the last item in the
     # batch, even if that item was filtered out.
     return (batch[-1].version, filtered, len(new_changes) - len(batch))
+
+  def GetKey(self):
+    """Returns the encryption key for this account."""
+    print "Returning encryption key: %s" % self._key
+    return self._key
 
   def _CopyOverImmutableFields(self, entry):
     """Preserve immutable fields by copying pre-commit state.
@@ -864,6 +899,10 @@ class SyncDataModel(object):
       entry.originator_cache_guid = base_entry.originator_cache_guid
       entry.originator_client_item_id = base_entry.originator_client_item_id
 
+    # Store the current time since the Unix epoch in milliseconds.
+    entry.mtime = (int((time.mktime(time.gmtime()) -
+        time.mktime(UNIX_TIME_EPOCH))*1000))
+
     # Commit the change.  This also updates the version number.
     self._SaveEntry(entry)
     return entry
@@ -902,16 +941,29 @@ class SyncDataModel(object):
 
     nigori_tag = "google_chrome_nigori"
     nigori_original = self._entries.get(self._ServerTagToId(nigori_tag))
-    if (nigori_original.specifics.Extensions[nigori_specifics_pb2.nigori].
-        sync_tabs):
+    if (nigori_original.specifics.nigori.sync_tabs):
       return
     nigori_new = copy.deepcopy(nigori_original)
-    nigori_new.specifics.Extensions[nigori_specifics_pb2.nigori].sync_tabs = (
-        True)
+    nigori_new.specifics.nigori.sync_tabs = True
     self._SaveEntry(nigori_new)
 
-  def SetInducedError(self, error):
+  def TriggerCreateSyncedBookmarks(self):
+    """Create the Synced Bookmarks folder under the Bookmarks permanent item.
+
+    Clients will then receive the Synced Bookmarks folder on future
+    GetUpdates, and new bookmarks can be added within the Synced Bookmarks
+    folder.
+    """
+
+    synced_bookmarks_spec, = [spec for spec in self._PERMANENT_ITEM_SPECS
+                              if spec.tag == "synced_bookmarks"]
+    self._CreatePermanentItem(synced_bookmarks_spec)
+
+  def SetInducedError(self, error, error_frequency,
+                      sync_count_before_errors):
     self.induced_error = error
+    self.induced_error_frequency = error_frequency
+    self.sync_count_before_errors = sync_count_before_errors
 
   def GetInducedError(self):
     return self.induced_error
@@ -935,6 +987,7 @@ class TestServer(object):
     self.client_name_generator = ('+' * times + chr(c)
         for times in xrange(0, sys.maxint) for c in xrange(ord('A'), ord('Z')))
     self.transient_error = False
+    self.sync_count = 0
 
   def GetShortClientName(self, query):
     parsed = cgi.parse_qs(query[query.find('?')+1:])
@@ -962,7 +1015,20 @@ class TestServer(object):
      """Raises SyncInducedError if needed."""
      if (self.account.induced_error.error_type !=
          sync_enums_pb2.SyncEnums.UNKNOWN):
-       raise SyncInducedError
+       # Always means return the given error for all requests.
+       if self.account.induced_error_frequency == ERROR_FREQUENCY_ALWAYS:
+         raise SyncInducedError
+       # This means the FIRST 2 requests of every 3 requests
+       # return an error. Don't switch the order of failures. There are
+       # test cases that rely on the first 2 being the failure rather than
+       # the last 2.
+       elif (self.account.induced_error_frequency ==
+             ERROR_FREQUENCY_TWO_THIRDS):
+         if (((self.sync_count -
+               self.account.sync_count_before_errors) % 3) != 0):
+           raise SyncInducedError
+       else:
+         raise InducedErrorFrequencyNotDefined
 
   def HandleMigrate(self, path):
     query = urlparse.urlparse(path)[4]
@@ -989,7 +1055,7 @@ class TestServer(object):
   def HandleSetInducedError(self, path):
      query = urlparse.urlparse(path)[4]
      self.account_lock.acquire()
-     code = 200;
+     code = 200
      response = 'Success'
      error = sync_pb2.ClientToServerResponse.Error()
      try:
@@ -1006,7 +1072,11 @@ class TestServer(object):
          (urlparse.parse_qs(query)['error_description'])[0])
        except KeyError:
          error.error_description = ''
-       self.account.SetInducedError(error)
+       try:
+         error_frequency = int((urlparse.parse_qs(query)['frequency'])[0])
+       except KeyError:
+         error_frequency = ERROR_FREQUENCY_ALWAYS
+       self.account.SetInducedError(error, error_frequency, self.sync_count)
        response = ('Error = %d, action = %d, url = %s, description = %s' %
                    (error.error_type, error.action,
                     error.url,
@@ -1038,6 +1108,13 @@ class TestServer(object):
         200,
         '<html><title>Sync Tabs</title><H1>Sync Tabs</H1></html>')
 
+  def HandleCreateSyncedBookmarks(self):
+    """Create the Synced Bookmarks folder under Bookmarks."""
+    self.account.TriggerCreateSyncedBookmarks()
+    return (
+        200,
+        '<html><title>Synced Bookmarks</title><H1>Synced Bookmarks</H1></html>')
+
   def HandleCommand(self, query, raw_request):
     """Decode and handle a sync command from a raw input of bytes.
 
@@ -1053,6 +1130,7 @@ class TestServer(object):
       serialized reply to the command.
     """
     self.account_lock.acquire()
+    self.sync_count += 1
     def print_context(direction):
       print '[Client %s %s %s.py]' % (self.GetShortClientName(query), direction,
                                       __name__),
@@ -1066,8 +1144,8 @@ class TestServer(object):
       response.error_code = sync_enums_pb2.SyncEnums.SUCCESS
       self.CheckStoreBirthday(request)
       response.store_birthday = self.account.store_birthday
-      self.CheckTransientError();
-      self.CheckSendError();
+      self.CheckTransientError()
+      self.CheckSendError()
 
       print_context('->')
 
@@ -1196,3 +1274,6 @@ class TestServer(object):
       reply = update_response.entries.add()
       reply.CopyFrom(entry)
     update_sieve.SaveProgress(new_timestamp, update_response)
+
+    if update_request.need_encryption_key:
+      update_response.encryption_key = self.account.GetKey()

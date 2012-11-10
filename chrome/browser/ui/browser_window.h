@@ -4,10 +4,14 @@
 
 #ifndef CHROME_BROWSER_UI_BROWSER_WINDOW_H_
 #define CHROME_BROWSER_UI_BROWSER_WINDOW_H_
-#pragma once
 
+#include "base/callback_forward.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/ui/base_window.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
-#include "chrome/browser/ui/fullscreen_exit_bubble_type.h"
+#include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
+#include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
+#include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/common/content_settings_types.h"
 #include "ui/gfx/native_widget_types.h"
 #include "webkit/glue/window_open_disposition.h"
@@ -21,16 +25,22 @@ class LocationBar;
 class Profile;
 class StatusBubble;
 class TabContents;
-class TabContentsWrapper;
 class TemplateURL;
 #if !defined(OS_MACOSX)
 class ToolbarView;
 #endif
-struct NativeWebKeyboardEvent;
 
+namespace autofill {
+class PasswordGenerator;
+}
 namespace content {
 class WebContents;
+struct NativeWebKeyboardEvent;
 struct SSLStatus;
+}
+
+namespace extensions {
+class Extension;
 }
 
 namespace gfx {
@@ -38,7 +48,11 @@ class Rect;
 class Size;
 }
 
-class Extension;
+namespace webkit {
+namespace forms {
+struct PasswordForm;
+}
+}
 
 enum DevToolsDockSide {
   DEVTOOLS_DOCK_SIDE_BOTTOM = 0,
@@ -48,50 +62,35 @@ enum DevToolsDockSide {
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserWindow interface
 //  An interface implemented by the "view" of the Browser window.
+//  This interface includes BaseWindow methods as well as Browser window
+//  specific methods.
 //
 // NOTE: All getters may return NULL.
-class BrowserWindow {
+//
+class BrowserWindow : public BaseWindow {
  public:
   virtual ~BrowserWindow() {}
 
-  // Show the window, or activates it if it's already visible.
-  // Browser::OnWindowDidShow should be called after showing the window.
-  virtual void Show() = 0;
+  //////////////////////////////////////////////////////////////////////////////
+  // BaseWindow interface notes:
 
-  // Show the window, but do not activate it. Does nothing if window
-  // is already visible.
-  virtual void ShowInactive() = 0;
-
-  // Sets the window's size and position to the specified values.
-  virtual void SetBounds(const gfx::Rect& bounds) = 0;
-
-  // Closes the frame as soon as possible.  If the frame is not in a drag
+  // Closes the window as soon as possible. If the window is not in a drag
   // session, it will close immediately; otherwise, it will move offscreen (so
   // events are still fired) until the drag ends, then close. This assumes
   // that the Browser is not immediately destroyed, but will be eventually
   // destroyed by other means (eg, the tab strip going to zero elements).
   // Bad things happen if the Browser dtor is called directly as a result of
   // invoking this method.
-  virtual void Close() = 0;
+  // virtual void Close() = 0;
 
-  // Activates (brings to front) the window. Restores the window from minimized
-  // state if necessary.
-  virtual void Activate() = 0;
+  // Browser::OnWindowDidShow should be called after showing the window.
+  // virtual void Show() = 0;
 
-  // Deactivates the window, making the next window in the Z order the active
-  // window.
-  virtual void Deactivate() = 0;
+  // No BrowserWindow supports this BaseWindow function.
+  virtual void SetDraggableRegion(SkRegion* region) OVERRIDE {}
 
-  // Returns true if the window is currently the active/focused window.
-  virtual bool IsActive() const = 0;
-
-  // Flashes the taskbar item associated with this frame.
-  // Set |flash| to true to initiate flashing, false to stop flashing.
-  virtual void FlashFrame(bool flash) = 0;
-
-  // Return a platform dependent identifier for this frame. On Windows, this
-  // returns an HWND.
-  virtual gfx::NativeWindow GetNativeHandle() = 0;
+  //////////////////////////////////////////////////////////////////////////////
+  // Browser specific methods:
 
   // Returns a pointer to the testing interface to the Browser window, or NULL
   // if there is none.
@@ -99,12 +98,6 @@ class BrowserWindow {
 
   // Return the status bubble associated with the frame
   virtual StatusBubble* GetStatusBubble() = 0;
-
-  // Inform the receiving frame that an animation has progressed in the
-  // selected tab.
-  // TODO(beng): Remove. Infobars/Boomarks bars should talk directly to
-  //             BrowserView.
-  virtual void ToolbarSizeChanged(bool is_animating) = 0;
 
   // Inform the frame that the selected tab favicon or title has changed. Some
   // frames may need to refresh their title bar.
@@ -130,26 +123,14 @@ class BrowserWindow {
   // Sets the starred state for the current tab.
   virtual void SetStarredState(bool is_starred) = 0;
 
-  // Returns the nonmaximized bounds of the frame (even if the frame is
-  // currently maximized or minimized) in terms of the screen coordinates.
-  virtual gfx::Rect GetRestoredBounds() const = 0;
+  // Sets the zoom icon state for the current tab.
+  virtual void SetZoomIconState(ZoomController::ZoomIconState state) = 0;
 
-  // Retrieves the window's current bounds, including its frame.
-  // This will only differ from GetRestoredBounds() for maximized
-  // and minimized windows.
-  virtual gfx::Rect GetBounds() const = 0;
+  // Sets the zoom icon tooltip zoom percentage for the current tab.
+  virtual void SetZoomIconTooltipPercent(int zoom_percent) = 0;
 
-  // TODO(beng): REMOVE?
-  // Returns true if the frame is maximized (aka zoomed).
-  virtual bool IsMaximized() const = 0;
-
-  // Returns true if the frame is minimized.
-  virtual bool IsMinimized() const = 0;
-
-  // Maximizes/minimizes/restores the window.
-  virtual void Maximize() = 0;
-  virtual void Minimize() = 0;
-  virtual void Restore() = 0;
+  // Show zoom bubble for the current tab.
+  virtual void ShowZoomBubble(int zoom_percent) = 0;
 
   // Accessors for fullscreen mode state.
   virtual void EnterFullscreen(const GURL& url,
@@ -158,10 +139,17 @@ class BrowserWindow {
   virtual void UpdateFullscreenExitBubbleContent(
       const GURL& url,
       FullscreenExitBubbleType bubble_type) = 0;
-  virtual bool IsFullscreen() const = 0;
 
   // Returns true if the fullscreen bubble is visible.
   virtual bool IsFullscreenBubbleVisible() const = 0;
+
+#if defined(OS_WIN)
+  // Sets state for entering or exiting Win8 Metro snap mode.
+  virtual void SetMetroSnapMode(bool enable) = 0;
+
+  // Returns whether the window is currently in Win8 Metro snap mode.
+  virtual bool IsInMetroSnapMode() const = 0;
+#endif
 
   // Returns the location bar.
   virtual LocationBar* GetLocationBar() const = 0;
@@ -175,7 +163,7 @@ class BrowserWindow {
   virtual void UpdateReloadStopState(bool is_loading, bool force) = 0;
 
   // Updates the toolbar with the state for the specified |contents|.
-  virtual void UpdateToolbar(TabContentsWrapper* contents,
+  virtual void UpdateToolbar(TabContents* contents,
                              bool should_restore_state) = 0;
 
   // Focuses the toolbar (for accessibility).
@@ -188,9 +176,6 @@ class BrowserWindow {
 
   // Focuses the bookmarks toolbar (for accessibility).
   virtual void FocusBookmarksToolbar() = 0;
-
-  // Focuses the Chrome OS status view (for accessibility).
-  virtual void FocusChromeOSStatus() = 0;
 
   // Moves keyboard focus to the next pane.
   virtual void RotatePaneFocus(bool forwards) = 0;
@@ -224,26 +209,13 @@ class BrowserWindow {
   // provided here since the functionality is Windows-specific.
   virtual void DisableInactiveFrame() {}
 
-  // Shows a confirmation dialog box for setting the default search engine
-  // described by |template_url|. Takes ownership of |template_url|.
-  virtual void ConfirmSetDefaultSearchProvider(
-      content::WebContents* web_contents,
-      TemplateURL* template_url,
-      Profile* profile) {
-    // TODO(levin): Implement this for non-Windows platforms and make it pure.
-    // http://crbug.com/38475
-  }
-
   // Shows a confirmation dialog box for adding a search engine described by
   // |template_url|. Takes ownership of |template_url|.
-  virtual void ConfirmAddSearchProvider(const TemplateURL* template_url,
+  virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
                                         Profile* profile) = 0;
 
   // Shows or hides the bookmark bar depending on its current visibility.
   virtual void ToggleBookmarkBar() = 0;
-
-  // Shows the About Chrome dialog box.
-  virtual void ShowAboutChromeDialog() = 0;
 
   // Shows the Update Recommended dialog box.
   virtual void ShowUpdateChromeDialog() = 0;
@@ -258,14 +230,26 @@ class BrowserWindow {
   // |already_bookmarked| is true if the url is already bookmarked.
   virtual void ShowBookmarkBubble(const GURL& url, bool already_bookmarked) = 0;
 
+  // Shows the Chrome To Mobile bubble.
+  virtual void ShowChromeToMobileBubble() = 0;
+
+#if defined(ENABLE_ONE_CLICK_SIGNIN)
+  // Callback type used with the ShowOneClickSigninBubble() method.  If the
+  // user chooses to accept the sign in, the callback is called to start the
+  // sync process.
+  typedef base::Callback<void(OneClickSigninSyncStarter::StartSyncMode)>
+      StartSyncCallback;
+
+  // Shows the one-click sign in bubble.
+  virtual void ShowOneClickSigninBubble(
+      const StartSyncCallback& start_sync_callback) = 0;
+#endif
+
   // Whether or not the shelf view is visible.
   virtual bool IsDownloadShelfVisible() const = 0;
 
   // Returns the DownloadShelf.
   virtual DownloadShelf* GetDownloadShelf() = 0;
-
-  // Shows the collected cookies dialog box.
-  virtual void ShowCollectedCookiesDialog(TabContentsWrapper* tab_contents) = 0;
 
   // Shows the confirmation dialog box warning that the browser is closing with
   // in-progress downloads.
@@ -291,10 +275,20 @@ class BrowserWindow {
   // |url| is the url of the page/frame the info applies to, |ssl| is the SSL
   // information for that page/frame.  If |show_history| is true, a section
   // showing how many times that URL has been visited is added to the page info.
-  virtual void ShowPageInfo(Profile* profile,
+  virtual void ShowPageInfo(content::WebContents* web_contents,
                             const GURL& url,
                             const content::SSLStatus& ssl,
                             bool show_history) = 0;
+
+  // Shows the website settings using the specified information. |url| is the
+  // url of the page/frame the info applies to, |ssl| is the SSL information for
+  // that page/frame.  If |show_history| is true, a section showing how many
+  // times that URL has been visited is added to the page info.
+  virtual void ShowWebsiteSettings(Profile* profile,
+                                   TabContents* tab_contents,
+                                   const GURL& url,
+                                   const content::SSLStatus& ssl,
+                                   bool show_history) = 0;
 
   // Shows the app menu (for accessibility).
   virtual void ShowAppMenu() = 0;
@@ -304,20 +298,19 @@ class BrowserWindow {
   // Returns true if the |event| was handled. Otherwise, if the |event| would
   // be handled in HandleKeyboardEvent() method as a normal keyboard shortcut,
   // |*is_keyboard_shortcut| should be set to true.
-  virtual bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
-                                      bool* is_keyboard_shortcut) = 0;
+  virtual bool PreHandleKeyboardEvent(
+      const content::NativeWebKeyboardEvent& event,
+      bool* is_keyboard_shortcut) = 0;
 
   // Allows the BrowserWindow object to handle the specified keyboard event,
   // if the renderer did not process it.
-  virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event) = 0;
-
-  // Shows the create web app shortcut dialog box.
-  virtual void ShowCreateWebAppShortcutsDialog(
-      TabContentsWrapper* tab_contents) = 0;
+  virtual void HandleKeyboardEvent(
+      const content::NativeWebKeyboardEvent& event) = 0;
 
   // Shows the create chrome app shortcut dialog box.
   virtual void ShowCreateChromeAppShortcutsDialog(Profile* profile,
-                                                  const Extension* app) = 0;
+      const extensions::Extension* app) = 0;
+
 
   // Clipboard commands applied to the whole browser window.
   virtual void Cut() = 0;
@@ -338,7 +331,7 @@ class BrowserWindow {
 #endif
 
   // Invoked when instant's tab contents should be shown.
-  virtual void ShowInstant(TabContentsWrapper* preview) = 0;
+  virtual void ShowInstant(TabContents* preview) = 0;
 
   // Invoked when the instant's tab contents should be hidden.
   virtual void HideInstant() = 0;
@@ -355,20 +348,16 @@ class BrowserWindow {
   // Construct a FindBar implementation for the |browser|.
   virtual FindBar* CreateFindBar() = 0;
 
-#if defined(OS_CHROMEOS)
-  // Shows the mobile setup dialog.
-  virtual void ShowMobileSetup() = 0;
-
-  // Shows the keyboard overlay dialog box.
-  virtual void ShowKeyboardOverlay(gfx::NativeWindow owning_window) = 0;
-#endif
-
   // Invoked when the preferred size of the contents in current tab has been
   // changed. We might choose to update the window size to accomodate this
   // change.
   // Note that this won't be fired if we change tabs.
   virtual void UpdatePreferredSize(content::WebContents* web_contents,
                                    const gfx::Size& pref_size) {}
+
+  // Invoked when the contents auto-resized and the container should match it.
+  virtual void ResizeDueToAutoResize(content::WebContents* web_contents,
+                                     const gfx::Size& new_size) {}
 
   // Construct a BrowserWindow implementation for the specified |browser|.
   static BrowserWindow* CreateBrowserWindow(Browser* browser);
@@ -382,8 +371,19 @@ class BrowserWindow {
   // Shows the avatar bubble on the window frame off of the avatar button.
   virtual void ShowAvatarBubbleFromAvatarButton() = 0;
 
+  // Show bubble for password generation positioned relative to |rect|. The
+  // subclasses implementing this interface do not own the |password_generator|
+  // object which is passed to generate the password. |form| is the form that
+  // contains the password field that the bubble will be associated with. A
+  // stub implementation is provided since this feature is currently not
+  // available on mac.
+  virtual void ShowPasswordGenerationBubble(
+      const gfx::Rect& rect,
+      autofill::PasswordGenerator* password_generator,
+      const webkit::forms::PasswordForm& form) {}
+
  protected:
-  friend class BrowserList;
+  friend void browser::CloseAllBrowsers();
   friend class BrowserView;
   virtual void DestroyBrowser() = 0;
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,14 +11,22 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "crypto/nss_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
+
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
+#elif defined(OS_MACOSX)
+#include "base/mac/mac_util.h"
+#endif
 
 namespace net {
 
@@ -59,6 +67,17 @@ class NSSSSLInitSingleton {
     // Enable SSL.
     SSL_OptionSetDefault(SSL_SECURITY, PR_TRUE);
 
+    // Disable ECDSA cipher suites on platforms that do not support ECDSA
+    // signed certificates, as servers may use the presence of such
+    // ciphersuites as a hint to send an ECDSA certificate.
+#if defined(OS_WIN)
+    if (base::win::GetVersion() < base::win::VERSION_VISTA)
+      DisableECDSA();
+#elif defined(OS_MACOSX)
+    if (!base::mac::IsOSSnowLeopardOrLater())
+      DisableECDSA();
+#endif
+
     // All other SSL options are set per-session by SSLClientSocket and
     // SSLServerSocket.
   }
@@ -66,6 +85,19 @@ class NSSSSLInitSingleton {
   ~NSSSSLInitSingleton() {
     // Have to clear the cache, or NSS_Shutdown fails with SEC_ERROR_BUSY.
     SSL_ClearSessionCache();
+  }
+
+  void DisableECDSA() {
+    const PRUint16* ciphersuites = SSL_GetImplementedCiphers();
+    const unsigned num_ciphersuites = SSL_GetNumImplementedCiphers();
+    SECStatus rv;
+    SSLCipherSuiteInfo info;
+
+    for (unsigned i = 0; i < num_ciphersuites; i++) {
+      rv = SSL_GetCipherSuiteInfo(ciphersuites[i], &info, sizeof(info));
+      if (rv == SECSuccess && info.authAlgorithm == ssl_auth_ecdsa)
+        SSL_CipherPrefSetDefault(ciphersuites[i], PR_FALSE);
+    }
   }
 };
 
@@ -159,6 +191,8 @@ int MapNSSError(PRErrorCode err) {
     case PR_NOT_IMPLEMENTED_ERROR:
       return ERR_NOT_IMPLEMENTED;
 
+    case SEC_ERROR_LIBRARY_FAILURE:
+      return ERR_UNEXPECTED;
     case SEC_ERROR_INVALID_ARGS:
       return ERR_INVALID_ARGUMENT;
     case SEC_ERROR_NO_MEMORY:
@@ -177,6 +211,7 @@ int MapNSSError(PRErrorCode err) {
     case SSL_ERROR_SSL_DISABLED:
       return ERR_NO_SSL_VERSIONS_ENABLED;
     case SSL_ERROR_NO_CYPHER_OVERLAP:
+    case SSL_ERROR_PROTOCOL_VERSION_ALERT:
     case SSL_ERROR_UNSUPPORTED_VERSION:
       return ERR_SSL_VERSION_OR_CIPHER_MISMATCH;
     case SSL_ERROR_HANDSHAKE_FAILURE_ALERT:
@@ -217,50 +252,31 @@ int MapNSSError(PRErrorCode err) {
   }
 }
 
-// Context-sensitive error mapping functions.
-int MapNSSHandshakeError(PRErrorCode err) {
-  switch (err) {
-    // If the server closed on us, it is a protocol error.
-    // Some TLS-intolerant servers do this when we request TLS.
-    case PR_END_OF_FILE_ERROR:
-      return ERR_SSL_PROTOCOL_ERROR;
-    default:
-      return MapNSSError(err);
-  }
+// Returns parameters to attach to the NetLog when we receive an error in
+// response to a call to an NSS function.  Used instead of
+// NetLogSSLErrorCallback with events of type TYPE_SSL_NSS_ERROR.
+Value* NetLogSSLFailedNSSFunctionCallback(
+    const char* function,
+    const char* param,
+    int ssl_lib_error,
+    NetLog::LogLevel /* log_level */) {
+  DictionaryValue* dict = new DictionaryValue();
+  dict->SetString("function", function);
+  if (param[0] != '\0')
+    dict->SetString("param", param);
+  dict->SetInteger("ssl_lib_error", ssl_lib_error);
+  return dict;
 }
-
-// Extra parameters to attach to the NetLog when we receive an error in response
-// to a call to an NSS function.  Used instead of SSLErrorParams with
-// events of type TYPE_SSL_NSS_ERROR.  Automatically looks up last PR error.
-class SSLFailedNSSFunctionParams : public NetLog::EventParameters {
- public:
-  // |param| is ignored if it has a length of 0.
-  SSLFailedNSSFunctionParams(const std::string& function,
-                             const std::string& param)
-      : function_(function), param_(param), ssl_lib_error_(PR_GetError()) {
-  }
-
-  virtual Value* ToValue() const {
-    DictionaryValue* dict = new DictionaryValue();
-    dict->SetString("function", function_);
-    if (!param_.empty())
-      dict->SetString("param", param_);
-    dict->SetInteger("ssl_lib_error", ssl_lib_error_);
-    return dict;
-  }
-
- private:
-  const std::string function_;
-  const std::string param_;
-  const PRErrorCode ssl_lib_error_;
-};
 
 void LogFailedNSSFunction(const BoundNetLog& net_log,
                           const char* function,
                           const char* param) {
+  DCHECK(function);
+  DCHECK(param);
   net_log.AddEvent(
       NetLog::TYPE_SSL_NSS_ERROR,
-      make_scoped_refptr(new SSLFailedNSSFunctionParams(function, param)));
+      base::Bind(&NetLogSSLFailedNSSFunctionCallback,
+                 function, param, PR_GetError()));
 }
 
 }  // namespace net

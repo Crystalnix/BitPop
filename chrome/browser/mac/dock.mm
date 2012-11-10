@@ -10,12 +10,12 @@
 #include <signal.h>
 
 #include "base/logging.h"
+#include "base/mac/launchd.h"
 #include "base/mac/mac_logging.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/sys_string_conversions.h"
-#include "chrome/browser/mac/launchd.h"
 
 extern "C" {
 
@@ -120,71 +120,12 @@ NSMutableArray* PersistentAppPaths(NSArray* persistent_apps) {
   return app_paths;
 }
 
-// Returns the process ID for a process whose bundle identifier is bundle_id.
-// The process is looked up using the Process Manager. Returns -1 on error,
-// including when no process matches the bundle identifier.
-pid_t PIDForProcessBundleID(const std::string& bundle_id) {
-  // This technique is racy: what happens if |psn| becomes invalid before a
-  // subsequent call to GetNextProcess, or if the Process Manager's internal
-  // order of processes changes? Tolerate the race by allowing failure. Since
-  // this function is only used on Leopard to find the Dock process so that it
-  // can be restarted, the worst that can happen here is that the Dock won't
-  // be restarted.
-  ProcessSerialNumber psn = {0, kNoProcess};
-  OSStatus status;
-  while ((status = GetNextProcess(&psn)) == noErr) {
-    pid_t process_pid;
-    if ((status = GetProcessPID(&psn, &process_pid)) != noErr) {
-      OSSTATUS_LOG(ERROR, status) << "GetProcessPID";
-      continue;
-    }
-
-    base::mac::ScopedCFTypeRef<CFDictionaryRef> process_dictionary(
-        ProcessInformationCopyDictionary(&psn,
-            kProcessDictionaryIncludeAllInformationMask));
-    if (!process_dictionary.get()) {
-      LOG(ERROR) << "ProcessInformationCopyDictionary";
-      continue;
-    }
-
-    CFStringRef process_bundle_id_cf = base::mac::CFCast<CFStringRef>(
-        CFDictionaryGetValue(process_dictionary, kCFBundleIdentifierKey));
-    if (!process_bundle_id_cf) {
-      // Not all processes have a bundle ID.
-      continue;
-    }
-
-    std::string process_bundle_id =
-        base::SysCFStringRefToUTF8(process_bundle_id_cf);
-    if (process_bundle_id == bundle_id) {
-      // Found it!
-      return process_pid;
-    }
-  }
-
-  // status will be procNotFound (-600) if the process wasn't found.
-  OSSTATUS_LOG(ERROR, status) << "GetNextProcess";
-
-  return -1;
-}
-
 // Restart the Dock process by sending it a SIGHUP.
 void Restart() {
-  pid_t pid;
-
-  if (base::mac::IsOSSnowLeopardOrLater()) {
-    // Doing this via launchd using the proper job label is the safest way to
-    // handle the restart. Unlike "killall Dock", looking this up via launchd
-    // guarantees that only the right process will be targeted.
-    pid = launchd::PIDForJob("com.apple.Dock.agent");
-  } else {
-    // On Leopard, the Dock doesn't have a known fixed job label name as it
-    // does on Snow Leopard and Lion because it's not launched as a launch
-    // agent. Look the PID up by finding a process with the expected bundle
-    // identifier using the Process Manager.
-    pid = PIDForProcessBundleID("com.apple.dock");
-  }
-
+  // Doing this via launchd using the proper job label is the safest way to
+  // handle the restart. Unlike "killall Dock", looking this up via launchd
+  // guarantees that only the right process will be targeted.
+  pid_t pid = base::mac::PIDForJob("com.apple.Dock.agent");
   if (pid <= 0) {
     return;
   }
@@ -243,24 +184,15 @@ void AddIcon(NSString* installed_path, NSString* dmg_app_path) {
     return;
   }
 
-  // Directories in the Dock's plist are given with trailing slashes. Since
-  // installed_path and dmg_app_path both refer to application bundles,
-  // they're directories and will show up with trailing slashes. This is an
-  // artifact of the Dock's internal use of CFURL. Look for paths that match,
-  // and when adding an item to the Dock's plist, keep it in the form that the
-  // Dock likes.
-  NSString* installed_path_dock = [installed_path stringByAppendingString:@"/"];
-  NSString* dmg_app_path_dock = [dmg_app_path stringByAppendingString:@"/"];
-
   NSUInteger already_installed_app_index = NSNotFound;
   NSUInteger app_index = NSNotFound;
   for (NSUInteger index = 0; index < [persistent_apps count]; ++index) {
     NSString* app_path = [persistent_app_paths objectAtIndex:index];
-    if ([app_path isEqualToString:installed_path_dock]) {
+    if ([app_path isEqualToString:installed_path]) {
       // If the Dock already contains a reference to the newly installed
       // application, don't add another one.
       already_installed_app_index = index;
-    } else if ([app_path isEqualToString:dmg_app_path_dock]) {
+    } else if ([app_path isEqualToString:dmg_app_path]) {
       // If the Dock contains a reference to the application on the disk
       // image, replace it with a reference to the newly installed
       // application. However, if the Dock contains a reference to both the
@@ -364,7 +296,7 @@ void AddIcon(NSString* installed_path, NSString* dmg_app_path) {
     }
 
     // Set up the new Dock tile.
-    NSURL* url = [NSURL fileURLWithPath:installed_path_dock];
+    NSURL* url = [NSURL fileURLWithPath:installed_path isDirectory:YES];
     NSDictionary* url_dict = NSURLCopyDictionary(url);
     if (!url_dict) {
       LOG(ERROR) << "couldn't create url_dict";
@@ -380,7 +312,7 @@ void AddIcon(NSString* installed_path, NSString* dmg_app_path) {
 
     // Add the new tile to the Dock.
     [persistent_apps insertObject:new_tile atIndex:app_index];
-    [persistent_app_paths insertObject:installed_path_dock atIndex:app_index];
+    [persistent_app_paths insertObject:installed_path atIndex:app_index];
     made_change = true;
   }
 

@@ -1,18 +1,18 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/content_settings/content_settings_extension_provider.h"
 
-#include "base/scoped_ptr.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
-#include "chrome/browser/extensions/extension_content_settings_store.h"
+#include "chrome/browser/extensions/api/content_settings/content_settings_store.h"
 #include "chrome/common/content_settings_pattern.h"
 
 namespace content_settings {
 
 ExtensionProvider::ExtensionProvider(
-    ExtensionContentSettingsStore* extensions_settings,
+    extensions::ContentSettingsStore* extensions_settings,
     bool incognito)
     : incognito_(incognito),
       extensions_settings_(extensions_settings) {

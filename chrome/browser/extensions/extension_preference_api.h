@@ -1,16 +1,17 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_EXTENSIONS_EXTENSION_PREFERENCE_API_H__
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_PREFERENCE_API_H__
-#pragma once
 
 #include <string>
 
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/prefs/pref_change_registrar.h"
 #include "content/public/browser/notification_observer.h"
+
+class PrefService;
 
 namespace base {
 class Value;
@@ -66,25 +67,52 @@ class PrefTransformerInterface {
       const base::Value* browser_pref) = 0;
 };
 
-class GetPreferenceFunction : public SyncExtensionFunction {
+// A base class to provide functionality common to the other *PreferenceFunction
+// classes.
+class PreferenceFunction : public SyncExtensionFunction {
+ protected:
+  virtual ~PreferenceFunction();
+
+  // Given an |extension_pref_key|, provides its |browser_pref_key| from the
+  // static map in extension_preference.cc. Returns true if the corresponding
+  // browser pref exists and the extension has the API permission needed to
+  // modify that pref. Sets |error_| if the extension doesn't have the needed
+  // permission.
+  bool ValidateBrowserPref(const std::string& extension_pref_key,
+                           std::string* browser_pref_key);
+};
+
+class GetPreferenceFunction : public PreferenceFunction {
  public:
-  virtual ~GetPreferenceFunction();
-  virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION_NAME("types.ChromeSetting.get")
+
+ protected:
+  virtual ~GetPreferenceFunction();
+
+  // ExtensionFunction:
+  virtual bool RunImpl() OVERRIDE;
 };
 
-class SetPreferenceFunction : public SyncExtensionFunction {
+class SetPreferenceFunction : public PreferenceFunction {
  public:
-  virtual ~SetPreferenceFunction();
-  virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION_NAME("types.ChromeSetting.set")
+
+ protected:
+  virtual ~SetPreferenceFunction();
+
+  // ExtensionFunction:
+  virtual bool RunImpl() OVERRIDE;
 };
 
-class ClearPreferenceFunction : public SyncExtensionFunction {
+class ClearPreferenceFunction : public PreferenceFunction {
  public:
-  virtual ~ClearPreferenceFunction();
-  virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION_NAME("types.ChromeSetting.clear")
+
+ protected:
+  virtual ~ClearPreferenceFunction();
+
+  // ExtensionFunction:
+  virtual bool RunImpl() OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_PREFERENCE_API_H__

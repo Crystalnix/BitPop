@@ -7,7 +7,6 @@
 
 #ifndef CHROME_INSTALLER_UTIL_UTIL_CONSTANTS_H_
 #define CHROME_INSTALLER_UTIL_UTIL_CONSTANTS_H_
-#pragma once
 
 #include "base/basictypes.h"
 
@@ -71,17 +70,18 @@ enum InstallStatus {
   CONFLICTING_CHANNEL_EXISTS,  // 39. A multi-install product on a different
                                // update channel exists.
   READY_MODE_REQUIRES_CHROME,  // 40. Chrome Frame in ready-mode requires Chrome
-  REQUIRES_MULTI_INSTALL,      // 41. --multi-install was missing from the
+  APP_HOST_REQUIRES_MULTI_INSTALL,  // 41. --multi-install was missing from the
                                // command line.
   APPLY_DIFF_PATCH_FAILED,     // 42. Failed to apply a diff patch.
   INCONSISTENT_UPDATE_POLICY,  // 43. Inconsistent update policy GP settings.
+  APP_HOST_REQUIRES_USER_LEVEL,  // 44. --system-level is forbidden.
+  APP_HOST_REQUIRES_BINARIES,  // 45. No Chrome binaries at either level.
+  // Friendly reminder: note the COMPILE_ASSERT below.
 };
 
 
-// If the following compile assert fires it means that the InstallStatus
-// enumeration changed which will break the contract between the old
-// chrome installed and the new setup.exe that is trying to upgrade.
-COMPILE_ASSERT(installer::INCONSISTENT_UPDATE_POLICY == 43,
+// Existing InstallStatus values must not change.  Always add to the end.
+COMPILE_ASSERT(installer::APP_HOST_REQUIRES_BINARIES == 45,
                dont_change_enum);
 
 // The type of an update archive.
@@ -113,17 +113,19 @@ enum InstallerStage {
   REMOVING_OLD_VERSIONS,       // 14: Deleting old version directories.
   FINISHING,                   // 15: Finishing the install.
   CONFIGURE_AUTO_LAUNCH,       // 16: Configuring Chrome to auto-launch.
-  NUM_STAGES                   // 17: The number of stages.
+  CREATING_VISUAL_MANIFEST,    // 17: Creating VisualElementsManifest.xml
+  NUM_STAGES                   // 18: The number of stages.
 };
 
 // When we start reporting the numerical values from the enum, the order
 // above MUST be preserved.
-COMPILE_ASSERT(CONFIGURE_AUTO_LAUNCH == 16,
+COMPILE_ASSERT(CREATING_VISUAL_MANIFEST == 17,
                never_ever_ever_change_InstallerStage_values_bang);
 
 namespace switches {
 extern const char kAutoLaunchChrome[];
 extern const char kChrome[];
+extern const char kChromeAppHost[];
 extern const char kChromeFrame[];
 extern const char kChromeFrameQuickEnable[];
 extern const char kChromeFrameReadyMode[];
@@ -131,11 +133,11 @@ extern const char kChromeFrameReadyModeOptIn[];
 extern const char kChromeFrameReadyModeTempOptOut[];
 extern const char kChromeFrameReadyModeEndTempOptOut[];
 extern const char kChromeSxS[];
+extern const char kConfigureUserSettings[];
 extern const char kCreateAllShortcuts[];
 extern const char kCriticalUpdateVersion[];
 extern const char kDeleteProfile[];
 extern const char kDisableLogging[];
-extern const char kDoNotCreateShortcuts[];
 extern const char kDoNotLaunchChrome[];
 extern const char kDoNotRegisterForUpdateLaunch[];
 extern const char kDoNotRemoveSharedItems[];
@@ -166,6 +168,7 @@ extern const char kExperimentGroup[];
 extern const char kToastResultsKey[];
 }  // namespace switches
 
+extern const wchar_t kChromeAppHostExe[];
 extern const wchar_t kChromeDll[];
 extern const wchar_t kChromeExe[];
 extern const wchar_t kChromeFrameDll[];
@@ -175,7 +178,10 @@ extern const wchar_t kChromeFrameReadyModeField[];
 extern const wchar_t kChromeLauncherExe[];
 extern const wchar_t kChromeOldExe[];
 extern const wchar_t kChromeNewExe[];
+extern const wchar_t kCmdInstallApp[];
+extern const wchar_t kCmdQuickEnableApplicationHost[];
 extern const wchar_t kCmdQuickEnableCf[];
+extern const wchar_t kDelegateExecuteExe[];
 extern const wchar_t kGoogleChromeInstallSubDir1[];
 extern const wchar_t kGoogleChromeInstallSubDir2[];
 extern const wchar_t kInstallBinaryDir[];
@@ -183,6 +189,7 @@ extern const wchar_t kInstallerDir[];
 extern const wchar_t kInstallTempDir[];
 extern const wchar_t kInstallUserDataDir[];
 extern const wchar_t kNaClExe[];
+extern const wchar_t kPSOAInterfaceUuid[];
 extern const wchar_t kSetupExe[];
 extern const wchar_t kSxSSuffix[];
 extern const wchar_t kUninstallArgumentsField[];
@@ -214,6 +221,8 @@ extern const wchar_t kChromeChannelCanary[];
 extern const wchar_t kChromeChannelDev[];
 extern const wchar_t kChromeChannelBeta[];
 extern const wchar_t kChromeChannelStable[];
+
+extern const size_t kMaxAppModelIdLength;
 
 }  // namespace installer
 

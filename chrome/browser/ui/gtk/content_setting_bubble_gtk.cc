@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -138,7 +138,7 @@ void ContentSettingBubbleGtk::BuildBubble() {
          i(popup_items.begin()); i != popup_items.end(); ++i, ++row) {
       GtkWidget* image = gtk_image_new();
       if (!i->bitmap.empty()) {
-        GdkPixbuf* icon_pixbuf = gfx::GdkPixbufFromSkBitmap(&i->bitmap);
+        GdkPixbuf* icon_pixbuf = gfx::GdkPixbufFromSkBitmap(i->bitmap);
         gtk_image_set_from_pixbuf(GTK_IMAGE(image), icon_pixbuf);
         g_object_unref(icon_pixbuf);
 
@@ -263,8 +263,9 @@ void ContentSettingBubbleGtk::BuildBubble() {
                             NULL,
                             bubble_content,
                             arrow_location,
-                            true,  // match_system_theme
-                            true,  // grab_input
+                            BubbleGtk::MATCH_SYSTEM_THEME |
+                                BubbleGtk::POPUP_WINDOW |
+                                BubbleGtk::GRAB_INPUT,
                             theme_provider,
                             this);
 }
@@ -303,6 +304,7 @@ void ContentSettingBubbleGtk::OnRadioToggled(GtkWidget* widget) {
 }
 
 void ContentSettingBubbleGtk::OnCloseButtonClicked(GtkWidget *button) {
+  content_setting_bubble_model_->OnDoneClicked();
   Close();
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,6 +17,12 @@
 #include "ppapi/cpp/url_request_info.h"
 #include "ppapi/cpp/url_response_info.h"
 #include "ppapi/utility/completion_callback_factory.h"
+
+// When compiling natively on Windows, PostMessage can be #define-d to
+// something else.
+#ifdef PostMessage
+#undef PostMessage
+#endif
 
 // Buffer size for reading network data.
 const int kBufSize = 1024;
@@ -82,7 +88,7 @@ void MyInstance::StartRequest(const std::string& url) {
 
   loader_ = pp::URLLoader(this);
   loader_.Open(request,
-               factory_.NewRequiredCallback(&MyInstance::OnOpenComplete));
+               factory_.NewCallback(&MyInstance::OnOpenComplete));
 }
 
 void MyInstance::OnOpenComplete(int32_t result) {

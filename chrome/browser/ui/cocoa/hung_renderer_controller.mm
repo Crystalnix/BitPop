@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,14 +12,14 @@
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/ui/browser_dialogs.h"
-#include "chrome/browser/ui/browser_list.h"
 #import "chrome/browser/ui/cocoa/multi_key_equivalent_button.h"
-#import "chrome/browser/ui/cocoa/tab_contents/favicon_util.h"
+#import "chrome/browser/ui/cocoa/tab_contents/favicon_util_mac.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/common/logging_chrome.h"
-#include "content/browser/renderer_host/render_view_host.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/result_codes.h"
 #include "grit/chromium_strings.h"
@@ -154,8 +154,8 @@ class WebContentsObserverBridge : public content::WebContentsObserver {
 - (void)windowWillClose:(NSNotification*)notification {
   // We have to reset g_instance before autoreleasing the window,
   // because we want to avoid reusing the same dialog if someone calls
-  // browser::ShowHungRendererDialog() between the autorelease
-  // call and the actual dealloc.
+  // chrome::ShowHungRendererDialog() between the autorelease call and the
+  // actual dealloc.
   g_instance = nil;
 
   [self autorelease];
@@ -217,9 +217,9 @@ class WebContentsObserverBridge : public content::WebContentsObserver {
 }
 @end
 
-namespace browser {
+namespace chrome {
 
-void ShowNativeHungRendererDialog(WebContents* contents) {
+void ShowHungRendererDialog(WebContents* contents) {
   if (!logging::DialogsAreSuppressed()) {
     if (!g_instance)
       g_instance = [[HungRendererController alloc]
@@ -228,9 +228,9 @@ void ShowNativeHungRendererDialog(WebContents* contents) {
   }
 }
 
-void HideNativeHungRendererDialog(WebContents* contents) {
+void HideHungRendererDialog(WebContents* contents) {
   if (!logging::DialogsAreSuppressed() && g_instance)
     [g_instance endForWebContents:contents];
 }
 
-}  // namespace browser
+}  // namespace chrome

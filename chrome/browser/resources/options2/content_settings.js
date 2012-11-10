@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  const OptionsPage = options.OptionsPage;
+  /** @const */ var OptionsPage = options.OptionsPage;
 
   //////////////////////////////////////////////////////////////////////////////
   // ContentSettings class:
@@ -14,7 +14,8 @@ cr.define('options', function() {
    */
   function ContentSettings() {
     this.activeNavTab = null;
-    OptionsPage.call(this, 'content', templateData.contentSettingsPageTabTitle,
+    OptionsPage.call(this, 'content',
+                     loadTimeData.getString('contentSettingsPageTabTitle'),
                      'content-settings-page');
   }
 
@@ -33,14 +34,22 @@ cr.define('options', function() {
       for (var i = 0; i < exceptionsButtons.length; i++) {
         exceptionsButtons[i].onclick = function(event) {
           var page = ContentSettingsExceptionsArea.getInstance();
-          page.showList(
-              event.target.getAttribute('contentType'));
-          OptionsPage.navigateToPage('contentExceptions');
+
           // Add on the proper hash for the content type, and store that in the
           // history so back/forward and tab restore works.
           var hash = event.target.getAttribute('contentType');
-          window.history.replaceState({pageName: page.name}, page.title,
-                                      '/' + page.name + "#" + hash);
+          var url = page.name + '#' + hash;
+          window.history.replaceState({pageName: page.name},
+                                      page.title,
+                                      '/' + url);
+
+          // Navigate after the history has been replaced in order to have the
+          // correct hash loaded.
+          OptionsPage.navigateToPage('contentExceptions');
+
+          uber.invokeMethodOnParent('setPath', {path: url});
+          uber.invokeMethodOnParent('setTitle',
+              {title: loadTimeData.getString(hash + 'TabTitle')});
         };
       }
 
@@ -51,21 +60,31 @@ cr.define('options', function() {
         };
       }
 
-      var manageIntentsButton = $('manage-intents-button');
-      if (manageIntentsButton) {
-        manageIntentsButton.onclick = function(event) {
-          OptionsPage.navigateToPage('intents');
-        };
-      }
+      $('manage-galleries-button').onclick = function(event) {
+        OptionsPage.navigateToPage('manageGalleries');
+      };
+
+      if (cr.isChromeOS)
+        UIAccountTweaks.applyGuestModeVisibility(document);
 
       // Cookies filter page ---------------------------------------------------
       $('show-cookies-button').onclick = function(event) {
         chrome.send('coreOptionsUserMetricsAction', ['Options_ShowCookies']);
         OptionsPage.navigateToPage('cookies');
       };
+      $('show-app-cookies-button').onclick = function(event) {
+        OptionsPage.navigateToPage('app-cookies');
+      };
 
-      if (!templateData.enable_web_intents && $('intent-section'))
-        $('intent-section').hidden = true;
+      var intentsSection = $('intents-section');
+      if (!loadTimeData.getBoolean('enable_web_intents') && intentsSection)
+        intentsSection.parentNode.removeChild(intentsSection);
+
+      $('content-settings-overlay-confirm').onclick =
+          OptionsPage.closeOverlay.bind(OptionsPage);
+
+      $('pepper-flash-cameramic-section').style.display = 'none';
+      $('pepper-flash-cameramic-exceptions-div').style.display = 'none';
     },
   };
 
@@ -141,6 +160,16 @@ cr.define('options', function() {
                                'list[mode=' + mode + ']');
     exceptionsList.patternValidityCheckComplete(pattern, valid);
   };
+
+  /**
+   * Enables the Pepper Flash camera and microphone settings.
+   * Please note that whether the settings are actually showed or not is also
+   * affected by the style class pepper-flash-settings.
+   */
+  ContentSettings.enablePepperFlashCameraMicSettings = function() {
+    $('pepper-flash-cameramic-section').style.display = '';
+    $('pepper-flash-cameramic-exceptions-div').style.display = '';
+  }
 
   // Export
   return {

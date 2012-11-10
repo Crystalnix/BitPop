@@ -4,11 +4,11 @@
 
 #ifndef UI_AURA_CLIENT_VISIBILITY_CLIENT_H_
 #define UI_AURA_CLIENT_VISIBILITY_CLIENT_H_
-#pragma once
 
 #include "ui/aura/aura_export.h"
 
 namespace aura {
+class RootWindow;
 class Window;
 namespace client {
 
@@ -26,8 +26,9 @@ class AURA_EXPORT VisibilityClient {
 };
 
 // Sets/Gets the VisibilityClient on the RootWindow.
-AURA_EXPORT void SetVisibilityClient(VisibilityClient* client);
-AURA_EXPORT VisibilityClient* GetVisibilityClient();
+AURA_EXPORT void SetVisibilityClient(RootWindow* root_window,
+                                     VisibilityClient* client);
+AURA_EXPORT VisibilityClient* GetVisibilityClient(RootWindow* root_window);
 
 }  // namespace clients
 }  // namespace aura

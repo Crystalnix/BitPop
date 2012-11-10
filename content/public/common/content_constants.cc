@@ -3,11 +3,17 @@
 // found in the LICENSE file.
 
 #include "content/public/common/content_constants.h"
-
 namespace content {
 
+const FilePath::CharType kAppCacheDirname[] =
+    FILE_PATH_LITERAL("Application Cache");
+const FilePath::CharType kPepperDataDirname[] =
+    FILE_PATH_LITERAL("Pepper Data");
+
+const char kBrowserPluginMimeType[] = "application/browser-plugin";
+
 // This number used to be limited to 32 in the past (see b/535234).
-const unsigned int kMaxRendererProcessCount = 42;
+const size_t kMaxRendererProcessCount = 82;
 const int kMaxSessionHistoryEntries = 50;
 const size_t kMaxTitleChars = 4 * 1024;
 const size_t kMaxURLChars = 2 * 1024 * 1024;
@@ -23,5 +29,15 @@ const char    kStatsFilename[] = "ChromiumStats2";
 
 const int kStatsMaxThreads = 32;
 const int kStatsMaxCounters = 3000;
+
+const int kHistogramSynchronizerReservedSequenceNumber = 0;
+
+const char kGpuCompositingFieldTrialName[] = "ForceCompositingMode";
+const char kGpuCompositingFieldTrialEnabledName[] = "enabled";
+const char kGpuCompositingFieldTrialThreadEnabledName[] = "thread";
+
+const char kStage3DFieldTrialName[] = "EnableStage3D";
+const char kStage3DFieldTrialBlacklistedName[] = "blacklisted";
+const char kStage3DFieldTrialEnabledName[] = "enabled";
 
 }  // namespace content

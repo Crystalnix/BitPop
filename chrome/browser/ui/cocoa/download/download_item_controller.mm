@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,12 +23,14 @@
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #import "chrome/browser/ui/cocoa/ui_localizer.h"
 #include "content/public/browser/download_item.h"
+#include "content/public/browser/page_navigator.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/text_elider.h"
+#include "ui/gfx/font.h"
 #include "ui/gfx/image/image.h"
 
 using content::DownloadItem;
@@ -40,10 +42,6 @@ namespace {
 // UX to fully spec all the the behaviors of download items and truncations
 // rules so all platforms can get inline in the future.
 const int kTextWidth = 140;            // Pixels
-
-// The maximum number of characters we show in a file name when displaying the
-// dangerous download message.
-const int kFileNameMaxLength = 20;
 
 // The maximum width in pixels for the file name tooltip.
 const int kToolTipMaxWidth = 900;
@@ -76,8 +74,9 @@ void WidenView(NSView* view, CGFloat widthChange) {
 
 class DownloadShelfContextMenuMac : public DownloadShelfContextMenu {
  public:
-  DownloadShelfContextMenuMac(BaseDownloadItemModel* model)
-      : DownloadShelfContextMenu(model) { }
+  DownloadShelfContextMenuMac(BaseDownloadItemModel* model,
+                              content::PageNavigator* navigator)
+      : DownloadShelfContextMenu(model, navigator) { }
 
   using DownloadShelfContextMenu::ExecuteCommand;
   using DownloadShelfContextMenu::IsCommandIdChecked;
@@ -101,12 +100,14 @@ class DownloadShelfContextMenuMac : public DownloadShelfContextMenu {
 @implementation DownloadItemController
 
 - (id)initWithModel:(BaseDownloadItemModel*)downloadModel
-              shelf:(DownloadShelfController*)shelf {
+              shelf:(DownloadShelfController*)shelf
+          navigator:(content::PageNavigator*)navigator {
   if ((self = [super initWithNibName:@"DownloadItem"
                               bundle:base::mac::FrameworkBundle()])) {
     // Must be called before [self view], so that bridge_ is set in awakeFromNib
     bridge_.reset(new DownloadItemMac(downloadModel, self));
-    menuBridge_.reset(new DownloadShelfContextMenuMac(downloadModel));
+    menuBridge_.reset(new DownloadShelfContextMenuMac(downloadModel,
+                                                      navigator));
 
     NSNotificationCenter* defaultCenter = [NSNotificationCenter defaultCenter];
     [defaultCenter addObserver:self
@@ -117,6 +118,7 @@ class DownloadShelfContextMenuMac : public DownloadShelfContextMenu {
     shelf_ = shelf;
     state_ = kNormal;
     creationTime_ = base::Time::Now();
+    font_.reset(new gfx::Font());
   }
   return self;
 }
@@ -165,7 +167,7 @@ class DownloadShelfContextMenuMac : public DownloadShelfContextMenu {
   DCHECK_EQ(bridge_->download_model(), downloadModel);
 
   // Handle dangerous downloads.
-  if (downloadModel->download()->GetSafetyState() == DownloadItem::DANGEROUS) {
+  if (downloadModel->IsDangerous()) {
     [self setState:kDangerous];
 
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
@@ -173,61 +175,15 @@ class DownloadShelfContextMenuMac : public DownloadShelfContextMenu {
     NSString* confirmButtonTitle;
     NSImage* alertIcon;
 
-    // The dangerous download label, button text and icon are different under
-    // different cases.
-    if (downloadModel->download()->GetDangerType() ==
-        content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL) {
-      // TODO(noelutz): add support for malicious content.
-      // Safebrowsing shows the download URL leads to malicious file.
+    dangerousWarning =
+        base::SysUTF16ToNSString(downloadModel->GetWarningText(
+            *font_, kTextWidth));
+    confirmButtonTitle =
+        base::SysUTF16ToNSString(downloadModel->GetWarningConfirmButtonText());
+    if (downloadModel->IsMalicious())
       alertIcon = rb.GetNativeImageNamed(IDR_SAFEBROWSING_WARNING);
-      dangerousWarning = l10n_util::GetNSStringWithFixup(
-          IDS_PROMPT_MALICIOUS_DOWNLOAD_URL);
-      confirmButtonTitle = l10n_util::GetNSStringWithFixup(
-          IDS_CONFIRM_DOWNLOAD);
-    } else {
-      // It's a dangerous file type (e.g.: an executable).
-      DCHECK_EQ(downloadModel->download()->GetDangerType(),
-                content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE);
+    else
       alertIcon = rb.GetNativeImageNamed(IDR_WARNING);
-      if (ChromeDownloadManagerDelegate::IsExtensionDownload(
-              downloadModel->download())) {
-        dangerousWarning = l10n_util::GetNSStringWithFixup(
-            IDS_PROMPT_DANGEROUS_DOWNLOAD_EXTENSION);
-        confirmButtonTitle = l10n_util::GetNSStringWithFixup(
-            IDS_CONTINUE_EXTENSION_DOWNLOAD);
-      } else {
-        // This basic fixup copies Windows DownloadItemView::DownloadItemView().
-
-        // Extract the file extension (if any).
-        FilePath filename(downloadModel->download()->GetTargetName());
-        FilePath::StringType extension = filename.Extension();
-
-        // Remove leading '.' from the extension
-        if (extension.length() > 0)
-          extension = extension.substr(1);
-
-        // Elide giant extensions.
-        if (extension.length() > kFileNameMaxLength / 2) {
-          string16 utf16_extension;
-          ui::ElideString(UTF8ToUTF16(extension), kFileNameMaxLength / 2,
-                          &utf16_extension);
-          extension = UTF16ToUTF8(utf16_extension);
-        }
-
-       // Rebuild the filename.extension.
-       string16 rootname = UTF8ToUTF16(filename.RemoveExtension().value());
-       ui::ElideString(rootname, kFileNameMaxLength - extension.length(),
-                       &rootname);
-       std::string new_filename = UTF16ToUTF8(rootname);
-       if (extension.length())
-         new_filename += std::string(".") + extension;
-
-         dangerousWarning = l10n_util::GetNSStringFWithFixup(
-             IDS_PROMPT_DANGEROUS_DOWNLOAD, UTF8ToUTF16(new_filename));
-         confirmButtonTitle =
-             l10n_util::GetNSStringWithFixup(IDS_CONFIRM_DOWNLOAD);
-      }
-    }
     DCHECK(alertIcon);
     [image_ setImage:alertIcon];
     DCHECK(dangerousWarning);
@@ -293,10 +249,9 @@ class DownloadShelfContextMenuMac : public DownloadShelfContextMenu {
 }
 
 - (void)updateToolTip {
-  string16 elidedFilename = ui::ElideFilename(
-      [self download]->GetFileNameToReportUser(),
-      gfx::Font(), kToolTipMaxWidth);
-  [progressView_ setToolTip:base::SysUTF16ToNSString(elidedFilename)];
+  string16 tooltip_text =
+      bridge_->download_model()->GetTooltipText(*font_, kToolTipMaxWidth);
+  [progressView_ setToolTip:base::SysUTF16ToNSString(tooltip_text)];
 }
 
 - (void)clearDangerousMode {

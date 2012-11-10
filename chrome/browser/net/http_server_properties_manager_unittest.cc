@@ -9,7 +9,7 @@
 #include "base/values.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -139,19 +139,10 @@ TEST_F(HttpServerPropertiesManagerTest,
   // Set supports_spdy for www.google.com:80.
   server_pref_dict->SetBoolean("supports_spdy", true);
 
-  // Set up the SpdySettings for www.google.com:80.
-  base::ListValue* spdy_settings_list = new base::ListValue;
-  base::DictionaryValue* spdy_setting_dict = new base::DictionaryValue;
-  spdy_setting_dict->SetInteger("flags", spdy::SETTINGS_FLAG_PERSISTED);
-  spdy_setting_dict->SetInteger("id", 1234);
-  spdy_setting_dict->SetInteger("value", 31337);
-  spdy_settings_list->Append(spdy_setting_dict);
-  server_pref_dict->Set("settings", spdy_settings_list);
-
   // Set up alternate_protocol for www.google.com:80.
   base::DictionaryValue* alternate_protocol = new base::DictionaryValue;
   alternate_protocol->SetInteger("port", 443);
-  alternate_protocol->SetInteger("protocol", static_cast<int>(net::NPN_SPDY_1));
+  alternate_protocol->SetString("protocol_str", "npn-spdy/1");
   server_pref_dict->SetWithoutPathExpansion(
       "alternate_protocol", alternate_protocol);
 
@@ -170,20 +161,11 @@ TEST_F(HttpServerPropertiesManagerTest,
   // Set supports_spdy for mail.google.com:80
   server_pref_dict1->SetBoolean("supports_spdy", true);
 
-  // Set up the SpdySettings for mail.google.com:80
-  base::ListValue* spdy_settings_list1 = new base::ListValue;
-  base::DictionaryValue* spdy_setting_dict1 = new base::DictionaryValue;
-  spdy_setting_dict1->SetInteger("flags", spdy::SETTINGS_FLAG_PERSISTED);
-  spdy_setting_dict1->SetInteger("id", 5678);
-  spdy_setting_dict1->SetInteger("value", 62667);
-  spdy_settings_list1->Append(spdy_setting_dict1);
-  server_pref_dict1->Set("settings", spdy_settings_list1);
-
   // Set up alternate_protocol for mail.google.com:80
   base::DictionaryValue* alternate_protocol1 = new base::DictionaryValue;
   alternate_protocol1->SetInteger("port", 444);
-  alternate_protocol1->SetInteger(
-      "protocol", static_cast<int>(net::NPN_SPDY_2));
+  alternate_protocol1->SetString("protocol_str", "npn-spdy/2");
+
   server_pref_dict1->SetWithoutPathExpansion(
       "alternate_protocol", alternate_protocol1);
 
@@ -212,25 +194,6 @@ TEST_F(HttpServerPropertiesManagerTest,
       net::HostPortPair::FromString("mail.google.com:80")));
   EXPECT_FALSE(http_server_props_manager_->SupportsSpdy(
       net::HostPortPair::FromString("foo.google.com:1337")));
-
-  // Verify SpdySettings.
-  spdy::SpdySettings spdy_settings_ret =
-      http_server_props_manager_->GetSpdySettings(
-          net::HostPortPair::FromString("www.google.com:80"));
-  ASSERT_EQ(1U, spdy_settings_ret.size());
-  spdy::SpdySetting spdy_setting1_ret = spdy_settings_ret.front();
-  spdy::SettingsFlagsAndId id1_ret(spdy_setting1_ret.first);
-  EXPECT_EQ(1234U, id1_ret.id());
-  EXPECT_EQ(spdy::SETTINGS_FLAG_PERSISTED, id1_ret.flags());
-  EXPECT_EQ(31337u, spdy_setting1_ret.second);
-  spdy_settings_ret = http_server_props_manager_->GetSpdySettings(
-          net::HostPortPair::FromString("mail.google.com:80"));
-  ASSERT_EQ(1U, spdy_settings_ret.size());
-  spdy_setting1_ret = spdy_settings_ret.front();
-  id1_ret = spdy_setting1_ret.first;
-  EXPECT_EQ(5678U, id1_ret.id());
-  EXPECT_EQ(spdy::SETTINGS_FLAG_PERSISTED, id1_ret.flags());
-  EXPECT_EQ(62667u, spdy_setting1_ret.second);
 
   // Verify AlternateProtocol.
   ASSERT_TRUE(http_server_props_manager_->HasAlternateProtocol(
@@ -275,29 +238,28 @@ TEST_F(HttpServerPropertiesManagerTest, SupportsSpdy) {
   Mock::VerifyAndClearExpectations(http_server_props_manager_.get());
 }
 
-TEST_F(HttpServerPropertiesManagerTest, SetSpdySettings) {
+TEST_F(HttpServerPropertiesManagerTest, SetSpdySetting) {
   ExpectPrefsUpdate();
 
-  // Add SpdySettings for mail.google.com:443.
+  // Add SpdySetting for mail.google.com:443.
   net::HostPortPair spdy_server_mail("mail.google.com", 443);
-  spdy::SpdySettings spdy_settings;
-  spdy::SettingsFlagsAndId id1(0);
-  id1.set_flags(spdy::SETTINGS_FLAG_PLEASE_PERSIST);
-  id1.set_id(1234);
-  spdy_settings.push_back(std::make_pair(id1, 31337));
-  http_server_props_manager_->SetSpdySettings(spdy_server_mail, spdy_settings);
+  const net::SpdySettingsIds id1 = net::SETTINGS_UPLOAD_BANDWIDTH;
+  const net::SpdySettingsFlags flags1 = net::SETTINGS_FLAG_PLEASE_PERSIST;
+  const uint32 value1 = 31337;
+  http_server_props_manager_->SetSpdySetting(
+      spdy_server_mail, id1, flags1, value1);
 
   // Run the task.
   loop_.RunAllPending();
 
-  spdy::SpdySettings spdy_settings_ret =
+  const net::SettingsMap& settings_map1_ret =
       http_server_props_manager_->GetSpdySettings(spdy_server_mail);
-  ASSERT_EQ(1U, spdy_settings_ret.size());
-  spdy::SpdySetting spdy_setting1_ret = spdy_settings_ret.front();
-  spdy::SettingsFlagsAndId id1_ret(spdy_setting1_ret.first);
-  EXPECT_EQ(1234U, id1_ret.id());
-  EXPECT_EQ(spdy::SETTINGS_FLAG_PERSISTED, id1_ret.flags());
-  EXPECT_EQ(31337U, spdy_setting1_ret.second);
+  ASSERT_EQ(1U, settings_map1_ret.size());
+  net::SettingsMap::const_iterator it1_ret = settings_map1_ret.find(id1);
+  EXPECT_TRUE(it1_ret != settings_map1_ret.end());
+  net::SettingsFlagsAndValue flags_and_value1_ret = it1_ret->second;
+  EXPECT_EQ(net::SETTINGS_FLAG_PERSISTED, flags_and_value1_ret.first);
+  EXPECT_EQ(value1, flags_and_value1_ret.second);
 
   Mock::VerifyAndClearExpectations(http_server_props_manager_.get());
 }
@@ -358,12 +320,11 @@ TEST_F(HttpServerPropertiesManagerTest, Clear) {
   http_server_props_manager_->SetAlternateProtocol(
       spdy_server_mail, 443, net::NPN_SPDY_2);
 
-  spdy::SpdySettings spdy_settings;
-  spdy::SettingsFlagsAndId id1(0);
-  id1.set_flags(spdy::SETTINGS_FLAG_PLEASE_PERSIST);
-  id1.set_id(1234);
-  spdy_settings.push_back(std::make_pair(id1, 31337));
-  http_server_props_manager_->SetSpdySettings(spdy_server_mail, spdy_settings);
+  const net::SpdySettingsIds id1 = net::SETTINGS_UPLOAD_BANDWIDTH;
+  const net::SpdySettingsFlags flags1 = net::SETTINGS_FLAG_PLEASE_PERSIST;
+  const uint32 value1 = 31337;
+  http_server_props_manager_->SetSpdySetting(
+      spdy_server_mail, id1, flags1, value1);
 
   net::HostPortPair known_pipeliner("pipeline.com", 8080);
   http_server_props_manager_->SetPipelineCapability(known_pipeliner,
@@ -376,14 +337,15 @@ TEST_F(HttpServerPropertiesManagerTest, Clear) {
   EXPECT_TRUE(
       http_server_props_manager_->HasAlternateProtocol(spdy_server_mail));
 
-  spdy::SpdySettings spdy_settings_ret =
+  // Check SPDY settings values.
+  const net::SettingsMap& settings_map1_ret =
       http_server_props_manager_->GetSpdySettings(spdy_server_mail);
-  ASSERT_EQ(1U, spdy_settings_ret.size());
-  spdy::SpdySetting spdy_setting1_ret = spdy_settings_ret.front();
-  spdy::SettingsFlagsAndId id1_ret(spdy_setting1_ret.first);
-  EXPECT_EQ(1234U, id1_ret.id());
-  EXPECT_EQ(spdy::SETTINGS_FLAG_PERSISTED, id1_ret.flags());
-  EXPECT_EQ(31337U, spdy_setting1_ret.second);
+  ASSERT_EQ(1U, settings_map1_ret.size());
+  net::SettingsMap::const_iterator it1_ret = settings_map1_ret.find(id1);
+  EXPECT_TRUE(it1_ret != settings_map1_ret.end());
+  net::SettingsFlagsAndValue flags_and_value1_ret = it1_ret->second;
+  EXPECT_EQ(net::SETTINGS_FLAG_PERSISTED, flags_and_value1_ret.first);
+  EXPECT_EQ(value1, flags_and_value1_ret.second);
 
   EXPECT_EQ(net::PIPELINE_CAPABLE,
             http_server_props_manager_->GetPipelineCapability(known_pipeliner));
@@ -401,9 +363,9 @@ TEST_F(HttpServerPropertiesManagerTest, Clear) {
   EXPECT_FALSE(
       http_server_props_manager_->HasAlternateProtocol(spdy_server_mail));
 
-  spdy::SpdySettings spdy_settings1_ret =
+  const net::SettingsMap& settings_map2_ret =
       http_server_props_manager_->GetSpdySettings(spdy_server_mail);
-  EXPECT_EQ(0U, spdy_settings1_ret.size());
+  EXPECT_EQ(0U, settings_map2_ret.size());
 
   EXPECT_EQ(net::PIPELINE_UNKNOWN,
             http_server_props_manager_->GetPipelineCapability(known_pipeliner));

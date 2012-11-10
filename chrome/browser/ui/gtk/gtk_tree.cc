@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "ui/base/models/table_model.h"
 #include "ui/gfx/gtk_util.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia.h"
 
 namespace gtk_tree {
 
@@ -351,10 +352,10 @@ TreeAdapter::TreeAdapter(Delegate* delegate, ui::TreeModel* tree_model)
                                    G_TYPE_POINTER);
   tree_model->AddObserver(this);
 
-  std::vector<SkBitmap> icons;
+  std::vector<gfx::ImageSkia> icons;
   tree_model->GetIcons(&icons);
   for (size_t i = 0; i < icons.size(); ++i) {
-    pixbufs_.push_back(gfx::GdkPixbufFromSkBitmap(&icons[i]));
+    pixbufs_.push_back(gfx::GdkPixbufFromSkBitmap(*icons[i].bitmap()));
   }
 }
 
@@ -384,7 +385,7 @@ void TreeAdapter::FillRow(GtkTreeIter* iter, ui::TreeModelNode* node) {
   if (icon_index >= 0 && icon_index < static_cast<int>(pixbufs_.size()))
     pixbuf = pixbufs_[icon_index];
   else
-    pixbuf = GtkThemeService::GetFolderIcon(true)->ToGdkPixbuf();
+    pixbuf = GtkThemeService::GetFolderIcon(true).ToGdkPixbuf();
   gtk_tree_store_set(tree_store_, iter,
                      COL_ICON, pixbuf,
                      COL_TITLE, UTF16ToUTF8(node->GetTitle()).c_str(),

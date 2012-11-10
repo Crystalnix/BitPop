@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/sys_string_conversions.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_cell_single_line.h"
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_model_observer_for_cocoa.h"
@@ -70,21 +71,16 @@
 
 - (void)awakeFromNib {
   [nameField_ setStringValue:initialName_.get()];
+  [[nameField_ cell] setUsesSingleLineMode:YES];
 
-  // Check if NSTextFieldCell supports the method. This check is in place as
-  // only 10.6 and greater support the setUsesSingleLineMode method.
-  // TODO(kushi.p): Remove this when the project hits a 10.6+ only state.
-  NSTextFieldCell* nameFieldCell_ = [nameField_ cell];
-  if ([nameFieldCell_
-          respondsToSelector:@selector(setUsesSingleLineMode:)]) {
-    [nameFieldCell_ setUsesSingleLineMode:YES];
-  }
+  [okButton_ setTitle:l10n_util::GetNSStringWithFixup(node_ ? IDS_SAVE :
+                                                              IDS_ADD)];
 }
 
 - (void)runAsModalSheet {
   // Ping me when things change out from under us.
   observer_.reset(new BookmarkModelObserverForCocoa(
-                    node_, profile_->GetBookmarkModel(),
+                    node_, BookmarkModelFactory::GetForProfile(profile_),
                     self,
                     @selector(cancel:)));
   [NSApp beginSheet:[self window]
@@ -100,7 +96,7 @@
 
 - (IBAction)ok:(id)sender {
   NSString* name = [nameField_ stringValue];
-  BookmarkModel* model = profile_->GetBookmarkModel();
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile_);
   if (node_) {
     model->SetTitle(node_, base::SysNSStringToUTF16(name));
   } else {

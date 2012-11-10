@@ -196,22 +196,40 @@
   OP(BlitFramebufferEXT)                                       /* 439 */ \
   OP(RenderbufferStorageMultisampleEXT)                        /* 440 */ \
   OP(TexStorage2DEXT)                                          /* 441 */ \
-  OP(SwapBuffers)                                              /* 442 */ \
-  OP(GetMaxValueInBufferCHROMIUM)                              /* 443 */ \
-  OP(GenSharedIdsCHROMIUM)                                     /* 444 */ \
-  OP(DeleteSharedIdsCHROMIUM)                                  /* 445 */ \
-  OP(RegisterSharedIdsCHROMIUM)                                /* 446 */ \
-  OP(EnableFeatureCHROMIUM)                                    /* 447 */ \
-  OP(ResizeCHROMIUM)                                           /* 448 */ \
-  OP(GetRequestableExtensionsCHROMIUM)                         /* 449 */ \
-  OP(RequestExtensionCHROMIUM)                                 /* 450 */ \
-  OP(GetMultipleIntegervCHROMIUM)                              /* 451 */ \
-  OP(GetProgramInfoCHROMIUM)                                   /* 452 */ \
-  OP(CreateStreamTextureCHROMIUM)                              /* 453 */ \
-  OP(DestroyStreamTextureCHROMIUM)                             /* 454 */ \
-  OP(GetTranslatedShaderSourceANGLE)                           /* 455 */ \
-  OP(PostSubBufferCHROMIUM)                                    /* 456 */ \
-  OP(TexImageIOSurface2DCHROMIUM)                              /* 457 */ \
+  OP(GenQueriesEXT)                                            /* 442 */ \
+  OP(GenQueriesEXTImmediate)                                   /* 443 */ \
+  OP(DeleteQueriesEXT)                                         /* 444 */ \
+  OP(DeleteQueriesEXTImmediate)                                /* 445 */ \
+  OP(BeginQueryEXT)                                            /* 446 */ \
+  OP(EndQueryEXT)                                              /* 447 */ \
+  OP(SwapBuffers)                                              /* 448 */ \
+  OP(GetMaxValueInBufferCHROMIUM)                              /* 449 */ \
+  OP(GenSharedIdsCHROMIUM)                                     /* 450 */ \
+  OP(DeleteSharedIdsCHROMIUM)                                  /* 451 */ \
+  OP(RegisterSharedIdsCHROMIUM)                                /* 452 */ \
+  OP(EnableFeatureCHROMIUM)                                    /* 453 */ \
+  OP(ResizeCHROMIUM)                                           /* 454 */ \
+  OP(GetRequestableExtensionsCHROMIUM)                         /* 455 */ \
+  OP(RequestExtensionCHROMIUM)                                 /* 456 */ \
+  OP(GetMultipleIntegervCHROMIUM)                              /* 457 */ \
+  OP(GetProgramInfoCHROMIUM)                                   /* 458 */ \
+  OP(CreateStreamTextureCHROMIUM)                              /* 459 */ \
+  OP(DestroyStreamTextureCHROMIUM)                             /* 460 */ \
+  OP(GetTranslatedShaderSourceANGLE)                           /* 461 */ \
+  OP(PostSubBufferCHROMIUM)                                    /* 462 */ \
+  OP(TexImageIOSurface2DCHROMIUM)                              /* 463 */ \
+  OP(CopyTextureCHROMIUM)                                      /* 464 */ \
+  OP(DrawArraysInstancedANGLE)                                 /* 465 */ \
+  OP(DrawElementsInstancedANGLE)                               /* 466 */ \
+  OP(VertexAttribDivisorANGLE)                                 /* 467 */ \
+  OP(GenMailboxCHROMIUM)                                       /* 468 */ \
+  OP(ProduceTextureCHROMIUM)                                   /* 469 */ \
+  OP(ProduceTextureCHROMIUMImmediate)                          /* 470 */ \
+  OP(ConsumeTextureCHROMIUM)                                   /* 471 */ \
+  OP(ConsumeTextureCHROMIUMImmediate)                          /* 472 */ \
+  OP(BindUniformLocationCHROMIUM)                              /* 473 */ \
+  OP(BindUniformLocationCHROMIUMImmediate)                     /* 474 */ \
+  OP(BindUniformLocationCHROMIUMBucket)                        /* 475 */ \
 
 enum CommandId {
   kStartPoint = cmd::kLastCommonId,  // All GLES2 commands start after this.

@@ -20,14 +20,19 @@ class WindowlessPluginTest : public PluginTest {
   virtual bool IsWindowless() const OVERRIDE;
 
   // NPAPI HandleEvent handler
+  virtual NPError New(uint16 mode, int16 argc, const char* argn[],
+                      const char* argv[], NPSavedData* saved) OVERRIDE;
   virtual int16 HandleEvent(void* event) OVERRIDE;
 
  protected:
   NPError ExecuteScript(NPNetscapeFuncs* browser, NPP id,
       const std::string& script, NPVariant* result);
   void ExecuteScriptDeleteInPaint(NPNetscapeFuncs* browser);
+  void ExecuteScriptResizeInPaint(NPNetscapeFuncs* browser);
   void MultipleInstanceSyncCalls(NPNetscapeFuncs* browser);
   void ConvertPoint(NPNetscapeFuncs* browser);
+
+  int paint_counter_;
 };
 
 }  // namespace NPAPIClient

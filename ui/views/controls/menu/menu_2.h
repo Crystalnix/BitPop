@@ -4,7 +4,6 @@
 
 #ifndef UI_VIEWS_CONTROLS_MENU_MENU_2_H_
 #define UI_VIEWS_CONTROLS_MENU_MENU_2_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
@@ -21,8 +20,6 @@ class MenuModel;
 }
 
 namespace views {
-
-class NativeMenuGtk;
 
 // A menu. Populated from a model, and relies on a delegate to execute commands.
 //
@@ -85,7 +82,6 @@ class VIEWS_EXPORT Menu2 {
   void SetMinimumWidth(int width);
 
  private:
-  friend class NativeMenuGtk;
 
   ui::MenuModel* model_;
 

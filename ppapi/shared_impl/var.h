@@ -91,11 +91,17 @@ class PPAPI_SHARED_EXPORT Var : public base::RefCounted<Var> {
 //   DoSomethingWithTheString(string->value());
 class PPAPI_SHARED_EXPORT StringVar : public Var {
  public:
-  StringVar(const std::string& str);
+  explicit StringVar(const std::string& str);
   StringVar(const char* str, uint32 len);
   virtual ~StringVar();
 
   const std::string& value() const { return value_; }
+  // Return a pointer to the internal string. This allows other objects to
+  // temporarily store a weak pointer to our internal string. Use with care; the
+  // pointer *will* become invalid if this StringVar is removed from the
+  // tracker. (All of this applies to value(), but this one's even easier to use
+  // dangerously).
+  const std::string* ptr() const { return &value_; }
 
   // Var override.
   virtual StringVar* AsStringVar() OVERRIDE;
@@ -110,11 +116,18 @@ class PPAPI_SHARED_EXPORT StringVar : public Var {
   static PP_Var StringToPPVar(const std::string& str);
   static PP_Var StringToPPVar(const char* str, uint32 len);
 
+  // Same as StringToPPVar but avoids a copy by destructively swapping the
+  // given string into the newly created StringVar. The string must already be
+  // valid UTF-8. After the call, *src will be empty.
+  static PP_Var SwapValidatedUTF8StringIntoPPVar(std::string* src);
+
   // Helper function that converts a PP_Var to a string. This will return NULL
   // if the PP_Var is not of string type or the string is invalid.
   static StringVar* FromPPVar(PP_Var var);
 
  private:
+  StringVar();  // Makes an empty string.
+
   std::string value_;
 
   DISALLOW_COPY_AND_ASSIGN(StringVar);

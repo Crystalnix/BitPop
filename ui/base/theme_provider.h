@@ -4,10 +4,10 @@
 
 #ifndef UI_BASE_THEME_PROVIDER_H_
 #define UI_BASE_THEME_PROVIDER_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/base/layout.h"
 #include "ui/base/ui_export.h"
 
 #if defined(OS_MACOSX)
@@ -25,9 +25,15 @@ typedef struct _GdkColor GdkColor;
 typedef struct _GdkPixbuf GdkPixbuf;
 #endif  // OS_*
 
-class Profile;
-class RefCountedMemory;
 class SkBitmap;
+
+namespace base {
+class RefCountedMemory;
+}
+
+namespace gfx {
+class ImageSkia;
+}
 
 namespace ui {
 
@@ -44,13 +50,15 @@ class UI_EXPORT ThemeProvider {
  public:
   virtual ~ThemeProvider();
 
-  // TODO(beng): This dependency is horrible!
-  // Initialize the provider with the passed in profile.
-  virtual void Init(Profile* profile) = 0;
-
   // Get the bitmap specified by |id|. An implementation of ThemeProvider should
   // have its own source of ids (e.g. an enum, or external resource bundle).
+  // TODO(pkotwicz): Get rid of GetBitmapNamed once all code uses
+  // GetImageSkiaNamed.
   virtual SkBitmap* GetBitmapNamed(int id) const = 0;
+
+  // Get the image specified by |id|. An implementation of ThemeProvider should
+  // have its own source of ids (e.g. an enum, or external resource bundle).
+  virtual gfx::ImageSkia* GetImageSkiaNamed(int id) const = 0;
 
   // Get the color specified by |id|.
   virtual SkColor GetColor(int id) const = 0;
@@ -70,7 +78,9 @@ class UI_EXPORT ThemeProvider {
   // Reads the image data from the theme file into the specified vector. Only
   // valid for un-themed resources and the themed IDR_THEME_NTP_* in most
   // implementations of ThemeProvider. Returns NULL on error.
-  virtual RefCountedMemory* GetRawData(int id) const = 0;
+  virtual base::RefCountedMemory* GetRawData(
+      int id,
+      ui::ScaleFactor scale_factor) const = 0;
 
 #if defined(OS_MACOSX) && !defined(TOOLKIT_VIEWS)
   // Gets the NSImage with the specified |id|.

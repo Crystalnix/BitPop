@@ -1,10 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/prefs/pref_set_observer.h"
 
 #include "chrome/common/pref_names.h"
+#include "chrome/browser/extensions/extension_prefs.h"
 #include "content/public/browser/notification_types.h"
 
 PrefSetObserver::PrefSetObserver(PrefService* pref_service,
@@ -53,19 +54,21 @@ PrefSetObserver* PrefSetObserver::CreateProxyPrefSetObserver(
 }
 
 // static
-PrefSetObserver* PrefSetObserver::CreateDefaultSearchPrefSetObserver(
+PrefSetObserver* PrefSetObserver::CreateProtectedPrefSetObserver(
     PrefService* pref_service,
     content::NotificationObserver* observer) {
   PrefSetObserver* pref_set = new PrefSetObserver(pref_service, observer);
-  pref_set->AddPref(prefs::kDefaultSearchProviderEnabled);
-  pref_set->AddPref(prefs::kDefaultSearchProviderName);
-  pref_set->AddPref(prefs::kDefaultSearchProviderKeyword);
-  pref_set->AddPref(prefs::kDefaultSearchProviderSearchURL);
-  pref_set->AddPref(prefs::kDefaultSearchProviderSuggestURL);
-  pref_set->AddPref(prefs::kDefaultSearchProviderIconURL);
-  pref_set->AddPref(prefs::kDefaultSearchProviderInstantURL);
-  pref_set->AddPref(prefs::kDefaultSearchProviderEncodings);
-  pref_set->AddPref(prefs::kSyncedDefaultSearchProviderGUID);
+  // Homepage.
+  pref_set->AddPref(prefs::kHomePageIsNewTabPage);
+  pref_set->AddPref(prefs::kHomePage);
+  pref_set->AddPref(prefs::kShowHomeButton);
+  // Session startup.
+  pref_set->AddPref(prefs::kRestoreOnStartup);
+  pref_set->AddPref(prefs::kURLsToRestoreOnStartup);
+  // Pinned tabs.
+  pref_set->AddPref(prefs::kPinnedTabs);
+  // Extensions.
+  pref_set->AddPref(extensions::ExtensionPrefs::kExtensionsPref);
 
   return pref_set;
 }

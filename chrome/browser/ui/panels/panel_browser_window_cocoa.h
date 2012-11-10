@@ -8,8 +8,10 @@
 #import <Foundation/Foundation.h>
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/tabs/tab_strip_model_observer.h"
-#include "chrome/browser/ui/panels/native_panel.h"
+#include "chrome/browser/ui/panels/native_panel_cocoa.h"
+#include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/rect.h"
 
 class Browser;
@@ -20,8 +22,9 @@ class Panel;
 // Bridges between C++ and the Cocoa NSWindow. Cross-platform code will
 // interact with this object when it needs to manipulate the window.
 
-class PanelBrowserWindowCocoa : public NativePanel,
-                                public TabStripModelObserver {
+class PanelBrowserWindowCocoa : public NativePanelCocoa,
+                                public TabStripModelObserver,
+                                public content::NotificationObserver {
  public:
   PanelBrowserWindowCocoa(Browser* browser, Panel* panel,
                           const gfx::Rect& bounds);
@@ -37,6 +40,7 @@ class PanelBrowserWindowCocoa : public NativePanel,
   virtual void ActivatePanel() OVERRIDE;
   virtual void DeactivatePanel() OVERRIDE;
   virtual bool IsPanelActive() const OVERRIDE;
+  virtual void PreventActivationByOS(bool prevent_activation) OVERRIDE;
   virtual gfx::NativeWindow GetNativePanelHandle() OVERRIDE;
   virtual void UpdatePanelTitleBar() OVERRIDE;
   virtual void UpdatePanelLoadingAnimations(bool should_animate) OVERRIDE;
@@ -50,16 +54,21 @@ class PanelBrowserWindowCocoa : public NativePanel,
   virtual void DrawAttention(bool draw_attention) OVERRIDE;
   virtual bool IsDrawingAttention() const OVERRIDE;
   virtual bool PreHandlePanelKeyboardEvent(
-      const NativeWebKeyboardEvent& event,
+      const content::NativeWebKeyboardEvent& event,
       bool* is_keyboard_shortcut) OVERRIDE;
   virtual void HandlePanelKeyboardEvent(
-      const NativeWebKeyboardEvent& event) OVERRIDE;
+      const content::NativeWebKeyboardEvent& event) OVERRIDE;
   virtual void FullScreenModeChanged(bool is_full_screen) OVERRIDE;
   virtual Browser* GetPanelBrowser() const OVERRIDE;
   virtual void DestroyPanelBrowser() OVERRIDE;
-  virtual gfx::Size IconOnlySize() const OVERRIDE;
   virtual void EnsurePanelFullyVisible() OVERRIDE;
-  virtual void SetPanelAppIconVisibility(bool visible) OVERRIDE;
+  virtual void SetPanelAlwaysOnTop(bool on_top) OVERRIDE;
+  virtual void EnableResizeByMouse(bool enable) OVERRIDE;
+  virtual void UpdatePanelMinimizeRestoreButtonVisibility() OVERRIDE;
+  virtual void PanelExpansionStateChanging(
+      Panel::ExpansionState old_state,
+      Panel::ExpansionState new_state) OVERRIDE;
+  virtual NativePanelTesting* CreateNativePanelTesting() OVERRIDE;
 
   // These sizes are in screen coordinates.
   virtual gfx::Size WindowSizeFromContentSize(
@@ -69,18 +78,19 @@ class PanelBrowserWindowCocoa : public NativePanel,
   virtual int TitleOnlyHeight() const OVERRIDE;
 
   // Overridden from TabStripModelObserver.
-  virtual void TabInsertedAt(TabContentsWrapper* contents,
+  virtual void TabInsertedAt(TabContents* contents,
                              int index,
                              bool foreground) OVERRIDE;
-  virtual void TabDetachedAt(TabContentsWrapper* contents, int index) OVERRIDE;
+  virtual void TabDetachedAt(TabContents* contents, int index) OVERRIDE;
 
-  Panel* panel() { return panel_.get(); }
-  Browser* browser() const { return browser_.get(); }
+  // Overridden from NotificationObserver.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
-  // Callback from PanelWindowControllerCocoa that native window was actually
-  // closed. The window may not close right away because of onbeforeunload
-  // handlers.
-  void DidCloseNativeWindow();
+  // Overridden from NativePanelCocoa.
+  virtual Panel* panel() const OVERRIDE;
+  virtual void DidCloseNativeWindow() OVERRIDE;
 
  private:
   friend class PanelBrowserWindowCocoaTest;
@@ -111,6 +121,9 @@ class PanelBrowserWindowCocoa : public NativePanel,
   PanelWindowControllerCocoa* controller_;  // Weak, owns us.
   bool is_shown_;  // Panel is hidden on creation, Show() changes that forever.
   bool has_find_bar_; // Find bar should only be created once per panel.
+  NSInteger attention_request_id_;  // identifier from requestUserAttention.
+
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(PanelBrowserWindowCocoa);
 };

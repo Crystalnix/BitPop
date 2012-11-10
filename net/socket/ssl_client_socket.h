@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef NET_SOCKET_SSL_CLIENT_SOCKET_H_
 #define NET_SOCKET_SSL_CLIENT_SOCKET_H_
-#pragma once
 
 #include <string>
 
@@ -17,10 +16,8 @@
 namespace net {
 
 class CertVerifier;
-class OriginBoundCertService;
+class ServerBoundCertService;
 class SSLCertRequestInfo;
-class SSLHostInfo;
-class SSLHostInfoFactory;
 class SSLInfo;
 class TransportSecurityState;
 
@@ -29,25 +26,21 @@ class TransportSecurityState;
 struct SSLClientSocketContext {
   SSLClientSocketContext()
       : cert_verifier(NULL),
-        origin_bound_cert_service(NULL),
-        transport_security_state(NULL),
-        ssl_host_info_factory(NULL) {}
+        server_bound_cert_service(NULL),
+        transport_security_state(NULL) {}
 
   SSLClientSocketContext(CertVerifier* cert_verifier_arg,
-                         OriginBoundCertService* origin_bound_cert_service_arg,
+                         ServerBoundCertService* server_bound_cert_service_arg,
                          TransportSecurityState* transport_security_state_arg,
-                         SSLHostInfoFactory* ssl_host_info_factory_arg,
                          const std::string& ssl_session_cache_shard_arg)
       : cert_verifier(cert_verifier_arg),
-        origin_bound_cert_service(origin_bound_cert_service_arg),
+        server_bound_cert_service(server_bound_cert_service_arg),
         transport_security_state(transport_security_state_arg),
-        ssl_host_info_factory(ssl_host_info_factory_arg),
         ssl_session_cache_shard(ssl_session_cache_shard_arg) {}
 
   CertVerifier* cert_verifier;
-  OriginBoundCertService* origin_bound_cert_service;
+  ServerBoundCertService* server_bound_cert_service;
   TransportSecurityState* transport_security_state;
-  SSLHostInfoFactory* ssl_host_info_factory;
   // ssl_session_cache_shard is an opaque string that identifies a shard of the
   // SSL session cache. SSL sockets with the same ssl_session_cache_shard may
   // resume each other's SSL sessions but we'll never sessions between shards.
@@ -76,23 +69,9 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
                                 // the first protocol in our list.
   };
 
-  // Next Protocol Negotiation (NPN), if successful, results in agreement on an
-  // application-level string that specifies the application level protocol to
-  // use over the TLS connection. NextProto enumerates the application level
-  // protocols that we recognise.
-  enum NextProto {
-    kProtoUnknown = 0,
-    kProtoHTTP11 = 1,
-    kProtoSPDY1 = 2,
-    kProtoSPDY2 = 3,
-    kProtoSPDY21 = 4,
-  };
-
-  // Gets the SSL connection information of the socket.
-  //
-  // TODO(sergeyu): Move this method to the SSLSocket interface and
-  // implemented in SSLServerSocket too.
-  virtual void GetSSLInfo(SSLInfo* ssl_info) = 0;
+  // StreamSocket:
+  virtual bool WasNpnNegotiated() const OVERRIDE;
+  virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
 
   // Gets the SSL CertificateRequest info of the socket after Connect failed
   // with ERR_SSL_CLIENT_AUTH_CERT_NEEDED.
@@ -112,10 +91,9 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
 
   static NextProto NextProtoFromString(const std::string& proto_string);
 
-  static const char* NextProtoToString(SSLClientSocket::NextProto next_proto);
+  static const char* NextProtoToString(NextProto next_proto);
 
-  static const char* NextProtoStatusToString(
-      const SSLClientSocket::NextProtoStatus status);
+  static const char* NextProtoStatusToString(const NextProtoStatus status);
 
   // Can be used with the second argument(|server_protos|) of |GetNextProto| to
   // construct a comma separated string of server advertised protocols.
@@ -127,26 +105,25 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
   // sessions.
   static void ClearSessionCache();
 
-  virtual bool was_npn_negotiated() const;
-
   virtual bool set_was_npn_negotiated(bool negotiated);
 
   virtual bool was_spdy_negotiated() const;
 
   virtual bool set_was_spdy_negotiated(bool negotiated);
 
-  virtual SSLClientSocket::NextProto protocol_negotiated() const;
+  virtual void set_protocol_negotiated(NextProto protocol_negotiated);
 
-  virtual void set_protocol_negotiated(
-      SSLClientSocket::NextProto protocol_negotiated);
+  // Returns the ServerBoundCertService used by this socket, or NULL if
+  // server bound certificates are not supported.
+  virtual ServerBoundCertService* GetServerBoundCertService() const = 0;
 
-  // Returns true if an origin bound certificate was sent on this connection.
+  // Returns true if a channel ID was sent on this connection.
   // This may be useful for protocols, like SPDY, which allow the same
-  // connection to be shared between multiple origins, each of which need
-  // an origin bound certificate.
-  virtual bool was_origin_bound_cert_sent() const;
+  // connection to be shared between multiple domains, each of which need
+  // a channel ID.
+  virtual bool WasChannelIDSent() const;
 
-  virtual bool set_was_origin_bound_cert_sent(bool sent);
+  virtual void set_channel_id_sent(bool channel_id_sent);
 
  private:
   // True if NPN was responded to, independent of selecting SPDY or HTTP.
@@ -154,9 +131,9 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
   // True if NPN successfully negotiated SPDY.
   bool was_spdy_negotiated_;
   // Protocol that we negotiated with the server.
-  SSLClientSocket::NextProto protocol_negotiated_;
-  // True if an origin bound certificate was sent.
-  bool was_origin_bound_cert_sent_;
+  NextProto protocol_negotiated_;
+  // True if a channel ID was sent.
+  bool channel_id_sent_;
 };
 
 }  // namespace net

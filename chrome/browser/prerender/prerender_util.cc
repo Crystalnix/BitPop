@@ -79,4 +79,14 @@ bool IsWebURL(const GURL& url) {
   return url.SchemeIs("http") || url.SchemeIs("https");
 }
 
+bool IsNoSwapInExperiment(uint8 experiment_id) {
+  // Currently, experiments 5 and 6 fall in this category.
+  return experiment_id == 5 || experiment_id == 6;
+}
+
+bool IsControlGroupExperiment(uint8 experiment_id) {
+  // Currently, experiments 7 and 8 fall in this category.
+  return experiment_id == 7 || experiment_id == 8;
+}
+
 }  // namespace prerender

@@ -15,11 +15,12 @@
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service.h"
+#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/auto_login_info_bar_delegate.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -38,35 +39,35 @@ using content::BrowserThread;
 using content::NavigationController;
 using content::WebContents;
 
-static std::string ExtractContinueUrl(const GURL& url) {
-  DCHECK(url.is_valid());
-  const std::string& spec = url.spec();
-  url_parse::Component query = url.parsed_for_possibly_invalid_spec().query;
-  url_parse::Component key;
-  url_parse::Component value;
-  while (url_parse::ExtractQueryKeyValue(spec.c_str(), &query, &key, &value)) {
-    if (key.is_nonempty() && spec.substr(key.begin, key.len) == "continue") {
-      if (value.is_nonempty())
-        return spec.substr(value.begin, value.len);
-      break;
-    }
+namespace {
+
+bool FetchUsernameThroughSigninManager(Profile* profile, std::string* output) {
+  // In an incognito window, there may not be a profile sync service and/or
+  // signin manager.
+  if (!ProfileSyncServiceFactory::GetInstance()->HasProfileSyncService(
+      profile)) {
+    return false;
   }
 
-  // If no continue URL is found, redirect user to Google home page.
-  return GoogleURLTracker::GoogleURL().spec();
+  if (!TokenServiceFactory::GetForProfile(profile)->AreCredentialsValid())
+    return false;
+
+  SigninManager* signin_manager =
+      SigninManagerFactory::GetInstance()->GetForProfile(profile);
+  if (!signin_manager)
+    return false;
+
+  *output = signin_manager->GetAuthenticatedUsername();
+  return true;
 }
+
+}  // namespace
 
 AutoLoginPrompter::AutoLoginPrompter(
     WebContents* web_contents,
-    const std::string& username,
-    const std::string& args,
-    const std::string& continue_url,
-    bool use_normal_auto_login_infobar)
+    const Params& params)
     : web_contents_(web_contents),
-      username_(username),
-      args_(args),
-      continue_url_(continue_url),
-      use_normal_auto_login_infobar_(use_normal_auto_login_infobar){
+      params_(params) {
   registrar_.Add(this, content::NOTIFICATION_LOAD_STOP,
                  content::Source<NavigationController>(
                     &web_contents_->GetController()));
@@ -89,48 +90,59 @@ void AutoLoginPrompter::ShowInfoBarIfPossible(net::URLRequest* request,
   // suggest auto-login, if available.
   std::string value;
   request->GetResponseHeaderByName("X-Auto-Login", &value);
-  if (value.empty())
-    return;
-
-  std::vector<std::pair<std::string, std::string> > pairs;
-  if (!base::SplitStringIntoKeyValuePairs(value, '=', '&', &pairs))
-    return;
-
-  // Parse the information from the value string.
-  std::string realm;
-  std::string account;
-  std::string args;
-  for (size_t i = 0; i < pairs.size(); ++i) {
-    const std::pair<std::string, std::string>& pair = pairs[i];
-    if (pair.first == "realm") {
-      realm = net::UnescapeURLComponent(pair.second,
-                                        net::UnescapeRule::URL_SPECIAL_CHARS);
-    } else if (pair.first == "account") {
-      account = net::UnescapeURLComponent(pair.second,
-                                          net::UnescapeRule::URL_SPECIAL_CHARS);
-    } else if (pair.first == "args") {
-      args = pair.second;
-    }
-  }
-
-  // Currently we only accept GAIA credentials.
-  if (realm != "com.google")
+  Params params;
+  if (!ParseAutoLoginHeader(value, &params))
     return;
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&AutoLoginPrompter::ShowInfoBarUIThread, account, args,
-                 request->url(), child_id, route_id));
+      base::Bind(&ShowInfoBarUIThread,
+                 params, request->url(), child_id, route_id));
 }
 
 // static
-void AutoLoginPrompter::ShowInfoBarUIThread(const std::string& account,
-                                            const std::string& args,
+bool AutoLoginPrompter::ParseAutoLoginHeader(const std::string& input,
+                                             Params* output) {
+  // TODO(pliard): Investigate/fix potential internationalization issue. It
+  // seems that "account" from the x-auto-login header might contain non-ASCII
+  // characters.
+  if (input.empty())
+    return false;
+
+  std::vector<std::pair<std::string, std::string> > pairs;
+  if (!base::SplitStringIntoKeyValuePairs(input, '=', '&', &pairs))
+    return false;
+
+  // Parse the information from the |input| string.
+  Params params;
+  for (size_t i = 0; i < pairs.size(); ++i) {
+    const std::pair<std::string, std::string>& pair = pairs[i];
+    std::string unescaped_value(net::UnescapeURLComponent(
+          pair.second, net::UnescapeRule::URL_SPECIAL_CHARS));
+    if (pair.first == "realm") {
+      // Currently we only accept GAIA credentials.
+      if (unescaped_value != "com.google")
+        return false;
+      params.realm = unescaped_value;
+    } else if (pair.first == "account") {
+      params.account = unescaped_value;
+    } else if (pair.first == "args") {
+      params.args = unescaped_value;
+    }
+  }
+  if (params.realm.empty() || params.args.empty())
+    return false;
+
+  *output = params;
+  return true;
+}
+
+// static
+void AutoLoginPrompter::ShowInfoBarUIThread(Params params,
                                             const GURL& url,
                                             int child_id,
                                             int route_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
   WebContents* web_contents = tab_util::GetWebContentsByID(child_id, route_id);
   if (!web_contents)
     return;
@@ -138,73 +150,38 @@ void AutoLoginPrompter::ShowInfoBarUIThread(const std::string& account,
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
 
-  // In an incognito window, there may not be a profile sync service and/or
-  // signin manager.
-  if (!ProfileSyncServiceFactory::GetInstance()->HasProfileSyncService(
-      profile)) {
-    return;
-  }
-
-  SigninManager* signin_manager =
-      SigninManagerFactory::GetInstance()->GetForProfile(profile);
-  if (!signin_manager)
+  if (!profile->GetPrefs()->GetBoolean(prefs::kAutologinEnabled))
     return;
 
-  // If there are credentials in the token manager, then we want to show the
-  // user the regular auto-login infobar, asking if they want to turn on
-  // auto-login.  If there are no credentials in the token manager, then we
-  // want to show the reverse auto-login infobar, asking if they want to
-  // connect their profile to a Google account.
-  bool use_normal_auto_login_infobar =
-      profile->GetTokenService()->AreCredentialsValid();
-  const std::string& username = signin_manager->GetAuthenticatedUsername();
-  std::string continue_url;
-
-  if (use_normal_auto_login_infobar) {
-    // Make sure that |account|, if specified, matches the logged in user.
-    // However, |account| is usually empty.
-    if (!account.empty() && (username != account))
-      return;
-
-    if (!profile->GetPrefs()->GetBoolean(prefs::kAutologinEnabled))
-      return;
-  } else if (profile->GetPrefs()->GetBoolean(prefs::kReverseAutologinEnabled)) {
-    continue_url = ExtractContinueUrl(url);
-  } else {
+#if !defined(OS_ANDROID)
+  // On Android, the username is fetched on the Java side from the
+  // AccountManager provided by the platform.
+  if (!FetchUsernameThroughSigninManager(profile, &params.username))
     return;
-  }
+#endif
 
+  // Make sure that |account|, if specified, matches the logged in user.
+  // However, |account| is usually empty.
+  if (!params.username.empty() && !params.account.empty() &&
+      params.username != params.account)
+    return;
   // We can't add the infobar just yet, since we need to wait for the tab to
   // finish loading.  If we don't, the info bar appears and then disappears
   // immediately.  Create an AutoLoginPrompter instance to listen for the
   // relevant notifications; it will delete itself.
-  new AutoLoginPrompter(web_contents, username, args, continue_url,
-                        use_normal_auto_login_infobar);
+  new AutoLoginPrompter(web_contents, params);
 }
 
 void AutoLoginPrompter::Observe(int type,
                                 const content::NotificationSource& source,
                                 const content::NotificationDetails& details) {
   if (type == content::NOTIFICATION_LOAD_STOP) {
-    TabContentsWrapper* wrapper =
-        TabContentsWrapper::GetCurrentWrapperForContents(web_contents_);
-    // |wrapper| is NULL for TabContents hosted in HTMLDialog.
-    if (wrapper) {
-      InfoBarTabHelper* infobar_helper = wrapper->infobar_tab_helper();
-      Profile* profile = wrapper->profile();
-      InfoBarDelegate* delegate = NULL;
-      if (use_normal_auto_login_infobar_) {
-        delegate = new AutoLoginInfoBarDelegate(
-            infobar_helper, &web_contents_->GetController(),
-            profile->GetTokenService(), profile->GetPrefs(),
-            username_, args_);
-      } else {
-        delegate = new ReverseAutoLoginInfoBarDelegate(
-            infobar_helper, &web_contents_->GetController(),
-            profile->GetPrefs(), continue_url_);
-      }
-
-      infobar_helper->AddInfoBar(delegate);
+    TabContents* tab_contents = TabContents::FromWebContents(web_contents_);
+    // |tab_contents| is NULL for WebContents hosted in WebDialog.
+    if (tab_contents) {
+      InfoBarTabHelper* infobar_helper = tab_contents->infobar_tab_helper();
+      infobar_helper->AddInfoBar(
+          new AutoLoginInfoBarDelegate(infobar_helper, params_));
     }
   }
   // Either we couldn't add the infobar, we added the infobar, or the tab

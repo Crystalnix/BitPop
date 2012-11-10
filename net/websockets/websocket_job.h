@@ -1,11 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef NET_WEBSOCKETS_WEBSOCKET_JOB_H_
 #define NET_WEBSOCKETS_WEBSOCKET_JOB_H_
-#pragma once
 
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -20,7 +20,7 @@ class GURL;
 namespace net {
 
 class DrainableIOBuffer;
-class WebSocketFrameHandler;
+class SSLInfo;
 class WebSocketHandshakeRequestHandler;
 class WebSocketHandshakeResponseHandler;
 
@@ -71,20 +71,24 @@ class NET_EXPORT WebSocketJob
   virtual void OnClose(SocketStream* socket) OVERRIDE;
   virtual void OnAuthRequired(
       SocketStream* socket, AuthChallengeInfo* auth_info) OVERRIDE;
+  virtual void OnSSLCertificateError(SocketStream* socket,
+                                     const SSLInfo& ssl_info,
+                                     bool fatal) OVERRIDE;
   virtual void OnError(const SocketStream* socket, int error) OVERRIDE;
 
   // SpdyWebSocketStream::Delegate methods.
   virtual void OnCreatedSpdyStream(int status) OVERRIDE;
   virtual void OnSentSpdyHeaders(int status) OVERRIDE;
   virtual int OnReceivedSpdyResponseHeader(
-      const spdy::SpdyHeaderBlock& headers, int status) OVERRIDE;
+      const SpdyHeaderBlock& headers, int status) OVERRIDE;
   virtual void OnSentSpdyData(int amount_sent) OVERRIDE;
   virtual void OnReceivedSpdyData(const char* data, int length) OVERRIDE;
   virtual void OnCloseSpdyStream() OVERRIDE;
 
  private:
   friend class WebSocketThrottle;
-  friend class WebSocketJobTest;
+  friend class WebSocketJobSpdy2Test;
+  friend class WebSocketJobSpdy3Test;
   virtual ~WebSocketJob();
 
   bool SendHandshakeRequest(const char* data, int len);
@@ -130,9 +134,9 @@ class NET_EXPORT WebSocketJob
   std::vector<std::string> response_cookies_;
   size_t response_cookies_save_index_;
 
-  scoped_ptr<WebSocketFrameHandler> send_frame_handler_;
-  scoped_refptr<DrainableIOBuffer> current_buffer_;
-  scoped_ptr<WebSocketFrameHandler> receive_frame_handler_;
+  std::deque<scoped_refptr<IOBufferWithSize> > send_buffer_queue_;
+  scoped_refptr<DrainableIOBuffer> current_send_buffer_;
+  std::vector<char> received_data_after_handshake_;
 
   scoped_ptr<SpdyWebSocketStream> spdy_websocket_stream_;
   std::string challenge_;

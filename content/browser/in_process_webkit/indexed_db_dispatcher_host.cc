@@ -4,10 +4,13 @@
 
 #include "content/browser/in_process_webkit/indexed_db_dispatcher_host.h"
 
+#include <vector>
+
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/utf_string_conversions.h"
 #include "content/browser/in_process_webkit/indexed_db_callbacks.h"
+#include "content/browser/in_process_webkit/indexed_db_context_impl.h"
 #include "content/browser/in_process_webkit/indexed_db_database_callbacks.h"
 #include "content/browser/in_process_webkit/indexed_db_transaction_callbacks.h"
 #include "content/browser/renderer_host/render_message_filter.h"
@@ -20,28 +23,32 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDOMStringList.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBCursor.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBDatabase.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBDatabaseError.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBFactory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBIndex.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBKeyRange.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBMetadata.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBObjectStore.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBTransaction.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
+#include "webkit/database/database_util.h"
 #include "webkit/glue/webkit_glue.h"
 
 using content::BrowserMessageFilter;
 using content::BrowserThread;
+using content::IndexedDBKey;
+using content::IndexedDBKeyPath;
+using content::IndexedDBKeyRange;
 using content::UserMetricsAction;
+using content::SerializedScriptValue;
+using webkit_database::DatabaseUtil;
 using WebKit::WebDOMStringList;
 using WebKit::WebExceptionCode;
 using WebKit::WebIDBCallbacks;
 using WebKit::WebIDBCursor;
 using WebKit::WebIDBDatabase;
-using WebKit::WebIDBDatabaseError;
 using WebKit::WebIDBIndex;
 using WebKit::WebIDBKey;
-using WebKit::WebIDBKeyRange;
+using WebKit::WebIDBMetadata;
 using WebKit::WebIDBObjectStore;
 using WebKit::WebIDBTransaction;
 using WebKit::WebSecurityOrigin;
@@ -56,12 +63,11 @@ void DeleteOnWebKitThread(T* obj) {
                                  FROM_HERE, obj))
     delete obj;
 }
-
 }
 
 IndexedDBDispatcherHost::IndexedDBDispatcherHost(
-    int process_id, WebKitContext* webkit_context)
-    : webkit_context_(webkit_context),
+    int process_id, IndexedDBContextImpl* indexed_db_context)
+    : indexed_db_context_(indexed_db_context),
       ALLOW_THIS_IN_INITIALIZER_LIST(database_dispatcher_host_(
           new DatabaseDispatcherHost(this))),
       ALLOW_THIS_IN_INITIALIZER_LIST(index_dispatcher_host_(
@@ -73,7 +79,7 @@ IndexedDBDispatcherHost::IndexedDBDispatcherHost(
       ALLOW_THIS_IN_INITIALIZER_LIST(transaction_dispatcher_host_(
           new TransactionDispatcherHost(this))),
       process_id_(process_id) {
-  DCHECK(webkit_context_.get());
+  DCHECK(indexed_db_context_.get());
 }
 
 IndexedDBDispatcherHost::~IndexedDBDispatcherHost() {
@@ -205,22 +211,10 @@ WebIDBCursor* IndexedDBDispatcherHost::GetCursorFromId(int32 cursor_id) {
 void IndexedDBDispatcherHost::OnIDBFactoryGetDatabaseNames(
     const IndexedDBHostMsg_FactoryGetDatabaseNames_Params& params) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
-  FilePath base_path = webkit_context_->data_path();
-  FilePath indexed_db_path;
-  if (!base_path.empty()) {
-    indexed_db_path = base_path.Append(
-        IndexedDBContext::kIndexedDBDirectory);
-  }
+  FilePath indexed_db_path = indexed_db_context_->data_path();
 
-  // TODO(jorlow): This doesn't support file:/// urls properly. We probably need
-  //               to add some toString method to WebSecurityOrigin that doesn't
-  //               return null for them.  Look at
-  //               DatabaseUtil::GetOriginFromIdentifier.
   WebSecurityOrigin origin(
       WebSecurityOrigin::createFromDatabaseIdentifier(params.origin));
-  GURL origin_url(origin.toString());
-
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
 
   Context()->GetIDBFactory()->getDatabaseNames(
       new IndexedDBCallbacks<WebDOMStringList>(this, params.thread_id,
@@ -231,20 +225,11 @@ void IndexedDBDispatcherHost::OnIDBFactoryGetDatabaseNames(
 void IndexedDBDispatcherHost::OnIDBFactoryOpen(
     const IndexedDBHostMsg_FactoryOpen_Params& params) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
-  FilePath base_path = webkit_context_->data_path();
-  FilePath indexed_db_path;
-  if (!base_path.empty()) {
-    indexed_db_path = base_path.Append(
-        IndexedDBContext::kIndexedDBDirectory);
-  }
+  FilePath indexed_db_path = indexed_db_context_->data_path();
 
-  // TODO(jorlow): This doesn't support file:/// urls properly. We probably need
-  //               to add some toString method to WebSecurityOrigin that doesn't
-  //               return null for them.  Look at
-  //               DatabaseUtil::GetOriginFromIdentifier.
+  GURL origin_url = DatabaseUtil::GetOriginFromIdentifier(params.origin);
   WebSecurityOrigin origin(
       WebSecurityOrigin::createFromDatabaseIdentifier(params.origin));
-  GURL origin_url(origin.toString());
 
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
 
@@ -252,6 +237,7 @@ void IndexedDBDispatcherHost::OnIDBFactoryOpen(
   // created) if this origin is already over quota.
   Context()->GetIDBFactory()->open(
       params.name,
+      params.version,
       new IndexedDBCallbacks<WebIDBDatabase>(this, params.thread_id,
                                              params.response_id, origin_url),
       origin, NULL, webkit_glue::FilePathToWebString(indexed_db_path));
@@ -259,12 +245,7 @@ void IndexedDBDispatcherHost::OnIDBFactoryOpen(
 
 void IndexedDBDispatcherHost::OnIDBFactoryDeleteDatabase(
     const IndexedDBHostMsg_FactoryDeleteDatabase_Params& params) {
-  FilePath base_path = webkit_context_->data_path();
-  FilePath indexed_db_path;
-  if (!base_path.empty()) {
-    indexed_db_path = base_path.Append(
-        IndexedDBContext::kIndexedDBDirectory);
-  }
+  FilePath indexed_db_path = indexed_db_context_->data_path();
 
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
   Context()->GetIDBFactory()->deleteDatabase(
@@ -291,21 +272,11 @@ ObjectType* IndexedDBDispatcherHost::GetOrTerminateProcess(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
   ObjectType* return_object = map->Lookup(return_object_id);
   if (!return_object) {
+    NOTREACHED() << "Uh oh, couldn't find object with id " << return_object_id;
     content::RecordAction(UserMetricsAction("BadMessageTerminate_IDBMF"));
     BadMessageReceived();
   }
   return return_object;
-}
-
-template <typename ReplyType, typename MapObjectType, typename Method>
-void IndexedDBDispatcherHost::SyncGetter(
-    IDMap<MapObjectType, IDMapOwnPointer>* map, int32 object_id,
-    ReplyType* reply, Method method) {
-  MapObjectType* object = GetOrTerminateProcess(map, object_id);
-  if (!object)
-      return;
-
-  *reply = (object->*method)();
 }
 
 template <typename ObjectType>
@@ -341,10 +312,7 @@ bool IndexedDBDispatcherHost::DatabaseDispatcherHost::OnMessageReceived(
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(IndexedDBDispatcherHost::DatabaseDispatcherHost,
                            message, *msg_is_ok)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseName, OnName)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseVersion, OnVersion)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseObjectStoreNames,
-                        OnObjectStoreNames)
+    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseMetadata, OnMetadata)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseCreateObjectStore,
                         OnCreateObjectStore)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseDeleteObjectStore,
@@ -364,28 +332,38 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::Send(
   parent_->Send(message);
 }
 
-void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnName(
-    int32 object_id, string16* name) {
-  parent_->SyncGetter<string16>(&map_, object_id, name, &WebIDBDatabase::name);
-}
-
-void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnVersion(
-    int32 object_id, string16* version) {
-  parent_->SyncGetter<string16>(
-      &map_, object_id, version, &WebIDBDatabase::version);
-}
-
-void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnObjectStoreNames(
-    int32 idb_database_id, std::vector<string16>* object_stores) {
+void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnMetadata(
+    int32 idb_database_id, IndexedDBDatabaseMetadata* metadata) {
   WebIDBDatabase* idb_database = parent_->GetOrTerminateProcess(
       &map_, idb_database_id);
   if (!idb_database)
     return;
 
-  WebDOMStringList web_object_stores = idb_database->objectStoreNames();
-  object_stores->reserve(web_object_stores.length());
-  for (unsigned i = 0; i < web_object_stores.length(); ++i)
-    object_stores->push_back(web_object_stores.item(i));
+  WebIDBMetadata web_metadata = idb_database->metadata();
+  metadata->name = web_metadata.name;
+  metadata->version = web_metadata.version;
+  metadata->intVersion = web_metadata.intVersion;
+
+  for (size_t i = 0; i < web_metadata.objectStores.size(); ++i) {
+    const WebIDBMetadata::ObjectStore& web_store_metadata =
+        web_metadata.objectStores[i];
+    IndexedDBObjectStoreMetadata idb_store_metadata;
+    idb_store_metadata.name = web_store_metadata.name;
+    idb_store_metadata.keyPath = IndexedDBKeyPath(web_store_metadata.keyPath);
+    idb_store_metadata.autoIncrement = web_store_metadata.autoIncrement;
+
+    for (size_t j = 0; j < web_store_metadata.indexes.size(); ++j) {
+      const WebIDBMetadata::Index& web_index_metadata =
+          web_store_metadata.indexes[j];
+      IndexedDBIndexMetadata idb_index_metadata;
+      idb_index_metadata.name = web_index_metadata.name;
+      idb_index_metadata.keyPath = IndexedDBKeyPath(web_index_metadata.keyPath);
+      idb_index_metadata.unique = web_index_metadata.unique;
+      idb_index_metadata.multiEntry = web_index_metadata.multiEntry;
+      idb_store_metadata.indexes.push_back(idb_index_metadata);
+    }
+    metadata->object_stores.push_back(idb_store_metadata);
+  }
 }
 
 void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnCreateObjectStore(
@@ -519,11 +497,6 @@ bool IndexedDBDispatcherHost::IndexDispatcherHost::OnMessageReceived(
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(IndexedDBDispatcherHost::IndexDispatcherHost,
                            message, *msg_is_ok)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_IndexName, OnName)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_IndexStoreName, OnStoreName)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_IndexKeyPath, OnKeyPath)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_IndexUnique, OnUnique)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_IndexMultiEntry, OnMultiEntry)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_IndexOpenObjectCursor,
                                     OnOpenObjectCursor)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_IndexOpenKeyCursor, OnOpenKeyCursor)
@@ -539,34 +512,6 @@ bool IndexedDBDispatcherHost::IndexDispatcherHost::OnMessageReceived(
 void IndexedDBDispatcherHost::IndexDispatcherHost::Send(
     IPC::Message* message) {
   parent_->Send(message);
-}
-
-void IndexedDBDispatcherHost::IndexDispatcherHost::OnName(
-    int32 object_id, string16* name) {
-  parent_->SyncGetter<string16>(&map_, object_id, name, &WebIDBIndex::name);
-}
-
-void IndexedDBDispatcherHost::IndexDispatcherHost::OnStoreName(
-    int32 object_id, string16* store_name) {
-  parent_->SyncGetter<string16>(
-      &map_, object_id, store_name, &WebIDBIndex::storeName);
-}
-
-void IndexedDBDispatcherHost::IndexDispatcherHost::OnKeyPath(
-    int32 object_id, NullableString16* key_path) {
-  parent_->SyncGetter<NullableString16>(
-      &map_, object_id, key_path, &WebIDBIndex::keyPath);
-}
-
-void IndexedDBDispatcherHost::IndexDispatcherHost::OnUnique(
-    int32 object_id, bool* unique) {
-  parent_->SyncGetter<bool>(&map_, object_id, unique, &WebIDBIndex::unique);
-}
-
-void IndexedDBDispatcherHost::IndexDispatcherHost::OnMultiEntry(
-    int32 object_id, bool* multi_entry) {
-  parent_->SyncGetter<bool>(
-      &map_, object_id, multi_entry, &WebIDBIndex::multiEntry);
 }
 
 void IndexedDBDispatcherHost::IndexDispatcherHost::OnOpenObjectCursor(
@@ -585,9 +530,8 @@ void IndexedDBDispatcherHost::IndexDispatcherHost::OnOpenObjectCursor(
       new IndexedDBCallbacks<WebIDBCursor>(parent_, params.thread_id,
                                            params.response_id, -1));
   idb_index->openObjectCursor(
-      WebIDBKeyRange(params.lower_key, params.upper_key, params.lower_open,
-                     params.upper_open),
-      params.direction, callbacks.release(), *idb_transaction, *ec);
+      params.key_range, params.direction, callbacks.release(),
+      *idb_transaction, *ec);
 }
 
 void IndexedDBDispatcherHost::IndexDispatcherHost::OnOpenKeyCursor(
@@ -606,9 +550,8 @@ void IndexedDBDispatcherHost::IndexDispatcherHost::OnOpenKeyCursor(
       new IndexedDBCallbacks<WebIDBCursor>(parent_, params.thread_id,
                                            params.response_id, -1));
   idb_index->openKeyCursor(
-      WebIDBKeyRange(params.lower_key, params.upper_key, params.lower_open,
-                     params.upper_open),
-      params.direction, callbacks.release(), *idb_transaction, *ec);
+      params.key_range, params.direction, callbacks.release(),
+      *idb_transaction, *ec);
 }
 
 void IndexedDBDispatcherHost::IndexDispatcherHost::OnCount(
@@ -628,16 +571,14 @@ void IndexedDBDispatcherHost::IndexDispatcherHost::OnCount(
                                                        params.thread_id,
                                                        params.response_id));
   idb_index->count(
-      WebIDBKeyRange(params.lower_key, params.upper_key, params.lower_open,
-                     params.upper_open),
-      callbacks.release(), *idb_transaction, *ec);
+      params.key_range, callbacks.release(), *idb_transaction, *ec);
 }
 
 void IndexedDBDispatcherHost::IndexDispatcherHost::OnGetObject(
     int idb_index_id,
     int32 thread_id,
     int32 response_id,
-    const IndexedDBKey& key,
+    const IndexedDBKeyRange& key_range,
     int32 transaction_id,
     WebKit::WebExceptionCode* ec) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
@@ -652,14 +593,14 @@ void IndexedDBDispatcherHost::IndexDispatcherHost::OnGetObject(
   scoped_ptr<WebIDBCallbacks> callbacks(
       new IndexedDBCallbacks<WebSerializedScriptValue>(parent_, thread_id,
                                                        response_id));
-  idb_index->getObject(key, callbacks.release(), *idb_transaction, *ec);
+  idb_index->getObject(key_range, callbacks.release(), *idb_transaction, *ec);
 }
 
 void IndexedDBDispatcherHost::IndexDispatcherHost::OnGetKey(
     int idb_index_id,
     int32 thread_id,
     int32 response_id,
-    const IndexedDBKey& key,
+    const IndexedDBKeyRange& key_range,
     int32 transaction_id,
     WebKit::WebExceptionCode* ec) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
@@ -673,7 +614,7 @@ void IndexedDBDispatcherHost::IndexDispatcherHost::OnGetKey(
   *ec = 0;
   scoped_ptr<WebIDBCallbacks> callbacks(
       new IndexedDBCallbacks<WebIDBKey>(parent_, thread_id, response_id));
-  idb_index->getKey(key, callbacks.release(), *idb_transaction, *ec);
+  idb_index->getKey(key_range, callbacks.release(), *idb_transaction, *ec);
 }
 
 void IndexedDBDispatcherHost::IndexDispatcherHost::OnDestroyed(
@@ -700,9 +641,6 @@ bool IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnMessageReceived(
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(IndexedDBDispatcherHost::ObjectStoreDispatcherHost,
                            message, *msg_is_ok)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_ObjectStoreName, OnName)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_ObjectStoreKeyPath, OnKeyPath)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_ObjectStoreIndexNames, OnIndexNames)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_ObjectStoreGet, OnGet)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_ObjectStorePut, OnPut)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_ObjectStoreDelete, OnDelete)
@@ -723,36 +661,11 @@ void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::Send(
   parent_->Send(message);
 }
 
-void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnName(
-    int32 object_id, string16* name) {
-  parent_->SyncGetter<string16>(
-      &map_, object_id, name, &WebIDBObjectStore::name);
-}
-
-void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnKeyPath(
-    int32 object_id, NullableString16* keyPath) {
-  parent_->SyncGetter<NullableString16>(
-      &map_, object_id, keyPath, &WebIDBObjectStore::keyPath);
-}
-
-void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnIndexNames(
-    int32 idb_object_store_id, std::vector<string16>* index_names) {
-  WebIDBObjectStore* idb_object_store = parent_->GetOrTerminateProcess(
-      &map_, idb_object_store_id);
-  if (!idb_object_store)
-    return;
-
-  WebDOMStringList web_index_names = idb_object_store->indexNames();
-  index_names->reserve(web_index_names.length());
-  for (unsigned i = 0; i < web_index_names.length(); ++i)
-    index_names->push_back(web_index_names.item(i));
-}
-
 void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnGet(
     int idb_object_store_id,
     int32 thread_id,
     int32 response_id,
-    const IndexedDBKey& key,
+    const IndexedDBKeyRange& key_range,
     int32 transaction_id,
     WebKit::WebExceptionCode* ec) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
@@ -767,7 +680,7 @@ void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnGet(
   scoped_ptr<WebIDBCallbacks> callbacks(
       new IndexedDBCallbacks<WebSerializedScriptValue>(parent_, thread_id,
                                                        response_id));
-  idb_object_store->get(key, callbacks.release(), *idb_transaction, *ec);
+  idb_object_store->get(key_range, callbacks.release(), *idb_transaction, *ec);
 }
 
 void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnPut(
@@ -785,8 +698,10 @@ void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnPut(
   scoped_ptr<WebIDBCallbacks> callbacks(
       new IndexedDBCallbacks<WebIDBKey>(parent_, params.thread_id,
                                         params.response_id));
-  idb_object_store->put(params.serialized_value, params.key, params.put_mode,
-                        callbacks.release(), *idb_transaction, *ec);
+  idb_object_store->putWithIndexKeys(params.serialized_value, params.key,
+                                     params.put_mode, callbacks.release(),
+                                     *idb_transaction, params.index_names,
+                                     params.index_keys, *ec);
   if (*ec)
     return;
   int64 size = UTF16ToUTF8(params.serialized_value.data()).size();
@@ -799,7 +714,7 @@ void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnDelete(
     int idb_object_store_id,
     int32 thread_id,
     int32 response_id,
-    const IndexedDBKey& key,
+    const IndexedDBKeyRange& key_range,
     int32 transaction_id,
     WebKit::WebExceptionCode* ec) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
@@ -815,7 +730,7 @@ void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnDelete(
       new IndexedDBCallbacks<WebSerializedScriptValue>(parent_, thread_id,
                                                        response_id));
   idb_object_store->deleteFunction(
-      key, callbacks.release(), *idb_transaction, *ec);
+      key_range, callbacks.release(), *idb_transaction, *ec);
 }
 
 void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnClear(
@@ -840,8 +755,8 @@ void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnClear(
 }
 
 void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnCreateIndex(
-   const IndexedDBHostMsg_ObjectStoreCreateIndex_Params& params,
-   int32* index_id, WebKit::WebExceptionCode* ec) {
+    const IndexedDBHostMsg_ObjectStoreCreateIndex_Params& params,
+    int32* index_id, WebKit::WebExceptionCode* ec) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
   WebIDBObjectStore* idb_object_store = parent_->GetOrTerminateProcess(
       &map_, params.idb_object_store_id);
@@ -912,9 +827,8 @@ void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnOpenCursor(
       new IndexedDBCallbacks<WebIDBCursor>(parent_, params.thread_id,
                                            params.response_id, -1));
   idb_object_store->openCursor(
-      WebIDBKeyRange(params.lower_key, params.upper_key, params.lower_open,
-                     params.upper_open),
-      params.direction, callbacks.release(), *idb_transaction, *ec);
+      params.key_range, params.direction, callbacks.release(),
+      *idb_transaction, *ec);
 }
 
 void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnCount(
@@ -935,9 +849,7 @@ void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnCount(
                                                        params.thread_id,
                                                        params.response_id));
   idb_object_store->count(
-      WebIDBKeyRange(params.lower_key, params.upper_key, params.lower_open,
-                     params.upper_open),
-      callbacks.release(), *idb_transaction, *ec);
+      params.key_range, callbacks.release(), *idb_transaction, *ec);
 }
 
 void IndexedDBDispatcherHost::ObjectStoreDispatcherHost::OnDestroyed(
@@ -963,8 +875,7 @@ bool IndexedDBDispatcherHost::CursorDispatcherHost::OnMessageReceived(
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(IndexedDBDispatcherHost::CursorDispatcherHost,
                            message, *msg_is_ok)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_CursorDirection, OnDirection)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_CursorUpdate, OnUpdate)
+    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_CursorAdvance, OnAdvance)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_CursorContinue, OnContinue)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_CursorPrefetch, OnPrefetch)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_CursorPrefetchReset, OnPrefetchReset)
@@ -979,15 +890,6 @@ bool IndexedDBDispatcherHost::CursorDispatcherHost::OnMessageReceived(
 void IndexedDBDispatcherHost::CursorDispatcherHost::Send(
     IPC::Message* message) {
   parent_->Send(message);
-}
-
-void IndexedDBDispatcherHost::CursorDispatcherHost::OnDirection(
-    int32 object_id, int32* direction) {
-  WebIDBCursor* idb_cursor = parent_->GetOrTerminateProcess(&map_, object_id);
-  if (!idb_cursor)
-    return;
-
-  *direction = idb_cursor->direction();
 }
 
 void IndexedDBDispatcherHost::CursorDispatcherHost::OnKey(
@@ -1010,19 +912,19 @@ void IndexedDBDispatcherHost::CursorDispatcherHost::OnPrimaryKey(
 
 void IndexedDBDispatcherHost::CursorDispatcherHost::OnValue(
     int32 object_id,
-    content::SerializedScriptValue* script_value) {
+    SerializedScriptValue* script_value) {
   WebIDBCursor* idb_cursor = parent_->GetOrTerminateProcess(&map_, object_id);
   if (!idb_cursor)
     return;
 
-  *script_value = content::SerializedScriptValue(idb_cursor->value());
+  *script_value = SerializedScriptValue(idb_cursor->value());
 }
 
-void IndexedDBDispatcherHost::CursorDispatcherHost::OnUpdate(
+void IndexedDBDispatcherHost::CursorDispatcherHost::OnAdvance(
     int32 cursor_id,
     int32 thread_id,
     int32 response_id,
-    const content::SerializedScriptValue& value,
+    unsigned long count,
     WebKit::WebExceptionCode* ec) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
   WebIDBCursor* idb_cursor = parent_->GetOrTerminateProcess(&map_, cursor_id);
@@ -1030,9 +932,12 @@ void IndexedDBDispatcherHost::CursorDispatcherHost::OnUpdate(
     return;
 
   *ec = 0;
-  idb_cursor->update(
-      value, new IndexedDBCallbacks<WebIDBKey>(parent_, thread_id, response_id),
-      *ec);
+  idb_cursor->advance(count,
+                      new IndexedDBCallbacks<WebIDBCursor>(parent_,
+                                                           thread_id,
+                                                           response_id,
+                                                           cursor_id),
+                      *ec);
 }
 
 void IndexedDBDispatcherHost::CursorDispatcherHost::OnContinue(
@@ -1124,8 +1029,8 @@ bool IndexedDBDispatcherHost::TransactionDispatcherHost::OnMessageReceived(
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(IndexedDBDispatcherHost::TransactionDispatcherHost,
                            message, *msg_is_ok)
+    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_TransactionCommit, OnCommit)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_TransactionAbort, OnAbort)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_TransactionMode, OnMode)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_TransactionObjectStore, OnObjectStore)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_TransactionDidCompleteTaskEvents,
                         OnDidCompleteTaskEvents)
@@ -1140,6 +1045,16 @@ void IndexedDBDispatcherHost::TransactionDispatcherHost::Send(
   parent_->Send(message);
 }
 
+void IndexedDBDispatcherHost::TransactionDispatcherHost::OnCommit(
+    int32 transaction_id) {
+  WebIDBTransaction* idb_transaction = parent_->GetOrTerminateProcess(
+      &map_, transaction_id);
+  if (!idb_transaction)
+    return;
+
+  idb_transaction->commit();
+}
+
 void IndexedDBDispatcherHost::TransactionDispatcherHost::OnAbort(
     int32 transaction_id) {
   WebIDBTransaction* idb_transaction = parent_->GetOrTerminateProcess(
@@ -1148,17 +1063,6 @@ void IndexedDBDispatcherHost::TransactionDispatcherHost::OnAbort(
     return;
 
   idb_transaction->abort();
-}
-
-void IndexedDBDispatcherHost::TransactionDispatcherHost::OnMode(
-    int32 transaction_id,
-    int* mode) {
-  WebIDBTransaction* idb_transaction = parent_->GetOrTerminateProcess(
-      &map_, transaction_id);
-  if (!idb_transaction)
-    return;
-
-  *mode = idb_transaction->mode();
 }
 
 void IndexedDBDispatcherHost::TransactionDispatcherHost::OnObjectStore(
@@ -1183,6 +1087,7 @@ void IndexedDBDispatcherHost::
     return;
 
   // TODO(dgrogan): Tell the page the transaction aborted because of quota.
+  // http://crbug.com/113118
   if (parent_->Context()->WouldBeOverQuota(
       transaction_url_map_[transaction_id],
       transaction_size_map_[transaction_id])) {
@@ -1194,6 +1099,8 @@ void IndexedDBDispatcherHost::
 
 void IndexedDBDispatcherHost::TransactionDispatcherHost::OnDestroyed(
     int32 object_id) {
+  // TODO(dgrogan): This doesn't seem to be happening with some version change
+  // transactions. Possibly introduced with integer version support.
   transaction_size_map_.erase(object_id);
   transaction_url_map_.erase(object_id);
   parent_->DestroyObject(&map_, object_id);

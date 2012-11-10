@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,6 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/test/automation/automation_json_requests.h"
 #include "chrome/test/automation/browser_proxy.h"
-#include "chrome/test/automation/extension_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
 #include "ipc/ipc_descriptors.h"
@@ -79,7 +78,7 @@ class AutomationMessageFilter : public IPC::ChannelProxy::MessageFilter {
 
   void OnAutomationHello(const IPC::Message& hello_message) {
     std::string server_version;
-    void* iter = NULL;
+    PickleIterator iter(hello_message);
     if (!hello_message.ReadString(&iter, &server_version)) {
       // We got an AutomationMsg_Hello from an old automation provider
       // that doesn't send version info. Leave server_version as an empty
@@ -98,7 +97,7 @@ class AutomationMessageFilter : public IPC::ChannelProxy::MessageFilter {
 }  // anonymous namespace
 
 
-AutomationProxy::AutomationProxy(int action_timeout_ms,
+AutomationProxy::AutomationProxy(base::TimeDelta action_timeout,
                                  bool disconnect_on_failure)
     : app_launched_(true, false),
       initial_loads_complete_(true, false),
@@ -107,13 +106,12 @@ AutomationProxy::AutomationProxy(int action_timeout_ms,
       perform_version_check_(false),
       disconnect_on_failure_(disconnect_on_failure),
       channel_disconnected_on_failure_(false),
-      action_timeout_(
-          TimeDelta::FromMilliseconds(action_timeout_ms)),
+      action_timeout_(action_timeout),
       listener_thread_id_(0) {
   // base::WaitableEvent::TimedWait() will choke if we give it a negative value.
   // Zero also seems unreasonable, since we need to wait for IPC, but at
   // least it is legal... ;-)
-  DCHECK_GE(action_timeout_ms, 0);
+  DCHECK_GE(action_timeout.InMilliseconds(), 0);
   listener_thread_id_ = base::PlatformThread::CurrentId();
   InitializeHandleTracker();
   InitializeThread();
@@ -236,25 +234,6 @@ void AutomationProxy::SignalNewTabUITab(int load_time) {
   new_tab_ui_load_complete_.Signal();
 }
 
-bool AutomationProxy::SavePackageShouldPromptUser(bool should_prompt) {
-  return Send(new AutomationMsg_SavePackageShouldPromptUser(should_prompt));
-}
-
-scoped_refptr<ExtensionProxy> AutomationProxy::InstallExtension(
-    const FilePath& extension_path, bool with_ui) {
-  int handle = 0;
-  if (!Send(new AutomationMsg_InstallExtension(extension_path,
-                                               with_ui, &handle)))
-    return NULL;
-
-  return ProxyObjectFromHandle<ExtensionProxy>(handle);
-}
-
-bool AutomationProxy::GetExtensionTestResult(
-    bool* result, std::string* message) {
-  return Send(new AutomationMsg_WaitForExtensionTestResult(result, message));
-}
-
 bool AutomationProxy::GetBrowserWindowCount(int* num_windows) {
   if (!num_windows) {
     NOTREACHED();
@@ -279,42 +258,6 @@ bool AutomationProxy::WaitForWindowCountToBecome(int count) {
                 count, &wait_success))) {
     return false;
   }
-  return wait_success;
-}
-
-bool AutomationProxy::GetShowingAppModalDialog(bool* showing_app_modal_dialog,
-                                               ui::DialogButton* button) {
-  if (!showing_app_modal_dialog || !button) {
-    NOTREACHED();
-    return false;
-  }
-
-  int button_int = 0;
-
-  if (!Send(new AutomationMsg_ShowingAppModalDialog(
-                showing_app_modal_dialog, &button_int))) {
-    return false;
-  }
-
-  *button = static_cast<ui::DialogButton>(button_int);
-  return true;
-}
-
-bool AutomationProxy::ClickAppModalDialogButton(ui::DialogButton button) {
-  bool succeeded = false;
-
-  if (!Send(new AutomationMsg_ClickAppModalDialogButton(
-                button, &succeeded))) {
-    return false;
-  }
-
-  return succeeded;
-}
-
-bool AutomationProxy::WaitForAppModalDialog() {
-  bool wait_success = false;
-  if (!Send(new AutomationMsg_WaitForAppModalDialogToBeShown(&wait_success)))
-    return false;
   return wait_success;
 }
 
@@ -355,17 +298,6 @@ bool AutomationProxy::GetMetricEventDuration(const std::string& event_name,
                                                        duration_ms));
 }
 
-bool AutomationProxy::SetFilteredInet(bool enabled) {
-  return Send(new AutomationMsg_SetFilteredInet(enabled));
-}
-
-int AutomationProxy::GetFilteredInetHitCount() {
-  int hit_count;
-  if (!Send(new AutomationMsg_GetFilteredInetHitCount(&hit_count)))
-    return -1;
-  return hit_count;
-}
-
 bool AutomationProxy::SendProxyConfig(const std::string& new_proxy_config) {
   return Send(new AutomationMsg_SetProxyConfig(new_proxy_config));
 }
@@ -389,42 +321,10 @@ void AutomationProxy::OnChannelError() {
     Disconnect();
 }
 
-scoped_refptr<WindowProxy> AutomationProxy::GetActiveWindow() {
-  int handle = 0;
-  if (!Send(new AutomationMsg_ActiveWindow(&handle)))
-    return NULL;
-
-  return ProxyObjectFromHandle<WindowProxy>(handle);
-}
-
 scoped_refptr<BrowserProxy> AutomationProxy::GetBrowserWindow(
     int window_index) {
   int handle = 0;
   if (!Send(new AutomationMsg_BrowserWindow(window_index, &handle)))
-    return NULL;
-
-  return ProxyObjectFromHandle<BrowserProxy>(handle);
-}
-
-bool AutomationProxy::GetBrowserLocale(string16* locale) {
-  DCHECK(locale != NULL);
-  if (!Send(new AutomationMsg_GetBrowserLocale(locale)))
-    return false;
-
-  return !locale->empty();
-}
-
-scoped_refptr<BrowserProxy> AutomationProxy::FindTabbedBrowserWindow() {
-  int handle = 0;
-  if (!Send(new AutomationMsg_FindTabbedBrowserWindow(&handle)))
-    return NULL;
-
-  return ProxyObjectFromHandle<BrowserProxy>(handle);
-}
-
-scoped_refptr<BrowserProxy> AutomationProxy::GetLastActiveBrowserWindow() {
-  int handle = 0;
-  if (!Send(new AutomationMsg_LastActiveBrowserWindow(&handle)))
     return NULL;
 
   return ProxyObjectFromHandle<BrowserProxy>(handle);
@@ -462,7 +362,7 @@ bool AutomationProxy::Send(IPC::Message* message, int timeout_ms) {
 }
 
 void AutomationProxy::InvalidateHandle(const IPC::Message& message) {
-  void* iter = NULL;
+  PickleIterator iter(message);
   int handle;
 
   if (message.ReadInt(&iter, &handle)) {
@@ -529,18 +429,6 @@ void AutomationProxy::ResetChannel() {
     tracker_->put_channel(NULL);
 }
 
-#if defined(OS_CHROMEOS)
-bool AutomationProxy::LoginWithUserAndPass(const std::string& username,
-                                           const std::string& password) {
-  bool success;
-  bool sent = Send(new AutomationMsg_LoginWithUserAndPass(username,
-                                                          password,
-                                                          &success));
-  // If message sending unsuccessful or test failed, return false.
-  return sent && success;
-}
-#endif
-
 bool AutomationProxy::BeginTracing(const std::string& categories) {
   bool result = false;
   bool send_success = Send(new AutomationMsg_BeginTracing(categories,
@@ -576,10 +464,6 @@ bool AutomationProxy::EndTracing(std::string* json_trace_output) {
 
   *json_trace_output = output.json_output;
   return true;
-}
-
-bool AutomationProxy::ResetToDefaultTheme() {
-  return Send(new AutomationMsg_ResetToDefaultTheme());
 }
 
 bool AutomationProxy::SendJSONRequest(const std::string& request,

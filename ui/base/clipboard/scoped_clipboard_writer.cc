@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,14 +14,16 @@
 
 namespace ui {
 
-ScopedClipboardWriter::ScopedClipboardWriter(Clipboard* clipboard)
-    : clipboard_(clipboard) {
+ScopedClipboardWriter::ScopedClipboardWriter(Clipboard* clipboard,
+                                             Clipboard::Buffer buffer)
+    : clipboard_(clipboard),
+      buffer_(buffer) {
 }
 
 ScopedClipboardWriter::~ScopedClipboardWriter() {
   if (!objects_.empty() && clipboard_) {
-    clipboard_->WriteObjects(objects_);
-    if (url_text_.length())
+    clipboard_->WriteObjects(buffer_, objects_);
+    if (buffer_ == Clipboard::BUFFER_STANDARD && url_text_.length())
       clipboard_->DidWriteURL(url_text_);
   }
 }
@@ -36,9 +38,6 @@ void ScopedClipboardWriter::WriteURL(const string16& text) {
 
 void ScopedClipboardWriter::WriteHTML(const string16& markup,
                                       const std::string& source_url) {
-  if (markup.empty())
-    return;
-
   std::string utf8_markup = UTF16ToUTF8(markup);
 
   Clipboard::ObjectMapParams parameters;
@@ -51,6 +50,13 @@ void ScopedClipboardWriter::WriteHTML(const string16& markup,
   }
 
   objects_[Clipboard::CBF_HTML] = parameters;
+}
+
+void ScopedClipboardWriter::WriteRTF(const std::string& rtf_data) {
+  Clipboard::ObjectMapParams parameters;
+  parameters.push_back(Clipboard::ObjectMapParam(rtf_data.begin(),
+                                                 rtf_data.end()));
+  objects_[Clipboard::CBF_RTF] = parameters;
 }
 
 void ScopedClipboardWriter::WriteBookmark(const string16& bookmark_title,
@@ -121,10 +127,12 @@ void ScopedClipboardWriter::WritePickledData(
   objects_[Clipboard::CBF_DATA] = parameters;
 }
 
-void ScopedClipboardWriter::WriteTextOrURL(const string16& text, bool is_url) {
-  if (text.empty())
-    return;
+void ScopedClipboardWriter::Reset() {
+  url_text_.clear();
+  objects_.clear();
+}
 
+void ScopedClipboardWriter::WriteTextOrURL(const string16& text, bool is_url) {
   std::string utf8_text = UTF16ToUTF8(text);
 
   Clipboard::ObjectMapParams parameters;

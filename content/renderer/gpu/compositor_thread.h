@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,9 @@
 
 #include <map>
 
-#include "base/memory/linked_ptr.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
+#include "content/renderer/render_view_impl.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "webkit/glue/webthread_impl.h"
 
@@ -24,32 +26,41 @@ class CompositorThread {
  public:
   // |main_listener| refers to the central IPC message listener that lives on
   // the main thread, where all incoming IPC messages are first handled.
-  explicit CompositorThread(IPC::Channel::Listener* main_listener);
+  explicit CompositorThread(IPC::Listener* main_listener);
   ~CompositorThread();
 
   // This MessageFilter should be added to allow input events to be redirected
   // to the compositor's thread.
   IPC::ChannelProxy::MessageFilter* GetMessageFilter() const;
 
-  // Callable from the main thread or the compositor's thread.
-  void AddCompositor(int routing_id, int compositor_id);
+  // Callable from the main thread only.
+  void AddInputHandler(int routing_id,
+                       int input_handler_id,
+                       const base::WeakPtr<RenderViewImpl>& render_view_impl);
 
   webkit_glue::WebThreadImpl* GetWebThread() { return &thread_; }
 
  private:
   // Callback only from the compositor's thread.
-  void RemoveCompositor(int routing_id);
+  void RemoveInputHandler(int routing_id);
 
   // Called from the compositor's thread.
   void HandleInputEvent(int routing_id,
                         const WebKit::WebInputEvent* input_event);
 
-  class CompositorWrapper;
-  friend class CompositorWrapper;
+  // Called from the compositor's thread.
+  void AddInputHandlerOnCompositorThread(
+      int routing_id,
+      int input_handler_id,
+      scoped_refptr<base::MessageLoopProxy> main_loop,
+      const base::WeakPtr<RenderViewImpl>& render_view_impl);
+
+  class InputHandlerWrapper;
+  friend class InputHandlerWrapper;
 
   typedef std::map<int,  // routing_id
-                   linked_ptr<CompositorWrapper> > CompositorMap;
-  CompositorMap compositors_;
+                   scoped_refptr<InputHandlerWrapper> > InputHandlerMap;
+  InputHandlerMap input_handlers_;
 
   webkit_glue::WebThreadImpl thread_;
   scoped_refptr<InputEventFilter> filter_;

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,18 +7,20 @@
 #include "base/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 
-BookmarkExpandedStateTracker::BookmarkExpandedStateTracker(Profile* profile,
-                                                           const char* path)
+BookmarkExpandedStateTracker::BookmarkExpandedStateTracker(
+    Profile* profile,
+    const char* path,
+    BookmarkModel* bookmark_model)
     : profile_(profile),
       pref_path_(path) {
-  profile_->GetBookmarkModel()->AddObserver(this);
+  bookmark_model->AddObserver(this);
 }
 
 BookmarkExpandedStateTracker::~BookmarkExpandedStateTracker() {
-  profile_->GetBookmarkModel()->RemoveObserver(this);
 }
 
 void BookmarkExpandedStateTracker::SetExpandedNodes(const Nodes& nodes) {
@@ -28,7 +30,7 @@ void BookmarkExpandedStateTracker::SetExpandedNodes(const Nodes& nodes) {
 BookmarkExpandedStateTracker::Nodes
 BookmarkExpandedStateTracker::GetExpandedNodes() {
   Nodes nodes;
-  BookmarkModel* model = profile_->GetBookmarkModel();
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile_);
   if (!model->IsLoaded())
     return nodes;
 
@@ -71,6 +73,7 @@ void BookmarkExpandedStateTracker::BookmarkModelChanged() {
 
 void BookmarkExpandedStateTracker::BookmarkModelBeingDeleted(
     BookmarkModel* model) {
+  model->RemoveObserver(this);
 }
 
 void BookmarkExpandedStateTracker::BookmarkNodeRemoved(

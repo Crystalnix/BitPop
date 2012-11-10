@@ -5,6 +5,8 @@
 #ifndef REMOTING_BASE_DECODER_ROW_BASED_H_
 #define REMOTING_BASE_DECODER_ROW_BASED_H_
 
+#include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "remoting/base/decoder.h"
 
 namespace remoting {
@@ -20,11 +22,16 @@ class DecoderRowBased : public Decoder {
 
   // Decoder implementation.
   virtual bool IsReadyForData() OVERRIDE;
-  virtual void Initialize(scoped_refptr<media::VideoFrame> frame) OVERRIDE;
+  virtual void Initialize(const SkISize& screen_size) OVERRIDE;
   virtual DecodeResult DecodePacket(const VideoPacket* packet) OVERRIDE;
-  virtual void GetUpdatedRegion(SkRegion* region) OVERRIDE;
-  virtual void Reset() OVERRIDE;
   virtual VideoPacketFormat::Encoding Encoding() OVERRIDE;
+  virtual void Invalidate(const SkISize& view_size,
+                          const SkRegion& region) OVERRIDE;
+  virtual void RenderFrame(const SkISize& view_size,
+                           const SkIRect& clip_area,
+                           uint8* image_buffer,
+                           int image_stride,
+                           SkRegion* output_region) OVERRIDE;
 
  private:
   enum State {
@@ -48,9 +55,6 @@ class DecoderRowBased : public Decoder {
   // Keeps track of the updating rect.
   SkIRect clip_;
 
-  // The video frame to write to.
-  scoped_refptr<media::VideoFrame> frame_;
-
   // The compression for the input byte stream.
   scoped_ptr<Decompressor> decompressor_;
 
@@ -63,7 +67,14 @@ class DecoderRowBased : public Decoder {
   // The current row in the rect that we are updaing.
   int row_y_;
 
+  // The region updated that hasn't been copied to the screen yet.
   SkRegion updated_region_;
+
+  // Size of the remote screen.
+  SkISize screen_size_;
+
+  // The bitmap holding the remote screen bits.
+  scoped_array<uint8> screen_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(DecoderRowBased);
 };

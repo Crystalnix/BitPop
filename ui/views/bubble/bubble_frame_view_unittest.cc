@@ -1,8 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ui/base/hit_test.h"
+#include "ui/gfx/insets.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/bubble/bubble_frame_view.h"
@@ -14,7 +15,8 @@ namespace views {
 typedef ViewsTestBase BubbleFrameViewTest;
 
 const BubbleBorder::ArrowLocation kArrow = BubbleBorder::TOP_LEFT;
-const gfx::Rect kRect(10, 10, 200, 200);
+const int kBubbleWidth = 200;
+const int kBubbleHeight = 200;
 const SkColor kBackgroundColor = SK_ColorRED;
 const int kDefaultMargin = 6;
 
@@ -36,11 +38,13 @@ SizedBubbleDelegateView::SizedBubbleDelegateView() {}
 
 SizedBubbleDelegateView::~SizedBubbleDelegateView() {}
 
-gfx::Size SizedBubbleDelegateView::GetPreferredSize() { return kRect.size(); }
+gfx::Size SizedBubbleDelegateView::GetPreferredSize() {
+  return gfx::Size(kBubbleWidth, kBubbleHeight);
+}
 
 class TestBubbleFrameView : public BubbleFrameView {
  public:
-  TestBubbleFrameView(const gfx::Rect& bounds);
+  TestBubbleFrameView();
   virtual ~TestBubbleFrameView();
 
  protected:
@@ -52,9 +56,14 @@ class TestBubbleFrameView : public BubbleFrameView {
   DISALLOW_COPY_AND_ASSIGN(TestBubbleFrameView);
 };
 
-TestBubbleFrameView::TestBubbleFrameView(const gfx::Rect& bounds)
-  : BubbleFrameView(kArrow, kBackgroundColor, kDefaultMargin),
-    monitor_bounds_(bounds) {
+TestBubbleFrameView::TestBubbleFrameView()
+    : BubbleFrameView(gfx::Insets(kDefaultMargin,
+                                  kDefaultMargin,
+                                  kDefaultMargin,
+                                  kDefaultMargin),
+                      new BubbleBorder(kArrow, BubbleBorder::NO_SHADOW)),
+      monitor_bounds_(gfx::Rect(0, 0, 1000, 1000)) {
+  bubble_border()->set_background_color(kBackgroundColor);
 }
 
 TestBubbleFrameView::~TestBubbleFrameView() {}
@@ -66,7 +75,7 @@ gfx::Rect TestBubbleFrameView::GetMonitorBounds(const gfx::Rect& rect) {
 }  // namespace
 
 TEST_F(BubbleFrameViewTest, GetBoundsForClientView) {
-  BubbleFrameView frame(kArrow, kBackgroundColor, kDefaultMargin);
+  TestBubbleFrameView frame;
   EXPECT_EQ(kArrow, frame.bubble_border()->arrow_location());
   EXPECT_EQ(kBackgroundColor, frame.bubble_border()->background_color());
 
@@ -93,7 +102,7 @@ TEST_F(BubbleFrameViewTest, NonClientHitTest) {
 
 // Tests that the arrow is mirrored as needed to better fit the screen.
 TEST_F(BubbleFrameViewTest, GetUpdatedWindowBounds) {
-  TestBubbleFrameView frame(gfx::Rect(0, 0, 1000, 1000));
+  TestBubbleFrameView frame;
   gfx::Rect window_bounds;
 
   gfx::Insets insets;
@@ -206,7 +215,7 @@ TEST_F(BubbleFrameViewTest, GetUpdatedWindowBounds) {
 // Tests that the arrow is not moved when the info-bubble does not fit the
 // screen but moving it would make matter worse.
 TEST_F(BubbleFrameViewTest, GetUpdatedWindowBoundsMirroringFails) {
-  TestBubbleFrameView frame(gfx::Rect(0, 0, 1000, 1000));
+  TestBubbleFrameView frame;
   frame.bubble_border()->set_arrow_location(BubbleBorder::TOP_LEFT);
   gfx::Rect window_bounds = frame.GetUpdatedWindowBounds(
       gfx::Rect(400, 100, 50, 50),  // |anchor_rect|
@@ -217,7 +226,7 @@ TEST_F(BubbleFrameViewTest, GetUpdatedWindowBoundsMirroringFails) {
 
 // Test that the arrow will not be mirrored when |try_mirroring_arrow| is false.
 TEST_F(BubbleFrameViewTest, GetUpdatedWindowBoundsDontTryMirror) {
-  TestBubbleFrameView frame(gfx::Rect(0, 0, 1000, 1000));
+  TestBubbleFrameView frame;
   frame.bubble_border()->set_arrow_location(BubbleBorder::TOP_RIGHT);
   gfx::Rect window_bounds = frame.GetUpdatedWindowBounds(
       gfx::Rect(100, 900, 50, 50),  // |anchor_rect|

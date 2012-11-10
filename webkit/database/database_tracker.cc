@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,8 +18,8 @@
 #include "sql/connection.h"
 #include "sql/diagnostic_error_delegate.h"
 #include "sql/meta_table.h"
-#include "sql/statement.h"
 #include "sql/transaction.h"
+#include "third_party/sqlite/sqlite3.h"
 #include "webkit/database/database_quota_client.h"
 #include "webkit/database/database_util.h"
 #include "webkit/database/databases_table.h"
@@ -93,14 +93,12 @@ OriginInfo::OriginInfo(const string16& origin, int64 total_size)
 DatabaseTracker::DatabaseTracker(
     const FilePath& profile_path,
     bool is_incognito,
-    bool clear_local_state_on_exit,
     quota::SpecialStoragePolicy* special_storage_policy,
     quota::QuotaManagerProxy* quota_manager_proxy,
     base::MessageLoopProxy* db_tracker_thread)
     : is_initialized_(false),
       is_incognito_(is_incognito),
-      clear_local_state_on_exit_(clear_local_state_on_exit),
-      save_session_state_(false),
+      force_keep_session_state_(false),
       shutting_down_(false),
       profile_path_(profile_path),
       db_dir_(is_incognito_ ?
@@ -180,6 +178,24 @@ void DatabaseTracker::DatabaseClosed(const string16& origin_identifier,
     DeleteDatabaseIfNeeded(origin_identifier, database_name);
 }
 
+void DatabaseTracker::HandleSqliteError(
+    const string16& origin_identifier,
+    const string16& database_name,
+    int error) {
+  // We only handle errors that indicate corruption and we
+  // do so with a heavy hand, we delete it. Any renderers/workers
+  // with this database open will receive a message to close it
+  // immediately, once all have closed, the files will be deleted.
+  // In the interim, all attempts to open a new connection to that
+  // database will fail.
+  // Note: the client-side filters out all but these two errors as
+  // a small optimization, see WebDatabaseObserverImpl::HandleSqliteError.
+  if (error == SQLITE_CORRUPT || error == SQLITE_NOTADB) {
+    DeleteDatabase(origin_identifier, database_name,
+                   net::CompletionCallback());
+  }
+}
+
 void DatabaseTracker::CloseDatabases(const DatabaseConnections& connections) {
   if (database_connections_.IsEmpty()) {
     DCHECK(!is_initialized_ || connections.IsEmpty());
@@ -188,7 +204,7 @@ void DatabaseTracker::CloseDatabases(const DatabaseConnections& connections) {
 
   // When being closed by this route, there's a chance that
   // the tracker missed some DatabseModified calls. This method is used
-  // when a renderer crashes to cleanup it's open resources.
+  // when a renderer crashes to cleanup its open resources.
   // We need to examine what we have in connections for the
   // size of each open databases and notify any differences between the
   // actual file sizes now.
@@ -793,7 +809,7 @@ void DatabaseTracker::DeleteIncognitoDBDirectory() {
     file_util::Delete(incognito_db_dir, true);
 }
 
-void DatabaseTracker::ClearLocalState(bool clear_all_databases) {
+void DatabaseTracker::ClearSessionOnlyOrigins() {
   shutting_down_ = true;
 
   bool has_session_only_databases =
@@ -801,7 +817,7 @@ void DatabaseTracker::ClearLocalState(bool clear_all_databases) {
       special_storage_policy_->HasSessionOnlyOrigins();
 
   // Clearing only session-only databases, and there are none.
-  if (!clear_all_databases && !has_session_only_databases)
+  if (!has_session_only_databases)
     return;
 
   if (!LazyInit())
@@ -814,14 +830,10 @@ void DatabaseTracker::ClearLocalState(bool clear_all_databases) {
        origin != origin_identifiers.end(); ++origin) {
     GURL origin_url =
         webkit_database::DatabaseUtil::GetOriginFromIdentifier(*origin);
-    if (!clear_all_databases &&
-        !special_storage_policy_->IsStorageSessionOnly(origin_url)) {
+    if (!special_storage_policy_->IsStorageSessionOnly(origin_url))
       continue;
-    }
-    if (special_storage_policy_.get() &&
-        special_storage_policy_->IsStorageProtected(origin_url)) {
+    if (special_storage_policy_->IsStorageProtected(origin_url))
       continue;
-    }
     webkit_database::OriginInfo origin_info;
     std::vector<string16> databases;
     GetOriginInfo(*origin, &origin_info);
@@ -852,35 +864,19 @@ void DatabaseTracker::Shutdown() {
   }
   if (is_incognito_)
     DeleteIncognitoDBDirectory();
-  else if (!save_session_state_)
-    ClearLocalState(clear_local_state_on_exit_);
+  else if (!force_keep_session_state_)
+    ClearSessionOnlyOrigins();
 }
 
-void DatabaseTracker::SetClearLocalStateOnExit(bool clear_local_state_on_exit) {
+void DatabaseTracker::SetForceKeepSessionState() {
   DCHECK(db_tracker_thread_.get());
   if (!db_tracker_thread_->BelongsToCurrentThread()) {
     db_tracker_thread_->PostTask(
         FROM_HERE,
-        base::Bind(&DatabaseTracker::SetClearLocalStateOnExit, this,
-                   clear_local_state_on_exit));
+        base::Bind(&DatabaseTracker::SetForceKeepSessionState, this));
     return;
   }
-  if (shutting_down_) {
-    NOTREACHED();
-    return;
-  }
-  clear_local_state_on_exit_ = clear_local_state_on_exit;
-}
-
-void DatabaseTracker::SaveSessionState() {
-  DCHECK(db_tracker_thread_.get());
-  if (!db_tracker_thread_->BelongsToCurrentThread()) {
-    db_tracker_thread_->PostTask(
-        FROM_HERE,
-        base::Bind(&DatabaseTracker::SaveSessionState, this));
-    return;
-  }
-  save_session_state_ = true;
+  force_keep_session_state_ = true;
 }
 
 }  // namespace webkit_database

@@ -152,14 +152,15 @@
   </translations>
   <release seq="1" allow_pseudo="false">
     <messages fallback_to_english="true">
-      <!-- The font used in Web UI (e.g. History). -->
+      <!-- The font used in Web UI (e.g. History). Note that these are only
+           backups. We try to use the system font if possible. -->
       <message name="IDS_WEB_FONT_FAMILY" use_name_for_id="true">
         Arial, sans-serif
       </message>
 
       <!-- The relative font size in % used in Web UI (e.g. History).  -->
       <message name="IDS_WEB_FONT_SIZE" use_name_for_id="true">
-        84%
+        75%
       </message>
 
       <!-- The default value for |WebPreference::standard_font_family| -->
@@ -169,7 +170,7 @@
 
       <!-- The default value for |WebPreference::fixed_font_family| -->
       <message name="IDS_FIXED_FONT_FAMILY" use_name_for_id="true">
-        Courier New
+        Monospace
       </message>
 
       <!-- The default value for |WebPreference::serif_font_family| -->

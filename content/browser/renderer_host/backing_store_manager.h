@@ -1,21 +1,20 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_RENDERER_HOST_BACKING_STORE_MANAGER_H_
 #define CONTENT_BROWSER_RENDERER_HOST_BACKING_STORE_MANAGER_H_
-#pragma once
 
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/process.h"
-#include "content/common/content_export.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
-#include "ui/gfx/surface/transport_dib.h"
+#include "ui/surface/transport_dib.h"
 
+namespace content {
 class BackingStore;
 class RenderWidgetHost;
 
@@ -37,11 +36,17 @@ class BackingStoreManager {
   // bitmap from the renderer has been copied into the backing store.
   //
   // backing_store_size
-  //   The desired backing store dimensions.
+  //   The desired backing store dimensions, in DIPs.
   // bitmap_section
   //   The bitmap section from the renderer.
   // bitmap_rect
-  //   The rect to be painted into the backing store
+  //   The rect to be painted into the backing store, in DIPs.
+  // scale_factor
+  //   The device scale factor the backing store is expected to be at.
+  //   If the backing store's device scale factor doesn't match, it will need
+  //   to scale |bitmap| at paint time. This will only be out of sync with the
+  //   backing store scale factor for a few frames, right after device scale
+  //   changes.
   // needs_full_paint
   //   Set if we need to send out a request to paint the view
   //   to the renderer.
@@ -51,6 +56,7 @@ class BackingStoreManager {
       TransportDIB::Id bitmap,
       const gfx::Rect& bitmap_rect,
       const std::vector<gfx::Rect>& copy_rects,
+      float scale_factor,
       const base::Closure& completion_callback,
       bool* needs_full_paint,
       bool* scheduled_completion_callback);
@@ -63,15 +69,10 @@ class BackingStoreManager {
   static void RemoveBackingStore(RenderWidgetHost* host);
 
   // Removes all backing stores.
-  CONTENT_EXPORT static void RemoveAllBackingStores();
-
-  // Expires the given backing store. This emulates something getting evicted
-  // from the cache for the purpose of testing. Returns true if the host was
-  // removed, false if it wasn't found.
-  CONTENT_EXPORT static bool ExpireBackingStoreForTest(RenderWidgetHost* host);
+  static void RemoveAllBackingStores();
 
   // Current size in bytes of the backing store cache.
-  CONTENT_EXPORT static size_t MemorySize();
+  static size_t MemorySize();
 
  private:
   // Not intended for instantiation.
@@ -79,5 +80,7 @@ class BackingStoreManager {
 
   DISALLOW_COPY_AND_ASSIGN(BackingStoreManager);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_BACKING_STORE_MANAGER_H_

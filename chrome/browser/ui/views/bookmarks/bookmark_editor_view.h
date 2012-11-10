@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_UI_VIEWS_BOOKMARKS_BOOKMARK_EDITOR_VIEW_H_
 #define CHROME_BROWSER_UI_VIEWS_BOOKMARKS_BOOKMARK_EDITOR_VIEW_H_
-#pragma once
 
 #include <vector>
 
@@ -25,7 +24,7 @@
 
 namespace views {
 class Label;
-class Menu2;
+class MenuRunner;
 class TextButton;
 class TreeView;
 }
@@ -65,10 +64,7 @@ class BookmarkEditorView : public BookmarkEditor,
         : ui::TreeNodeModel<EditorNode>(root) {}
 
     virtual void SetTitle(ui::TreeModelNode* node,
-                          const string16& title) {
-      if (!title.empty())
-        ui::TreeNodeModel<EditorNode>::SetTitle(node, title);
-    }
+                          const string16& title) OVERRIDE;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(EditorTreeModel);
@@ -105,11 +101,9 @@ class BookmarkEditorView : public BookmarkEditor,
 
   // views::TextfieldController:
   virtual void ContentsChanged(views::Textfield* sender,
-                               const string16& new_contents)  OVERRIDE;
+                               const string16& new_contents) OVERRIDE;
   virtual bool HandleKeyEvent(views::Textfield* sender,
-                              const views::KeyEvent& key_event)  OVERRIDE {
-    return false;
-  }
+                              const views::KeyEvent& key_event) OVERRIDE;
 
   // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
@@ -125,15 +119,14 @@ class BookmarkEditorView : public BookmarkEditor,
 
   // Creates a Window and adds the BookmarkEditorView to it. When the window is
   // closed the BookmarkEditorView is deleted.
-  void Show(gfx::NativeWindow parent_hwnd);
+  void Show(gfx::NativeWindow parent_window);
 
   // Closes the dialog.
   void Close();
 
   // views::ContextMenuController:
-  virtual void ShowContextMenuForView(View* source,
-                                      const gfx::Point& p,
-                                      bool is_mouse_gesture) OVERRIDE;
+  virtual void ShowContextMenuForView(views::View* source,
+                                      const gfx::Point& point) OVERRIDE;
 
  private:
   friend class BookmarkEditorViewTest;
@@ -208,9 +201,6 @@ class BookmarkEditorView : public BookmarkEditor,
   // Returns the current url the user has input.
   GURL GetInputURL() const;
 
-  // Returns the title the user has input.
-  string16 GetInputTitle() const;
-
   // Invoked when the url or title has possibly changed. Updates the background
   // of Textfields and ok button appropriately.
   void UserInputChanged();
@@ -229,6 +219,8 @@ class BookmarkEditorView : public BookmarkEditor,
   // recursively invoked for all the children.
   void UpdateExpandedNodes(EditorNode* editor_node,
                            BookmarkExpandedStateTracker::Nodes* expanded_nodes);
+
+  ui::SimpleMenuModel* GetMenuModel();
 
   // Profile the entry is from.
   Profile* profile_;
@@ -251,8 +243,8 @@ class BookmarkEditorView : public BookmarkEditor,
   // The label for the title text field.
   views::Label* title_label_;
 
-  // Used for editing the title.
-  views::Textfield title_tf_;
+  // The text field used for editing the title.
+  views::Textfield* title_tf_;
 
   // Initial parent to select. Is only used if |details_.existing_node| is
   // NULL.
@@ -261,10 +253,8 @@ class BookmarkEditorView : public BookmarkEditor,
   const EditDetails details_;
 
   // The context menu.
-  scoped_ptr<ui::SimpleMenuModel> context_menu_contents_;
-#if !defined(USE_AURA)
-  scoped_ptr<views::Menu2> context_menu_;
-#endif
+  scoped_ptr<ui::SimpleMenuModel> context_menu_model_;
+  scoped_ptr<views::MenuRunner> context_menu_runner_;
 
   // Mode used to create nodes from.
   BookmarkModel* bb_model_;

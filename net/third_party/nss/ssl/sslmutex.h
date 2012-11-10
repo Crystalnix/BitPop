@@ -33,24 +33,24 @@
  * the terms of any one of the MPL, the GPL or the LGPL.
  *
  * ***** END LICENSE BLOCK ***** */
-/* $Id: sslmutex.h,v 1.12 2009/06/05 02:34:15 nelson%bolyard.com Exp $ */
+/* $Id: sslmutex.h,v 1.13 2011/09/30 23:27:08 rrelyea%redhat.com Exp $ */
 #ifndef __SSLMUTEX_H_
 #define __SSLMUTEX_H_ 1
 
-/* What SSL really wants is portable process-shared unnamed mutexes in 
+/* What SSL really wants is portable process-shared unnamed mutexes in
  * shared memory, that have the property that if the process that holds
- * them dies, they are released automatically, and that (unlike fcntl 
- * record locking) lock to the thread, not to the process.  
- * NSPR doesn't provide that.  
- * Windows has mutexes that meet that description, but they're not portable.  
- * POSIX mutexes are not automatically released when the holder dies, 
- * and other processes/threads cannot release the mutex on behalf of the 
- * dead holder.  
- * POSIX semaphores can be used to accomplish this on systems that implement 
- * process-shared unnamed POSIX semaphores, because a watchdog thread can 
- * discover and release semaphores that were held by a dead process.  
- * On systems that do not support process-shared POSIX unnamed semaphores, 
- * they can be emulated using pipes.  
+ * them dies, they are released automatically, and that (unlike fcntl
+ * record locking) lock to the thread, not to the process.
+ * NSPR doesn't provide that.
+ * Windows has mutexes that meet that description, but they're not portable.
+ * POSIX mutexes are not automatically released when the holder dies,
+ * and other processes/threads cannot release the mutex on behalf of the
+ * dead holder.
+ * POSIX semaphores can be used to accomplish this on systems that implement
+ * process-shared unnamed POSIX semaphores, because a watchdog thread can
+ * discover and release semaphores that were held by a dead process.
+ * On systems that do not support process-shared POSIX unnamed semaphores,
+ * they can be emulated using pipes.
  * The performance cost of doing that is not yet measured.
  *
  * So, this API looks a lot like POSIX pthread mutexes.
@@ -67,7 +67,7 @@
 
 #include <wtypes.h>
 
-typedef struct 
+typedef struct
 {
     PRBool isMultiProcess;
 #ifdef WINNT
@@ -88,12 +88,12 @@ typedef int    sslPID;
 #include <sys/types.h>
 #include "prtypes.h"
 
-typedef struct { 
+typedef struct {
     PRBool isMultiProcess;
     union {
         PRLock* sslLock;
         struct {
-            int      mPipes[3]; 
+            int      mPipes[3];
             PRInt32  nWaiters;
         } pipeStr;
     } u;
@@ -120,7 +120,7 @@ typedef pid_t sslPID;
 
 /* what platform is this ?? */
 
-typedef struct { 
+typedef struct {
     PRBool isMultiProcess;
     union {
         PRLock* sslLock;
@@ -138,7 +138,10 @@ SEC_BEGIN_PROTOS
 
 extern SECStatus sslMutex_Init(sslMutex *sem, int shared);
 
-extern SECStatus sslMutex_Destroy(sslMutex *sem);
+/* If processLocal is set to true, then just free resources which are *only* associated
+ * with the current process. Leave any shared resources (including the state of
+ * shared memory) intact. */
+extern SECStatus sslMutex_Destroy(sslMutex *sem, PRBool processLocal);
 
 extern SECStatus sslMutex_Unlock(sslMutex *sem);
 

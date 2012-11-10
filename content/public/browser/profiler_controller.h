@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,9 @@
 #include <set>
 #include <string>
 
+#include "base/tracked_objects.h"
 #include "content/common/content_export.h"
+
 
 namespace base {
 class DictionaryValue;
@@ -37,17 +39,12 @@ class CONTENT_EXPORT ProfilerController {
   // Unregister the subscriber so that it will not be called when for example
   // OnProfilerDataCollected is returning profiler data from a child process.
   // Safe to call even if caller is not the current subscriber.
-  virtual void Unregister(ProfilerSubscriber* subscriber) = 0;
+  virtual void Unregister(const ProfilerSubscriber* subscriber) = 0;
 
   // Contact all processes and get their profiler data.
   virtual void GetProfilerData(int sequence_number) = 0;
-
-  // Contact all processes and set profiler status to |enable|.
-  virtual void SetProfilerStatus(bool enable) = 0;
-
 };
 
 }  // namespace content
 
 #endif  // CONTENT_PUBLIC_BROWSER_PROFILER_CONTROLLER_H_
-

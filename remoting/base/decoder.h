@@ -5,10 +5,11 @@
 #ifndef REMOTING_BASE_DECODER_H_
 #define REMOTING_BASE_DECODER_H_
 
-#include "base/memory/scoped_ptr.h"
-#include "media/base/video_frame.h"
+#include "base/basictypes.h"
 #include "remoting/proto/video.pb.h"
+#include "third_party/skia/include/core/SkRect.h"
 #include "third_party/skia/include/core/SkRegion.h"
+#include "third_party/skia/include/core/SkSize.h"
 
 namespace remoting {
 
@@ -32,41 +33,41 @@ class Decoder {
   Decoder() {}
   virtual ~Decoder() {}
 
-  // Initializes the decoder to draw into the given |frame|.
-  virtual void Initialize(scoped_refptr<media::VideoFrame> frame) = 0;
+  // Initializes the decoder and sets the output dimensions.
+  // |screen size| must not be empty.
+  virtual void Initialize(const SkISize& screen_size) = 0;
 
   // Feeds more data into the decoder.
   virtual DecodeResult DecodePacket(const VideoPacket* packet) = 0;
-
-  // Returns the region affected by the most recent frame.  Can be called only
-  // after DecodePacket returned DECODE_DONE. Caller keeps ownership of
-  // |region|.
-  virtual void GetUpdatedRegion(SkRegion* region) = 0;
-
-  // Reset the decoder to an uninitialized state. Release all references to
-  // the initialized |frame|.  Initialize() must be called before the decoder
-  // is used again.
-  virtual void Reset() = 0;
 
   // Returns true if decoder is ready to accept data via DecodePacket.
   virtual bool IsReadyForData() = 0;
 
   virtual VideoPacketFormat::Encoding Encoding() = 0;
 
-  // Set the output dimensions for the decoder.  If the dimensions are empty
-  // then the source is rendered without scaling.
-  // Output dimensions are ignored if the decoder doesn't support scaling.
-  virtual void SetOutputSize(const SkISize& size) {}
+  // Marks the specified |region| of the view for update the next time
+  // RenderFrame() is called.  |region| is expressed in |view_size| coordinates.
+  // |view_size| must not be empty.
+  virtual void Invalidate(const SkISize& view_size,
+                          const SkRegion& region) = 0;
 
-  // Set the clipping rectangle to the decoder. Decoder should respect this and
-  // only output changes in this rectangle. The new clipping rectangle will be
-  // effective on the next decoded video frame.
-  virtual void SetClipRect(const SkIRect& clip_rect) {}
-
-  // Force decoder to output a frame based on the specified |region| of the
-  // most recently decoded video frame.  |region| is expressed in video frame
-  // rather than output coordinates.
-  virtual void RefreshRegion(const SkRegion& region) {}
+  // Copies invalidated pixels within |clip_area| to |image_buffer|. Pixels are
+  // invalidated either by new data received in DecodePacket(), or by explicit
+  // calls to Invalidate(). |clip_area| is specified in |view_size| coordinates.
+  // If |view_size| differs from the source size then the copied pixels will be
+  // scaled accordingly. |view_size| cannot be empty.
+  //
+  // |image_buffer|'s origin must correspond to the top-left of |clip_area|,
+  // and the buffer must be large enough to hold |clip_area| RGBA32 pixels.
+  // |image_stride| gives the output buffer's stride in pixels.
+  //
+  // On return, |output_region| contains the updated area, in |view_size|
+  // coordinates.
+  virtual void RenderFrame(const SkISize& view_size,
+                           const SkIRect& clip_area,
+                           uint8* image_buffer,
+                           int image_stride,
+                           SkRegion* output_region) = 0;
 };
 
 }  // namespace remoting

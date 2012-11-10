@@ -5,16 +5,16 @@
 #include "chrome/browser/tab_contents/background_contents.h"
 
 #include "chrome/browser/background/background_contents_service.h"
-#include "chrome/browser/extensions/extension_message_service.h"
+#include "chrome/browser/extensions/message_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
+#include "chrome/browser/view_type_utils.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/common/chrome_view_type.h"
-#include "content/browser/renderer_host/render_view_host.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/gfx/rect.h"
@@ -32,7 +32,8 @@ BackgroundContents::BackgroundContents(SiteInstance* site_instance,
   // TODO(rafaelw): Implement correct session storage.
   web_contents_.reset(WebContents::Create(
       profile_, site_instance, routing_id, NULL, NULL));
-  web_contents_->SetViewType(chrome::VIEW_TYPE_BACKGROUND_CONTENTS);
+  chrome::SetViewType(
+      web_contents_.get(), chrome::VIEW_TYPE_BACKGROUND_CONTENTS);
   web_contents_->SetDelegate(this);
   content::WebContentsObserver::Observe(web_contents_.get());
 
@@ -92,7 +93,7 @@ void BackgroundContents::DidNavigateMainFramePostCommit(WebContents* tab) {
       content::Details<BackgroundContents>(this));
 }
 
-// Forward requests to add a new TabContents to our delegate.
+// Forward requests to add a new WebContents to our delegate.
 void BackgroundContents::AddNewContents(WebContents* source,
                                         WebContents* new_contents,
                                         WindowOpenDisposition disposition,

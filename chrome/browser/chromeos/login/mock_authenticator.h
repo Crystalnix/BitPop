@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_MOCK_AUTHENTICATOR_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_MOCK_AUTHENTICATOR_H_
-#pragma once
 
 #include <string>
 
@@ -45,26 +44,28 @@ class MockAuthenticator : public Authenticator {
   virtual void AuthenticateToUnlock(const std::string& username,
                                     const std::string& password) OVERRIDE;
 
+  virtual void LoginDemoUser() OVERRIDE;
   virtual void LoginOffTheRecord() OVERRIDE;
 
-  virtual void OnLoginSuccess(
-      const GaiaAuthConsumer::ClientLoginResult& credentials,
-      bool request_pending) OVERRIDE;
+  virtual void OnDemoUserLoginSuccess() OVERRIDE;
+
+  virtual void OnLoginSuccess(bool request_pending) OVERRIDE;
 
   virtual void OnLoginFailure(const LoginFailure& failure) OVERRIDE;
 
   virtual void RecoverEncryptedData(
-      const std::string& old_password,
-      const GaiaAuthConsumer::ClientLoginResult& credentials) OVERRIDE {}
+      const std::string& old_password) OVERRIDE {}
 
-  virtual void ResyncEncryptedData(
-      const GaiaAuthConsumer::ClientLoginResult& credentials) OVERRIDE {}
+  virtual void ResyncEncryptedData() OVERRIDE {}
 
   virtual void RetryAuth(Profile* profile,
                          const std::string& username,
                          const std::string& password,
                          const std::string& login_token,
                          const std::string& login_captcha) OVERRIDE {}
+
+ protected:
+  virtual ~MockAuthenticator() {}
 
  private:
   std::string expected_username_;
@@ -73,16 +74,17 @@ class MockAuthenticator : public Authenticator {
   DISALLOW_COPY_AND_ASSIGN(MockAuthenticator);
 };
 
-class MockLoginUtils : public LoginUtils {
+class TestLoginUtils : public LoginUtils {
  public:
-  MockLoginUtils(const std::string& expected_username,
+  TestLoginUtils(const std::string& expected_username,
                  const std::string& expected_password);
-  virtual ~MockLoginUtils();
+  virtual ~TestLoginUtils();
 
+  virtual void DoBrowserLaunch(Profile* profile,
+                                 LoginDisplayHost* login_host) OVERRIDE {}
   virtual void PrepareProfile(const std::string& username,
                               const std::string& display_email,
                               const std::string& password,
-                              const GaiaAuthConsumer::ClientLoginResult& res,
                               bool pending_requests,
                               bool using_oauth,
                               bool has_cookies,
@@ -125,7 +127,7 @@ class MockLoginUtils : public LoginUtils {
   std::string expected_password_;
   std::string auth_token_;
 
-  DISALLOW_COPY_AND_ASSIGN(MockLoginUtils);
+  DISALLOW_COPY_AND_ASSIGN(TestLoginUtils);
 };
 
 }  // namespace chromeos

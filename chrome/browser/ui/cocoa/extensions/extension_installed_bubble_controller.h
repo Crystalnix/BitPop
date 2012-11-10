@@ -1,23 +1,26 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_COCOA_EXTENSIONS_EXTENSION_INSTALLED_BUBBLE_CONTROLLER_H_
 #define CHROME_BROWSER_UI_COCOA_EXTENSIONS_EXTENSION_INSTALLED_BUBBLE_CONTROLLER_H_
-#pragma once
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/mac/cocoa_protocols.h"
 #include "base/memory/scoped_ptr.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
+#import "chrome/browser/ui/cocoa/base_bubble_controller.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 class Browser;
-class Extension;
 class ExtensionLoadedNotificationObserver;
 @class HoverCloseButton;
 @class InfoBubbleView;
+
+namespace extensions {
+class BundleInstaller;
+class Extension;
+}
 
 namespace extension_installed_bubble {
 
@@ -35,20 +38,20 @@ typedef enum {
   kBrowserAction,
   kGeneric,
   kOmniboxKeyword,
-  kPageAction
+  kPageAction,
+  kBundle,
 } ExtensionType;
 
-}
+}  // namespace extension_installed_bubble
 
 // Controller for the extension installed bubble.  This bubble pops up after
 // an extension has been installed to inform the user that the install happened
 // properly, and to let the user know how to manage this extension in the
 // future.
-@interface ExtensionInstalledBubbleController :
-    NSWindowController<NSWindowDelegate> {
+@interface ExtensionInstalledBubbleController : BaseBubbleController {
  @private
-  NSWindow* parentWindow_;  // weak
-  const Extension* extension_;  // weak
+  const extensions::Extension* extension_;  // weak
+  const extensions::BundleInstaller* bundle_;  // weak
   Browser* browser_;  // weak
   scoped_nsobject<NSImage> icon_;
 
@@ -65,22 +68,28 @@ typedef enum {
   scoped_ptr<ExtensionLoadedNotificationObserver> extensionObserver_;
 
   // References below are weak, being obtained from the nib.
-  IBOutlet InfoBubbleView* infoBubbleView_;
   IBOutlet HoverCloseButton* closeButton_;
   IBOutlet NSImageView* iconImage_;
   IBOutlet NSTextField* extensionInstalledMsg_;
   // Only shown for page actions and omnibox keywords.
   IBOutlet NSTextField* extraInfoMsg_;
   IBOutlet NSTextField* extensionInstalledInfoMsg_;
+  // Only shown for bundle installs.
+  IBOutlet NSTextField* installedHeadingMsg_;
+  IBOutlet NSTextField* installedItemsMsg_;
+  IBOutlet NSTextField* failedHeadingMsg_;
+  IBOutlet NSTextField* failedItemsMsg_;
 }
 
-@property(nonatomic, readonly) const Extension* extension;
+@property(nonatomic, readonly) const extensions::Extension* extension;
+@property(nonatomic, readonly) const extensions::BundleInstaller* bundle;
 @property(nonatomic) BOOL pageActionRemoved;
 
 // Initialize the window, and then create observers to wait for the extension
 // to complete loading, or the browser window to close.
 - (id)initWithParentWindow:(NSWindow*)parentWindow
-                 extension:(const Extension*)extension
+                 extension:(const extensions::Extension*)extension
+                    bundle:(const extensions::BundleInstaller*)bundle
                    browser:(Browser*)browser
                       icon:(SkBitmap)icon;
 
@@ -97,7 +106,7 @@ typedef enum {
 
 @end
 
-@interface ExtensionInstalledBubbleController(ExposedForTesting)
+@interface ExtensionInstalledBubbleController (ExposedForTesting)
 
 - (void)removePageActionPreviewIfNecessary;
 - (NSWindow*)initializeWindow;

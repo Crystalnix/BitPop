@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -27,25 +27,31 @@
 
 #ifndef CHROME_BROWSER_SAFE_BROWSING_SAFE_BROWSING_BLOCKING_PAGE_H_
 #define CHROME_BROWSER_SAFE_BROWSING_SAFE_BROWSING_BLOCKING_PAGE_H_
-#pragma once
 
 #include <map>
+#include <string>
 #include <vector>
 
+#include "base/gtest_prod_util.h"
+#include "base/time.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
-#include "chrome/browser/tab_contents/chrome_interstitial_page.h"
+#include "content/public/browser/interstitial_page_delegate.h"
 #include "googleurl/src/gurl.h"
 
+class MalwareDetails;
 class MessageLoop;
 class SafeBrowsingBlockingPageFactory;
-class MalwareDetails;
-class TabContents;
 
 namespace base {
 class DictionaryValue;
 }
 
-class SafeBrowsingBlockingPage : public ChromeInterstitialPage {
+namespace content {
+class InterstitialPage;
+class WebContents;
+}
+
+class SafeBrowsingBlockingPage : public content::InterstitialPageDelegate {
  public:
   typedef std::vector<SafeBrowsingService::UnsafeResource> UnsafeResourceList;
   typedef std::map<content::WebContents*, UnsafeResourceList> UnsafeResourceMap;
@@ -67,16 +73,18 @@ class SafeBrowsingBlockingPage : public ChromeInterstitialPage {
     factory_ = factory;
   }
 
-  // ChromeInterstitialPage method:
+  // InterstitialPageDelegate method:
   virtual std::string GetHTMLContents() OVERRIDE;
-  virtual void Proceed() OVERRIDE;
-  virtual void DontProceed() OVERRIDE;
+  virtual void CommandReceived(const std::string& command) OVERRIDE;
+  virtual void OverrideRendererPrefs(
+      content::RendererPreferences* prefs) OVERRIDE;
+  virtual void OnProceed() OVERRIDE;
+  virtual void OnDontProceed() OVERRIDE;
 
  protected:
   friend class SafeBrowsingBlockingPageTest;
-
-  // ChromeInterstitialPage method:
-  virtual void CommandReceived(const std::string& command) OVERRIDE;
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingBlockingPageTest,
+                           ProceedThenDontProceed);
 
   void SetReportingPreference(bool report);
 
@@ -90,6 +98,9 @@ class SafeBrowsingBlockingPage : public ChromeInterstitialPage {
   // MalwareDetails::FinishCollection() by this much time (in
   // milliseconds), in order to get data from the blocked resource itself.
   int64 malware_details_proceed_delay_ms_;
+  content::InterstitialPage* interstitial_page() const {
+    return interstitial_page_;
+  }
 
  private:
   FRIEND_TEST_ALL_PREFIXES(SafeBrowsingBlockingPageTest, MalwareReports);
@@ -119,6 +130,11 @@ class SafeBrowsingBlockingPage : public ChromeInterstitialPage {
   // SBInterstitial[Phishing|Malware|Multiple][Show|Proceed|DontProceed].
   void RecordUserAction(BlockingPageEvent event);
 
+  // Records the time it took for the user to react to the
+  // interstitial.  We won't double-count if this method is called
+  // multiple times.
+  void RecordUserReactionTime(const std::string& command);
+
   // Checks if we should even show the malware details option. For example, we
   // don't show it in incognito mode.
   bool CanShowMalwareDetailsOption();
@@ -128,6 +144,10 @@ class SafeBrowsingBlockingPage : public ChromeInterstitialPage {
   // preferences, and if the option to send malware details is
   // enabled, the report is scheduled to be sent on the |sb_service_|.
   void FinishMalwareDetails(int64 delay_ms);
+
+  // Returns the boolean value of the given |pref| from the PrefService of the
+  // Profile associated with |web_contents_|.
+  bool IsPrefEnabled(const char* pref);
 
   // A list of SafeBrowsingService::UnsafeResource for a tab that the user
   // should be warned about.  They are queued when displaying more than one
@@ -168,6 +188,22 @@ class SafeBrowsingBlockingPage : public ChromeInterstitialPage {
   // blocking page is shown. The object will be sent when the warning
   // is gone (if the user enables the feature).
   scoped_refptr<MalwareDetails> malware_details_;
+
+  bool proceeded_;
+
+  content::WebContents* web_contents_;
+  GURL url_;
+  content::InterstitialPage* interstitial_page_;  // Owns us
+
+  // Time when the interstitial was show.  This variable is set in
+  // GetHTMLContents() which is called right before the interstitial
+  // is shown to the user. Will return is_null() once we reported the
+  // user action.
+  base::TimeTicks interstitial_show_time_;
+  // True if the interstitial that is shown is a malware interstitial
+  // and false if it's a phishing interstitial.  If it's a multi-threat
+  // interstitial we'll say it's malware.
+  bool is_malware_interstitial_;
 
   // The factory used to instanciate SafeBrowsingBlockingPage objects.
   // Usefull for tests, so they can provide their own implementation of

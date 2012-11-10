@@ -5,13 +5,15 @@
 #include "base/string_util.h"
 #include "base/string16.h"
 #include "content/public/browser/native_web_keyboard_event.h"
+#include "content/public/test/render_view_test.h"
 #include "content/renderer/render_view_impl.h"
-#include "content/test/render_view_test.h"
+#include "content/shell/shell_main_delegate.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #include <Cocoa/Cocoa.h>
 #include <Carbon/Carbon.h>  // for the kVK_* constants.
 
+using content::NativeWebKeyboardEvent;
 using content::RenderViewTest;
 
 NSEvent* CmdDeadKeyEvent(NSEventType type, unsigned short code) {
@@ -43,6 +45,7 @@ NSEvent* CmdDeadKeyEvent(NSEventType type, unsigned short code) {
 // Test that cmd-up/down scrolls the page exactly if it is not intercepted by
 // javascript.
 TEST_F(RenderViewTest, MacTestCmdUp) {
+  content::ShellMainDelegate::InitializeResourceBundle();
   // Some preprocessor trickery so that we can have literal html in our source,
   // makes it easier to copy html to and from an html file for testing (the
   // preprocessor will remove the newlines at the line ends, turning this into
@@ -83,7 +86,7 @@ TEST_F(RenderViewTest, MacTestCmdUp) {
   );
   #undef HTML
 
-  WebPreferences prefs;
+  webkit_glue::WebPreferences prefs;
   prefs.enable_scroll_animator = false;
 
   RenderViewImpl* view = static_cast<RenderViewImpl*>(view_);

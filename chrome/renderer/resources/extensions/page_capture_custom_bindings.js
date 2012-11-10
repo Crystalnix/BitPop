@@ -4,22 +4,19 @@
 
 // Custom bindings for the pageCapture API.
 
-(function() {
+var pageCaptureNatives = requireNative('page_capture');
+var CreateBlob = pageCaptureNatives.CreateBlob;
+var SendResponseAck = pageCaptureNatives.SendResponseAck;
 
-native function GetChromeHidden();
-native function CreateBlob(filePath);
-native function SendResponseAck(requestId);
-
-var chromeHidden = GetChromeHidden();
+var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
 
 chromeHidden.registerCustomHook('pageCapture', function(bindingsAPI) {
   var apiFunctions = bindingsAPI.apiFunctions;
 
-  apiFunctions.setCustomCallback(
-      "pageCapture.saveAsMHTML", function(name, request, response) {
-    var params = chromeHidden.JSON.parse(response);
-    var path = params.mhtmlFilePath;
-    var size = params.mhtmlFileLength;
+  apiFunctions.setCustomCallback('saveAsMHTML',
+                                 function(name, request, response) {
+    var path = response.mhtmlFilePath;
+    var size = response.mhtmlFileLength;
 
     if (request.callback)
       request.callback(CreateBlob(path, size));
@@ -30,5 +27,3 @@ chromeHidden.registerCustomHook('pageCapture', function(bindingsAPI) {
     SendResponseAck(request.id);
   });
 });
-
-})();

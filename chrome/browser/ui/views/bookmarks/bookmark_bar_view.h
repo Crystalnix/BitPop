@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_VIEWS_BOOKMARKS_BOOKMARK_BAR_VIEW_H_
 #define CHROME_BROWSER_UI_VIEWS_BOOKMARKS_BOOKMARK_BAR_VIEW_H_
-#pragma once
 
 #include <set>
 #include <string>
@@ -16,7 +15,7 @@
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
-#include "chrome/browser/ui/views/bookmarks/bookmark_bar_instructions_view.h"
+#include "chrome/browser/ui/bookmarks/bookmark_bar_instructions_delegate.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_controller_views.h"
 #include "chrome/browser/ui/views/detachable_toolbar_view.h"
 #include "content/public/browser/notification_observer.h"
@@ -24,11 +23,12 @@
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/button/button.h"
-#include "ui/views/controls/menu/view_menu_delegate.h"
+#include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/drag_controller.h"
 
 class BookmarkContextMenu;
 class Browser;
+class BrowserView;
 
 namespace content {
 class PageNavigator;
@@ -54,14 +54,14 @@ class TextButton;
 // creating the BookmarkModel.
 class BookmarkBarView : public DetachableToolbarView,
                         public BookmarkModelObserver,
-                        public views::ViewMenuDelegate,
+                        public views::MenuButtonListener,
                         public views::ButtonListener,
                         public content::NotificationObserver,
                         public views::ContextMenuController,
                         public views::DragController,
                         public ui::AnimationDelegate,
                         public BookmarkMenuController::Observer,
-                        public BookmarkBarInstructionsView::Delegate {
+                        public chrome::BookmarkBarInstructionsDelegate {
  public:
   // The internal view class name.
   static const char kViewClassName[];
@@ -74,7 +74,8 @@ class BookmarkBarView : public DetachableToolbarView,
   // Maximum size of buttons on the bookmark bar.
   static const int kMaxButtonWidth;
 
-  explicit BookmarkBarView(Browser* browser);
+  // |browser_view| can be NULL during tests.
+  BookmarkBarView(Browser* browser, BrowserView* browser_view);
   virtual ~BookmarkBarView();
 
   // Returns the current browser.
@@ -178,18 +179,18 @@ class BookmarkBarView : public DetachableToolbarView,
   virtual void OnThemeChanged() OVERRIDE;
   virtual std::string GetClassName() const OVERRIDE;
 
-  // AccessiblePaneView methods:
+  // AccessiblePaneView:
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
 
-  // SlideAnimationDelegate implementation.
+  // ui::AnimationDelegate:
   virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
   virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
 
-  // BookmarkMenuController::Observer
+  // BookmarkMenuController::Observer:
   virtual void BookmarkMenuDeleted(
       BookmarkMenuController* controller) OVERRIDE;
 
-  // BookmarkBarInstructionsView::Delegate.
+  // chrome::BookmarkBarInstructionsDelegate:
   virtual void ShowImportDialog() OVERRIDE;
 
   // BookmarkModelObserver:
@@ -214,7 +215,7 @@ class BookmarkBarView : public DetachableToolbarView,
   virtual void BookmarkNodeFaviconChanged(BookmarkModel* model,
                                           const BookmarkNode* node) OVERRIDE;
 
-  // DragController:
+  // views::DragController:
   virtual void WriteDragDataForView(views::View* sender,
                                     const gfx::Point& press_pt,
                                     ui::OSExchangeData* data) OVERRIDE;
@@ -224,25 +225,22 @@ class BookmarkBarView : public DetachableToolbarView,
                                    const gfx::Point& press_pt,
                                    const gfx::Point& p) OVERRIDE;
 
-  // ViewMenuDelegate:
-  virtual void RunMenu(views::View* view, const gfx::Point& pt) OVERRIDE;
+  // views::MenuButtonListener:
+  virtual void OnMenuButtonClicked(views::View* view,
+                                   const gfx::Point& point) OVERRIDE;
 
-  // ButtonListener:
+  // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
                              const views::Event& event) OVERRIDE;
 
-  // ContextMenuController
+  // views::ContextMenuController:
   virtual void ShowContextMenuForView(views::View* source,
-                                      const gfx::Point& p,
-                                      bool is_mouse_gesture) OVERRIDE;
+                                      const gfx::Point& point) OVERRIDE;
 
-  // NotificationService:
+  // content::NotificationObserver::
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
-
-  // If true we're running tests. This short circuits a couple of animations.
-  static bool testing_;
 
  private:
   class ButtonSeparatorView;
@@ -393,8 +391,8 @@ class BookmarkBarView : public DetachableToolbarView,
 
   ButtonSeparatorView* bookmarks_separator_view_;
 
-  // Owning browser.
   Browser* browser_;
+  BrowserView* browser_view_;
 
   // True if the owning browser is showing an infobar.
   bool infobar_visible_;

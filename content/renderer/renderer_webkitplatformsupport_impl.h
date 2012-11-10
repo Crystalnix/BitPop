@@ -4,7 +4,6 @@
 
 #ifndef CONTENT_RENDERER_RENDERER_WEBKITPLATFORMSUPPORT_IMPL_H_
 #define CONTENT_RENDERER_RENDERER_WEBKITPLATFORMSUPPORT_IMPL_H_
-#pragma once
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
@@ -21,10 +20,6 @@ namespace content {
 class GamepadSharedMemoryReader;
 }
 
-namespace IPC {
-class SyncMessage;
-}
-
 namespace webkit_glue {
 class WebClipboardImpl;
 }
@@ -35,6 +30,9 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   RendererWebKitPlatformSupportImpl();
   virtual ~RendererWebKitPlatformSupportImpl();
 
+  void set_plugin_refresh_allowed(bool plugin_refresh_allowed) {
+    plugin_refresh_allowed_ = plugin_refresh_allowed;
+  }
   // WebKitPlatformSupport methods:
   virtual WebKit::WebClipboard* clipboard() OVERRIDE;
   virtual WebKit::WebMimeRegistry* mimeRegistry() OVERRIDE;
@@ -53,10 +51,6 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual void suddenTerminationChanged(bool enabled) OVERRIDE;
   virtual WebKit::WebStorageNamespace* createLocalStorageNamespace(
       const WebKit::WebString& path, unsigned quota) OVERRIDE;
-  virtual void dispatchStorageEvent(
-      const WebKit::WebString& key, const WebKit::WebString& old_value,
-      const WebKit::WebString& new_value, const WebKit::WebString& origin,
-      const WebKit::WebURL& url, bool is_local_storage) OVERRIDE;
   virtual WebKit::WebKitPlatformSupport::FileHandle databaseOpenFile(
       const WebKit::WebString& vfs_file_name, int desired_flags) OVERRIDE;
   virtual int databaseDeleteFile(const WebKit::WebString& vfs_file_name,
@@ -71,20 +65,19 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       unsigned key_size_index,
       const WebKit::WebString& challenge,
       const WebKit::WebURL& url) OVERRIDE;
+  virtual void screenColorProfile(WebKit::WebVector<char>* to_profile) OVERRIDE;
   virtual WebKit::WebIDBFactory* idbFactory() OVERRIDE;
   virtual void createIDBKeysFromSerializedValuesAndKeyPath(
       const WebKit::WebVector<WebKit::WebSerializedScriptValue>& values,
-      const WebKit::WebString& keyPath,
+      const WebKit::WebIDBKeyPath& keyPath,
       WebKit::WebVector<WebKit::WebIDBKey>& keys) OVERRIDE;
   virtual WebKit::WebSerializedScriptValue injectIDBKeyIntoSerializedValue(
       const WebKit::WebIDBKey& key,
       const WebKit::WebSerializedScriptValue& value,
-      const WebKit::WebString& keyPath) OVERRIDE;
+      const WebKit::WebIDBKeyPath& keyPath) OVERRIDE;
   virtual WebKit::WebFileSystem* fileSystem() OVERRIDE;
   virtual WebKit::WebSharedWorkerRepository* sharedWorkerRepository() OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* createGraphicsContext3D() OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
-      const WebKit::WebGraphicsContext3D::Attributes& attributes);
+  virtual bool canAccelerate2dCanvas();
   virtual double audioHardwareSampleRate() OVERRIDE;
   virtual size_t audioHardwareBufferSize() OVERRIDE;
   virtual WebKit::WebAudioDevice* createAudioDevice(
@@ -95,14 +88,25 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual WebKit::WebString userAgent(const WebKit::WebURL& url) OVERRIDE;
   virtual void GetPlugins(bool refresh,
                           std::vector<webkit::WebPluginInfo>* plugins) OVERRIDE;
-  virtual WebKit::WebPeerConnectionHandler* createPeerConnectionHandler(
-      WebKit::WebPeerConnectionHandlerClient* client) OVERRIDE;
+  virtual WebKit::WebPeerConnection00Handler* createPeerConnection00Handler(
+      WebKit::WebPeerConnection00HandlerClient* client) OVERRIDE;
+  virtual WebKit::WebMediaStreamCenter* createMediaStreamCenter(
+      WebKit::WebMediaStreamCenterClient* client) OVERRIDE;
+
+  // Disables the WebSandboxSupport implementation for testing.
+  // Tests that do not set up a full sandbox environment should call
+  // SetSandboxEnabledForTesting(false) _before_ creating any instances
+  // of this class, to ensure that we don't attempt to use sandbox-related
+  // file descriptors or other resources.
+  //
+  // Returns the previous |enable| value.
+  static bool SetSandboxEnabledForTesting(bool enable);
+
+ protected:
+  virtual GpuChannelHostFactory* GetGpuChannelHostFactory() OVERRIDE;
 
  private:
   bool CheckPreparsedJsCachingEnabled() const;
-
-  // Helper function to send synchronous message from any thread.
-  static bool SendSyncMessageFromAnyThread(IPC::SyncMessage* msg);
 
   scoped_ptr<RendererClipboardClient> clipboard_client_;
   scoped_ptr<webkit_glue::WebClipboardImpl> clipboard_;
@@ -121,6 +125,9 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   // increments by 1, for every enable decrements by 1. When it reaches 0,
   // we tell the browser to enable fast termination.
   int sudden_termination_disables_;
+
+  // If true, then a GetPlugins call is allowed to rescan the disk.
+  bool plugin_refresh_allowed_;
 
   // Implementation of the WebSharedWorkerRepository APIs (provides an interface
   // to WorkerService on the browser thread.

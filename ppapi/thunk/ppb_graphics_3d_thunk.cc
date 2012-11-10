@@ -4,7 +4,7 @@
 
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_errors.h"
-#include "ppapi/thunk/common.h"
+#include "ppapi/shared_impl/tracked_callback.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/thunk.h"
 #include "ppapi/thunk/ppb_graphics_3d_api.h"
@@ -17,7 +17,7 @@ namespace {
 
 typedef EnterResource<PPB_Graphics3D_API> EnterGraphics3D;
 
-int32_t GetAttribMaxValue(PP_Resource instance,
+int32_t GetAttribMaxValue(PP_Instance instance,
                           int32_t attribute,
                           int32_t* value) {
   // TODO(alokp): Implement me.
@@ -26,8 +26,8 @@ int32_t GetAttribMaxValue(PP_Resource instance,
 
 PP_Resource Create(PP_Instance instance,
                    PP_Resource share_context,
-                   const int32_t* attrib_list) {
-  EnterFunction<ResourceCreationAPI> enter(instance, true);
+                   const int32_t attrib_list[]) {
+  EnterResourceCreation enter(instance);
   if (enter.failed())
     return 0;
   return enter.functions()->CreateGraphics3D(
@@ -39,41 +39,39 @@ PP_Bool IsGraphics3D(PP_Resource resource) {
   return PP_FromBool(enter.succeeded());
 }
 
-int32_t GetAttribs(PP_Resource graphics_3d, int32_t* attrib_list) {
+int32_t GetAttribs(PP_Resource graphics_3d, int32_t attrib_list[]) {
   EnterGraphics3D enter(graphics_3d, true);
   if (enter.failed())
-    return PP_ERROR_BADRESOURCE;
+    return enter.retval();
   return enter.object()->GetAttribs(attrib_list);
 }
 
-int32_t SetAttribs(PP_Resource graphics_3d, int32_t* attrib_list) {
+int32_t SetAttribs(PP_Resource graphics_3d, const int32_t attrib_list[]) {
   EnterGraphics3D enter(graphics_3d, true);
   if (enter.failed())
-    return PP_ERROR_BADRESOURCE;
+    return enter.retval();
   return enter.object()->SetAttribs(attrib_list);
 }
 
 int32_t GetError(PP_Resource graphics_3d) {
   EnterGraphics3D enter(graphics_3d, true);
   if (enter.failed())
-    return PP_ERROR_BADRESOURCE;
-
+    return enter.retval();
   return enter.object()->GetError();
 }
 
 int32_t ResizeBuffers(PP_Resource graphics_3d, int32_t width, int32_t height) {
   EnterGraphics3D enter(graphics_3d, true);
   if (enter.failed())
-    return PP_ERROR_BADRESOURCE;
+    return enter.retval();
   return enter.object()->ResizeBuffers(width, height);
 }
 
 int32_t SwapBuffers(PP_Resource graphics_3d, PP_CompletionCallback callback) {
-  EnterGraphics3D enter(graphics_3d, true);
+  EnterGraphics3D enter(graphics_3d, callback, true);
   if (enter.failed())
-    return MayForceCallback(callback, PP_ERROR_BADRESOURCE);
-  int32_t result = enter.object()->SwapBuffers(callback);
-  return MayForceCallback(callback, result);
+    return enter.retval();
+  return enter.SetResult(enter.object()->SwapBuffers(enter.callback()));
 }
 
 const PPB_Graphics3D g_ppb_graphics_3d_thunk = {

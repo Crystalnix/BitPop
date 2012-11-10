@@ -1,8 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "remoting/host/event_executor.h"
+
+#include <set>
 
 #include <X11/Xlib.h>
 #include <X11/XF86keysym.h>
@@ -12,39 +14,61 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "remoting/proto/internal.pb.h"
+#include "third_party/skia/include/core/SkPoint.h"
 
 namespace remoting {
 
-using protocol::MouseEvent;
-using protocol::KeyEvent;
-
 namespace {
+
+using protocol::ClipboardEvent;
+using protocol::KeyEvent;
+using protocol::MouseEvent;
+
+// USB to XKB keycode map table.
+#define USB_KEYMAP(usb, xkb, win, mac) {usb, xkb}
+#include "ui/base/keycodes/usb_keycode_map.h"
+#undef USB_KEYMAP
 
 // A class to generate events on Linux.
 class EventExecutorLinux : public EventExecutor {
  public:
-  EventExecutorLinux(MessageLoop* message_loop, Capturer* capturer);
-  virtual ~EventExecutorLinux() {};
+  EventExecutorLinux(scoped_refptr<base::SingleThreadTaskRunner> task_runner);
+  virtual ~EventExecutorLinux();
 
   bool Init();
 
+  // Clipboard stub interface.
+  virtual void InjectClipboardEvent(const ClipboardEvent& event)
+      OVERRIDE;
+
+  // InputStub interface.
   virtual void InjectKeyEvent(const KeyEvent& event) OVERRIDE;
   virtual void InjectMouseEvent(const MouseEvent& event) OVERRIDE;
 
+  // EventExecutor interface.
+  virtual void OnSessionStarted(
+      scoped_ptr<protocol::ClipboardStub> client_clipboard) OVERRIDE;
+  virtual void OnSessionFinished() OVERRIDE;
+
  private:
+  // |mode| is one of the AutoRepeatModeOn, AutoRepeatModeOff,
+  // AutoRepeatModeDefault constants defined by the XChangeKeyboardControl()
+  // API.
+  void SetAutoRepeatForKey(int keycode, int mode);
   void InjectScrollWheelClicks(int button, int count);
 
-  MessageLoop* message_loop_;
-  Capturer* capturer_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+
+  std::set<int> pressed_keys_;
+  SkIPoint latest_mouse_position_;
 
   // X11 graphics context.
   Display* display_;
   Window root_window_;
-  int width_;
-  int height_;
 
   int test_event_base_;
   int test_error_base_;
@@ -92,7 +116,7 @@ int VerticalScrollWheelToX11ButtonNumber(int dy) {
 // host's keyboard layout (see http://crbug.com/74550 ).
 const int kUsVkeyToKeysym[256] = {
   // 0x00 - 0x07
-  -1, -1, -1, -1,
+  -1, -1, -1, XK_Cancel,
   // 0x04 - 0x07
   -1, -1, -1, -1,
   // 0x08 - 0x0B
@@ -103,9 +127,9 @@ const int kUsVkeyToKeysym[256] = {
   // 0x10 - 0x13
   XK_Shift_L, XK_Control_L, XK_Alt_L, XK_Pause,
   // 0x14 - 0x17
-  XK_Caps_Lock, XK_Kana_Shift, -1, /* VKEY_JUNJA */ -1,
+  XK_Caps_Lock, XK_Kana_Shift, -1, XK_Hangul_Jeonja,
   // 0x18 - 0x1B
-  /* VKEY_FINAL */ -1, XK_Kanji, -1, XK_Escape,
+  XK_Hangul_End, XK_Kanji, -1, XK_Escape,
   // 0x1C - 0x1F
   XK_Henkan, XK_Muhenkan, /* VKEY_ACCEPT */ -1, XK_Mode_switch,
 
@@ -182,7 +206,7 @@ const int kUsVkeyToKeysym[256] = {
   -1, -1, -1, -1,
 
   // 0xA0 - 0xA3
-  XK_Num_Lock, XK_Scroll_Lock, XK_Control_L, XK_Control_R,
+  XK_Shift_L, XK_Shift_R, XK_Control_L, XK_Control_R,
   // 0xA4 - 0xA7
   XK_Meta_L, XK_Meta_R, XF86XK_Back, XF86XK_Forward,
   // 0xA8 - 0xAB
@@ -240,21 +264,22 @@ const int kUsVkeyToKeysym[256] = {
 };
 
 int ChromotocolKeycodeToX11Keysym(int32_t keycode) {
-  if (keycode < 0 || keycode > 255) {
-    return -1;
-  }
+  if (keycode < 0 || keycode > 255)
+    return kInvalidKeycode;
 
   return kUsVkeyToKeysym[keycode];
 }
 
-EventExecutorLinux::EventExecutorLinux(MessageLoop* message_loop,
-                                       Capturer* capturer)
-    : message_loop_(message_loop),
-      capturer_(capturer),
+EventExecutorLinux::EventExecutorLinux(
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
+    : task_runner_(task_runner),
+      latest_mouse_position_(SkIPoint::Make(-1, -1)),
       display_(XOpenDisplay(NULL)),
-      root_window_(BadValue),
-      width_(0),
-      height_(0) {
+      root_window_(BadValue) {
+}
+
+EventExecutorLinux::~EventExecutorLinux() {
+  CHECK(pressed_keys_.empty());
 }
 
 bool EventExecutorLinux::Init() {
@@ -275,50 +300,75 @@ bool EventExecutorLinux::Init() {
     return false;
   }
 
-  // Grab the width and height so we can figure out if mouse moves are out of
-  // range.
-  XWindowAttributes root_attr;
-  // TODO(ajwong): Handle resolution changes.
-  if (!XGetWindowAttributes(display_, root_window_, &root_attr)) {
-    LOG(ERROR) << "Unable to get window attributes";
-    return false;
-  }
-
-  width_ = root_attr.width;
-  height_ = root_attr.height;
   return true;
 }
 
+void EventExecutorLinux::InjectClipboardEvent(const ClipboardEvent& event) {
+  // TODO(simonmorris): Implement clipboard injection.
+}
+
 void EventExecutorLinux::InjectKeyEvent(const KeyEvent& event) {
-  if (MessageLoop::current() != message_loop_) {
-    message_loop_->PostTask(
+  // HostEventDispatcher should filter events missing the pressed field.
+  DCHECK(event.has_pressed());
+
+  if (!task_runner_->BelongsToCurrentThread()) {
+    task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&EventExecutorLinux::InjectKeyEvent, base::Unretained(this),
                    event));
     return;
   }
 
-  // TODO(ajwong): This will only work for QWERTY keyboards.
-  int keysym = ChromotocolKeycodeToX11Keysym(event.keycode());
-
-  if (keysym == -1) {
-    LOG(WARNING) << "Ignoring unknown key: " << event.keycode();
-    return;
+  int keycode = kInvalidKeycode;
+  if (event.has_usb_keycode()) {
+    keycode = UsbKeycodeToNativeKeycode(event.usb_keycode());
+    VLOG(3) << "Converting USB keycode: " << std::hex << event.usb_keycode()
+            << " to keycode: " << keycode << std::dec;
+  } else if (event.has_keycode()) {
+    // Fall back to keysym translation.
+    // TODO(garykac) Remove this once we switch entirely over to USB keycodes.
+    int keysym = ChromotocolKeycodeToX11Keysym(event.keycode());
+    keycode = XKeysymToKeycode(display_, keysym);
+    VLOG(3) << "Converting VKEY: " << std::hex << event.keycode()
+            << " to keysym: " << keysym
+            << " to keycode: " << keycode << std::dec;
   }
 
-  // Translate the keysym into a keycode understandable by the X display.
-  int keycode = XKeysymToKeycode(display_, keysym);
-  if (keycode == 0) {
-    LOG(WARNING) << "Ignoring undefined keysym: " << keysym
-                 << " for key: " << event.keycode();
+  // Ignore events with no VK- or USB-keycode, or which can't be mapped.
+  if (keycode == kInvalidKeycode)
     return;
+
+  if (event.pressed()) {
+    if (pressed_keys_.find(keycode) != pressed_keys_.end()) {
+      // Key is already held down, so lift the key up to ensure this repeated
+      // press takes effect.
+      XTestFakeKeyEvent(display_, keycode, False, CurrentTime);
+    } else {
+      // Key is not currently held down, so disable auto-repeat for this
+      // key to avoid repeated presses in case network congestion delays the
+      // key-released event from the client.
+      SetAutoRepeatForKey(keycode, AutoRepeatModeOff);
+    }
+    pressed_keys_.insert(keycode);
+  } else {
+    pressed_keys_.erase(keycode);
+
+    // Reset the AutoRepeatMode for the key that has been lifted.  In the IT2Me
+    // case, this ensures that key-repeating will continue to work normally
+    // for the local user of the host machine.  "ModeDefault" is used instead
+    // of "ModeOn", since some keys (such as Shift) should not auto-repeat.
+    SetAutoRepeatForKey(keycode, AutoRepeatModeDefault);
   }
 
-  VLOG(3) << "Got pepper key: " << event.keycode()
-          << " sending keysym: " << keysym
-          << " to keycode: " << keycode;
   XTestFakeKeyEvent(display_, keycode, event.pressed(), CurrentTime);
   XFlush(display_);
+}
+
+void EventExecutorLinux::SetAutoRepeatForKey(int keycode, int mode) {
+  XKeyboardControl control;
+  control.key = keycode;
+  control.auto_repeat_mode = mode;
+  XChangeKeyboardControl(display_, KBKey | KBAutoRepeatMode, &control);
 }
 
 void EventExecutorLinux::InjectScrollWheelClicks(int button, int count) {
@@ -327,12 +377,11 @@ void EventExecutorLinux::InjectScrollWheelClicks(int button, int count) {
     XTestFakeButtonEvent(display_, button, true, CurrentTime);
     XTestFakeButtonEvent(display_, button, false, CurrentTime);
   }
-  XFlush(display_);
 }
 
 void EventExecutorLinux::InjectMouseEvent(const MouseEvent& event) {
-  if (MessageLoop::current() != message_loop_) {
-    message_loop_->PostTask(
+  if (!task_runner_->BelongsToCurrentThread()) {
+    task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&EventExecutorLinux::InjectMouseEvent,
                    base::Unretained(this), event));
@@ -340,20 +389,25 @@ void EventExecutorLinux::InjectMouseEvent(const MouseEvent& event) {
   }
 
   if (event.has_x() && event.has_y()) {
-    if (event.x() < 0 || event.y() < 0 ||
-        event.x() > width_ || event.y() > height_) {
-      // A misbehaving client may send these. Drop events that are out of range.
-      // TODO(ajwong): How can we log this sanely? We don't want to DOS the
-      // server with a misbehaving client by logging like crazy.
-      return;
+    // Injecting a motion event immediately before a button release results in
+    // a MotionNotify even if the mouse position hasn't changed, which confuses
+    // apps which assume MotionNotify implies movement. See crbug.com/138075.
+    bool inject_motion = true;
+    SkIPoint new_mouse_position(SkIPoint::Make(event.x(), event.y()));
+    if (event.has_button() && event.has_button_down() && !event.button_down()) {
+      if (new_mouse_position == latest_mouse_position_)
+        inject_motion = false;
     }
 
-    VLOG(3) << "Moving mouse to " << event.x()
-            << "," << event.y();
-    XTestFakeMotionEvent(display_, DefaultScreen(display_),
-                         event.x(), event.y(),
-                         CurrentTime);
-    XFlush(display_);
+    latest_mouse_position_ = new_mouse_position;
+
+    if (inject_motion) {
+      VLOG(3) << "Moving mouse to " << event.x()
+              << "," << event.y();
+      XTestFakeMotionEvent(display_, DefaultScreen(display_),
+                           event.x(), event.y(),
+                           CurrentTime);
+    }
   }
 
   if (event.has_button() && event.has_button_down()) {
@@ -370,7 +424,6 @@ void EventExecutorLinux::InjectMouseEvent(const MouseEvent& event) {
             << button_number;
     XTestFakeButtonEvent(display_, button_number, event.button_down(),
                          CurrentTime);
-    XFlush(display_);
   }
 
   if (event.has_wheel_offset_y() && event.wheel_offset_y() != 0) {
@@ -382,18 +435,29 @@ void EventExecutorLinux::InjectMouseEvent(const MouseEvent& event) {
     InjectScrollWheelClicks(HorizontalScrollWheelToX11ButtonNumber(dx),
                             abs(dx));
   }
+
+  XFlush(display_);
+}
+
+void EventExecutorLinux::OnSessionStarted(
+    scoped_ptr<protocol::ClipboardStub> client_clipboard) {
+  return;
+}
+
+void EventExecutorLinux::OnSessionFinished() {
+  return;
 }
 
 }  // namespace
 
-EventExecutor* EventExecutor::Create(MessageLoop* message_loop,
-                                     Capturer* capturer) {
-  EventExecutorLinux* executor = new EventExecutorLinux(message_loop, capturer);
-  if (!executor->Init()) {
-    delete executor;
-    executor = NULL;
-  }
-  return executor;
+scoped_ptr<EventExecutor> EventExecutor::Create(
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner) {
+  scoped_ptr<EventExecutorLinux> executor(
+      new EventExecutorLinux(main_task_runner));
+  if (!executor->Init())
+    return scoped_ptr<EventExecutor>(NULL);
+  return executor.PassAs<EventExecutor>();
 }
 
 }  // namespace remoting

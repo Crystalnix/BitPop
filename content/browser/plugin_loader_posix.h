@@ -5,21 +5,24 @@
 #ifndef CONTENT_BROWSER_PLUGIN_LOADER_POSIX_H_
 #define CONTENT_BROWSER_PLUGIN_LOADER_POSIX_H_
 
+#include <deque>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/time.h"
 #include "content/browser/plugin_service_impl.h"
-#include "content/browser/utility_process_host.h"
-#include "ipc/ipc_message.h"
+#include "content/public/browser/utility_process_host_client.h"
+#include "ipc/ipc_sender.h"
 #include "webkit/plugins/webplugininfo.h"
-
-class FilePath;
-class UtilityProcessHost;
 
 namespace base {
 class MessageLoopProxy;
+}
+
+namespace content {
+class UtilityProcessHost;
 }
 
 // This class is responsible for managing the out-of-process plugin loading on
@@ -43,8 +46,9 @@ class MessageLoopProxy;
 // 5. This algorithm continues until the canonical list has been walked to the
 //    end, after which the list of loaded plugins is set on the PluginList and
 //    the completion callback is run.
-class CONTENT_EXPORT PluginLoaderPosix : public UtilityProcessHost::Client,
-                                                IPC::Message::Sender {
+class CONTENT_EXPORT PluginLoaderPosix
+    : public NON_EXPORTED_BASE(content::UtilityProcessHostClient),
+      public IPC::Sender {
  public:
   PluginLoaderPosix();
 
@@ -53,11 +57,11 @@ class CONTENT_EXPORT PluginLoaderPosix : public UtilityProcessHost::Client,
       scoped_refptr<base::MessageLoopProxy> target_loop,
       const content::PluginService::GetPluginsCallback& callback);
 
-  // UtilityProcessHost::Client:
+  // UtilityProcessHostClient:
   virtual void OnProcessCrashed(int exit_code) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
-  // IPC::Message::Sender:
+  // IPC::Sender:
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
  private:
@@ -92,7 +96,7 @@ class CONTENT_EXPORT PluginLoaderPosix : public UtilityProcessHost::Client,
   bool MaybeRunPendingCallbacks();
 
   // The process host for which this is a client.
-  base::WeakPtr<UtilityProcessHost> process_host_;
+  base::WeakPtr<content::UtilityProcessHost> process_host_;
 
   // A list of paths to plugins which will be loaded by the utility process, in
   // the order specified by this vector.
@@ -110,7 +114,7 @@ class CONTENT_EXPORT PluginLoaderPosix : public UtilityProcessHost::Client,
 
   // The callback and message loop on which the callback will be run when the
   // plugin loading process has been completed.
-  std::vector<PendingCallback> callbacks_;
+  std::deque<PendingCallback> callbacks_;
 
   // The time at which plugin loading started.
   base::TimeTicks load_start_time_;

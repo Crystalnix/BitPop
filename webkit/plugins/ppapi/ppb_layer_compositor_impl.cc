@@ -1,19 +1,21 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "webkit/plugins/ppapi/ppb_layer_compositor_impl.h"
 
 #include "ppapi/c/pp_errors.h"
+#include "ppapi/shared_impl/tracked_callback.h"
 #include "webkit/plugins/ppapi/common.h"
 
+using ppapi::TrackedCallback;
 using ppapi::thunk::PPB_LayerCompositor_API;
 
 namespace webkit {
 namespace ppapi {
 
 PPB_LayerCompositor_Impl::PPB_LayerCompositor_Impl(PP_Instance instance)
-    : Resource(instance) {
+    : Resource(::ppapi::OBJECT_IS_IMPL, instance) {
 }
 
 PPB_LayerCompositor_Impl::~PPB_LayerCompositor_Impl() {
@@ -45,7 +47,8 @@ void PPB_LayerCompositor_Impl::SetDisplay(PP_Resource layer,
 void PPB_LayerCompositor_Impl::MarkAsDirty(PP_Resource layer) {
 }
 
-int32_t PPB_LayerCompositor_Impl::SwapBuffers(PP_CompletionCallback callback) {
+int32_t PPB_LayerCompositor_Impl::SwapBuffers(
+    scoped_refptr<TrackedCallback> callback) {
   return PP_ERROR_FAILED;
 }
 

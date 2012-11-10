@@ -8,12 +8,16 @@
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
 #include "chrome/browser/profiles/profile.h"
-#include "content/public/common/url_fetcher.h"
+#include "net/base/load_flags.h"
+#include "net/url_request/url_fetcher.h"
+#include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
 
-SdchDictionaryFetcher::SdchDictionaryFetcher()
+SdchDictionaryFetcher::SdchDictionaryFetcher(
+    net::URLRequestContextGetter* context)
     : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
-      task_is_pending_(false) {
+      task_is_pending_(false),
+      context_(context) {
   DCHECK(CalledOnValidThread());
 }
 
@@ -61,25 +65,18 @@ void SdchDictionaryFetcher::StartFetching() {
   DCHECK(task_is_pending_);
   task_is_pending_ = false;
 
-  net::URLRequestContextGetter* context =
-      Profile::Deprecated::GetDefaultRequestContext();
-  if (!context) {
-    // Shutdown in progress.
-    // Simulate handling of all dictionary requests by clearing queue.
-    while (!fetch_queue_.empty())
-      fetch_queue_.pop();
-    return;
-  }
-
-  current_fetch_.reset(content::URLFetcher::Create(
-      fetch_queue_.front(), content::URLFetcher::GET, this));
+  DCHECK(context_.get());
+  current_fetch_.reset(net::URLFetcher::Create(
+      fetch_queue_.front(), net::URLFetcher::GET, this));
   fetch_queue_.pop();
-  current_fetch_->SetRequestContext(context);
+  current_fetch_->SetRequestContext(context_.get());
+  current_fetch_->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
+                               net::LOAD_DO_NOT_SAVE_COOKIES);
   current_fetch_->Start();
 }
 
 void SdchDictionaryFetcher::OnURLFetchComplete(
-    const content::URLFetcher* source) {
+    const net::URLFetcher* source) {
   if ((200 == source->GetResponseCode()) &&
       (source->GetStatus().status() == net::URLRequestStatus::SUCCESS)) {
     std::string data;

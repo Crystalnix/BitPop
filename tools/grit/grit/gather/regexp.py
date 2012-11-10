@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,11 +7,8 @@
 '''
 
 import re
-import types
 
 from grit.gather import skeleton_gatherer
-from grit import clique
-from grit import tclib
 
 
 class RegexpGatherer(skeleton_gatherer.SkeletonGatherer):
@@ -30,11 +27,6 @@ class RegexpGatherer(skeleton_gatherer.SkeletonGatherer):
       'LTEXT': 'This is the text for a label',
       'PUSHBUTTON': 'This is the text for a button',
     }
-
-  def __init__(self, text):
-    skeleton_gatherer.SkeletonGatherer.__init__(self)
-    # Original text of what we're parsing
-    self.text_ = text.strip()
 
   # Contextualization elements. Used for adding additional information
   # to the message bundle description string from RC files.
@@ -64,10 +56,6 @@ class RegexpGatherer(skeleton_gatherer.SkeletonGatherer):
       regexp: re.compile('...', re.MULTILINE)
       text_to_parse:
     '''
-    if self.have_parsed_:
-      return
-    self.have_parsed_ = True
-
     chunk_start = 0
     for match in regexp.finditer(text_to_parse):
       groups = match.groupdict()

@@ -4,14 +4,12 @@
 
 // Custom bindings for the devtools API.
 
-(function() {
+var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
 
-native function GetChromeHidden();
-
-GetChromeHidden().registerCustomHook('devtools', function(bindingsAPI) {
+chromeHidden.registerCustomHook('devtools', function(bindingsAPI) {
   var apiFunctions = bindingsAPI.apiFunctions;
 
-  apiFunctions.setHandleRequest('devtools.getTabEvents', function(tabId) {
+  apiFunctions.setHandleRequest('getTabEvents', function(tabId) {
     var tabIdProxy = {};
     var functions = ['onPageEvent', 'onTabClose'];
     functions.forEach(function(name) {
@@ -23,5 +21,3 @@ GetChromeHidden().registerCustomHook('devtools', function(bindingsAPI) {
     return tabIdProxy;
   });
 });
-
-})();

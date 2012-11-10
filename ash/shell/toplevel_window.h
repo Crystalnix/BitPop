@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef ASH_SHELL_TOPLEVEL_WINDOW_H_
 #define ASH_SHELL_TOPLEVEL_WINDOW_H_
-#pragma once
 
 #include "ui/views/widget/widget_delegate.h"
 
@@ -18,6 +17,7 @@ class ToplevelWindow : public views::WidgetDelegateView {
 
     bool can_resize;
     bool can_maximize;
+    bool persist_across_all_workspaces;
   };
   static void CreateToplevelWindow(const CreateParams& params);
 
@@ -33,7 +33,6 @@ class ToplevelWindow : public views::WidgetDelegateView {
   virtual View* GetContentsView() OVERRIDE;
   virtual bool CanResize() const OVERRIDE;
   virtual bool CanMaximize() const OVERRIDE;
-  virtual views::NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
 
   const CreateParams params_;
 

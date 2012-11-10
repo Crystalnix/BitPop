@@ -1,17 +1,18 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_RENDERER_HOST_CHROME_RENDER_WIDGET_HOST_VIEW_DELEGATE_H_
 #define CHROME_BROWSER_RENDERER_HOST_CHROME_RENDER_WIDGET_HOST_VIEW_DELEGATE_H_
-#pragma once
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/memory/scoped_ptr.h"
-#import "content/browser/renderer_host/render_widget_host_view_mac_delegate.h"
+#include "base/memory/scoped_ptr.h"
+#import "content/public/browser/render_widget_host_view_mac_delegate.h"
 
+namespace content {
 class RenderWidgetHost;
+}
 
 namespace ChromeRenderWidgetHostViewMacDelegateInternal {
 class SpellCheckRenderViewObserver;
@@ -20,9 +21,9 @@ class SpellCheckRenderViewObserver;
 @interface ChromeRenderWidgetHostViewMacDelegate
     : NSObject<RenderWidgetHostViewMacDelegate> {
  @private
-  RenderWidgetHost* render_widget_host_;  // weak
+  content::RenderWidgetHost* renderWidgetHost_;  // weak
   scoped_ptr<ChromeRenderWidgetHostViewMacDelegateInternal::
-      SpellCheckRenderViewObserver> spelling_observer_;
+      SpellCheckRenderViewObserver> spellingObserver_;
 
   // If the viewport is scrolled all the way to the left or right.
   // Used for history swiping.
@@ -44,17 +45,17 @@ class SpellCheckRenderViewObserver;
   NSSize totalScrollDelta_;
 
   // Used for continuous spell checking.
-  BOOL spellcheck_enabled_;
-  BOOL spellcheck_checked_;
+  BOOL spellcheckEnabled_;
+  BOOL spellcheckChecked_;
 }
 
-- (id)initWithRenderWidgetHost:(RenderWidgetHost*)render_widget_host;
+- (id)initWithRenderWidgetHost:(content::RenderWidgetHost*)renderWidgetHost;
 
 - (void)viewGone:(NSView*)view;
 - (BOOL)handleEvent:(NSEvent*)event;
 - (void)gotUnhandledWheelEvent;
 - (void)scrollOffsetPinnedToLeft:(BOOL)left toRight:(BOOL)right;
-- (void)setHasHorizontalScrollbar:(BOOL)has_horizontal_scrollbar;
+- (void)setHasHorizontalScrollbar:(BOOL)hasHorizontalScrollbar;
 - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item
                       isValidItem:(BOOL*)valid;
 

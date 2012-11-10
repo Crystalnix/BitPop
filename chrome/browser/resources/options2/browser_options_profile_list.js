@@ -3,11 +3,9 @@
 // found in the LICENSE file.
 
 cr.define('options.browser_options', function() {
-  const DeletableItem = options.DeletableItem;
-  const DeletableItemList = options.DeletableItemList;
-  const ListSingleSelectionModel = cr.ui.ListSingleSelectionModel;
-
-  var localStrings = new LocalStrings();
+  /** @const */ var DeletableItem = options.DeletableItem;
+  /** @const */ var DeletableItemList = options.DeletableItemList;
+  /** @const */ var ListSingleSelectionModel = cr.ui.ListSingleSelectionModel;
 
   /**
    * Creates a new profile list item.
@@ -35,9 +33,8 @@ cr.define('options.browser_options', function() {
     __proto__: DeletableItem.prototype,
 
     /**
-      * Get the filepath for this profile list item.
-      * @return the file path of this item.
-      */
+     * @type {string} the file path of this profile list item.
+     */
     get profilePath() {
       return this.profileInfo_.filePath;
     },
@@ -59,11 +56,14 @@ cr.define('options.browser_options', function() {
       this.contentElement.appendChild(nameEl);
 
       var displayName = profileInfo.name;
-      if (profileInfo.isCurrentProfile)
-        displayName = localStrings.getStringF(
-            'profilesListItemCurrent',
-            profileInfo.name)
+      if (profileInfo.isCurrentProfile) {
+        displayName = loadTimeData.getStringF('profilesListItemCurrent',
+                                              profileInfo.name);
+      }
       nameEl.textContent = displayName;
+
+      // Ensure that the button cannot be tabbed to for accessibility reasons.
+      this.closeButtonElement.tabIndex = -1;
     },
   };
 

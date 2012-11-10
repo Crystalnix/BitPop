@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_PUBLIC_BROWSER_WEB_UI_CONTROLLER_FACTORY_H_
 #define CONTENT_PUBLIC_BROWSER_WEB_UI_CONTROLLER_FACTORY_H_
-#pragma once
 
 #include "content/common/content_export.h"
 #include "content/public/browser/web_ui.h"
@@ -35,6 +34,8 @@ class CONTENT_EXPORT WebUIControllerFactory {
                                      const GURL& url) const = 0;
 
   // Shorthand for the above, but returns a simple yes/no.
+  // See also ContentClient::HasWebUIScheme, which only checks the scheme
+  // (faster) and can be used to determine security policy.
   virtual bool UseWebUIForURL(BrowserContext* browser_context,
                               const GURL& url) const = 0;
 
@@ -42,16 +43,12 @@ class CONTENT_EXPORT WebUIControllerFactory {
   virtual bool UseWebUIBindingsForURL(BrowserContext* browser_context,
                                       const GURL& url) const = 0;
 
-  // Returns true if the url has a scheme for WebUI. This differs from the above
-  // in that it only checks the scheme; it is faster and can be used to
-  // determine security policy.
-  virtual bool HasWebUIScheme(const GURL& url) const = 0;
-
   // Returns true if the given URL can be loaded by Web UI system. This allows
   // URLs with WebUI types (as above) and also URLs that can be loaded by
   // normal tabs such as javascript: URLs or about:hang.
   virtual bool IsURLAcceptableForWebUI(BrowserContext* browser_context,
-                                       const GURL& url) const = 0;
+                                       const GURL& url,
+                                       bool data_urls_allowed) const = 0;
 };
 
 }  // namespace content

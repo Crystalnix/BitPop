@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 
 #include "base/logging.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/size.h"
 
 void GetRebarGradientColors(int width, int x1, int x2,
@@ -23,7 +23,7 @@ void GetRebarGradientColors(int width, int x1, int x2,
   // those so calling code can use them to create gradient brushes for use in
   // rendering in other directions.
 
-  gfx::CanvasSkia canvas(gfx::Size(width, 1), true);
+  gfx::Canvas canvas(gfx::Size(width, 1), ui::SCALE_FACTOR_100P, true);
 
   // Render the Rebar gradient into the DIB
   CTheme theme;

@@ -1,9 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('cr.ui', function() {
-  const Command = cr.ui.Command;
+  /** @const */ var Command = cr.ui.Command;
 
   /**
    * Creates a new menu item element.
@@ -15,7 +15,7 @@ cr.define('cr.ui', function() {
 
   /**
    * Creates a new menu separator element.
-   * @return {cr.ui.MenuItem}
+   * @return {cr.ui.MenuItem} The new separator element.
    */
   MenuItem.createSeparator = function() {
     var el = cr.doc.createElement('hr');
@@ -36,9 +36,13 @@ cr.define('cr.ui', function() {
 
       this.addEventListener('mouseup', this.handleMouseUp_);
 
-      // Adding the 'custom-appearance' class prevents button.css from changing
+      // Adding the 'custom-appearance' class prevents widgets.css from changing
       // the appearance of this element.
       this.classList.add('custom-appearance');
+
+      var iconUrl;
+      if ((iconUrl = this.getAttribute('icon')))
+        this.iconUrl = iconUrl;
     },
 
     /**
@@ -89,6 +93,17 @@ cr.define('cr.ui', function() {
     },
     set label(label) {
       this.textContent = label;
+    },
+
+    /**
+     * Menu icon.
+     * @type {string}
+     */
+    get iconUrl() {
+      return this.style.backgroundImage;
+    },
+    set iconUrl(url) {
+      this.style.backgroundImage = 'url(' + url + ')';
     },
 
     /**

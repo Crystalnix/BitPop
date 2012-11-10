@@ -9,8 +9,11 @@
 #include <algorithm>
 
 #include "base/message_loop.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/client/capture_client.h"
+#include "ui/aura/env.h"
 #include "ui/aura/event.h"
+#include "ui/aura/root_window.h"
+#include "ui/base/view_prop.h"
 
 using std::max;
 using std::min;
@@ -19,76 +22,78 @@ namespace aura {
 
 namespace {
 
+const char* kRootWindowHostWinKey = "__AURA_ROOT_WINDOW_HOST_WIN__";
+
 const wchar_t* GetCursorId(gfx::NativeCursor native_cursor) {
-  switch (native_cursor) {
-    case kCursorNull:
+  switch (native_cursor.native_type()) {
+    case ui::kCursorNull:
       return IDC_ARROW;
-    case kCursorPointer:
+    case ui::kCursorPointer:
       return IDC_ARROW;
-    case kCursorCross:
+    case ui::kCursorCross:
       return IDC_CROSS;
-    case kCursorHand:
+    case ui::kCursorHand:
       return IDC_HAND;
-    case kCursorIBeam:
+    case ui::kCursorIBeam:
       return IDC_IBEAM;
-    case kCursorWait:
+    case ui::kCursorWait:
       return IDC_WAIT;
-    case kCursorHelp:
+    case ui::kCursorHelp:
       return IDC_HELP;
-    case kCursorEastResize:
+    case ui::kCursorEastResize:
       return IDC_SIZEWE;
-    case kCursorNorthResize:
+    case ui::kCursorNorthResize:
       return IDC_SIZENS;
-    case kCursorNorthEastResize:
+    case ui::kCursorNorthEastResize:
       return IDC_SIZENESW;
-    case kCursorNorthWestResize:
+    case ui::kCursorNorthWestResize:
       return IDC_SIZENWSE;
-    case kCursorSouthResize:
+    case ui::kCursorSouthResize:
       return IDC_SIZENS;
-    case kCursorSouthEastResize:
+    case ui::kCursorSouthEastResize:
       return IDC_SIZENWSE;
-    case kCursorSouthWestResize:
+    case ui::kCursorSouthWestResize:
       return IDC_SIZENESW;
-    case kCursorWestResize:
+    case ui::kCursorWestResize:
       return IDC_SIZEWE;
-    case kCursorNorthSouthResize:
+    case ui::kCursorNorthSouthResize:
       return IDC_SIZENS;
-    case kCursorEastWestResize:
+    case ui::kCursorEastWestResize:
       return IDC_SIZEWE;
-    case kCursorNorthEastSouthWestResize:
+    case ui::kCursorNorthEastSouthWestResize:
       return IDC_SIZENESW;
-    case kCursorNorthWestSouthEastResize:
+    case ui::kCursorNorthWestSouthEastResize:
       return IDC_SIZENWSE;
-    case kCursorMove:
+    case ui::kCursorMove:
       return IDC_SIZEALL;
-    case kCursorProgress:
+    case ui::kCursorProgress:
       return IDC_APPSTARTING;
-    case kCursorNoDrop:
+    case ui::kCursorNoDrop:
       return IDC_NO;
-    case kCursorNotAllowed:
+    case ui::kCursorNotAllowed:
       return IDC_NO;
-    case kCursorColumnResize:
-    case kCursorRowResize:
-    case kCursorMiddlePanning:
-    case kCursorEastPanning:
-    case kCursorNorthPanning:
-    case kCursorNorthEastPanning:
-    case kCursorNorthWestPanning:
-    case kCursorSouthPanning:
-    case kCursorSouthEastPanning:
-    case kCursorSouthWestPanning:
-    case kCursorWestPanning:
-    case kCursorVerticalText:
-    case kCursorCell:
-    case kCursorContextMenu:
-    case kCursorAlias:
-    case kCursorCopy:
-    case kCursorNone:
-    case kCursorZoomIn:
-    case kCursorZoomOut:
-    case kCursorGrab:
-    case kCursorGrabbing:
-    case kCursorCustom:
+    case ui::kCursorColumnResize:
+    case ui::kCursorRowResize:
+    case ui::kCursorMiddlePanning:
+    case ui::kCursorEastPanning:
+    case ui::kCursorNorthPanning:
+    case ui::kCursorNorthEastPanning:
+    case ui::kCursorNorthWestPanning:
+    case ui::kCursorSouthPanning:
+    case ui::kCursorSouthEastPanning:
+    case ui::kCursorSouthWestPanning:
+    case ui::kCursorWestPanning:
+    case ui::kCursorVerticalText:
+    case ui::kCursorCell:
+    case ui::kCursorContextMenu:
+    case ui::kCursorAlias:
+    case ui::kCursorCopy:
+    case ui::kCursorNone:
+    case ui::kCursorZoomIn:
+    case ui::kCursorZoomOut:
+    case ui::kCursorGrab:
+    case ui::kCursorGrabbing:
+    case ui::kCursorCustom:
       // TODO(jamescook): Should we use WebKit glue resources for these?
       // Or migrate those resources to someplace ui/aura can share?
       NOTIMPLEMENTED();
@@ -102,8 +107,16 @@ const wchar_t* GetCursorId(gfx::NativeCursor native_cursor) {
 }  // namespace
 
 // static
-RootWindowHost* RootWindowHost::Create(const gfx::Rect& bounds) {
-  return new RootWindowHostWin(bounds);
+RootWindowHost* RootWindowHost::Create(RootWindowHostDelegate* delegate,
+                                       const gfx::Rect& bounds) {
+  return new RootWindowHostWin(delegate, bounds);
+}
+
+// static
+RootWindowHost* RootWindowHost::GetForAcceleratedWidget(
+    gfx::AcceleratedWidget accelerated_widget) {
+  return reinterpret_cast<RootWindowHost*>(
+      ui::ViewProp::GetValue(accelerated_widget, kRootWindowHostWinKey));
 }
 
 // static
@@ -112,27 +125,24 @@ gfx::Size RootWindowHost::GetNativeScreenSize() {
                    GetSystemMetrics(SM_CYSCREEN));
 }
 
-RootWindowHostWin::RootWindowHostWin(const gfx::Rect& bounds)
-    : root_window_(NULL),
+RootWindowHostWin::RootWindowHostWin(RootWindowHostDelegate* delegate,
+                                     const gfx::Rect& bounds)
+    : delegate_(delegate),
       fullscreen_(false),
+      has_capture_(false),
       saved_window_style_(0),
       saved_window_ex_style_(0) {
   Init(NULL, bounds);
   SetWindowText(hwnd(), L"aura::RootWindow!");
+  prop_.reset(new ui::ViewProp(hwnd(), kRootWindowHostWinKey, this));
 }
 
 RootWindowHostWin::~RootWindowHostWin() {
   DestroyWindow(hwnd());
 }
 
-bool RootWindowHostWin::Dispatch(const MSG& msg) {
-  TranslateMessage(&msg);
-  DispatchMessage(&msg);
-  return true;
-}
-
-void RootWindowHostWin::SetRootWindow(RootWindow* root_window) {
-  root_window_ = root_window;
+RootWindow* RootWindowHostWin::GetRootWindow() {
+  return delegate_->AsRootWindow();
 }
 
 gfx::AcceleratedWidget RootWindowHostWin::GetAcceleratedWidget() {
@@ -175,23 +185,23 @@ void RootWindowHostWin::ToggleFullScreen() {
                SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 }
 
-gfx::Size RootWindowHostWin::GetSize() const {
+gfx::Rect RootWindowHostWin::GetBounds() const {
   RECT r;
   GetClientRect(hwnd(), &r);
-  return gfx::Rect(r).size();
+  return gfx::Rect(r);
 }
 
-void RootWindowHostWin::SetSize(const gfx::Size& size) {
+void RootWindowHostWin::SetBounds(const gfx::Rect& bounds) {
   if (fullscreen_) {
-    saved_window_rect_.right = saved_window_rect_.left + size.width();
-    saved_window_rect_.bottom = saved_window_rect_.top + size.height();
+    saved_window_rect_.right = saved_window_rect_.left + bounds.width();
+    saved_window_rect_.bottom = saved_window_rect_.top + bounds.height();
     return;
   }
   RECT window_rect;
-  window_rect.left = 0;
-  window_rect.top = 0;
-  window_rect.right = size.width();
-  window_rect.bottom = size.height();
+  window_rect.left = bounds.x();
+  window_rect.top = bounds.y();
+  window_rect.right = bounds.right() ;
+  window_rect.bottom = bounds.bottom();
   AdjustWindowRectEx(&window_rect,
                      GetWindowLong(hwnd(), GWL_STYLE),
                      FALSE,
@@ -215,7 +225,7 @@ gfx::Point RootWindowHostWin::GetLocationOnNativeScreen() const {
 
 void RootWindowHostWin::SetCursor(gfx::NativeCursor native_cursor) {
   // Custom web cursors are handled directly.
-  if (native_cursor == kCursorCustom)
+  if (native_cursor == ui::kCursorCustom)
     return;
   const wchar_t* cursor_id = GetCursorId(native_cursor);
   // TODO(jamescook): Support for non-system cursors will require finding
@@ -223,23 +233,47 @@ void RootWindowHostWin::SetCursor(gfx::NativeCursor native_cursor) {
   ::SetCursor(LoadCursor(NULL, cursor_id));
 }
 
+void RootWindowHostWin::SetCapture() {
+  if (!has_capture_) {
+    has_capture_ = true;
+    ::SetCapture(hwnd());
+  }
+}
+
+void RootWindowHostWin::ReleaseCapture() {
+  if (has_capture_) {
+    has_capture_ = false;
+    ::ReleaseCapture();
+  }
+}
+
 void RootWindowHostWin::ShowCursor(bool show) {
   // NOTIMPLEMENTED();
 }
 
-gfx::Point RootWindowHostWin::QueryMouseLocation() {
+bool RootWindowHostWin::QueryMouseLocation(gfx::Point* location_return) {
   POINT pt;
   GetCursorPos(&pt);
   ScreenToClient(hwnd(), &pt);
-  const gfx::Size size = GetSize();
-  return gfx::Point(max(0, min(size.width(), static_cast<int>(pt.x))),
-                    max(0, min(size.height(), static_cast<int>(pt.y))));
+  const gfx::Size size = GetBounds().size();
+  *location_return =
+      gfx::Point(max(0, min(size.width(), static_cast<int>(pt.x))),
+                 max(0, min(size.height(), static_cast<int>(pt.y))));
+  return (pt.x >= 0 && static_cast<int>(pt.x) < size.width() &&
+          pt.y >= 0 && static_cast<int>(pt.y) < size.height());
 }
 
 bool RootWindowHostWin::ConfineCursorToRootWindow() {
   RECT window_rect;
   GetWindowRect(hwnd(), &window_rect);
   return ClipCursor(&window_rect) != 0;
+}
+
+bool RootWindowHostWin::GrabSnapshot(
+    const gfx::Rect& snapshot_bounds,
+    std::vector<unsigned char>* png_representation) {
+  NOTIMPLEMENTED();
+  return false;
 }
 
 void RootWindowHostWin::UnConfineCursor() {
@@ -252,9 +286,18 @@ void RootWindowHostWin::MoveCursorTo(const gfx::Point& location) {
   SetCursorPos(pt.x, pt.y);
 }
 
+void RootWindowHostWin::SetFocusWhenShown(bool focus_when_shown) {
+  NOTIMPLEMENTED();
+}
+
 void RootWindowHostWin::PostNativeEvent(const base::NativeEvent& native_event) {
   ::PostMessage(
       hwnd(), native_event.message, native_event.wParam, native_event.lParam);
+}
+
+void RootWindowHostWin::OnDeviceScaleFactorChanged(
+    float device_scale_factor) {
+  NOTIMPLEMENTED();
 }
 
 void RootWindowHostWin::OnClose() {
@@ -267,7 +310,7 @@ LRESULT RootWindowHostWin::OnKeyEvent(UINT message,
                                       LPARAM l_param) {
   MSG msg = { hwnd(), message, w_param, l_param };
   KeyEvent keyev(msg, message == WM_CHAR);
-  SetMsgHandled(root_window_->DispatchKeyEvent(&keyev));
+  SetMsgHandled(delegate_->OnHostKeyEvent(&keyev));
   return 0;
 }
 
@@ -279,13 +322,23 @@ LRESULT RootWindowHostWin::OnMouseRange(UINT message,
   MouseEvent event(msg);
   bool handled = false;
   if (!(event.flags() & ui::EF_IS_NON_CLIENT))
-    handled = root_window_->DispatchMouseEvent(&event);
+    handled = delegate_->OnHostMouseEvent(&event);
   SetMsgHandled(handled);
   return 0;
 }
 
+LRESULT RootWindowHostWin::OnCaptureChanged(UINT message,
+                                            WPARAM w_param,
+                                            LPARAM l_param) {
+  if (has_capture_) {
+    has_capture_ = false;
+    delegate_->OnHostLostCapture();
+  }
+  return 0;
+}
+
 void RootWindowHostWin::OnPaint(HDC dc) {
-  root_window_->Draw();
+  delegate_->OnHostPaint();
   ValidateRect(hwnd(), NULL);
 }
 
@@ -293,7 +346,7 @@ void RootWindowHostWin::OnSize(UINT param, const CSize& size) {
   // Minimizing resizes the window to 0x0 which causes our layout to go all
   // screwy, so we just ignore it.
   if (param != SIZE_MINIMIZED)
-    root_window_->OnHostResized(gfx::Size(size.cx, size.cy));
+    delegate_->OnHostResized(gfx::Size(size.cx, size.cy));
 }
 
 }  // namespace aura

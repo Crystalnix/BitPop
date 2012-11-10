@@ -138,7 +138,7 @@ var NetInternalsTest = (function() {
     if ($(ancestorId).nodeName == 'TBODY')
       return $(ancestorId);
     // The tbody element of the first styled table in |parentId|.
-    return document.querySelector('#' + ancestorId + ' .styledTable tbody');
+    return document.querySelector('#' + ancestorId + ' .styled-table tbody');
   };
 
   /**
@@ -216,6 +216,14 @@ var NetInternalsTest = (function() {
   };
 
   /**
+   * Returns the id of the currently active tab.
+   * @return {string} ID of the active tab.
+   */
+  NetInternalsTest.getActiveTabId = function() {
+    return MainView.getInstance().categoryTabSwitcher().findActiveTab().id;
+  };
+
+  /**
    * Returns the tab id of a tab, given its associated URL hash value.  Asserts
    *     if |hash| has no associated tab.
    * @param {string}: hash Hash associated with the tab to return the id of.
@@ -241,7 +249,6 @@ var NetInternalsTest = (function() {
       spdy: SpdyView.TAB_HANDLE_ID,
       httpPipeline: HttpPipelineView.TAB_HANDLE_ID,
       httpCache: HttpCacheView.TAB_HANDLE_ID,
-      httpThrottling: HttpThrottlingView.TAB_HANDLE_ID,
       serviceProviders: ServiceProvidersView.TAB_HANDLE_ID,
       tests: TestView.TAB_HANDLE_ID,
       hsts: HSTSView.TAB_HANDLE_ID,
@@ -304,6 +311,10 @@ var NetInternalsTest = (function() {
    */
   NetInternalsTest.checkTabHandleVisibility = function(tabVisibilityState,
                                                        tourTabs) {
+    // The currently active tab should have a handle that is visible.
+    expectTrue(NetInternalsTest.tabHandleIsVisible(
+                   NetInternalsTest.getActiveTabId()));
+
     // Check visibility state of all tabs.
     var tabCount = 0;
     for (var hash in tabVisibilityState) {
@@ -392,7 +403,7 @@ var NetInternalsTest = (function() {
           testDone();
       }
     }
-  }
+  };
 
   /**
    * A Task that can be added to a TaskQueue.  A Task is started with a call to
@@ -598,7 +609,7 @@ var NetInternalsTest = (function() {
    * @constructor
    */
   NetInternalsTest.Source = function(type, id) {
-    assertNotEquals(getKeyWithValue(LogSourceType, type), '?');
+    assertNotEquals(getKeyWithValue(EventSourceType, type), '?');
     assertGE(id, 0);
     this.type = type;
     this.id = id;
@@ -614,13 +625,13 @@ var NetInternalsTest = (function() {
    * @constructor
    */
   NetInternalsTest.Event = function(source, type, time, phase, params) {
-    assertNotEquals(getKeyWithValue(LogEventType, type), '?');
-    assertNotEquals(getKeyWithValue(LogEventPhase, phase), '?');
+    assertNotEquals(getKeyWithValue(EventType, type), '?');
+    assertNotEquals(getKeyWithValue(EventPhase, phase), '?');
 
     this.source = source;
     this.phase = phase;
     this.type = type;
-    this.time = "" + time;
+    this.time = '' + time;
     this.phase = phase;
     if (params)
       this.params = params;
@@ -633,7 +644,7 @@ var NetInternalsTest = (function() {
    */
   NetInternalsTest.createBeginEvent = function(source, type, time, params) {
     return new NetInternalsTest.Event(source, type, time,
-                                      LogEventPhase.PHASE_BEGIN, params);
+                                      EventPhase.PHASE_BEGIN, params);
   };
 
   /**
@@ -643,7 +654,7 @@ var NetInternalsTest = (function() {
    */
   NetInternalsTest.createEndEvent = function(source, type, time, params) {
     return new NetInternalsTest.Event(source, type, time,
-                                      LogEventPhase.PHASE_END, params);
+                                      EventPhase.PHASE_END, params);
   };
 
   /**
@@ -664,12 +675,16 @@ var NetInternalsTest = (function() {
    * @param {string}: nodeId ID of the node that should be visible.
    */
   NetInternalsTest.expectStatusViewNodeVisible = function(nodeId) {
-    expectEquals(nodeId == StatusView.FOR_CAPTURE_ID,
-                 NetInternalsTest.nodeIsVisible($(StatusView.FOR_CAPTURE_ID)));
-    expectEquals(nodeId == StatusView.FOR_VIEW_ID,
-                 NetInternalsTest.nodeIsVisible($(StatusView.FOR_VIEW_ID)));
-    expectEquals(nodeId == StatusView.FOR_FILE_ID,
-                 NetInternalsTest.nodeIsVisible($(StatusView.FOR_FILE_ID)));
+    var allIds = [
+      CaptureStatusView.MAIN_BOX_ID,
+      LoadedStatusView.MAIN_BOX_ID,
+      HaltedStatusView.MAIN_BOX_ID
+    ];
+
+    for (var i = 0; i < allIds.length; ++i) {
+      var curId = allIds[i];
+      expectEquals(nodeId == curId, NetInternalsTest.nodeIsVisible($(curId)));
+    }
   };
 
   return NetInternalsTest;

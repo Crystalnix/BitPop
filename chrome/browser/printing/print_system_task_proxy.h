@@ -4,15 +4,13 @@
 
 #ifndef CHROME_BROWSER_PRINTING_PRINT_SYSTEM_TASK_PROXY_H_
 #define CHROME_BROWSER_PRINTING_PRINT_SYSTEM_TASK_PROXY_H_
-#pragma once
 
 #include <string>
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop_helpers.h"
+#include "base/sequenced_task_runner_helpers.h"
 #include "build/build_config.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -20,7 +18,7 @@ class PrintPreviewHandler;
 
 namespace base {
 class DictionaryValue;
-class StringValue;
+class ListValue;
 }
 
 namespace printing {
@@ -64,13 +62,9 @@ class PrintSystemTaskProxy
 #if defined(UNIT_TEST) && defined(USE_CUPS)
   FRIEND_TEST_ALL_PREFIXES(PrintSystemTaskProxyTest, DetectDuplexModeCUPS);
   FRIEND_TEST_ALL_PREFIXES(PrintSystemTaskProxyTest, DetectNoDuplexModeCUPS);
-
-  // Only used for testing.
-  PrintSystemTaskProxy();
 #endif
 
-#if defined(USE_CUPS)
-  static bool GetPrinterCapabilitiesCUPS(
+  bool ParsePrinterCapabilities(
       const printing::PrinterCapsAndDefaults& printer_info,
       const std::string& printer_name,
       bool* set_color_as_default,
@@ -78,20 +72,12 @@ class PrintSystemTaskProxy
       int* printer_color_space_for_black,
       bool* set_duplex_as_default,
       int* default_duplex_setting_value);
-#elif defined(OS_WIN)
-  void GetPrinterCapabilitiesWin(
-      const printing::PrinterCapsAndDefaults& printer_info,
-      bool* set_color_as_default,
-      int* printer_color_space_for_color,
-      int* printer_color_space_for_black,
-      bool* set_duplex_as_default,
-      int* default_duplex_setting_value);
-#endif
 
-  void SendDefaultPrinter(const std::string* default_printer,
-                          const std::string* cloud_print_data);
+  void SendDefaultPrinter(const std::string& default_printer,
+                          const std::string& cloud_print_data);
   void SetupPrinterList(base::ListValue* printers);
   void SendPrinterCapabilities(base::DictionaryValue* settings_info);
+  void SendFailedToGetPrinterCapabilities(const std::string& printer_name);
 
   ~PrintSystemTaskProxy();
 

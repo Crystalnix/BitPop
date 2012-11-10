@@ -1,63 +1,33 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/sync/glue/extension_data_type_controller.h"
 
 #include "base/metrics/histogram.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 
 namespace browser_sync {
 
 ExtensionDataTypeController::ExtensionDataTypeController(
+    syncer::ModelType type,
     ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
-    : FrontendDataTypeController(profile_sync_factory,
-                                 profile,
-                                 sync_service) {
+    : UIDataTypeController(type,
+                           profile_sync_factory,
+                           profile,
+                           sync_service) {
+  DCHECK(type == syncer::EXTENSIONS || type == syncer::APPS);
 }
 
-ExtensionDataTypeController::~ExtensionDataTypeController() {
-}
-
-syncable::ModelType ExtensionDataTypeController::type() const {
-  return syncable::EXTENSIONS;
-}
+ExtensionDataTypeController::~ExtensionDataTypeController() {}
 
 bool ExtensionDataTypeController::StartModels() {
-  profile_->InitExtensions(true);
+  extensions::ExtensionSystem::Get(profile_)->InitForRegularProfile(true);
   return true;
-}
-
-void ExtensionDataTypeController::CreateSyncComponents() {
-  ProfileSyncComponentsFactory::SyncComponents sync_components =
-      profile_sync_factory_->CreateExtensionSyncComponents(sync_service_,
-                                                     this);
-  set_model_associator(sync_components.model_associator);
-  generic_change_processor_.reset(static_cast<GenericChangeProcessor*>(
-      sync_components.change_processor));
-}
-
-GenericChangeProcessor* ExtensionDataTypeController::change_processor() const {
-  return generic_change_processor_.get();
-}
-
-void ExtensionDataTypeController::RecordUnrecoverableError(
-    const tracked_objects::Location& from_here,
-    const std::string& message) {
-  UMA_HISTOGRAM_COUNTS("Sync.ExtensionRunFailures", 1);
-}
-
-void ExtensionDataTypeController::RecordAssociationTime(base::TimeDelta time) {
-  UMA_HISTOGRAM_TIMES("Sync.ExtensionAssociationTime", time);
-}
-
-void ExtensionDataTypeController::RecordStartFailure(StartResult result) {
-  UMA_HISTOGRAM_ENUMERATION("Sync.ExtensionStartFailures",
-                            result,
-                            MAX_START_RESULT);
 }
 
 }  // namespace browser_sync

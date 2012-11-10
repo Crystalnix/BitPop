@@ -4,7 +4,6 @@
 
 #ifndef WEBKIT_GPU_WEBGRAPHICSCONTEXT3D_IN_PROCESS_COMMAND_BUFFER_IMPL_H_
 #define WEBKIT_GPU_WEBGRAPHICSCONTEXT3D_IN_PROCESS_COMMAND_BUFFER_IMPL_H_
-#pragma once
 
 #if defined(ENABLE_GPU)
 
@@ -13,7 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/gfx/native_widget_types.h"
 
 #if defined(USE_SKIA)
@@ -28,6 +26,7 @@ class GLES2Implementation;
 
 using WebKit::WebGLId;
 
+using WebKit::WGC3Dbyte;
 using WebKit::WGC3Dchar;
 using WebKit::WGC3Denum;
 using WebKit::WGC3Dboolean;
@@ -52,12 +51,11 @@ class WebGraphicsContext3DInProcessCommandBufferImpl
   WebGraphicsContext3DInProcessCommandBufferImpl();
   virtual ~WebGraphicsContext3DInProcessCommandBufferImpl();
 
+  bool Initialize(WebKit::WebGraphicsContext3D::Attributes attributes,
+                  WebKit::WebGraphicsContext3D* view_context);
+
   //----------------------------------------------------------------------
   // WebGraphicsContext3D methods
-  virtual bool initialize(WebGraphicsContext3D::Attributes attributes,
-                          WebKit::WebView*,
-                          bool renderDirectlyToWebView);
-
   virtual bool makeContextCurrent();
 
   virtual int width();
@@ -220,11 +218,10 @@ class WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual WebKit::WebString getShaderInfoLog(WebGLId shader);
 
-  // TBD
-  // void glGetShaderPrecisionFormat (GLenum shadertype,
-  //                                  GLenum precisiontype,
-  //                                  GLint* range,
-  //                                  GLint* precision);
+  virtual void getShaderPrecisionFormat(WGC3Denum shadertype,
+                                        WGC3Denum precisiontype,
+                                        WGC3Dint* range,
+                                        WGC3Dint* precision);
 
   virtual WebKit::WebString getShaderSource(WebGLId shader);
   virtual WebKit::WebString getString(WGC3Denum name);
@@ -425,6 +422,14 @@ class WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual void setVisibilityCHROMIUM(bool visible);
 
+  virtual void setMemoryAllocationChangedCallbackCHROMIUM(
+      WebGraphicsMemoryAllocationChangedCallbackCHROMIUM* callback);
+
+  virtual void discardFramebufferEXT(WGC3Denum target,
+                                     WGC3Dsizei numAttachments,
+                                     const WGC3Denum* attachments);
+  virtual void ensureFramebufferCHROMIUM();
+
   virtual void copyTextureToParentTextureCHROMIUM(
       WebGLId texture, WebGLId parentTexture);
 
@@ -460,10 +465,33 @@ class WebGraphicsContext3DInProcessCommandBufferImpl
       WGC3Denum target, WGC3Dint levels, WGC3Duint internalformat,
       WGC3Dint width, WGC3Dint height);
 
+  virtual WebGLId createQueryEXT();
+  virtual void deleteQueryEXT(WebGLId query);
+  virtual WGC3Dboolean isQueryEXT(WebGLId query);
+  virtual void beginQueryEXT(WGC3Denum target, WebGLId query);
+  virtual void endQueryEXT(WGC3Denum target);
+  virtual void getQueryivEXT(
+      WGC3Denum target, WGC3Denum pname, WGC3Dint* params);
+  virtual void getQueryObjectuivEXT(
+      WebGLId query, WGC3Denum pname, WGC3Duint* params);
+
+  virtual void copyTextureCHROMIUM(WGC3Denum target, WGC3Duint source_id,
+                                   WGC3Duint dest_id, WGC3Dint level,
+                                   WGC3Denum internal_format);
+
+  virtual void bindUniformLocationCHROMIUM(WebGLId program, WGC3Dint location,
+                                           const WGC3Dchar* uniform);
+
+  virtual void shallowFlushCHROMIUM();
+
+  virtual void genMailboxCHROMIUM(WGC3Dbyte* mailbox);
+  virtual void produceTextureCHROMIUM(WGC3Denum target,
+                                      const WGC3Dbyte* mailbox);
+  virtual void consumeTextureCHROMIUM(WGC3Denum target,
+                                      const WGC3Dbyte* mailbox);
+
  protected:
-#if WEBKIT_USING_SKIA
   virtual GrGLInterface* onCreateGrGLInterface();
-#endif
 
  private:
   // SwapBuffers callback.
@@ -479,12 +507,6 @@ class WebGraphicsContext3DInProcessCommandBufferImpl
   // The GLES2Implementation we use for OpenGL rendering.
   ::gpu::gles2::GLES2Implementation* gl_;
 
-  // If rendering directly to WebView, weak pointer to it.
-  WebKit::WebView* web_view_;
-#if defined(OS_MACOSX)
-  // "Fake" plugin window handle in browser process for the compositor's output.
-  gfx::PluginWindowHandle plugin_handle_;
-#endif
   WebGraphicsContext3D::WebGraphicsContextLostCallback* context_lost_callback_;
   WGC3Denum context_lost_reason_;
 

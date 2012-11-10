@@ -9,19 +9,15 @@
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
-#include "net/base/escape.h"
+#include "base/utf_string_conversions.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCommon.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebDragData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebImage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "ui/base/clipboard/clipboard.h"
 #include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/support/webkit_support_gfx.h"
-
-#if WEBKIT_USING_CG
-#include <ApplicationServices/ApplicationServices.h>
-#include <CoreFoundation/CoreFoundation.h>
-#endif
 
 using WebKit::WebDragData;
 using WebKit::WebString;
@@ -78,10 +74,11 @@ WebVector<WebString> MockWebClipboardImpl::readAvailableTypes(
   if (!m_image.isNull()) {
     results.push_back(WebString("image/png"));
   }
-  for (size_t i = 0; i < m_customData.size(); ++i) {
-    CHECK(std::find(results.begin(), results.end(), m_customData[i].type) ==
+  for (std::map<string16, string16>::const_iterator it = m_customData.begin();
+       it != m_customData.end(); ++it) {
+    CHECK(std::find(results.begin(), results.end(), it->first) ==
           results.end());
-    results.push_back(m_customData[i].type);
+    results.push_back(it->first);
   }
   return results;
 }
@@ -106,7 +103,6 @@ WebKit::WebData MockWebClipboardImpl::readImage(
   std::vector<unsigned char> encoded_image;
   // TODO(dcheng): Verify that we can assume the image is ARGB8888. Note that
   // for endianess reasons, it will be BGRA8888 on Windows.
-#if WEBKIT_USING_SKIA
   const SkBitmap& bitmap = m_image.getSkBitmap();
   SkAutoLockPixels lock(bitmap);
   webkit_support::EncodeBGRAPNG(static_cast<unsigned char*>(bitmap.getPixels()),
@@ -115,18 +111,6 @@ WebKit::WebData MockWebClipboardImpl::readImage(
                                 bitmap.rowBytes(),
                                 false,
                                 &encoded_image);
-#elif WEBKIT_USING_CG
-  CGImageRef image = m_image.getCGImageRef();
-  CFDataRef image_data_ref =
-      CGDataProviderCopyData(CGImageGetDataProvider(image));
-  webkit_support::EncodeBGRAPNG(CFDataGetBytePtr(image_data_ref),
-                                CGImageGetWidth(image),
-                                CGImageGetHeight(image),
-                                CGImageGetBytesPerRow(image),
-                                false,
-                                &encoded_image);
-  CFRelease(image_data_ref);
-#endif
   data.assign(reinterpret_cast<char*>(vector_as_array(&encoded_image)),
               encoded_image.size());
   return data;
@@ -135,58 +119,79 @@ WebKit::WebData MockWebClipboardImpl::readImage(
 WebKit::WebString MockWebClipboardImpl::readCustomData(
     WebKit::WebClipboard::Buffer buffer,
     const WebKit::WebString& type) {
-  for (size_t i = 0; i < m_customData.size(); ++i) {
-    if (m_customData[i].type == type) {
-      return m_customData[i].data;
-    }
-  }
+  std::map<string16, string16>::const_iterator it = m_customData.find(type);
+  if (it != m_customData.end())
+    return it->second;
   return WebKit::WebString();
 }
 
 void MockWebClipboardImpl::writeHTML(
     const WebKit::WebString& htmlText, const WebKit::WebURL& url,
     const WebKit::WebString& plainText, bool writeSmartPaste) {
+  clear();
+
   m_htmlText = htmlText;
   m_plainText = plainText;
-  m_image.reset();
-  m_customData = WebVector<WebDragData::CustomData>();
   m_writeSmartPaste = writeSmartPaste;
 }
 
 void MockWebClipboardImpl::writePlainText(const WebKit::WebString& plain_text) {
-  m_htmlText = WebKit::WebString();
+  clear();
+
   m_plainText = plain_text;
-  m_image.reset();
-  m_customData = WebVector<WebDragData::CustomData>();
-  m_writeSmartPaste = false;
 }
 
 void MockWebClipboardImpl::writeURL(
     const WebKit::WebURL& url, const WebKit::WebString& title) {
+  clear();
+
   m_htmlText = WebString::fromUTF8(
       webkit_glue::WebClipboardImpl::URLToMarkup(url, title));
   m_plainText = url.spec().utf16();
-  m_image.reset();
-  m_customData = WebVector<WebDragData::CustomData>();
-  m_writeSmartPaste = false;
 }
 
 void MockWebClipboardImpl::writeImage(const WebKit::WebImage& image,
     const WebKit::WebURL& url, const WebKit::WebString& title) {
   if (!image.isNull()) {
+    clear();
+
+    m_plainText = m_htmlText;
     m_htmlText = WebString::fromUTF8(
         webkit_glue::WebClipboardImpl::URLToImageMarkup(url, title));
-    m_plainText = m_htmlText;
     m_image = image;
-    m_customData = WebVector<WebDragData::CustomData>();
-    m_writeSmartPaste = false;
   }
 }
 
-void MockWebClipboardImpl::writeDataObject(const WebKit::WebDragData& data) {
-  m_htmlText = data.htmlText();
-  m_plainText = data.plainText();
+void MockWebClipboardImpl::writeDataObject(const WebDragData& data) {
+  clear();
+
+  const WebVector<WebDragData::Item>& itemList = data.items();
+  for (size_t i = 0; i < itemList.size(); ++i) {
+    const WebDragData::Item& item = itemList[i];
+    switch (item.storageType) {
+      case WebDragData::Item::StorageTypeString: {
+        if (EqualsASCII(item.stringType, ui::Clipboard::kMimeTypeText)) {
+          m_plainText = item.stringData;
+          continue;
+        }
+        if (EqualsASCII(item.stringType, ui::Clipboard::kMimeTypeHTML)) {
+          m_htmlText = item.stringData;
+          continue;
+        }
+        m_customData.insert(std::make_pair(item.stringType, item.stringData));
+        continue;
+      }
+      case WebDragData::Item::StorageTypeFilename:
+      case WebDragData::Item::StorageTypeBinaryData:
+        NOTREACHED();  // Currently unused by the clipboard implementation.
+    }
+  }
+}
+
+void MockWebClipboardImpl::clear() {
+  m_plainText = WebString();
+  m_htmlText = WebString();
   m_image.reset();
-  m_customData = data.customData();
+  m_customData.clear();
   m_writeSmartPaste = false;
 }

@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -14,6 +14,8 @@ JS_DIR = os.path.join(DOC_DIR, 'js')
 CSS_DIR = os.path.join(DOC_DIR, 'css')
 STATIC_DIR = os.path.join(DOC_DIR, 'static')
 SAMPLES_DIR = os.path.join(DOC_DIR, 'examples')
+APPS_DIR = os.path.join(DOC_DIR, 'apps')
+EXTENSIONS_DIR = os.path.join(DOC_DIR, 'extensions')
 
 EXCEPTIONS = ['README', 'README.txt', 'OWNERS']
 
@@ -21,11 +23,11 @@ EXCEPTIONS = ['README', 'README.txt', 'OWNERS']
 README = os.path.join(DOC_DIR, 'README.txt')
 REBUILD_WARNING = (
     'This change modifies the extension docs but the generated docs have '
-    'not been updated properly. See %s for more info. '
-    '(Report problems to tessamac@chromium.org.)' % README)
+    'not been updated properly. See %s for more info.' % README)
 BUILD_SCRIPT = os.path.join(BUILD_DIR, 'build.py')
 REBUILD_INSTRUCTIONS = (
-    'First build DumpRenderTree, then update the docs by running:\n  %s' %
+    'First build DumpRenderTree, then update the docs by running:\n  %s'
+    ' --page-name=<apiName>' %
     BUILD_SCRIPT)
 
 
@@ -88,7 +90,7 @@ def IsSkippedFile(path, input_api):
 
 def IsApiFile(path, input_api):
   return (input_api.os_path.dirname(path) == API_DIR and
-          path.endswith('.json'))
+          (path.endswith('.json') or path.endswith('.idl')))
 
 def IsBuildFile(path, input_api):
   return input_api.os_path.dirname(path) == BUILD_DIR
@@ -112,7 +114,7 @@ def IsSampleFile(path, input_api):
   return input_api.os_path.dirname(path).startswith(SAMPLES_DIR)
 
 def IsGeneratedDoc(path, input_api):
-  return (input_api.os_path.dirname(path) == DOC_DIR and
+  return (input_api.os_path.dirname(path) in [APPS_DIR, EXTENSIONS_DIR]  and
           path.endswith('.html'))
 
 def DocsGenerated(input_api):
@@ -143,8 +145,11 @@ def StaticDocBuilt(static_file, input_api):
   """Return True if the generated doc that corresponds to the |static_file|
   is also in this change. Both files must also contain matching changes.
   """
-  generated_file = _FindFileInAlternateDir(static_file, DOC_DIR, input_api)
-  return _ChangesMatch(generated_file, static_file)
+  for subdir in [APPS_DIR, EXTENSIONS_DIR]:
+    generated_file = _FindFileInAlternateDir(static_file, subdir, input_api)
+    if not _ChangesMatch(generated_file, static_file):
+      return False
+  return True
 
 def _FindFileInAlternateDir(affected_file, alt_dir, input_api):
   """Return an AffectFile for the file in |alt_dir| that corresponds to
@@ -186,10 +191,9 @@ def _ChangesMatch(generated_file, static_file):
   static_changes = static_file.ChangedContents()
   # ChangedContents() is a list of (line number, text) for all new lines.
   # Ignore the line number, but check that the text for each new line matches.
-  if len(generated_changes) < len(static_changes):
-    return False
 
   next_generated = 0
+  start_pos = 0
   for next_static in range(len(static_changes)):
     _, static_text = static_changes[next_static]
 
@@ -199,10 +203,15 @@ def _ChangesMatch(generated_file, static_file):
       _, generated_text = generated_changes[next_generated]
       # Text need not be identical but the entire static line should be
       # in the generated one (e.g. generated text might have extra formatting).
-      if static_text in generated_text:
-        found = True
+      found_at = generated_text[start_pos:].find(static_text)
+      if found_at != -1:
+        # Next search starts on the same line, after the substring matched.
+        start_pos = found_at + len(static_text)
+        found  = True
       else:
         next_generated += 1
+        start_pos = 0
+
     if not found:
       return False
 

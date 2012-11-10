@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,12 +7,7 @@
 """Unittests for grit.format.policy_templates.writers.admx_writer."""
 
 
-import os
-import sys
 import unittest
-
-
-from xml.dom import minidom
 
 
 class XmlWriterBaseTest(unittest.TestCase):

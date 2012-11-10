@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -65,6 +65,7 @@ MockPrinter::MockPrinter()
     is_first_request_(true),
     print_to_pdf_(false),
     preview_request_id_(0),
+    print_scaling_option_(WebKit::WebPrintScalingOptionSourceSize),
     display_header_footer_(false),
     date_(ASCIIToUTF16("date")),
     title_(ASCIIToUTF16("title")),
@@ -123,6 +124,14 @@ void MockPrinter::UseInvalidSettings() {
   SetDefaultPrintSettings(empty_param);
 }
 
+void MockPrinter::UseInvalidPageSize() {
+  page_size_.SetSize(0, 0);
+}
+
+void MockPrinter::UseInvalidContentSize() {
+  content_size_.SetSize(0, 0);
+}
+
 void MockPrinter::ScriptedPrint(int cookie,
                                 int expected_pages_count,
                                 bool has_selection,
@@ -142,6 +151,7 @@ void MockPrinter::ScriptedPrint(int cookie,
   settings->params.content_size = content_size_;
   settings->params.printable_area = printable_area_;
   settings->params.is_first_request = is_first_request_;
+  settings->params.print_scaling_option = print_scaling_option_;
   settings->params.print_to_pdf = print_to_pdf_;
   settings->params.preview_request_id = preview_request_id_;
   settings->params.display_header_footer = display_header_footer_;
@@ -295,6 +305,7 @@ void MockPrinter::SetPrintParams(PrintMsg_Print_Params* params) {
   params->margin_left = margin_left_;
   params->margin_top = margin_top_;
   params->is_first_request = is_first_request_;
+  params->print_scaling_option = print_scaling_option_;
   params->print_to_pdf = print_to_pdf_;
   params->preview_request_id = preview_request_id_;
   params->display_header_footer = display_header_footer_;

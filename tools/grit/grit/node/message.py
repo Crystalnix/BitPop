@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -16,14 +16,15 @@ import grit.format.rc
 
 from grit import clique
 from grit import exception
+from grit import lazy_re
 from grit import tclib
 from grit import util
 
 BINARY, UTF8, UTF16 = range(3)
 
 # Finds whitespace at the start and end of a string which can be multiline.
-_WHITESPACE = re.compile('(?P<start>\s*)(?P<body>.+?)(?P<end>\s*)\Z',
-                         re.DOTALL | re.MULTILINE)
+_WHITESPACE = lazy_re.compile('(?P<start>\s*)(?P<body>.+?)(?P<end>\s*)\Z',
+                              re.DOTALL | re.MULTILINE)
 
 
 class MessageNode(base.ContentNode):
@@ -31,10 +32,10 @@ class MessageNode(base.ContentNode):
 
   # For splitting a list of things that can be separated by commas or
   # whitespace
-  _SPLIT_RE = re.compile('\s*,\s*|\s+')
+  _SPLIT_RE = lazy_re.compile('\s*,\s*|\s+')
 
   def __init__(self):
-    super(type(self), self).__init__()
+    super(MessageNode, self).__init__()
     # Valid after EndParsing, this is the MessageClique that contains the
     # source message and any translations of it that have been loaded.
     self.clique = None
@@ -55,9 +56,10 @@ class MessageNode(base.ContentNode):
   def _IsValidAttribute(self, name, value):
     if name not in ['name', 'offset', 'translateable', 'desc', 'meaning',
                     'internal_comment', 'shortcut_groups', 'custom_type',
-                    'validation_expr', 'use_name_for_id']:
+                    'validation_expr', 'use_name_for_id', 'sub_variable']:
       return False
-    if name == 'translateable' and value not in ['true', 'false']:
+    if (name in ('translateable', 'sub_variable') and
+        value not in ['true', 'false']):
       return False
     return True
 
@@ -66,14 +68,15 @@ class MessageNode(base.ContentNode):
 
   def DefaultAttributes(self):
     return {
-      'translateable' : 'true',
-      'desc' : '',
-      'meaning' : '',
-      'internal_comment' : '',
-      'shortcut_groups' : '',
       'custom_type' : '',
-      'validation_expr' : '',
+      'desc' : '',
+      'internal_comment' : '',
+      'meaning' : '',
+      'shortcut_groups' : '',
+      'sub_variable' : 'false',
+      'translateable' : 'true',
       'use_name_for_id' : 'false',
+      'validation_expr' : '',
     }
 
   def GetTextualIds(self):
@@ -94,7 +97,7 @@ class MessageNode(base.ContentNode):
       assert 'first_id' in grouping_parent.attrs
       return [grouping_parent.attrs['first_id'] + '_' + self.attrs['offset']]
     else:
-      return super(type(self), self).GetTextualIds()
+      return super(MessageNode, self).GetTextualIds()
 
   def IsTranslateable(self):
     return self.attrs['translateable'] == 'true'
@@ -102,19 +105,23 @@ class MessageNode(base.ContentNode):
   def ItemFormatter(self, t):
     # Only generate an output if the if condition is satisfied.
     if not self.SatisfiesOutputCondition():
-      return super(type(self), self).ItemFormatter(t)
+      return super(MessageNode, self).ItemFormatter(t)
 
     if t == 'rc_header':
       return grit.format.rc_header.Item()
     elif t in ('rc_all', 'rc_translateable', 'rc_nontranslateable'):
       return grit.format.rc.Message()
+    elif t == 'c_format' and self.SatisfiesOutputCondition():
+      return grit.format.c_format.Message()
     elif t == 'js_map_format':
-        return grit.format.js_map_format.Message()
+      return grit.format.js_map_format.Message()
+    elif t == 'android':
+      return grit.format.android_xml.Message()
     else:
-      return super(type(self), self).ItemFormatter(t)
+      return super(MessageNode, self).ItemFormatter(t)
 
   def EndParsing(self):
-    super(type(self), self).EndParsing()
+    super(MessageNode, self).EndParsing()
 
     # Make the text (including placeholder references) and list of placeholders,
     # then strip and store leading and trailing whitespace and create the
@@ -155,6 +162,14 @@ class MessageNode(base.ContentNode):
                             description=description_or_id,
                             meaning=self.attrs['meaning'],
                             assigned_id=assigned_id)
+    self.InstallMessage(message)
+
+  def InstallMessage(self, message):
+    '''Sets this node's clique from a tclib.Message instance.
+
+    Args:
+      message: A tclib.Message.
+    '''
     self.clique = self.UberClique().MakeClique(message, self.IsTranslateable())
     for group in self.shortcut_groups_:
       self.clique.AddToShortcutGroup(group)
@@ -164,6 +179,16 @@ class MessageNode(base.ContentNode):
     elif self.attrs['validation_expr'] != '':
       self.clique.SetCustomType(
         clique.OneOffCustomType(self.attrs['validation_expr']))
+
+  def SubstituteMessages(self, substituter):
+    '''Applies substitution to this message.
+
+    Args:
+      substituter: a grit.util.Substituter object.
+    '''
+    message = substituter.SubstituteMessage(self.clique.GetMessage())
+    if message is not self.clique.GetMessage():
+      self.InstallMessage(message)
 
   def GetCliques(self):
     if self.clique:
@@ -187,6 +212,10 @@ class MessageNode(base.ContentNode):
     else:
       return self.attrs['offset']
 
+  def ExpandVariables(self):
+    '''We always expand variables on Messages.'''
+    return True
+
   def GetDataPackPair(self, lang, encoding):
     '''Returns a (id, string) pair that represents the string id and the string
     in utf8.  This is used to generate the data pack data file.
@@ -207,17 +236,14 @@ class MessageNode(base.ContentNode):
     # Default is BINARY
     return id, message
 
-  # static method
+  @staticmethod
   def Construct(parent, message, name, desc='', meaning='', translateable=True):
     '''Constructs a new message node that is a child of 'parent', with the
     name, desc, meaning and translateable attributes set using the same-named
     parameters and the text of the message and any placeholders taken from
     'message', which must be a tclib.Message() object.'''
     # Convert type to appropriate string
-    if translateable:
-      translateable = 'true'
-    else:
-      translateable = 'false'
+    translateable = 'true' if translateable else 'false'
 
     node = MessageNode()
     node.StartParsing('message', parent)
@@ -227,27 +253,25 @@ class MessageNode(base.ContentNode):
     node.HandleAttribute('translateable', translateable)
 
     items = message.GetContent()
-    for ix in range(len(items)):
-      if isinstance(items[ix], types.StringTypes):
-        text = items[ix]
-
+    for ix, item in enumerate(items):
+      if isinstance(item, types.StringTypes):
         # Ensure whitespace at front and back of message is correctly handled.
         if ix == 0:
-          text = "'''" + text
+          item = "'''" + item
         if ix == len(items) - 1:
-          text = text + "'''"
+          item = item + "'''"
 
-        node.AppendContent(text)
+        node.AppendContent(item)
       else:
         phnode = PhNode()
         phnode.StartParsing('ph', node)
-        phnode.HandleAttribute('name', items[ix].GetPresentation())
-        phnode.AppendContent(items[ix].GetOriginal())
+        phnode.HandleAttribute('name', item.GetPresentation())
+        phnode.AppendContent(item.GetOriginal())
 
-        if len(items[ix].GetExample()) and items[ix].GetExample() != ' ':
+        if len(item.GetExample()) and item.GetExample() != ' ':
           exnode = ExNode()
           exnode.StartParsing('ex', phnode)
-          exnode.AppendContent(items[ix].GetExample())
+          exnode.AppendContent(item.GetExample())
           exnode.EndParsing()
           phnode.AddChild(exnode)
 
@@ -256,7 +280,6 @@ class MessageNode(base.ContentNode):
 
     node.EndParsing()
     return node
-  Construct = staticmethod(Construct)
 
 class PhNode(base.ContentNode):
   '''A <ph> element.'''
@@ -268,7 +291,7 @@ class PhNode(base.ContentNode):
     return ['name']
 
   def EndParsing(self):
-    super(type(self), self).EndParsing()
+    super(PhNode, self).EndParsing()
     # We only allow a single example for each placeholder
     if len(self.children) > 1:
       raise exception.TooManyExamples()

@@ -76,7 +76,7 @@ class CGen(object):
   TypeMap = {
     'Array': {
       'in': 'const %s',
-      'inout': '%s*',
+      'inout': '%s',
       'out': '%s*',
       'store': '%s',
       'return': '%s'
@@ -123,6 +123,13 @@ class CGen(object):
       'return': 'const %s',
       'store': '%s'
     },
+    'cstr_t': {
+      'in': '%s',
+      'inout': '%s*',
+      'out': '%s*',
+      'return': '%s',
+      'store': '%s'
+    },
     'TypeValue': {
       'in': '%s',
       'inout': '%s*',
@@ -146,6 +153,7 @@ class CGen(object):
   'handle_t': 'int',
   'mem_t': 'void*',
   'str_t': 'char*',
+  'cstr_t': 'const char*',
   'interface_t' : 'const void*'
   }
 

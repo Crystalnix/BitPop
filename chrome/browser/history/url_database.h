@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_HISTORY_URL_DATABASE_H_
 #define CHROME_BROWSER_HISTORY_URL_DATABASE_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "chrome/browser/history/history_types.h"
@@ -57,7 +56,7 @@ class URLDatabase {
 
   // Looks up all urls that were typed in manually. Fills info with the data.
   // Returns true on success and false otherwise.
-  bool GetAllTypedUrls(std::vector<history::URLRow>* urls);
+  bool GetAllTypedUrls(URLRows* urls);
 
   // Looks up the given URL and if it exists, fills the given pointers with the
   // associated info and returns the ID of that URL. If the info pointer is
@@ -172,7 +171,7 @@ class URLDatabase {
   bool AutocompleteForPrefix(const std::string& prefix,
                              size_t max_results,
                              bool typed_only,
-                             std::vector<URLRow>* results);
+                             URLRows* results);
 
   // Returns true if the database holds some past typed navigation to a URL on
   // the provided hostname.
@@ -197,9 +196,14 @@ class URLDatabase {
                                    TemplateURLID keyword_id,
                                    const string16& term);
 
-  // Looks up a keyword search term given a url id. Fills row with the data.
-  // Returns true on success and false otherwise.
+  // Looks up a keyword search term given a url id. Returns all the search terms
+  // in |rows|. Returns true on success.
   bool GetKeywordSearchTermRow(URLID url_id, KeywordSearchTermRow* row);
+
+  // Looks up all keyword search terms given a term, Fills the rows with data.
+  // Returns true on success and false otherwise.
+  bool GetKeywordSearchTermRows(const string16& term,
+                                std::vector<KeywordSearchTermRow>* rows);
 
   // Deletes all search terms for the specified keyword that have been added by
   // way of SetKeywordSearchTermsForURL.
@@ -212,6 +216,9 @@ class URLDatabase {
       const string16& prefix,
       int max_count,
       std::vector<KeywordSearchTermVisit>* matches);
+
+  // Deletes all searches matching |term|.
+  bool DeleteKeywordSearchTerm(const string16& term);
 
   // Migration -----------------------------------------------------------------
 

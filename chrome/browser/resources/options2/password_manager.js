@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  const OptionsPage = options.OptionsPage;
-  const ArrayDataModel = cr.ui.ArrayDataModel;
+  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
 
   /////////////////////////////////////////////////////////////////////////////
   // PasswordManager class:
@@ -17,7 +17,7 @@ cr.define('options', function() {
     this.activeNavTab = null;
     OptionsPage.call(this,
                      'passwords',
-                     templateData.passwordsPageTabTitle,
+                     loadTimeData.getString('passwordsPageTabTitle'),
                      'password-manager');
   }
 
@@ -58,6 +58,10 @@ cr.define('options', function() {
     initializePage: function() {
       OptionsPage.prototype.initializePage.call(this);
 
+      $('password-manager-confirm').onclick = function() {
+        OptionsPage.closeOverlay();
+      };
+
       $('password-search-box').addEventListener('search',
           this.handleSearchQueryChange_.bind(this));
 
@@ -67,7 +71,7 @@ cr.define('options', function() {
 
     /** @inheritDoc */
     canShowPage: function() {
-      return !AdvancedOptions.GuestModeActive();
+      return !(cr.isChromeOS && UIAccountTweaks.loggedInAsGuest());
     },
 
     /** @inheritDoc */
@@ -181,32 +185,30 @@ cr.define('options', function() {
   };
 
   /**
-   * Call to remove a saved password.
-   * @param rowIndex indicating the row to remove.
+   * Removes a saved password.
+   * @param {number} rowIndex indicating the row to remove.
    */
   PasswordManager.removeSavedPassword = function(rowIndex) {
       chrome.send('removeSavedPassword', [String(rowIndex)]);
   };
 
   /**
-   * Call to remove a password exception.
-   * @param rowIndex indicating the row to remove.
+   * Removes a password exception.
+   * @param {number} rowIndex indicating the row to remove.
    */
   PasswordManager.removePasswordException = function(rowIndex) {
       chrome.send('removePasswordException', [String(rowIndex)]);
   };
 
   /**
-   * Call to remove all saved passwords.
-   * @param tab contentType of the tab currently on.
+   * Removes all saved passwords.
    */
   PasswordManager.removeAllPasswords = function() {
     chrome.send('removeAllSavedPasswords');
   };
 
   /**
-   * Call to remove all saved passwords.
-   * @param tab contentType of the tab currently on.
+   * Removes all password exceptions.
    */
   PasswordManager.removeAllPasswordExceptions = function() {
     chrome.send('removeAllPasswordExceptions');

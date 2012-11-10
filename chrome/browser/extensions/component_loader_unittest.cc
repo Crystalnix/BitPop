@@ -16,6 +16,8 @@
 #include "chrome/test/base/testing_pref_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using extensions::Extension;
+
 namespace {
 
 class MockExtensionService : public TestExtensionService {
@@ -29,7 +31,7 @@ class MockExtensionService : public TestExtensionService {
   }
 
   virtual void AddExtension(const Extension* extension) OVERRIDE {
-    ASSERT_FALSE(extension_set_.Contains(extension->id()));
+    EXPECT_FALSE(extension_set_.Contains(extension->id()));
     // ExtensionService must become the owner of the extension object.
     extension_set_.Insert(extension);
   }

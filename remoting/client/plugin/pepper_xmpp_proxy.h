@@ -1,28 +1,34 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef REMOTING_CLIENT_PLUGIN_PEPPER_XMPP_PROXY_H_
 #define REMOTING_CLIENT_PLUGIN_PEPPER_XMPP_PROXY_H_
 
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "remoting/jingle_glue/xmpp_proxy.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }  // namespace base
 
 namespace remoting {
 
-class ChromotingScriptableObject;
-
 class PepperXmppProxy : public XmppProxy {
  public:
+  typedef base::Callback<void(const std::string&)> SendIqCallback;
+
+  // |plugin_task_runner| is the thread on which |send_iq_callback| is
+  // called. Normally the callback will call JavaScript, so this has
+  // to be the task runner that corresponds to the plugin
+  // thread. |callback_task_runner| is used to call the callback
+  // registered with AttachCallback().
   PepperXmppProxy(
-      base::WeakPtr<ChromotingScriptableObject> scriptable_object,
-      base::MessageLoopProxy* plugin_message_loop,
-      base::MessageLoopProxy* callback_message_loop);
+      const SendIqCallback& send_iq_callback,
+      base::SingleThreadTaskRunner* plugin_task_runner,
+      base::SingleThreadTaskRunner* callback_task_runner);
 
   // Registered the callback class with this object.
   //
@@ -43,10 +49,10 @@ class PepperXmppProxy : public XmppProxy {
  private:
   virtual ~PepperXmppProxy();
 
-  base::WeakPtr<ChromotingScriptableObject> scriptable_object_;
+  SendIqCallback send_iq_callback_;
 
-  scoped_refptr<base::MessageLoopProxy> plugin_message_loop_;
-  scoped_refptr<base::MessageLoopProxy> callback_message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> plugin_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> callback_task_runner_;
 
   // Must only be access on callback_message_loop_.
   base::WeakPtr<ResponseCallback> callback_;

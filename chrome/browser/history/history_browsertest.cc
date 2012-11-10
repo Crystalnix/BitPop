@@ -1,19 +1,27 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <vector>
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/message_loop.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/test/browser_test_utils.h"
+#include "content/public/test/test_browser_thread.h"
 #include "googleurl/src/gurl.h"
 
 using content::BrowserThread;
@@ -30,8 +38,7 @@ namespace {
 // Notifies the main thread after all history backend thread tasks have run.
 class WaitForHistoryTask : public HistoryDBTask {
  public:
-  WaitForHistoryTask() {
-  }
+  WaitForHistoryTask() {}
 
   virtual bool RunOnDBThread(history::HistoryBackend* backend,
                              history::HistoryDatabase* db) {
@@ -43,6 +50,8 @@ class WaitForHistoryTask : public HistoryDBTask {
   }
 
  private:
+  virtual ~WaitForHistoryTask() {}
+
   DISALLOW_COPY_AND_ASSIGN(WaitForHistoryTask);
 };
 
@@ -58,7 +67,7 @@ class HistoryEnumerator : public HistoryService::URLEnumerator {
         BrowserThread::UI,
         FROM_HERE,
         base::Bind(&HistoryService::IterateURLs, history, this));
-    ui_test_utils::RunMessageLoop();
+    content::RunMessageLoop();
   }
 
   virtual void OnURL(const GURL& url) {
@@ -80,18 +89,25 @@ class HistoryEnumerator : public HistoryService::URLEnumerator {
   DISALLOW_COPY_AND_ASSIGN(HistoryEnumerator);
 };
 
+}  // namespace
+
 class HistoryBrowserTest : public InProcessBrowserTest {
  protected:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    command_line->AppendSwitch(switches::kEnableFileCookies);
+  }
+
   PrefService* GetPrefs() {
     return GetProfile()->GetPrefs();
   }
 
   Profile* GetProfile() {
-    return browser()->GetProfile();
+    return browser()->profile();
   }
 
   HistoryService* GetHistoryService() {
-    return GetProfile()->GetHistoryService(Profile::EXPLICIT_ACCESS);
+    return HistoryServiceFactory::GetForProfile(GetProfile(),
+                                                Profile::EXPLICIT_ACCESS);
   }
 
   std::vector<GURL> GetHistoryContents() {
@@ -113,12 +129,28 @@ class HistoryBrowserTest : public InProcessBrowserTest {
                             FROM_HERE,
                             base::Bind(&HistoryService::ScheduleDBTask,
                                        history, task, &request_consumer));
-    ui_test_utils::RunMessageLoop();
+    content::RunMessageLoop();
   }
 
   void ExpectEmptyHistory() {
     std::vector<GURL> urls(GetHistoryContents());
     EXPECT_EQ(0U, urls.size());
+  }
+
+  void LoadAndWaitForURL(const GURL& url) {
+    string16 expected_title(ASCIIToUTF16("OK"));
+    content::TitleWatcher title_watcher(
+        chrome::GetActiveWebContents(browser()), expected_title);
+    title_watcher.AlsoWaitForTitle(ASCIIToUTF16("FAIL"));
+    ui_test_utils::NavigateToURL(browser(), url);
+    EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
+  }
+
+  void LoadAndWaitForFile(const char* filename) {
+    GURL url = ui_test_utils::GetTestUrl(
+        FilePath().AppendASCII("History"),
+        FilePath().AppendASCII(filename));
+    LoadAndWaitForURL(url);
   }
 };
 
@@ -126,10 +158,13 @@ class HistoryBrowserTest : public InProcessBrowserTest {
 IN_PROC_BROWSER_TEST_F(HistoryBrowserTest, SavingHistoryEnabled) {
   EXPECT_FALSE(GetPrefs()->GetBoolean(prefs::kSavingBrowserHistoryDisabled));
 
-  EXPECT_TRUE(GetProfile()->GetHistoryService(Profile::EXPLICIT_ACCESS));
-  EXPECT_TRUE(GetProfile()->GetHistoryService(Profile::IMPLICIT_ACCESS));
+  EXPECT_TRUE(HistoryServiceFactory::GetForProfile(
+      GetProfile(), Profile::EXPLICIT_ACCESS));
+  EXPECT_TRUE(HistoryServiceFactory::GetForProfile(
+      GetProfile(), Profile::IMPLICIT_ACCESS));
 
-  ui_test_utils::WaitForHistoryToLoad(browser());
+  ui_test_utils::WaitForHistoryToLoad(HistoryServiceFactory::GetForProfile(
+      browser()->profile(), Profile::EXPLICIT_ACCESS));
   ExpectEmptyHistory();
 
   ui_test_utils::NavigateToURL(browser(), GetTestUrl());
@@ -146,10 +181,13 @@ IN_PROC_BROWSER_TEST_F(HistoryBrowserTest, SavingHistoryEnabled) {
 IN_PROC_BROWSER_TEST_F(HistoryBrowserTest, SavingHistoryDisabled) {
   GetPrefs()->SetBoolean(prefs::kSavingBrowserHistoryDisabled, true);
 
-  EXPECT_TRUE(GetProfile()->GetHistoryService(Profile::EXPLICIT_ACCESS));
-  EXPECT_FALSE(GetProfile()->GetHistoryService(Profile::IMPLICIT_ACCESS));
+  EXPECT_TRUE(HistoryServiceFactory::GetForProfile(
+      GetProfile(), Profile::EXPLICIT_ACCESS));
+  EXPECT_FALSE(HistoryServiceFactory::GetForProfile(
+      GetProfile(), Profile::IMPLICIT_ACCESS));
 
-  ui_test_utils::WaitForHistoryToLoad(browser());
+  ui_test_utils::WaitForHistoryToLoad(HistoryServiceFactory::GetForProfile(
+      browser()->profile(), Profile::EXPLICIT_ACCESS));
   ExpectEmptyHistory();
 
   ui_test_utils::NavigateToURL(browser(), GetTestUrl());
@@ -162,7 +200,8 @@ IN_PROC_BROWSER_TEST_F(HistoryBrowserTest, SavingHistoryDisabled) {
 IN_PROC_BROWSER_TEST_F(HistoryBrowserTest, SavingHistoryEnabledThenDisabled) {
   EXPECT_FALSE(GetPrefs()->GetBoolean(prefs::kSavingBrowserHistoryDisabled));
 
-  ui_test_utils::WaitForHistoryToLoad(browser());
+  ui_test_utils::WaitForHistoryToLoad(HistoryServiceFactory::GetForProfile(
+      browser()->profile(), Profile::EXPLICIT_ACCESS));
 
   ui_test_utils::NavigateToURL(browser(), GetTestUrl());
   WaitForHistoryBackendToRun();
@@ -191,7 +230,8 @@ IN_PROC_BROWSER_TEST_F(HistoryBrowserTest, SavingHistoryEnabledThenDisabled) {
 IN_PROC_BROWSER_TEST_F(HistoryBrowserTest, SavingHistoryDisabledThenEnabled) {
   GetPrefs()->SetBoolean(prefs::kSavingBrowserHistoryDisabled, true);
 
-  ui_test_utils::WaitForHistoryToLoad(browser());
+  ui_test_utils::WaitForHistoryToLoad(HistoryServiceFactory::GetForProfile(
+      browser()->profile(), Profile::EXPLICIT_ACCESS));
   ExpectEmptyHistory();
 
   ui_test_utils::NavigateToURL(browser(), GetTestUrl());
@@ -210,4 +250,67 @@ IN_PROC_BROWSER_TEST_F(HistoryBrowserTest, SavingHistoryDisabledThenEnabled) {
   }
 }
 
-}  // namespace
+IN_PROC_BROWSER_TEST_F(HistoryBrowserTest, VerifyHistoryLength1) {
+  // Test the history length for the following page transitions.
+  //   -open-> Page 1.
+  LoadAndWaitForFile("history_length_test_page_1.html");
+}
+
+IN_PROC_BROWSER_TEST_F(HistoryBrowserTest, VerifyHistoryLength2) {
+  // Test the history length for the following page transitions.
+  //   -open-> Page 2 -redirect-> Page 3.
+  LoadAndWaitForFile("history_length_test_page_2.html");
+}
+
+IN_PROC_BROWSER_TEST_F(HistoryBrowserTest, VerifyHistoryLength3) {
+  // Test the history length for the following page transitions.
+  // -open-> Page 1 -> open Page 2 -redirect Page 3. open Page 4
+  // -navigate_backward-> Page 3 -navigate_backward->Page 1
+  // -navigate_forward-> Page 3 -navigate_forward-> Page 4
+  LoadAndWaitForFile("history_length_test_page_1.html");
+  LoadAndWaitForFile("history_length_test_page_2.html");
+  LoadAndWaitForFile("history_length_test_page_4.html");
+}
+
+IN_PROC_BROWSER_TEST_F(HistoryBrowserTest,
+                       ConsiderRedirectAfterGestureAsUserInitiated) {
+  // Test the history length for the following page transition.
+  //
+  // -open-> Page 11 -slow_redirect-> Page 12.
+  //
+  // If redirect occurs after a user gesture, e.g., mouse click, the
+  // redirect is more likely to be user-initiated rather than automatic.
+  // Therefore, Page 11 should be in the history in addition to Page 12.
+  LoadAndWaitForFile("history_length_test_page_11.html");
+
+  content::SimulateMouseClick(chrome::GetActiveWebContents(browser()));
+  LoadAndWaitForFile("history_length_test_page_11.html");
+}
+
+IN_PROC_BROWSER_TEST_F(HistoryBrowserTest,
+                       ConsiderSlowRedirectAsUserInitiated) {
+  // Test the history length for the following page transition.
+  //
+  // -open-> Page 21 -redirect-> Page 22.
+  //
+  // If redirect occurs more than 5 seconds later after the page is loaded,
+  // the redirect is likely to be user-initiated.
+  // Therefore, Page 21 should be in the history in addition to Page 22.
+  LoadAndWaitForFile("history_length_test_page_21.html");
+}
+
+// If this test flakes, use bug 22111.
+IN_PROC_BROWSER_TEST_F(HistoryBrowserTest, HistorySearchXSS) {
+  GURL url(std::string(chrome::kChromeUIHistoryURL) +
+      "#q=%3Cimg%20src%3Dx%3Ax%20onerror%3D%22document.title%3D'XSS'%22%3E");
+  ui_test_utils::NavigateToURL(browser(), url);
+  // Mainly, this is to ensure we send a synchronous message to the renderer
+  // so that we're not susceptible (less susceptible?) to a race condition.
+  // Should a race condition ever trigger, it won't result in flakiness.
+  int num = ui_test_utils::FindInPage(
+      chrome::GetActiveTabContents(browser()), ASCIIToUTF16("<img"), true,
+      true, NULL);
+  EXPECT_GT(num, 0);
+  EXPECT_EQ(ASCIIToUTF16("History"),
+            chrome::GetActiveWebContents(browser())->GetTitle());
+}

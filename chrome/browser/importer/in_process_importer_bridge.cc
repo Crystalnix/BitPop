@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/importer/importer_host.h"
+#include "chrome/browser/search_engines/template_url.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "webkit/forms/password_form.h"
@@ -14,6 +15,8 @@
 #if defined(OS_WIN)
 #include "chrome/browser/password_manager/ie7_password.h"
 #endif
+
+#include <iterator>
 
 using content::BrowserThread;
 
@@ -55,7 +58,7 @@ void InProcessImporterBridge::SetFavicons(
 }
 
 void InProcessImporterBridge::SetHistoryItems(
-    const std::vector<history::URLRow> &rows,
+    const history::URLRows &rows,
     history::VisitSource visit_source) {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -64,13 +67,13 @@ void InProcessImporterBridge::SetHistoryItems(
 
 void InProcessImporterBridge::SetKeywords(
     const std::vector<TemplateURL*>& template_urls,
-    int default_keyword_index,
     bool unique_on_host_and_path) {
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(
-          &ProfileWriter::AddKeywords, writer_, template_urls,
-          default_keyword_index, unique_on_host_and_path));
+  ScopedVector<TemplateURL> owned_template_urls;
+  std::copy(template_urls.begin(), template_urls.end(),
+            std::back_inserter(owned_template_urls));
+  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+      base::Bind(&ProfileWriter::AddKeywords, writer_,
+                 base::Passed(&owned_template_urls), unique_on_host_and_path));
 }
 
 void InProcessImporterBridge::SetPasswordForm(

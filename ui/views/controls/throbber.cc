@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,10 @@
 
 #include "base/time.h"
 #include "grit/ui_resources.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia.h"
 
 using base::Time;
 using base::TimeDelta;
@@ -21,7 +22,8 @@ Throbber::Throbber(int frame_time_ms,
       paint_while_stopped_(paint_while_stopped),
       frames_(NULL),
       frame_time_(TimeDelta::FromMilliseconds(frame_time_ms)) {
-  SetFrames(ResourceBundle::GetSharedInstance().GetBitmapNamed(IDR_THROBBER));
+  SetFrames(ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+      IDR_THROBBER).ToImageSkia());
 }
 
 Throbber::~Throbber() {
@@ -52,7 +54,7 @@ void Throbber::Stop() {
   SchedulePaint();  // Important if we're not painting while stopped
 }
 
-void Throbber::SetFrames(SkBitmap* frames) {
+void Throbber::SetFrames(const gfx::ImageSkia* frames) {
   frames_ = frames;
   DCHECK(frames_->width() > 0 && frames_->height() > 0);
   DCHECK(frames_->width() % frames_->height() == 0);
@@ -80,10 +82,10 @@ void Throbber::OnPaint(gfx::Canvas* canvas) {
 
   int image_size = frames_->height();
   int image_offset = current_frame * image_size;
-  canvas->DrawBitmapInt(*frames_,
-                        image_offset, 0, image_size, image_size,
-                        0, 0, image_size, image_size,
-                        false);
+  canvas->DrawImageInt(*frames_,
+                       image_offset, 0, image_size, image_size,
+                       0, 0, image_size, image_size,
+                       false);
 }
 
 
@@ -136,8 +138,9 @@ void SmoothedThrobber::StopDelayOver() {
 
 CheckmarkThrobber::CheckmarkThrobber()
     : Throbber(kFrameTimeMs, false),
-      checked_(false) {
-  InitClass();
+      checked_(false),
+      checkmark_(ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+          IDR_CHECKMARK).ToImageSkia()) {
 }
 
 void CheckmarkThrobber::SetChecked(bool checked) {
@@ -158,21 +161,8 @@ void CheckmarkThrobber::OnPaint(gfx::Canvas* canvas) {
   if (checked_) {
     int checkmark_x = (width() - checkmark_->width()) / 2;
     int checkmark_y = (height() - checkmark_->height()) / 2;
-    canvas->DrawBitmapInt(*checkmark_, checkmark_x, checkmark_y);
+    canvas->DrawImageInt(*checkmark_, checkmark_x, checkmark_y);
   }
 }
-
-// static
-void CheckmarkThrobber::InitClass() {
-  static bool initialized = false;
-  if (!initialized) {
-    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-    checkmark_ = rb.GetBitmapNamed(IDR_CHECKMARK);
-    initialized = true;
-  }
-}
-
-// static
-SkBitmap* CheckmarkThrobber::checkmark_ = NULL;
 
 }  // namespace views

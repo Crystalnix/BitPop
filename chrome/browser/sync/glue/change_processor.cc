@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 
 namespace browser_sync {
 
-ChangeProcessor::ChangeProcessor(UnrecoverableErrorHandler* error_handler)
+ChangeProcessor::ChangeProcessor(DataTypeErrorHandler* error_handler)
     : running_(false),
       error_handler_(error_handler),
       share_handle_(NULL) {}
@@ -17,7 +17,7 @@ ChangeProcessor::~ChangeProcessor() {
 }
 
 void ChangeProcessor::Start(Profile* profile,
-                            sync_api::UserShare* share_handle) {
+                            syncer::UserShare* share_handle) {
   DCHECK(error_handler_ && !share_handle_);
   share_handle_ = share_handle;
   StartImpl(profile);
@@ -39,11 +39,11 @@ bool ChangeProcessor::IsRunning() const {
 // Not implemented by default.
 void ChangeProcessor::CommitChangesFromSyncModel() {}
 
-UnrecoverableErrorHandler* ChangeProcessor::error_handler() const {
+DataTypeErrorHandler* ChangeProcessor::error_handler() const {
   return error_handler_;
 }
 
-sync_api::UserShare* ChangeProcessor::share_handle() const {
+syncer::UserShare* ChangeProcessor::share_handle() const {
   return share_handle_;
 }
 

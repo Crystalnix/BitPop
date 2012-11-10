@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_PROFILES_PROFILE_DOWNLOADER_H_
 #define CHROME_BROWSER_PROFILES_PROFILE_DOWNLOADER_H_
-#pragma once
 
 #include <string>
 
@@ -13,19 +12,23 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "chrome/browser/image_decoder.h"
+#include "chrome/common/net/gaia/oauth2_access_token_consumer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "content/public/common/url_fetcher_delegate.h"
 #include "googleurl/src/gurl.h"
+#include "net/url_request/url_fetcher_delegate.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "chrome/common/net/gaia/oauth2_access_token_consumer.h"
 
 class ProfileDownloaderDelegate;
 class OAuth2AccessTokenFetcher;
 
+namespace net {
+class URLFetcher;
+}  // namespace net
+
 // Downloads user profile information. The profile picture is decoded in a
 // sandboxed process.
-class ProfileDownloader : public content::URLFetcherDelegate,
+class ProfileDownloader : public net::URLFetcherDelegate,
                           public ImageDecoder::Delegate,
                           public content::NotificationObserver,
                           public OAuth2AccessTokenConsumer {
@@ -67,8 +70,8 @@ class ProfileDownloader : public content::URLFetcherDelegate,
   FRIEND_TEST_ALL_PREFIXES(ProfileDownloaderTest, ParseData);
   FRIEND_TEST_ALL_PREFIXES(ProfileDownloaderTest, DefaultURL);
 
-  // Overriden from content::URLFetcherDelegate:
-  virtual void OnURLFetchComplete(const content::URLFetcher* source) OVERRIDE;
+  // Overriden from net::URLFetcherDelegate:
+  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
 
   // Overriden from ImageDecoder::Delegate:
   virtual void OnImageDecoded(const ImageDecoder* decoder,
@@ -81,7 +84,8 @@ class ProfileDownloader : public content::URLFetcherDelegate,
                        const content::NotificationDetails& details) OVERRIDE;
 
   // Overriden from OAuth2AccessTokenConsumer:
-  virtual void OnGetTokenSuccess(const std::string& access_token) OVERRIDE;
+  virtual void OnGetTokenSuccess(const std::string& access_token,
+                                 const base::Time& expiration_time) OVERRIDE;
   virtual void OnGetTokenFailure(const GoogleServiceAuthError& error) OVERRIDE;
 
   // Parses the entry response and gets the name and and profile image URL.
@@ -107,8 +111,8 @@ class ProfileDownloader : public content::URLFetcherDelegate,
 
   ProfileDownloaderDelegate* delegate_;
   std::string auth_token_;
-  scoped_ptr<content::URLFetcher> user_entry_fetcher_;
-  scoped_ptr<content::URLFetcher> profile_image_fetcher_;
+  scoped_ptr<net::URLFetcher> user_entry_fetcher_;
+  scoped_ptr<net::URLFetcher> profile_image_fetcher_;
   scoped_ptr<OAuth2AccessTokenFetcher> oauth2_access_token_fetcher_;
   content::NotificationRegistrar registrar_;
   string16 profile_full_name_;

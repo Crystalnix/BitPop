@@ -5,7 +5,6 @@
 
 #ifndef SKIA_EXT_CANVAS_PAINT_LINUX_H_
 #define SKIA_EXT_CANVAS_PAINT_LINUX_H_
-#pragma once
 
 #include "base/logging.h"
 #include "skia/ext/canvas_paint_common.h"
@@ -18,6 +17,7 @@ namespace skia {
 // A class designed to translate skia painting into a region in a GdkWindow.
 // On construction, it will set up a context for painting into, and on
 // destruction, it will commit it to the GdkWindow.
+// Note: The created context is always inialized to (0, 0, 0, 0).
 template <class T>
 class CanvasPaintT : public T {
  public:
@@ -89,6 +89,8 @@ class CanvasPaintT : public T {
       // Cause a deliberate crash;
       CHECK(false);
     }
+    // No need to clear the canvas, because cairo automatically performs the
+    // clear.
 
     // Need to translate so that the dirty region appears at the origin of the
     // surface.

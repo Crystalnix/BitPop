@@ -129,10 +129,8 @@ void Firefox3Importer::ImportHistory() {
                       "WHERE v.visit_type <= 3";
 
   sql::Statement s(db.GetUniqueStatement(query));
-  if (!s)
-    return;
 
-  std::vector<history::URLRow> rows;
+  history::URLRows rows;
   while (s.Step() && !cancelled()) {
     GURL url(s.ColumnString(0));
 
@@ -197,13 +195,12 @@ void Firefox3Importer::ImportBookmarks() {
       "INNER JOIN moz_anno_attributes aa ON ia.anno_attribute_id = aa.id "
       "WHERE aa.name = 'bookmarkProperties/POSTData'";
   sql::Statement s(db.GetUniqueStatement(query));
-  if (s) {
-    while (s.Step() && !cancelled())
-      post_keyword_ids.insert(s.ColumnInt(0));
-  } else {
-    NOTREACHED();
+
+  if (!s.is_valid())
     return;
-  }
+
+  while (s.Step() && !cancelled())
+    post_keyword_ids.insert(s.ColumnInt(0));
 
   for (size_t i = 0; i < list.size(); ++i) {
     BookmarkItem* item = list[i];
@@ -283,7 +280,7 @@ void Firefox3Importer::ImportBookmarks() {
     }
   }
 
-  STLDeleteContainerPointers(list.begin(), list.end());
+  STLDeleteElements(&list);
 
   // Write into profile.
   if (!bookmarks.empty() && !cancelled()) {
@@ -291,11 +288,10 @@ void Firefox3Importer::ImportBookmarks() {
         bridge_->GetLocalizedString(IDS_BOOKMARK_GROUP_FROM_FIREFOX);
     bridge_->AddBookmarks(bookmarks, first_folder_name);
   }
-  if (!template_urls.empty() && !cancelled()) {
-    bridge_->SetKeywords(template_urls, -1, false);
-  } else {
-    STLDeleteContainerPointers(template_urls.begin(), template_urls.end());
-  }
+  if (!template_urls.empty() && !cancelled())
+    bridge_->SetKeywords(template_urls, false);
+  else
+    STLDeleteElements(&template_urls);
   if (!favicon_map.empty() && !cancelled()) {
     std::vector<history::ImportedFaviconUsage> favicons;
     LoadFavicons(&db, favicon_map, &favicons);
@@ -342,8 +338,7 @@ void Firefox3Importer::ImportSearchEngines() {
   std::vector<TemplateURL*> search_engines;
   ParseSearchEnginesFromXMLFiles(files, &search_engines);
 
-  // Import the list of search engines, but do not override the default.
-  bridge_->SetKeywords(search_engines, -1 /*default_keyword_index*/, true);
+  bridge_->SetKeywords(search_engines, true);
 }
 
 void Firefox3Importer::ImportHomepage() {
@@ -370,7 +365,7 @@ void Firefox3Importer::GetSearchEnginesXMLFiles(
                       "ORDER BY value ASC";
 
   sql::Statement s(db.GetUniqueStatement(query));
-  if (!s)
+  if (!s.is_valid())
     return;
 
   FilePath app_path = app_path_.AppendASCII("searchplugins");
@@ -442,8 +437,6 @@ void Firefox3Importer::LoadRootNodeID(sql::Connection* db,
 
   const char* query = "SELECT root_name, folder_id FROM moz_bookmarks_roots";
   sql::Statement s(db->GetUniqueStatement(query));
-  if (!s)
-    return;
 
   while (s.Step()) {
     std::string folder = s.ColumnString(0);
@@ -467,10 +460,8 @@ void Firefox3Importer::LoadLivemarkIDs(sql::Connection* db,
                       "JOIN moz_items_annos b ON a.id = b.anno_attribute_id "
                       "WHERE a.name = ? ";
   sql::Statement s(db->GetUniqueStatement(query));
-  if (!s)
-    return;
-
   s.BindString(0, kFeedAnnotation);
+
   while (s.Step() && !cancelled())
     livemark->insert(s.ColumnInt(0));
 }
@@ -483,10 +474,8 @@ void Firefox3Importer::GetTopBookmarkFolder(sql::Connection* db,
                      "WHERE b.type = 2 AND b.id = ? "
                      "ORDER BY b.position";
   sql::Statement s(db->GetUniqueStatement(query));
-  if (!s)
-    return;
-
   s.BindInt(0, folder_id);
+
   if (s.Step()) {
     BookmarkItem* item = new BookmarkItem;
     item->parent = -1;  // The top level folder has no parent.
@@ -516,10 +505,8 @@ void Firefox3Importer::GetWholeBookmarkFolder(sql::Connection* db,
          "WHERE b.type IN (1,2) AND b.parent = ? "
          "ORDER BY b.position";
   sql::Statement s(db->GetUniqueStatement(query));
-  if (!s)
-    return;
-
   s.BindInt(0, (*list)[position]->id);
+
   BookmarkList temp_list;
   while (s.Step()) {
     BookmarkItem* item = new BookmarkItem;
@@ -554,7 +541,8 @@ void Firefox3Importer::LoadFavicons(
     std::vector<history::ImportedFaviconUsage>* favicons) {
   const char* query = "SELECT url, data FROM moz_favicons WHERE id=?";
   sql::Statement s(db->GetUniqueStatement(query));
-  if (!s)
+
+  if (!s.is_valid())
     return;
 
   for (FaviconMap::const_iterator i = favicon_map.begin();
@@ -578,6 +566,6 @@ void Firefox3Importer::LoadFavicons(
       usage.urls = i->second;
       favicons->push_back(usage);
     }
-    s.Reset();
+    s.Reset(true);
   }
 }

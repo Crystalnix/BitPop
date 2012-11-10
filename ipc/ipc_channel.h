@@ -1,16 +1,29 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef IPC_IPC_CHANNEL_H_
 #define IPC_IPC_CHANNEL_H_
-#pragma once
+
+#include <string>
+
+#if defined(OS_POSIX)
+#include <sys/types.h>
+#endif
 
 #include "base/compiler_specific.h"
+#include "base/process.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message.h"
+#include "ipc/ipc_sender.h"
+
+// TODO(brettw) remove this and update files that depend on this being included
+// from here.
+#include "ipc/ipc_listener.h"
 
 namespace IPC {
+
+class Listener;
 
 //------------------------------------------------------------------------------
 // See
@@ -29,39 +42,11 @@ namespace IPC {
 // the channel with the mode set to one of the NAMED modes. NAMED modes are
 // currently used by automation and service processes.
 
-class IPC_EXPORT Channel : public Message::Sender {
+class IPC_EXPORT Channel : public Sender {
   // Security tests need access to the pipe handle.
   friend class ChannelTest;
 
  public:
-  // Implemented by consumers of a Channel to receive messages.
-  class IPC_EXPORT Listener {
-   public:
-    virtual ~Listener() {}
-
-    // Called when a message is received.  Returns true iff the message was
-    // handled.
-    virtual bool OnMessageReceived(const Message& message) = 0;
-
-    // Called when the channel is connected and we have received the internal
-    // Hello message from the peer.
-    virtual void OnChannelConnected(int32 peer_pid) {}
-
-    // Called when an error is detected that causes the channel to close.
-    // This method is not called when a channel is closed normally.
-    virtual void OnChannelError() {}
-
-#if defined(OS_POSIX)
-    // Called on the server side when a channel that listens for connections
-    // denies an attempt to connect.
-    virtual void OnChannelDenied() {}
-
-    // Called on the server side when a channel that listens for connections
-    // has an error that causes the listening channel to close.
-    virtual void OnChannelListenError() {}
-#endif  // OS_POSIX
-  };
-
   // Flags to test modes
   enum ModeFlags {
     MODE_NO_FLAG = 0x0,
@@ -92,6 +77,17 @@ class IPC_EXPORT Channel : public Message::Sender {
     MODE_OPEN_NAMED_SERVER = MODE_OPEN_ACCESS_FLAG | MODE_SERVER_FLAG |
                              MODE_NAMED_FLAG
 #endif
+  };
+
+  // The Hello message is internal to the Channel class.  It is sent
+  // by the peer when the channel is connected.  The message contains
+  // just the process id (pid).  The message has a special routing_id
+  // (MSG_ROUTING_NONE) and type (HELLO_MESSAGE_TYPE).
+  enum {
+    HELLO_MESSAGE_TYPE = kuint16max  // Maximum value of message type (uint16),
+                                     // to avoid conflicting with normal
+                                     // message types, which are enumeration
+                                     // constants starting from 0.
   };
 
   // The maximum message size in bytes. Attempting to receive a message of this
@@ -136,13 +132,17 @@ class IPC_EXPORT Channel : public Message::Sender {
   // Modify the Channel's listener.
   void set_listener(Listener* listener);
 
+  // Get the process ID for the connected peer.
+  // Returns base::kNullProcessId if the peer is not connected yet.
+  base::ProcessId peer_pid() const;
+
   // Send a message over the Channel to the listener on the other end.
   //
   // |message| must be allocated using operator new.  This object will be
   // deleted once the contents of the Message have been sent.
   virtual bool Send(Message* message) OVERRIDE;
 
-#if defined(OS_POSIX) && !defined(OS_NACL)
+#if defined(OS_POSIX)
   // On POSIX an IPC::Channel wraps a socketpair(), this method returns the
   // FD # for the client end of the socket.
   // This method may only be called on the server side of a channel.
@@ -179,6 +179,15 @@ class IPC_EXPORT Channel : public Message::Sender {
   // ID. Even if true, the server may have already accepted a connection.
   static bool IsNamedServerInitialized(const std::string& channel_id);
 
+  // Generates a channel ID that's non-predictable and unique.
+  static std::string GenerateUniqueRandomChannelID();
+
+  // Generates a channel ID that, if passed to the client as a shared secret,
+  // will validate that the client's authenticity. On platforms that do not
+  // require additional this is simply calls GenerateUniqueRandomChannelID().
+  // For portability the prefix should not include the \ character.
+  static std::string GenerateVerifiedChannelID(const std::string& prefix);
+
 #if defined(OS_LINUX)
   // Sandboxed processes live in a PID namespace, so when sending the IPC hello
   // message from client to server we need to send the PID from the global
@@ -197,17 +206,6 @@ class IPC_EXPORT Channel : public Message::Sender {
   // PIMPL to which all channel calls are delegated.
   class ChannelImpl;
   ChannelImpl *channel_impl_;
-
-  // The Hello message is internal to the Channel class.  It is sent
-  // by the peer when the channel is connected.  The message contains
-  // just the process id (pid).  The message has a special routing_id
-  // (MSG_ROUTING_NONE) and type (HELLO_MESSAGE_TYPE).
-  enum {
-    HELLO_MESSAGE_TYPE = kuint16max  // Maximum value of message type (uint16),
-                                     // to avoid conflicting with normal
-                                     // message types, which are enumeration
-                                     // constants starting from 0.
-  };
 };
 
 }  // namespace IPC

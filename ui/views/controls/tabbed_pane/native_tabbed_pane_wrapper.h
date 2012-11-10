@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_VIEWS_CONTROLS_TABBED_PANE_NATIVE_TABBED_PANE_WRAPPER_H_
 #define UI_VIEWS_CONTROLS_TABBED_PANE_NATIVE_TABBED_PANE_WRAPPER_H_
-#pragma once
 
 #include "base/string16.h"
 #include "ui/gfx/native_widget_types.h"
@@ -15,7 +14,6 @@ class Size;
 
 namespace views {
 
-class TabbedPane;
 class View;
 
 // An interface implemented by an object that provides a platform-native
@@ -69,9 +67,6 @@ class NativeTabbedPaneWrapper {
 
   // Returns a handle to the underlying native view for testing.
   virtual gfx::NativeView GetTestingHandle() const = 0;
-
-  // Creates an appropriate NativeTabbedPaneWrapper for the platform.
-  static NativeTabbedPaneWrapper* CreateNativeWrapper(TabbedPane* tabbed_pane);
 };
 
 }  // namespace views

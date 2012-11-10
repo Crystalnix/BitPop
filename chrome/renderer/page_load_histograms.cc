@@ -8,12 +8,12 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/time.h"
-#include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/url_pattern.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
 #include "chrome/renderer/prerender/prerender_helper.h"
-#include "chrome/renderer/renderer_histogram_snapshots.h"
+#include "content/public/common/content_constants.h"
 #include "content/public/renderer/document_state.h"
+#include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
@@ -30,16 +30,23 @@ using base::Time;
 using base::TimeDelta;
 using content::DocumentState;
 
-static const TimeDelta kPLTMin(TimeDelta::FromMilliseconds(10));
-static const TimeDelta kPLTMax(TimeDelta::FromMinutes(10));
-static const size_t kPLTCount(100);
+const size_t kPLTCount = 100;
+
+namespace {
+
+TimeDelta kPLTMin() {
+  return TimeDelta::FromMilliseconds(10);
+}
+TimeDelta kPLTMax() {
+  return TimeDelta::FromMinutes(10);
+}
 
 #define PLT_HISTOGRAM(name, sample) \
-    UMA_HISTOGRAM_CUSTOM_TIMES(name, sample, kPLTMin, kPLTMax, kPLTCount);
+    UMA_HISTOGRAM_CUSTOM_TIMES(name, sample, kPLTMin(), kPLTMax(), kPLTCount);
 
 // Returns the scheme type of the given URL if its type is one for which we
 // dump page load histograms. Otherwise returns NULL.
-static URLPattern::SchemeMasks GetSupportedSchemeType(const GURL& url) {
+URLPattern::SchemeMasks GetSupportedSchemeType(const GURL& url) {
   if (url.SchemeIs("http"))
     return URLPattern::SCHEME_HTTP;
   else if (url.SchemeIs("https"))
@@ -47,8 +54,8 @@ static URLPattern::SchemeMasks GetSupportedSchemeType(const GURL& url) {
   return static_cast<URLPattern::SchemeMasks>(0);
 }
 
-static void DumpPerformanceTiming(const WebPerformance& performance,
-                                  DocumentState* document_state) {
+void DumpPerformanceTiming(const WebPerformance& performance,
+                           DocumentState* document_state) {
   Time request = document_state->request_time();
 
   Time navigation_start = Time::FromDoubleT(performance.navigationStart());
@@ -109,13 +116,12 @@ enum AbandonType {
   ABANDON_TYPE_MAX = 0x10
 };
 
-PageLoadHistograms::PageLoadHistograms(
-    content::RenderView* render_view,
-    RendererHistogramSnapshots* histogram_snapshots)
+}  // namespace
+
+PageLoadHistograms::PageLoadHistograms(content::RenderView* render_view)
     : content::RenderViewObserver(render_view),
       cross_origin_access_count_(0),
-      same_origin_access_count_(0),
-      histogram_snapshots_(histogram_snapshots) {
+      same_origin_access_count_(0) {
 }
 
 void PageLoadHistograms::Dump(WebFrame* frame) {
@@ -238,15 +244,21 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   }
   PLT_HISTOGRAM("PLT.CommitToFinish", finish_all_loads - commit);
   if (!first_paint.is_null()) {
-    DCHECK(begin <= first_paint);
-    PLT_HISTOGRAM("PLT.BeginToFirstPaint", first_paint - begin);
+    // 'first_paint' can be before 'begin' for an unknown reason.
+    // See bug http://crbug.com/125273 for details.
+    if (begin <= first_paint) {
+      PLT_HISTOGRAM("PLT.BeginToFirstPaint", first_paint - begin);
+    }
     DCHECK(commit <= first_paint);
     PLT_HISTOGRAM("PLT.CommitToFirstPaint", first_paint - commit);
   }
   if (!first_paint_after_load.is_null()) {
-    DCHECK(begin <= first_paint_after_load);
-    PLT_HISTOGRAM("PLT.BeginToFirstPaintAfterLoad",
-      first_paint_after_load - begin);
+    // 'first_paint_after_load' can be before 'begin' for an unknown reason.
+    // See bug http://crbug.com/125273 for details.
+    if (begin <= first_paint_after_load) {
+      PLT_HISTOGRAM("PLT.BeginToFirstPaintAfterLoad",
+          first_paint_after_load - begin);
+    }
     DCHECK(commit <= first_paint_after_load);
     PLT_HISTOGRAM("PLT.CommitToFirstPaintAfterLoad",
         first_paint_after_load - commit);
@@ -574,60 +586,6 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
         break;
       default:
         break;
-    }
-  }
-
-  // Histograms to determine the PLT impact of the cache's deleted list size.
-  static const bool use_cache_histogram =
-      base::FieldTrialList::TrialExists("CacheListSize");
-  if (use_cache_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        base::FieldTrial::MakeName("PLT.Abandoned", "CacheListSize"),
-        abandoned_page ? 1 : 0, 2);
-    switch (load_type) {
-      case DocumentState::RELOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_Reload", "CacheListSize"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::HISTORY_LOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_HistoryLoad", "CacheListSize"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_NormalLoad", "CacheListSize"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadNormal", "CacheListSize"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadReload", "CacheListSize"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadStaleOk", "CacheListSize"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_ONLY:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadCacheOnly", "CacheListSize"),
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
-    if (DocumentState::RELOAD <= load_type &&
-        DocumentState::LINK_LOAD_CACHE_ONLY >= load_type) {
-      PLT_HISTOGRAM(base::FieldTrial::MakeName(
-          "PLT.BeginToFinish", "CacheListSize"),
-           begin_to_finish_all_loads);
     }
   }
 
@@ -981,8 +939,8 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   // TODO(jar) BUG=33233: This needs to be moved to a PostDelayedTask, and it
   // should post when the onload is complete, so that it doesn't interfere with
   // the next load.
-  histogram_snapshots_->SendHistograms(
-      chrome::kHistogramSynchronizerReservedSequenceNumber);
+  content::RenderThread::Get()->UpdateHistograms(
+      content::kHistogramSynchronizerReservedSequenceNumber);
 }
 
 void PageLoadHistograms::ResetCrossFramePropertyAccess() {

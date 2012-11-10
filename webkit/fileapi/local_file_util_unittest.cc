@@ -5,6 +5,7 @@
 #include <string>
 
 #include "base/file_path.h"
+#include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "base/scoped_temp_dir.h"
@@ -14,8 +15,8 @@
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_file_util.h"
 #include "webkit/fileapi/file_system_operation_context.h"
-#include "webkit/fileapi/file_system_test_helper.h"
 #include "webkit/fileapi/file_system_types.h"
+#include "webkit/fileapi/local_file_system_test_helper.h"
 #include "webkit/fileapi/local_file_util.h"
 #include "webkit/fileapi/native_file_util.h"
 
@@ -25,7 +26,7 @@ namespace fileapi {
 class LocalFileUtilTest : public testing::Test {
  public:
   LocalFileUtilTest()
-      : local_file_util_(new LocalFileUtil(new NativeFileUtil())) {
+      : local_file_util_(new LocalFileUtil()) {
   }
 
   void SetUp() {
@@ -47,8 +48,8 @@ class LocalFileUtilTest : public testing::Test {
     return local_file_util_.get();
   }
 
-  static FilePath Path(const std::string& file_name) {
-    return FilePath().AppendASCII(file_name);
+  FileSystemURL Path(const std::string& file_name) {
+    return test_helper_.CreateURLFromUTF8(file_name);
   }
 
   FilePath LocalPath(const char *file_name) {
@@ -90,10 +91,15 @@ class LocalFileUtilTest : public testing::Test {
         Path(file_name), created);
   }
 
+  const LocalFileSystemTestOriginHelper& test_helper() const {
+    return test_helper_;
+  }
+
  private:
   scoped_ptr<LocalFileUtil> local_file_util_;
   ScopedTempDir data_dir_;
-  FileSystemTestOriginHelper test_helper_;
+  MessageLoop message_loop_;
+  LocalFileSystemTestOriginHelper test_helper_;
 
   DISALLOW_COPY_AND_ASSIGN(LocalFileUtilTest);
 };
@@ -150,8 +156,8 @@ TEST_F(LocalFileUtilTest, CopyFile) {
   bool created;
   ASSERT_EQ(base::PLATFORM_FILE_OK, EnsureFileExists(from_file, &created));
   ASSERT_TRUE(created);
-  scoped_ptr<FileSystemOperationContext> context;
 
+  scoped_ptr<FileSystemOperationContext> context;
   context.reset(NewContext());
   ASSERT_EQ(base::PLATFORM_FILE_OK,
       FileUtil()->Truncate(context.get(), Path(from_file), 1020));
@@ -161,11 +167,13 @@ TEST_F(LocalFileUtilTest, CopyFile) {
 
   context.reset(NewContext());
   ASSERT_EQ(base::PLATFORM_FILE_OK,
-      FileUtil()->Copy(context.get(), Path(from_file), Path(to_file1)));
+            test_helper().SameFileUtilCopy(context.get(),
+                                           Path(from_file), Path(to_file1)));
 
   context.reset(NewContext());
   ASSERT_EQ(base::PLATFORM_FILE_OK,
-      FileUtil()->Copy(context.get(), Path(from_file), Path(to_file2)));
+            test_helper().SameFileUtilCopy(context.get(),
+                                           Path(from_file), Path(to_file2)));
 
   EXPECT_TRUE(FileExists(from_file));
   EXPECT_EQ(1020, GetSize(from_file));
@@ -200,7 +208,8 @@ TEST_F(LocalFileUtilTest, CopyDirectory) {
 
   context.reset(NewContext());
   ASSERT_EQ(base::PLATFORM_FILE_OK,
-      FileUtil()->Copy(context.get(), Path(from_dir), Path(to_dir)));
+            test_helper().SameFileUtilCopy(context.get(),
+                                           Path(from_dir), Path(to_dir)));
 
   EXPECT_TRUE(DirectoryExists(from_dir));
   EXPECT_TRUE(FileExists(from_file));
@@ -227,7 +236,8 @@ TEST_F(LocalFileUtilTest, MoveFile) {
 
   context.reset(NewContext());
   ASSERT_EQ(base::PLATFORM_FILE_OK,
-      FileUtil()->Move(context.get(), Path(from_file), Path(to_file)));
+            test_helper().SameFileUtilMove(context.get(),
+                                           Path(from_file), Path(to_file)));
 
   EXPECT_FALSE(FileExists(from_file));
   EXPECT_TRUE(FileExists(to_file));
@@ -259,7 +269,8 @@ TEST_F(LocalFileUtilTest, MoveDirectory) {
 
   context.reset(NewContext());
   ASSERT_EQ(base::PLATFORM_FILE_OK,
-      FileUtil()->Move(context.get(), Path(from_dir), Path(to_dir)));
+            test_helper().SameFileUtilMove(context.get(),
+                                           Path(from_dir), Path(to_dir)));
 
   EXPECT_FALSE(DirectoryExists(from_dir));
   EXPECT_TRUE(DirectoryExists(to_dir));

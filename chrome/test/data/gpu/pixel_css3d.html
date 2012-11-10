@@ -24,7 +24,18 @@
 }
 </style>
 <script>
-var g_swapsBeforeAck = 5;
+var g_swapsBeforeAck = 15;
+var g_targetWidth, g_targetHeight;
+
+function onresized()
+{
+  if (g_targetWidth != window.outerWidth ||
+      g_targetHeight != window.outerHeight)
+    return;
+
+  main();
+}
+
 
 function main()
 {
@@ -35,16 +46,34 @@ function waitForFinish()
 {
   if (g_swapsBeforeAck == 0) {
     domAutomationController.setAutomationId(1);
-    domAutomationController.send("ok");
+    domAutomationController.send("resized");
   } else {
     g_swapsBeforeAck--;
+    document.getElementById('blue_box').style.zIndex = g_swapsBeforeAck + 1;
     window.webkitRequestAnimationFrame(waitForFinish);
   }
 }
+
+function notifyLoadFinished()
+{
+  domAutomationController.setAutomationId(1);
+  domAutomationController.send("ok");
+}
+
+function preCallResizeInChromium(targetWidth, targetHeight)
+{
+  g_targetWidth = targetWidth;
+  g_targetHeight = targetHeight;
+  window.onresize = onresized;
+
+  // Call main() on a timeout in case the window did not resize for whatever
+  // reason.
+  setTimeout(main, 10000);
+}
 </script>
 </head>
-<body onload="main()">
-<div style="position:relative; width:200px; height:200px; background-color:black">
+<body onload="notifyLoadFinished()">
+<div style="position:relative; width:200px; height:200px; background-color:black; zindex-0">
 </div>
 <div id="container" style="position:absolute; top:0px; left:0px">
   <div id="blue_box"></div>

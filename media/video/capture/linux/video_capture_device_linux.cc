@@ -50,18 +50,18 @@ static const int32 kV4l2Fmts[] = {
   V4L2_PIX_FMT_YUYV
 };
 
-static VideoCaptureDevice::Format V4l2ColorToVideoCaptureColorFormat(
+static VideoCaptureCapability::Format V4l2ColorToVideoCaptureColorFormat(
     int32 v4l2_fourcc) {
-  VideoCaptureDevice::Format result = VideoCaptureDevice::kColorUnknown;
+  VideoCaptureCapability::Format result = VideoCaptureCapability::kColorUnknown;
   switch (v4l2_fourcc) {
     case V4L2_PIX_FMT_YUV420:
-      result = VideoCaptureDevice::kI420;
+      result = VideoCaptureCapability::kI420;
       break;
     case V4L2_PIX_FMT_YUYV:
-      result = VideoCaptureDevice::kYUY2;
+      result = VideoCaptureCapability::kYUY2;
       break;
   }
-  DCHECK_NE(result, VideoCaptureDevice::kColorUnknown);
+  DCHECK_NE(result, VideoCaptureCapability::kColorUnknown);
   return result;
 }
 
@@ -81,14 +81,15 @@ void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
 
     Name name;
     name.unique_id = path.value() + info.filename;
-    if ((fd = open(name.unique_id.c_str() , O_RDONLY)) <= 0) {
+    if ((fd = open(name.unique_id.c_str() , O_RDONLY)) < 0) {
       // Failed to open this device.
       continue;
     }
-    // Test if this is a V4L2 device.
+    // Test if this is a V4L2 capture device.
     v4l2_capability cap;
     if ((ioctl(fd, VIDIOC_QUERYCAP, &cap) == 0) &&
-        (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
+        (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE) &&
+        !(cap.capabilities & V4L2_CAP_VIDEO_OUTPUT)) {
       // This is a V4L2 video capture device
       name.device_name = StringPrintf("%s", cap.card);
       device_names->push_back(name);
@@ -106,7 +107,7 @@ VideoCaptureDevice* VideoCaptureDevice::Create(const Name& device_name) {
   // allocates the camera.
   int fd = open(device_name.unique_id.c_str(), O_RDONLY);
   if (fd < 0) {
-    DPLOG(ERROR) << "Cannot open device";
+    DVLOG(1) << "Cannot open device";
     delete self;
     return NULL;
   }
@@ -197,15 +198,17 @@ void VideoCaptureDeviceLinux::OnAllocate(int width,
 
   observer_ = observer;
 
-  if ((device_fd_ = open(device_name_.unique_id.c_str(), O_RDONLY)) < 0) {
+  // Need to open camera with O_RDWR after Linux kernel 3.3.
+  if ((device_fd_ = open(device_name_.unique_id.c_str(), O_RDWR)) < 0) {
     SetErrorState("Failed to open V4L2 device driver.");
     return;
   }
 
-  // Test if this is a V4L2 device.
+  // Test if this is a V4L2 capture device.
   v4l2_capability cap;
   if (!((ioctl(device_fd_, VIDIOC_QUERYCAP, &cap) == 0) &&
-      (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE))) {
+      (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE) &&
+      !(cap.capabilities & V4L2_CAP_VIDEO_OUTPUT))) {
     // This is not a V4L2 video capture device.
     close(device_fd_);
     device_fd_ = -1;
@@ -248,12 +251,14 @@ void VideoCaptureDeviceLinux::OnAllocate(int width,
   }
 
   // Store our current width and height.
-  Capability current_settings;
+  VideoCaptureCapability current_settings;
   current_settings.color = V4l2ColorToVideoCaptureColorFormat(
       video_fmt.fmt.pix.pixelformat);
   current_settings.width  = video_fmt.fmt.pix.width;
   current_settings.height = video_fmt.fmt.pix.height;
   current_settings.frame_rate = frame_rate;
+  current_settings.expected_capture_delay = 0;
+  current_settings.interlaced = false;
 
   state_ = kAllocated;
   // Report the resulting frame size to the observer.
@@ -449,7 +454,7 @@ void VideoCaptureDeviceLinux::DeAllocateVideoBuffers() {
 }
 
 void VideoCaptureDeviceLinux::SetErrorState(const std::string& reason) {
-  DLOG(ERROR) << reason;
+  DVLOG(1) << reason;
   state_ = kError;
   observer_->OnError();
 }

@@ -7,21 +7,13 @@
 // There will be one instance of MediaStreamDeviceSettings handling all
 // requests.
 
-// This version always accepts the first device in the list(s), but this will
-// soon be changed to ask the user and/or Chrome settings.
-
 // Expected call flow:
-// 1. RequestCaptureDeviceUsage() to request usage of capture device.
-// 2. SettingsRequester::GetDevices() is called to get a list of available
-//    devices.
-// 3. AvailableDevices() is called with a list of currently available devices.
-// 4. TODO(mflodman) Pick device and get user confirmation.
-// Temporary 4. Choose first device of each requested media type.
-// 5. Confirm by calling SettingsRequester::DevicesAccepted().
-// Repeat step 1 - 5 for new device requests.
-
-// Note that this is still in a development phase and the class will be modified
-// to include real UI interaction.
+// 1. RequestCaptureDeviceUsage() is called to create a new request for capture
+//    device usage.
+// 2. AvailableDevices() is called with a list of currently available devices.
+// 3. Pick device and get user confirmation.
+// 4. Confirm by calling SettingsRequester::DevicesAccepted().
+// Repeat step 1 - 4 for new device requests.
 
 #ifndef CONTENT_BROWSER_RENDERER_HOST_MEDIA_MEDIA_STREAM_DEVICE_SETTINGS_H_
 #define CONTENT_BROWSER_RENDERER_HOST_MEDIA_MEDIA_STREAM_DEVICE_SETTINGS_H_
@@ -30,31 +22,44 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/memory/weak_ptr.h"
 #include "content/browser/renderer_host/media/media_stream_provider.h"
 
 namespace media_stream {
 
 class SettingsRequester;
-struct StreamOptions;
+struct MediaStreamDeviceSettingsRequest;
 
 // MediaStreamDeviceSettings is responsible for getting user permission to use
 // a media capture device as well as selecting what device to use.
-class MediaStreamDeviceSettings {
+class CONTENT_EXPORT MediaStreamDeviceSettings {
  public:
   explicit MediaStreamDeviceSettings(SettingsRequester* requester);
-  ~MediaStreamDeviceSettings();
+  virtual ~MediaStreamDeviceSettings();
 
   // Called when a new request of capture device usage is made.
   void RequestCaptureDeviceUsage(const std::string& label,
                                  int render_process_id,
                                  int render_view_id,
                                  const StreamOptions& stream_components,
-                                 const std::string& security_origin);
+                                 const GURL& security_origin);
+
+  // Called to remove a pending request of capture device usage when the user
+  // has no action for the media stream InfoBar.
+  void RemovePendingCaptureRequest(const std::string& label);
 
   // Called to pass in an array of available devices for a request represented
   // by |label|. There could be multiple calls for a request.
   void AvailableDevices(const std::string& label, MediaStreamType stream_type,
                         const StreamDeviceInfoArray& devices);
+
+  // Called by the InfoBar when the user grants/denies access to some devices
+  // to the webpage. This is placed here, so the request can be cleared from the
+  // list of pending requests, instead of letting the InfoBar itself respond to
+  // the requester. An empty list of devices means that access has been denied.
+  // This method must be called on the IO thread.
+  void PostResponse(const std::string& label,
+                    const content::MediaStreamDevices& devices);
 
   // Used for testing only. This function is called to use faked UI, which is
   // needed for server based tests. The first non-opened device(s) will be
@@ -62,14 +67,30 @@ class MediaStreamDeviceSettings {
   void UseFakeUI();
 
  private:
-  struct SettingsRequest;
+  typedef std::map<std::string, MediaStreamDeviceSettingsRequest*>
+      SettingsRequests;
+
+  // Returns true if the UI is already processing a request for this render
+  // view.
+  bool IsUIBusy(int render_view_id, int render_process_id);
+
+  // Process the next pending request and bring it up to the UI on the given
+  // page for user approval.
+  void ProcessNextRequestForView(int render_view_id, int render_process_id);
+
+  // Posts a request to be approved/denied by UI.
+  void PostRequestToUI(const std::string& label);
+
+  // Posts a request to fake UI which is used for testing purpose.
+  void PostRequestToFakeUI(const std::string& label);
 
   SettingsRequester* requester_;
-
-  typedef std::map<std::string, SettingsRequest*> SettingsRequests;
   SettingsRequests requests_;
 
+  // See comment above for method UseFakeUI. Used for automated testing.
   bool use_fake_ui_;
+
+  base::WeakPtrFactory<MediaStreamDeviceSettings> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaStreamDeviceSettings);
 };

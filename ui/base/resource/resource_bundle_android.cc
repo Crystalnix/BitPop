@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,44 +11,26 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/stringprintf.h"
-
-// We use a trick where we bundle the resource files in the apk
-// as fake shared libraries. We should stop doing this as soon as either the
-// resource files come pre-installed on the platform or there is a supported
-// way to include additional files in the APK that get unpacked at install
-// time.
+#include "ui/base/ui_base_paths.h"
+#include "ui/base/resource/resource_handle.h"
 
 namespace ui {
 
-// static
-FilePath ResourceBundle::GetResourcesFilePath() {
-  FilePath data_path;
-  PathService::Get(base::DIR_MODULE, &data_path);
-  DCHECK(!data_path.empty());
-  return data_path.Append("lib_chrome.pak.so");
+void ResourceBundle::LoadCommonResources() {
+  FilePath path;
+  PathService::Get(ui::DIR_RESOURCE_PAKS_ANDROID, &path);
+  AddDataPackFromPath(path.AppendASCII("chrome.pak"),
+                      SCALE_FACTOR_100P);
+  AddDataPackFromPath(path.AppendASCII("theme_resources_100_percent.pak"),
+                      SCALE_FACTOR_100P);
+  AddDataPackFromPath(path.AppendASCII("ui_resources_100_percent.pak"),
+                      SCALE_FACTOR_100P);
 }
 
-// static
-FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale) {
-  FilePath locale_path;
-  PathService::Get(base::DIR_MODULE, &locale_path);
-  DCHECK(!locale_path.empty());
-  const std::string locale_name =
-      StringPrintf("lib_%s.pak.so", app_locale.c_str());
-  locale_path = locale_path.Append(locale_name);
-  if (!file_util::PathExists(locale_path))
-    return FilePath();
-  return locale_path;
-}
-
-gfx::Image& ResourceBundle::GetNativeImageNamed(int resource_id) {
+gfx::Image& ResourceBundle::GetNativeImageNamed(int resource_id, ImageRTL rtl) {
+  // Flipped image is not used on Android.
+  DCHECK_EQ(rtl, RTL_DISABLED);
   return GetImageNamed(resource_id);
-}
-
-// static
-FilePath ResourceBundle::GetLargeIconResourcesFilePath() {
-  // Not supported.
-  return FilePath();
 }
 
 }

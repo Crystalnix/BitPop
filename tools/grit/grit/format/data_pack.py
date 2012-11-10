@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,11 +11,14 @@ import exceptions
 import os
 import struct
 import sys
+if __name__ == '__main__':
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../..'))
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from grit import util
 from grit.format import interface
 from grit.node import include
 from grit.node import message
+from grit.node import structure
 from grit.node import misc
 
 
@@ -34,17 +37,15 @@ class DataPackContents:
 
 class DataPack(interface.ItemFormatter):
   '''Writes out the data pack file format (platform agnostic resource file).'''
-  def Format(self, item, lang='en', begin_item=True, output_dir='.'):
-    if not begin_item:
-      return ''
-
+  def Format(self, item, lang='en', output_dir='.'):
     assert isinstance(item, misc.ReleaseNode)
 
     nodes = DataPack.GetDataNodes(item)
     data = {}
     for node in nodes:
       id, value = node.GetDataPackPair(lang, UTF8)
-      data[id] = value
+      if value is not None:
+        data[id] = value
     return DataPack.WriteDataPackToString(data, UTF8)
 
   @staticmethod
@@ -54,7 +55,8 @@ class DataPack(interface.ItemFormatter):
     if (isinstance(item, misc.IfNode) and not item.IsConditionSatisfied()):
       return nodes
     if (isinstance(item, include.IncludeNode) or
-        isinstance(item, message.MessageNode)):
+        isinstance(item, message.MessageNode) or
+        isinstance(item, structure.StructureNode)):
       # Include this node if it wasn't marked as skipped by a whitelist.
       if not item.WhitelistMarkedAsSkip():
         return [item]
@@ -66,7 +68,7 @@ class DataPack(interface.ItemFormatter):
   @staticmethod
   def ReadDataPack(input_file):
     """Reads a data pack file and returns a dictionary."""
-    data = open(input_file, "rb").read()
+    data = util.ReadFile(input_file, util.BINARY)
     original_data = data
 
     # Read the header.
@@ -122,9 +124,9 @@ class DataPack(interface.ItemFormatter):
   @staticmethod
   def WriteDataPack(resources, output_file, encoding):
     """Write a map of id=>data into output_file as a data pack."""
-    file = open(output_file, "wb")
     content = DataPack.WriteDataPackToString(resources, encoding)
-    file.write(content)
+    with open(output_file, "wb") as file:
+      file.write(content)
 
   @staticmethod
   def RePack(output_file, input_files):
@@ -157,12 +159,20 @@ class DataPack(interface.ItemFormatter):
     DataPack.WriteDataPack(resources, output_file, encoding)
 
 def main():
-  # Just write a simple file.
-  data = { 1: "", 4: "this is id 4", 6: "this is id 6", 10: "" }
-  DataPack.WriteDataPack(data, "datapack1.pak", UTF8)
-  data2 = { 1000: "test", 5: "five" }
-  DataPack.WriteDataPack(data2, "datapack2.pak", UTF8)
-  print "wrote datapack1 and datapack2 to current directory."
+  if len(sys.argv) > 1:
+    # When an argument is given, read and explode the file to text
+    # format, for easier diffing.
+    data = DataPack.ReadDataPack(sys.argv[1])
+    print data.encoding
+    for (resource_id, text) in data.resources.iteritems():
+      print "%s: %s" % (resource_id, text)
+  else:
+    # Just write a simple file.
+    data = { 1: "", 4: "this is id 4", 6: "this is id 6", 10: "" }
+    DataPack.WriteDataPack(data, "datapack1.pak", UTF8)
+    data2 = { 1000: "test", 5: "five" }
+    DataPack.WriteDataPack(data2, "datapack2.pak", UTF8)
+    print "wrote datapack1 and datapack2 to current directory."
 
 if __name__ == '__main__':
   main()

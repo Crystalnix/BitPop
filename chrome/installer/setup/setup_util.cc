@@ -1,10 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // This file declares util functions for setup project.
 
 #include "chrome/installer/setup/setup_util.h"
+
+#include <windows.h>
 
 #include "base/file_util.h"
 #include "base/logging.h"
@@ -61,7 +63,7 @@ Version* GetMaxVersionFromArchiveDir(const FilePath& chrome_path) {
   // TODO(tommi): The version directory really should match the version of
   // setup.exe.  To begin with, we should at least DCHECK that that's true.
 
-  scoped_ptr<Version> max_version(Version::GetVersionFromString("0.0.0.0"));
+  scoped_ptr<Version> max_version(new Version("0.0.0.0"));
   bool version_found = false;
 
   while (!version_enum.Next().empty()) {
@@ -70,8 +72,8 @@ Version* GetMaxVersionFromArchiveDir(const FilePath& chrome_path) {
     VLOG(1) << "directory found: " << find_data.cFileName;
 
     scoped_ptr<Version> found_version(
-        Version::GetVersionFromString(WideToASCII(find_data.cFileName)));
-    if (found_version.get() != NULL &&
+        new Version(WideToASCII(find_data.cFileName)));
+    if (found_version->IsValid() &&
         found_version->CompareTo(*max_version.get()) > 0) {
       max_version.reset(found_version.release());
       version_found = true;
@@ -138,74 +140,46 @@ bool DeleteFileFromTempProcess(const FilePath& path,
   return ok != FALSE;
 }
 
-// Open |path| with minimal access to obtain information about it, returning
-// true and populating |handle| on success.
-// static
-bool ProgramCompare::OpenForInfo(const FilePath& path,
-                                 base::win::ScopedHandle* handle) {
-  DCHECK(handle);
-  handle->Set(base::CreatePlatformFile(path, base::PLATFORM_FILE_OPEN, NULL,
-                                       NULL));
-  return handle->IsValid();
+string16 GetActiveSetupPath(BrowserDistribution* dist) {
+  static const wchar_t kInstalledComponentsPath[] =
+      L"Software\\Microsoft\\Active Setup\\Installed Components\\";
+  return kInstalledComponentsPath + dist->GetAppGuid();
 }
 
-// Populate |info| for |handle|, returning true on success.
-// static
-bool ProgramCompare::GetInfo(const base::win::ScopedHandle& handle,
-                             BY_HANDLE_FILE_INFORMATION* info) {
-  DCHECK(handle.IsValid());
-  return GetFileInformationByHandle(
-      const_cast<base::win::ScopedHandle&>(handle), info) != 0;
-}
+ScopedTokenPrivilege::ScopedTokenPrivilege(const wchar_t* privilege_name)
+    : is_enabled_(false) {
+  if (!::OpenProcessToken(::GetCurrentProcess(),
+      TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, token_.Receive())) {
+    return;
+  }
 
-ProgramCompare::ProgramCompare(const FilePath& path_to_match)
-    : path_to_match_(path_to_match),
-      file_handle_(base::kInvalidPlatformFileValue),
-      file_info_() {
-  DCHECK(!path_to_match_.empty());
-  if (!OpenForInfo(path_to_match_, &file_handle_)) {
-    PLOG(WARNING) << "Failed opening " << path_to_match_.value()
-                  << "; falling back to path string comparisons.";
-  } else if (!GetInfo(file_handle_, &file_info_)) {
-    PLOG(WARNING) << "Failed getting information for "
-                  << path_to_match_.value()
-                  << "; falling back to path string comparisons.";
-    file_handle_.Close();
+  LUID privilege_luid;
+  if (!::LookupPrivilegeValue(NULL, privilege_name, &privilege_luid)) {
+    token_.Close();
+    return;
+  }
+
+  // Adjust the token's privileges to enable |privilege_name|. If this privilege
+  // was already enabled, |previous_privileges_|.PrivilegeCount will be set to 0
+  // and we then know not to disable this privilege upon destruction.
+  TOKEN_PRIVILEGES tp;
+  tp.PrivilegeCount = 1;
+  tp.Privileges[0].Luid = privilege_luid;
+  tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+  DWORD return_length;
+  if (!::AdjustTokenPrivileges(token_, FALSE, &tp, sizeof(TOKEN_PRIVILEGES),
+                               &previous_privileges_, &return_length)) {
+    token_.Close();
+  } else {
+    is_enabled_ = true;
   }
 }
 
-ProgramCompare::~ProgramCompare() {
-}
-
-bool ProgramCompare::Evaluate(const std::wstring& value) const {
-  // Suss out the exe portion of the value, which is expected to be a command
-  // line kinda (or exactly) like:
-  // "c:\foo\bar\chrome.exe" -- "%1"
-  FilePath program(CommandLine::FromString(value).GetProgram());
-  if (program.empty()) {
-    LOG(WARNING) << "Failed to parse an executable name from command line: \""
-                 << value << "\"";
-    return false;
+ScopedTokenPrivilege::~ScopedTokenPrivilege() {
+  if (is_enabled_ && previous_privileges_.PrivilegeCount != 0) {
+    ::AdjustTokenPrivileges(token_, FALSE, &previous_privileges_,
+                            sizeof(TOKEN_PRIVILEGES), NULL, NULL);
   }
-
-  // Try the simple thing first: do the paths happen to match?
-  if (FilePath::CompareEqualIgnoreCase(path_to_match_.value(), program.value()))
-    return true;
-
-  // If the paths don't match and we couldn't open the expected file, we've done
-  // our best.
-  if (!file_handle_.IsValid())
-    return false;
-
-  // Open the program and see if it references the expected file.
-  base::win::ScopedHandle handle;
-  BY_HANDLE_FILE_INFORMATION info = {};
-
-  return (OpenForInfo(program, &handle) &&
-          GetInfo(handle, &info) &&
-          info.dwVolumeSerialNumber == file_info_.dwVolumeSerialNumber &&
-          info.nFileIndexHigh == file_info_.nFileIndexHigh &&
-          info.nFileIndexLow == file_info_.nFileIndexLow);
 }
 
 }  // namespace installer

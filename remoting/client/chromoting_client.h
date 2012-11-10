@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,22 +10,32 @@
 #include <list>
 
 #include "base/callback.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/time.h"
-#include "remoting/base/scoped_thread_proxy.h"
 #include "remoting/client/client_config.h"
 #include "remoting/client/chromoting_stats.h"
-#include "remoting/client/chromoting_view.h"
 #include "remoting/protocol/client_stub.h"
+#include "remoting/protocol/clipboard_stub.h"
 #include "remoting/protocol/connection_to_host.h"
 #include "remoting/protocol/input_stub.h"
 #include "remoting/protocol/video_stub.h"
 #include "remoting/jingle_glue/xmpp_proxy.h"
 
-class MessageLoop;
+namespace base {
+class SingleThreadTaskRunner;
+}  // namespace base
 
 namespace remoting {
 
+namespace protocol {
+class TransportFactory;
+}  // namespace protocol
+
+class AudioDecodeScheduler;
+class AudioPlayer;
 class ClientContext;
+class ClientUserInterface;
 class RectangleUpdateDecoder;
 
 // TODO(sergeyu): Move VideoStub implementation to RectangleUpdateDecoder.
@@ -35,42 +45,49 @@ class ChromotingClient : public protocol::ConnectionToHost::HostEventCallback,
  public:
   // Objects passed in are not owned by this class.
   ChromotingClient(const ClientConfig& config,
-                   ClientContext* context,
+                   ClientContext* client_context,
                    protocol::ConnectionToHost* connection,
-                   ChromotingView* view,
+                   ClientUserInterface* user_interface,
                    RectangleUpdateDecoder* rectangle_decoder,
-                   const base::Closure& client_done);
+                   scoped_ptr<AudioPlayer> audio_player);
+
   virtual ~ChromotingClient();
 
-  void Start(scoped_refptr<XmppProxy> xmpp_proxy);
+  // Start/stop the client. Must be called on the main thread.
+  void Start(scoped_refptr<XmppProxy> xmpp_proxy,
+             scoped_ptr<protocol::TransportFactory> transport_factory);
   void Stop(const base::Closure& shutdown_task);
-  void ClientDone();
 
   // Return the stats recorded by this client.
   ChromotingStats* GetStats();
 
-  // Signals that the associated view may need updating.
-  virtual void Repaint();
+  // ClipboardStub implementation for receiving clipboard data from host.
+  virtual void InjectClipboardEvent(const protocol::ClipboardEvent& event)
+      OVERRIDE;
+
+  // CursorShapeStub implementation for receiving cursor shape updates.
+  virtual void SetCursorShape(const protocol::CursorShapeInfo& cursor_shape)
+      OVERRIDE;
 
   // ConnectionToHost::HostEventCallback implementation.
   virtual void OnConnectionState(
       protocol::ConnectionToHost::State state,
-      protocol::ConnectionToHost::Error error) OVERRIDE;
+      protocol::ErrorCode error) OVERRIDE;
+  virtual void OnConnectionReady(bool ready) OVERRIDE;
 
   // VideoStub implementation.
-  virtual void ProcessVideoPacket(const VideoPacket* packet,
+  virtual void ProcessVideoPacket(scoped_ptr<VideoPacket> packet,
                                   const base::Closure& done) OVERRIDE;
-  virtual int GetPendingPackets() OVERRIDE;
+  virtual int GetPendingVideoPackets() OVERRIDE;
 
  private:
   struct QueuedVideoPacket {
-    QueuedVideoPacket(const VideoPacket* packet, const base::Closure& done);
+    QueuedVideoPacket(scoped_ptr<VideoPacket> packet,
+                      const base::Closure& done);
     ~QueuedVideoPacket();
-    const VideoPacket* packet;
+    VideoPacket* packet;
     base::Closure done;
   };
-
-  base::MessageLoopProxy* message_loop();
 
   // Initializes connection.
   void Initialize();
@@ -88,10 +105,13 @@ class ChromotingClient : public protocol::ConnectionToHost::HostEventCallback,
 
   // The following are not owned by this class.
   ClientConfig config_;
-  ClientContext* context_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   protocol::ConnectionToHost* connection_;
-  ChromotingView* view_;
+  ClientUserInterface* user_interface_;
+  // TODO(kxing): Make ChromotingClient own RectangleUpdateDecoder.
   RectangleUpdateDecoder* rectangle_decoder_;
+
+  scoped_ptr<AudioDecodeScheduler> audio_decode_scheduler_;
 
   // If non-NULL, this is called when the client is done.
   base::Closure client_done_;
@@ -112,7 +132,9 @@ class ChromotingClient : public protocol::ConnectionToHost::HostEventCallback,
   // Keep track of the last sequence number bounced back from the host.
   int64 last_sequence_number_;
 
-  ScopedThreadProxy thread_proxy_;
+  // WeakPtr used to avoid tasks accessing the client after it is deleted.
+  base::WeakPtrFactory<ChromotingClient> weak_factory_;
+  base::WeakPtr<ChromotingClient> weak_ptr_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromotingClient);
 };

@@ -1,18 +1,23 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_RENDERER_HOST_BACKING_STORE_MAC_H_
 #define CONTENT_BROWSER_RENDERER_HOST_BACKING_STORE_MAC_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "content/browser/renderer_host/backing_store.h"
 
+namespace content {
+
 class BackingStoreMac : public BackingStore {
  public:
-  BackingStoreMac(RenderWidgetHost* widget, const gfx::Size& size);
+  // |size| is in view units, |device_scale_factor| is the backingScaleFactor.
+  // The pixel size of the backing store is size.Scale(device_scale_factor).
+  BackingStoreMac(RenderWidgetHost* widget,
+                  const gfx::Size& size,
+                  float device_scale_factor);
   virtual ~BackingStoreMac();
 
   // A CGLayer that stores the contents of the backing store, cached in GPU
@@ -23,12 +28,17 @@ class BackingStoreMac : public BackingStore {
   // corresponding Cocoa view has not been inserted into an NSWindow yet.
   CGContextRef cg_bitmap() { return cg_bitmap_; }
 
+  // Called when the view's backing scale factor changes.
+  void ScaleFactorChanged(float device_scale_factor);
+
   // BackingStore implementation.
+  virtual size_t MemorySize() OVERRIDE;
   virtual void PaintToBackingStore(
-      content::RenderProcessHost* process,
+      RenderProcessHost* process,
       TransportDIB::Id bitmap,
       const gfx::Rect& bitmap_rect,
       const std::vector<gfx::Rect>& copy_rects,
+      float scale_factor,
       const base::Closure& completion_callback,
       bool* scheduled_completion_callback) OVERRIDE;
   virtual bool CopyFromBackingStore(const gfx::Rect& rect,
@@ -36,6 +46,9 @@ class BackingStoreMac : public BackingStore {
   virtual void ScrollBackingStore(int dx, int dy,
                                   const gfx::Rect& clip_rect,
                                   const gfx::Size& view_size) OVERRIDE;
+
+  void CopyFromBackingStoreToCGContext(const CGRect& dest_rect,
+                                       CGContextRef context);
 
  private:
   // Creates a CGLayer associated with its owner view's window's graphics
@@ -52,7 +65,12 @@ class BackingStoreMac : public BackingStore {
   base::mac::ScopedCFTypeRef<CGContextRef> cg_bitmap_;
   base::mac::ScopedCFTypeRef<CGLayerRef> cg_layer_;
 
+  // Number of physical pixels per view unit. This is 1 or 2 in practice.
+  float device_scale_factor_;
+
   DISALLOW_COPY_AND_ASSIGN(BackingStoreMac);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_BACKING_STORE_MAC_H_

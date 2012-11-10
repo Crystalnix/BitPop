@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,15 +30,15 @@ class OriginIdentifierValueMap {
     ContentSettingsType content_type;
     ResourceIdentifier resource_identifier;
     EntryMapKey(ContentSettingsType content_type,
-                ResourceIdentifier resource_identifier);
+                const ResourceIdentifier& resource_identifier);
     bool operator<(const OriginIdentifierValueMap::EntryMapKey& other) const;
   };
 
   struct PatternPair {
     ContentSettingsPattern primary_pattern;
     ContentSettingsPattern secondary_pattern;
-    PatternPair(ContentSettingsPattern primary_pattern,
-                ContentSettingsPattern secondary_pattern);
+    PatternPair(const ContentSettingsPattern& primary_pattern,
+                const ContentSettingsPattern& secondary_pattern);
     bool operator<(const OriginIdentifierValueMap::PatternPair& other) const;
   };
 
@@ -74,7 +74,7 @@ class OriginIdentifierValueMap {
   // non-NULL, the returned |RuleIterator| locks it and releases it when it is
   // destroyed.
   RuleIterator* GetRuleIterator(ContentSettingsType content_type,
-                                ResourceIdentifier resource_identifier,
+                                const ResourceIdentifier& resource_identifier,
                                 base::Lock* lock) const;
 
   OriginIdentifierValueMap();

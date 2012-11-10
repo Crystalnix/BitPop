@@ -1,9 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef REMOTING_HOST_CONTINUE_WINDOW_H
-#define REMOTING_HOST_CONTINUE_WINDOW_H
+#ifndef REMOTING_HOST_CONTINUE_WINDOW_H_
+#define REMOTING_HOST_CONTINUE_WINDOW_H_
 
 #include "base/callback.h"
 
@@ -29,9 +29,9 @@ class ContinueWindow {
   // Hide the continuation window if it is visible.
   virtual void Hide() = 0;
 
-  static ContinueWindow* Create();
+  static scoped_ptr<ContinueWindow> Create();
 };
 
-}
+}  // namespace remoting
 
-#endif  // REMOTING_HOST_CONTINUE_WINDOW_H
+#endif  // REMOTING_HOST_CONTINUE_WINDOW_H_

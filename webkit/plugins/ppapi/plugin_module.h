@@ -21,6 +21,7 @@
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/ppb.h"
 #include "ppapi/c/ppb_core.h"
+#include "ppapi/shared_impl/ppapi_permissions.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
 #include "webkit/plugins/webkit_plugins_export.h"
 
@@ -70,7 +71,8 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
   // tracks which modules are alive.
   PluginModule(const std::string& name,
                const FilePath& path,
-               PluginDelegate::ModuleLifetime* lifetime_delegate);
+               PluginDelegate::ModuleLifetime* lifetime_delegate,
+               const ::ppapi::PpapiPermissions& perms);
 
   ~PluginModule();
 
@@ -87,11 +89,24 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
   // ownership of the given pointer, even in the failure case.
   void InitAsProxied(PluginDelegate::OutOfProcessProxy* out_of_process_proxy);
 
+  // Initializes this module for the given NaCl proxy. This takes
+  // ownership of the given pointer, even in the failure case.
+  void InitAsProxiedNaCl(
+      scoped_ptr<PluginDelegate::OutOfProcessProxy> out_of_process_proxy,
+      PP_Instance instance);
+
   static const PPB_Core* GetCore();
 
   // Returns a pointer to the local GetInterface function for retrieving
   // PPB interfaces.
   static GetInterfaceFunc GetLocalGetInterfaceFunc();
+
+  // Returns whether an interface is supported. This method can be called from
+  // the browser process and used for interface matching before plugin
+  // registration.
+  // NOTE: those custom interfaces provided by PpapiInterfaceFactoryManager
+  // will not be considered when called on the browser process.
+  static bool SupportsInterface(const char* name);
 
   // Returns the module handle. This may be used before Init() is called (the
   // proxy needs this information to set itself up properly).
@@ -99,6 +114,7 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
 
   const std::string& name() const { return name_; }
   const FilePath& path() const { return path_; }
+  const ::ppapi::PpapiPermissions permissions() const { return permissions_; }
 
   PluginInstance* CreateInstance(PluginDelegate* delegate);
 
@@ -142,8 +158,8 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
   bool ReserveInstanceID(PP_Instance instance);
 
   // These should only be called from the main thread.
-  void SetBroker(PluginDelegate::PpapiBroker* broker);
-  PluginDelegate::PpapiBroker* GetBroker();
+  void SetBroker(PluginDelegate::Broker* broker);
+  PluginDelegate::Broker* GetBroker();
 
  private:
   // Calls the InitializeModule entrypoint. The entrypoint must have been
@@ -151,6 +167,7 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
   // entrypoints in that case).
   bool InitializeModule(const EntryPoints& entry_points);
 
+  // Note: This may be null.
   PluginDelegate::ModuleLifetime* lifetime_delegate_;
 
   // Tracker for completion callbacks, used mainly to ensure that all callbacks
@@ -173,7 +190,7 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
 
   // Non-owning pointer to the broker for this plugin module, if one exists.
   // It is populated and cleared in the main thread.
-  PluginDelegate::PpapiBroker* broker_;
+  PluginDelegate::Broker* broker_;
 
   // Holds a reference to the base::NativeLibrary handle if this PluginModule
   // instance wraps functions loaded from a library.  Can be NULL.  If
@@ -190,11 +207,15 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
   const std::string name_;
   const FilePath path_;
 
+  ::ppapi::PpapiPermissions permissions_;
+
   // Non-owning pointers to all instances associated with this module. When
   // there are no more instances, this object should be deleted.
   PluginInstanceSet instances_;
 
   PP_Bool (*reserve_instance_id_)(PP_Module, PP_Instance);
+
+  bool nacl_ipc_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginModule);
 };

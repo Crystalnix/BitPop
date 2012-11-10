@@ -18,6 +18,10 @@ cr.define('extensions', function() {
      * Initialize the page.
      */
     initializePage: function() {
+      var overlay = $('overlay');
+      cr.ui.overlay.setupOverlay(overlay);
+      overlay.addEventListener('cancelOverlay', this.handleDismiss_.bind(this));
+
       $('packExtensionDismiss').addEventListener('click',
           this.handleDismiss_.bind(this));
       $('packExtensionCommit').addEventListener('click',
@@ -30,7 +34,7 @@ cr.define('extensions', function() {
 
     /**
      * Handles a click on the dismiss button.
-     * @param {Event} e
+     * @param {Event} e The click event.
      */
     handleDismiss_: function(e) {
       ExtensionSettings.showOverlay(null);
@@ -38,7 +42,7 @@ cr.define('extensions', function() {
 
     /**
      * Handles a click on the pack button.
-     * @param {Event} e
+     * @param {Event} e The click event.
      */
     handleCommit_: function(e) {
       var extensionPath = $('extensionRootDir').value;
@@ -47,20 +51,20 @@ cr.define('extensions', function() {
     },
 
     /**
-    * Utility function which asks the C++ to show a platform-specific file
-    * select dialog, and fire |callback| with the |filePath| that resulted.
-    * |selectType| can be either 'file' or 'folder'. |operation| can be 'load',
-    * 'packRoot', or 'pem' which are signals to the C++ to do some
-    * operation-specific configuration.
-    * @private
-    */
+     * Utility function which asks the C++ to show a platform-specific file
+     * select dialog, and fire |callback| with the |filePath| that resulted.
+     * |selectType| can be either 'file' or 'folder'. |operation| can be 'load'
+     * or 'pem' which are signals to the C++ to do some operation-specific
+     * configuration.
+     * @private
+     */
     showFileDialog_: function(selectType, operation, callback) {
       handleFilePathSelected = function(filePath) {
         callback(filePath);
         handleFilePathSelected = function() {};
       };
 
-      chrome.send('extensionSettingsSelectFilePath', [selectType, operation]);
+      chrome.send('packExtensionSelectFilePath', [selectType, operation]);
     },
 
     /**
@@ -80,7 +84,7 @@ cr.define('extensions', function() {
      * @private
      */
     handleBrowsePrivateKey_: function(e) {
-      this.showFileDialog_('file', 'load', function(filePath) {
+      this.showFileDialog_('file', 'pem', function(filePath) {
         $('extensionPrivateKey').value = filePath;
       });
     },
@@ -93,12 +97,12 @@ cr.define('extensions', function() {
    */
   PackExtensionOverlay.showSuccessMessage = function(message) {
     alertOverlay.setValues(
-        localStrings.getString('packExtensionOverlay'),
+        loadTimeData.getString('packExtensionOverlay'),
         message,
-        localStrings.getString('ok'),
+        loadTimeData.getString('ok'),
         '',
         function() {
-          ExtensionSettings.showOverlay($('packExtensionOverlay'));
+          ExtensionSettings.showOverlay(null);
         },
         null);
     ExtensionSettings.showOverlay($('alertOverlay'));
@@ -110,9 +114,9 @@ cr.define('extensions', function() {
    */
   PackExtensionOverlay.showError = function(message) {
     alertOverlay.setValues(
-        localStrings.getString('packExtensionErrorTitle'),
+        loadTimeData.getString('packExtensionErrorTitle'),
         message,
-        localStrings.getString('ok'),
+        loadTimeData.getString('ok'),
         '',
         function() {
           ExtensionSettings.showOverlay($('packExtensionOverlay'));

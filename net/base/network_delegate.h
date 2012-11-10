@@ -4,14 +4,17 @@
 
 #ifndef NET_BASE_NETWORK_DELEGATE_H_
 #define NET_BASE_NETWORK_DELEGATE_H_
-#pragma once
+
+#include <string>
 
 #include "base/callback.h"
 #include "base/string16.h"
 #include "base/threading/non_thread_safe.h"
 #include "net/base/auth.h"
 #include "net/base/completion_callback.h"
+#include "net/cookies/canonical_cookie.h"
 
+class FilePath;
 class GURL;
 
 namespace net {
@@ -26,8 +29,10 @@ namespace net {
 // NOTE: It is not okay to add any compile-time dependencies on symbols outside
 // of net/base here, because we have a net_base library. Forward declarations
 // are ok.
+class CookieOptions;
 class HttpRequestHeaders;
 class HttpResponseHeaders;
+class SocketStream;
 class URLRequest;
 
 class NetworkDelegate : public base::NonThreadSafe {
@@ -42,6 +47,12 @@ class NetworkDelegate : public base::NonThreadSafe {
     AUTH_REQUIRED_RESPONSE_IO_PENDING,
   };
   typedef base::Callback<void(AuthRequiredResponse)> AuthCallback;
+
+  enum CacheWaitState {
+    CACHE_WAIT_STATE_START,
+    CACHE_WAIT_STATE_FINISH,
+    CACHE_WAIT_STATE_RESET
+  };
 
   virtual ~NetworkDelegate() {}
 
@@ -73,9 +84,23 @@ class NetworkDelegate : public base::NonThreadSafe {
                                           const AuthChallengeInfo& auth_info,
                                           const AuthCallback& callback,
                                           AuthCredentials* credentials);
+  bool CanGetCookies(const URLRequest& request,
+                     const CookieList& cookie_list);
+  bool CanSetCookie(const URLRequest& request,
+                    const std::string& cookie_line,
+                    CookieOptions* options);
+  bool CanAccessFile(const URLRequest& request,
+                     const FilePath& path) const;
+  bool CanThrottleRequest(const URLRequest& request) const;
+
+  int NotifyBeforeSocketStreamConnect(SocketStream* socket,
+                                      const CompletionCallback& callback);
+
+  void NotifyCacheWaitStateChange(const URLRequest& request,
+                                  CacheWaitState state);
 
  private:
-  // This is the interface for subclasses of NetworkDelegate to implement. This
+  // This is the interface for subclasses of NetworkDelegate to implement. These
   // member functions will be called by the respective public notification
   // member function, which will perform basic sanity checking.
 
@@ -169,6 +194,46 @@ class NetworkDelegate : public base::NonThreadSafe {
       const AuthChallengeInfo& auth_info,
       const AuthCallback& callback,
       AuthCredentials* credentials) = 0;
+
+  // Called when reading cookies to allow the network delegate to block access
+  // to the cookie. This method will never be invoked when
+  // LOAD_DO_NOT_SEND_COOKIES is specified.
+  virtual bool OnCanGetCookies(const URLRequest& request,
+                               const CookieList& cookie_list) = 0;
+
+  // Called when a cookie is set to allow the network delegate to block access
+  // to the cookie. This method will never be invoked when
+  // LOAD_DO_NOT_SAVE_COOKIES is specified.
+  virtual bool OnCanSetCookie(const URLRequest& request,
+                              const std::string& cookie_line,
+                              CookieOptions* options) = 0;
+
+
+  // Called when a file access is attempted to allow the network delegate to
+  // allow or block access to the given file path.  Returns true if access is
+  // allowed.
+  virtual bool OnCanAccessFile(const URLRequest& request,
+                               const FilePath& path) const = 0;
+
+  // Returns true if the given request may be rejected when the
+  // URLRequestThrottlerManager believes the server servicing the
+  // request is overloaded or down.
+  virtual bool OnCanThrottleRequest(const URLRequest& request) const = 0;
+
+  // Called before a SocketStream tries to connect.
+  virtual int OnBeforeSocketStreamConnect(
+      SocketStream* socket, const CompletionCallback& callback) = 0;
+
+  // Called when the completion of a URLRequest is blocking on a cache
+  // transaction (CACHE_WAIT_STATE_START), or when a URLRequest is no longer
+  // blocked on a cache transaction (CACHE_WAIT_STATE_FINISH), or when a
+  // URLRequest is reset (CACHE_WAIT_STATE_RESET), indicating
+  // cancellation of any pending cache waits for this request.  Notice that
+  // START can be called several times for the same request.  It is the
+  // responsibility of the delegate to keep track of the number of outstanding
+  // cache transactions.
+  virtual void OnCacheWaitStateChange(const URLRequest& request,
+                                      CacheWaitState state) = 0;
 };
 
 }  // namespace net

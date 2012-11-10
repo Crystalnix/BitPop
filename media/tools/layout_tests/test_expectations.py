@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,7 +11,7 @@ import urllib2
 # TODO(imasaki): support multiple test expectations files.
 DEFAULT_TEST_EXPECTATION_LOCATION = (
     'http://svn.webkit.org/repository/webkit/trunk/'
-    'LayoutTests/platform/chromium/test_expectations.txt')
+    'LayoutTests/platform/chromium/TestExpectations')
 
 # The following is from test expectation syntax. The detail can be found in
 # http://www.chromium.org/developers/testing/

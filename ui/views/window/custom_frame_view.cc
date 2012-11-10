@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,11 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/path.h"
+#include "ui/views/color_constants.h"
+#include "ui/views/controls/button/image_button.h"
+#include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/window/client_view.h"
 #include "ui/views/window/frame_background.h"
@@ -28,9 +32,6 @@
 #endif
 
 namespace views {
-
-// static
-gfx::Font* CustomFrameView::title_font_ = NULL;
 
 namespace {
 
@@ -58,9 +59,9 @@ const int kTitlebarTopAndBottomEdgeThickness = 2;
 const int kIconLeftSpacing = 2;
 // The icon never shrinks below 16 px on a side.
 const int kIconMinimumSize = 16;
-// There is a 4 px gap between the icon and the title text.
-const int kIconTitleSpacing = 4;
-// There is a 5 px gap between the title text and the caption buttons.
+// The space between the window icon and the title text.
+const int kTitleIconOffsetX = 4;
+// The space between the title text and the caption buttons.
 const int kTitleCaptionSpacing = 5;
 
 #if defined(USE_AURA)
@@ -71,71 +72,65 @@ const SkColor kDefaultColorFrame = SkColorSetRGB(66, 116, 201);
 const SkColor kDefaultColorFrameInactive = SkColorSetRGB(161, 182, 228);
 #endif
 
+const gfx::Font& GetTitleFont() {
+  static gfx::Font* title_font = NULL;
+  if (!title_font) {
+#if defined(USE_AURA)
+    title_font = new gfx::Font(NativeWidgetAura::GetWindowTitleFont());
+#elif defined(OS_WIN)
+    title_font = new gfx::Font(NativeWidgetWin::GetWindowTitleFont());
+#elif defined(OS_LINUX)
+    // TODO(ben): need to resolve what font this is.
+    title_font = new gfx::Font();
+#endif
+  }
+  return *title_font;
+}
+
 }  // namespace
 
 ///////////////////////////////////////////////////////////////////////////////
 // CustomFrameView, public:
 
-CustomFrameView::CustomFrameView(Widget* frame)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(close_button_(new ImageButton(this))),
-      ALLOW_THIS_IN_INITIALIZER_LIST(restore_button_(new ImageButton(this))),
-      ALLOW_THIS_IN_INITIALIZER_LIST(maximize_button_(new ImageButton(this))),
-      ALLOW_THIS_IN_INITIALIZER_LIST(minimize_button_(new ImageButton(this))),
+CustomFrameView::CustomFrameView()
+    : frame_(NULL),
       window_icon_(NULL),
+      minimize_button_(NULL),
+      maximize_button_(NULL),
+      restore_button_(NULL),
+      close_button_(NULL),
       should_show_minmax_buttons_(false),
-      should_show_client_edge_(false),
-      frame_(frame),
       frame_background_(new FrameBackground()) {
-  InitClass();
+}
 
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+CustomFrameView::~CustomFrameView() {
+}
 
+void CustomFrameView::Init(Widget* frame) {
+  frame_ = frame;
+
+  close_button_ = new ImageButton(this);
   close_button_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_APP_ACCNAME_CLOSE));
 
   // Close button images will be set in LayoutWindowControls().
   AddChildView(close_button_);
 
-  restore_button_->SetAccessibleName(
-      l10n_util::GetStringUTF16(IDS_APP_ACCNAME_RESTORE));
-  restore_button_->SetImage(CustomButton::BS_NORMAL,
-                            rb.GetBitmapNamed(IDR_RESTORE));
-  restore_button_->SetImage(CustomButton::BS_HOT,
-                            rb.GetBitmapNamed(IDR_RESTORE_H));
-  restore_button_->SetImage(CustomButton::BS_PUSHED,
-                            rb.GetBitmapNamed(IDR_RESTORE_P));
-  AddChildView(restore_button_);
+  minimize_button_ = InitWindowCaptionButton(IDS_APP_ACCNAME_MINIMIZE,
+      IDR_MINIMIZE, IDR_MINIMIZE_H, IDR_MINIMIZE_P);
 
-  maximize_button_->SetAccessibleName(
-      l10n_util::GetStringUTF16(IDS_APP_ACCNAME_MAXIMIZE));
-  maximize_button_->SetImage(CustomButton::BS_NORMAL,
-                             rb.GetBitmapNamed(IDR_MAXIMIZE));
-  maximize_button_->SetImage(CustomButton::BS_HOT,
-                             rb.GetBitmapNamed(IDR_MAXIMIZE_H));
-  maximize_button_->SetImage(CustomButton::BS_PUSHED,
-                             rb.GetBitmapNamed(IDR_MAXIMIZE_P));
-  AddChildView(maximize_button_);
+  maximize_button_ = InitWindowCaptionButton(IDS_APP_ACCNAME_MAXIMIZE,
+      IDR_MAXIMIZE, IDR_MAXIMIZE_H, IDR_MAXIMIZE_P);
 
-  minimize_button_->SetAccessibleName(
-      l10n_util::GetStringUTF16(IDS_APP_ACCNAME_MINIMIZE));
-  minimize_button_->SetImage(CustomButton::BS_NORMAL,
-                             rb.GetBitmapNamed(IDR_MINIMIZE));
-  minimize_button_->SetImage(CustomButton::BS_HOT,
-                             rb.GetBitmapNamed(IDR_MINIMIZE_H));
-  minimize_button_->SetImage(CustomButton::BS_PUSHED,
-                             rb.GetBitmapNamed(IDR_MINIMIZE_P));
-  AddChildView(minimize_button_);
+  restore_button_ = InitWindowCaptionButton(IDS_APP_ACCNAME_RESTORE,
+      IDR_RESTORE, IDR_RESTORE_H, IDR_RESTORE_P);
 
   should_show_minmax_buttons_ = frame_->widget_delegate()->CanMaximize();
-  should_show_client_edge_ = frame_->widget_delegate()->ShouldShowClientEdge();
 
   if (frame_->widget_delegate()->ShouldShowWindowIcon()) {
     window_icon_ = new ImageButton(this);
     AddChildView(window_icon_);
   }
-}
-
-CustomFrameView::~CustomFrameView() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -201,7 +196,7 @@ void CustomFrameView::GetWindowMask(const gfx::Size& size,
   if (frame_->IsMaximized())
     return;
 
-  views::GetDefaultWindowMask(size, window_mask);
+  GetDefaultWindowMask(size, window_mask);
 }
 
 void CustomFrameView::ResetWindowControls() {
@@ -212,7 +207,8 @@ void CustomFrameView::ResetWindowControls() {
 }
 
 void CustomFrameView::UpdateWindowIcon() {
-  window_icon_->SchedulePaint();
+  if (window_icon_)
+    window_icon_->SchedulePaint();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -235,16 +231,14 @@ void CustomFrameView::Layout() {
 }
 
 gfx::Size CustomFrameView::GetPreferredSize() {
-  gfx::Size pref = frame_->client_view()->GetPreferredSize();
-  gfx::Rect bounds(0, 0, pref.width(), pref.height());
   return frame_->non_client_view()->GetWindowBoundsForClientBounds(
-      bounds).size();
+      gfx::Rect(frame_->client_view()->GetPreferredSize())).size();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // CustomFrameView, ButtonListener implementation:
 
-void CustomFrameView::ButtonPressed(Button* sender, const views::Event& event) {
+void CustomFrameView::ButtonPressed(Button* sender, const Event& event) {
   if (sender == close_button_)
     frame_->Close();
   else if (sender == minimize_button_)
@@ -291,12 +285,8 @@ int CustomFrameView::IconSize() const {
   // size are increased.
   return GetSystemMetrics(SM_CYSMICON);
 #else
-  return std::max(title_font_->GetHeight(), kIconMinimumSize);
+  return std::max(GetTitleFont().GetHeight(), kIconMinimumSize);
 #endif
-}
-
-bool CustomFrameView::ShouldShowClientEdge() const {
-  return should_show_client_edge_ && !frame_->IsMaximized();
 }
 
 gfx::Rect CustomFrameView::IconBounds() const {
@@ -322,69 +312,61 @@ gfx::Rect CustomFrameView::IconBounds() const {
   return gfx::Rect(frame_thickness + kIconLeftSpacing, y, size, size);
 }
 
-void CustomFrameView::PaintRestoredFrameBorder(gfx::Canvas* canvas) {
-  // Window frame mode.
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+bool CustomFrameView::ShouldShowClientEdge() const {
+  return !frame_->IsMaximized();
+}
 
+void CustomFrameView::PaintRestoredFrameBorder(gfx::Canvas* canvas) {
   frame_background_->set_frame_color(GetFrameColor());
-  SkBitmap* frame_image = GetFrameBitmap();
-  frame_background_->set_theme_bitmap(frame_image);
+  const gfx::ImageSkia* frame_image = GetFrameImage();
+  frame_background_->set_theme_image(frame_image);
   frame_background_->set_top_area_height(frame_image->height());
 
-#if defined(USE_AURA)
-  // TODO(jamescook): Remove this when Aura defaults to its own window frame,
-  // BrowserNonClientFrameViewAura.  Until then, use custom square corners to
-  // avoid performance penalties associated with transparent layers.
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+
   frame_background_->SetCornerImages(
-      rb.GetBitmapNamed(IDR_AURA_WINDOW_TOP_LEFT),
-      rb.GetBitmapNamed(IDR_AURA_WINDOW_TOP_RIGHT),
-      rb.GetBitmapNamed(IDR_AURA_WINDOW_BOTTOM_LEFT),
-      rb.GetBitmapNamed(IDR_AURA_WINDOW_BOTTOM_RIGHT));
-#else
-  frame_background_->SetCornerImages(
-      rb.GetBitmapNamed(IDR_WINDOW_TOP_LEFT_CORNER),
-      rb.GetBitmapNamed(IDR_WINDOW_TOP_RIGHT_CORNER),
-      rb.GetBitmapNamed(IDR_WINDOW_BOTTOM_LEFT_CORNER),
-      rb.GetBitmapNamed(IDR_WINDOW_BOTTOM_RIGHT_CORNER));
-#endif
+      rb.GetImageNamed(IDR_WINDOW_TOP_LEFT_CORNER).ToImageSkia(),
+      rb.GetImageNamed(IDR_WINDOW_TOP_RIGHT_CORNER).ToImageSkia(),
+      rb.GetImageNamed(IDR_WINDOW_BOTTOM_LEFT_CORNER).ToImageSkia(),
+      rb.GetImageNamed(IDR_WINDOW_BOTTOM_RIGHT_CORNER).ToImageSkia());
   frame_background_->SetSideImages(
-      rb.GetBitmapNamed(IDR_WINDOW_LEFT_SIDE),
-      rb.GetBitmapNamed(IDR_WINDOW_TOP_CENTER),
-      rb.GetBitmapNamed(IDR_WINDOW_RIGHT_SIDE),
-      rb.GetBitmapNamed(IDR_WINDOW_BOTTOM_CENTER));
+      rb.GetImageNamed(IDR_WINDOW_LEFT_SIDE).ToImageSkia(),
+      rb.GetImageNamed(IDR_WINDOW_TOP_CENTER).ToImageSkia(),
+      rb.GetImageNamed(IDR_WINDOW_RIGHT_SIDE).ToImageSkia(),
+      rb.GetImageNamed(IDR_WINDOW_BOTTOM_CENTER).ToImageSkia());
 
   frame_background_->PaintRestored(canvas, this);
 }
 
 void CustomFrameView::PaintMaximizedFrameBorder(gfx::Canvas* canvas) {
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-
-  SkBitmap* frame_image = GetFrameBitmap();
-  frame_background_->set_theme_bitmap(frame_image);
+  const gfx::ImageSkia* frame_image = GetFrameImage();
+  frame_background_->set_theme_image(frame_image);
   frame_background_->set_top_area_height(frame_image->height());
-
   frame_background_->PaintMaximized(canvas, this);
+
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
   // TODO(jamescook): Migrate this into FrameBackground.
   // The bottom of the titlebar actually comes from the top of the Client Edge
   // graphic, with the actual client edge clipped off the bottom.
-  SkBitmap* titlebar_bottom = rb.GetBitmapNamed(IDR_APP_TOP_CENTER);
+  const gfx::ImageSkia* titlebar_bottom = rb.GetImageNamed(
+      IDR_APP_TOP_CENTER).ToImageSkia();
   int edge_height = titlebar_bottom->height() -
-                    (ShouldShowClientEdge() ? kClientEdgeThickness : 0);
+      (ShouldShowClientEdge() ? kClientEdgeThickness : 0);
   canvas->TileImageInt(*titlebar_bottom, 0,
       frame_->client_view()->y() - edge_height, width(), edge_height);
 }
 
 void CustomFrameView::PaintTitleBar(gfx::Canvas* canvas) {
-  WidgetDelegate* d = frame_->widget_delegate();
+  WidgetDelegate* delegate = frame_->widget_delegate();
 
   // It seems like in some conditions we can be asked to paint after the window
   // that contains us is WM_DESTROYed. At this point, our delegate is NULL. The
   // correct long term fix may be to shut down the RootView in WM_DESTROY.
-  if (!d)
+  if (!delegate)
     return;
 
-  canvas->DrawStringInt(d->GetWindowTitle(), *title_font_,
+  canvas->DrawStringInt(delegate->GetWindowTitle(), GetTitleFont(),
                         SK_ColorWHITE, GetMirroredXForRect(title_bounds_),
                         title_bounds_.y(), title_bounds_.width(),
                         title_bounds_.height());
@@ -395,24 +377,30 @@ void CustomFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
   int client_area_top = client_area_bounds.y();
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  SkBitmap* top_left = rb.GetBitmapNamed(IDR_APP_TOP_LEFT);
-  SkBitmap* top = rb.GetBitmapNamed(IDR_APP_TOP_CENTER);
-  SkBitmap* top_right = rb.GetBitmapNamed(IDR_APP_TOP_RIGHT);
-  SkBitmap* right = rb.GetBitmapNamed(IDR_CONTENT_RIGHT_SIDE);
-  SkBitmap* bottom_right =
-      rb.GetBitmapNamed(IDR_CONTENT_BOTTOM_RIGHT_CORNER);
-  SkBitmap* bottom = rb.GetBitmapNamed(IDR_CONTENT_BOTTOM_CENTER);
-  SkBitmap* bottom_left =
-      rb.GetBitmapNamed(IDR_CONTENT_BOTTOM_LEFT_CORNER);
-  SkBitmap* left = rb.GetBitmapNamed(IDR_CONTENT_LEFT_SIDE);
+  const gfx::ImageSkia* top_left = rb.GetImageNamed(
+      IDR_APP_TOP_LEFT).ToImageSkia();
+  const gfx::ImageSkia* top = rb.GetImageNamed(
+      IDR_APP_TOP_CENTER).ToImageSkia();
+  const gfx::ImageSkia* top_right = rb.GetImageNamed(
+      IDR_APP_TOP_RIGHT).ToImageSkia();
+  const gfx::ImageSkia* right = rb.GetImageNamed(
+      IDR_CONTENT_RIGHT_SIDE).ToImageSkia();
+  const gfx::ImageSkia* bottom_right = rb.GetImageNamed(
+      IDR_CONTENT_BOTTOM_RIGHT_CORNER).ToImageSkia();
+  const gfx::ImageSkia* bottom = rb.GetImageNamed(
+      IDR_CONTENT_BOTTOM_CENTER).ToImageSkia();
+  const gfx::ImageSkia* bottom_left = rb.GetImageNamed(
+      IDR_CONTENT_BOTTOM_LEFT_CORNER).ToImageSkia();
+  const gfx::ImageSkia* left = rb.GetImageNamed(
+      IDR_CONTENT_LEFT_SIDE).ToImageSkia();
 
   // Top.
   int top_edge_y = client_area_top - top->height();
-  canvas->DrawBitmapInt(*top_left, client_area_bounds.x() - top_left->width(),
-                        top_edge_y);
+  canvas->DrawImageInt(*top_left, client_area_bounds.x() - top_left->width(),
+                       top_edge_y);
   canvas->TileImageInt(*top, client_area_bounds.x(), top_edge_y,
                        client_area_bounds.width(), top->height());
-  canvas->DrawBitmapInt(*top_right, client_area_bounds.right(), top_edge_y);
+  canvas->DrawImageInt(*top_right, client_area_bounds.right(), top_edge_y);
 
   // Right.
   int client_area_bottom =
@@ -422,30 +410,30 @@ void CustomFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
                        right->width(), client_area_height);
 
   // Bottom.
-  canvas->DrawBitmapInt(*bottom_right, client_area_bounds.right(),
-                        client_area_bottom);
+  canvas->DrawImageInt(*bottom_right, client_area_bounds.right(),
+                       client_area_bottom);
   canvas->TileImageInt(*bottom, client_area_bounds.x(), client_area_bottom,
                        client_area_bounds.width(), bottom_right->height());
-  canvas->DrawBitmapInt(*bottom_left,
+  canvas->DrawImageInt(*bottom_left,
       client_area_bounds.x() - bottom_left->width(), client_area_bottom);
 
   // Left.
   canvas->TileImageInt(*left, client_area_bounds.x() - left->width(),
       client_area_top, left->width(), client_area_height);
 
-  // Draw the toolbar color to fill in the edges.
-  canvas->DrawRect(gfx::Rect(client_area_bounds.x() - 1, client_area_top - 1,
+  // Draw the color to fill in the edges.
+  canvas->FillRect(gfx::Rect(client_area_bounds.x() - 1, client_area_top - 1,
       client_area_bounds.width() + 1, client_area_bottom - client_area_top + 1),
-      ui::ResourceBundle::toolbar_color);
+      kClientEdgeColor);
 }
 
 SkColor CustomFrameView::GetFrameColor() const {
   return frame_->IsActive() ? kDefaultColorFrame : kDefaultColorFrameInactive;
 }
 
-SkBitmap* CustomFrameView::GetFrameBitmap() const {
-  return ResourceBundle::GetSharedInstance().GetBitmapNamed(
-      frame_->IsActive() ? IDR_FRAME : IDR_FRAME_INACTIVE);
+const gfx::ImageSkia* CustomFrameView::GetFrameImage() const {
+  return ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+      frame_->IsActive() ? IDR_FRAME : IDR_FRAME_INACTIVE).ToImageSkia();
 }
 
 void CustomFrameView::LayoutWindowControls() {
@@ -467,13 +455,13 @@ void CustomFrameView::LayoutWindowControls() {
   // When the window is restored, we show a maximized button; otherwise, we show
   // a restore button.
   bool is_restored = !is_maximized && !frame_->IsMinimized();
-  views::ImageButton* invisible_button = is_restored ?
-      restore_button_ : maximize_button_;
+  ImageButton* invisible_button = is_restored ? restore_button_
+                                              : maximize_button_;
   invisible_button->SetVisible(false);
 
-  views::ImageButton* visible_button = is_restored ?
-      maximize_button_ : restore_button_;
-  FramePartBitmap normal_part, hot_part, pushed_part;
+  ImageButton* visible_button = is_restored ? maximize_button_
+                                            : restore_button_;
+  FramePartImage normal_part, hot_part, pushed_part;
   if (should_show_minmax_buttons_) {
     visible_button->SetVisible(true);
     visible_button->SetImageAlignment(ImageButton::ALIGN_LEFT,
@@ -504,27 +492,28 @@ void CustomFrameView::LayoutWindowControls() {
     pushed_part = IDR_CLOSE_SA_P;
   }
 
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
   close_button_->SetImage(CustomButton::BS_NORMAL,
-                          rb.GetBitmapNamed(normal_part));
+                          rb.GetImageNamed(normal_part).ToImageSkia());
   close_button_->SetImage(CustomButton::BS_HOT,
-                          rb.GetBitmapNamed(hot_part));
+                          rb.GetImageNamed(hot_part).ToImageSkia());
   close_button_->SetImage(CustomButton::BS_PUSHED,
-                          rb.GetBitmapNamed(pushed_part));
+                          rb.GetImageNamed(pushed_part).ToImageSkia());
 }
 
 void CustomFrameView::LayoutTitleBar() {
-  // The window title is based on the calculated icon position, even when there
-  // is no icon.
+  // The window title position is calculated based on the icon position, even
+  // when there is no icon.
   gfx::Rect icon_bounds(IconBounds());
-  if (frame_->widget_delegate()->ShouldShowWindowIcon())
+  bool show_window_icon = window_icon_ != NULL;
+  if (show_window_icon)
     window_icon_->SetBoundsRect(icon_bounds);
 
-  // Size the title.
-  int title_x = frame_->widget_delegate()->ShouldShowWindowIcon() ?
-      icon_bounds.right() + kIconTitleSpacing : icon_bounds.x();
-  int title_height = title_font_->GetHeight();
+  // The offset between the window left edge and the title text.
+  int title_x = show_window_icon ? icon_bounds.right() + kTitleIconOffsetX
+                                 : icon_bounds.x();
+  int title_height = GetTitleFont().GetHeight();
   // We bias the title position so that when the difference between the icon and
   // title heights is odd, the extra pixel of the title is above the vertical
   // midline rather than below.  This compensates for how the icon is already
@@ -545,20 +534,22 @@ void CustomFrameView::LayoutClientView() {
       std::max(0, height() - top_height - border_thickness));
 }
 
-// static
-void CustomFrameView::InitClass() {
-  static bool initialized = false;
-  if (!initialized) {
-#if defined(USE_AURA)
-    title_font_ = new gfx::Font(NativeWidgetAura::GetWindowTitleFont());
-#elif defined(OS_WIN)
-    title_font_ = new gfx::Font(NativeWidgetWin::GetWindowTitleFont());
-#elif defined(OS_LINUX)
-    // TODO(ben): need to resolve what font this is.
-    title_font_ = new gfx::Font();
-#endif
-    initialized = true;
-  }
+ImageButton* CustomFrameView::InitWindowCaptionButton(
+    int accessibility_string_id,
+    int normal_image_id,
+    int hot_image_id,
+    int pushed_image_id) {
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  ImageButton* button = new ImageButton(this);
+  button->SetAccessibleName(l10n_util::GetStringUTF16(accessibility_string_id));
+  button->SetImage(CustomButton::BS_NORMAL,
+                   rb.GetImageNamed(normal_image_id).ToImageSkia());
+  button->SetImage(CustomButton::BS_HOT,
+                   rb.GetImageNamed(hot_image_id).ToImageSkia());
+  button->SetImage(CustomButton::BS_PUSHED,
+                   rb.GetImageNamed(pushed_image_id).ToImageSkia());
+  AddChildView(button);
+  return button;
 }
 
 }  // namespace views

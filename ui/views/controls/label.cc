@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,9 +15,10 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/base/native_theme/native_theme.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/text_elider.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/insets.h"
@@ -54,27 +55,15 @@ void Label::SetFont(const gfx::Font& font) {
 
 void Label::SetText(const string16& text) {
   text_ = text;
-  url_set_ = false;
   text_size_valid_ = false;
+  is_email_ = false;
   PreferredSizeChanged();
   SchedulePaint();
 }
 
-const string16 Label::GetText() const {
-  return url_set_ ? UTF8ToUTF16(url_.spec()) : text_;
-}
-
-void Label::SetURL(const GURL& url) {
-  url_ = url;
-  text_ = UTF8ToUTF16(url_.spec());
-  url_set_ = true;
-  text_size_valid_ = false;
-  PreferredSizeChanged();
-  SchedulePaint();
-}
-
-const GURL Label::GetURL() const {
-  return url_set_ ? url_ : GURL(UTF16ToUTF8(text_));
+void Label::SetEmail(const string16& email) {
+  SetText(email);
+  is_email_ = true;
 }
 
 void Label::SetAutoColorReadabilityEnabled(bool enabled) {
@@ -82,26 +71,40 @@ void Label::SetAutoColorReadabilityEnabled(bool enabled) {
   RecalculateColors();
 }
 
-void Label::SetEnabledColor(const SkColor& color) {
+void Label::SetEnabledColor(SkColor color) {
   requested_enabled_color_ = color;
   RecalculateColors();
 }
 
-void Label::SetDisabledColor(const SkColor& color) {
+void Label::SetDisabledColor(SkColor color) {
   requested_disabled_color_ = color;
   RecalculateColors();
 }
 
-void Label::SetBackgroundColor(const SkColor& color) {
+void Label::SetBackgroundColor(SkColor color) {
   background_color_ = color;
   RecalculateColors();
 }
 
+void Label::SetShadowColors(SkColor enabled_color, SkColor disabled_color) {
+  enabled_shadow_color_ = enabled_color;
+  disabled_shadow_color_ = disabled_color;
+  has_shadow_ = true;
+}
+
+void Label::SetShadowOffset(int x, int y) {
+  shadow_offset_.SetPoint(x, y);
+}
+
+void Label::ClearEmbellishing() {
+  has_shadow_ = false;
+}
+
 void Label::SetHorizontalAlignment(Alignment alignment) {
-  // If the View's UI layout is right-to-left and rtl_alignment_mode_ is
-  // USE_UI_ALIGNMENT, we need to flip the alignment so that the alignment
+  // If the View's UI layout is right-to-left and directionality_mode_ is
+  // USE_UI_DIRECTIONALITY, we need to flip the alignment so that the alignment
   // settings take into account the text directionality.
-  if (base::i18n::IsRTL() && (rtl_alignment_mode_ == USE_UI_ALIGNMENT) &&
+  if (base::i18n::IsRTL() && (directionality_mode_ == USE_UI_DIRECTIONALITY) &&
       (alignment != ALIGN_CENTER))
     alignment = (alignment == ALIGN_LEFT) ? ALIGN_RIGHT : ALIGN_LEFT;
   if (horiz_alignment_ != alignment) {
@@ -111,7 +114,7 @@ void Label::SetHorizontalAlignment(Alignment alignment) {
 }
 
 void Label::SetMultiLine(bool multi_line) {
-  DCHECK(!multi_line || !elide_in_middle_);
+  DCHECK(!multi_line || elide_behavior_ != ELIDE_IN_MIDDLE);
   if (multi_line != is_multi_line_) {
     is_multi_line_ = multi_line;
     text_size_valid_ = false;
@@ -129,11 +132,12 @@ void Label::SetAllowCharacterBreak(bool allow_character_break) {
   }
 }
 
-void Label::SetElideInMiddle(bool elide_in_middle) {
-  DCHECK(!elide_in_middle || !is_multi_line_);
-  if (elide_in_middle != elide_in_middle_) {
-    elide_in_middle_ = elide_in_middle;
+void Label::SetElideBehavior(ElideBehavior elide_behavior) {
+  DCHECK(elide_behavior != ELIDE_IN_MIDDLE || !is_multi_line_);
+  if (elide_behavior != elide_behavior_) {
+    elide_behavior_ = elide_behavior;
     text_size_valid_ = false;
+    is_email_ = false;
     PreferredSizeChanged();
     SchedulePaint();
   }
@@ -214,8 +218,7 @@ int Label::GetHeightForWidth(int w) {
 
   w = std::max(0, w - GetInsets().width());
   int h = font_.GetHeight();
-  gfx::CanvasSkia::SizeStringInt(text_, font_, &w, &h,
-                                 ComputeMultiLineFlags());
+  gfx::Canvas::SizeStringInt(text_, font_, &w, &h, ComputeDrawStringFlags());
   return h + GetInsets().height();
 }
 
@@ -267,6 +270,15 @@ void Label::PaintText(gfx::Canvas* canvas,
                       const string16& text,
                       const gfx::Rect& text_bounds,
                       int flags) {
+  if (has_shadow_) {
+    canvas->DrawStringInt(
+        text, font_,
+        enabled() ? enabled_shadow_color_ : disabled_shadow_color_,
+        text_bounds.x() + shadow_offset_.x(),
+        text_bounds.y() + shadow_offset_.y(),
+        text_bounds.width(), text_bounds.height(),
+        flags);
+  }
   canvas->DrawStringInt(text, font_,
       enabled() ? actual_enabled_color_ : actual_disabled_color_,
       text_bounds.x(), text_bounds.y(), text_bounds.width(),
@@ -290,10 +302,10 @@ gfx::Size Label::GetTextSize() const {
     int h = font_.GetHeight();
     // For single-line strings, ignore the available width and calculate how
     // wide the text wants to be.
-    int flags = ComputeMultiLineFlags();
+    int flags = ComputeDrawStringFlags();
     if (!is_multi_line_)
       flags |= gfx::Canvas::NO_ELLIPSIS;
-    gfx::CanvasSkia::SizeStringInt(text_, font_, &w, &h, flags);
+    gfx::Canvas::SizeStringInt(text_, font_, &w, &h, flags);
     text_size_.SetSize(w, h);
     text_size_valid_ = true;
   }
@@ -333,42 +345,30 @@ gfx::Font Label::GetDefaultFont() {
 }
 
 void Label::Init(const string16& text, const gfx::Font& font) {
-  static bool initialized = false;
-  static SkColor kDefaultEnabledColor;
-  static SkColor kDefaultDisabledColor;
-  static SkColor kDefaultBackgroundColor;
-  if (!initialized) {
-#if defined(OS_WIN)
-    kDefaultEnabledColor = color_utils::GetSysSkColor(COLOR_WINDOWTEXT);
-    kDefaultDisabledColor = color_utils::GetSysSkColor(COLOR_GRAYTEXT);
-    kDefaultBackgroundColor = color_utils::GetSysSkColor(COLOR_WINDOW);
-#else
-    // TODO(beng): source from theme provider.
-    kDefaultEnabledColor = SK_ColorBLACK;
-    kDefaultDisabledColor = SK_ColorGRAY;
-    kDefaultBackgroundColor = SK_ColorWHITE;
-#endif
-
-    initialized = true;
-  }
-
   contains_mouse_ = false;
   font_ = font;
   text_size_valid_ = false;
-  url_set_ = false;
-  requested_enabled_color_ = kDefaultEnabledColor;
-  requested_disabled_color_ = kDefaultDisabledColor;
-  background_color_ = kDefaultBackgroundColor;
+  requested_enabled_color_ = ui::NativeTheme::instance()->GetSystemColor(
+      ui::NativeTheme::kColorId_LabelEnabledColor);
+  requested_disabled_color_ = ui::NativeTheme::instance()->GetSystemColor(
+      ui::NativeTheme::kColorId_LabelDisabledColor);
+  background_color_ = ui::NativeTheme::instance()->GetSystemColor(
+      ui::NativeTheme::kColorId_LabelBackgroundColor);
   auto_color_readability_ = true;
   RecalculateColors();
   horiz_alignment_ = ALIGN_CENTER;
   is_multi_line_ = false;
   allow_character_break_ = false;
-  elide_in_middle_ = false;
+  elide_behavior_ = NO_ELIDE;
+  is_email_ = false;
   collapse_when_hidden_ = false;
-  rtl_alignment_mode_ = USE_UI_ALIGNMENT;
+  directionality_mode_ = USE_UI_DIRECTIONALITY;
   paint_as_focused_ = false;
   has_focus_border_ = false;
+  enabled_shadow_color_ = 0;
+  disabled_shadow_color_ = 0;
+  shadow_offset_.SetPoint(1, 1);
+  has_shadow_ = false;
 
   SetText(text);
 }
@@ -426,11 +426,26 @@ gfx::Rect Label::GetTextBounds() const {
   return gfx::Rect(text_origin, text_size);
 }
 
-int Label::ComputeMultiLineFlags() const {
-  if (!is_multi_line_)
-    return 0;
+int Label::ComputeDrawStringFlags() const {
+  int flags = 0;
 
-  int flags = gfx::Canvas::MULTI_LINE;
+  // We can't use subpixel rendering if the background is non-opaque.
+  if (SkColorGetA(background_color_) != 0xFF)
+    flags |= gfx::Canvas::NO_SUBPIXEL_RENDERING;
+
+  if (directionality_mode_ == AUTO_DETECT_DIRECTIONALITY) {
+    base::i18n::TextDirection direction =
+        base::i18n::GetFirstStrongCharacterDirection(text_);
+    if (direction == base::i18n::RIGHT_TO_LEFT)
+      flags |= gfx::Canvas::FORCE_RTL_DIRECTIONALITY;
+    else
+      flags |= gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
+  }
+
+  if (!is_multi_line_)
+    return flags;
+
+  flags |= gfx::Canvas::MULTI_LINE;
 #if !defined(OS_WIN)
     // Don't elide multiline labels on Linux.
     // Todo(davemoore): Do we depend on eliding multiline text?
@@ -452,6 +467,7 @@ int Label::ComputeMultiLineFlags() const {
       flags |= gfx::Canvas::TEXT_ALIGN_RIGHT;
       break;
   }
+
   return flags;
 }
 
@@ -467,41 +483,20 @@ void Label::CalculateDrawStringParams(string16* paint_text,
                                       int* flags) const {
   DCHECK(paint_text && text_bounds && flags);
 
-  if (url_set_) {
-    // TODO(jungshik) : Figure out how to get 'intl.accept_languages'
-    // preference and use it when calling ElideUrl.
-    *paint_text =
-        ui::ElideUrl(url_, font_, GetAvailableRect().width(), std::string());
-
-    // An URLs is always treated as an LTR text and therefore we should
-    // explicitly mark it as such if the locale is RTL so that URLs containing
-    // Hebrew or Arabic characters are displayed correctly.
-    //
-    // Note that we don't check the View's UI layout setting in order to
-    // determine whether or not to insert the special Unicode formatting
-    // characters. We use the locale settings because an URL is always treated
-    // as an LTR string, even if its containing view does not use an RTL UI
-    // layout.
-    *paint_text = base::i18n::GetDisplayStringInLTRDirectionality(
-        *paint_text);
-  } else if (elide_in_middle_) {
+  if (is_email_) {
+    *paint_text = ui::ElideEmail(text_, font_, GetAvailableRect().width());
+  } else if (elide_behavior_ == ELIDE_IN_MIDDLE) {
     *paint_text = ui::ElideText(text_, font_, GetAvailableRect().width(),
                                 ui::ELIDE_IN_MIDDLE);
+  } else if (elide_behavior_ == ELIDE_AT_END) {
+    *paint_text = ui::ElideText(text_, font_, GetAvailableRect().width(),
+                                ui::ELIDE_AT_END);
   } else {
     *paint_text = text_;
   }
 
   *text_bounds = GetTextBounds();
-  *flags = ComputeMultiLineFlags();
-  // If rtl_alignment_mode_ is AUTO_DETECT_ALIGNMENT (such as for text from
-  // webpage, not from chrome's UI), its directionality is forced to be RTL if
-  // it is right aligned. Otherwise, its directionality is forced to be LTR.
-  if (rtl_alignment_mode_ == AUTO_DETECT_ALIGNMENT) {
-    if (horiz_alignment_ == ALIGN_RIGHT)
-      *flags |= gfx::Canvas::FORCE_RTL_DIRECTIONALITY;
-    else
-      *flags |= gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
-  }
+  *flags = ComputeDrawStringFlags();
 }
 
 }  // namespace views

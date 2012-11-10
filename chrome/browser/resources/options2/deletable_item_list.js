@@ -1,10 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  const List = cr.ui.List;
-  const ListItem = cr.ui.ListItem;
+  /** @const */ var List = cr.ui.List;
+  /** @const */ var ListItem = cr.ui.ListItem;
 
   /**
    * Creates a deletable list item, which has a button that will trigger a call
@@ -47,7 +47,7 @@ cr.define('options', function() {
 
       this.closeButtonElement_ = this.ownerDocument.createElement('button');
       this.closeButtonElement_.className =
-          'raw-button close-button custom-appearance';
+          'raw-button row-delete-button custom-appearance';
       this.closeButtonElement_.addEventListener('mousedown',
                                                 this.handleMouseDownUpOnClose_);
       this.closeButtonElement_.addEventListener('mouseup',
@@ -63,6 +63,14 @@ cr.define('options', function() {
      */
     get contentElement() {
       return this.contentElement_;
+    },
+
+    /**
+     * Returns the close button element.
+     * @return {HTMLElement} The close |<button>| element.
+     */
+    get closeButtonElement() {
+      return this.closeButtonElement_;
     },
 
     /* Gets/sets the deletable property. An item that is not deletable doesn't
@@ -122,7 +130,7 @@ cr.define('options', function() {
         return;
 
       var target = e.target;
-      if (target.classList.contains('close-button')) {
+      if (target.classList.contains('row-delete-button')) {
         var listItem = this.getListItemAncestor(target);
         var selected = this.selectionModel.selectedIndexes;
 

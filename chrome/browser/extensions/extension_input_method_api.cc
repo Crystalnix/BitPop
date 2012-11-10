@@ -19,14 +19,15 @@ GetInputMethodFunction::~GetInputMethodFunction() {
 bool GetInputMethodFunction::RunImpl() {
 #if !defined(OS_CHROMEOS)
   NOTREACHED();
+  return false;
 #else
   chromeos::ExtensionInputMethodEventRouter* router =
       profile_->GetExtensionService()->input_method_event_router();
   chromeos::input_method::InputMethodManager* manager =
       chromeos::input_method::InputMethodManager::GetInstance();
   const std::string input_method =
-      router->GetInputMethodForXkb(manager->current_input_method().id());
-  result_.reset(Value::CreateStringValue(input_method));
+      router->GetInputMethodForXkb(manager->GetCurrentInputMethod().id());
+  SetResult(Value::CreateStringValue(input_method));
   return true;
 #endif
 }

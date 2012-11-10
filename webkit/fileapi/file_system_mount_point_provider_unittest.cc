@@ -19,6 +19,7 @@
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/fileapi/file_system_context.h"
+#include "webkit/fileapi/file_system_task_runners.h"
 #include "webkit/fileapi/file_system_util.h"
 #include "webkit/fileapi/mock_file_system_options.h"
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
@@ -102,7 +103,6 @@ const struct IsRestrictedNameTest {
   FilePath::StringType name;
   bool expected_dangerous;
 } kIsRestrictedNameTestCases[] = {
-
   // Names that contain strings that used to be restricted, but are now allowed.
   { FILE_PATH_LITERAL("con"), false, },
   { FILE_PATH_LITERAL("Con.txt"), false, },
@@ -211,8 +211,7 @@ class FileSystemMountPointProviderTest : public testing::Test {
  protected:
   void SetupNewContext(const FileSystemOptions& options) {
     file_system_context_ = new FileSystemContext(
-        base::MessageLoopProxy::current(),
-        base::MessageLoopProxy::current(),
+        FileSystemTaskRunners::CreateMockTaskRunners(),
         special_storage_policy_,
         NULL,
         data_dir_.path(),
@@ -220,7 +219,7 @@ class FileSystemMountPointProviderTest : public testing::Test {
 #if defined(OS_CHROMEOS)
     ExternalFileSystemMountPointProvider* external_provider =
         file_system_context_->external_provider();
-    external_provider->AddMountPoint(FilePath(kMountPoint));
+    external_provider->AddLocalMountPoint(FilePath(kMountPoint));
 #endif
   }
 
@@ -255,6 +254,7 @@ class FileSystemMountPointProviderTest : public testing::Test {
 
  private:
   ScopedTempDir data_dir_;
+  MessageLoop message_loop_;
   base::WeakPtrFactory<FileSystemMountPointProviderTest> weak_factory_;
 
   scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;

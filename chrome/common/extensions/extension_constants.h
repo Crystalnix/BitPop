@@ -4,298 +4,16 @@
 
 #ifndef CHROME_COMMON_EXTENSIONS_EXTENSION_CONSTANTS_H_
 #define CHROME_COMMON_EXTENSIONS_EXTENSION_CONSTANTS_H_
-#pragma once
 
 #include <string>
 
 #include "base/basictypes.h"
 #include "googleurl/src/gurl.h"
 
-// Keys used in JSON representation of extensions.
-namespace extension_manifest_keys {
-  extern const char kAllFrames[];
-  extern const char kAltKey[];
-  extern const char kApp[];
-  extern const char kBackground[];
-  extern const char kBackgroundPage[];
-  extern const char kBackgroundPageLegacy[];
-  extern const char kBackgroundScripts[];
-  extern const char kBackgroundPersistent[];
-  extern const char kBrowserAction[];
-  extern const char kBrowseURLs[];
-  extern const char kChromeURLOverrides[];
-  extern const char kContentScripts[];
-  extern const char kContentSecurityPolicy[];
-  extern const char kConvertedFromUserScript[];
-  extern const char kCss[];
-  extern const char kCtrlKey[];
-  extern const char kCurrentLocale[];
-  extern const char kDefaultLocale[];
-  extern const char kDescription[];
-  extern const char kDevToolsPage[];
-  extern const char kExcludeGlobs[];
-  extern const char kExcludeMatches[];
-  extern const char kFileFilters[];
-  extern const char kFileBrowserHandlers[];
-  extern const char kHomepageURL[];
-  extern const char kIcons[];
-  extern const char kId[];
-  extern const char kIncognito[];
-  extern const char kIncludeGlobs[];
-  extern const char kInputComponents[];
-  extern const char kIntents[];
-  extern const char kIntentType[];
-  extern const char kIntentPath[];
-  extern const char kIntentTitle[];
-  extern const char kIntentDisposition[];
-  extern const char kIsolation[];
-  extern const char kJs[];
-  extern const char kKeycode[];
-  extern const char kLanguage[];
-  extern const char kLaunch[];
-  extern const char kLaunchContainer[];
-  extern const char kLaunchHeight[];
-  extern const char kLaunchLocalPath[];
-  extern const char kLaunchWebURL[];
-  extern const char kLaunchWidth[];
-  extern const char kLayouts[];
-  extern const char kManifestVersion[];
-  extern const char kMatches[];
-  extern const char kMinimumChromeVersion[];
-  extern const char kNaClModules[];
-  extern const char kNaClModulesMIMEType[];
-  extern const char kNaClModulesPath[];
-  extern const char kName[];
-  extern const char kOfflineEnabled[];
-  extern const char kOmnibox[];
-  extern const char kOmniboxKeyword[];
-  extern const char kOptionalPermissions[];
-  extern const char kOptionsPage[];
-  extern const char kPageAction[];
-  extern const char kPageActionDefaultIcon[];
-  extern const char kPageActionDefaultPopup[];
-  extern const char kPageActionDefaultTitle[];
-  extern const char kPageActionIcons[];
-  extern const char kPageActionId[];
-  extern const char kPageActionPopup[];
-  extern const char kPageActionPopupPath[];
-  extern const char kPageActions[];
-  extern const char kPermissions[];
-  extern const char kPlatformApp[];
-  extern const char kPlugins[];
-  extern const char kPluginsPath[];
-  extern const char kPluginsPublic[];
-  extern const char kPublicKey[];
-  extern const char kRequirements[];
-  extern const char kRunAt[];
-  extern const char kShiftKey[];
-  extern const char kShortcutKey[];
-  extern const char kSignature[];
-  extern const char kTheme[];
-  extern const char kThemeColors[];
-  extern const char kThemeDisplayProperties[];
-  extern const char kThemeImages[];
-  extern const char kThemeTints[];
-  extern const char kTtsEngine[];
-  extern const char kTtsGenderFemale[];
-  extern const char kTtsGenderMale[];
-  extern const char kTtsVoices[];
-  extern const char kTtsVoicesEventTypeEnd[];
-  extern const char kTtsVoicesEventTypeError[];
-  extern const char kTtsVoicesEventTypeMarker[];
-  extern const char kTtsVoicesEventTypeSentence[];
-  extern const char kTtsVoicesEventTypeStart[];
-  extern const char kTtsVoicesEventTypeWord[];
-  extern const char kTtsVoicesEventTypes[];
-  extern const char kTtsVoicesGender[];
-  extern const char kTtsVoicesLang[];
-  extern const char kTtsVoicesVoiceName[];
-  extern const char kType[];
-  extern const char kUpdateURL[];
-  extern const char kVersion[];
-  extern const char kWebAccessibleResources[];
-  extern const char kWebURLs[];
-}  // namespace extension_manifest_keys
-
-// Some values expected in manifests.
-namespace extension_manifest_values {
-  extern const char kIncognitoSplit[];
-  extern const char kIncognitoSpanning[];
-  extern const char kIntentDispositionWindow[];
-  extern const char kIntentDispositionInline[];
-  extern const char kIsolatedStorage[];
-  extern const char kLaunchContainerPanel[];
-  extern const char kLaunchContainerShell[];
-  extern const char kLaunchContainerTab[];
-  extern const char kLaunchContainerWindow[];
-  extern const char kPageActionTypePermanent[];
-  extern const char kPageActionTypeTab[];
-  extern const char kRunAtDocumentEnd[];
-  extern const char kRunAtDocumentIdle[];
-  extern const char kRunAtDocumentStart[];
-}  // namespace extension_manifest_values
-
-// Error messages returned from Extension::InitFromValue().
-namespace extension_manifest_errors {
-  extern const char kAppsNotEnabled[];
-  extern const char kBackgroundPermissionNeeded[];
-  extern const char kCannotAccessPage[];
-  extern const char kCannotChangeExtensionID[];
-  extern const char kCannotClaimAllHostsInExtent[];
-  extern const char kCannotClaimAllURLsInExtent[];
-  extern const char kCannotScriptGallery[];
-  extern const char kCannotUninstallManagedExtension[];
-  extern const char kChromeVersionTooLow[];
-  extern const char kDevToolsExperimental[];
-  extern const char kDisabledByPolicy[];
-  extern const char kExperimentalFlagRequired[];
-  extern const char kExpectString[];
-  extern const char kFeatureNotAllowed[];
-  extern const char kInvalidAllFrames[];
-  extern const char kInvalidBackground[];
-  extern const char kInvalidBackgroundCombination[];
-  extern const char kInvalidBackgroundScript[];
-  extern const char kInvalidBackgroundScripts[];
-  extern const char kInvalidBackgroundInHostedApp[];
-  extern const char kInvalidBackgroundPersistent[];
-  extern const char kInvalidBackgroundPersistentNoPage[];
-  extern const char kInvalidBrowserAction[];
-  extern const char kInvalidBrowseURL[];
-  extern const char kInvalidBrowseURLs[];
-  extern const char kInvalidChromeURLOverrides[];
-  extern const char kInvalidContentScript[];
-  extern const char kInvalidContentScriptsList[];
-  extern const char kInvalidContentSecurityPolicy[];
-  extern const char kInvalidCss[];
-  extern const char kInvalidCssList[];
-  extern const char kInvalidDefaultLocale[];
-  extern const char kInvalidDescription[];
-  extern const char kInvalidDevToolsPage[];
-  extern const char kInvalidExcludeMatch[];
-  extern const char kInvalidExcludeMatches[];
-  extern const char kInvalidFileBrowserHandler[];
-  extern const char kInvalidFileFiltersList[];
-  extern const char kInvalidFileFilterValue[];
-  extern const char kInvalidGlob[];
-  extern const char kInvalidGlobList[];
-  extern const char kInvalidHomepageURL[];
-  extern const char kInvalidIconPath[];
-  extern const char kInvalidIcons[];
-  extern const char kInvalidIncognitoBehavior[];
-  extern const char kInvalidInputComponents[];
-  extern const char kInvalidInputComponentDescription[];
-  extern const char kInvalidInputComponentLayoutName[];
-  extern const char kInvalidInputComponentLayouts[];
-  extern const char kInvalidInputComponentName[];
-  extern const char kInvalidInputComponentShortcutKey[];
-  extern const char kInvalidInputComponentShortcutKeycode[];
-  extern const char kInvalidInputComponentType[];
-  extern const char kInvalidIntent[];
-  extern const char kInvalidIntentDisposition[];
-  extern const char kInvalidIntentPath[];
-  extern const char kInvalidIntentPageInHostedApp[];
-  extern const char kInvalidIntents[];
-  extern const char kInvalidIntentType[];
-  extern const char kInvalidIntentTypeElement[];
-  extern const char kInvalidIntentTitle[];
-  extern const char kInvalidIsolation[];
-  extern const char kInvalidIsolationValue[];
-  extern const char kInvalidJs[];
-  extern const char kInvalidJsList[];
-  extern const char kInvalidKey[];
-  extern const char kInvalidLaunchContainer[];
-  extern const char kInvalidLaunchContainerForNonPlatform[];
-  extern const char kInvalidLaunchContainerForPlatform[];
-  extern const char kInvalidLaunchHeight[];
-  extern const char kInvalidLaunchHeightContainer[];
-  extern const char kInvalidLaunchLocalPath[];
-  extern const char kInvalidLaunchWebURL[];
-  extern const char kInvalidLaunchWidth[];
-  extern const char kInvalidLaunchWidthContainer[];
-  extern const char kInvalidManifest[];
-  extern const char kInvalidManifestVersion[];
-  extern const char kInvalidMatch[];
-  extern const char kInvalidMatchCount[];
-  extern const char kInvalidMatches[];
-  extern const char kInvalidMinimumChromeVersion[];
-  extern const char kInvalidNaClModules[];
-  extern const char kInvalidNaClModulesMIMEType[];
-  extern const char kInvalidNaClModulesPath[];
-  extern const char kInvalidName[];
-  extern const char kInvalidOfflineEnabled[];
-  extern const char kInvalidOmniboxKeyword[];
-  extern const char kInvalidOptionsPage[];
-  extern const char kInvalidOptionsPageExpectUrlInPackage[];
-  extern const char kInvalidOptionsPageInHostedApp[];
-  extern const char kInvalidPageAction[];
-  extern const char kInvalidPageActionDefaultTitle[];
-  extern const char kInvalidPageActionIconPath[];
-  extern const char kInvalidPageActionId[];
-  extern const char kInvalidPageActionName[];
-  extern const char kInvalidPageActionOldAndNewKeys[];
-  extern const char kInvalidPageActionPopup[];
-  extern const char kInvalidPageActionPopupHeight[];
-  extern const char kInvalidPageActionPopupPath[];
-  extern const char kInvalidPageActionsList[];
-  extern const char kInvalidPageActionsListSize[];
-  extern const char kInvalidPageActionTypeValue[];
-  extern const char kInvalidPermission[];
-  extern const char kInvalidPermissions[];
-  extern const char kInvalidPermissionScheme[];
-  extern const char kInvalidPlugins[];
-  extern const char kInvalidPluginsPath[];
-  extern const char kInvalidPluginsPublic[];
-  extern const char kInvalidRequirement[];
-  extern const char kInvalidRequirements[];
-  extern const char kInvalidRunAt[];
-  extern const char kInvalidSignature[];
-  extern const char kInvalidTheme[];
-  extern const char kInvalidThemeColors[];
-  extern const char kInvalidThemeImages[];
-  extern const char kInvalidThemeImagesMissing[];
-  extern const char kInvalidThemeTints[];
-  extern const char kInvalidTts[];
-  extern const char kInvalidTtsVoices[];
-  extern const char kInvalidTtsVoicesEventTypes[];
-  extern const char kInvalidTtsVoicesGender[];
-  extern const char kInvalidTtsVoicesLang[];
-  extern const char kInvalidTtsVoicesVoiceName[];
-  extern const char kInvalidUpdateURL[];
-  extern const char kInvalidURLPatternError[];
-  extern const char kInvalidVersion[];
-  extern const char kInvalidWebAccessibleResourcesList[];
-  extern const char kInvalidWebAccessibleResource[];
-  extern const char kInvalidWebURL[];
-  extern const char kInvalidWebURLs[];
-  extern const char kInvalidZipHash[];
-  extern const char kLaunchPathAndExtentAreExclusive[];
-  extern const char kLaunchPathAndURLAreExclusive[];
-  extern const char kLaunchURLRequired[];
-  extern const char kLocalesMessagesFileMissing[];
-  extern const char kLocalesNoDefaultLocaleSpecified[];
-  extern const char kLocalesNoDefaultMessages[];
-  extern const char kLocalesNoValidLocaleNamesListed[];
-  extern const char kLocalesTreeMissing[];
-  extern const char kManifestParseError[];
-  extern const char kManifestUnreadable[];
-  extern const char kMissingFile[];
-  extern const char kMultipleOverrides[];
-  extern const char kNoWildCardsInPaths[];
-  extern const char kPermissionNotAllowed[];
-  extern const char kOneUISurfaceOnly[];
-  extern const char kReservedMessageFound[];
-  extern const char kWebContentMustBeEnabled[];
-#if defined(OS_CHROMEOS)
-  extern const char kIllegalPlugins[];
-#endif
-}  // namespace extension_manifest_errors
-
 namespace extension_urls {
   // Returns the URL prefix for the extension/apps gallery. Can be set via the
   // --apps-gallery-url switch. The URL returned will not contain a trailing
-  // slash. Do not use this as a prefix/extent for the store.  Instead see
-  // ExtensionService::GetWebStoreApp or
-  // ExtensionService::IsDownloadFromGallery
+  // slash. Do not use this as a prefix/extent for the store.
   std::string GetWebstoreLaunchURL();
 
   // Returns the URL prefix for an item in the extension/app gallery. This URL
@@ -303,16 +21,20 @@ namespace extension_urls {
   // to get the item detail URL.
   std::string GetWebstoreItemDetailURLPrefix();
 
+  // Returns the URL leading to a search page for Web Intents. The search is
+  // specific to intents with the given |action| and |type|.
+  GURL GetWebstoreIntentQueryURL(const std::string& action,
+                                 const std::string& type);
+
   // Returns the URL used to get webstore data (ratings, manifest, icon URL,
   // etc.) about an extension from the webstore as JSON.
   GURL GetWebstoreItemJsonDataURL(const std::string& extension_id);
 
-  // Return the update URL used by gallery/webstore extensions/apps. The
-  // |secure| parameter will be ignored if the update URL is overriden with
-  // --apps-gallery-update-url.
-  GURL GetWebstoreUpdateUrl(bool secure);
+  // Return the update URL used by gallery/webstore extensions/apps.
+  GURL GetWebstoreUpdateUrl();
 
-  // Returns whether the URL is the webstore update URL (secure or not).
+  // Returns whether the URL is the webstore update URL (just considering host
+  // and path, not scheme, query, etc.)
   bool IsWebstoreUpdateUrl(const GURL& update_url);
 
   // Returns true if the URL points to an extension blacklist.
@@ -338,6 +60,18 @@ namespace extension_filenames {
   // The filename to use for a background page generated from
   // background.scripts.
   extern const char kGeneratedBackgroundPageFilename[];
+}
+
+// Keys in the dictionary returned by Extension::GetBasicInfo().
+namespace extension_info_keys {
+  extern const char kDescriptionKey[];
+  extern const char kEnabledKey[];
+  extern const char kHomepageUrlKey[];
+  extern const char kIdKey[];
+  extern const char kNameKey[];
+  extern const char kOfflineEnabledKey[];
+  extern const char kOptionsUrlKey[];
+  extern const char kVersionKey[];
 }
 
 namespace extension_misc {
@@ -368,11 +102,17 @@ namespace extension_misc {
   // The extension id of the HTerm dev app for ChromeOS.
   extern const char kHTermDevAppId[];
 
+  // The extension id of the Crosh component app for ChromeOS.
+  extern const char kCroshBuiltinAppId[];
+
   // The extension id of the Web Store component application.
   extern const char kWebStoreAppId[];
 
   // The extension id of the Cloud Print component application.
   extern const char kCloudPrintAppId[];
+
+  // The extension id of the Chrome component application.
+  extern const char kChromeAppId[];
 
   // Note: this structure is an ASN.1 which encodes the algorithm used
   // with its parameters. This is defined in PKCS #1 v2.1 (RFC 3447).
@@ -388,20 +128,9 @@ namespace extension_misc {
     LAUNCH_WINDOW,
     LAUNCH_PANEL,
     LAUNCH_TAB,
-    LAUNCH_SHELL
-  };
-
-  // The name of the apps promo histogram.
-  extern const char kAppsPromoHistogram[];
-
-  // The buckets used in the apps promo histogram.
-  enum AppsPromoBuckets {
-    PROMO_LAUNCH_APP,
-    PROMO_LAUNCH_WEB_STORE,
-    PROMO_CLOSE,
-    PROMO_EXPIRE,
-    PROMO_SEEN,
-    PROMO_BUCKET_BOUNDARY
+    // For platform apps, which don't actually have a container (they just get a
+    // "onLaunched" event).
+    LAUNCH_NONE
   };
 
   // The name of the app launch histogram.
@@ -468,6 +197,9 @@ namespace extension_misc {
     // User clicked web store link on the NTP footer.
     APP_LAUNCH_NTP_WEBSTORE_FOOTER,
 
+    // User clicked [+] icon in apps page.
+    APP_LAUNCH_NTP_WEBSTORE_PLUS_ICON,
+
     APP_LAUNCH_BUCKET_BOUNDARY,
     APP_LAUNCH_BUCKET_INVALID
   };
@@ -496,6 +228,22 @@ namespace extension_misc {
     UNLOAD_REASON_UNINSTALL,  // Extension is being uninstalled.
     UNLOAD_REASON_TERMINATE,  // Extension has terminated.
   };
+
+  // The states that an app can be in, as reported by chrome.app.installState
+  // and chrome.app.runningState.
+  extern const char kAppStateNotInstalled[];
+  extern const char kAppStateInstalled[];
+  extern const char kAppStateDisabled[];
+  extern const char kAppStateRunning[];
+  extern const char kAppStateCannotRun[];
+  extern const char kAppStateReadyToRun[];
+
+  // The path part of the file system url used for media file systems.
+  extern const char kMediaFileSystemPathPart[];
+
+  // Error indicating that the app notifications API is not accessible by split
+  // mode extensions in incognito windows.
+  extern const char kAppNotificationsIncognitoError[];
 }  // extension_misc
 
 #endif  // CHROME_COMMON_EXTENSIONS_EXTENSION_CONSTANTS_H_

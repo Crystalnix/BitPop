@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_GTK_INFOBARS_INFOBAR_GTK_H_
 #define CHROME_BROWSER_UI_GTK_INFOBARS_INFOBAR_GTK_H_
-#pragma once
 
 #include <gtk/gtk.h>
 
@@ -70,6 +69,10 @@ class InfoBarGtk : public InfoBar,
 
   // Creates a link button with the appropriate current gtk-theme state.
   GtkWidget* CreateLinkButton(const std::string& text);
+
+  // Builds a button with an arrow in it to emulate the menu-button style from
+  // the windows version.
+  static GtkWidget* CreateMenuButton(const std::string& text);
 
   // Adds |display_text| to the infobar. If |link_text| is not empty, it is
   // rendered as a hyperlink and inserted into |display_text| at |link_offset|,

@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_UI_WEBUI_CHROMEOS_MOBILE_SETUP_UI_H_
 #define CHROME_BROWSER_UI_WEBUI_CHROMEOS_MOBILE_SETUP_UI_H_
-#pragma once
 
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/web_ui_controller.h"
@@ -18,7 +17,8 @@ class MobileSetupUI : public content::WebUIController,
 
  private:
   // WebUIController overrides.
-  virtual void RenderViewCreated(RenderViewHost* render_view_host) OVERRIDE;
+  virtual void RenderViewCreated(
+      content::RenderViewHost* render_view_host) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(MobileSetupUI);
 };

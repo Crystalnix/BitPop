@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,7 @@ cr.define('options', function() {
   function ImportDataOverlay() {
     OptionsPage.call(this,
                      'importData',
-                     templateData.importDataOverlayTabTitle,
+                     loadTimeData.getString('importDataOverlayTabTitle'),
                      'import-data-overlay');
   }
 
@@ -102,7 +102,7 @@ cr.define('options', function() {
      * @private
      */
     setUpCheckboxState_: function(checkbox, enabled) {
-       checkbox.setDisabled("noProfileData", !enabled);
+       checkbox.setDisabled('noProfileData', !enabled);
     },
 
     /**
@@ -135,14 +135,14 @@ cr.define('options', function() {
       var browserCount = browsers.length;
 
       if (browserCount == 0) {
-        var option = new Option(templateData.noProfileFound, 0);
+        var option = new Option(loadTimeData.getString('noProfileFound'), 0);
         browserSelect.appendChild(option);
 
         this.setControlsSensitive_(false);
       } else {
         this.setControlsSensitive_(true);
         for (var i = 0; i < browserCount; i++) {
-          var browser = browsers[i]
+          var browser = browsers[i];
           var option = new Option(browser['name'], browser['index']);
           browserSelect.appendChild(option);
         }
@@ -153,11 +153,11 @@ cr.define('options', function() {
     },
 
     /**
-    * Clear import prefs set when user checks/unchecks a checkbox so that each
-    * checkbox goes back to the default "checked" state (or alternatively, to
-    * the state set by a recommended policy).
-    * @private
-    */
+     * Clear import prefs set when user checks/unchecks a checkbox so that each
+     * checkbox goes back to the default "checked" state (or alternatively, to
+     * the state set by a recommended policy).
+     * @private
+     */
     clearUserPrefs_: function() {
       var importPrefs = ['import_history',
                          'import_bookmarks',
@@ -165,6 +165,21 @@ cr.define('options', function() {
                          'import_search_engine'];
       for (var i = 0; i < importPrefs.length; i++)
         Preferences.clearPref(importPrefs[i], undefined);
+    },
+
+    /**
+     * Update the dialog layout to reflect success state.
+     * @param {boolean} success If true, show success dialog elements.
+     * @private
+     */
+    updateSuccessState_: function(success) {
+      var sections = document.querySelectorAll('.import-data-configure');
+      for (var i = 0; i < sections.length; i++)
+        sections[i].hidden = success;
+
+      sections = document.querySelectorAll('.import-data-success');
+      for (var i = 0; i < sections.length; i++)
+        sections[i].hidden = !success;
     },
   };
 
@@ -188,11 +203,11 @@ cr.define('options', function() {
     var checkboxes =
         document.querySelectorAll('#import-checkboxes input[type=checkbox]');
     for (var i = 0; i < checkboxes.length; i++)
-        checkboxes[i].setDisabled("Importing", state);
+        checkboxes[i].setDisabled('Importing', state);
     if (!state)
       ImportDataOverlay.getInstance().updateCheckboxes_();
     $('import-browsers').disabled = state;
-    $('import-throbber').style.visibility = state ? "visible" : "hidden";
+    $('import-throbber').style.visibility = state ? 'visible' : 'hidden';
     ImportDataOverlay.getInstance().validateCommitButton_();
   };
 
@@ -210,9 +225,19 @@ cr.define('options', function() {
   ImportDataOverlay.confirmSuccess = function() {
     var showBookmarksMessage = $('import-favorites').checked;
     ImportDataOverlay.setImportingState(false);
-    $('import-data-configure').hidden = true;
-    $('import-data-success').hidden = false;
     $('import-find-your-bookmarks').hidden = !showBookmarksMessage;
+    ImportDataOverlay.getInstance().updateSuccessState_(true);
+  };
+
+  /**
+   * Show the import data overlay.
+   */
+  ImportDataOverlay.show = function() {
+    // Make sure that any previous import success message is hidden, and
+    // we're showing the UI to import further data.
+    ImportDataOverlay.getInstance().updateSuccessState_(false);
+
+    OptionsPage.navigateToPage('importData');
   };
 
   // Export

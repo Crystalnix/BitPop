@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef SQL_CONNECTION_H_
 #define SQL_CONNECTION_H_
-#pragma once
 
 #include <map>
 #include <set>
@@ -13,6 +12,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/time.h"
 #include "sql/sql_export.h"
 
@@ -181,6 +181,26 @@ class SQL_EXPORT Connection {
   // generally exist either.
   void Preload();
 
+  // Raze the database to the ground.  This approximates creating a
+  // fresh database from scratch, within the constraints of SQLite's
+  // locking protocol (locks and open handles can make doing this with
+  // filesystem operations problematic).  Returns true if the database
+  // was razed.
+  //
+  // false is returned if the database is locked by some other
+  // process.  RazeWithTimeout() may be used if appropriate.
+  //
+  // NOTE(shess): Raze() will DCHECK in the following situations:
+  // - database is not open.
+  // - the connection has a transaction open.
+  // - a SQLite issue occurs which is structural in nature (like the
+  //   statements used are broken).
+  // Since Raze() is expected to be called in unexpected situations,
+  // these all return false, since it is unlikely that the caller
+  // could fix them.
+  bool Raze();
+  bool RazeWithTimout(base::TimeDelta timeout);
+
   // Transactions --------------------------------------------------------------
 
   // Transaction management. We maintain a virtual transaction stack to emulate
@@ -301,6 +321,14 @@ class SQL_EXPORT Connection {
   // sqlite3_open. The string can also be sqlite's special ":memory:" string.
   bool OpenInternal(const std::string& file_name);
 
+  // Check whether the current thread is allowed to make IO calls, but only
+  // if database wasn't open in memory. Function is inlined to be a no-op in
+  // official build.
+  void AssertIOAllowed() {
+    if (!in_memory_)
+      base::ThreadRestrictions::AssertIOAllowed();
+  }
+
   // Internal helper for DoesTableExist and DoesIndexExist.
   bool DoesTableOrIndexExist(const char* name, const char* type) const;
 
@@ -319,6 +347,7 @@ class SQL_EXPORT Connection {
    public:
     // Default constructor initializes to an invalid statement.
     StatementRef();
+    explicit StatementRef(sqlite3_stmt* stmt);
     StatementRef(Connection* connection, sqlite3_stmt* stmt);
 
     // When true, the statement can be used.
@@ -335,6 +364,10 @@ class SQL_EXPORT Connection {
     // Destroys the compiled statement and marks it NULL. The statement will
     // no longer be active.
     void Close();
+
+    // Check whether the current thread is allowed to make IO calls, but only
+    // if database wasn't open in memory.
+    void AssertIOAllowed() { if (connection_) connection_->AssertIOAllowed(); }
 
    private:
     friend class base::RefCounted<StatementRef>;
@@ -368,6 +401,14 @@ class SQL_EXPORT Connection {
   bool ExecuteWithTimeout(const char* sql, base::TimeDelta ms_timeout)
       WARN_UNUSED_RESULT;
 
+  // Internal helper for const functions.  Like GetUniqueStatement(),
+  // except the statement is not entered into open_statements_,
+  // allowing this function to be const.  Open statements can block
+  // closing the database, so only use in cases where the last ref is
+  // released before close could be called (which should always be the
+  // case for const functions).
+  scoped_refptr<StatementRef> GetUntrackedStatement(const char* sql) const;
+
   // The actual sqlite database. Will be NULL before Init has been called or if
   // Init resulted in an error.
   sqlite3* db_;
@@ -397,6 +438,10 @@ class SQL_EXPORT Connection {
   // When we get to the outermost transaction, this will determine if we do
   // a rollback instead of a commit.
   bool needs_rollback_;
+
+  // True if database is open with OpenInMemory(), False if database is open
+  // with Open().
+  bool in_memory_;
 
   // This object handles errors resulting from all forms of executing sqlite
   // commands or statements. It can be null which means default handling.

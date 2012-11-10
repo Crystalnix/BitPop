@@ -8,17 +8,19 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/snapshot_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/browser/renderer_host/render_view_host.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_observer.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/browser_test_utils.h"
 #include "net/test/test_server.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/clipboard/clipboard.h"
@@ -42,10 +44,9 @@ class PDFBrowserTest : public InProcessBrowserTest,
       : snapshot_different_(true),
         next_dummy_search_value_(0),
         load_stop_notification_count_(0) {
-    EnableDOMAutomation();
-
     pdf_test_server_.reset(new net::TestServer(
         net::TestServer::TYPE_HTTP,
+        net::TestServer::kLocalhost,
         FilePath(FILE_PATH_LITERAL("pdf/test"))));
   }
 
@@ -68,7 +69,7 @@ class PDFBrowserTest : public InProcessBrowserTest,
     // to a smaller window and then expanding leads to slight anti-aliasing
     // differences of the text and the pixel comparison fails.
     gfx::Rect bounds(gfx::Rect(0, 0, kBrowserWidth, kBrowserHeight));
-    gfx::Rect screen_bounds = gfx::Screen::GetPrimaryMonitorBounds();
+    gfx::Rect screen_bounds = gfx::Screen::GetPrimaryDisplay().bounds();
     ASSERT_GT(screen_bounds.width(), kBrowserWidth);
     ASSERT_GT(screen_bounds.height(), kBrowserHeight);
     browser()->window()->SetBounds(bounds);
@@ -82,12 +83,12 @@ class PDFBrowserTest : public InProcessBrowserTest,
   void VerifySnapshot(const std::string& expected_filename) {
     snapshot_different_ = true;
     expected_filename_ = expected_filename;
-    TabContentsWrapper* wrapper =  browser()->GetSelectedTabContentsWrapper();
-    wrapper->snapshot_tab_helper()->CaptureSnapshot();
+    TabContents* tab_contents =  chrome::GetActiveTabContents(browser());
+    tab_contents->snapshot_tab_helper()->CaptureSnapshot();
     ui_test_utils::RegisterAndWait(
         this,
         chrome::NOTIFICATION_TAB_SNAPSHOT_TAKEN,
-        content::Source<WebContents>(wrapper->web_contents()));
+        content::Source<WebContents>(tab_contents->web_contents()));
     ASSERT_FALSE(snapshot_different_) << "Rendering didn't match, see result "
         "at " << snapshot_filename_.value().c_str();
   }
@@ -106,7 +107,7 @@ class PDFBrowserTest : public InProcessBrowserTest,
     string16 query = UTF8ToUTF16(
         std::string("xyzxyz" + base::IntToString(next_dummy_search_value_++)));
     ASSERT_EQ(0, ui_test_utils::FindInPage(
-        browser()->GetSelectedTabContentsWrapper(), query, true, false, NULL));
+        chrome::GetActiveTabContents(browser()), query, true, false, NULL));
   }
 
  private:
@@ -236,13 +237,13 @@ IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_Scroll) {
   wheel_event.type = WebKit::WebInputEvent::MouseWheel;
   wheel_event.deltaY = -200;
   wheel_event.wheelTicksY = -2;
-  WebContents* web_contents = browser()->GetSelectedWebContents();
+  WebContents* web_contents = chrome::GetActiveWebContents(browser());
   web_contents->GetRenderViewHost()->ForwardWheelEvent(wheel_event);
   ASSERT_NO_FATAL_FAILURE(WaitForResponse());
 
   int y_offset = 0;
-  ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractInt(
-      browser()->GetSelectedWebContents()->GetRenderViewHost(),
+  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractInt(
+      chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
       std::wstring(),
       L"window.domAutomationController.send(plugin.pageYOffset())",
       &y_offset));
@@ -259,7 +260,7 @@ IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_FindAndCopy) {
   ASSERT_NO_FATAL_FAILURE(Load());
   // Verifies that find in page works.
   ASSERT_EQ(3, ui_test_utils::FindInPage(
-      browser()->GetSelectedTabContentsWrapper(), UTF8ToUTF16("adipiscing"),
+      chrome::GetActiveTabContents(browser()), UTF8ToUTF16("adipiscing"),
       true, false, NULL));
 
   // Verify that copying selected text works.
@@ -269,9 +270,9 @@ IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_FindAndCopy) {
   ui::Clipboard::ObjectMapParams params;
   params.push_back(std::vector<char>());
   objects[ui::Clipboard::CBF_TEXT] = params;
-  clipboard.WriteObjects(objects);
+  clipboard.WriteObjects(ui::Clipboard::BUFFER_STANDARD, objects);
 
-  browser()->GetSelectedWebContents()->GetRenderViewHost()->Copy();
+  chrome::GetActiveWebContents(browser())->GetRenderViewHost()->Copy();
   ASSERT_NO_FATAL_FAILURE(WaitForResponse());
 
   std::string text;
@@ -282,12 +283,12 @@ IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_FindAndCopy) {
 // Tests that loading async pdfs works correctly (i.e. document fully loads).
 // This also loads all documents that used to crash, to ensure we don't have
 // regressions.
-// Flaky as per http://crbug.com/74548.
-IN_PROC_BROWSER_TEST_F(PDFBrowserTest, FLAKY_SLOW_Loading) {
+// If it flakes, reopen http://crbug.com/74548.
+IN_PROC_BROWSER_TEST_F(PDFBrowserTest, SLOW_Loading) {
   ASSERT_TRUE(pdf_test_server()->Start());
 
   NavigationController* controller =
-      &(browser()->GetSelectedWebContents()->GetController());
+      &(chrome::GetActiveWebContents(browser())->GetController());
   content::NotificationRegistrar registrar;
   registrar.Add(this,
                 content::NOTIFICATION_LOAD_STOP,
@@ -321,8 +322,8 @@ IN_PROC_BROWSER_TEST_F(PDFBrowserTest, FLAKY_SLOW_Loading) {
       // doing async loading.  This happens when the first loader is cancelled
       // and before creating a byte-range request loader.
       bool complete = false;
-      ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
-          browser()->GetSelectedWebContents()->GetRenderViewHost(),
+      ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
+          chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
           std::wstring(),
           L"window.domAutomationController.send(plugin.documentLoadComplete())",
           &complete));
@@ -333,34 +334,30 @@ IN_PROC_BROWSER_TEST_F(PDFBrowserTest, FLAKY_SLOW_Loading) {
       // nested message loop for the JS call.
       if (last_count != load_stop_notification_count())
         continue;
-      ui_test_utils::WaitForLoadStop(browser()->GetSelectedWebContents());
+      content::WaitForLoadStop(chrome::GetActiveWebContents(browser()));
     }
   }
 }
 
 // Flaky as per http://crbug.com/74549.
-#if defined(OS_MACOSX)
-#define MAYBE_OnLoadAndReload DISABLED_OnLoadAndReload
-#else
-#define MAYBE_OnLoadAndReload FLAKY_OnLoadAndReload
-#endif
-IN_PROC_BROWSER_TEST_F(PDFBrowserTest, MAYBE_OnLoadAndReload) {
+IN_PROC_BROWSER_TEST_F(PDFBrowserTest, DISABLED_OnLoadAndReload) {
   ASSERT_TRUE(pdf_test_server()->Start());
 
   GURL url = pdf_test_server()->GetURL("files/onload_reload.html");
   ui_test_utils::NavigateToURL(browser(), url);
 
-  ui_test_utils::WindowedNotificationObserver observer(
+  content::WindowedNotificationObserver observer(
       content::NOTIFICATION_LOAD_STOP,
       content::Source<NavigationController>(
-          &browser()->GetSelectedWebContents()->GetController()));
-  ASSERT_TRUE(ui_test_utils::ExecuteJavaScript(
-      browser()->GetSelectedWebContents()->GetRenderViewHost(),
+          &chrome::GetActiveWebContents(browser())->GetController()));
+  ASSERT_TRUE(content::ExecuteJavaScript(
+      chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
       std::wstring(),
       L"reloadPDF();"));
   observer.Wait();
 
-  ASSERT_EQ("success", browser()->GetSelectedWebContents()->GetURL().query());
+  ASSERT_EQ("success",
+            chrome::GetActiveWebContents(browser())->GetURL().query());
 }
 
 }  // namespace

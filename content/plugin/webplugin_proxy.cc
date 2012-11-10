@@ -35,12 +35,24 @@
 #include "ui/base/x/x11_util_internal.h"
 #endif
 
+#if defined(OS_WIN)
+#include "content/public/common/sandbox_init.h"
+#endif
+
 using WebKit::WebBindings;
 
 using webkit::npapi::WebPluginResourceClient;
 #if defined(OS_MACOSX)
 using webkit::npapi::WebPluginAcceleratedSurface;
 #endif
+
+
+WebPluginProxy::SharedTransportDIB::SharedTransportDIB(TransportDIB* dib)
+    : dib_(dib) {
+}
+
+WebPluginProxy::SharedTransportDIB::~SharedTransportDIB() {
+}
 
 WebPluginProxy::WebPluginProxy(
     PluginChannel* channel,
@@ -129,10 +141,9 @@ void WebPluginProxy::WillDestroyWindow(gfx::PluginWindowHandle window) {
 #if defined(OS_WIN)
 void WebPluginProxy::SetWindowlessPumpEvent(HANDLE pump_messages_event) {
   HANDLE pump_messages_event_for_renderer = NULL;
-  DuplicateHandle(GetCurrentProcess(), pump_messages_event,
-                  channel_->renderer_handle(),
-                  &pump_messages_event_for_renderer,
-                  0, FALSE, DUPLICATE_SAME_ACCESS);
+  content::BrokerDuplicateHandle(pump_messages_event, channel_->peer_pid(),
+                                 &pump_messages_event_for_renderer,
+                                 SYNCHRONIZE | EVENT_MODIFY_STATE, 0);
   DCHECK(pump_messages_event_for_renderer != NULL);
   Send(new PluginHostMsg_SetWindowlessPumpEvent(
       route_id_, pump_messages_event_for_renderer));
@@ -339,7 +350,7 @@ void WebPluginProxy::Paint(const gfx::Rect& rect) {
   if (!windowless_context())
     return;
 #else
-  if (!windowless_canvas())
+  if (!windowless_canvas() || !windowless_canvas()->getDevice())
     return;
 #endif
 
@@ -380,43 +391,52 @@ void WebPluginProxy::Paint(const gfx::Rect& rect) {
   if (windowless_contexts_[saved_index].get() == saved_context_weak)
     CGContextRestoreGState(windowless_contexts_[saved_index]);
 #else
-  windowless_canvas()->save();
+  // See above comment about windowless_context_ changing.
+  // http::/crbug.com/139462
+  skia::PlatformCanvas* saved_canvas = windowless_canvas();
+  SkAutoRef local_ref(saved_canvas);
+#if defined(USE_X11)
+  scoped_refptr<SharedTransportDIB> local_dib_ref(
+      windowless_dibs_[windowless_buffer_index_]);
+#endif
+
+  saved_canvas->save();
 
   // The given clip rect is relative to the plugin coordinate system.
   SkRect sk_rect = { SkIntToScalar(rect.x()),
                      SkIntToScalar(rect.y()),
                      SkIntToScalar(rect.right()),
                      SkIntToScalar(rect.bottom()) };
-  windowless_canvas()->clipRect(sk_rect);
+  saved_canvas->clipRect(sk_rect);
 
   // Setup the background.
-  if (background_canvas_.get()) {
+  if (background_canvas_.get() && background_canvas_.get()->getDevice()) {
     // When a background canvas is given, we're in transparent mode. This means
     // the plugin wants to have the image of the page in the canvas it's drawing
     // into (which is windowless_canvases_) so it can do blending. So we copy
     // the background bitmap into the windowless canvas.
     const SkBitmap& background_bitmap =
         skia::GetTopDevice(*background_canvas_)->accessBitmap(false);
-    windowless_canvas()->drawBitmap(background_bitmap, 0, 0);
+    saved_canvas->drawBitmap(background_bitmap, 0, 0);
   } else {
     // In non-transparent mode, the plugin doesn't care what's underneath, so we
     // can just give it black.
     SkPaint black_fill_paint;
     black_fill_paint.setARGB(0xFF, 0x00, 0x00, 0x00);
-    windowless_canvas()->drawPaint(black_fill_paint);
+    saved_canvas->drawPaint(black_fill_paint);
   }
 
   // Bring the windowless canvas into the window coordinate system, which is
   // how the plugin expects to draw (since the windowless API was originally
   // designed just for scribbling over the web page).
-  windowless_canvas()->translate(SkIntToScalar(-delegate_->GetRect().x()),
-                                 SkIntToScalar(-delegate_->GetRect().y()));
+  saved_canvas->translate(SkIntToScalar(-delegate_->GetRect().x()),
+                          SkIntToScalar(-delegate_->GetRect().y()));
 
   // Before we send the invalidate, paint so that renderer uses the updated
   // bitmap.
-  delegate_->Paint(windowless_canvas(), offset_rect);
+  delegate_->Paint(saved_canvas, offset_rect);
 
-  windowless_canvas()->restore();
+  saved_canvas->restore();
 #endif
 }
 
@@ -469,26 +489,17 @@ void WebPluginProxy::UpdateGeometry(
 void WebPluginProxy::CreateCanvasFromHandle(
     const TransportDIB::Handle& dib_handle,
     const gfx::Rect& window_rect,
-    scoped_ptr<skia::PlatformCanvas>* canvas_out) {
-  // Create a canvas that will reference the shared bits. We have to handle
-  // errors here since we're mapping a large amount of memory that may not fit
-  // in our address space, or go wrong in some other way.
-  HANDLE section;
-  DuplicateHandle(channel_->renderer_handle(), dib_handle, GetCurrentProcess(),
-                  &section,
-                  STANDARD_RIGHTS_REQUIRED | FILE_MAP_READ | FILE_MAP_WRITE,
-                  FALSE, 0);
-  scoped_ptr<skia::PlatformCanvas> canvas(new skia::PlatformCanvas);
-  if (!canvas->initialize(
+    SkAutoTUnref<skia::PlatformCanvas>* canvas) {
+  canvas->reset(new skia::PlatformCanvas);
+  if (!canvas->get()->initialize(
           window_rect.width(),
           window_rect.height(),
           true,
-          section)) {
-    canvas_out->reset();
+          dib_handle)) {
+    canvas->reset(NULL);
   }
-  canvas_out->reset(canvas.release());
   // The canvas does not own the section so we need to close it now.
-  CloseHandle(section);
+  CloseHandle(dib_handle);
 }
 
 void WebPluginProxy::SetWindowlessBuffers(
@@ -500,16 +511,16 @@ void WebPluginProxy::SetWindowlessBuffers(
                          window_rect,
                          &windowless_canvases_[0]);
   if (!windowless_canvases_[0].get()) {
-    windowless_canvases_[1].reset();
-    background_canvas_.reset();
+    windowless_canvases_[1].reset(NULL);
+    background_canvas_.reset(NULL);
     return;
   }
   CreateCanvasFromHandle(windowless_buffer1,
                          window_rect,
                          &windowless_canvases_[1]);
   if (!windowless_canvases_[1].get()) {
-    windowless_canvases_[0].reset();
-    background_canvas_.reset();
+    windowless_canvases_[0].reset(NULL);
+    background_canvas_.reset(NULL);
     return;
   }
 
@@ -518,8 +529,8 @@ void WebPluginProxy::SetWindowlessBuffers(
                            window_rect,
                            &background_canvas_);
     if (!background_canvas_.get()) {
-      windowless_canvases_[0].reset();
-      windowless_canvases_[1].reset();
+      windowless_canvases_[0].reset(NULL);
+      windowless_canvases_[1].reset(NULL);
       return;
     }
   }
@@ -576,17 +587,18 @@ void WebPluginProxy::SetWindowlessBuffers(
 void WebPluginProxy::CreateDIBAndCanvasFromHandle(
     const TransportDIB::Handle& dib_handle,
     const gfx::Rect& window_rect,
-    scoped_ptr<TransportDIB>* dib_out,
-    scoped_ptr<skia::PlatformCanvas>* canvas_out) {
+    scoped_refptr<SharedTransportDIB>* dib_out,
+    SkAutoTUnref<skia::PlatformCanvas>* canvas) {
   TransportDIB* dib = TransportDIB::Map(dib_handle);
-  skia::PlatformCanvas* canvas = NULL;
   // dib may be NULL if the renderer has already destroyed the TransportDIB by
   // the time we receive the handle, e.g. in case of multiple resizes.
   if (dib) {
-    canvas = dib->GetPlatformCanvas(window_rect.width(), window_rect.height());
+    canvas->reset(
+        dib->GetPlatformCanvas(window_rect.width(), window_rect.height()));
+  } else {
+    canvas->reset(NULL);
   }
-  dib_out->reset(dib);
-  canvas_out->reset(canvas);
+  *dib_out = new SharedTransportDIB(dib);
 }
 
 void WebPluginProxy::CreateShmPixmapFromDIB(
@@ -632,13 +644,23 @@ void WebPluginProxy::SetWindowlessBuffers(
   // If SHM pixmaps support is available, create SHM pixmaps to pass to the
   // delegate for windowless plugin painting.
   if (delegate_->IsWindowless() && use_shm_pixmap_) {
-    CreateShmPixmapFromDIB(windowless_dibs_[0].get(),
+    CreateShmPixmapFromDIB(windowless_dibs_[0]->dib(),
                            window_rect,
                            &windowless_shm_pixmaps_[0]);
-    CreateShmPixmapFromDIB(windowless_dibs_[1].get(),
+    CreateShmPixmapFromDIB(windowless_dibs_[1]->dib(),
                            window_rect,
                            &windowless_shm_pixmaps_[1]);
   }
+}
+
+#elif defined(OS_ANDROID)
+
+void WebPluginProxy::SetWindowlessBuffers(
+    const TransportDIB::Handle& windowless_buffer0,
+    const TransportDIB::Handle& windowless_buffer1,
+    const TransportDIB::Handle& background_buffer,
+    const gfx::Rect& window_rect) {
+  NOTIMPLEMENTED();
 }
 
 #endif

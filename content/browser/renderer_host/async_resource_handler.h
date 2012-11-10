@@ -4,14 +4,18 @@
 
 #ifndef CONTENT_BROWSER_RENDERER_HOST_ASYNC_RESOURCE_HANDLER_H_
 #define CONTENT_BROWSER_RENDERER_HOST_ASYNC_RESOURCE_HANDLER_H_
-#pragma once
 
 #include <string>
 
 #include "content/browser/renderer_host/resource_handler.h"
 #include "googleurl/src/gurl.h"
 
-class ResourceDispatcherHost;
+namespace net {
+class URLRequest;
+}
+
+namespace content {
+class ResourceDispatcherHostImpl;
 class ResourceMessageFilter;
 class SharedIOBuffer;
 
@@ -21,8 +25,14 @@ class AsyncResourceHandler : public ResourceHandler {
  public:
   AsyncResourceHandler(ResourceMessageFilter* filter,
                        int routing_id,
-                       const GURL& url,
-                       ResourceDispatcherHost* resource_dispatcher_host);
+                       net::URLRequest* request,
+                       ResourceDispatcherHostImpl* rdh);
+  virtual ~AsyncResourceHandler();
+
+  // IPC message handlers:
+  void OnFollowRedirect(bool has_new_first_party_for_cookies,
+                        const GURL& new_first_party_for_cookies);
+  void OnDataReceivedACK();
 
   // ResourceHandler implementation:
   virtual bool OnUploadProgress(int request_id,
@@ -30,10 +40,11 @@ class AsyncResourceHandler : public ResourceHandler {
                                 uint64 size) OVERRIDE;
   virtual bool OnRequestRedirected(int request_id,
                                    const GURL& new_url,
-                                   content::ResourceResponse* response,
+                                   ResourceResponse* response,
                                    bool* defer) OVERRIDE;
   virtual bool OnResponseStarted(int request_id,
-                                 content::ResourceResponse* response) OVERRIDE;
+                                 ResourceResponse* response,
+                                 bool* defer) OVERRIDE;
   virtual bool OnWillStart(int request_id,
                            const GURL& url,
                            bool* defer) OVERRIDE;
@@ -42,23 +53,29 @@ class AsyncResourceHandler : public ResourceHandler {
                           int* buf_size,
                           int min_size) OVERRIDE;
   virtual bool OnReadCompleted(int request_id,
-                               int* bytes_read) OVERRIDE;
+                               int bytes_read,
+                               bool* defer) OVERRIDE;
   virtual bool OnResponseCompleted(int request_id,
                                    const net::URLRequestStatus& status,
                                    const std::string& security_info) OVERRIDE;
-  virtual void OnRequestClosed() OVERRIDE;
   virtual void OnDataDownloaded(int request_id,
                                 int bytes_downloaded) OVERRIDE;
 
   static void GlobalCleanup();
 
  private:
-  virtual ~AsyncResourceHandler();
+  // Returns true if it's ok to send the data. If there are already too many
+  // data messages pending, it defers the request and returns false. In this
+  // case the caller should not send the data.
+  void WillSendData(bool* defer);
+
+  void ResumeIfDeferred();
 
   scoped_refptr<SharedIOBuffer> read_buffer_;
   scoped_refptr<ResourceMessageFilter> filter_;
   int routing_id_;
-  ResourceDispatcherHost* rdh_;
+  net::URLRequest* request_;
+  ResourceDispatcherHostImpl* rdh_;
 
   // |next_buffer_size_| is the size of the buffer to be allocated on the next
   // OnWillRead() call.  We exponentially grow the size of the buffer allocated
@@ -67,11 +84,17 @@ class AsyncResourceHandler : public ResourceHandler {
   // was filled, up to a maximum size of 512k.
   int next_buffer_size_;
 
-  // TODO(battre): Remove url. This is only for debugging
-  // http://crbug.com/107692.
-  GURL url_;
+  // Number of messages we've sent to the renderer that we haven't gotten an
+  // ACK for. This allows us to avoid having too many messages in flight.
+  int pending_data_count_;
+
+  bool did_defer_;
+
+  bool sent_received_response_msg_;
 
   DISALLOW_COPY_AND_ASSIGN(AsyncResourceHandler);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_ASYNC_RESOURCE_HANDLER_H_

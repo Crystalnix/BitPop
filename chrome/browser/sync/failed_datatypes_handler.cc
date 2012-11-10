@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,48 +15,58 @@ FailedDatatypesHandler::FailedDatatypesHandler(ProfileSyncService* service)
 FailedDatatypesHandler::~FailedDatatypesHandler() {
 }
 
-syncable::ModelTypeSet FailedDatatypesHandler::GetFailedTypes() const {
-  syncable::ModelTypeSet result;
-  for (std::list<SyncError>::const_iterator it = errors_.begin();
-       it != errors_.end(); ++it) {
+syncer::ModelTypeSet GetTypesFromErrorsList(
+    const std::vector<syncer::SyncError>& errors) {
+  syncer::ModelTypeSet result;
+  for (std::vector<syncer::SyncError>::const_iterator it = errors.begin();
+       it != errors.end(); ++it) {
     DCHECK(!result.Has(it->type()));
     result.Put(it->type());
   }
   return result;
 }
 
+syncer::ModelTypeSet FailedDatatypesHandler::GetFailedTypes() const {
+  syncer::ModelTypeSet result = GetTypesFromErrorsList(startup_errors_);
+  result.PutAll(GetTypesFromErrorsList(runtime_errors_));
+  return result;
+}
+
 bool FailedDatatypesHandler::UpdateFailedDatatypes(
-    DataTypeManager::ConfigureResult result) {
-  const syncable::ModelTypeSet types = GetFailedTypes();
-  bool any_new_failed_types = false;
-  for (std::list<SyncError>::iterator it = result.errors.begin();
-       it != result.errors.end(); ++it) {
-    DCHECK(!types.Has(it->type()));
-    any_new_failed_types = true;
-    errors_.push_back(*it);
+    const std::list<syncer::SyncError>& errors,
+    FailureType failure_type) {
+  const syncer::ModelTypeSet types = GetFailedTypes();
+  if (failure_type == RUNTIME) {
+    runtime_errors_.insert(runtime_errors_.end(),
+                           errors.begin(),
+                           errors.end());
+  } else if (failure_type == STARTUP) {
+    startup_errors_.insert(startup_errors_.end(),
+                           errors.begin(),
+                           errors.end());
+  } else {
+    NOTREACHED();
   }
 
-  return any_new_failed_types;
+  return !errors.empty();
 }
 
 void FailedDatatypesHandler::OnUserChoseDatatypes() {
-  errors_.clear();
+  startup_errors_.clear();
+  runtime_errors_.clear();
 }
 
-std::string FailedDatatypesHandler::GetErrorString() const {
-  std::string message = "Sync configuration failed when starting ";
-  for (std::list<SyncError>::const_iterator it = errors_.begin();
-       it != errors_.end(); ++it) {
-    if (it != errors_.begin()) {
-      message += ", ";
-    }
-    message += std::string(syncable::ModelTypeToString(it->type())) + " " +
-        it->location().ToString() + ": " + it->message();
+std::vector<syncer::SyncError> FailedDatatypesHandler::GetAllErrors() const {
+  std::vector<syncer::SyncError> result;
+
+  if (AnyFailedDatatype()) {
+    result.insert(result.end(), startup_errors_.begin(), startup_errors_.end());
+    result.insert(result.end(), runtime_errors_.begin(), runtime_errors_.end());
   }
-  return message;
+  return result;
 }
 
 bool FailedDatatypesHandler::AnyFailedDatatype() const {
-  return (!errors_.empty());
+  return (!startup_errors_.empty() || !runtime_errors_.empty());
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,22 +45,30 @@ function checkHostPermission(item, perm) {
 var tests = [
   function simple() {
     chrome.management.getAll(callback(function(items) {
-      chrome.test.assertEq(7, items.length);
+      chrome.test.assertEq(10, items.length);
 
       checkItemInList(items, "Extension Management API Test", true, false);
       checkItemInList(items, "description", true, false,
-                { "description": "a short description" });
+          { "description": "a short description" });
       checkItemInList(items, "enabled_app", true, true,
-                { "appLaunchUrl": "http://www.google.com/",
-                  "offlineEnabled": true,
-                  "updateUrl": "http://example.com/update.xml" });
+          { "appLaunchUrl": "http://www.google.com/",
+            "offlineEnabled": true,
+            "updateUrl": "http://example.com/update.xml" });
       checkItemInList(items, "disabled_app", false, true,
-                     { "disabledReason": "unknown" });
+          { "disabledReason": "unknown" });
       checkItemInList(items, "enabled_extension", true, false,
-                     { "homepageUrl": "http://example.com/" });
+          { "homepageUrl": "http://example.com/" });
       checkItemInList(items, "disabled_extension", false, false,
-                { "optionsUrl": "chrome-extension://<ID>/pages/options.html",
-                  "disabledReason": "unknown" });
+          { "optionsUrl": "chrome-extension://<ID>/pages/options.html",
+            "disabledReason": "unknown" });
+      checkItemInList(items, "description", true, false,
+          { "installType": "development" });
+      checkItemInList(items, "internal_extension", true, false,
+          { "installType": "normal" });
+      checkItemInList(items, "external_extension", true, false,
+          { "installType": "sideload" });
+      checkItemInList(items, "admin_extension", true, false,
+          { "installType": "admin" });
 
       // Check that we got the icons correctly
       var extension = getItemNamed(items, "enabled_extension");
@@ -97,12 +105,14 @@ var tests = [
     chrome.management.getPermissionWarningsByManifest(
         manifest_str, callback(function(warnings) {
       chrome.test.assertEq(5, warnings.length);
-      chrome.test.assertEq("Your data on *.flickr.com and api.flickr.com",
-                           warnings[0]);
-      chrome.test.assertEq("Your bookmarks", warnings[1]);
-      chrome.test.assertEq("Your physical location", warnings[2]);
-      chrome.test.assertEq("Your browsing history", warnings[3]);
-      chrome.test.assertEq("Your tabs and browsing activity", warnings[4]);
+      chrome.test.assertEq(
+        "Access your data on *.flickr.com and api.flickr.com", warnings[0]);
+      chrome.test.assertEq("Read and modify your bookmarks", warnings[1]);
+      chrome.test.assertEq("Detect your physical location", warnings[2]);
+      chrome.test.assertEq("Read and modify your browsing history",
+                           warnings[3]);
+      chrome.test.assertEq("Access your tabs and browsing activity",
+                           warnings[4]);
     }));
 
     chrome.management.getAll(callback(function(items) {
@@ -110,7 +120,7 @@ var tests = [
       chrome.management.getPermissionWarningsById(extension.id,
                                                   callback(function(warnings) {
         chrome.test.assertEq(1, warnings.length);
-        chrome.test.assertEq("Your list of apps, extensions, and themes",
+        chrome.test.assertEq("Manage your apps, extensions, and themes",
                              warnings[0]);
       }));
     }));

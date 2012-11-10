@@ -4,13 +4,13 @@
 
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_WIZARD_CONTROLLER_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_WIZARD_CONTROLLER_H_
-#pragma once
 
 #include <string>
 
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "chrome/browser/chromeos/login/screen_observer.h"
@@ -19,6 +19,10 @@
 #include "ui/gfx/rect.h"
 
 class PrefService;
+
+namespace base {
+class DictionaryValue;
+}
 
 namespace chromeos {
 
@@ -37,12 +41,27 @@ class WizardScreen;
 // interacts with screen controllers to move the user between screens.
 class WizardController : public ScreenObserver {
  public:
+  // Observes screen changes.
+  class Observer {
+   public:
+    // Called before a screen change happens.
+    virtual void OnScreenChanged(WizardScreen* next_screen) = 0;
+
+    // Called after the browser session has started.
+    virtual void OnSessionStart() = 0;
+  };
+
   WizardController(LoginDisplayHost* host, OobeDisplay* oobe_display);
   virtual ~WizardController();
 
   // Returns the default wizard controller if it has been created.
   static WizardController* default_controller() {
     return default_controller_;
+  }
+
+  // Whether the user image selection step should be skipped.
+  static bool skip_user_image_selection() {
+    return skip_user_image_selection_;
   }
 
   // Returns true if EULA has been accepted.
@@ -69,16 +88,44 @@ class WizardController : public ScreenObserver {
   // Returns initial locale from local settings.
   static std::string GetInitialLocale();
 
+  // Sets delays to zero. MUST be used only for tests.
+  static void SetZeroDelays();
+
+  // If true zero delays have been enabled (for browser tests).
+  static bool IsZeroDelayEnabled();
+
   // Sets initial locale in local settings.
   static void SetInitialLocale(const std::string& locale);
+
+  // Registers OOBE preferences.
+  static void RegisterPrefs(PrefService* local_state);
+
+  // Marks user image screen to be always skipped after login.
+  static void SkipImageSelectionForTesting();
 
   // Shows the first screen defined by |first_screen_name| or by default
   // if the parameter is empty. Takes ownership of |screen_parameters|.
   void Init(const std::string& first_screen_name,
-            DictionaryValue* screen_parameters);
+            base::DictionaryValue* screen_parameters);
 
-  // Skips OOBE update screen if it's currently shown.
-  void CancelOOBEUpdate();
+  // Advances to screen defined by |screen_name| and shows it.
+  void AdvanceToScreen(const std::string& screen_name);
+
+  // Advances to login screen. Should be used in for testing only.
+  void SkipToLoginForTesting();
+
+  // If being at register screen proceeds to the next one.
+  void SkipRegistration();
+
+  // Adds and removes an observer.
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* observer);
+
+  // Called right after the browser session has started.
+  void OnSessionStart();
+
+  // Skip update, go straight to enrollment after EULA is accepted.
+  void SkipUpdateEnrollAfterEula();
 
   // Lazy initializers and getters for screens.
   NetworkScreen* GetNetworkScreen();
@@ -89,34 +136,12 @@ class WizardController : public ScreenObserver {
   HTMLPageScreen* GetHTMLPageScreen();
   EnterpriseEnrollmentScreen* GetEnterpriseEnrollmentScreen();
 
-  // Show specific screen.
-  void ShowNetworkScreen();
-  void ShowUpdateScreen();
-  void ShowUserImageScreen();
-  void ShowEulaScreen();
-  void ShowRegistrationScreen();
-  void ShowHTMLPageScreen();
-  void ShowEnterpriseEnrollmentScreen();
-
-  // Determines which screen to show first by the parameter, shows it and
-  // sets it as the current one.
-  void ShowFirstScreen(const std::string& first_screen_name);
-
-  // Shows images login screen.
-  void ShowLoginScreen();
-
-  // Resumes a pending login screen.
-  void ResumeLoginScreen();
-
   // Returns a pointer to the current screen or NULL if there's no such
   // screen.
   WizardScreen* current_screen() const { return current_screen_; }
 
-  // If being at register screen proceeds to the next one.
-  void SkipRegistration();
-
-  // Registers OOBE preferences.
-  static void RegisterPrefs(PrefService* local_state);
+  // Returns true if the current wizard instance has reached the login screen.
+  bool login_screen_started() const { return login_screen_started_; }
 
   static const char kNetworkScreenName[];
   static const char kLoginScreenName[];
@@ -130,6 +155,21 @@ class WizardController : public ScreenObserver {
   static const char kEnterpriseEnrollmentScreenName[];
 
  private:
+  // Show specific screen.
+  void ShowNetworkScreen();
+  void ShowUpdateScreen();
+  void ShowUserImageScreen();
+  void ShowEulaScreen();
+  void ShowRegistrationScreen();
+  void ShowHTMLPageScreen();
+  void ShowEnterpriseEnrollmentScreen();
+
+  // Shows images login screen.
+  void ShowLoginScreen();
+
+  // Resumes a pending login screen.
+  void ResumeLoginScreen();
+
   // Exit handlers:
   void OnNetworkConnected();
   void OnNetworkOffline();
@@ -149,13 +189,20 @@ class WizardController : public ScreenObserver {
   // Shows update screen and starts update process.
   void InitiateOOBEUpdate();
 
+  // Actions that should be done right after EULA is accepted,
+  // before update check.
+  void PerformPostEulaActions();
+
+  // Actions that should be done right after update stage is finished.
+  void PerformPostUpdateActions();
+
   // Overridden from ScreenObserver:
   virtual void OnExit(ExitCodes exit_code) OVERRIDE;
   virtual void ShowCurrentScreen() OVERRIDE;
   virtual void OnSetUserNamePassword(const std::string& username,
                                      const std::string& password) OVERRIDE;
-  virtual void set_usage_statistics_reporting(bool val) OVERRIDE;
-  virtual bool usage_statistics_reporting() const OVERRIDE;
+  virtual void SetUsageStatisticsReporting(bool val) OVERRIDE;
+  virtual bool GetUsageStatisticsReporting() const OVERRIDE;
 
   // Switches from one screen to another.
   void SetCurrentScreen(WizardScreen* screen);
@@ -170,8 +217,9 @@ class WizardController : public ScreenObserver {
   // Logs in the specified user via default login screen.
   void Login(const std::string& username, const std::string& password);
 
-  // Sets delays to zero. MUST be used only for browser tests.
-  static void SetZeroDelays();
+  static bool skip_user_image_selection_;
+
+  static bool zero_delay_enabled_;
 
   // Screens.
   scoped_ptr<NetworkScreen> network_screen_;
@@ -205,7 +253,7 @@ class WizardController : public ScreenObserver {
   static WizardController* default_controller_;
 
   // Parameters for the first screen. May be NULL.
-  scoped_ptr<DictionaryValue> screen_parameters_;
+  scoped_ptr<base::DictionaryValue> screen_parameters_;
 
   base::OneShotTimer<WizardController> smooth_show_timer_;
 
@@ -215,9 +263,17 @@ class WizardController : public ScreenObserver {
   // during wizard lifetime.
   bool usage_statistics_reporting_;
 
+  // If true then update check is cancelled and enrollment is started after
+  // EULA is accepted.
+  bool skip_update_enroll_after_eula_;
+
   // Time when the EULA was accepted. Used to measure the duration from the EULA
   // acceptance until the Sign-In screen is displayed.
   base::Time time_eula_accepted_;
+
+  ObserverList<Observer> observer_list_;
+
+  bool login_screen_started_;
 
   FRIEND_TEST_ALL_PREFIXES(EnterpriseEnrollmentScreenTest, TestCancel);
   FRIEND_TEST_ALL_PREFIXES(WizardControllerFlowTest, Accelerators);

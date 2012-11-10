@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -74,7 +74,7 @@ TEST_F(L10nUtilTest, DISABLED_GetString) {
 // Cocoa.
 
 void SetDefaultLocaleForTest(const std::string& tag, base::Environment* env) {
-#if defined(OS_POSIX) && !defined(OS_CHROMEOS)
+#if defined(OS_POSIX) && !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
   env->SetVar("LANGUAGE", tag);
 #else
   base::i18n::SetICUDefaultLocale(tag);
@@ -118,7 +118,7 @@ TEST_F(L10nUtilTest, GetAppLocale) {
   // Keep a copy of ICU's default locale before we overwrite it.
   icu::Locale locale = icu::Locale::getDefault();
 
-#if defined(OS_POSIX) && !defined(OS_CHROMEOS)
+#if defined(OS_POSIX) && !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
   env.reset(base::Environment::Create());
 
   // Test the support of LANGUAGE environment variable.
@@ -170,7 +170,7 @@ TEST_F(L10nUtilTest, GetAppLocale) {
 
   SetDefaultLocaleForTest("ca_ES.UTF8@valencia", env.get());
   EXPECT_EQ("ca@valencia", l10n_util::GetApplicationLocale(""));
-#endif  // defined(OS_POSIX) && !defined(OS_CHROMEOS)
+#endif  // defined(OS_POSIX) && !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
 
   SetDefaultLocaleForTest("en-US", env.get());
   EXPECT_EQ("en-US", l10n_util::GetApplicationLocale(""));
@@ -178,9 +178,10 @@ TEST_F(L10nUtilTest, GetAppLocale) {
   SetDefaultLocaleForTest("xx", env.get());
   EXPECT_EQ("en-US", l10n_util::GetApplicationLocale(""));
 
-#if defined(OS_CHROMEOS)
-  // ChromeOS honors preferred locale first in GetApplicationLocale(),
-  // defaulting to en-US, while other targets first honor other signals.
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
+  // ChromeOS and Android honor preferred locale first in
+  // GetApplicationLocale(), defaulting to en-US, while other
+  // targets first honor other signals.
   base::i18n::SetICUDefaultLocale("en-GB");
   EXPECT_EQ("en-US", l10n_util::GetApplicationLocale(""));
 
@@ -198,7 +199,7 @@ TEST_F(L10nUtilTest, GetAppLocale) {
 
   base::i18n::SetICUDefaultLocale("en-US");
   EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale("en-ZA"));
-#else  // defined(OS_CHROMEOS)
+#else  // !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
   SetDefaultLocaleForTest("en-GB", env.get());
   EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale(""));
 
@@ -237,7 +238,7 @@ TEST_F(L10nUtilTest, GetAppLocale) {
 
   SetDefaultLocaleForTest("en-ZA", env.get());
   EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale(""));
-#endif  // defined (OS_CHROMEOS)
+#endif  // defined (OS_CHROMEOS) || defined(OS_ANDROID)
 
 #if defined(OS_WIN)
   // We don't allow user prefs for locale on linux/mac.
@@ -303,7 +304,7 @@ TEST_F(L10nUtilTest, SortStringsUsingFunction) {
   STLDeleteElements(&strings);
 }
 
-TEST_F(L10nUtilTest, LocaleDisplayName) {
+TEST_F(L10nUtilTest, GetDisplayNameForLocale) {
   // TODO(jungshik): Make this test more extensive.
   // Test zh-CN and zh-TW are treated as zh-Hans and zh-Hant.
   string16 result = l10n_util::GetDisplayNameForLocale("zh-CN", "en", false);
@@ -317,6 +318,12 @@ TEST_F(L10nUtilTest, LocaleDisplayName) {
 
   result = l10n_util::GetDisplayNameForLocale("es-419", "en", false);
   EXPECT_EQ(ASCIIToUTF16("Spanish (Latin America)"), result);
+
+  result = l10n_util::GetDisplayNameForLocale("-BR", "en", false);
+  EXPECT_EQ(ASCIIToUTF16("Brazil"), result);
+
+  result = l10n_util::GetDisplayNameForLocale("xyz-xyz", "en", false);
+  EXPECT_EQ(ASCIIToUTF16("xyz (XYZ)"), result);
 
   // ToUpper and ToLower should work with embedded NULLs.
   const size_t length_with_null = 4;
@@ -332,6 +339,17 @@ TEST_F(L10nUtilTest, LocaleDisplayName) {
   ASSERT_EQ(length_with_null, upper_with_null.size());
   EXPECT_TRUE(lower_with_null[0] == 0 && lower_with_null[1] == 'a' &&
               lower_with_null[2] == 0 && lower_with_null[3] == 'b');
+}
+
+TEST_F(L10nUtilTest, GetDisplayNameForCountry) {
+  string16 result = l10n_util::GetDisplayNameForCountry("BR", "en");
+  EXPECT_EQ(ASCIIToUTF16("Brazil"), result);
+
+  result = l10n_util::GetDisplayNameForCountry("419", "en");
+  EXPECT_EQ(ASCIIToUTF16("Latin America"), result);
+
+  result = l10n_util::GetDisplayNameForCountry("xyz", "en");
+  EXPECT_EQ(ASCIIToUTF16("XYZ"), result);
 }
 
 TEST_F(L10nUtilTest, GetParentLocales) {

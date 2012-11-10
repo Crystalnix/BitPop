@@ -1,11 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/threading/watchdog.h"
 
 #include "base/logging.h"
-#include "base/spin_wait.h"
+#include "base/synchronization/spin_wait.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -22,12 +22,13 @@ class WatchdogCounter : public Watchdog {
   WatchdogCounter(const TimeDelta& duration,
                   const std::string& thread_watched_name,
                   bool enabled)
-      : Watchdog(duration, thread_watched_name, enabled), alarm_counter_(0) {
+      : Watchdog(duration, thread_watched_name, enabled),
+        alarm_counter_(0) {
   }
 
   virtual ~WatchdogCounter() {}
 
-  virtual void Alarm() {
+  virtual void Alarm() OVERRIDE {
     alarm_counter_++;
     Watchdog::Alarm();
   }
@@ -42,7 +43,7 @@ class WatchdogCounter : public Watchdog {
 
 class WatchdogTest : public testing::Test {
  public:
-  void SetUp() {
+  virtual void SetUp() OVERRIDE {
     Watchdog::ResetStaticData();
   }
 };

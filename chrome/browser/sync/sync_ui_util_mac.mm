@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,10 @@
 #include "base/logging.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/sync_ui_util.h"
 #include "chrome/common/pref_names.h"
 #include "grit/chromium_strings.h"
@@ -25,11 +29,13 @@ namespace sync_ui_util {
 
 void UpdateSyncItem(id syncItem, BOOL syncEnabled, Profile* profile) {
   ProfileSyncService* syncService =
-    profile->GetOriginalProfile()->GetProfileSyncService();
+      ProfileSyncServiceFactory::GetInstance()->GetForProfile(
+          profile->GetOriginalProfile());
+  SigninManager* signin = SigninManagerFactory::GetForProfile(profile);
   UpdateSyncItemForStatus(
       syncItem,
       syncEnabled,
-      sync_ui_util::GetStatus(syncService),
+      sync_ui_util::GetStatus(syncService, *signin),
       profile->GetPrefs()->GetString(prefs::kGoogleServicesUsername));
 }
 

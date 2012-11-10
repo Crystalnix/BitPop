@@ -12,15 +12,8 @@
 #include "base/string_util.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/ui/browser_dialogs.h"
-#include "chrome/common/about_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/gpu/gpu_process_host_ui_shim.h"
-#include "content/browser/sensors/sensors_provider.h"
-
-#if defined(USE_TCMALLOC)
-#include "third_party/tcmalloc/chromium/src/google/malloc_extension.h"
-#endif
 
 namespace {
 
@@ -40,30 +33,29 @@ const char* const kChromePaths[] = {
   chrome::kChromeUIFlagsHost,
   chrome::kChromeUIFlashHost,
   chrome::kChromeUIGpuInternalsHost,
-  chrome::kChromeUIHistogramsHost,
   chrome::kChromeUIHistoryHost,
   chrome::kChromeUIIPCHost,
+  chrome::kChromeUIInspectHost,
   chrome::kChromeUIMediaInternalsHost,
   chrome::kChromeUIMemoryHost,
   chrome::kChromeUINetInternalsHost,
-  chrome::kChromeUINetworkActionPredictorHost,
   chrome::kChromeUINetworkViewCacheHost,
   chrome::kChromeUINewTabHost,
   chrome::kChromeUIOmniboxHost,
   chrome::kChromeUIPluginsHost,
-  chrome::kChromeUIPrintHost,
+  chrome::kChromeUIPolicyHost,
+  chrome::kChromeUIPredictorsHost,
   chrome::kChromeUIProfilerHost,
   chrome::kChromeUIQuotaInternalsHost,
-  chrome::kChromeUISessionsHost,
   chrome::kChromeUISettingsHost,
   chrome::kChromeUIStatsHost,
   chrome::kChromeUISyncInternalsHost,
+#if defined(OS_CHROMEOS)
   chrome::kChromeUITaskManagerHost,
-  chrome::kChromeUITCMallocHost,
+#endif
   chrome::kChromeUITermsHost,
   chrome::kChromeUITracingHost,
   chrome::kChromeUIVersionHost,
-  chrome::kChromeUIWorkersHost,
 #if defined(OS_WIN)
   chrome::kChromeUIConflictsHost,
 #endif
@@ -72,10 +64,11 @@ const char* const kChromePaths[] = {
   chrome::kChromeUISandboxHost,
 #endif
 #if defined(OS_CHROMEOS)
-  chrome::kChromeUIActiveDownloadsHost,
   chrome::kChromeUIChooseMobileNetworkHost,
   chrome::kChromeUICryptohomeHost,
+  chrome::kChromeUIDiagnosticsHost,
   chrome::kChromeUIDiscardsHost,
+  chrome::kChromeUIDriveInternalsHost,
   chrome::kChromeUIImageBurnerHost,
   chrome::kChromeUIKeyboardOverlayHost,
   chrome::kChromeUILoginHost,
@@ -84,6 +77,10 @@ const char* const kChromePaths[] = {
   chrome::kChromeUIOSCreditsHost,
   chrome::kChromeUIProxySettingsHost,
   chrome::kChromeUISystemInfoHost,
+  chrome::kChromeUIWallpaperHost,
+#endif
+#if defined(ENABLE_PRINTING)
+  chrome::kChromeUIPrintHost,
 #endif
 };
 
@@ -100,16 +97,8 @@ bool WillHandleBrowserAboutURL(GURL* url,
          !url->SchemeIs(chrome::kAboutScheme));
 
   // Only handle chrome://foo/, URLFixerUpper::FixupURL translates about:foo.
-  // TAB_CONTENTS_WEB handles about:blank, which frames are allowed to access.
   if (!url->SchemeIs(chrome::kChromeUIScheme))
     return false;
-
-  // Circumvent processing URLs that the renderer process will handle.
-  if (chrome_about_handler::WillHandle(*url))
-    return false;
-
-  CommandLine* cl = CommandLine::ForCurrentProcess();
-  bool enableUberPage = cl->HasSwitch(switches::kEnableUberPage);
 
   std::string host(url->host());
   std::string path;
@@ -127,22 +116,20 @@ bool WillHandleBrowserAboutURL(GURL* url,
     host = chrome::kChromeUISyncInternalsHost;
   // Redirect chrome://extensions.
   } else if (host == chrome::kChromeUIExtensionsHost) {
-    if (enableUberPage) {
-      host = chrome::kChromeUIUberHost;
-      path = chrome::kChromeUIExtensionsHost + url->path();
-    } else {
-      host = chrome::kChromeUISettingsHost;
-      path = chrome::kExtensionsSubPage;
-    }
+    host = chrome::kChromeUIUberHost;
+    path = chrome::kChromeUIExtensionsHost + url->path();
   // Redirect chrome://settings/extensions.
-  // TODO(csilv): Fix all code paths for this page once Uber page is enabled
-  // permanently.
-  } else if (enableUberPage && host == chrome::kChromeUISettingsHost &&
+  // TODO(csilv): Remove this URL after M22 (legacy URL).
+  } else if (host == chrome::kChromeUISettingsHost &&
       url->path() == std::string("/") + chrome::kExtensionsSubPage) {
     host = chrome::kChromeUIUberHost;
     path = chrome::kChromeUIExtensionsHost;
+  // Redirect chrome://history.
+  } else if (host == chrome::kChromeUIHistoryHost) {
+    host = chrome::kChromeUIUberHost;
+    path = chrome::kChromeUIHistoryHost + url->path();
   // Redirect chrome://settings
-  } else if (enableUberPage && host == chrome::kChromeUISettingsHost) {
+  } else if (host == chrome::kChromeUISettingsHost) {
     host = chrome::kChromeUIUberHost;
     path = chrome::kChromeUISettingsHost + url->path();
   }
@@ -165,59 +152,12 @@ bool HandleNonNavigationAboutURL(const GURL& url) {
 #if (defined(OS_MACOSX) || defined(OS_WIN)) && defined(IPC_MESSAGE_LOG_ENABLED)
   if (LowerCaseEqualsASCII(url.spec(), chrome::kChromeUIIPCURL)) {
     // Run the dialog. This will re-use the existing one if it's already up.
-    browser::ShowAboutIPCDialog();
+    chrome::ShowAboutIPCDialog();
     return true;
   }
 #endif
 
 #endif  // OFFICIAL_BUILD
-
-  // Handle URLs to crash the browser or wreck the gpu process.
-  if (host == chrome::kChromeUIBrowserCrashHost) {
-    // Induce an intentional crash in the browser process.
-    CHECK(false);
-  }
-
-  if (host == chrome::kChromeUIGpuCleanHost) {
-    GpuProcessHostUIShim* shim = GpuProcessHostUIShim::GetOneInstance();
-    if (shim)
-      shim->SimulateRemoveAllContext();
-    return true;
-  }
-
-  if (host == chrome::kChromeUIGpuCrashHost) {
-    GpuProcessHostUIShim* shim = GpuProcessHostUIShim::GetOneInstance();
-    if (shim)
-      shim->SimulateCrash();
-    return true;
-  }
-
-  if (host == chrome::kChromeUIGpuHangHost) {
-    GpuProcessHostUIShim* shim = GpuProcessHostUIShim::GetOneInstance();
-    if (shim)
-      shim->SimulateHang();
-    return true;
-  }
-
-#if defined(OS_CHROMEOS)
-  if (host == chrome::kChromeUIRotateHost) {
-    content::ScreenOrientation change = content::SCREEN_ORIENTATION_TOP;
-    std::string query(url.query());
-    if (query == "left") {
-      change = content::SCREEN_ORIENTATION_LEFT;
-    } else if (query == "right") {
-      change = content::SCREEN_ORIENTATION_RIGHT;
-    } else if (query == "top") {
-      change = content::SCREEN_ORIENTATION_TOP;
-    } else if (query == "bottom") {
-      change = content::SCREEN_ORIENTATION_BOTTOM;
-    } else {
-      NOTREACHED() << "Unknown orientation";
-    }
-    sensors::Provider::GetInstance()->ScreenOrientationChanged(change);
-    return true;
-  }
-#endif
 
   return false;
 }
@@ -229,20 +169,3 @@ std::vector<std::string> ChromePaths() {
     paths.push_back(kChromePaths[i]);
   return paths;
 }
-
-#if defined(USE_TCMALLOC)
-// static
-AboutTcmallocOutputs* AboutTcmallocOutputs::GetInstance() {
-  return Singleton<AboutTcmallocOutputs>::get();
-}
-
-AboutTcmallocOutputs::AboutTcmallocOutputs() {}
-
-AboutTcmallocOutputs::~AboutTcmallocOutputs() {}
-
-// Glue between the callback task and the method in the singleton.
-void AboutTcmallocRendererCallback(base::ProcessId pid,
-                                   const std::string& output) {
-  AboutTcmallocOutputs::GetInstance()->RendererCallback(pid, output);
-}
-#endif

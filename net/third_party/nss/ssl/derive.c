@@ -36,7 +36,7 @@
  * the terms of any one of the MPL, the GPL or the LGPL.
  *
  * ***** END LICENSE BLOCK ***** */
-/* $Id: derive.c,v 1.12 2008/06/06 01:16:31 wtc%google.com Exp $ */
+/* $Id: derive.c,v 1.13 2011/03/22 22:15:22 alexei.volkov.bugs%sun.com Exp $ */
 
 #include "ssl.h" 	/* prereq to sslimpl.h */
 #include "certt.h"	/* prereq to sslimpl.h */
@@ -80,16 +80,16 @@ buildSSLKey(unsigned char * keyBlock, unsigned int keyLen, SECItem * result,
 #ifndef NUM_MIXERS
 #define NUM_MIXERS 9
 #endif
-static const char * const mixers[NUM_MIXERS] = { 
-    "A", 
-    "BB", 
-    "CCC", 
-    "DDDD", 
-    "EEEEE", 
-    "FFFFFF", 
+static const char * const mixers[NUM_MIXERS] = {
+    "A",
+    "BB",
+    "CCC",
+    "DDDD",
+    "EEEEE",
+    "FFFFFF",
     "GGGGGGG",
     "HHHHHHHH",
-    "IIIIIIIII" 
+    "IIIIIIIII"
 };
 
 
@@ -134,7 +134,7 @@ ssl3_KeyAndMacDeriveBypass(
 	return rv;
     }
 
-    PRINT_BUF(100, (NULL, "Master Secret", pwSpec->msItem.data, 
+    PRINT_BUF(100, (NULL, "Master Secret", pwSpec->msItem.data,
                                            pwSpec->msItem.len));
 
     /* figure out how much is needed */
@@ -187,12 +187,12 @@ ssl3_KeyAndMacDeriveBypass(
 	}
 	block_bytes = keyblk.len;
     } else {
-	/* key_block = 
-	 *     MD5(master_secret + SHA('A' + master_secret + 
+	/* key_block =
+	 *     MD5(master_secret + SHA('A' + master_secret +
 	 *                      ServerHello.random + ClientHello.random)) +
-	 *     MD5(master_secret + SHA('BB' + master_secret + 
+	 *     MD5(master_secret + SHA('BB' + master_secret +
 	 *                      ServerHello.random + ClientHello.random)) +
-	 *     MD5(master_secret + SHA('CCC' + master_secret + 
+	 *     MD5(master_secret + SHA('CCC' + master_secret +
 	 *                      ServerHello.random + ClientHello.random)) +
 	 *     [...];
 	 */
@@ -227,7 +227,7 @@ ssl3_KeyAndMacDeriveBypass(
     key_block2 = key_block + block_bytes;
     i = 0;			/* now shows how much consumed */
 
-    /* 
+    /*
      * The key_block is partitioned as follows:
      * client_write_MAC_secret[CipherSpec.hash_size]
      */
@@ -235,7 +235,7 @@ ssl3_KeyAndMacDeriveBypass(
                 "Client Write MAC Secret");
     i += macSize;
 
-    /* 
+    /*
      * server_write_MAC_secret[CipherSpec.hash_size]
      */
     buildSSLKey(&key_block[i],macSize, &pwSpec->server.write_mac_key_item, \
@@ -253,7 +253,7 @@ ssl3_KeyAndMacDeriveBypass(
 	buildSSLKey(NULL, 0, &pwSpec->server.write_iv_item, \
 	            "Server Write IV (MAC only)");
     } else if (!isExport) {
-	/* 
+	/*
 	** Generate Domestic write keys and IVs.
 	** client_write_key[CipherSpec.key_material]
 	*/
@@ -261,7 +261,7 @@ ssl3_KeyAndMacDeriveBypass(
 	            "Domestic Client Write Key");
 	i += keySize;
 
-	/* 
+	/*
 	** server_write_key[CipherSpec.key_material]
 	*/
 	buildSSLKey(&key_block[i], keySize, &pwSpec->server.write_key_item, \
@@ -269,14 +269,14 @@ ssl3_KeyAndMacDeriveBypass(
 	i += keySize;
 
 	if (IVSize > 0) {
-	    /* 
+	    /*
 	    ** client_write_IV[CipherSpec.IV_size]
 	    */
 	    buildSSLKey(&key_block[i], IVSize, &pwSpec->client.write_iv_item, \
 	                "Domestic Client Write IV");
 	    i += IVSize;
 
-	    /* 
+	    /*
 	    ** server_write_IV[CipherSpec.IV_size]
 	    */
 	    buildSSLKey(&key_block[i], IVSize, &pwSpec->server.write_iv_item, \
@@ -285,7 +285,7 @@ ssl3_KeyAndMacDeriveBypass(
 	}
 	PORT_Assert(i <= block_bytes);
 
-    } else if (!isTLS) { 
+    } else if (!isTLS) {
 	/*
 	** Generate SSL3 Export write keys and IVs.
 	*/
@@ -322,7 +322,7 @@ ssl3_KeyAndMacDeriveBypass(
 
 	if (IVSize) {
 	    /*
-	    ** client_write_IV = 
+	    ** client_write_IV =
 	    **	MD5(ClientHello.random + ServerHello.random);
 	    */
 	    MD5_Begin(md5Ctx);
@@ -333,7 +333,7 @@ ssl3_KeyAndMacDeriveBypass(
 	    key_block2 += IVSize;
 
 	    /*
-	    ** server_write_IV = 
+	    ** server_write_IV =
 	    **	MD5(ServerHello.random + ClientHello.random);
 	    */
 	    MD5_Begin(md5Ctx);
@@ -356,7 +356,7 @@ ssl3_KeyAndMacDeriveBypass(
 	keyblk.type = siBuffer;
 	/*
 	** client_write_key[CipherSpec.key_material]
-	** final_client_write_key = PRF(client_write_key, 
+	** final_client_write_key = PRF(client_write_key,
 	**                              "client write key",
 	**                              client_random + server_random);
 	*/
@@ -433,10 +433,10 @@ key_and_mac_derive_fail:
 
 /* derive the Master Secret from the PMS */
 /* Presently, this is only done wtih RSA PMS, and only on the server side,
- * so isRSA is always true. 
+ * so isRSA is always true.
  */
 SECStatus
-ssl3_MasterKeyDeriveBypass( 
+ssl3_MasterKeyDeriveBypass(
     ssl3CipherSpec *      pwSpec,
     const unsigned char * cr,
     const unsigned char * sr,
@@ -458,7 +458,7 @@ ssl3_MasterKeyDeriveBypass(
 #define shaCtx ((SHA1Context *)shabuf)
 
     /* first do the consistancy checks */
-    if (isRSA) { 
+    if (isRSA) {
 	PORT_Assert(pms->len == SSL3_RSA_PMS_LENGTH);
 	if (pms->len != SSL3_RSA_PMS_LENGTH) {
 	    PORT_SetError(SEC_ERROR_INVALID_ARGS);
@@ -510,11 +510,11 @@ ssl3_MasterKeyDeriveBypass(
     }
 
     /* store the results */
-    PORT_Memcpy(pwSpec->raw_master_secret, key_block, 
+    PORT_Memcpy(pwSpec->raw_master_secret, key_block,
 		SSL3_MASTER_SECRET_LENGTH);
     pwSpec->msItem.data = pwSpec->raw_master_secret;
     pwSpec->msItem.len  = SSL3_MASTER_SECRET_LENGTH;
-    PRINT_BUF(100, (NULL, "Master Secret", pwSpec->msItem.data, 
+    PRINT_BUF(100, (NULL, "Master Secret", pwSpec->msItem.data,
                                            pwSpec->msItem.len));
 
     return rv;
@@ -531,7 +531,7 @@ ssl_canExtractMS(PK11SymKey *pms, PRBool isTLS, PRBool isDH, PRBool *pcbp)
     CK_MECHANISM_TYPE master_derive;
     CK_MECHANISM_TYPE key_derive;
     CK_FLAGS          keyFlags;
-    
+
     if (pms == NULL)
 	return(SECFailure);
 
@@ -566,24 +566,26 @@ ssl_canExtractMS(PK11SymKey *pms, PRBool isTLS, PRBool isDH, PRBool *pcbp)
     rv = PK11_ExtractKeyValue(ms);
     *pcbp = (rv == SECSuccess);
     PK11_FreeSymKey(ms);
-    
+
     return(rv);
 
 }
 
 /* Check the key exchange algorithm for each cipher in the list to see if
- * a master secret key can be extracted. If the KEA will use keys from the 
+ * a master secret key can be extracted. If the KEA will use keys from the
  * specified cert make sure the extract operation is attempted from the slot
  * where the private key resides.
  * If MS can be extracted for all ciphers, (*pcanbypass) is set to TRUE and
  * SECSuccess is returned. In all other cases but one (*pcanbypass) is
  * set to FALSE and SECFailure is returned.
- * In that last case Derive() has been called successfully but the MS is null, 
+ * In that last case Derive() has been called successfully but the MS is null,
  * CanBypass sets (*pcanbypass) to FALSE and returns SECSuccess indicating the
  * arguments were all valid but the slot cannot be bypassed.
  */
 
-SECStatus 
+/* XXX Add SSL_CBP_TLS1_1 and test it in protocolmask when setting isTLS. */
+
+SECStatus
 SSL_CanBypass(CERTCertificate *cert, SECKEYPrivateKey *srvPrivkey,
 	      PRUint32 protocolmask, PRUint16 *ciphersuites, int nsuites,
               PRBool *pcanbypass, void *pwArg)
@@ -604,19 +606,22 @@ SSL_CanBypass(CERTCertificate *cert, SECKEYPrivateKey *srvPrivkey,
     PRBool	      testrsa_export = PR_FALSE;
     PRBool	      testecdh = PR_FALSE;
     PRBool	      testecdhe = PR_FALSE;
+#ifdef NSS_ENABLE_ECC
+    SECKEYECParams ecParams = { siBuffer, NULL, 0 };
+#endif
 
     if (!cert || !srvPrivkey || !ciphersuites || !pcanbypass) {
 	PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
     }
-    
+
     srvPubkey = CERT_ExtractPublicKey(cert);
     if (!srvPubkey)
         return SECFailure;
-	
+
     *pcanbypass = PR_TRUE;
     rv = SECFailure;
-    
+
     /* determine which KEAs to test */
     /* 0 (SSL_NULL_WITH_NULL_NULL) is used as a list terminator because
      * SSL3 and TLS specs forbid negotiating that cipher suite number.
@@ -650,7 +655,7 @@ SSL_CanBypass(CERTCertificate *cert, SECKEYPrivateKey *srvPrivkey,
 	    continue;
 	}
     }
-    
+
     /* For each protocol try to derive and extract an MS.
      * Failure of function any function except MS extract means
      * continue with the next cipher test. Stop testing when the list is
@@ -681,7 +686,7 @@ SSL_CanBypass(CERTCertificate *cert, SECKEYPrivateKey *srvPrivkey,
 	    unsigned int      outLen = 0;
 	    CK_MECHANISM_TYPE target;
 	    SECStatus	      irv;
-	    
+
 	    mechanism_array[0] = CKM_SSL3_PRE_MASTER_KEY_GEN;
 	    mechanism_array[1] = CKM_RSA_PKCS;
 
@@ -703,10 +708,15 @@ SSL_CanBypass(CERTCertificate *cert, SECKEYPrivateKey *srvPrivkey,
 	    /* now wrap it */
 	    enc_pms.len  = SECKEY_PublicKeyStrength(srvPubkey);
 	    enc_pms.data = (unsigned char*)PORT_Alloc(enc_pms.len);
+	    if (enc_pms.data == NULL) {
+	        PORT_SetError(PR_OUT_OF_MEMORY_ERROR);
+	        break;
+	    }
 	    irv = PK11_PubWrapSymKey(CKM_RSA_PKCS, srvPubkey, pms, &enc_pms);
-	    if (irv != SECSuccess) 
+	    if (irv != SECSuccess)
 		break;
 	    PK11_FreeSymKey(pms);
+	    pms = NULL;
 	    /* now do the server side--check the triple bypass first */
 	    rv = PK11_PrivDecryptPKCS1(srvPrivkey, rsaPmsBuf, &outLen,
 				       sizeof rsaPmsBuf,
@@ -727,6 +737,13 @@ SSL_CanBypass(CERTCertificate *cert, SECKEYPrivateKey *srvPrivkey,
 		goto done;
 	    break;
 	}
+
+	/* Check for NULL to avoid double free.
+	 * SECItem_FreeItem sets data NULL in secitem.c#265
+	 */
+	if (enc_pms.data != NULL) {
+	    SECITEM_FreeItem(&enc_pms, PR_FALSE);
+        }
 #ifdef NSS_ENABLE_ECC
 	for (; (privKeytype == ecKey && ( testecdh || testecdhe)) ||
 	       (privKeytype == rsaKey && testecdhe); ) {
@@ -735,8 +752,7 @@ SSL_CanBypass(CERTCertificate *cert, SECKEYPrivateKey *srvPrivkey,
 	    SECKEYPrivateKey *keapriv;
 	    SECKEYPublicKey  *cpub = NULL; /* client's ephemeral ECDH keys */
 	    SECKEYPrivateKey *cpriv = NULL;
-	    SECKEYECParams    ecParams = { siBuffer, NULL, 0 },
-			      *pecParams;
+	    SECKEYECParams   *pecParams = NULL;
 
 	    if (privKeytype == ecKey && testecdhe) {
 		/* TLS_ECDHE_ECDSA */
@@ -763,7 +779,7 @@ SSL_CanBypass(CERTCertificate *cert, SECKEYPrivateKey *srvPrivkey,
 		signatureKeyStrength =
 		    SSL_RSASTRENGTH_TO_ECSTRENGTH(serverKeyStrengthInBits);
 
-		if ( requiredECCbits > signatureKeyStrength ) 
+		if ( requiredECCbits > signatureKeyStrength )
 		     requiredECCbits = signatureKeyStrength;
 
 		ec_curve =
@@ -778,7 +794,7 @@ SSL_CanBypass(CERTCertificate *cert, SECKEYPrivateKey *srvPrivkey,
 
 	    if (testecdhe) {
 		/* generate server's ephemeral keys */
-		keapriv = SECKEY_CreateECPrivateKey(pecParams, &keapub, NULL); 
+		keapriv = SECKEY_CreateECPrivateKey(pecParams, &keapub, NULL);
 		if (!keapriv || !keapub) {
 		    if (keapriv)
 			SECKEY_DestroyPrivateKey(keapriv);
@@ -821,12 +837,15 @@ SSL_CanBypass(CERTCertificate *cert, SECKEYPrivateKey *srvPrivkey,
 	    if (testecdhe) {
 		SECKEY_DestroyPrivateKey(keapriv);
 		SECKEY_DestroyPublicKey(keapub);
-		if (privKeytype == rsaKey)
-		    PORT_Free(ecParams.data);
 	    }
 	    if (rv == SECSuccess && *pcanbypass == PR_FALSE)
 		goto done;
 	    break;
+	}
+	/* Check for NULL to avoid double free. */
+	if (ecParams.data != NULL) {
+	    PORT_Free(ecParams.data);
+	    ecParams.data = NULL;
 	}
 #endif /* NSS_ENABLE_ECC */
 	if (pms)
@@ -835,12 +854,23 @@ SSL_CanBypass(CERTCertificate *cert, SECKEYPrivateKey *srvPrivkey,
 
     /* *pcanbypass has been set */
     rv = SECSuccess;
-    
+
   done:
     if (pms)
 	PK11_FreeSymKey(pms);
 
-    SECITEM_FreeItem(&enc_pms, PR_FALSE);
+    /* Check for NULL to avoid double free.
+     * SECItem_FreeItem sets data NULL in secitem.c#265
+     */
+    if (enc_pms.data != NULL) {
+    	SECITEM_FreeItem(&enc_pms, PR_FALSE);
+    }
+#ifdef NSS_ENABLE_ECC
+    if (ecParams.data != NULL) {
+        PORT_Free(ecParams.data);
+        ecParams.data = NULL;
+    }
+#endif /* NSS_ENABLE_ECC */
 
     if (srvPubkey) {
     	SECKEY_DestroyPublicKey(srvPubkey);

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 namespace pp {
 
 class FileRef;
-class Instance;
+class InstanceHandle;
 
 /// URLRequestInfo provides an API for creating and manipulating URL requests.
 class URLRequestInfo : public Resource {
@@ -27,8 +27,9 @@ class URLRequestInfo : public Resource {
   /// browser. The resulting object will be <code>is_null</code> if the
   /// allocation failed.
   ///
-  /// @param[in] instance An <code>Instance</code>.
-  explicit URLRequestInfo(Instance* instance);
+  /// @param[in] instance The instance with which this resource will be
+  /// associated.
+  explicit URLRequestInfo(const InstanceHandle& instance);
 
   /// The copy constructor for <code>URLRequestInfo</code>.
   ///
@@ -244,7 +245,6 @@ class URLRequestInfo : public Resource {
     return SetProperty(PP_URLREQUESTPROPERTY_ALLOWCREDENTIALS, enable);
   }
 
-
   /// SetCustomContentTransferEncoding() sets the
   /// <code>PP_URLREQUESTPROPERTY_CUSTOMCONTENTTRANSFERENCODING</code>
   /// (corresponding to a string of type <code>PP_VARTYPE_STRING</code> or
@@ -307,6 +307,25 @@ class URLRequestInfo : public Resource {
   bool SetPrefetchBufferLowerThreshold(int32_t size) {
     return SetProperty(PP_URLREQUESTPROPERTY_PREFETCHBUFFERLOWERTHRESHOLD,
                        size);
+  }
+
+  /// SetCustomUserAgent() sets the
+  /// <code>PP_URLREQUESTPROPERTY_CUSTOMUSERAGENT</code> (corresponding to a
+  /// string of type <code>PP_VARTYPE_STRING</code> or might be set to undefined
+  /// as <code>PP_VARTYPE_UNDEFINED</code>). Set it to a string to set a custom
+  /// user-agent header (if empty, that header will be omitted), or to undefined
+  /// to use the default. Only loaders with universal access (only available on
+  /// trusted implementations) will accept <code>URLRequestInfo</code> objects
+  /// that try to set a custom user agent; if given to a loader without
+  /// universal access, <code>PP_ERROR_BADARGUMENT</code> will result.
+  ///
+  /// @param[in] user_agent A <code>Var</code> containing the property value. To
+  /// use the default user agent, set <code>user_agent</code> to an undefined
+  /// <code>Var</code>.
+  ///
+  /// @return true if successful, false if the parameter is invalid.
+  bool SetCustomUserAgent(const Var& user_agent) {
+    return SetProperty(PP_URLREQUESTPROPERTY_CUSTOMUSERAGENT, user_agent);
   }
 };
 

@@ -1,9 +1,9 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 
-from xml.dom import minidom
 from grit.format.policy_templates.writers import template_writer
 
 
@@ -72,8 +72,7 @@ class XMLFormattedWriter(template_writer.TemplateWriter):
     indent = ''
     res = ''
     # Determine indent for each line.
-    for i in range(len(lines)):
-      line = lines[i]
+    for i, line in enumerate(lines):
       if line[0] == '/':
         # If the current line starts with a closing tag, decrease indent before
         # printing.

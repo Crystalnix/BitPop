@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -72,10 +72,10 @@ NSTimeInterval kShowStatusDuration = 0.3;
 NSTimeInterval kHideStatusDuration = 0.3;
 
 // Duration of the 'download complete' animation, in seconds.
-const int kCompleteAnimationDuration = 2.5;
+const CGFloat kCompleteAnimationDuration = 2.5;
 
 // Duration of the 'download interrupted' animation, in seconds.
-const int kInterruptedAnimationDuration = 2.5;
+const CGFloat kInterruptedAnimationDuration = 2.5;
 
 using content::DownloadItem;
 
@@ -213,7 +213,7 @@ using content::DownloadItem;
       break;
     case DownloadItem::IN_PROGRESS:
       percentDone_ = downloadModel->download()->IsPaused() ?
-          -1 : downloadModel->download()->PercentComplete();
+          -1 : downloadModel->PercentComplete();
       break;
     default:
       NOTREACHED();
@@ -390,7 +390,7 @@ using content::DownloadItem;
   if (![self secondaryTitle] || statusAlpha_ <= 0)
     return;
 
-  CGFloat textWidth = innerFrame.size.width -
+  CGFloat textWidth = NSWidth(innerFrame) -
       (kTextPosLeft + kTextPaddingRight + kDropdownAreaWidth);
   NSString* secondaryText = [self elideStatus:textWidth];
   NSColor* secondaryColor =
@@ -492,7 +492,7 @@ using content::DownloadItem;
 
 - (void)drawInteriorWithFrame:(NSRect)cellFrame inView:(NSView*)controlView {
   // Draw title
-  CGFloat textWidth = cellFrame.size.width -
+  CGFloat textWidth = NSWidth(cellFrame) -
       (kTextPosLeft + kTextPaddingRight + kDropdownAreaWidth);
   [self setTitle:[self elideTitle:textWidth]];
 

@@ -4,15 +4,21 @@
 
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/string_split.h"
 #include "base/values.h"
+#include "chrome/common/extensions/api/extension_api.h"
+#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/renderer/extensions/chrome_v8_extension.h"
+#include "chrome/renderer/extensions/user_script_slave.h"
 #include "content/public/renderer/render_view.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "v8/include/v8.h"
+
+using extensions::Feature;
 
 namespace {
 
@@ -20,26 +26,33 @@ const char kChromeHidden[] = "chromeHidden";
 
 #ifndef NDEBUG
 const char kValidateCallbacks[] = "validateCallbacks";
+const char kValidateAPI[] = "validateAPI";
 #endif
 
 }  // namespace
 
-
 ChromeV8Context::ChromeV8Context(v8::Handle<v8::Context> v8_context,
                                  WebKit::WebFrame* web_frame,
-                                 const std::string& extension_id)
+                                 const extensions::Extension* extension,
+                                 Feature::Context context_type)
     : v8_context_(v8::Persistent<v8::Context>::New(v8_context)),
       web_frame_(web_frame),
-      extension_id_(extension_id) {
-  VLOG(1) << "Created context for extension\n"
-          << "  id:    " << extension_id << "\n"
-          << "  frame: " << web_frame_;
+      extension_(extension),
+      context_type_(context_type) {
+  VLOG(1) << "Created context:\n"
+          << "  extension id: " << GetExtensionID() << "\n"
+          << "  frame:        " << web_frame_ << "\n"
+          << "  context type: " << GetContextTypeDescription();
 }
 
 ChromeV8Context::~ChromeV8Context() {
   VLOG(1) << "Destroyed context for extension\n"
-          << "  id:    " << extension_id_;
+          << "  extension id: " << GetExtensionID();
   v8_context_.Dispose();
+}
+
+std::string ChromeV8Context::GetExtensionID() {
+  return extension_ ? extension_->id() : "";
 }
 
 // static
@@ -56,8 +69,11 @@ v8::Handle<v8::Value> ChromeV8Context::GetOrCreateChromeHidden(
 #ifndef NDEBUG
     // Tell schema_generated_bindings.js to validate callbacks and events
     // against their schema definitions.
-    v8::Local<v8::Object>::Cast(hidden)
-        ->Set(v8::String::New(kValidateCallbacks), v8::True());
+    v8::Local<v8::Object>::Cast(hidden)->Set(
+        v8::String::New(kValidateCallbacks), v8::True());
+    // Tell schema_generated_bindings.js to validate API for ambiguity.
+    v8::Local<v8::Object>::Cast(hidden)->Set(
+        v8::String::New(kValidateAPI), v8::True());
 #endif
   }
 
@@ -84,6 +100,12 @@ bool ChromeV8Context::CallChromeHiddenMethod(
     v8::Handle<v8::Value>* result) const {
   v8::Context::Scope context_scope(v8_context_);
 
+  // ChromeV8ContextSet calls clear_web_frame() and then schedules a task to
+  // delete this object. This check prevents a race from attempting to execute
+  // script on a NULL web_frame_.
+  if (!web_frame_)
+    return false;
+
   // Look up the function name, which may be a sub-property like
   // "Port.dispatchOnMessage" in the hidden global variable.
   v8::Local<v8::Value> value = v8::Local<v8::Value>::New(GetChromeHidden());
@@ -104,26 +126,58 @@ bool ChromeV8Context::CallChromeHiddenMethod(
     return false;
   }
 
+  TRACE_EVENT1("v8", "v8.callChromeHiddenMethod",
+               "function_name", function_name);
+
+  v8::Local<v8::Function> function = v8::Local<v8::Function>::Cast(value);
   v8::Handle<v8::Value> result_temp =
-      v8::Local<v8::Function>::Cast(value)->Call(v8::Object::New(), argc, argv);
+      web_frame_->callFunctionEvenIfScriptDisabled(function,
+                                                   v8::Object::New(),
+                                                   argc,
+                                                   argv);
   if (result)
     *result = result_temp;
+
   return true;
 }
 
-void ChromeV8Context::DispatchOnLoadEvent(bool is_extension_process,
-                                          bool is_incognito_process,
-                                          int manifest_version) const {
+const std::set<std::string>& ChromeV8Context::GetAvailableExtensionAPIs() {
+  if (!available_extension_apis_.get()) {
+    available_extension_apis_ =
+        extensions::ExtensionAPI::GetSharedInstance()->GetAPIsForContext(
+            context_type_,
+            extension_,
+            extensions::UserScriptSlave::GetDataSourceURLForFrame(
+                web_frame_)).Pass();
+  }
+  return *(available_extension_apis_.get());
+}
+
+void ChromeV8Context::DispatchOnLoadEvent(bool is_incognito_process,
+                                          int manifest_version) {
   v8::HandleScope handle_scope;
-  v8::Handle<v8::Value> argv[4];
-  argv[0] = v8::String::New(extension_id_.c_str());
-  argv[1] = v8::Boolean::New(is_extension_process);
-  argv[2] = v8::Boolean::New(is_incognito_process);
-  argv[3] = v8::Integer::New(manifest_version);
+  v8::Handle<v8::Value> argv[] = {
+    v8::String::New(GetExtensionID().c_str()),
+    v8::String::New(GetContextTypeDescription().c_str()),
+    v8::Boolean::New(is_incognito_process),
+    v8::Integer::New(manifest_version),
+  };
   CallChromeHiddenMethod("dispatchOnLoad", arraysize(argv), argv, NULL);
 }
 
-void ChromeV8Context::DispatchOnUnloadEvent() const {
+void ChromeV8Context::DispatchOnUnloadEvent() {
   v8::HandleScope handle_scope;
   CallChromeHiddenMethod("dispatchOnUnload", 0, NULL, NULL);
+}
+
+std::string ChromeV8Context::GetContextTypeDescription() {
+  switch (context_type_) {
+    case Feature::UNSPECIFIED_CONTEXT:         return "UNSPECIFIED";
+    case Feature::BLESSED_EXTENSION_CONTEXT:   return "BLESSED_EXTENSION";
+    case Feature::UNBLESSED_EXTENSION_CONTEXT: return "UNBLESSED_EXTENSION";
+    case Feature::CONTENT_SCRIPT_CONTEXT:      return "CONTENT_SCRIPT";
+    case Feature::WEB_PAGE_CONTEXT:            return "WEB_PAGE";
+  }
+  NOTREACHED();
+  return "";
 }

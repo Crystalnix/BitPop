@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 //
 
-#include <nacl/nacl_log.h>
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +12,7 @@
 #include <limits>
 #include <string>
 #include "native_client/src/include/nacl/nacl_inttypes.h"
+#include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/shared/ppapi_proxy/utility.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_errors.h"
@@ -34,12 +33,6 @@
 const double kDefaultFrequencyLeft = 400.0;
 const double kDefaultFrequencyRight = 1000.0;
 const uint32_t kDefaultDuration = 10000;
-
-// This sample frequency is guaranteed to work.
-const PP_AudioSampleRate kSampleFrequency = PP_AUDIOSAMPLERATE_44100;
-// Buffer size in units of sample frames.
-// 4096 is a conservative size that should avoid underruns on most systems.
-const uint32_t kSampleFrameCount = 4096;
 
 const double kPi = 3.141592653589;
 const double kTwoPi = 2.0 * kPi;
@@ -95,16 +88,32 @@ class MyInstance : public pp::Instance {
     }
   }
 
+  bool HaveAudio() {
+    PP_Resource audio_config_resource = config_->pp_resource();
+    PP_Resource audio_resource = audio_->pp_resource();
+    const int kInvalidResource = 0;
+    if (audio_config_resource == kInvalidResource)
+      return false;
+    if (audio_resource == kInvalidResource)
+      return false;
+    return true;
+  }
+
   void StartOutput() {
-    bool audio_start_playback = audio_->StartPlayback();
-    CHECK(true == audio_start_playback);
-    NaClLog(1, "example: frequencies are %f %f\n", frequency_l_, frequency_r_);
-    NaClLog(1, "example: amplitudes are %f %f\n", amplitude_l_, amplitude_r_);
-    NaClLog(1, "example: Scheduling StopOutput on main thread in %"
-            NACL_PRIu32"msec\n", duration_msec_);
+    uint32_t stop_in_msec = 0;
+    if (HaveAudio()) {
+      bool audio_start_playback = audio_->StartPlayback();
+      CHECK(true == audio_start_playback);
+      NaClLog(1, "example: frequencies are %f %f\n", frequency_l_,
+          frequency_r_);
+      NaClLog(1, "example: amplitudes are %f %f\n", amplitude_l_, amplitude_r_);
+      NaClLog(1, "example: Scheduling StopOutput on main thread in %"
+              NACL_PRIu32"msec\n", duration_msec_);
+      stop_in_msec = duration_msec_;
+    }
     // Schedule a callback in duration_msec_ to stop audio output
     pp::CompletionCallback cc(StopOutput, this);
-    pp::Module::Get()->core()->CallOnMainThread(duration_msec_, cc, PP_OK);
+    pp::Module::Get()->core()->CallOnMainThread(stop_in_msec, cc, PP_OK);
   }
 
   static void StopOutput(void* user_data, int32_t err) {
@@ -114,18 +123,19 @@ class MyInstance : public pp::Instance {
     char result[kMaxResult];
     NaClLog(1, "example: StopOutput() invoked on main thread\n");
     if (PP_OK == err) {
-      if (instance->audio_->StopPlayback()) {
-        // In headless mode, the build bots may not have an audio driver, in
-        // which case the callback won't be invoked.
-        // TODO(nfullagar): Other ways to determine if machine has audio
-        // capabilities. Currently PPAPI returns a valid resource regardless.
-        if ((instance->callback_count_ >= 2) || instance->headless_) {
+      // Systems without audio or run with headless option will pass.
+      if (!instance->HaveAudio() || instance->headless_) {
+        snprintf(result, kMaxResult, "StopOutput:PASSED");
+      } else if (instance->audio_->StopPlayback()) {
+        if (instance->callback_count_ >= 2) {
           snprintf(result, kMaxResult, "StopOutput:PASSED");
         } else {
           snprintf(result, kMaxResult, "StopOutput:FAILED - too "
               "few callbacks (only %d callbacks detected)",
               static_cast<int>(instance->callback_count_));
         }
+      } else {
+        snprintf(result, kMaxResult, "StopOutput:FAILED");
       }
     } else {
       snprintf(result, kMaxResult,
@@ -161,6 +171,8 @@ class MyInstance : public pp::Instance {
     NaClLog(1, "example: audio config resource: %"NACL_PRId32"\n",
             audio_config_resource);
     NaClLog(1, "example: audio resource: %"NACL_PRId32"\n", audio_resource);
+    if (!HaveAudio())
+      return;
     CHECK(PP_TRUE == audio_config_interface->
         IsAudioConfig(audio_config_resource));
     CHECK(PP_TRUE == audio_interface->IsAudio(audio_resource));
@@ -178,6 +190,8 @@ class MyInstance : public pp::Instance {
 
   // To enable stress tests, use stress_tests="1" in the embed tag.
   void StressTests() {
+    if (!HaveAudio())
+      return;
     // Attempt to create many audio devices, then immediately shut them down.
     // Chrome may generate some warnings on the console, but should not crash.
     const int kNumManyAudio = 1000;
@@ -198,11 +212,13 @@ class MyInstance : public pp::Instance {
   }
 
   virtual bool Init(uint32_t argc, const char* argn[], const char* argv[]) {
+    const int32_t kSampleFrameCount = 2048;
     ParseArgs(argc, argn, argv);
+    obtained_sample_rate_ = pp::AudioConfig::RecommendSampleRate(this);
     obtained_sample_frame_count_ = pp::AudioConfig::RecommendSampleFrameCount(
-        kSampleFrequency, kSampleFrameCount);
-    config_ = new
-       pp::AudioConfig(this, kSampleFrequency, obtained_sample_frame_count_);
+        this, obtained_sample_rate_, kSampleFrameCount);
+    config_ = new pp::AudioConfig(
+        this, obtained_sample_rate_, obtained_sample_frame_count_);
     CHECK(NULL != config_);
     audio_ = new pp::Audio(this, *config_, SineWaveCallback, this);
     CHECK(NULL != audio_);
@@ -214,8 +230,10 @@ class MyInstance : public pp::Instance {
  private:
   static void SineWaveCallback(void* samples, uint32_t num_bytes, void* thiz) {
     MyInstance* instance = reinterpret_cast<MyInstance*>(thiz);
-    const double delta_l = kTwoPi * instance->frequency_l_ / kSampleFrequency;
-    const double delta_r = kTwoPi * instance->frequency_r_ / kSampleFrequency;
+    const double delta_l = kTwoPi * instance->frequency_l_ /
+                           instance->obtained_sample_rate_;
+    const double delta_r = kTwoPi * instance->frequency_r_ /
+                           instance->obtained_sample_rate_;
 
     // Verify num_bytes and obtained_sample_frame_count match up.
     const int kNumChannelsForStereo = 2;
@@ -277,6 +295,7 @@ class MyInstance : public pp::Instance {
   bool stress_tests_;
 
   uint32_t duration_msec_;
+  PP_AudioSampleRate obtained_sample_rate_;
   uint32_t obtained_sample_frame_count_;
 
   int callback_count_;

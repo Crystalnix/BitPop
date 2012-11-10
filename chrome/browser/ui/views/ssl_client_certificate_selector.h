@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_VIEWS_SSL_CLIENT_CERTIFICATE_SELECTOR_H_
 #define CHROME_BROWSER_UI_VIEWS_SSL_CLIENT_CERTIFICATE_SELECTOR_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -12,7 +11,7 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
-#include "content/browser/ssl/ssl_client_auth_handler.h"
+#include "chrome/browser/ssl/ssl_client_auth_observer.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/table/table_view_observer.h"
 #include "ui/views/view.h"
@@ -22,6 +21,11 @@
 // certificate selector only through the cross-platform interface
 // chrome/browser/ssl_client_certificate_selector.h.
 
+namespace net {
+class SSLCertRequestInfo;
+class X509Certificate;
+}
+
 namespace views {
 class TableView;
 class TextButton;
@@ -29,7 +33,7 @@ class TextButton;
 
 class CertificateSelectorTableModel;
 class ConstrainedWindow;
-class TabContentsWrapper;
+class TabContents;
 
 class SSLClientCertificateSelector : public SSLClientAuthObserver,
                                      public views::DialogDelegateView,
@@ -37,9 +41,10 @@ class SSLClientCertificateSelector : public SSLClientAuthObserver,
                                      public views::TableViewObserver {
  public:
   SSLClientCertificateSelector(
-      TabContentsWrapper* wrapper,
+      TabContents* tab_contents,
+      const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
-      SSLClientAuthHandler* delegate);
+      const base::Callback<void(net::X509Certificate*)>& callback);
   virtual ~SSLClientCertificateSelector();
 
   void Init();
@@ -72,13 +77,9 @@ class SSLClientCertificateSelector : public SSLClientAuthObserver,
   void CreateCertTable();
   void CreateViewCertButton();
 
-  scoped_refptr<net::SSLCertRequestInfo> cert_request_info_;
-
-  scoped_refptr<SSLClientAuthHandler> delegate_;
-
   scoped_ptr<CertificateSelectorTableModel> model_;
 
-  TabContentsWrapper* wrapper_;
+  TabContents* tab_contents_;
 
   ConstrainedWindow* window_;
   views::TableView* table_;

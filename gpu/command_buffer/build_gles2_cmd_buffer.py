@@ -76,6 +76,7 @@ _ENUM_LISTS = {
       'GL_FRAMEBUFFER',
     ],
     'invalid': [
+      'GL_DRAW_FRAMEBUFFER' ,
       'GL_READ_FRAMEBUFFER' ,
     ],
   },
@@ -200,6 +201,9 @@ _ENUM_LISTS = {
       'GL_TEXTURE_BINDING_2D',
       'GL_TEXTURE_BINDING_CUBE_MAP',
       'GL_UNPACK_ALIGNMENT',
+      'GL_UNPACK_FLIP_Y_CHROMIUM',
+      'GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM',
+      'GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM',
       'GL_VIEWPORT',
     ],
     'invalid': [
@@ -210,12 +214,7 @@ _ENUM_LISTS = {
     'type': 'GLenum',
     'valid': [
       'GL_TEXTURE_2D',
-      'GL_TEXTURE_CUBE_MAP_POSITIVE_X',
-      'GL_TEXTURE_CUBE_MAP_NEGATIVE_X',
-      'GL_TEXTURE_CUBE_MAP_POSITIVE_Y',
-      'GL_TEXTURE_CUBE_MAP_NEGATIVE_Y',
-      'GL_TEXTURE_CUBE_MAP_POSITIVE_Z',
-      'GL_TEXTURE_CUBE_MAP_NEGATIVE_Z',
+      'GL_TEXTURE_CUBE_MAP',
     ],
     'invalid': [
       'GL_PROXY_TEXTURE_CUBE_MAP',
@@ -339,10 +338,10 @@ _ENUM_LISTS = {
   'Capability': {
     'type': 'GLenum',
     'valid': [
+      'GL_DITHER',  # 1st one is a non-cached value so autogen unit tests work.
       'GL_BLEND',
       'GL_CULL_FACE',
       'GL_DEPTH_TEST',
-      'GL_DITHER',
       'GL_POLYGON_OFFSET_FILL',
       'GL_SAMPLE_ALPHA_TO_COVERAGE',
       'GL_SAMPLE_COVERAGE',
@@ -431,6 +430,27 @@ _ENUM_LISTS = {
       'GL_ACTIVE_ATTRIBUTE_MAX_LENGTH',
       'GL_ACTIVE_UNIFORMS',
       'GL_ACTIVE_UNIFORM_MAX_LENGTH',
+    ],
+  },
+  'QueryObjectParameter': {
+    'type': 'GLenum',
+    'valid': [
+      'GL_QUERY_RESULT_EXT',
+      'GL_QUERY_RESULT_AVAILABLE_EXT',
+    ],
+  },
+  'QueryParameter': {
+    'type': 'GLenum',
+    'valid': [
+      'GL_CURRENT_QUERY_EXT',
+    ],
+  },
+  'QueryTarget': {
+    'type': 'GLenum',
+    'valid': [
+      'GL_ANY_SAMPLES_PASSED_EXT',
+      'GL_ANY_SAMPLES_PASSED_CONSERVATIVE_EXT',
+      'GL_COMMANDS_ISSUED_CHROMIUM',
     ],
   },
   'RenderBufferParameter': {
@@ -566,6 +586,9 @@ _ENUM_LISTS = {
     'valid': [
       'GL_PACK_ALIGNMENT',
       'GL_UNPACK_ALIGNMENT',
+      'GL_UNPACK_FLIP_Y_CHROMIUM',
+      'GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM',
+      'GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM',
     ],
     'invalid': [
       'GL_PACK_SWAP_BYTES',
@@ -594,6 +617,19 @@ _ENUM_LISTS = {
     ],
   },
   'PixelType': {
+    'type': 'GLenum',
+    'valid': [
+      'GL_UNSIGNED_BYTE',
+      'GL_UNSIGNED_SHORT_5_6_5',
+      'GL_UNSIGNED_SHORT_4_4_4_4',
+      'GL_UNSIGNED_SHORT_5_5_5_1',
+    ],
+    'invalid': [
+      'GL_SHORT',
+      'GL_INT',
+    ],
+  },
+  'ReadPixelType': {
     'type': 'GLenum',
     'valid': [
       'GL_UNSIGNED_BYTE',
@@ -731,8 +767,22 @@ _ENUM_LISTS = {
   },
 }
 
+# This table specifies the different pepper interfaces that are supported for
+# GL commands. 'dev' is true if it's a dev interface.
+_PEPPER_INTERFACES = [
+  {'name': '', 'dev': False},
+  {'name': 'InstancedArrays', 'dev': False},
+  {'name': 'FramebufferBlit', 'dev': False},
+  {'name': 'FramebufferMultisample', 'dev': False},
+  {'name': 'ChromiumEnableFeature', 'dev': False},
+  {'name': 'ChromiumMapSub', 'dev': False},
+  {'name': 'Query', 'dev': False},
+]
+
 # This table specifies types and other special data for the commands that
 # will be generated.
+#
+# Must match function names specified in "cmd_buffer_functions.txt".
 #
 # cmd_comment:  A comment added to the cmd format.
 # type:         defines which handler will be used to generate code.
@@ -763,6 +813,8 @@ _ENUM_LISTS = {
 #               bind function.
 # valid_args:   A dictionary of argument indices to args to use in unit tests
 #               when they can not be automatically determined.
+# pepper_interface: The pepper interface that is used for this extension
+# invalid_test: False if no invalid test needed.
 
 _FUNCTION_INFO = {
   'ActiveTexture': {
@@ -799,6 +851,7 @@ _FUNCTION_INFO = {
     'decoder_func': 'DoBlitFramebufferEXT',
     'unit_test': False,
     'extension': True,
+    'pepper_interface': 'FramebufferBlit',
   },
   'BufferData': {
     'type': 'Manual',
@@ -817,13 +870,25 @@ _FUNCTION_INFO = {
     'error_value': 'GL_FRAMEBUFFER_UNSUPPORTED',
     'result': ['GLenum'],
   },
-  'Clear': {'decoder_func': 'DoClear'},
+  'Clear': {
+    'type': 'Manual',
+    'cmd_args': 'GLbitfield mask'
+  },
   'ClearColor': {'decoder_func': 'DoClearColor'},
   'ClearDepthf': {
     'decoder_func': 'DoClearDepthf',
     'gl_test_func': 'glClearDepth',
   },
   'ColorMask': {'decoder_func': 'DoColorMask', 'expectation': False},
+  'ConsumeTextureCHROMIUM': {
+    'decoder_func': 'DoConsumeTextureCHROMIUM',
+    'type': 'PUT',
+    'data_type': 'GLbyte',
+    'count': 64,
+    'unit_test': False,
+    'extension': True,
+    'chromium': True,
+  },
   'ClearStencil': {'decoder_func': 'DoClearStencil'},
   'EnableFeatureCHROMIUM': {
     'type': 'Custom',
@@ -834,6 +899,7 @@ _FUNCTION_INFO = {
     'result': ['GLint'],
     'extension': True,
     'chromium': True,
+    'pepper_interface': 'ChromiumEnableFeature',
   },
   'CompileShader': {'decoder_func': 'DoCompileShader', 'unit_test': False},
   'CompressedTexImage2D': {
@@ -864,15 +930,21 @@ _FUNCTION_INFO = {
   'DeleteBuffers': {
     'type': 'DELn',
     'gl_test_func': 'glDeleteBuffersARB',
+    'resource_type': 'Buffer',
+    'resource_types': 'Buffers',
   },
   'DeleteFramebuffers': {
     'type': 'DELn',
     'gl_test_func': 'glDeleteFramebuffersEXT',
+    'resource_type': 'Framebuffer',
+    'resource_types': 'Framebuffers',
   },
   'DeleteProgram': {'type': 'Delete', 'decoder_func': 'DoDeleteProgram'},
   'DeleteRenderbuffers': {
     'type': 'DELn',
     'gl_test_func': 'glDeleteRenderbuffersEXT',
+    'resource_type': 'Renderbuffer',
+    'resource_types': 'Renderbuffers',
   },
   'DeleteShader': {'type': 'Delete', 'decoder_func': 'DoDeleteShader'},
   'DeleteSharedIdsCHROMIUM': {
@@ -884,12 +956,17 @@ _FUNCTION_INFO = {
     'extension': True,
     'chromium': True,
   },
-  'DeleteTextures': {'type': 'DELn'},
+  'DeleteTextures': {
+    'type': 'DELn',
+    'resource_type': 'Texture',
+    'resource_types': 'Textures',
+  },
   'DepthRangef': {'decoder_func': 'glDepthRange'},
   'DepthMask': {'decoder_func': 'DoDepthMask', 'expectation': False},
   'DetachShader': {'decoder_func': 'DoDetachShader'},
   'Disable': {
     'decoder_func': 'DoDisable',
+    'impl_func': False,
   },
   'DisableVertexAttribArray': {
     'decoder_func': 'DoDisableVertexAttribArray',
@@ -907,6 +984,7 @@ _FUNCTION_INFO = {
   },
   'Enable': {
     'decoder_func': 'DoEnable',
+    'impl_func': False,
   },
   'EnableVertexAttribArray': {
     'decoder_func': 'DoEnableVertexAttribArray',
@@ -915,8 +993,19 @@ _FUNCTION_INFO = {
   'Finish': {
     'impl_func': False,
     'client_test': False,
+    'decoder_func': 'DoFinish',
   },
-  'Flush': {'impl_func': False},
+  'Flush': {
+    'impl_func': False,
+    'decoder_func': 'DoFlush',
+  },
+  'ShallowFlushCHROMIUM': {
+    'impl_func': False,
+    'gen_cmd': False,
+    'extension': True,
+    'chromium': True,
+    'client_test': False,
+  },
   'FramebufferRenderbuffer': {
     'decoder_func': 'DoFramebufferRenderbuffer',
     'gl_test_func': 'glFramebufferRenderbufferEXT',
@@ -929,10 +1018,38 @@ _FUNCTION_INFO = {
     'decoder_func': 'DoGenerateMipmap',
     'gl_test_func': 'glGenerateMipmapEXT',
   },
-  'GenBuffers': {'type': 'GENn', 'gl_test_func': 'glGenBuffersARB'},
-  'GenFramebuffers': {'type': 'GENn', 'gl_test_func': 'glGenFramebuffersEXT'},
-  'GenRenderbuffers': {'type': 'GENn', 'gl_test_func': 'glGenRenderbuffersEXT'},
-  'GenTextures': {'type': 'GENn', 'gl_test_func': 'glGenTextures'},
+  'GenBuffers': {
+    'type': 'GENn',
+    'gl_test_func': 'glGenBuffersARB',
+    'resource_type': 'Buffer',
+    'resource_types': 'Buffers',
+  },
+  'GenMailboxCHROMIUM': {
+    'type': 'Manual',
+    'cmd_args': 'GLuint bucket_id',
+    'result': ['SizedResult<GLint>'],
+    'client_test': False,
+    'unit_test': False,
+    'extension': True,
+    'chromium': True,
+  },
+  'GenFramebuffers': {
+    'type': 'GENn',
+    'gl_test_func': 'glGenFramebuffersEXT',
+    'resource_type': 'Framebuffer',
+    'resource_types': 'Framebuffers',
+  },
+  'GenRenderbuffers': {
+    'type': 'GENn', 'gl_test_func': 'glGenRenderbuffersEXT',
+    'resource_type': 'Renderbuffer',
+    'resource_types': 'Renderbuffers',
+  },
+  'GenTextures': {
+    'type': 'GENn',
+    'gl_test_func': 'glGenTextures',
+    'resource_type': 'Texture',
+    'resource_types': 'Textures',
+  },
   'GenSharedIdsCHROMIUM': {
     'type': 'Custom',
     'decoder_func': 'DoGenSharedIdsCHROMIUM',
@@ -1035,6 +1152,7 @@ _FUNCTION_INFO = {
     'type': 'GETn',
     'decoder_func': 'DoGetProgramiv',
     'result': ['SizedResult<GLint>'],
+    'expectation': False,
   },
   'GetProgramInfoCHROMIUM': {
     'type': 'Custom',
@@ -1152,7 +1270,11 @@ _FUNCTION_INFO = {
     'decoder_func': 'DoIsBuffer',
     'expectation': False,
   },
-  'IsEnabled': {'type': 'Is'},
+  'IsEnabled': {
+    'type': 'Is',
+    'decoder_func': 'DoIsEnabled',
+    'impl_func': False,
+  },
   'IsFramebuffer': {
     'type': 'Is',
     'decoder_func': 'DoIsFramebuffer',
@@ -1187,12 +1309,14 @@ _FUNCTION_INFO = {
     'extension': True,
     'chromium': True,
     'client_test': False,
+    'pepper_interface': 'ChromiumMapSub',
   },
   'MapTexSubImage2DCHROMIUM': {
     'gen_cmd': False,
     'extension': True,
     'chromium': True,
     'client_test': False,
+    'pepper_interface': 'ChromiumMapSub',
   },
   'PixelStorei': {'type': 'Manual'},
   'PostSubBufferCHROMIUM': {
@@ -1202,6 +1326,15 @@ _FUNCTION_INFO = {
       'client_test': False,
       'extension': True,
       'chromium': True,
+  },
+  'ProduceTextureCHROMIUM': {
+    'decoder_func': 'DoProduceTextureCHROMIUM',
+    'type': 'PUT',
+    'data_type': 'GLbyte',
+    'count': 64,
+    'unit_test': False,
+    'extension': True,
+    'chromium': True,
   },
   'RenderbufferStorage': {
     'decoder_func': 'DoRenderbufferStorage',
@@ -1214,6 +1347,7 @@ _FUNCTION_INFO = {
     'expectation': False,
     'unit_test': False,
     'extension': True,
+    'pepper_interface': 'FramebufferMultisample',
   },
   'ReadPixels': {
     'cmd_comment':
@@ -1226,7 +1360,7 @@ _FUNCTION_INFO = {
     'client_test': False,
     'cmd_args':
         'GLint x, GLint y, GLsizei width, GLsizei height, '
-        'GLenumReadPixelFormat format, GLenumPixelType type, '
+        'GLenumReadPixelFormat format, GLenumReadPixelType type, '
         'uint32 pixels_shm_id, uint32 pixels_shm_offset, '
         'uint32 result_shm_id, uint32 result_shm_offset',
     'result': ['uint32'],
@@ -1325,6 +1459,7 @@ _FUNCTION_INFO = {
     'decoder_func': 'DoUniform1iv',
     'unit_test': False,
   },
+  'Uniform2i': {'type': 'PUTXn', 'data_type': 'GLint', 'count': 2},
   'Uniform2f': {'type': 'PUTXn', 'data_type': 'GLfloat', 'count': 2},
   'Uniform2fv': {
     'type': 'PUTn',
@@ -1338,6 +1473,7 @@ _FUNCTION_INFO = {
     'count': 2,
     'decoder_func': 'DoUniform2iv',
   },
+  'Uniform3i': {'type': 'PUTXn', 'data_type': 'GLint', 'count': 3},
   'Uniform3f': {'type': 'PUTXn', 'data_type': 'GLfloat', 'count': 3},
   'Uniform3fv': {
     'type': 'PUTn',
@@ -1351,9 +1487,8 @@ _FUNCTION_INFO = {
     'count': 3,
     'decoder_func': 'DoUniform3iv',
   },
-  'Uniform4f': {
-    'type': 'PUTXn', 'data_type': 'GLfloat', 'count': 4
-  },
+  'Uniform4i': {'type': 'PUTXn', 'data_type': 'GLint', 'count': 4},
+  'Uniform4f': {'type': 'PUTXn', 'data_type': 'GLfloat', 'count': 4},
   'Uniform4fv': {
     'type': 'PUTn',
     'data_type': 'GLfloat',
@@ -1389,12 +1524,14 @@ _FUNCTION_INFO = {
     'extension': True,
     'chromium': True,
     'client_test': False,
-    },
+    'pepper_interface': 'ChromiumMapSub',
+  },
   'UnmapTexSubImage2DCHROMIUM': {
     'gen_cmd': False,
     'extension': True,
     'chromium': True,
     'client_test': False,
+    'pepper_interface': 'ChromiumMapSub',
   },
   'UseProgram': {'decoder_func': 'DoUseProgram', 'unit_test': False},
   'ValidateProgram': {'decoder_func': 'DoValidateProgram'},
@@ -1432,6 +1569,9 @@ _FUNCTION_INFO = {
                   'GLenumVertexAttribType type, GLboolean normalized, '
                   'GLsizei stride, GLuint offset',
       'client_test': False,
+  },
+  'Viewport': {
+    'decoder_func': 'DoViewport',
   },
   'ResizeCHROMIUM': {
       'type': 'Custom',
@@ -1487,12 +1627,94 @@ _FUNCTION_INFO = {
     'extension': True,
     'chromium': True,
   },
+  'CopyTextureCHROMIUM': {
+    'decoder_func': 'DoCopyTextureCHROMIUM',
+    'unit_test': False,
+    'extension': True,
+    'chromium': True,
+  },
   'TexStorage2DEXT': {
     'unit_test': False,
     'extension': True,
     'decoder_func': 'DoTexStorage2DEXT',
   },
-
+  'DrawArraysInstancedANGLE': {
+    'type': 'Manual',
+    'cmd_args': 'GLenumDrawMode mode, GLint first, GLsizei count, '
+                'GLsizei primcount',
+    'extension': True,
+    'unit_test': False,
+    'pepper_interface': 'InstancedArrays',
+  },
+  'DrawElementsInstancedANGLE': {
+    'type': 'Manual',
+    'cmd_args': 'GLenumDrawMode mode, GLsizei count, '
+                'GLenumIndexType type, GLuint index_offset, GLsizei primcount',
+    'extension': True,
+    'unit_test': False,
+    'client_test': False,
+    'pepper_interface': 'InstancedArrays',
+  },
+  'VertexAttribDivisorANGLE': {
+    'type': 'Manual',
+    'cmd_args': 'GLuint index, GLuint divisor',
+    'extension': True,
+    'unit_test': False,
+    'pepper_interface': 'InstancedArrays',
+  },
+  'GenQueriesEXT': {
+    'type': 'GENn',
+    'gl_test_func': 'glGenQueriesARB',
+    'resource_type': 'Query',
+    'resource_types': 'Queries',
+    'unit_test': False,
+    'pepper_interface': 'Query',
+  },
+  'DeleteQueriesEXT': {
+    'type': 'DELn',
+    'gl_test_func': 'glDeleteQueriesARB',
+    'resource_type': 'Query',
+    'resource_types': 'Queries',
+    'unit_test': False,
+    'pepper_interface': 'Query',
+  },
+  'IsQueryEXT': {
+    'gen_cmd': False,
+    'client_test': False,
+    'pepper_interface': 'Query',
+  },
+  'BeginQueryEXT': {
+    'type': 'Manual',
+    'cmd_args': 'GLenumQueryTarget target, GLidQuery id, void* sync_data',
+    'immediate': False,
+    'gl_test_func': 'glBeginQuery',
+    'pepper_interface': 'Query',
+  },
+  'EndQueryEXT': {
+    'type': 'Manual',
+    'cmd_args': 'GLenumQueryTarget target, GLuint submit_count',
+    'gl_test_func': 'glEndnQuery',
+    'client_test': False,
+    'pepper_interface': 'Query',
+  },
+  'GetQueryivEXT': {
+    'gen_cmd': False,
+    'client_test': False,
+    'gl_test_func': 'glGetQueryiv',
+    'pepper_interface': 'Query',
+  },
+  'GetQueryObjectuivEXT': {
+    'gen_cmd': False,
+    'client_test': False,
+    'gl_test_func': 'glGetQueryObjectuiv',
+    'pepper_interface': 'Query',
+  },
+  'BindUniformLocationCHROMIUM': {
+    'type': 'GLchar',
+    'bucket': True,
+    'needs_size': True,
+    'gl_test_func': 'DoBindUniformLocationCHROMIUM',
+  },
 }
 
 
@@ -1593,10 +1815,15 @@ class CWriter(object):
       i = self.__FindSplit(line)
       if i > 0:
         line1 = line[0:i + 1]
+        if line1[-1] == ' ':
+          line1 = line1[:-1]
+        lineend = ''
+        if line1[0] == '#':
+          lineend = ' \\'
         nolint = ''
         if len(line1) > 80:
           nolint = '  // NOLINT'
-        self.__AddLine(line1 + nolint + '\n')
+        self.__AddLine(line1 + nolint + lineend + '\n')
         match = re.match("( +)", line1)
         indent = ""
         if match:
@@ -2093,11 +2320,11 @@ TEST_F(GLES2ImplementationTest, %(name)s) {
 
   def WriteImmediateCmdInit(self, func, file):
     """Writes the Init function for the immediate version of a command."""
-    raise Error
+    raise NotImplementedError(func.name)
 
   def WriteImmediateCmdSet(self, func, file):
     """Writes the Set function for the immediate version of a command."""
-    raise Error
+    raise NotImplementedError(func.name)
 
   def WriteCmdHelper(self, func, file):
     """Writes the cmd helper definition for a cmd."""
@@ -2191,9 +2418,45 @@ class CustomHandler(TypeHandler):
 class TodoHandler(CustomHandler):
   """Handle for commands that are not yet implemented."""
 
+  def AddImmediateFunction(self, generator, func):
+    """Overrriden from TypeHandler."""
+    pass
+
   def WriteImmediateFormatTest(self, func, file):
     """Overrriden from TypeHandler."""
     pass
+
+  def WriteGLES2ImplementationUnitTest(self, func, file):
+    """Overrriden from TypeHandler."""
+    pass
+
+  def WriteGLES2ImplementationHeader(self, func, file):
+    """Overrriden from TypeHandler."""
+    file.Write("%s %s(%s) {\n" %
+               (func.return_type, func.original_name,
+                func.MakeTypedOriginalArgString("")))
+    file.Write("  // TODO: for now this is a no-op\n")
+    file.Write(
+        "  SetGLError(GL_INVALID_OPERATION, \"gl%s\", \"not implemented\");\n" %
+        func.name)
+    if func.return_type != "void":
+      file.Write("  return 0;\n")
+    file.Write("}\n")
+    file.Write("\n")
+
+  def WriteServiceImplementation(self, func, file):
+    """Overrriden from TypeHandler."""
+    file.Write(
+        "error::Error GLES2DecoderImpl::Handle%s(\n" % func.name)
+    file.Write(
+        "    uint32 immediate_data_size, const gles2::%s& c) {\n" % func.name)
+    file.Write("  // TODO: for now this is a no-op\n")
+    file.Write(
+        "  SetGLError(GL_INVALID_OPERATION, \"gl%s\", \"not implemented\");\n" %
+        func.name)
+    file.Write("  return error::kNoError;\n")
+    file.Write("}\n")
+    file.Write("\n")
 
 
 class HandWrittenHandler(CustomHandler):
@@ -2500,7 +2763,7 @@ TEST_F(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
       for arg in func.GetOriginalArgs():
         arg.WriteClientSideValidationCode(file, func)
       code = """  if (Is%(type)sReservedId(%(id)s)) {
-    SetGLError(GL_INVALID_OPERATION, "%(name)s: %(id)s reserved id");
+    SetGLError(GL_INVALID_OPERATION, "%(name)s\", \"%(id)s reserved id");
     return;
   }
   Bind%(type)sHelper(%(arg_string)s);
@@ -2565,7 +2828,7 @@ class GENnHandler(TypeHandler):
         'name': func.original_name,
         'typed_args': func.MakeTypedOriginalArgString(""),
         'args': func.MakeOriginalArgString(""),
-        'resource_type': func.name[3:],
+        'resource_types': func.GetInfo('resource_types'),
         'count_name': func.GetOriginalArgs()[0].name,
       }
     file.Write("%(return_type)s %(name)s(%(typed_args)s) {\n" % args)
@@ -2574,8 +2837,8 @@ class GENnHandler(TypeHandler):
     for arg in func.GetOriginalArgs():
       arg.WriteClientSideValidationCode(file, func)
     code = """  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  id_handlers_[id_namespaces::k%(resource_type)s]->
-      MakeIds(0, %(args)s);
+  GetIdHandler(id_namespaces::k%(resource_types)s)->
+      MakeIds(this, 0, %(args)s);
   helper_->%(name)sImmediate(%(args)s);
 %(log_code)s
 }
@@ -2594,17 +2857,17 @@ TEST_F(GLES2ImplementationTest, %(name)s) {
   };
   Cmds expected;
   expected.gen.Init(arraysize(ids), &ids[0]);
-  expected.data[0] = k%(type)ssStartId;
-  expected.data[1] = k%(type)ssStartId + 1;
+  expected.data[0] = k%(types)sStartId;
+  expected.data[1] = k%(types)sStartId + 1;
   gl_->%(name)s(arraysize(ids), &ids[0]);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
-  EXPECT_EQ(k%(type)ssStartId, ids[0]);
-  EXPECT_EQ(k%(type)ssStartId + 1, ids[1]);
+  EXPECT_EQ(k%(types)sStartId, ids[0]);
+  EXPECT_EQ(k%(types)sStartId + 1, ids[1]);
 }
 """
     file.Write(code % {
           'name': func.name,
-          'type': func.name[3:-1],
+          'types': func.GetInfo('resource_types'),
         })
 
   def WriteServiceUnitTest(self, func, file):
@@ -2622,8 +2885,8 @@ TEST_F(%(test_name)s, %(name)sValidArgs) {
   EXPECT_TRUE(Get%(resource_name)sInfo(kNewClientId) != NULL);
 }
 """
-    self.WriteValidUnitTest(func, file, valid_test,  {
-        'resource_name': func.name[3:-1],
+    self.WriteValidUnitTest(func, file, valid_test, {
+        'resource_name': func.GetInfo('resource_type'),
       })
     invalid_test = """
 TEST_F(%(test_name)s, %(name)sInvalidArgs) {
@@ -2636,7 +2899,7 @@ TEST_F(%(test_name)s, %(name)sInvalidArgs) {
 }
 """
     self.WriteValidUnitTest(func, file, invalid_test, {
-          'resource_name': func.GetOriginalArgs()[1].name[0:-1]
+          'resource_name': func.GetInfo('resource_type').lower(),
         })
 
   def WriteImmediateServiceUnitTest(self, func, file):
@@ -2656,7 +2919,7 @@ TEST_F(%(test_name)s, %(name)sValidArgs) {
 }
 """
     self.WriteValidUnitTest(func, file, valid_test, {
-        'resource_name': func.original_name[3:-1],
+        'resource_name': func.GetInfo('resource_type'),
       })
     invalid_test = """
 TEST_F(%(test_name)s, %(name)sInvalidArgs) {
@@ -2669,7 +2932,7 @@ TEST_F(%(test_name)s, %(name)sInvalidArgs) {
 }
 """
     self.WriteValidUnitTest(func, file, invalid_test, {
-          'resource_name': func.GetOriginalArgs()[1].name[0:-1]
+          'resource_name': func.GetInfo('resource_type').lower(),
         })
 
   def WriteImmediateCmdComputeSize(self, func, file):
@@ -2824,8 +3087,9 @@ TEST_F(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
     for arg in func.GetOriginalArgs():
       arg.WriteClientSideValidationCode(file, func)
     file.Write("  GLuint client_id;\n")
-    file.Write("  id_handlers_[id_namespaces::kProgramsAndShaders]->\n")
-    file.Write("      MakeIds(0, 1, &client_id);\n")
+    file.Write(
+        "  GetIdHandler(id_namespaces::kProgramsAndShaders)->\n")
+    file.Write("      MakeIds(this, 0, 1, &client_id);\n")
     file.Write("  helper_->%s(%s);\n" %
                (func.name, func.MakeCmdArgString("")))
     file.Write('  GPU_CLIENT_LOG("returned " << client_id);\n')
@@ -2881,22 +3145,22 @@ class DELnHandler(TypeHandler):
     """Overrriden from TypeHandler."""
     code = """
 TEST_F(GLES2ImplementationTest, %(name)s) {
-  GLuint ids[2] = { k%(type)ssStartId, k%(type)ssStartId + 1 };
+  GLuint ids[2] = { k%(types)sStartId, k%(types)sStartId + 1 };
   struct Cmds {
     %(name)sImmediate del;
     GLuint data[2];
   };
   Cmds expected;
   expected.del.Init(arraysize(ids), &ids[0]);
-  expected.data[0] = k%(type)ssStartId;
-  expected.data[1] = k%(type)ssStartId + 1;
+  expected.data[0] = k%(types)sStartId;
+  expected.data[1] = k%(types)sStartId + 1;
   gl_->%(name)s(arraysize(ids), &ids[0]);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 """
     file.Write(code % {
           'name': func.name,
-          'type': func.GetOriginalArgs()[1].name[0:-1].capitalize(),
+          'types': func.GetInfo('resource_types'),
         })
 
   def WriteServiceUnitTest(self, func, file):
@@ -2918,9 +3182,8 @@ TEST_F(%(test_name)s, %(name)sValidArgs) {
 }
 """
     self.WriteValidUnitTest(func, file, valid_test, {
-          'resource_name': func.GetOriginalArgs()[1].name[0:-1],
-          'upper_resource_name':
-              func.GetOriginalArgs()[1].name[0:-1].capitalize(),
+          'resource_name': func.GetInfo('resource_type').lower(),
+          'upper_resource_name': func.GetInfo('resource_type'),
         })
     invalid_test = """
 TEST_F(%(test_name)s, %(name)sInvalidArgs) {
@@ -2952,9 +3215,8 @@ TEST_F(%(test_name)s, %(name)sValidArgs) {
 }
 """
     self.WriteValidUnitTest(func, file, valid_test, {
-          'resource_name': func.GetOriginalArgs()[1].name[0:-1],
-          'upper_resource_name':
-              func.GetOriginalArgs()[1].name[0:-1].capitalize(),
+          'resource_name': func.GetInfo('resource_type').lower(),
+          'upper_resource_name': func.GetInfo('resource_type'),
         })
     invalid_test = """
 TEST_F(%(test_name)s, %(name)sInvalidArgs) {
@@ -2987,7 +3249,7 @@ TEST_F(%(test_name)s, %(name)sInvalidArgs) {
           'name': func.original_name,
           'typed_args': func.MakeTypedOriginalArgString(""),
           'args': func.MakeOriginalArgString(""),
-          'resource_type': func.name[6:-1].lower(),
+          'resource_type': func.GetInfo('resource_type').lower(),
           'count_name': func.GetOriginalArgs()[0].name,
         }
       file.Write("%(return_type)s %(name)s(%(typed_args)s) {\n" % args)
@@ -3149,7 +3411,7 @@ class GETnHandler(TypeHandler):
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
   } else {
-    SetGLError(error, NULL);
+    SetGLError(error, "", "");
   }
   return error::kNoError;
 }
@@ -3580,12 +3842,13 @@ TEST_F(%(test_name)s, %(name)sValidArgsCountTooLarge) {
     for arg in func.GetOriginalArgs():
       # hardcoded to match unit tests.
       if count == 0:
-        # the location of the second element of the first uniform.
+        # the location of the second element of the 2nd uniform.
+        # defined in GLES2DecoderBase::SetupShaderForUniform
         gl_arg_strings.append("3")
-        arg_strings.append("3")
+        arg_strings.append("ProgramManager::MakeFakeLocation(1, 1)")
       elif count == 1:
         # the number of elements that gl will be called with.
-        gl_arg_strings.append("2")
+        gl_arg_strings.append("3")
         # the number of elements requested in the command.
         arg_strings.append("5")
       else:
@@ -3609,7 +3872,7 @@ TEST_F(%(test_name)s, %(name)sValidArgs) {
           reinterpret_cast<%(data_type)s*>(ImmediateDataAddress(&cmd))));
   SpecializedSetup<%(name)s, 0>(true);
   %(data_type)s temp[%(data_count)s * 2] = { 0, };
-  cmd.Init(%(gl_args)s, &temp[0]);
+  cmd.Init(%(args)s, &temp[0]);
   EXPECT_EQ(error::kNoError,
             ExecuteImmediateCmd(cmd, sizeof(temp)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
@@ -3617,14 +3880,17 @@ TEST_F(%(test_name)s, %(name)sValidArgs) {
 """
     gl_arg_strings = []
     gl_any_strings = []
+    arg_strings = []
     count = 0
     for arg in func.GetOriginalArgs()[0:-1]:
       gl_arg_strings.append(arg.GetValidGLArg(func, count, 0))
       gl_any_strings.append("_")
+      arg_strings.append(arg.GetValidArg(func, count, 0))
       count += 1
     extra = {
       'data_type': func.GetInfo('data_type'),
       'data_count': func.GetInfo('count'),
+      'args': ", ".join(arg_strings),
       'gl_args': ", ".join(gl_arg_strings),
       'gl_any_args': ", ".join(gl_any_strings),
     }
@@ -3836,8 +4102,8 @@ class PUTXnHandler(TypeHandler):
 
   def WriteHandlerImplementation(self, func, file):
     """Overrriden from TypeHandler."""
-    code = """  GLfloat temp[%(count)s] = { %(values)s};
-  DoUniform%(count)sfv(%(location)s, 1, &temp[0]);
+    code = """  %(type)s temp[%(count)s] = { %(values)s};
+  Do%(name)sv(%(location)s, 1, &temp[0]);
 """
     values = ""
     args = func.GetOriginalArgs()
@@ -3847,7 +4113,9 @@ class PUTXnHandler(TypeHandler):
       values += "%s, " % args[len(args) - count + ii].name
 
     file.Write(code % {
+        'name': func.name,
         'count': func.GetInfo('count'),
+        'type': func.GetInfo('data_type'),
         'location': args[0].name,
         'args': func.MakeOriginalArgString(""),
         'values': values,
@@ -3857,7 +4125,7 @@ class PUTXnHandler(TypeHandler):
     """Overrriden from TypeHandler."""
     valid_test = """
 TEST_F(%(test_name)s, %(name)sValidArgs) {
-  EXPECT_CALL(*gl_, Uniform%(count)sfv(%(local_args)s));
+  EXPECT_CALL(*gl_, %(name)sv(%(local_args)s));
   SpecializedSetup<%(name)s, 0>(true);
   %(name)s cmd;
   cmd.Init(%(args)s);
@@ -3866,15 +4134,16 @@ TEST_F(%(test_name)s, %(name)sValidArgs) {
 }
 """
     args = func.GetOriginalArgs()
-    local_args = "%s, 1, _" % args[0].GetValidArg(func, 0, 0)
+    local_args = "%s, 1, _" % args[0].GetValidGLArg(func, 0, 0)
     self.WriteValidUnitTest(func, file, valid_test, {
+        'name': func.name,
         'count': func.GetInfo('count'),
         'local_args': local_args,
       })
 
     invalid_test = """
 TEST_F(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
-  EXPECT_CALL(*gl_, Uniform%(count)s(_, _, _).Times(0);
+  EXPECT_CALL(*gl_, %(name)sv(_, _, _).Times(0);
   SpecializedSetup<%(name)s, 0>(false);
   %(name)s cmd;
   cmd.Init(%(args)s);
@@ -3882,6 +4151,7 @@ TEST_F(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
 }
 """
     self.WriteInvalidUnitTest(func, file, invalid_test, {
+        'name': func.GetInfo('name'),
         'count': func.GetInfo('count'),
       })
 
@@ -4423,6 +4693,23 @@ class BoolArgument(Argument):
     return 'true'
 
 
+class UniformLocationArgument(Argument):
+  """class for uniform locations."""
+
+  def __init__(self, name):
+    Argument.__init__(self, name, "GLint")
+
+  def WriteGetCode(self, file):
+    """Writes the code to get an argument from a command structure."""
+    code = """  %s %s = static_cast<%s>(c.%s);
+"""
+    file.Write(code % (self.type, self.name, self.type, self.name))
+
+  def GetValidArg(self, func, offset, index):
+    """Gets a valid value for this argument."""
+    return "%d" % (offset + 1)
+
+
 class DataSizeArgument(Argument):
   """class for data_size which Bucket commands do not need."""
 
@@ -4452,7 +4739,7 @@ class SizeArgument(Argument):
   def WriteValidationCode(self, file, func):
     """overridden from Argument."""
     file.Write("  if (%s < 0) {\n" % self.name)
-    file.Write("    SetGLError(GL_INVALID_VALUE, \"gl%s: %s < 0\");\n" %
+    file.Write("    SetGLError(GL_INVALID_VALUE, \"gl%s\", \"%s < 0\");\n" %
                (func.original_name, self.name))
     file.Write("    return error::kNoError;\n")
     file.Write("  }\n")
@@ -4460,7 +4747,7 @@ class SizeArgument(Argument):
   def WriteClientSideValidationCode(self, file, func):
     """overridden from Argument."""
     file.Write("  if (%s < 0) {\n" % self.name)
-    file.Write("    SetGLError(GL_INVALID_VALUE, \"gl%s: %s < 0\");\n" %
+    file.Write("    SetGLError(GL_INVALID_VALUE, \"gl%s\", \"%s < 0\");\n" %
                (func.original_name, self.name))
     file.Write("    return;\n")
     file.Write("  }\n")
@@ -4479,11 +4766,6 @@ class SizeNotNegativeArgument(SizeArgument):
   def WriteValidationCode(self, file, func):
     """overridden from SizeArgument."""
     pass
-    #file.Write("  if (%s < 0) {\n" % self.name)
-    #file.Write("    SetGLError(GL_INVALID_VALUE, \"gl%s: %s < 0\");\n" %
-    #           (func.original_name, self.name))
-    #file.Write("    return error::kNoError;\n")
-    #file.Write("  }\n")
 
 
 class EnumBaseArgument(Argument):
@@ -4501,7 +4783,7 @@ class EnumBaseArgument(Argument):
   def WriteValidationCode(self, file, func):
     file.Write("  if (!validators_->%s.IsValid(%s)) {\n" %
         (ToUnderscore(self.type_name), self.name))
-    file.Write("    SetGLError(%s, \"gl%s: %s %s\");\n" %
+    file.Write("    SetGLError(%s, \"gl%s\", \"%s %s\");\n" %
                (self.gl_error, func.original_name, self.name, self.gl_error))
     file.Write("    return error::kNoError;\n")
     file.Write("  }\n")
@@ -4896,7 +5178,17 @@ class Function(object):
     setattr(self.info, name, value)
 
   def IsCoreGLFunction(self):
-    return not self.GetInfo('extension')
+    return (not self.GetInfo('extension') and
+            not self.GetInfo('pepper_interface'))
+
+  def InPepperInterface(self, interface):
+    ext = self.GetInfo('pepper_interface')
+    if not interface.GetName():
+      return self.IsCoreGLFunction()
+    return ext == interface.GetName()
+
+  def InAnyPepperExtension(self):
+    return self.IsCoreGLFunction() or self.GetInfo('pepper_interface')
 
   def GetGLFunctionName(self):
     """Gets the function to call to execute GL for this command."""
@@ -5088,6 +5380,38 @@ class Function(object):
     self.type_handler.WriteFormatTest(self, file)
 
 
+class PepperInterface(object):
+  """A class that represents a function."""
+
+  def __init__(self, info):
+    self.name = info["name"]
+    self.dev = info["dev"]
+
+  def GetName(self):
+    return self.name
+
+  def GetInterfaceName(self):
+    upperint = ""
+    dev = ""
+    if self.name:
+      upperint = "_" + self.name.upper()
+    if self.dev:
+      dev = "_DEV"
+    return "PPB_OPENGLES2%s%s_INTERFACE" % (upperint, dev)
+
+  def GetInterfaceString(self):
+    dev = ""
+    if self.dev:
+      dev = "(Dev)"
+    return "PPB_OpenGLES2%s%s" % (self.name, dev)
+
+  def GetStructName(self):
+    dev = ""
+    if self.dev:
+      dev = "_Dev"
+    return "PPB_OpenGLES2%s%s" % (self.name, dev)
+
+
 class ImmediateFunction(Function):
   """A class that represnets an immediate function command."""
 
@@ -5257,6 +5581,8 @@ def CreateArg(arg_string):
     return ValidatedBoolArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))
   elif arg_parts[0].startswith('GLboolean'):
     return BoolArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))
+  elif arg_parts[0].startswith('GLintUniformLocation'):
+    return UniformLocationArgument(arg_parts[-1])
   elif (arg_parts[0].startswith('GLint') and len(arg_parts[0]) > 5 and
         not arg_parts[0].startswith('GLintptr')):
     return IntArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))
@@ -5284,6 +5610,8 @@ class GLGenerator(object):
     self._function_info = {}
     self._empty_type_handler = TypeHandler()
     self._empty_function_info = FunctionInfo({}, self._empty_type_handler)
+    self.pepper_interfaces = []
+    self.interface_info = {}
 
     self._type_handlers = {
       'Bind': BindHandler(),
@@ -5312,6 +5640,10 @@ class GLGenerator(object):
         type = info['type']
       self._function_info[func_name] = FunctionInfo(info,
                                                     self.GetTypeHandler(type))
+    for interface in _PEPPER_INTERFACES:
+      interface = PepperInterface(interface)
+      self.pepper_interfaces.append(interface)
+      self.interface_info[interface.GetName()] = interface
 
   def AddFunction(self, func):
     """Adds a function."""
@@ -5674,36 +6006,44 @@ const size_t GLES2Util::enum_to_string_table_len_ =
 """)
     file.Close()
 
-  def WritePepperGLES2Interface(self, filename):
+  def WritePepperGLES2Interface(self, filename, dev):
     """Writes the Pepper OpenGLES interface definition."""
     file = CHeaderWriter(
         filename,
         "// OpenGL ES interface.\n",
-        3)
+        2)
 
-    file.Write("#include \"ppapi/c/pp_resource.h\"\n\n")
+    file.Write("#include \"ppapi/c/pp_resource.h\"\n")
+    if dev:
+      file.Write("#include \"ppapi/c/ppb_opengles2.h\"\n\n")
+    else:
+      file.Write("\n#ifndef __gl2_h_\n")
+      for (k, v) in _GL_TYPES.iteritems():
+        file.Write("typedef %s %s;\n" % (v, k))
+      file.Write("#endif  // __gl2_h_\n\n")
 
-    file.Write("#ifndef __gl2_h_\n")
-    for (k, v) in _GL_TYPES.iteritems():
-      file.Write("typedef %s %s;\n" % (v, k))
-    file.Write("#endif  // __gl2_h_\n\n")
-
-    file.Write("#define PPB_OPENGLES2_INTERFACE_1_0 \"PPB_OpenGLES2;1.0\"\n")
-    file.Write("#define PPB_OPENGLES2_INTERFACE PPB_OPENGLES2_INTERFACE_1_0\n")
-
-    file.Write("\nstruct PPB_OpenGLES2 {\n")
-    for func in self.original_functions:
-      if not func.IsCoreGLFunction():
+    for interface in self.pepper_interfaces:
+      if interface.dev != dev:
         continue
+      file.Write("#define %s_1_0 \"%s;1.0\"\n" %
+                 (interface.GetInterfaceName(), interface.GetInterfaceString()))
+      file.Write("#define %s %s_1_0\n" %
+                 (interface.GetInterfaceName(), interface.GetInterfaceName()))
 
-      original_arg = func.MakeTypedOriginalArgString("")
-      context_arg = "PP_Resource context"
-      if len(original_arg):
-        arg = context_arg + ", " + original_arg
-      else:
-        arg = context_arg
-      file.Write("  %s (*%s)(%s);\n" % (func.return_type, func.name, arg))
-    file.Write("};\n\n")
+      file.Write("\nstruct %s {\n" % interface.GetStructName())
+      for func in self.original_functions:
+        if not func.InPepperInterface(interface):
+          continue
+
+        original_arg = func.MakeTypedOriginalArgString("")
+        context_arg = "PP_Resource context"
+        if len(original_arg):
+          arg = context_arg + ", " + original_arg
+        else:
+          arg = context_arg
+        file.Write("  %s (*%s)(%s);\n" % (func.return_type, func.name, arg))
+      file.Write("};\n\n")
+
 
     file.Close()
 
@@ -5733,7 +6073,7 @@ const size_t GLES2Util::enum_to_string_table_len_ =
     file.Write("}\n\n")
 
     for func in self.original_functions:
-      if not func.IsCoreGLFunction():
+      if not func.InAnyPepperExtension():
         continue
 
       original_arg = func.MakeTypedOriginalArgString("")
@@ -5750,21 +6090,23 @@ const size_t GLES2Util::enum_to_string_table_len_ =
                   func.MakeOriginalArgString("")))
       file.Write("}\n\n")
 
-    file.Write("\nconst struct PPB_OpenGLES2 ppb_opengles2 = {\n")
-    file.Write("  &")
-    file.Write(",\n  &".join(
-      f.name for f in self.original_functions if f.IsCoreGLFunction()))
-    file.Write("\n")
-    file.Write("};\n\n")
-
     file.Write("}  // namespace\n")
 
-    file.Write("""
-const PPB_OpenGLES2* PPB_OpenGLES2_Shared::GetInterface() {
-  return &ppb_opengles2;
-}
+    for interface in self.pepper_interfaces:
+      file.Write("const %s* PPB_OpenGLES2_Shared::Get%sInterface() {\n" %
+                 (interface.GetStructName(), interface.GetName()))
+      file.Write("  static const struct %s "
+                 "ppb_opengles2 = {\n" % interface.GetStructName())
+      file.Write("    &")
+      file.Write(",\n    &".join(
+        f.name for f in self.original_functions
+          if f.InPepperInterface(interface)))
+      file.Write("\n")
 
-""")
+      file.Write("  };\n")
+      file.Write("  return &ppb_opengles2;\n")
+      file.Write("}\n")
+
     file.Write("}  // namespace ppapi\n")
     file.Close()
 
@@ -5775,27 +6117,43 @@ const PPB_OpenGLES2* PPB_OpenGLES2_Shared::GetInterface() {
     file.Write(_LICENSE)
     file.Write(_DO_NOT_EDIT_WARNING)
 
+    file.Write("#ifndef GL_GLEXT_PROTOTYPES\n")
+    file.Write("#define GL_GLEXT_PROTOTYPES\n")
+    file.Write("#endif\n")
     file.Write("#include <GLES2/gl2.h>\n")
+    file.Write("#include <GLES2/gl2ext.h>\n")
     file.Write("#include \"ppapi/lib/gl/gles2/gl2ext_ppapi.h\"\n\n")
 
     for func in self.original_functions:
-      if not func.IsCoreGLFunction():
+      if not func.InAnyPepperExtension():
         continue
+
+      interface = self.interface_info[func.GetInfo('pepper_interface') or '']
 
       file.Write("%s GL_APIENTRY gl%s(%s) {\n" %
                  (func.return_type, func.name,
                   func.MakeTypedOriginalArgString("")))
       return_str = "" if func.return_type == "void" else "return "
-      interface_str = "glGetInterfacePPAPI()"
+      interface_str = "glGet%sInterfacePPAPI()" % interface.GetName()
       original_arg = func.MakeOriginalArgString("")
       context_arg = "glGetCurrentContextPPAPI()"
       if len(original_arg):
         arg = context_arg + ", " + original_arg
       else:
         arg = context_arg
-      file.Write("  %s%s->%s(%s);\n" %
-                 (return_str, interface_str, func.name, arg))
+      if interface.GetName():
+        file.Write("  const struct %s* ext = %s;\n" %
+                   (interface.GetStructName(), interface_str))
+        file.Write("  if (ext)\n")
+        file.Write("    %sext->%s(%s);\n" %
+                   (return_str, func.name, arg))
+        if return_str:
+          file.Write("  %s0;\n" % return_str)
+      else:
+        file.Write("  %s%s->%s(%s);\n" %
+                   (return_str, interface_str, func.name, arg))
       file.Write("}\n\n")
+    file.Close()
 
   def WritePepperGLES2NaClProxy(self, filename):
     """Writes the Pepper OpenGLES interface implementation for NaCl."""
@@ -5807,15 +6165,14 @@ const PPB_OpenGLES2* PPB_OpenGLES2_Shared::GetInterface() {
         "/plugin_ppb_graphics_3d.h\"\n\n")
 
     file.Write("#include \"gpu/command_buffer/client/gles2_implementation.h\"")
-    file.Write("\n#include \"native_client/src/third_party"
-        "/ppapi/c/dev/ppb_opengles_dev.h\"\n\n")
+    file.Write("\n#include \"ppapi/c/ppb_opengles2.h\"\n\n")
 
     file.Write("using ppapi_proxy::PluginGraphics3D;\n")
     file.Write("using ppapi_proxy::PluginResource;\n\n")
     file.Write("namespace {\n\n")
 
     for func in self.original_functions:
-      if not func.IsCoreGLFunction():
+      if not func.InAnyPepperExtension():
         continue
       args = func.MakeTypedOriginalArgString("")
       if len(args) != 0:
@@ -5834,17 +6191,21 @@ const PPB_OpenGLES2* PPB_OpenGLES2_Shared::GetInterface() {
 
     file.Write("\n} // namespace\n\n")
 
-    file.Write("const PPB_OpenGLES2* "
-               "PluginGraphics3D::GetOpenGLESInterface() {\n")
+    for interface in self.pepper_interfaces:
+      file.Write("const %s* "
+                 "PluginGraphics3D::GetOpenGLES%sInterface() {\n" %
+                 (interface.GetStructName(), interface.GetName()))
 
-    file.Write("  const static struct PPB_OpenGLES2 ppb_opengles = {\n")
-    file.Write("    &")
-    file.Write(",\n    &".join(
-      f.name for f in self.original_functions if f.IsCoreGLFunction()))
-    file.Write("\n")
-    file.Write("  };\n")
-    file.Write("  return &ppb_opengles;\n")
-    file.Write("}\n")
+      file.Write("  const static struct %s ppb_opengles = {\n" %
+                 interface.GetStructName())
+      file.Write("    &")
+      file.Write(",\n    &".join(
+        f.name for f in self.original_functions
+          if f.InPepperInterface(interface)))
+      file.Write("\n")
+      file.Write("  };\n")
+      file.Write("  return &ppb_opengles;\n")
+      file.Write("}\n")
     file.Close()
 
 
@@ -5884,7 +6245,8 @@ def main(argv):
   if options.alternate_mode == "ppapi":
     # To trigger this action, do "make ppapi_gles_bindings"
     os.chdir("ppapi");
-    gen.WritePepperGLES2Interface("c/ppb_opengles2.h")
+    gen.WritePepperGLES2Interface("c/ppb_opengles2.h", False)
+    gen.WritePepperGLES2Interface("c/dev/ppb_opengles2ext_dev.h", True)
     gen.WriteGLES2ToPPAPIBridge("lib/gl/gles2/gles2.c")
 
   elif options.alternate_mode == "chrome_ppapi":
@@ -5893,6 +6255,7 @@ def main(argv):
         "ppapi/shared_impl/ppb_opengles2_shared.cc")
 
   elif options.alternate_mode == "nacl_ppapi":
+    os.chdir("ppapi")
     gen.WritePepperGLES2NaClProxy(
         "native_client/src/shared/ppapi_proxy/plugin_opengles.cc")
 

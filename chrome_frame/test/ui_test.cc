@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -67,7 +67,8 @@ TEST_P(FullTabUITest, KeyboardInput) {
 }
 
 // Tests keyboard shortcuts for back and forward.
-TEST_P(FullTabUITest, FLAKY_KeyboardBackForward) {
+// http://code.google.com/p/chromium/issues/detail?id=114058
+TEST_P(FullTabUITest, DISABLED_KeyboardBackForward) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -92,22 +93,28 @@ TEST_P(FullTabUITest, FLAKY_KeyboardBackForward) {
   EXPECT_CALL(ie_mock_, OnLoad(in_cf, StrEq(page2)))
       .WillOnce(testing::DoAll(
           SetFocusToRenderer(&ie_mock_),
-          DelaySendScanCode(&loop_, 1000, bkspace, simulate_input::NONE)));
+          DelaySendScanCode(&loop_,
+                            base::TimeDelta::FromSeconds(1),
+                            bkspace,
+                            simulate_input::NONE)));
 
   EXPECT_CALL(ie_mock_, OnLoad(in_cf, StrEq(page1)))
       .WillOnce(testing::DoAll(
           SetFocusToRenderer(&ie_mock_),
-          DelaySendScanCode(&loop_, 1000, bkspace, simulate_input::SHIFT)));
+          DelaySendScanCode(&loop_,
+                            base::TimeDelta::FromSeconds(1),
+                            bkspace,
+                            simulate_input::SHIFT)));
 
   EXPECT_CALL(ie_mock_, OnLoad(in_cf, StrEq(page2)))
       .WillOnce(CloseBrowserMock(&ie_mock_));
 
-  LaunchIENavigateAndLoop(page1,
-                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
+  LaunchIENavigateAndLoop(page1, kChromeFrameVeryLongNavigationTimeout);
 }
 
 // Tests new window behavior with ctrl+N.
-TEST_P(FullTabUITest, CtrlN) {
+// Flaky due to DelaySendChar; see http://crbug.com/124244.
+TEST_P(FullTabUITest, FLAKY_CtrlN) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -128,7 +135,10 @@ TEST_P(FullTabUITest, CtrlN) {
       .WillOnce(testing::DoAll(
           WatchWindow(&win_observer_mock, kNewWindowTitlePattern, ""),
           SetFocusToRenderer(&ie_mock_),
-          DelaySendChar(&loop_, 1000, 'n', simulate_input::CONTROL)));
+          DelaySendChar(&loop_,
+                        base::TimeDelta::FromSeconds(1),
+                        'n',
+                        simulate_input::CONTROL)));
 
   // Watch for new window. It appears that the window close message cannot be
   // reliably delivered immediately upon receipt of the window open event.
@@ -141,11 +151,12 @@ TEST_P(FullTabUITest, CtrlN) {
       .Times(testing::AtMost(2));
 
   LaunchIENavigateAndLoop(GetSimplePageUrl(),
-                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
+                          kChromeFrameVeryLongNavigationTimeout);
 }
 
 // Test that Ctrl+F opens the Find dialog.
-TEST_P(FullTabUITest, CtrlF) {
+// Flaky due to DelaySendChar; see http://crbug.com/124244.
+TEST_P(FullTabUITest, FLAKY_CtrlF) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -165,17 +176,21 @@ TEST_P(FullTabUITest, CtrlF) {
       .WillOnce(testing::DoAll(
           WatchWindow(&win_observer_mock, kFindDialogCaption, ""),
           SetFocusToRenderer(&ie_mock_),
-          DelaySendChar(&loop_, 1500, 'f', simulate_input::CONTROL)));
+          DelaySendChar(&loop_,
+                        base::TimeDelta::FromMilliseconds(1500),
+                        'f',
+                        simulate_input::CONTROL)));
 
   EXPECT_CALL(win_observer_mock, OnWindowOpen(_))
       .WillOnce(CloseBrowserMock(&ie_mock_));
 
   LaunchIENavigateAndLoop(GetSimplePageUrl(),
-                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
+                          kChromeFrameVeryLongNavigationTimeout);
 }
 
 // Test that ctrl+r does cause a refresh.
-TEST_P(FullTabUITest, CtrlR) {
+// Flaky due to DelaySendChar; see http://crbug.com/124244.
+TEST_P(FullTabUITest, FLAKY_CtrlR) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -190,16 +205,21 @@ TEST_P(FullTabUITest, CtrlR) {
       .Times(testing::AtMost(2))
       .WillOnce(testing::DoAll(
           SetFocusToRenderer(&ie_mock_),
-          DelaySendChar(&loop_, 1000, 'r', simulate_input::CONTROL),
-          DelayCloseBrowserMock(&loop_, 4000, &ie_mock_)))
+          DelaySendChar(&loop_,
+                        base::TimeDelta::FromSeconds(1),
+                        'r',
+                        simulate_input::CONTROL),
+          DelayCloseBrowserMock(
+              &loop_, base::TimeDelta::FromSeconds(4), &ie_mock_)))
       .WillRepeatedly(testing::Return());
 
   LaunchIENavigateAndLoop(GetSimplePageUrl(),
-                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
+                          kChromeFrameVeryLongNavigationTimeout);
 }
 
 // Test window close with ctrl+w.
-TEST_P(FullTabUITest, CtrlW) {
+// Flaky due to DelaySendChar; see http://crbug.com/124244.
+TEST_P(FullTabUITest, FLAKY_CtrlW) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -209,14 +229,18 @@ TEST_P(FullTabUITest, CtrlW) {
                                StrEq(GetSimplePageUrl())))
       .WillOnce(testing::DoAll(
           SetFocusToRenderer(&ie_mock_),
-          DelaySendChar(&loop_, 1000, 'w', simulate_input::CONTROL)));
+          DelaySendChar(&loop_,
+                        base::TimeDelta::FromSeconds(1),
+                        'w',
+                        simulate_input::CONTROL)));
 
   LaunchIENavigateAndLoop(GetSimplePageUrl(),
-                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
+                          kChromeFrameVeryLongNavigationTimeout);
 }
 
 // Test address bar navigation with Alt+d and URL.
-TEST_P(FullTabUITest, AltD) {
+// Flaky due to TypeUrlInAddressBar; see http://crbug.com/124244.
+TEST_P(FullTabUITest, FLAKY_AltD) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -226,19 +250,21 @@ TEST_P(FullTabUITest, AltD) {
                                StrEq(GetSimplePageUrl())))
       .WillOnce(testing::DoAll(
           SetFocusToRenderer(&ie_mock_),
-          TypeUrlInAddressBar(&loop_, GetLinkPageUrl(), 1500)));
+          TypeUrlInAddressBar(&loop_,
+                              GetLinkPageUrl(),
+                              base::TimeDelta::FromMilliseconds(1500))));
 
   EXPECT_CALL(ie_mock_, OnLoad(GetParam().invokes_cf(),
                                StrEq(GetLinkPageUrl())))
       .WillOnce(CloseBrowserMock(&ie_mock_));
 
   LaunchIENavigateAndLoop(GetSimplePageUrl(),
-                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
+                          kChromeFrameVeryLongNavigationTimeout);
 }
 
 // Tests that the renderer has focus after navigation.
 // Flaky, see http://crbug.com/90791 .
-TEST_P(FullTabUITest, FLAKY_RendererHasFocus) {
+TEST_P(FullTabUITest, DISABLED_RendererHasFocus) {
   EXPECT_CALL(ie_mock_, OnLoad(GetParam().invokes_cf(),
                                StrEq(GetSimplePageUrl())))
       .WillOnce(testing::DoAll(
@@ -271,9 +297,10 @@ TEST_P(FullTabUITest, ViewSource) {
   VARIANT empty = base::win::ScopedVariant::kEmptyVariant;
   EXPECT_CALL(ie_mock_, OnLoad(in_cf,
                                StrEq(GetSimplePageUrl())))
-      .WillOnce(DelayExecCommand(&ie_mock_, &loop_, 0, &CGID_MSHTML,
-                                 static_cast<OLECMDID>(IDM_VIEWSOURCE),
-                                 OLECMDEXECOPT_DONTPROMPTUSER, &empty, &empty));
+      .WillOnce(DelayExecCommand(
+          &ie_mock_, &loop_, base::TimeDelta(), &CGID_MSHTML,
+          static_cast<OLECMDID>(IDM_VIEWSOURCE),
+          OLECMDEXECOPT_DONTPROMPTUSER, &empty, &empty));
 
   // Expect notification for view-source window, handle new window event
   // and attach a new ie_mock_ to the received web browser
@@ -337,7 +364,8 @@ TEST_P(FullTabUITest, TabCrashReload) {
   EXPECT_CALL(prop_listener, OnChanged(DISPID_READYSTATE))
       .WillOnce(DoAll(
           ExpectDocumentReadystate(&ie_mock_, READYSTATE_UNINITIALIZED),
-          DelayNavigateToCurrentUrl(&ie_mock_, &loop_, 10)));
+          DelayNavigateToCurrentUrl(
+              &ie_mock_, &loop_, base::TimeDelta::FromMilliseconds(10))));
 
   EXPECT_CALL(ie_mock_, OnLoad(_, StrEq(GetSimplePageUrl())))
       .WillOnce(CloseBrowserMock(&ie_mock_));
@@ -371,8 +399,9 @@ TEST_P(FullTabUITest, DISABLED_TabCrashRefresh) {
       .WillOnce(DoAll(
           DisconnectDocPropNotifySink(&prop_listener),
           ExpectDocumentReadystate(&ie_mock_, READYSTATE_UNINITIALIZED),
-          DelayExecCommand(&ie_mock_, &loop_, 10, static_cast<GUID*>(NULL),
-              OLECMDID_REFRESH, 0, &empty, &empty)));
+          DelayExecCommand(
+              &ie_mock_, &loop_, base::TimeDelta::FromMilliseconds(10),
+              static_cast<GUID*>(NULL), OLECMDID_REFRESH, 0, &empty, &empty)));
 
   EXPECT_CALL(ie_mock_, OnLoad(_, StrEq(GetSimplePageUrl())))
       .WillOnce(CloseBrowserMock(&ie_mock_));
@@ -414,6 +443,7 @@ class ContextMenuTest : public MockIEEventSinkTest, public testing::Test {
 
   virtual void SetUp() {
     context_menu_page_url = GetTestUrl(L"context_menu.html");
+    context_menu_page_title = L"context menu";
     // Clear clipboard to make sure there is no effect from previous tests.
     SetClipboardText(L"");
     // These are UI-related tests, so we do not care about the exact
@@ -432,7 +462,8 @@ class ContextMenuTest : public MockIEEventSinkTest, public testing::Test {
 
     // Open 'Save As' dialog.
     const char* kSaveDlgCaption = "Save As";
-    EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+    EXPECT_CALL(acc_observer_,
+                OnAccDocLoad(TabContentsTitleEq(L"Save As download test")))
         .WillOnce(testing::DoAll(
             WatchWindow(&win_observer_mock, kSaveDlgCaption, ""),
             AccRightClick(AccObjectMatcher(L"", role))));
@@ -456,13 +487,15 @@ class ContextMenuTest : public MockIEEventSinkTest, public testing::Test {
         .WillOnce(CloseWhenFileSaved(&ie_mock_, temp_file_path, 8000));
 
     LaunchIENavigateAndLoop(GetTestUrl(L"save_as_context_menu.html"),
-                            kChromeFrameVeryLongNavigationTimeoutInSeconds);
+                            kChromeFrameVeryLongNavigationTimeout);
     ASSERT_TRUE(file_util::DieFileDie(temp_file_path, false));
   }
 
  protected:
   // Html page that holds a text field for context menu testing.
   std::wstring context_menu_page_url;
+  // Title of said html page.
+  std::wstring context_menu_page_title;
   // This is the text value used to test cut/copy/paste etc.
   const std::wstring kTextFieldInitValue;
 
@@ -474,7 +507,8 @@ TEST_F(ContextMenuTest, CFReload) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   InSequence expect_in_sequence_for_scope;
 
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(GetSimplePageTitle())))
       .WillOnce(OpenContextMenuAsync());
   EXPECT_CALL(acc_observer_, OnMenuPopup(_))
       .WillOnce(AccLeftClick(AccObjectMatcher(L"Reload")));
@@ -500,7 +534,8 @@ TEST_F(ContextMenuTest, CFViewSource) {
   InSequence expect_in_sequence_for_scope;
 
   // View the page source.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(GetSimplePageTitle())))
       .WillOnce(OpenContextMenuAsync());
   EXPECT_CALL(acc_observer_, OnMenuPopup(_))
       .WillOnce(AccLeftClick(AccObjectMatcher(L"View page source")));
@@ -535,7 +570,8 @@ TEST_F(ContextMenuTest, DISABLED_CFPageInfo) {
   InSequence expect_in_sequence_for_scope;
 
   // View page information.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(GetSimplePageTitle())))
       .WillOnce(testing::DoAll(
           WatchWindow(&win_observer_mock, "", "Chrome_WidgetWin_*"),
           OpenContextMenuAsync()));
@@ -563,7 +599,8 @@ TEST_F(ContextMenuTest, CFInspector) {
   // Devtools begins life with "Untitled" caption and it changes
   // later to the 'Developer Tools - <url> form.
   const char* kPageInfoCaptionPattern = "Untitled*";
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(GetSimplePageTitle())))
       .WillOnce(testing::DoAll(
           WatchWindow(&win_observer_mock, kPageInfoCaptionPattern, ""),
           OpenContextMenuAsync()));
@@ -576,11 +613,11 @@ TEST_F(ContextMenuTest, CFInspector) {
       .WillOnce(CloseBrowserMock(&ie_mock_));
 
   LaunchIENavigateAndLoop(GetSimplePageUrl(),
-                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
+                          kChromeFrameVeryLongNavigationTimeout);
 }
 
 // http://code.google.com/p/chromium/issues/detail?id=83114
-TEST_F(ContextMenuTest, FLAKY_CFSavePageAs) {
+TEST_F(ContextMenuTest, DISABLED_CFSavePageAs) {
   // Please see http://code.google.com/p/chromium/issues/detail?id=60987
   // for more information on why this test is disabled for Vista with IE7.
   if (base::win::GetVersion() == base::win::VERSION_VISTA &&
@@ -619,7 +656,8 @@ TEST_F(ContextMenuTest, CFAboutVersionLoads) {
   new_window_mock.ExpectAnyNavigations();
   InSequence expect_in_sequence_for_scope;
 
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(GetSimplePageTitle())))
       .WillOnce(OpenContextMenuAsync());
   EXPECT_CALL(acc_observer_, OnMenuPopup(_))
       .WillOnce(AccLeftClick(AccObjectMatcher(L"About*")));
@@ -645,8 +683,9 @@ TEST_F(ContextMenuTest, IEOpen) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::None());
   InSequence expect_in_sequence_for_scope;
 
-  // Open the link throught the context menu.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  // Open the link through the context menu.
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(GetLinkPageTitle())))
       .WillOnce(AccRightClick(AccObjectMatcher(L"", L"link")));
   EXPECT_CALL(acc_observer_, OnMenuPopup(_))
       .WillOnce(AccLeftClick(AccObjectMatcher(L"Open")));
@@ -671,7 +710,8 @@ TEST_F(ContextMenuTest, IEOpenInNewWindow) {
   InSequence expect_in_sequence_for_scope;
 
   // Open the link in a new window.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(GetLinkPageTitle())))
       .WillOnce(AccRightClick(AccObjectMatcher(L"", L"link")));
   EXPECT_CALL(acc_observer_, OnMenuPopup(_))
       .WillOnce(AccLeftClick(AccObjectMatcher(L"Open in New Window")));
@@ -693,15 +733,17 @@ TEST_F(ContextMenuTest, IEOpenInNewWindow) {
 TEST_F(ContextMenuTest, IEBackForward) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::None());
   std::wstring page1 = GetLinkPageUrl();
+  std::wstring title1 = GetLinkPageTitle();
   std::wstring page2 = GetSimplePageUrl();
+  std::wstring title2 = GetSimplePageTitle();
   InSequence expect_in_sequence_for_scope;
 
   // Navigate to second page.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_, OnAccDocLoad(TabContentsTitleEq(title1)))
       .WillOnce(Navigate(&ie_mock_, page2));
 
   // Go back.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_, OnAccDocLoad(TabContentsTitleEq(title2)))
       .WillOnce(testing::DoAll(
           VerifyPageLoad(&ie_mock_, IN_IE, page2),
           OpenContextMenuAsync()));
@@ -709,7 +751,7 @@ TEST_F(ContextMenuTest, IEBackForward) {
       .WillOnce(AccLeftClick(AccObjectMatcher(L"Back")));
 
   // Go forward.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_, OnAccDocLoad(TabContentsTitleEq(title1)))
       .WillOnce(testing::DoAll(
           VerifyPageLoad(&ie_mock_, IN_IE, page1),
           OpenContextMenuAsync()));
@@ -724,13 +766,14 @@ TEST_F(ContextMenuTest, IEBackForward) {
 
 // Test CF link context menu - Open link in new window.
 // Failing intermittently on IE6/7. See crbug.com/64794.
-TEST_F(ContextMenuTest, FLAKY_CFOpenLinkInNewWindow) {
+TEST_F(ContextMenuTest, DISABLED_CFOpenLinkInNewWindow) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   MockIEEventSink new_window_mock;
   new_window_mock.ExpectAnyNavigations();
 
   // Invoke 'Open link in new window' context menu item.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(GetLinkPageTitle())))
       .Times(testing::AtMost(2))
       .WillOnce(AccRightClick(AccObjectMatcher(L"", L"link")))
       .WillOnce(testing::Return());
@@ -751,7 +794,8 @@ TEST_F(ContextMenuTest, CFCopyLinkAddress) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
 
   // Invoke 'Copy link address' context menu item.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(GetLinkPageTitle())))
       .WillOnce(AccRightClick(AccObjectMatcher(L"", L"link")));
   EXPECT_CALL(acc_observer_, OnMenuPopup(_))
       .WillOnce(testing::DoAll(
@@ -764,12 +808,14 @@ TEST_F(ContextMenuTest, CFCopyLinkAddress) {
 }
 
 // Test CF text field context menu - cut.
-TEST_F(ContextMenuTest, CFTxtFieldCut) {
+// Times out sporadically http://crbug.com/119660.
+TEST_F(ContextMenuTest, FLAKY_CFTxtFieldCut) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   AccObjectMatcher txtfield_matcher(L"", L"editable text");
 
   // Invoke "Cut" context menu item of text field.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(context_menu_page_title)))
       .WillOnce(testing::DoAll(
           AccRightClick(txtfield_matcher),
           AccWatchForOneValueChange(&acc_observer_, txtfield_matcher)));
@@ -786,12 +832,14 @@ TEST_F(ContextMenuTest, CFTxtFieldCut) {
 }
 
 // Test CF text field context menu - copy.
-TEST_F(ContextMenuTest, CFTxtFieldCopy) {
+// Times out sporadically http://crbug.com/119660.
+TEST_F(ContextMenuTest, FLAKY_CFTxtFieldCopy) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   AccObjectMatcher txtfield_matcher(L"", L"editable text");
 
   // Invoke "Copy" context menu item of text field.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(context_menu_page_title)))
       .WillOnce(testing::DoAll(
           AccRightClick(txtfield_matcher),
           AccWatchForOneValueChange(&acc_observer_, txtfield_matcher)));
@@ -810,12 +858,14 @@ TEST_F(ContextMenuTest, CFTxtFieldCopy) {
 }
 
 // Test CF text field context menu - paste.
-TEST_F(ContextMenuTest, DISABLED_CFTxtFieldPaste) {
+// Times out sporadically http://crbug.com/119660.
+TEST_F(ContextMenuTest, FLAKY_CFTxtFieldPaste) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   AccObjectMatcher txtfield_matcher(L"", L"editable text");
 
   // Invoke "Paste" context menu item of text field.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(context_menu_page_title)))
       .WillOnce(testing::DoAll(
           AccRightClick(txtfield_matcher),
           AccWatchForOneValueChange(&acc_observer_, txtfield_matcher)));
@@ -832,12 +882,14 @@ TEST_F(ContextMenuTest, DISABLED_CFTxtFieldPaste) {
 }
 
 // Test CF text field context menu - delete.
-TEST_F(ContextMenuTest, CFTxtFieldDelete) {
+// Times out sporadically http://crbug.com/119660.
+TEST_F(ContextMenuTest, FLAKY_CFTxtFieldDelete) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   AccObjectMatcher txtfield_matcher(L"", L"editable text");
 
   // Invoke 'Delete' context menu item of text field.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(context_menu_page_title)))
       .WillOnce(testing::DoAll(
           AccRightClick(txtfield_matcher),
           AccWatchForOneValueChange(&acc_observer_, txtfield_matcher)));
@@ -855,7 +907,8 @@ TEST_F(ContextMenuTest, CFTxtFieldSelectAll) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
 
   // Invoke 'Select all' context menu item of text field.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(context_menu_page_title)))
       .WillOnce(AccRightClick(AccObjectMatcher(L"", L"editable text")));
   EXPECT_CALL(acc_observer_, OnMenuPopup(_))
       .WillOnce(testing::DoAll(
@@ -870,16 +923,21 @@ TEST_F(ContextMenuTest, CFTxtFieldSelectAll) {
 }
 
 // Test CF text field context menu - undo.
-TEST_F(ContextMenuTest, CFTxtFieldUndo) {
+// Times out sporadically http://crbug.com/119660.
+TEST_F(ContextMenuTest, FLAKY_CFTxtFieldUndo) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   AccObjectMatcher txtfield_matcher(L"", L"editable text");
 
-  // Change the value of text field to 'A', then invoke 'Undo' context menu item
-  // of text field.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  // Change the value of text field to 'A'.
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(context_menu_page_title)))
       .WillOnce(testing::DoAll(
-          AccSendCharMessage(txtfield_matcher, L'A'),
-          AccRightClick(txtfield_matcher)));
+          AccWatchForOneValueChange(&acc_observer_, txtfield_matcher),
+          AccSendCharMessage(txtfield_matcher, L'A')));
+  // Bring up the context menu once the value has changed.
+  EXPECT_CALL(acc_observer_, OnAccValueChange(_, _, StrEq(L"A")))
+      .WillOnce(AccRightClick(txtfield_matcher));
+  // Then select "Undo".
   EXPECT_CALL(acc_observer_, OnMenuPopup(_))
       .WillOnce(testing::DoAll(
           AccWatchForOneValueChange(&acc_observer_, txtfield_matcher),
@@ -893,41 +951,52 @@ TEST_F(ContextMenuTest, CFTxtFieldUndo) {
 }
 
 // Test CF text field context menu - redo.
-TEST_F(ContextMenuTest, CFTxtFieldRedo) {
+// Times out sporadically http://crbug.com/119660.
+TEST_F(ContextMenuTest, FLAKY_CFTxtFieldRedo) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   AccObjectMatcher txtfield_matcher(L"", L"editable text");
   InSequence expect_in_sequence_for_scope;
 
-  // Change text field value to 'A', then undo it.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  // Change text field from its initial value to 'A'.
+  EXPECT_CALL(acc_observer_,
+              OnAccDocLoad(TabContentsTitleEq(context_menu_page_title)))
       .WillOnce(testing::DoAll(
-          AccSendCharMessage(txtfield_matcher, L'A'),
-          AccRightClick(txtfield_matcher)));
+          AccWatchForOneValueChange(&acc_observer_, txtfield_matcher),
+          AccSendCharMessage(txtfield_matcher, L'A')));
+  // Bring up the context menu.
+  EXPECT_CALL(acc_observer_, OnAccValueChange(_, _, StrEq(L"A")))
+      .WillOnce(AccRightClick(txtfield_matcher));
+  // Select "Undo"
   EXPECT_CALL(acc_observer_, OnMenuPopup(_))
       .WillOnce(testing::DoAll(
           AccWatchForOneValueChange(&acc_observer_, txtfield_matcher),
           AccLeftClick(AccObjectMatcher(L"Undo*"))));
 
-  // After undo operation is done, invoke 'Redo' context menu item.
+  // After undo operation is done, bring up the context menu again.
   EXPECT_CALL(acc_observer_, OnAccValueChange(_, _, StrEq(kTextFieldInitValue)))
-      .WillOnce(testing::DoAll(
-          AccRightClick(txtfield_matcher),
-          AccWatchForOneValueChange(&acc_observer_, txtfield_matcher)));
+      .WillOnce(AccRightClick(txtfield_matcher));
+  // Select "Redo"
   EXPECT_CALL(acc_observer_, OnMenuPopup(_))
-      .WillOnce(AccLeftClick(AccObjectMatcher(L"Redo*")));
+      .WillOnce(testing::DoAll(
+          AccWatchForOneValueChange(&acc_observer_, txtfield_matcher),
+          AccLeftClick(AccObjectMatcher(L"Redo*"))));
 
-  // After redo operation is done, verify that text field value is reset to its
-  // changed value 'A'.
+  // Verify that text field value is reset to its changed value 'A' and exit.
   EXPECT_CALL(acc_observer_, OnAccValueChange(_, _, StrEq(L"A")))
       .WillOnce(CloseBrowserMock(&ie_mock_));
 
   LaunchIEAndNavigate(context_menu_page_url);
 }
 
-TEST_F(ContextMenuTest, CFBackForward) {
+// Disabled because it seems to hang, causing the test process to timeout and
+// be killed; see http://crbug.com/121097.
+TEST_F(ContextMenuTest, DISABLED_CFBackForward) {
   std::wstring page1 = GetLinkPageUrl();
+  std::wstring title1 = GetLinkPageTitle();
   std::wstring page2 = GetSimplePageUrl();
+  std::wstring title2 = GetSimplePageTitle();
   std::wstring page3 = GetTestUrl(L"anchor.html");
+  std::wstring title3 = GetAnchorPageTitle();
 
   server_mock_.ExpectAndServeRequestWithCardinality(
       CFInvocation::MetaTag(), page1, testing::Exactly(2));
@@ -941,19 +1010,19 @@ TEST_F(ContextMenuTest, CFBackForward) {
   InSequence expect_in_sequence_for_scope;
 
   // Navigate to second page.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_, OnAccDocLoad(TabContentsTitleEq(title1)))
       .WillOnce(testing::DoAll(
           VerifyPageLoad(&ie_mock_, IN_CF, page1),
           Navigate(&ie_mock_, page2)));
 
   // Navigate to third page.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_, OnAccDocLoad(TabContentsTitleEq(title2)))
       .WillOnce(testing::DoAll(
           VerifyPageLoad(&ie_mock_, IN_IE, page2),
           Navigate(&ie_mock_, page3)));
 
   // Go back.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_, OnAccDocLoad(TabContentsTitleEq(title3)))
       .WillOnce(testing::DoAll(
           VerifyPageLoad(&ie_mock_, IN_CF, page3),
           OpenContextMenuAsync()));
@@ -962,7 +1031,7 @@ TEST_F(ContextMenuTest, CFBackForward) {
       .WillOnce(AccLeftClick(AccObjectMatcher(L"Back")));
 
   // Go back
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_, OnAccDocLoad(TabContentsTitleEq(title2)))
       .WillOnce(testing::DoAll(
           VerifyPageLoad(&ie_mock_, IN_IE, page2),
           OpenContextMenuAsync()));
@@ -971,7 +1040,7 @@ TEST_F(ContextMenuTest, CFBackForward) {
       .WillOnce(AccLeftClick(AccObjectMatcher(L"Back")));
 
   // Go forward.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_, OnAccDocLoad(TabContentsTitleEq(title1)))
       .WillOnce(testing::DoAll(
           VerifyPageLoad(&ie_mock_, IN_CF, page1),
           OpenContextMenuAsync()));
@@ -980,7 +1049,7 @@ TEST_F(ContextMenuTest, CFBackForward) {
       .WillOnce(AccLeftClick(AccObjectMatcher(L"Forward")));
 
   // Go forward.
-  EXPECT_CALL(acc_observer_, OnAccDocLoad(_))
+  EXPECT_CALL(acc_observer_, OnAccDocLoad(TabContentsTitleEq(title2)))
       .WillOnce(testing::DoAll(
           VerifyPageLoad(&ie_mock_, IN_IE, page2),
           OpenContextMenuAsync()));
@@ -991,8 +1060,7 @@ TEST_F(ContextMenuTest, CFBackForward) {
   EXPECT_CALL(ie_mock_, OnLoad(IN_CF, StrEq(page3)))
       .WillOnce(CloseBrowserMock(&ie_mock_));
 
-  LaunchIENavigateAndLoop(page1,
-                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
+  LaunchIENavigateAndLoop(page1, kChromeFrameVeryLongNavigationTimeout);
 }
 
 }  // namespace chrome_frame_test

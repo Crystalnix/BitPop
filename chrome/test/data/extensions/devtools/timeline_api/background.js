@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,24 +24,34 @@ function setListenersOnTab(tabId) {
   }
 }
 
+/**
+ * Sends true if next event was a onPageEvent and pop it from |receivedEvents|.
+ */
 function testReceivePageEvent() {
-  if (receivedEvents.length == 1) {
+  var sawPage = false;
+  if (receivedEvents.length >= 1) {
     var eventName = receivedEvents.pop();
-    window.domAutomationController.send(eventName === "onPageEvent");
-  } else {
-    receivedEvents = [];
-    window.domAutomationController.send(false);
+    if (eventName === "onPageEvent")
+      sawPage = true;
+    else
+      console.warn('received ' + eventName + '; expecting onPageEvent');
   }
+  window.domAutomationController.send(sawPage);
 }
 
+/**
+ * Sends true if any event is onTabClose and clear |receivedEvents|.
+ */
 function testReceiveTabCloseEvent() {
-  if (receivedEvents.length == 1) {
-    var eventName = receivedEvents.pop();
-    window.domAutomationController.send(eventName === "onTabClose");
-  } else {
-    receivedEvents = [];
-    window.domAutomationController.send(false);
+  var sawTabClose = false;
+  for(var i = 0; i < receivedEvents.length; i++) {
+    if (receivedEvents[i] === 'onTabClose') {
+      sawTabClose = true;
+      break;
+    }
   }
+  receivedEvents = [];
+  window.domAutomationController.send(sawTabClose);
 }
 
 function unregisterListeners() {

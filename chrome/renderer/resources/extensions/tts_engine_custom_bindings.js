@@ -4,18 +4,15 @@
 
 // Custom bindings for the ttsEngine API.
 
-(function() {
+var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
 
-native function GetChromeHidden();
-
-GetChromeHidden().registerCustomHook('ttsEngine', function() {
-  chrome.ttsEngine.onSpeak.dispatch = function(text, options, requestId) {
-    var sendTtsEvent = function(event) {
-      chrome.ttsEngine.sendTtsEvent(requestId, event);
-    };
-    chrome.Event.prototype.dispatch.apply(
-        this, [text, options, sendTtsEvent]);
+chromeHidden.Event.registerArgumentMassager('ttsEngine.onSpeak',
+    function(args, dispatch) {
+  var text = args[0];
+  var options = args[1];
+  var requestId = args[2];
+  var sendTtsEvent = function(event) {
+    chrome.ttsEngine.sendTtsEvent(requestId, event);
   };
+  dispatch([text, options, sendTtsEvent]);
 });
-
-})();

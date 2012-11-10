@@ -1,15 +1,9 @@
-/*
-Copyright (c) 2011 The Chromium Authors. All rights reserved.
-Use of this source code is governed by a BSD-style license that can be
-found in the LICENSE file.
-*/
+/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
 
-#clearBrowserDataOverlay {
+#clear-browser-data-overlay {
   min-width: 500px;
-}
-
-#clearBrowserDataOverlay > .content-area label {
-  margin: 5px 0;
 }
 
 #clear-data-checkboxes {
@@ -17,8 +11,12 @@ found in the LICENSE file.
   margin: 5px 0;
 }
 
-#cbdThrobber {
+#cbd-throbber {
   margin: 4px 10px;
   vertical-align: middle;
   visibility: hidden;
+}
+
+#flash-storage-settings {
+  padding-top: 5px;
 }

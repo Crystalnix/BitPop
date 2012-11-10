@@ -12,6 +12,7 @@
 #include "base/callback_forward.h"
 #include "base/file_path.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string16.h"
 #include "base/threading/thread.h"
 #include "chrome/common/automation_constants.h"
@@ -139,6 +140,9 @@ class Session {
   Error* GetURL(std::string* url);
   Error* GetTitle(std::string* tab_title);
   Error* GetScreenShot(std::string* png);
+#if !defined(NO_TCMALLOC) && (defined(OS_LINUX) || defined(OS_CHROMEOS))
+  Error* HeapProfilerDump(const std::string& reason);
+#endif  // !defined(NO_TCMALLOC) && (defined(OS_LINUX) || defined(OS_CHROMEOS))
   Error* GetCookies(const std::string& url, base::ListValue** cookies);
   Error* DeleteCookie(const std::string& url, const std::string& cookie_name);
   Error* SetCookie(const std::string& url, base::DictionaryValue* cookie_dict);
@@ -179,6 +183,9 @@ class Session {
 
   // Sets the bounds for the specified window.
   Error* SetWindowBounds(const WebViewId& window, const Rect& bounds);
+
+  // Maximizes the specified window.
+  Error* MaximizeWindow(const WebViewId& window);
 
   // Gets the message of the currently active JavaScript modal dialog.
   Error* GetAlertMessage(std::string* text);
@@ -307,9 +314,6 @@ class Session {
   // Waits for all views to stop loading. Returns true on success.
   Error* WaitForAllViewsToStopLoading();
 
-  // Install packed extension at |path|.
-  Error* InstallExtensionDeprecated(const FilePath& path);
-
   // Install extension at |path|.
   Error* InstallExtension(const FilePath& path, std::string* extension_id);
 
@@ -366,8 +370,14 @@ class Session {
   Error* ClearStorage(StorageType type);
 
   // Gets the keys of all items of the HTML5 localStorage object. If there are
-  // no errors, the function sets |value| and the caller takes ownership.
+  // no errors, the function sets |keys| and the caller takes ownership.
   Error* GetStorageKeys(StorageType type, base::ListValue** keys);
+
+  // Gets the current geolocation.
+  Error* GetGeolocation(scoped_ptr<base::DictionaryValue>* geolocation);
+
+  // Overrides the current geolocation.
+  Error* OverrideGeolocation(const base::DictionaryValue* geolocation);
 
   const std::string& id() const;
 
@@ -382,6 +392,8 @@ class Session {
   const Point& get_mouse_position() const;
 
   const Logger& logger() const;
+
+  const FilePath& temp_dir() const;
 
   const Capabilities& capabilities() const;
 
@@ -438,6 +450,7 @@ class Session {
       Point* location);
   Error* PostBrowserStartInit();
   Error* InitForWebsiteTesting();
+  Error* SetPrefs();
 
   scoped_ptr<InMemoryLog> session_log_;
   Logger logger_;
@@ -470,6 +483,8 @@ class Session {
   std::string alert_prompt_text_;
   bool has_alert_prompt_text_;
 
+  // Temporary directory containing session data.
+  ScopedTempDir temp_dir_;
   Capabilities capabilities_;
 
   // Current state of all modifier keys.

@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -67,6 +67,15 @@ Message& Message::operator=(const Message& other) {
   return *this;
 }
 
+void Message::SetHeaderValues(int32 routing, uint32 type, uint32 flags) {
+  // This should only be called when the message is already empty.
+  DCHECK(payload_size() == 0);
+
+  header()->routing = routing;
+  header()->type = type;
+  header()->flags = flags;
+}
+
 #ifdef IPC_MESSAGE_LOG_ENABLED
 void Message::set_sent_time(int64 time) {
   DCHECK((header()->flags & HAS_SENT_TIME_BIT) == 0);
@@ -100,7 +109,7 @@ bool Message::WriteFileDescriptor(const base::FileDescriptor& descriptor) {
   }
 }
 
-bool Message::ReadFileDescriptor(void** iter,
+bool Message::ReadFileDescriptor(PickleIterator* iter,
                                  base::FileDescriptor* descriptor) const {
   int descriptor_index;
   if (!ReadInt(iter, &descriptor_index))
@@ -114,6 +123,10 @@ bool Message::ReadFileDescriptor(void** iter,
   descriptor->auto_close = true;
 
   return descriptor->fd >= 0;
+}
+
+bool Message::HasFileDescriptors() const {
+  return file_descriptor_set_.get() && !file_descriptor_set_->empty();
 }
 
 void Message::EnsureFileDescriptorSet() {

@@ -4,8 +4,8 @@
 
 #ifndef ASH_LAUNCHER_TABBED_LAUNCHER_BUTTON_H_
 #define ASH_LAUNCHER_TABBED_LAUNCHER_BUTTON_H_
-#pragma once
 
+#include "ash/launcher/launcher_button.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
 #include "ui/base/animation/animation_delegate.h"
@@ -17,84 +17,85 @@ class MultiAnimation;
 }
 
 namespace ash {
+
+struct LauncherItem;
+
 namespace internal {
 
-class LauncherButtonHost;
-
 // Button used for items on the launcher corresponding to tabbed windows.
-class TabbedLauncherButton : public views::ImageButton {
+class TabbedLauncherButton : public LauncherButton {
  public:
-  TabbedLauncherButton(views::ButtonListener* listener,
-                       LauncherButtonHost* host);
+  // Indicates if this button is incognito or not.
+  enum IncognitoState {
+    STATE_INCOGNITO,
+    STATE_NOT_INCOGNITO,
+  };
+
+  static TabbedLauncherButton* Create(views::ButtonListener* listener,
+                                      LauncherButtonHost* host,
+                                      IncognitoState is_incognito);
   virtual ~TabbedLauncherButton();
 
-  // Notification that the images are about to change. Kicks off an animation.
-  void PrepareForImageChange();
-
   // Sets the images to display for this entry.
-  void SetTabImage(const SkBitmap& image, int count);
+  void SetTabImage(const SkBitmap& image);
+
+  // This only defines how the icon is drawn. Do not use it for other purposes.
+  IncognitoState is_incognito() const { return is_incognito_; }
 
  protected:
-  // View overrides:
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual bool OnMousePressed(const views::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseReleased(const views::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseCaptureLost() OVERRIDE;
-  virtual bool OnMouseDragged(const views::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseEntered(const views::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseMoved(const views::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseExited(const views::MouseEvent& event) OVERRIDE;
+  TabbedLauncherButton(views::ButtonListener* listener,
+                       LauncherButtonHost* host,
+                       IncognitoState is_incognito);
+  // View override.
+  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+
+  // LauncherButton override.
+  virtual IconView* CreateIconView() OVERRIDE;
 
  private:
-  // Used as the delegate for |animation_|. TabbedLauncherButton doesn't
-  // directly implement AnimationDelegate as one of it's superclasses already
-  // does.
-  class AnimationDelegateImpl : public ui::AnimationDelegate {
+  // Used as the delegate for |animation_|.
+  class IconView : public LauncherButton::IconView,
+                   public ui::AnimationDelegate {
    public:
-    explicit AnimationDelegateImpl(TabbedLauncherButton* host);
-    virtual ~AnimationDelegateImpl();
+    explicit IconView(TabbedLauncherButton* host);
+    virtual ~IconView();
 
     // ui::AnimationDelegateImpl overrides:
     virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
     virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
 
+    // Sets the image to display for this entry.
+    void SetTabImage(const SkBitmap& image);
+
+   protected:
+    // View override.
+    virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+
    private:
     TabbedLauncherButton* host_;
+    SkBitmap image_;
+    SkBitmap animating_image_;
 
-    DISALLOW_COPY_AND_ASSIGN(AnimationDelegateImpl);
+    // Used to animate image.
+    scoped_ptr<ui::MultiAnimation> animation_;
+
+    // Background images. Which one is chosen depends on the type of the window.
+    static SkBitmap* browser_image_;
+    static SkBitmap* incognito_browser_image_;
+    // TODO[dave] implement panel specific image.
+    static SkBitmap* browser_panel_image_;
+    static SkBitmap* incognito_browser_panel_image_;
+
+    DISALLOW_COPY_AND_ASSIGN(IconView);
   };
 
-  struct ImageSet {
-    SkBitmap* normal_image;
-    SkBitmap* pushed_image;
-    SkBitmap* hot_image;
-  };
+  IconView* tabbed_icon_view() {
+    return static_cast<IconView*>(icon_view());
+  }
 
-  // Creates an ImageSet using the specified image ids. Caller owns the returned
-  // value.
-  static ImageSet* CreateImageSet(int normal_id, int pushed_id, int hot_id);
-
-  SkBitmap image_;
-
-  LauncherButtonHost* host_;
-
-  // Delegate of |animation_|.
-  AnimationDelegateImpl animation_delegate_;
-
-  // Used to animate image.
-  scoped_ptr<ui::MultiAnimation> animation_;
-
-  // Should |images_| be shown? This is set to false soon after
-  // PrepareForImageChange() is invoked without a following call to SetImages().
-  bool show_image_;
-
-  // Background images. Which one is chosen depends upon how many images are
-  // provided.
-  static ImageSet* bg_image_1_;
-  static ImageSet* bg_image_2_;
-  static ImageSet* bg_image_3_;
-
-  views::GlowHoverController hover_controller_;
+  // Indicates how the icon is drawn. If true an Incognito symbol will be
+  // drawn. It does not necessarily indicate if the window is 'incognito'.
+  const IncognitoState is_incognito_;
 
   DISALLOW_COPY_AND_ASSIGN(TabbedLauncherButton);
 };

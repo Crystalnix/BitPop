@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,9 +14,9 @@
 #include "base/process_util.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
-#include "content/common/chrome_descriptors.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/common/content_descriptors.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 
@@ -25,10 +25,13 @@
 #include "content/common/sandbox_policy.h"
 #elif defined(OS_MACOSX)
 #include "content/browser/mach_broker_mac.h"
+#elif defined(OS_ANDROID)
+#include "base/android/jni_android.h"
+#include "content/browser/android/sandboxed_process_launcher.h"
 #elif defined(OS_POSIX)
 #include "base/memory/singleton.h"
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
-#include "content/browser/zygote_host_linux.h"
+#include "content/browser/zygote_host/zygote_host_impl_linux.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -48,20 +51,27 @@ class ChildProcessLauncher::Context
         client_thread_id_(BrowserThread::UI),
         termination_status_(base::TERMINATION_STATUS_NORMAL_TERMINATION),
         exit_code_(content::RESULT_CODE_NORMAL_EXIT),
-        starting_(true),
-        terminate_child_on_shutdown_(true)
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+        starting_(true)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
         , zygote_(false)
 #endif
         {
+#if defined(OS_POSIX)
+          terminate_child_on_shutdown_ = !CommandLine::ForCurrentProcess()->
+              HasSwitch(switches::kChildCleanExit);
+#else
+          terminate_child_on_shutdown_ = true;
+#endif
   }
 
   void Launch(
 #if defined(OS_WIN)
       const FilePath& exposed_dir,
+#elif defined(OS_ANDROID)
+      int ipcfd,
 #elif defined(OS_POSIX)
       bool use_zygote,
-      const base::environment_vector& environ,
+      const base::EnvironmentVector& environ,
       int ipcfd,
 #endif
       CommandLine* cmd_line,
@@ -70,6 +80,12 @@ class ChildProcessLauncher::Context
 
     CHECK(BrowserThread::GetCurrentThreadIdentifier(&client_thread_id_));
 
+#if defined(OS_ANDROID)
+    // We need to close the client end of the IPC channel to reliably detect
+    // child termination. We will close this fd after we create the child
+    // process which is asynchronous on Android.
+    ipcfd_ = ipcfd;
+#endif
     BrowserThread::PostTask(
         BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
         base::Bind(
@@ -78,6 +94,8 @@ class ChildProcessLauncher::Context
             client_thread_id_,
 #if defined(OS_WIN)
             exposed_dir,
+#elif defined(OS_ANDROID)
+            ipcfd,
 #elif defined(OS_POSIX)
             use_zygote,
             environ,
@@ -85,6 +103,27 @@ class ChildProcessLauncher::Context
 #endif
             cmd_line));
   }
+
+#if defined(OS_ANDROID)
+  static void OnSandboxedProcessStarted(
+      // |this_object| is NOT thread safe. Only use it to post a task back.
+      scoped_refptr<Context> this_object,
+      BrowserThread::ID client_thread_id,
+      base::ProcessHandle handle) {
+    if (BrowserThread::CurrentlyOn(client_thread_id)) {
+      // This is always invoked on the UI thread which is commonly the
+      // |client_thread_id| so we can shortcut one PostTask.
+      this_object->Notify(handle);
+    } else {
+      BrowserThread::PostTask(
+          client_thread_id, FROM_HERE,
+          base::Bind(
+              &ChildProcessLauncher::Context::Notify,
+              this_object,
+              handle));
+    }
+  }
+#endif
 
   void ResetClient() {
     // No need for locking as this function gets called on the same thread that
@@ -111,53 +150,66 @@ class ChildProcessLauncher::Context
       BrowserThread::ID client_thread_id,
 #if defined(OS_WIN)
       const FilePath& exposed_dir,
+#elif defined(OS_ANDROID)
+      int ipcfd,
 #elif defined(OS_POSIX)
       bool use_zygote,
-      const base::environment_vector& env,
+      const base::EnvironmentVector& env,
       int ipcfd,
 #endif
       CommandLine* cmd_line) {
     scoped_ptr<CommandLine> cmd_line_deleter(cmd_line);
 
-    base::ProcessHandle handle = base::kNullProcessHandle;
 #if defined(OS_WIN)
-    handle = sandbox::StartProcessWithAccess(cmd_line, exposed_dir);
+    base::ProcessHandle handle = sandbox::StartProcessWithAccess(
+        cmd_line, exposed_dir);
+#elif defined(OS_ANDROID)
+    std::string process_type =
+        cmd_line->GetSwitchValueASCII(switches::kProcessType);
+    base::GlobalDescriptors::Mapping files_to_register;
+    files_to_register.push_back(std::pair<base::GlobalDescriptors::Key, int>(
+        kPrimaryIPCChannel, ipcfd));
+    content::GetContentClient()->browser()->
+        GetAdditionalMappedFilesForChildProcess(*cmd_line, &files_to_register);
+
+    content::StartSandboxedProcess(cmd_line->argv(),
+        ipcfd, files_to_register,
+        base::Bind(&ChildProcessLauncher::Context::OnSandboxedProcessStarted,
+                   this_object, client_thread_id));
+
 #elif defined(OS_POSIX)
+    base::ProcessHandle handle = base::kNullProcessHandle;
     // We need to close the client end of the IPC channel
     // to reliably detect child termination.
     file_util::ScopedFD ipcfd_closer(&ipcfd);
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-    // On Linux, we need to add some extra file descriptors for crash handling.
     std::string process_type =
         cmd_line->GetSwitchValueASCII(switches::kProcessType);
-    int crash_signal_fd =
-        content::GetContentClient()->browser()->GetCrashSignalFD(*cmd_line);
+    base::GlobalDescriptors::Mapping files_to_register;
+    files_to_register.push_back(std::pair<base::GlobalDescriptors::Key, int>(
+        kPrimaryIPCChannel, ipcfd));
+#if !defined(OS_MACOSX)
+    content::GetContentClient()->browser()->
+        GetAdditionalMappedFilesForChildProcess(*cmd_line, &files_to_register);
     if (use_zygote) {
-      base::GlobalDescriptors::Mapping mapping;
-      mapping.push_back(std::pair<uint32_t, int>(kPrimaryIPCChannel, ipcfd));
-      if (crash_signal_fd >= 0) {
-        mapping.push_back(std::pair<uint32_t, int>(kCrashDumpSignal,
-                                                   crash_signal_fd));
-      }
-      handle = ZygoteHost::GetInstance()->ForkRequest(cmd_line->argv(),
-                                                      mapping,
-                                                      process_type);
+      handle = ZygoteHostImpl::GetInstance()->ForkRequest(cmd_line->argv(),
+                                                          files_to_register,
+                                                          process_type);
     } else
     // Fall through to the normal posix case below when we're not zygoting.
-#endif
+#endif  // !defined(OS_MACOSX)
     {
-      base::file_handle_mapping_vector fds_to_map;
-      fds_to_map.push_back(std::make_pair(
-          ipcfd,
-          kPrimaryIPCChannel + base::GlobalDescriptors::kBaseDescriptor));
-
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-      if (crash_signal_fd >= 0) {
+      // Convert FD mapping to FileHandleMappingVector
+      base::FileHandleMappingVector fds_to_map;
+      for (size_t i = 0; i < files_to_register.size(); ++i) {
+        const base::GlobalDescriptors::KeyFDPair& id_file =
+            files_to_register[i];
         fds_to_map.push_back(std::make_pair(
-            crash_signal_fd,
-            kCrashDumpSignal + base::GlobalDescriptors::kBaseDescriptor));
+            id_file.second,
+            id_file.first + base::GlobalDescriptors::kBaseDescriptor));
       }
+
+#if !defined(OS_MACOSX)
       if (process_type == switches::kRendererProcess) {
         const int sandbox_fd =
             RenderSandboxHostLinux::GetInstance()->GetRendererSocket();
@@ -165,7 +217,7 @@ class ChildProcessLauncher::Context
             sandbox_fd,
             kSandboxIPCChannel + base::GlobalDescriptors::kBaseDescriptor));
       }
-#endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
+#endif  // defined(OS_MACOSX)
 
       // Actually launch the app.
       base::LaunchOptions options;
@@ -203,29 +255,34 @@ class ChildProcessLauncher::Context
         handle = base::kNullProcessHandle;
     }
 #endif  // else defined(OS_POSIX)
-
-    BrowserThread::PostTask(
-        client_thread_id, FROM_HERE,
-        base::Bind(
-            &Context::Notify,
-            this_object.get(),
+#if !defined(OS_ANDROID)
+  BrowserThread::PostTask(
+      client_thread_id, FROM_HERE,
+      base::Bind(
+          &Context::Notify,
+          this_object.get(),
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
-            use_zygote,
+          use_zygote,
 #endif
-            handle));
+          handle));
+#endif  // !defined(OS_ANDROID)
   }
 
   void Notify(
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
       bool zygote,
 #endif
       base::ProcessHandle handle) {
+#if defined(OS_ANDROID)
+    // Finally close the ipcfd
+    file_util::ScopedFD ipcfd_closer(&ipcfd_);
+#endif
     starting_ = false;
     process_.set_handle(handle);
     if (!handle)
       LOG(ERROR) << "Failed to launch child process";
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
     zygote_ = zygote;
 #endif
     if (client_) {
@@ -248,7 +305,7 @@ class ChildProcessLauncher::Context
         BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
         base::Bind(
             &Context::TerminateInternal,
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
             zygote_,
 #endif
             process_.handle()));
@@ -262,10 +319,14 @@ class ChildProcessLauncher::Context
   }
 
   static void TerminateInternal(
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
       bool zygote,
 #endif
       base::ProcessHandle handle) {
+#if defined(OS_ANDROID)
+    LOG(INFO) << "ChromeProcess: Stopping process with handle " << handle;
+    content::StopSandboxedProcess(handle);
+#else
     base::Process process(handle);
      // Client has gone away, so just kill the process.  Using exit code 0
     // means that UMA won't treat this as a crash.
@@ -276,7 +337,7 @@ class ChildProcessLauncher::Context
     if (zygote) {
       // If the renderer was created via a zygote, we have to proxy the reaping
       // through the zygote process.
-      ZygoteHost::GetInstance()->EnsureProcessTerminated(handle);
+      ZygoteHostImpl::GetInstance()->EnsureProcessTerminated(handle);
     } else
 #endif  // !OS_MACOSX
     {
@@ -284,6 +345,7 @@ class ChildProcessLauncher::Context
     }
 #endif  // OS_POSIX
     process.Close();
+#endif  // defined(OS_ANDROID)
   }
 
   Client* client_;
@@ -295,8 +357,10 @@ class ChildProcessLauncher::Context
   // Controls whether the child process should be terminated on browser
   // shutdown. Default behavior is to terminate the child.
   bool terminate_child_on_shutdown_;
-
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_ANDROID)
+  // The fd to close after creating the process.
+  int ipcfd_;
+#elif defined(OS_POSIX) && !defined(OS_MACOSX)
   bool zygote_;
 #endif
 };
@@ -307,7 +371,7 @@ ChildProcessLauncher::ChildProcessLauncher(
     const FilePath& exposed_dir,
 #elif defined(OS_POSIX)
     bool use_zygote,
-    const base::environment_vector& environ,
+    const base::EnvironmentVector& environ,
     int ipcfd,
 #endif
     CommandLine* cmd_line,
@@ -316,6 +380,8 @@ ChildProcessLauncher::ChildProcessLauncher(
   context_->Launch(
 #if defined(OS_WIN)
       exposed_dir,
+#elif defined(OS_ANDROID)
+      ipcfd,
 #elif defined(OS_POSIX)
       use_zygote,
       environ,
@@ -347,9 +413,9 @@ base::TerminationStatus ChildProcessLauncher::GetChildTerminationStatus(
       *exit_code = context_->exit_code_;
     return context_->termination_status_;
   }
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   if (context_->zygote_) {
-    context_->termination_status_ = ZygoteHost::GetInstance()->
+    context_->termination_status_ = ZygoteHostImpl::GetInstance()->
         GetTerminationStatus(handle, &context_->exit_code_);
   } else
 #endif

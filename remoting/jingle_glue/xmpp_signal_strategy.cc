@@ -4,36 +4,66 @@
 
 #include "remoting/jingle_glue/xmpp_signal_strategy.h"
 
+#include "base/bind.h"
+#include "base/location.h"
 #include "base/logging.h"
+#include "base/single_thread_task_runner.h"
+#include "base/string_util.h"
+#include "base/thread_task_runner_handle.h"
+#include "jingle/glue/chrome_async_socket.h"
+#include "jingle/glue/task_pump.h"
+#include "jingle/glue/xmpp_client_socket_factory.h"
 #include "jingle/notifier/base/gaia_token_pre_xmpp_auth.h"
-#include "remoting/jingle_glue/jingle_thread.h"
-#include "remoting/jingle_glue/xmpp_socket_adapter.h"
-#include "third_party/libjingle/source/talk/base/asyncsocket.h"
+#include "net/socket/client_socket_factory.h"
+#include "net/url_request/url_request_context_getter.h"
+#include "third_party/libjingle/source/talk/base/thread.h"
 #include "third_party/libjingle/source/talk/xmpp/prexmppauth.h"
 #include "third_party/libjingle/source/talk/xmpp/saslcookiemechanism.h"
 
 namespace {
+
 const char kDefaultResourceName[] = "chromoting";
+
+// Use 58 seconds keep-alive interval, in case routers terminate
+// connections that are idle for more than a minute.
+const int kKeepAliveIntervalSeconds = 50;
+
+// Read buffer size used by ChromeAsyncSocket for read and write buffers. Most
+// of XMPP messages are smaller than 4kB.
+const size_t kReadBufferSize = 4096;
+const size_t kWriteBufferSize = 4096;
+
+void DisconnectXmppClient(buzz::XmppClient* client) {
+  client->Disconnect();
+}
+
 }  // namespace
 
 namespace remoting {
 
-XmppSignalStrategy::XmppSignalStrategy(JingleThread* jingle_thread,
-                                       const std::string& username,
-                                       const std::string& auth_token,
-                                       const std::string& auth_token_service)
-   : thread_(jingle_thread),
+XmppSignalStrategy::XmppSignalStrategy(
+    scoped_refptr<net::URLRequestContextGetter> request_context_getter,
+    const std::string& username,
+    const std::string& auth_token,
+    const std::string& auth_token_service)
+   : request_context_getter_(request_context_getter),
      username_(username),
      auth_token_(auth_token),
      auth_token_service_(auth_token_service),
      resource_name_(kDefaultResourceName),
      xmpp_client_(NULL),
-     state_(DISCONNECTED) {
+     state_(DISCONNECTED),
+     error_(OK) {
 }
 
 XmppSignalStrategy::~XmppSignalStrategy() {
-  DCHECK_EQ(listeners_.size(), 0U);
   Disconnect();
+
+  // Destroying task runner will destroy XmppClient, but XmppClient may be on
+  // the stack and it doesn't handle this case properly, so we need to delay
+  // destruction.
+  base::ThreadTaskRunnerHandle::Get()->DeleteSoon(
+      FROM_HERE, task_runner_.release());
 }
 
 void XmppSignalStrategy::Connect() {
@@ -49,12 +79,18 @@ void XmppSignalStrategy::Connect() {
   settings.set_resource(resource_name_);
   settings.set_use_tls(buzz::TLS_ENABLED);
   settings.set_token_service(auth_token_service_);
-  settings.set_auth_cookie(auth_token_);
+  settings.set_auth_token(buzz::AUTH_MECHANISM_GOOGLE_TOKEN, auth_token_);
   settings.set_server(talk_base::SocketAddress("talk.google.com", 5222));
 
-  buzz::AsyncSocket* socket = new XmppSocketAdapter(settings, false);
+  scoped_ptr<jingle_glue::XmppClientSocketFactory> socket_factory(
+      new jingle_glue::XmppClientSocketFactory(
+          net::ClientSocketFactory::GetDefaultFactory(),
+          net::SSLConfig(), request_context_getter_, false));
+  buzz::AsyncSocket* socket = new jingle_glue::ChromeAsyncSocket(
+    socket_factory.release(), kReadBufferSize, kWriteBufferSize);
 
-  xmpp_client_ = new buzz::XmppClient(thread_->task_pump());
+  task_runner_.reset(new jingle_glue::TaskPump());
+  xmpp_client_ = new buzz::XmppClient(task_runner_.get());
   xmpp_client_->Connect(settings, "", socket, CreatePreXmppAuth(settings));
   xmpp_client_->SignalStateChange.connect(
       this, &XmppSignalStrategy::OnConnectionStateChanged);
@@ -83,6 +119,11 @@ SignalStrategy::State XmppSignalStrategy::GetState() const {
   return state_;
 }
 
+SignalStrategy::Error XmppSignalStrategy::GetError() const {
+  DCHECK(CalledOnValidThread());
+  return error_;
+}
+
 std::string XmppSignalStrategy::GetLocalJid() const {
   DCHECK(CalledOnValidThread());
   return xmpp_client_->jid().Str();
@@ -98,16 +139,15 @@ void XmppSignalStrategy::RemoveListener(Listener* listener) {
   listeners_.RemoveObserver(listener);
 }
 
-bool XmppSignalStrategy::SendStanza(buzz::XmlElement* stanza) {
+bool XmppSignalStrategy::SendStanza(scoped_ptr<buzz::XmlElement> stanza) {
   DCHECK(CalledOnValidThread());
   if (!xmpp_client_) {
     LOG(INFO) << "Dropping signalling message because XMPP "
         "connection has been terminated.";
-    delete stanza;
     return false;
   }
 
-  buzz::XmppReturnStatus status = xmpp_client_->SendStanza(stanza);
+  buzz::XmppReturnStatus status = xmpp_client_->SendStanza(stanza.release());
   return status == buzz::XMPP_RETURN_OK || status == buzz::XMPP_RETURN_PENDING;
 }
 
@@ -149,12 +189,36 @@ void XmppSignalStrategy::SetResourceName(const std::string &resource_name) {
 void XmppSignalStrategy::OnConnectionStateChanged(
     buzz::XmppEngine::State state) {
   DCHECK(CalledOnValidThread());
+
   if (state == buzz::XmppEngine::STATE_OPEN) {
+    keep_alive_timer_.Start(
+        FROM_HERE, base::TimeDelta::FromSeconds(kKeepAliveIntervalSeconds),
+        this, &XmppSignalStrategy::SendKeepAlive);
     SetState(CONNECTED);
   } else if (state == buzz::XmppEngine::STATE_CLOSED) {
+    // Make sure we dump errors to the log.
+    int subcode;
+    buzz::XmppEngine::Error error = xmpp_client_->GetError(&subcode);
+    LOG(INFO) << "XMPP connection was closed: error=" << error
+              << ", subcode=" << subcode;
+
+    keep_alive_timer_.Stop();
+
     // Client is destroyed by the TaskRunner after the client is
     // closed. Reset the pointer so we don't try to use it later.
     xmpp_client_ = NULL;
+
+    switch (error) {
+      case buzz::XmppEngine::ERROR_UNAUTHORIZED:
+      case buzz::XmppEngine::ERROR_AUTH:
+      case buzz::XmppEngine::ERROR_MISSING_USERNAME:
+        error_ = AUTHENTICATION_FAILED;
+        break;
+
+      default:
+        error_ = NETWORK_ERROR;
+    }
+
     SetState(DISCONNECTED);
   }
 }
@@ -167,6 +231,10 @@ void XmppSignalStrategy::SetState(State new_state) {
   }
 }
 
+void XmppSignalStrategy::SendKeepAlive() {
+  xmpp_client_->SendRaw(" ");
+}
+
 // static
 buzz::PreXmppAuth* XmppSignalStrategy::CreatePreXmppAuth(
     const buzz::XmppClientSettings& settings) {
@@ -177,7 +245,7 @@ buzz::PreXmppAuth* XmppSignalStrategy::CreatePreXmppAuth(
   }
 
   return new notifier::GaiaTokenPreXmppAuth(
-      jid.Str(), settings.auth_cookie(), settings.token_service(), mechanism);
+      jid.Str(), settings.auth_token(), settings.token_service(), mechanism);
 }
 
 }  // namespace remoting

@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_WORKER_HOST_WORKER_SERVICE_H_
 #define CONTENT_BROWSER_WORKER_HOST_WORKER_SERVICE_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -29,6 +28,8 @@ class CONTENT_EXPORT WorkerServiceImpl
   static WorkerServiceImpl* GetInstance();
 
   // WorkerService implementation:
+  virtual bool TerminateWorker(int process_id, int route_id) OVERRIDE;
+  virtual std::vector<WorkerInfo> GetWorkers() OVERRIDE;
   virtual void AddObserver(WorkerServiceObserver* observer) OVERRIDE;
   virtual void RemoveObserver(WorkerServiceObserver* observer) OVERRIDE;
 
@@ -36,11 +37,11 @@ class CONTENT_EXPORT WorkerServiceImpl
   void CreateWorker(const ViewHostMsg_CreateWorker_Params& params,
                     int route_id,
                     WorkerMessageFilter* filter,
-                    const ResourceContext& resource_context);
+                    ResourceContext* resource_context);
   void LookupSharedWorker(const ViewHostMsg_CreateWorker_Params& params,
                           int route_id,
                           WorkerMessageFilter* filter,
-                          const ResourceContext* resource_context,
+                          ResourceContext* resource_context,
                           bool* exists,
                           bool* url_error);
   void CancelCreateDedicatedWorker(int route_id, WorkerMessageFilter* filter);
@@ -65,9 +66,6 @@ class CONTENT_EXPORT WorkerServiceImpl
       int worker_process_id);
 
   void NotifyWorkerDestroyed(
-      WorkerProcessHost* process,
-      int worker_route_id);
-  void NotifyWorkerContextStarted(
       WorkerProcessHost* process,
       int worker_route_id);
 
@@ -117,20 +115,20 @@ class CONTENT_EXPORT WorkerServiceImpl
   WorkerProcessHost::WorkerInstance* CreatePendingInstance(
       const GURL& url,
       const string16& name,
-      const ResourceContext* resource_context);
+      ResourceContext* resource_context);
   WorkerProcessHost::WorkerInstance* FindPendingInstance(
       const GURL& url,
       const string16& name,
-      const ResourceContext* resource_context);
+      ResourceContext* resource_context);
   void RemovePendingInstances(
       const GURL& url,
       const string16& name,
-      const ResourceContext* resource_context);
+      ResourceContext* resource_context);
 
   WorkerProcessHost::WorkerInstance* FindSharedWorkerInstance(
       const GURL& url,
       const string16& name,
-      const ResourceContext* resource_context);
+      ResourceContext* resource_context);
 
   NotificationRegistrar registrar_;
   int next_worker_route_id_;

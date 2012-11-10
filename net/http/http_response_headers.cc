@@ -14,10 +14,12 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/pickle.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
 #include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/time.h"
+#include "base/values.h"
 #include "net/base/escape.h"
 #include "net/http/http_util.h"
 
@@ -54,6 +56,15 @@ const char* const kChallengeResponseHeaders[] = {
 const char* const kCookieResponseHeaders[] = {
   "set-cookie",
   "set-cookie2"
+};
+
+// By default, do not cache Strict-Transport-Security or Public-Key-Pins.
+// This avoids erroneously re-processing them on page loads from cache ---
+// they are defined to be valid only on live and error-free HTTPS
+// connections.
+const char* const kSecurityStateHeaders[] = {
+  "strict-transport-security",
+  "public-key-pins"
 };
 
 // These response headers are not copied from a 304/206 response to the cached
@@ -160,7 +171,8 @@ HttpResponseHeaders::HttpResponseHeaders(const std::string& raw_input)
                                    GetAllHttpResponseCodes());
 }
 
-HttpResponseHeaders::HttpResponseHeaders(const Pickle& pickle, void** iter)
+HttpResponseHeaders::HttpResponseHeaders(const Pickle& pickle,
+                                         PickleIterator* iter)
     : response_code_(-1) {
   std::string raw_input;
   if (pickle.ReadString(iter, &raw_input))
@@ -190,6 +202,9 @@ void HttpResponseHeaders::Persist(Pickle* pickle, PersistOptions options) {
 
   if ((options & PERSIST_SANS_RANGES) == PERSIST_SANS_RANGES)
     AddHopContentRangeHeaders(&filter_headers);
+
+  if ((options & PERSIST_SANS_SECURITY_STATE) == PERSIST_SANS_SECURITY_STATE)
+    AddSecurityStateHeaders(&filter_headers);
 
   std::string blob;
   blob.reserve(raw_headers_.size());
@@ -296,42 +311,6 @@ void HttpResponseHeaders::MergeWithHeaders(const std::string& raw_headers,
   Parse(new_raw_headers);
 }
 
-void HttpResponseHeaders::MergeWithHeadersWithValue(
-    const std::string& raw_headers,
-    const std::string& header_to_remove_name,
-    const std::string& header_to_remove_value) {
-  std::string header_to_remove_name_lowercase(header_to_remove_name);
-  StringToLowerASCII(&header_to_remove_name_lowercase);
-
-  std::string new_raw_headers(raw_headers);
-  for (size_t i = 0; i < parsed_.size(); ++i) {
-    DCHECK(!parsed_[i].is_continuation());
-
-    // Locate the start of the next header.
-    size_t k = i;
-    while (++k < parsed_.size() && parsed_[k].is_continuation()) {}
-    --k;
-
-    std::string name(parsed_[i].name_begin, parsed_[i].name_end);
-    StringToLowerASCII(&name);
-    std::string value(parsed_[i].value_begin, parsed_[i].value_end);
-    if (name != header_to_remove_name_lowercase ||
-        value != header_to_remove_value) {
-      // It's ok to preserve this header in the final result.
-      new_raw_headers.append(parsed_[i].name_begin, parsed_[k].value_end);
-      new_raw_headers.push_back('\0');
-    }
-
-    i = k;
-  }
-  new_raw_headers.push_back('\0');
-
-  // Make this object hold the new data.
-  raw_headers_.clear();
-  parsed_.clear();
-  Parse(new_raw_headers);
-}
-
 void HttpResponseHeaders::RemoveHeader(const std::string& name) {
   // Copy up to the null byte.  This just copies the status line.
   std::string new_raw_headers(raw_headers_.c_str());
@@ -344,13 +323,39 @@ void HttpResponseHeaders::RemoveHeader(const std::string& name) {
   MergeWithHeaders(new_raw_headers, to_remove);
 }
 
-void HttpResponseHeaders::RemoveHeaderWithValue(const std::string& name,
-                                                const std::string& value) {
-  // Copy up to the null byte.  This just copies the status line.
-  std::string new_raw_headers(raw_headers_.c_str());
+void HttpResponseHeaders::RemoveHeaderLine(const std::string& name,
+                                           const std::string& value) {
+  std::string name_lowercase(name);
+  StringToLowerASCII(&name_lowercase);
+
+  std::string new_raw_headers(GetStatusLine());
   new_raw_headers.push_back('\0');
 
-  MergeWithHeadersWithValue(new_raw_headers, name, value);
+  new_raw_headers.reserve(raw_headers_.size());
+
+  void* iter = NULL;
+  std::string old_header_name;
+  std::string old_header_value;
+  while (EnumerateHeaderLines(&iter, &old_header_name, &old_header_value)) {
+    std::string old_header_name_lowercase(name);
+    StringToLowerASCII(&old_header_name_lowercase);
+
+    if (name_lowercase == old_header_name_lowercase &&
+        value == old_header_value)
+      continue;
+
+    new_raw_headers.append(old_header_name);
+    new_raw_headers.push_back(':');
+    new_raw_headers.push_back(' ');
+    new_raw_headers.append(old_header_value);
+    new_raw_headers.push_back('\0');
+  }
+  new_raw_headers.push_back('\0');
+
+  // Make this object hold the new data.
+  raw_headers_.clear();
+  parsed_.clear();
+  Parse(new_raw_headers);
 }
 
 void HttpResponseHeaders::AddHeader(const std::string& header) {
@@ -832,6 +837,11 @@ void HttpResponseHeaders::AddHopContentRangeHeaders(HeaderSet* result) {
   result->insert("content-range");
 }
 
+void HttpResponseHeaders::AddSecurityStateHeaders(HeaderSet* result) {
+  for (size_t i = 0; i < arraysize(kSecurityStateHeaders); ++i)
+    result->insert(std::string(kSecurityStateHeaders[i]));
+}
+
 void HttpResponseHeaders::GetMimeTypeAndCharset(std::string* mime_type,
                                                 std::string* charset) const {
   mime_type->clear();
@@ -1142,32 +1152,16 @@ bool HttpResponseHeaders::IsKeepAlive() const {
 }
 
 bool HttpResponseHeaders::HasStrongValidators() const {
-  if (GetHttpVersion() < HttpVersion(1, 1))
-    return false;
-
-  std::string etag_value;
-  EnumerateHeader(NULL, "etag", &etag_value);
-  if (!etag_value.empty()) {
-    size_t slash = etag_value.find('/');
-    if (slash == std::string::npos || slash == 0)
-      return true;
-
-    std::string::const_iterator i = etag_value.begin();
-    std::string::const_iterator j = etag_value.begin() + slash;
-    HttpUtil::TrimLWS(&i, &j);
-    if (!LowerCaseEqualsASCII(i, j, "w"))
-      return true;
-  }
-
-  Time last_modified;
-  if (!GetLastModifiedValue(&last_modified))
-    return false;
-
-  Time date;
-  if (!GetDateValue(&date))
-    return false;
-
-  return ((date - last_modified).InSeconds() >= 60);
+  std::string etag_header;
+  EnumerateHeader(NULL, "etag", &etag_header);
+  std::string last_modified_header;
+  EnumerateHeader(NULL, "Last-Modified", &last_modified_header);
+  std::string date_header;
+  EnumerateHeader(NULL, "Date", &date_header);
+  return HttpUtil::HasStrongValidators(GetHttpVersion(),
+                                       etag_header,
+                                       last_modified_header,
+                                       date_header);
 }
 
 // From RFC 2616:
@@ -1301,6 +1295,55 @@ bool HttpResponseHeaders::GetContentRange(int64* first_byte_position,
       *instance_length < 0 || *instance_length - 1 < *last_byte_position)
     return false;
 
+  return true;
+}
+
+Value* HttpResponseHeaders::NetLogCallback(
+    NetLog::LogLevel /* log_level */) const {
+  DictionaryValue* dict = new DictionaryValue();
+  ListValue* headers = new ListValue();
+  headers->Append(new StringValue(GetStatusLine()));
+  void* iterator = NULL;
+  std::string name;
+  std::string value;
+  while (EnumerateHeaderLines(&iterator, &name, &value)) {
+    headers->Append(
+      new StringValue(base::StringPrintf("%s: %s",
+                                         name.c_str(),
+                                         value.c_str())));
+  }
+  dict->Set("headers", headers);
+  return dict;
+}
+
+// static
+bool HttpResponseHeaders::FromNetLogParam(
+    const base::Value* event_param,
+    scoped_refptr<HttpResponseHeaders>* http_response_headers) {
+  http_response_headers->release();
+
+  const base::DictionaryValue* dict;
+  const base::ListValue* header_list;
+
+  if (!event_param ||
+      !event_param->GetAsDictionary(&dict) ||
+      !dict->GetList("headers", &header_list)) {
+    return false;
+  }
+
+  std::string raw_headers;
+  for (base::ListValue::const_iterator it = header_list->begin();
+       it != header_list->end();
+       ++it) {
+    std::string header_line;
+    if (!(*it)->GetAsString(&header_line))
+      return false;
+
+    raw_headers.append(header_line);
+    raw_headers.push_back('\0');
+  }
+  raw_headers.push_back('\0');
+  *http_response_headers = new HttpResponseHeaders(raw_headers);
   return true;
 }
 

@@ -22,14 +22,15 @@ namespace {
 
 void ProvidePictureBuffers(PP_Instance instance, PP_Resource decoder,
                            uint32_t req_num_of_bufs,
-                           const PP_Size* dimensions) {
+                           const PP_Size* dimensions,
+                           uint32_t texture_target) {
   HostResource decoder_resource;
   decoder_resource.SetHostResource(instance, decoder);
 
   HostDispatcher::GetForInstance(instance)->Send(
       new PpapiMsg_PPPVideoDecoder_ProvidePictureBuffers(
           API_ID_PPP_VIDEO_DECODER_DEV,
-          decoder_resource, req_num_of_bufs, *dimensions));
+          decoder_resource, req_num_of_bufs, *dimensions, texture_target));
 }
 
 void DismissPictureBuffer(PP_Instance instance, PP_Resource decoder,
@@ -118,36 +119,48 @@ bool PPP_VideoDecoder_Proxy::OnMessageReceived(const IPC::Message& msg) {
 }
 
 void PPP_VideoDecoder_Proxy::OnMsgProvidePictureBuffers(
-    const HostResource& decoder, uint32_t req_num_of_bufs,
-    const PP_Size& dimensions) {
+    const HostResource& decoder,
+    uint32_t req_num_of_bufs,
+    const PP_Size& dimensions,
+    uint32_t texture_target) {
   PP_Resource plugin_decoder = PluginGlobals::Get()->plugin_resource_tracker()->
       PluginResourceForHostResource(decoder);
-  ppp_video_decoder_impl_->ProvidePictureBuffers(
-      decoder.instance(), plugin_decoder, req_num_of_bufs, &dimensions);
+  CallWhileUnlocked(ppp_video_decoder_impl_->ProvidePictureBuffers,
+                    decoder.instance(),
+                    plugin_decoder,
+                    req_num_of_bufs,
+                    &dimensions,
+                    texture_target);
 }
 
 void PPP_VideoDecoder_Proxy::OnMsgDismissPictureBuffer(
     const HostResource& decoder, int32_t picture_id) {
   PP_Resource plugin_decoder = PluginGlobals::Get()->plugin_resource_tracker()->
       PluginResourceForHostResource(decoder);
-  ppp_video_decoder_impl_->DismissPictureBuffer(
-      decoder.instance(), plugin_decoder, picture_id);
+  CallWhileUnlocked(ppp_video_decoder_impl_->DismissPictureBuffer,
+                    decoder.instance(),
+                    plugin_decoder,
+                    picture_id);
 }
 
 void PPP_VideoDecoder_Proxy::OnMsgPictureReady(
     const HostResource& decoder, const PP_Picture_Dev& picture) {
   PP_Resource plugin_decoder = PluginGlobals::Get()->plugin_resource_tracker()->
       PluginResourceForHostResource(decoder);
-  ppp_video_decoder_impl_->PictureReady(
-      decoder.instance(), plugin_decoder, &picture);
+  CallWhileUnlocked(ppp_video_decoder_impl_->PictureReady,
+                    decoder.instance(),
+                    plugin_decoder,
+                    &picture);
 }
 
 void PPP_VideoDecoder_Proxy::OnMsgNotifyError(
     const HostResource& decoder, PP_VideoDecodeError_Dev error) {
   PP_Resource plugin_decoder = PluginGlobals::Get()->plugin_resource_tracker()->
       PluginResourceForHostResource(decoder);
-  ppp_video_decoder_impl_->NotifyError(
-      decoder.instance(), plugin_decoder, error);
+  CallWhileUnlocked(ppp_video_decoder_impl_->NotifyError,
+                    decoder.instance(),
+                    plugin_decoder,
+                    error);
 }
 
 }  // namespace proxy

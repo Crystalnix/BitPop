@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,6 +25,7 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/common/child_process_logging.h"
 #include "chrome/service/cloud_print/cloud_print_consts.h"
 #include "chrome/service/cloud_print/cloud_print_helpers.h"
 #include "googleurl/src/gurl.h"
@@ -49,10 +50,10 @@ const char kCUPSNotifyDelete[] = "notify_delete";
 const int kDefaultIPPServerPort = 631;
 
 // Time interval to check for printer's updates.
-const int kCheckForPrinterUpdatesMs = 5*60*1000;
+const int kCheckForPrinterUpdatesMinutes = 5;
 
 // Job update timeout
-const int kJobUpdateTimeoutMs = 5000;
+const int kJobUpdateTimeoutSeconds = 5;
 
 // Job id for dry run (it should not affect CUPS job ids, since 0 job-id is
 // invalid in CUPS.
@@ -115,7 +116,7 @@ class PrintSystemCUPS : public PrintSystem {
       const std::string& printer_name,
       printing::PrinterCapsAndDefaults* printer_info);
 
-  int GetUpdateTimeoutMs() const {
+  base::TimeDelta GetUpdateTimeout() const {
     return update_timeout_;
   }
 
@@ -126,13 +127,17 @@ class PrintSystemCUPS : public PrintSystem {
   }
 
  private:
+  virtual ~PrintSystemCUPS() {}
+
   // Following functions are wrappers around corresponding CUPS functions.
   // <functions>2()  are called when print server is specified, and plain
   // version in another case. There is an issue specifing CUPS_HTTP_DEFAULT
   // in the <functions>2(), it does not work in CUPS prior to 1.4.
-  int GetJobs(cups_job_t** jobs, const GURL& url, const char* name,
+  int GetJobs(cups_job_t** jobs, const GURL& url,
+              http_encryption_t encryption, const char* name,
               int myjobs, int whichjobs);
-  int PrintFile(const GURL& url, const char* name, const char* filename,
+  int PrintFile(const GURL& url, http_encryption_t encryption,
+                const char* name, const char* filename,
                 const char* title, int num_options, cups_option_t* options);
 
   void InitPrintBackends(const DictionaryValue* print_system_settings);
@@ -159,10 +164,11 @@ class PrintSystemCUPS : public PrintSystem {
   typedef std::list<PrintServerInfoCUPS> PrintServerList;
   PrintServerList print_servers_;
 
-  int update_timeout_;
+  base::TimeDelta update_timeout_;
   bool initialized_;
   bool printer_enum_succeeded_;
   bool notify_delete_;
+  http_encryption_t cups_encryption_;
 };
 
 class PrintServerWatcherCUPS
@@ -171,9 +177,6 @@ class PrintServerWatcherCUPS
   explicit PrintServerWatcherCUPS(PrintSystemCUPS* print_system)
       : print_system_(print_system),
         delegate_(NULL) {
-  }
-  ~PrintServerWatcherCUPS() {
-    StopWatching();
   }
 
   // PrintSystem::PrintServerWatcher implementation.
@@ -184,7 +187,7 @@ class PrintServerWatcherCUPS
     MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&PrintServerWatcherCUPS::CheckForUpdates, this),
-        print_system_->GetUpdateTimeoutMs());
+        print_system_->GetUpdateTimeout());
     return true;
   }
 
@@ -205,7 +208,12 @@ class PrintServerWatcherCUPS
     MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&PrintServerWatcherCUPS::CheckForUpdates, this),
-        print_system_->GetUpdateTimeoutMs());
+        print_system_->GetUpdateTimeout());
+  }
+
+ protected:
+  virtual ~PrintServerWatcherCUPS() {
+    StopWatching();
   }
 
  private:
@@ -240,17 +248,17 @@ class PrinterWatcherCUPS
   PrinterWatcherCUPS(PrintSystemCUPS* print_system,
                      const std::string& printer_name)
       : printer_name_(printer_name),
-    delegate_(NULL),
-    print_system_(print_system) {
-  }
-
-  ~PrinterWatcherCUPS() {
-    StopWatching();
+        delegate_(NULL),
+        print_system_(print_system) {
   }
 
   // PrintSystem::PrinterWatcher implementation.
   virtual bool StartWatching(
       PrintSystem::PrinterWatcher::Delegate* delegate) OVERRIDE{
+    scoped_refptr<printing::PrintBackend> print_backend(
+        printing::PrintBackend::CreateInstance(NULL));
+    child_process_logging::ScopedPrinterInfoSetter prn_info(
+        print_backend->GetPrinterDriverInfo(printer_name_));
     if (delegate_ != NULL)
       StopWatching();
     delegate_ = delegate;
@@ -259,13 +267,13 @@ class PrinterWatcherCUPS
     MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&PrinterWatcherCUPS::JobStatusUpdate, this),
-        kJobUpdateTimeoutMs);
+        base::TimeDelta::FromSeconds(kJobUpdateTimeoutSeconds));
     // Schedule next printer check.
     // TODO(gene): Randomize time for the next printer update.
     MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&PrinterWatcherCUPS::PrinterUpdate, this),
-        print_system_->GetUpdateTimeoutMs());
+        print_system_->GetUpdateTimeout());
     return true;
   }
 
@@ -290,29 +298,37 @@ class PrinterWatcherCUPS
     MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&PrinterWatcherCUPS::JobStatusUpdate, this),
-        kJobUpdateTimeoutMs);
+        base::TimeDelta::FromSeconds(kJobUpdateTimeoutSeconds));
   }
 
   void PrinterUpdate() {
     if (delegate_ == NULL)
       return;  // Orphan call. We have been stopped already.
-    VLOG(1) << "CP_CUPS: Checking for printer updates: " << printer_name_;
+    VLOG(1) << "CP_CUPS: Checking for updates"
+            << ", printer name: " << printer_name_;
     if (print_system_->NotifyDelete() &&
         !print_system_->IsValidPrinter(printer_name_)) {
       delegate_->OnPrinterDeleted();
-      VLOG(1) << "CP_CUPS: Printer deleted: " << printer_name_;
+      VLOG(1) << "CP_CUPS: Printer deleted"
+              << ", printer name: " << printer_name_;
     } else {
       std::string new_hash = GetSettingsHash();
       if (settings_hash_ != new_hash) {
         settings_hash_ = new_hash;
         delegate_->OnPrinterChanged();
-        VLOG(1) << "CP_CUPS: Printer update detected for: " << printer_name_;
+        VLOG(1) << "CP_CUPS: Printer configuration changed"
+                << ", printer name: " << printer_name_;
       }
     }
     MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&PrinterWatcherCUPS::PrinterUpdate, this),
-        print_system_->GetUpdateTimeoutMs());
+        print_system_->GetUpdateTimeout());
+  }
+
+ protected:
+  virtual ~PrinterWatcherCUPS() {
+    StopWatching();
   }
 
  private:
@@ -340,7 +356,6 @@ class PrinterWatcherCUPS
 
     return base::MD5String(to_hash);
   }
-
   std::string printer_name_;
   PrintSystem::PrinterWatcher::Delegate* delegate_;
   scoped_refptr<PrintSystemCUPS> print_system_;
@@ -383,6 +398,9 @@ class JobSpoolerCUPS : public PrintSystem::JobSpooler {
       delegate->OnJobSpoolFailed();
   }
 
+ protected:
+  virtual ~JobSpoolerCUPS() {}
+
  private:
   scoped_refptr<PrintSystemCUPS> print_system_;
 
@@ -390,14 +408,21 @@ class JobSpoolerCUPS : public PrintSystem::JobSpooler {
 };
 
 PrintSystemCUPS::PrintSystemCUPS(const DictionaryValue* print_system_settings)
-    : update_timeout_(kCheckForPrinterUpdatesMs),
+    : update_timeout_(base::TimeDelta::FromMinutes(
+        kCheckForPrinterUpdatesMinutes)),
       initialized_(false),
       printer_enum_succeeded_(false),
-      notify_delete_(true) {
+      notify_delete_(true),
+      cups_encryption_(HTTP_ENCRYPT_NEVER) {
   if (print_system_settings) {
     int timeout;
     if (print_system_settings->GetInteger(kCUPSUpdateTimeoutMs, &timeout))
-      update_timeout_ = timeout;
+      update_timeout_ = base::TimeDelta::FromMilliseconds(timeout);
+
+    int encryption;
+    if (print_system_settings->GetInteger(kCUPSEncryption, &encryption))
+      cups_encryption_ =
+          static_cast<http_encryption_t>(encryption);
 
     bool notify_delete = true;
     if (print_system_settings->GetBoolean(kCUPSNotifyDelete, &notify_delete))
@@ -409,7 +434,7 @@ PrintSystemCUPS::PrintSystemCUPS(const DictionaryValue* print_system_settings)
 
 void PrintSystemCUPS::InitPrintBackends(
     const DictionaryValue* print_system_settings) {
-  ListValue* url_list;
+  const ListValue* url_list;
   if (print_system_settings &&
       print_system_settings->GetList(kCUPSPrintServerURLs, &url_list)) {
     for (size_t i = 0; i < url_list->GetSize(); i++) {
@@ -434,6 +459,9 @@ void PrintSystemCUPS::AddPrintServer(const std::string& url) {
 
   // Make CUPS requests non-blocking.
   backend_settings.SetString(kCUPSBlocking, kValueFalse);
+
+  // Set encryption for backend.
+  backend_settings.SetInteger(kCUPSEncryption, cups_encryption_);
 
   PrintServerInfoCUPS print_server;
   print_server.backend =
@@ -462,14 +490,15 @@ void PrintSystemCUPS::UpdatePrinters() {
       printer_it->printer_name = MakeFullPrinterName(it->url,
                                                      printer_it->printer_name);
     }
-    VLOG(1) << "CUPS: Updated printer list for url: " << it->url
-            << " Number of printers: " << it->printers.size();
+    VLOG(1) << "CP_CUPS: Updated printers list"
+            << ", server: " << it->url
+            << ", # of printers: " << it->printers.size();
   }
 
   // Schedule next update.
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&PrintSystemCUPS::UpdatePrinters, this), GetUpdateTimeoutMs());
+      base::Bind(&PrintSystemCUPS::UpdatePrinters, this), GetUpdateTimeout());
 }
 
 PrintSystem::PrintSystemResult PrintSystemCUPS::EnumeratePrinters(
@@ -481,7 +510,7 @@ PrintSystem::PrintSystemResult PrintSystemCUPS::EnumeratePrinters(
     printer_list->insert(printer_list->end(),
         it->printers.begin(), it->printers.end());
   }
-  VLOG(1) << "CUPS: Total " << printer_list->size() << " printers enumerated.";
+  VLOG(1) << "CP_CUPS: Total printers enumerated: " << printer_list->size();
   // TODO(sanjeevr): Maybe some day we want to report the actual server names
   // for which the enumeration failed.
   return PrintSystemResult(printer_enum_succeeded_, std::string());
@@ -505,16 +534,16 @@ bool PrintSystemCUPS::IsValidPrinter(const std::string& printer_name) {
 bool PrintSystemCUPS::ValidatePrintTicket(const std::string& printer_name,
                                         const std::string& print_ticket_data) {
   DCHECK(initialized_);
-  scoped_ptr<Value> ticket_value(base::JSONReader::Read(print_ticket_data,
-      false));
+  scoped_ptr<Value> ticket_value(base::JSONReader::Read(print_ticket_data));
   return ticket_value != NULL && ticket_value->IsType(Value::TYPE_DICTIONARY);
 }
 
 // Print ticket on linux is a JSON string containing only one dictionary.
-bool PrintSystemCUPS::ParsePrintTicket(const std::string& print_ticket,
-                                  std::map<std::string, std::string>* options) {
+bool PrintSystemCUPS::ParsePrintTicket(
+    const std::string& print_ticket,
+    std::map<std::string, std::string>* options) {
   DCHECK(options);
-  scoped_ptr<Value> ticket_value(base::JSONReader::Read(print_ticket, false));
+  scoped_ptr<Value> ticket_value(base::JSONReader::Read(print_ticket));
   if (ticket_value == NULL || !ticket_value->IsType(Value::TYPE_DICTIONARY))
     return false;
 
@@ -551,6 +580,8 @@ bool PrintSystemCUPS::GetPrinterCapsAndDefaults(
   }
 
   // TODO(gene): Retry multiple times in case of error.
+  child_process_logging::ScopedPrinterInfoSetter prn_info(
+      server_info->backend->GetPrinterDriverInfo(short_printer_name));
   if (!server_info->backend->GetPrinterCapsAndDefaults(short_printer_name,
                                                        printer_info) ) {
     return false;
@@ -572,15 +603,16 @@ bool PrintSystemCUPS::GetJobDetails(const std::string& printer_name,
   if (!server_info)
     return false;
 
+  child_process_logging::ScopedPrinterInfoSetter prn_info(
+      server_info->backend->GetPrinterDriverInfo(short_printer_name));
   cups_job_t* jobs = NULL;
-  int num_jobs = GetJobs(&jobs, server_info->url,
+  int num_jobs = GetJobs(&jobs, server_info->url, cups_encryption_,
                          short_printer_name.c_str(), 1, -1);
   bool error = (num_jobs == 0) && (cupsLastError() > IPP_OK_EVENTS_COMPLETE);
   if (error) {
-    VLOG(1) << "CP_CUPS: Error getting jobs from CUPS server. Printer:"
-            << printer_name
-            << " Error: "
-            << static_cast<int>(cupsLastError());
+    VLOG(1) << "CP_CUPS: Error getting jobs from CUPS server"
+            << ", printer name:" << printer_name
+            << ", error: " << static_cast<int>(cupsLastError());
     return false;
   }
 
@@ -589,7 +621,8 @@ bool PrintSystemCUPS::GetJobDetails(const std::string& printer_name,
   // accessible through CUPS.
   if (job_id == kDryRunJobId) {
     job_details->status = PRINT_JOB_STATUS_COMPLETED;
-    VLOG(1) << "CP_CUPS: Dry run job succeeded for: " << printer_name;
+    VLOG(1) << "CP_CUPS: Dry run job succeeded"
+            << ", printer name: " << printer_name;
     return true;
   }
 
@@ -622,11 +655,14 @@ bool PrintSystemCUPS::GetJobDetails(const std::string& printer_name,
   }
 
   if (found)
-    VLOG(1) << "CP_CUPS: Job details for: " << printer_name
-            << " job_id: " << job_id << " job status: " << job_details->status;
+    VLOG(1) << "CP_CUPS: Job found"
+            << ", printer name: " << printer_name
+            << ", cups job id: " << job_id
+            << ", cups job status: " << job_details->status;
   else
-    LOG(WARNING) << "CP_CUPS: Job not found for: " << printer_name
-                 << " job_id: " << job_id;
+    LOG(WARNING) << "CP_CUPS: Job not found"
+                 << ", printer name: " << printer_name
+                 << ", cups job id: " << job_id;
 
   cupsFreeJobs(num_jobs, jobs);
   return found;
@@ -636,7 +672,8 @@ bool PrintSystemCUPS::GetPrinterInfo(const std::string& printer_name,
                                      printing::PrinterBasicInfo* info) {
   DCHECK(initialized_);
   if (info)
-    VLOG(1) << "CP_CUPS: Getting printer info for: " << printer_name;
+    VLOG(1) << "CP_CUPS: Getting printer info"
+            << ", printer name: " << printer_name;
 
   std::string short_printer_name;
   PrintServerInfoCUPS* server_info =
@@ -696,13 +733,14 @@ scoped_refptr<PrintSystem> PrintSystem::CreateInstance(
   return new PrintSystemCUPS(print_system_settings);
 }
 
-int PrintSystemCUPS::PrintFile(const GURL& url, const char* name,
-                               const char* filename, const char* title,
-                               int num_options, cups_option_t* options) {
+int PrintSystemCUPS::PrintFile(const GURL& url, http_encryption_t encryption,
+                               const char* name, const char* filename,
+                               const char* title, int num_options,
+                               cups_option_t* options) {
   if (url.is_empty()) {  // Use default (local) print server.
     return cupsPrintFile(name, filename, title, num_options, options);
   } else {
-    printing::HttpConnectionCUPS http(url);
+    printing::HttpConnectionCUPS http(url, encryption);
     http.SetBlocking(false);
     return cupsPrintFile2(http.http(), name, filename,
                           title, num_options, options);
@@ -710,11 +748,12 @@ int PrintSystemCUPS::PrintFile(const GURL& url, const char* name,
 }
 
 int PrintSystemCUPS::GetJobs(cups_job_t** jobs, const GURL& url,
+                             http_encryption_t encryption,
                              const char* name, int myjobs, int whichjobs) {
   if (url.is_empty()) {  // Use default (local) print server.
     return cupsGetJobs(jobs, name, myjobs, whichjobs);
   } else {
-    printing::HttpConnectionCUPS http(url);
+    printing::HttpConnectionCUPS http(url, encryption);
     http.SetBlocking(false);
     return cupsGetJobs2(http.http(), jobs, name, myjobs, whichjobs);
   }
@@ -729,13 +768,16 @@ PlatformJobId PrintSystemCUPS::SpoolPrintJob(
     const std::vector<std::string>& tags,
     bool* dry_run) {
   DCHECK(initialized_);
-  VLOG(1) << "CP_CUPS: Spooling print job for: " << printer_name;
+  VLOG(1) << "CP_CUPS: Spooling print job, printer name: " << printer_name;
 
   std::string short_printer_name;
   PrintServerInfoCUPS* server_info =
       FindServerByFullName(printer_name, &short_printer_name);
   if (!server_info)
     return false;
+
+  child_process_logging::ScopedPrinterInfoSetter prn_info(
+      server_info->backend->GetPrinterDriverInfo(printer_name));
 
   // We need to store options as char* string for the duration of the
   // cupsPrintFile2 call. We'll use map here to store options, since
@@ -747,7 +789,7 @@ PlatformJobId PrintSystemCUPS::SpoolPrintJob(
   // Check if this is a dry run (test) job.
   *dry_run = CloudPrintHelpers::IsDryRunJob(tags);
   if (*dry_run) {
-    VLOG(1) << "CP_CUPS: Dry run job spooled.";
+    VLOG(1) << "CP_CUPS: Dry run job spooled";
     return kDryRunJobId;
   }
 
@@ -762,13 +804,17 @@ PlatformJobId PrintSystemCUPS::SpoolPrintJob(
   }
 
   int job_id = PrintFile(server_info->url,
+                         cups_encryption_,
                          short_printer_name.c_str(),
                          print_data_file_path.value().c_str(),
                          job_title.c_str(),
                          cups_options.size(),
                          &(cups_options[0]));
 
-  VLOG(1) << "CP_CUPS: Job spooled, id: " << job_id;
+  // TODO(alexyu): Output printer id.
+  VLOG(1) << "CP_CUPS: Job spooled"
+          << ", printer name: " << printer_name
+          << ", cups job id: " << job_id;
 
   return job_id;
 }
@@ -792,7 +838,8 @@ PrintServerInfoCUPS* PrintSystemCUPS::FindServerByFullName(
   size_t front = full_printer_name.find("\\\\");
   size_t separator = full_printer_name.find("\\", 2);
   if (front == std::string::npos || separator == std::string::npos) {
-    LOG(WARNING) << "Invalid UNC printer name: " << full_printer_name;
+    LOG(WARNING) << "CP_CUPS: Invalid UNC"
+                 << ", printer name: " << full_printer_name;
     return NULL;
   }
   std::string server = full_printer_name.substr(2, separator - 2);
@@ -811,7 +858,8 @@ PrintServerInfoCUPS* PrintSystemCUPS::FindServerByFullName(
     }
   }
 
-  LOG(WARNING) << "Server not found for printer: " << full_printer_name;
+  LOG(WARNING) << "CP_CUPS: Server not found"
+               << ", printer name: " << full_printer_name;
   return NULL;
 }
 

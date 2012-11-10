@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,21 +14,21 @@
 namespace content {
 
 void WebUIMessageHandler::SetURLAndTitle(DictionaryValue* dictionary,
-                                         string16 title,
+                                         const string16& title,
                                          const GURL& gurl) {
   dictionary->SetString("url", gurl.spec());
 
   bool using_url_as_the_title = false;
+  string16 title_to_set(title);
   if (title.empty()) {
     using_url_as_the_title = true;
-    title = UTF8ToUTF16(gurl.spec());
+    title_to_set = UTF8ToUTF16(gurl.spec());
   }
 
   // Since the title can contain BiDi text, we need to mark the text as either
   // RTL or LTR, depending on the characters in the string. If we use the URL
   // as the title, we mark the title as LTR since URLs are always treated as
   // left to right strings.
-  string16 title_to_set(title);
   if (base::i18n::IsRTL()) {
     if (using_url_as_the_title) {
       base::i18n::WrapStringWithLTRFormatting(&title_to_set);
@@ -54,10 +54,12 @@ bool WebUIMessageHandler::ExtractIntegerValue(const ListValue* value,
 }
 
 bool WebUIMessageHandler::ExtractDoubleValue(const ListValue* value,
-                                            double* out_value) {
+                                             double* out_value) {
   std::string string_value;
   if (value->GetString(0, &string_value))
     return base::StringToDouble(string_value, out_value);
+  if (value->GetDouble(0, out_value))
+    return true;
   NOTREACHED();
   return false;
 }

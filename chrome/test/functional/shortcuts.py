@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -89,22 +89,34 @@ class ShortcutsTest(pyauto.PyUITest):
     self.NavigateToURL(self.GetFileURLForDataPath('title2.html'))
     self.ApplyAccelerator(pyauto.IDC_CLEAR_BROWSING_DATA)
     self.assertEquals(2, self.GetTabCount())
-    self.assertTrue(re.search('clearBrowserData',
-        self.GetActiveTabURL().spec()), 'Clear browsing data url is wrong.')
-    # Wait until the clear browsing data DOM UI window opens.
-    self.assertTrue(self.WaitUntil(lambda:
-        self.ExecuteJavascript(
-        'var element = document.getElementById("clearBrowserDataOverlay");'
-        'if(element) window.domAutomationController.send(element.nodeName);'
-        'else window.domAutomationController.send("")', 1),
-        expect_retval='DIV'), msg='Could not find the DOM UI window element.')
+    self.assertTrue(
+        re.search('clearBrowserData', self.GetActiveTabURL().spec()),
+        msg='Clear browsing data url is wrong: "%s"' %
+            self.GetActiveTabURL().spec())
+    # Wait until the clear browsing data DOM UI iframe is present.
+    find_dom_element_js = """
+      var frames = document.getElementsByTagName("iframe");
+      var sent_result = false;
+      for (var i = 0; i < frames.length; ++i)
+        if (frames[i].src == "chrome://settings-frame/clearBrowserData") {
+          window.domAutomationController.send("true");
+          sent_result = true;
+        }
+      if (!sent_result)
+        window.domAutomationController.send("false");
+    """
+    self.assertTrue(
+        self.WaitUntil(
+            lambda: self.ExecuteJavascript(find_dom_element_js, tab_index=1),
+            expect_retval='true'),
+        msg='Could not find the DOM UI window element iframe.')
 
   def testViewSourceShortcut(self):
     """Verify view source shortcut."""
     self.ApplyAccelerator(pyauto.IDC_VIEW_SOURCE)
     self.assertEqual(2, self.GetTabCount(), msg='Cannot View Source.')
-    self.assertEqual('view-source:about:blank', self.GetActiveTabURL().spec(),
-                      msg='View Source URL is not correct.')
+    self.assertEqual('view-source:chrome://newtab/',
+        self.GetActiveTabURL().spec())
 
   def testDeveloperToolsShortcut(self):
     """Verify developer tools shortcut opens developer tools window.."""
@@ -130,8 +142,10 @@ class ShortcutsTest(pyauto.PyUITest):
   def testHistoryShortcut(self):
     """Verify history shortcut opens history page."""
     self.RunCommand(pyauto.IDC_SHOW_HISTORY)
-    self.assertEqual('History', self.GetActiveTabTitle(),
-                     msg='History page was not opened.')
+    self.assertTrue(
+      self.WaitUntil(lambda: 'History' == self.GetActiveTabTitle()),
+      msg='History page was not opened; tab title is "%s"' %
+          self.GetActiveTabTitle())
 
   def testDownloadsShortcut(self):
     """Verify downloads shortcut opens downloads page."""
@@ -141,7 +155,7 @@ class ShortcutsTest(pyauto.PyUITest):
 
   def testHelpShortcut(self):
     """Verify help shortcut opens help page."""
-    self.ApplyAccelerator(pyauto.IDC_HELP_PAGE)
+    self.ApplyAccelerator(pyauto.IDC_HELP_PAGE_VIA_KEYBOARD)
     help_page_title = 'Google Chrome Help'
     if self.IsChromeOS():
       help_page_title = 'Chrome OS Help'

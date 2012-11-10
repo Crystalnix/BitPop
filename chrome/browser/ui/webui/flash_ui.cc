@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,16 +22,19 @@
 #include "chrome/browser/crash_upload_list.h"
 #include "chrome/browser/plugin_prefs.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/browser/ui/webui/crashes_ui.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/gpu/gpu_data_manager.h"
+#include "content/public/browser/gpu_data_manager.h"
+#include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_message_handler.h"
+#include "content/public/common/gpu_info.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -44,6 +47,7 @@
 #include "base/win/windows_version.h"
 #endif
 
+using content::GpuDataManager;
 using content::PluginService;
 using content::UserMetricsAction;
 using content::WebContents;
@@ -74,7 +78,7 @@ const int kTimeout = 8 * 1000;  // 8 seconds.
 // The handler for JavaScript messages for the about:flags page.
 class FlashDOMHandler : public WebUIMessageHandler,
                         public CrashUploadList::Delegate,
-                        public GpuDataManager::Observer {
+                        public content::GpuDataManagerObserver {
  public:
   FlashDOMHandler();
   virtual ~FlashDOMHandler();
@@ -109,9 +113,6 @@ class FlashDOMHandler : public WebUIMessageHandler,
   // A timer to keep track of when the data fetching times out.
   base::OneShotTimer<FlashDOMHandler> timeout_;
 
-  // GPU variables.
-  GpuDataManager* gpu_data_manager_;
-
   // Crash list.
   scoped_refptr<CrashUploadList> upload_list_;
 
@@ -141,16 +142,15 @@ FlashDOMHandler::FlashDOMHandler()
   upload_list_->LoadCrashListAsynchronously();
 
   // Watch for changes in GPUInfo.
-  gpu_data_manager_ = GpuDataManager::GetInstance();
-  gpu_data_manager_->AddObserver(this);
+  GpuDataManager::GetInstance()->AddObserver(this);
 
   // Tell GpuDataManager it should have full GpuInfo. If the
   // GPU process has not run yet, this will trigger its launch.
-  gpu_data_manager_->RequestCompleteGpuInfoIfNeeded();
+  GpuDataManager::GetInstance()->RequestCompleteGpuInfoIfNeeded();
 
   // GPU access might not be allowed at all, which will cause us not to get a
   // call back.
-  if (!gpu_data_manager_->GpuAccessAllowed())
+  if (!GpuDataManager::GetInstance()->GpuAccessAllowed())
     OnGpuInfoUpdate();
 
   PluginService::GetInstance()->GetPlugins(base::Bind(
@@ -163,7 +163,7 @@ FlashDOMHandler::FlashDOMHandler()
 }
 
 FlashDOMHandler::~FlashDOMHandler() {
-  gpu_data_manager_->RemoveObserver(this);
+  GpuDataManager::GetInstance()->RemoveObserver(this);
 }
 
 void FlashDOMHandler::RegisterMessages() {
@@ -248,10 +248,9 @@ void FlashDOMHandler::MaybeRespondToPage() {
     case base::win::VERSION_SERVER_2003:
       os_label += " Server 2003 or XP Pro 64 bit";
       break;
-    case base::win::VERSION_VISTA: os_label += " Vista"; break;
-    case base::win::VERSION_SERVER_2008: os_label += " Server 2008"; break;
-    case base::win::VERSION_WIN7: os_label += " 7"; break;
-    case base::win::VERSION_WIN8: os_label += " 8"; break;
+    case base::win::VERSION_VISTA: os_label += " Vista or Server 2008"; break;
+    case base::win::VERSION_WIN7: os_label += " 7 or Server 2008 R2"; break;
+    case base::win::VERSION_WIN8: os_label += " 8 or Server 2012"; break;
     default:  os_label += " UNKNOWN"; break;
   }
   os_label += " SP" + base::IntToString(os->service_pack().major);
@@ -306,9 +305,9 @@ void FlashDOMHandler::MaybeRespondToPage() {
 
   // GPU information.
   AddPair(list, string16(), "--- GPU information ---");
-  const content::GPUInfo& gpu_info = gpu_data_manager_->gpu_info();
+  content::GPUInfo gpu_info = GpuDataManager::GetInstance()->GetGPUInfo();
 
-  if (!gpu_data_manager_->GpuAccessAllowed())
+  if (!GpuDataManager::GetInstance()->GpuAccessAllowed())
     AddPair(list, ASCIIToUTF16("WARNING:"), "GPU access is not allowed");
 #if defined(OS_WIN)
   const content::DxDiagNode& node = gpu_info.dx_diagnostics;
@@ -336,10 +335,10 @@ void FlashDOMHandler::MaybeRespondToPage() {
   AddPair(list, string16(), "--- GPU driver, more information ---");
   AddPair(list,
           ASCIIToUTF16("Vendor Id"),
-          base::StringPrintf("0x%04x", gpu_info.vendor_id));
+          base::StringPrintf("0x%04x", gpu_info.gpu.vendor_id));
   AddPair(list,
           ASCIIToUTF16("Device Id"),
-          base::StringPrintf("0x%04x", gpu_info.device_id));
+          base::StringPrintf("0x%04x", gpu_info.gpu.device_id));
   AddPair(list, ASCIIToUTF16("Driver vendor"), gpu_info.driver_vendor);
   AddPair(list, ASCIIToUTF16("Driver version"), gpu_info.driver_version);
   AddPair(list, ASCIIToUTF16("Driver date"), gpu_info.driver_date);
@@ -376,11 +375,11 @@ FlashUI::FlashUI(content::WebUI* web_ui) : WebUIController(web_ui) {
 
   // Set up the about:flash source.
   Profile* profile = Profile::FromWebUI(web_ui);
-  profile->GetChromeURLDataManager()->AddDataSource(CreateFlashUIHTMLSource());
+  ChromeURLDataManager::AddDataSource(profile, CreateFlashUIHTMLSource());
 }
 
 // static
-RefCountedMemory* FlashUI::GetFaviconResourceBytes() {
+base::RefCountedMemory* FlashUI::GetFaviconResourceBytes() {
   // Use the default icon for now.
   return NULL;
 }

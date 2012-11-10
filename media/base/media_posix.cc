@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,10 +15,6 @@
 #include "base/stringize_macros.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "third_party/ffmpeg/ffmpeg_stubs.h"
-#if defined(OS_LINUX)
-// OpenMAX IL stub is generated only on Linux.
-#include "third_party/openmax/il_stubs.h"
-#endif
 
 namespace tp_ffmpeg = third_party_ffmpeg;
 
@@ -55,9 +51,9 @@ static std::string GetDSOName(tp_ffmpeg::StubModules stub_key) {
   // TODO(ajwong): Remove this once mac is migrated. Either that, or have GYP
   // set a constant that we can switch implementations based off of.
   switch (stub_key) {
-    case tp_ffmpeg::kModuleAvcodec53:
+    case tp_ffmpeg::kModuleAvcodec54:
       return FILE_PATH_LITERAL(DSO_NAME("avcodec", AVCODEC_VERSION));
-    case tp_ffmpeg::kModuleAvformat53:
+    case tp_ffmpeg::kModuleAvformat54:
       return FILE_PATH_LITERAL(DSO_NAME("avformat", AVFORMAT_VERSION));
     case tp_ffmpeg::kModuleAvutil51:
       return FILE_PATH_LITERAL(DSO_NAME("avutil", AVUTIL_VERSION));
@@ -101,31 +97,5 @@ void InitializeMediaLibraryForTesting() {
 bool IsMediaLibraryInitialized() {
   return g_media_library_is_initialized;
 }
-
-#if defined(OS_LINUX)
-namespace tp_openmax = third_party_openmax;
-bool InitializeOpenMaxLibrary(const FilePath& module_dir) {
-  // TODO(ajwong): We need error resolution.
-  tp_openmax::StubPathMap paths;
-  for (int i = 0; i < static_cast<int>(tp_openmax::kNumStubModules); ++i) {
-    tp_openmax::StubModules module = static_cast<tp_openmax::StubModules>(i);
-
-    // Add the OpenMAX library first so it takes precedence.
-    paths[module].push_back(module_dir.Append(openmax_name).value());
-  }
-
-  bool result = tp_openmax::InitializeStubs(paths);
-  if (!result) {
-    LOG(FATAL) << "Cannot load " << openmax_name << "."
-               << " Make sure it exists for OpenMAX.";
-  }
-  return result;
-}
-#else
-bool InitializeOpenMaxLibrary(const FilePath& module_dir) {
-  NOTIMPLEMENTED() << "OpenMAX is only used in Linux.";
-  return false;
-}
-#endif
 
 }  // namespace media

@@ -4,12 +4,11 @@
 
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_WEBUI_LOGIN_DISPLAY_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_WEBUI_LOGIN_DISPLAY_H_
-#pragma once
 
 #include <string>
 #include <vector>
 
-#include "base/memory/scoped_ptr.h"
+#include "base/compiler_specific.h"
 #include "chrome/browser/chromeos/login/login_display.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
@@ -42,13 +41,17 @@ class WebUILoginDisplay : public LoginDisplay,
   virtual void ShowGaiaPasswordChanged(const std::string& username) OVERRIDE;
 
   // SigninScreenHandlerDelegate implementation:
+  virtual gfx::NativeWindow GetNativeWindow() const OVERRIDE;
   virtual void CompleteLogin(const std::string& username,
                              const std::string& password) OVERRIDE;
   virtual void Login(const std::string& username,
                      const std::string& password) OVERRIDE;
+  virtual void LoginAsDemoUser() OVERRIDE;
   virtual void LoginAsGuest() OVERRIDE;
-  virtual void FixCaptivePortal() OVERRIDE;
+  virtual void Signout() OVERRIDE;
   virtual void CreateAccount() OVERRIDE;
+  virtual void OnUserDeselected() OVERRIDE;
+  virtual void OnUserSelected(const std::string& username) OVERRIDE;
   virtual void RemoveUser(const std::string& username) OVERRIDE;
   virtual void ShowEnterpriseEnrollmentScreen() OVERRIDE;
   virtual void SetWebUIHandler(

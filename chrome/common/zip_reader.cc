@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -148,9 +148,9 @@ bool ZipReader::OpenCurrentEntryInZip() {
                                            NULL,  // szComment.
                                            0);  // commentBufferSize.
   if (result != UNZ_OK)
-    return NULL;
+    return false;
   if (raw_file_name_in_zip[0] == '\0')
-    return NULL;
+    return false;
   current_entry_info_.reset(
       new EntryInfo(raw_file_name_in_zip, raw_file_info));
   return true;
@@ -190,10 +190,10 @@ bool ZipReader::ExtractCurrentEntryToFilePath(
   if (!file_util::CreateDirectory(output_dir_path))
     return false;
 
-  net::FileStream stream;
+  net::FileStream stream(NULL);
   const int flags = (base::PLATFORM_FILE_CREATE_ALWAYS |
                      base::PLATFORM_FILE_WRITE);
-  if (stream.Open(output_file_path, flags) != 0)
+  if (stream.OpenSync(output_file_path, flags) != 0)
     return false;
 
   bool success = true;  // This becomes false when something bad happens.
@@ -210,15 +210,14 @@ bool ZipReader::ExtractCurrentEntryToFilePath(
       break;
     } else if (num_bytes_read > 0) {
       // Some data is read. Write it to the output file.
-      if (num_bytes_read != stream.Write(buf, num_bytes_read,
-                                         net::CompletionCallback())) {
+      if (num_bytes_read != stream.WriteSync(buf, num_bytes_read)) {
         success = false;
         break;
       }
     }
   }
 
-  stream.Close();
+  stream.CloseSync();
   unzCloseCurrentFile(zip_file_);
   return success;
 }

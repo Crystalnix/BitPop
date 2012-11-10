@@ -4,6 +4,9 @@
 
 #include "chrome/browser/chromeos/preferences.h"
 
+#include "ash/display/display_controller.h"
+#include "ash/shell.h"
+#include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
 #include "base/i18n/time_formatting.h"
 #include "base/metrics/histogram.h"
@@ -11,12 +14,16 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/gdata/gdata_util.h"
 #include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/input_method/xkeyboard.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/system/screen_locker_settings.h"
+#include "chrome/browser/chromeos/system/drm_settings.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
+#include "chrome/browser/chromeos/system/power_manager_settings.h"
+#include "chrome/browser/chromeos/system/statistics_provider.h"
+#include "chrome/browser/download/download_util.h"
 #include "chrome/browser/prefs/pref_member.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
@@ -26,22 +33,58 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "googleurl/src/gurl.h"
+#include "ui/base/events.h"
 #include "unicode/timezone.h"
 
 namespace chromeos {
+namespace {
+
+// TODO(achuith): Use a cmd-line flag + use flags for this instead.
+bool IsLumpy() {
+  std::string board;
+  system::StatisticsProvider::GetInstance()->GetMachineStatistic(
+      "CHROMEOS_RELEASE_BOARD", &board);
+  return StartsWithASCII(board, "lumpy", false);
+}
+
+}  // namespace
+
+using ash::internal::DisplayController;
 
 static const char kFallbackInputMethodLocale[] = "en-US";
 
-Preferences::Preferences() {}
+Preferences::Preferences()
+    : prefs_(NULL),
+      input_method_manager_(input_method::InputMethodManager::GetInstance()) {
+}
+
+Preferences::Preferences(input_method::InputMethodManager* input_method_manager)
+    : input_method_manager_(input_method_manager) {
+}
 
 Preferences::~Preferences() {}
 
 // static
 void Preferences::RegisterUserPrefs(PrefService* prefs) {
-  input_method::InputMethodManager* manager =
-      input_method::InputMethodManager::GetInstance();
+  std::string hardware_keyboard_id;
+  // TODO(yusukes): Remove the runtime hack.
+  if (base::chromeos::IsRunningOnChromeOS()) {
+    input_method::InputMethodManager* manager =
+        input_method::InputMethodManager::GetInstance();
+    hardware_keyboard_id =
+        manager->GetInputMethodUtil()->GetHardwareInputMethodId();
+  } else {
+    hardware_keyboard_id = "xkb:us::eng";  // only for testing.
+  }
 
+  const bool enable_tap_to_click_default = IsLumpy();
   prefs->RegisterBooleanPref(prefs::kTapToClickEnabled,
+                             enable_tap_to_click_default,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kEnableTouchpadThreeFingerClick,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kNaturalScroll,
                              false,
                              PrefService::SYNCABLE_PREF);
   prefs->RegisterBooleanPref(prefs::kPrimaryMouseButtonRight,
@@ -76,11 +119,23 @@ void Preferences::RegisterUserPrefs(PrefService* prefs) {
                                false,
                                PrefService::UNSYNCABLE_PREF);
   }
+  prefs->RegisterIntegerPref(prefs::kMouseSensitivity,
+                             3,
+                             PrefService::UNSYNCABLE_PREF);
   prefs->RegisterIntegerPref(prefs::kTouchpadSensitivity,
                              3,
                              PrefService::UNSYNCABLE_PREF);
   prefs->RegisterBooleanPref(prefs::kUse24HourClock,
                              base::GetHourClockType() == base::k24HourClock,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kDisableGData,
+                             false,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kDisableGDataOverCellular,
+                             true,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kDisableGDataHostedFiles,
+                             false,
                              PrefService::SYNCABLE_PREF);
   // We don't sync prefs::kLanguageCurrentInputMethod and PreviousInputMethod
   // because they're just used to track the logout state of the device.
@@ -90,45 +145,37 @@ void Preferences::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterStringPref(prefs::kLanguagePreviousInputMethod,
                             "",
                             PrefService::UNSYNCABLE_PREF);
-  // We don't sync input method hotkeys since they're not configurable.
-  prefs->RegisterStringPref(prefs::kLanguageHotkeyNextEngineInMenu,
-                            language_prefs::kHotkeyNextEngineInMenu,
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kLanguageHotkeyPreviousEngine,
-                            language_prefs::kHotkeyPreviousEngine,
-                            PrefService::UNSYNCABLE_PREF);
   // We don't sync the list of input methods and preferred languages since a
   // user might use two or more devices with different hardware keyboards.
   // crosbug.com/15181
   prefs->RegisterStringPref(prefs::kLanguagePreferredLanguages,
                             kFallbackInputMethodLocale,
                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(
-      prefs::kLanguagePreloadEngines,
-      manager->GetInputMethodUtil()->GetHardwareInputMethodId(),
-      PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kLanguagePreloadEngines,
+                            hardware_keyboard_id,
+                            PrefService::UNSYNCABLE_PREF);
   for (size_t i = 0; i < language_prefs::kNumChewingBooleanPrefs; ++i) {
     prefs->RegisterBooleanPref(
         language_prefs::kChewingBooleanPrefs[i].pref_name,
         language_prefs::kChewingBooleanPrefs[i].default_pref_value,
-        PrefService::UNSYNCABLE_PREF);
+        language_prefs::kChewingBooleanPrefs[i].sync_status);
   }
   for (size_t i = 0; i < language_prefs::kNumChewingMultipleChoicePrefs; ++i) {
     prefs->RegisterStringPref(
         language_prefs::kChewingMultipleChoicePrefs[i].pref_name,
         language_prefs::kChewingMultipleChoicePrefs[i].default_pref_value,
-        PrefService::UNSYNCABLE_PREF);
+        language_prefs::kChewingMultipleChoicePrefs[i].sync_status);
   }
   prefs->RegisterIntegerPref(
       language_prefs::kChewingHsuSelKeyType.pref_name,
       language_prefs::kChewingHsuSelKeyType.default_pref_value,
-      PrefService::UNSYNCABLE_PREF);
+      language_prefs::kChewingHsuSelKeyType.sync_status);
 
   for (size_t i = 0; i < language_prefs::kNumChewingIntegerPrefs; ++i) {
     prefs->RegisterIntegerPref(
         language_prefs::kChewingIntegerPrefs[i].pref_name,
         language_prefs::kChewingIntegerPrefs[i].default_pref_value,
-        PrefService::UNSYNCABLE_PREF);
+        language_prefs::kChewingIntegerPrefs[i].sync_status);
   }
   prefs->RegisterStringPref(
       prefs::kLanguageHangulKeyboard,
@@ -177,10 +224,10 @@ void Preferences::RegisterUserPrefs(PrefService* prefs) {
                              input_method::kSearchKey,
                              PrefService::SYNCABLE_PREF);
   prefs->RegisterIntegerPref(prefs::kLanguageXkbRemapControlKeyTo,
-                             input_method::kLeftControlKey,
+                             input_method::kControlKey,
                              PrefService::SYNCABLE_PREF);
   prefs->RegisterIntegerPref(prefs::kLanguageXkbRemapAltKeyTo,
-                             input_method::kLeftAltKey,
+                             input_method::kAltKey,
                              PrefService::SYNCABLE_PREF);
   // We don't sync the following keyboard prefs since they are not user-
   // configurable.
@@ -194,13 +241,15 @@ void Preferences::RegisterUserPrefs(PrefService* prefs) {
                              language_prefs::kXkbAutoRepeatIntervalInMs,
                              PrefService::UNSYNCABLE_PREF);
 
-  prefs->RegisterDictionaryPref(prefs::kLanguagePreferredVirtualKeyboard,
-                                PrefService::SYNCABLE_PREF);
-
   // Screen lock default to off.
   prefs->RegisterBooleanPref(prefs::kEnableScreenLock,
                              false,
                              PrefService::SYNCABLE_PREF);
+
+  // Secondary display layout.
+  prefs->RegisterIntegerPref(prefs::kSecondaryDisplayLayout,
+                             static_cast<int>(DisplayController::RIGHT),
+                             PrefService::UNSYNCABLE_PREF);
 
   // Mobile plan notifications default to on.
   prefs->RegisterBooleanPref(prefs::kShowPlanNotifications,
@@ -212,6 +261,12 @@ void Preferences::RegisterUserPrefs(PrefService* prefs) {
                              true,
                              PrefService::UNSYNCABLE_PREF);
 
+  // Initially all existing users would see "What's new"
+  // for current version after update.
+  prefs->RegisterStringPref(prefs::kChromeOSReleaseNotesVersion,
+                            "0.0.0.0",
+                            PrefService::SYNCABLE_PREF);
+
   // OAuth1 all access token and secret pair.
   prefs->RegisterStringPref(prefs::kOAuth1Token,
                             "",
@@ -219,87 +274,114 @@ void Preferences::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterStringPref(prefs::kOAuth1Secret,
                             "",
                             PrefService::UNSYNCABLE_PREF);
+
+  // TODO(wad): Once UI is connected, a final default can be set. At that point
+  // change this pref from UNSYNCABLE to SYNCABLE.
+  prefs->RegisterBooleanPref(prefs::kEnableCrosDRM,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+
+  prefs->RegisterBooleanPref(prefs::kExternalStorageDisabled,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
 }
 
-void Preferences::Init(PrefService* prefs) {
+void Preferences::InitUserPrefs(PrefService* prefs) {
+  prefs_ = prefs;
+
   tap_to_click_enabled_.Init(prefs::kTapToClickEnabled, prefs, this);
+  three_finger_click_enabled_.Init(prefs::kEnableTouchpadThreeFingerClick,
+      prefs, this);
+  natural_scroll_.Init(prefs::kNaturalScroll, prefs, this);
   accessibility_enabled_.Init(prefs::kSpokenFeedbackEnabled, prefs, this);
-  sensitivity_.Init(prefs::kTouchpadSensitivity, prefs, this);
+  mouse_sensitivity_.Init(prefs::kMouseSensitivity, prefs, this);
+  touchpad_sensitivity_.Init(prefs::kTouchpadSensitivity, prefs, this);
   use_24hour_clock_.Init(prefs::kUse24HourClock, prefs, this);
+  disable_gdata_.Init(prefs::kDisableGData, prefs, this);
+  disable_gdata_over_cellular_.Init(prefs::kDisableGDataOverCellular,
+                                   prefs, this);
+  disable_gdata_hosted_files_.Init(prefs::kDisableGDataHostedFiles,
+                                   prefs, this);
   primary_mouse_button_right_.Init(prefs::kPrimaryMouseButtonRight,
                                    prefs, this);
-  language_hotkey_next_engine_in_menu_.Init(
-      prefs::kLanguageHotkeyNextEngineInMenu, prefs, this);
-  language_hotkey_previous_engine_.Init(
-      prefs::kLanguageHotkeyPreviousEngine, prefs, this);
-  language_preferred_languages_.Init(prefs::kLanguagePreferredLanguages,
-                                     prefs, this);
-  language_preload_engines_.Init(prefs::kLanguagePreloadEngines, prefs, this);
+  preferred_languages_.Init(prefs::kLanguagePreferredLanguages,
+                            prefs, this);
+  preload_engines_.Init(prefs::kLanguagePreloadEngines, prefs, this);
+  current_input_method_.Init(prefs::kLanguageCurrentInputMethod, prefs, this);
+  previous_input_method_.Init(prefs::kLanguagePreviousInputMethod, prefs, this);
+
   for (size_t i = 0; i < language_prefs::kNumChewingBooleanPrefs; ++i) {
-    language_chewing_boolean_prefs_[i].Init(
+    chewing_boolean_prefs_[i].Init(
         language_prefs::kChewingBooleanPrefs[i].pref_name, prefs, this);
   }
   for (size_t i = 0; i < language_prefs::kNumChewingMultipleChoicePrefs; ++i) {
-    language_chewing_multiple_choice_prefs_[i].Init(
+    chewing_multiple_choice_prefs_[i].Init(
         language_prefs::kChewingMultipleChoicePrefs[i].pref_name, prefs, this);
   }
-  language_chewing_hsu_sel_key_type_.Init(
+  chewing_hsu_sel_key_type_.Init(
       language_prefs::kChewingHsuSelKeyType.pref_name, prefs, this);
   for (size_t i = 0; i < language_prefs::kNumChewingIntegerPrefs; ++i) {
-    language_chewing_integer_prefs_[i].Init(
+    chewing_integer_prefs_[i].Init(
         language_prefs::kChewingIntegerPrefs[i].pref_name, prefs, this);
   }
-  language_hangul_keyboard_.Init(prefs::kLanguageHangulKeyboard, prefs, this);
-  language_hangul_hanja_binding_keys_.Init(
+  hangul_keyboard_.Init(prefs::kLanguageHangulKeyboard, prefs, this);
+  hangul_hanja_binding_keys_.Init(
       prefs::kLanguageHangulHanjaBindingKeys, prefs, this);
   for (size_t i = 0; i < language_prefs::kNumPinyinBooleanPrefs; ++i) {
-    language_pinyin_boolean_prefs_[i].Init(
+    pinyin_boolean_prefs_[i].Init(
         language_prefs::kPinyinBooleanPrefs[i].pref_name, prefs, this);
   }
   for (size_t i = 0; i < language_prefs::kNumPinyinIntegerPrefs; ++i) {
-    language_pinyin_int_prefs_[i].Init(
+    pinyin_int_prefs_[i].Init(
         language_prefs::kPinyinIntegerPrefs[i].pref_name, prefs, this);
   }
-  language_pinyin_double_pinyin_schema_.Init(
+  pinyin_double_pinyin_schema_.Init(
       language_prefs::kPinyinDoublePinyinSchema.pref_name, prefs, this);
   for (size_t i = 0; i < language_prefs::kNumMozcBooleanPrefs; ++i) {
-    language_mozc_boolean_prefs_[i].Init(
+    mozc_boolean_prefs_[i].Init(
         language_prefs::kMozcBooleanPrefs[i].pref_name, prefs, this);
   }
   for (size_t i = 0; i < language_prefs::kNumMozcMultipleChoicePrefs; ++i) {
-    language_mozc_multiple_choice_prefs_[i].Init(
+    mozc_multiple_choice_prefs_[i].Init(
         language_prefs::kMozcMultipleChoicePrefs[i].pref_name, prefs, this);
   }
   for (size_t i = 0; i < language_prefs::kNumMozcIntegerPrefs; ++i) {
-    language_mozc_integer_prefs_[i].Init(
+    mozc_integer_prefs_[i].Init(
         language_prefs::kMozcIntegerPrefs[i].pref_name, prefs, this);
   }
-  language_xkb_remap_search_key_to_.Init(
-      prefs::kLanguageXkbRemapSearchKeyTo, prefs, this);
-  language_xkb_remap_control_key_to_.Init(
-      prefs::kLanguageXkbRemapControlKeyTo, prefs, this);
-  language_xkb_remap_alt_key_to_.Init(
-      prefs::kLanguageXkbRemapAltKeyTo, prefs, this);
-  language_xkb_auto_repeat_enabled_.Init(
+  xkb_auto_repeat_enabled_.Init(
       prefs::kLanguageXkbAutoRepeatEnabled, prefs, this);
-  language_xkb_auto_repeat_delay_pref_.Init(
+  xkb_auto_repeat_delay_pref_.Init(
       prefs::kLanguageXkbAutoRepeatDelay, prefs, this);
-  language_xkb_auto_repeat_interval_pref_.Init(
+  xkb_auto_repeat_interval_pref_.Init(
       prefs::kLanguageXkbAutoRepeatInterval, prefs, this);
 
   enable_screen_lock_.Init(prefs::kEnableScreenLock, prefs, this);
 
+  secondary_display_layout_.Init(prefs::kSecondaryDisplayLayout, prefs, this);
+
+  enable_drm_.Init(prefs::kEnableCrosDRM, prefs, this);
+}
+
+void Preferences::Init(PrefService* prefs) {
+  InitUserPrefs(prefs);
+
   // Initialize preferences to currently saved state.
   NotifyPrefChanged(NULL);
-
-  // Initialize virtual keyboard settings to currently saved state.
-  UpdateVirturalKeyboardPreference(prefs);
 
   // If a guest is logged in, initialize the prefs as if this is the first
   // login.
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession)) {
     LoginUtils::Get()->SetFirstLoginPrefs(prefs);
   }
+}
+
+void Preferences::InitUserPrefsForTesting(PrefService* prefs) {
+  InitUserPrefs(prefs);
+}
+
+void Preferences::SetInputMethodListForTesting() {
+  SetInputMethodList();
 }
 
 void Preferences::Observe(int type,
@@ -311,16 +393,43 @@ void Preferences::Observe(int type,
 
 void Preferences::NotifyPrefChanged(const std::string* pref_name) {
   if (!pref_name || *pref_name == prefs::kTapToClickEnabled) {
-    bool enabled = tap_to_click_enabled_.GetValue();
+    const bool enabled = tap_to_click_enabled_.GetValue();
     system::touchpad_settings::SetTapToClick(enabled);
     if (pref_name)
       UMA_HISTOGRAM_BOOLEAN("Touchpad.TapToClick.Changed", enabled);
     else
       UMA_HISTOGRAM_BOOLEAN("Touchpad.TapToClick.Started", enabled);
   }
+  if (!pref_name || *pref_name == prefs::kEnableTouchpadThreeFingerClick) {
+    const bool enabled = three_finger_click_enabled_.GetValue();
+    system::touchpad_settings::SetThreeFingerClick(enabled);
+    if (pref_name)
+      UMA_HISTOGRAM_BOOLEAN("Touchpad.ThreeFingerClick.Changed", enabled);
+    else
+      UMA_HISTOGRAM_BOOLEAN("Touchpad.ThreeFingerClick.Started", enabled);
+  }
+  if (!pref_name || *pref_name == prefs::kNaturalScroll) {
+    const bool enabled = natural_scroll_.GetValue();
+    ui::SetNaturalScroll(enabled);
+    if (pref_name)
+      UMA_HISTOGRAM_BOOLEAN("Touchpad.NaturalScroll.Changed", enabled);
+    else
+      UMA_HISTOGRAM_BOOLEAN("Touchpad.NaturalScroll.Started", enabled);
+  }
+  if (!pref_name || *pref_name == prefs::kMouseSensitivity) {
+    const int sensitivity = mouse_sensitivity_.GetValue();
+    system::mouse_settings::SetSensitivity(sensitivity);
+    if (pref_name) {
+      UMA_HISTOGRAM_CUSTOM_COUNTS(
+          "Mouse.Sensitivity.Changed", sensitivity, 1, 5, 5);
+    } else {
+      UMA_HISTOGRAM_CUSTOM_COUNTS(
+          "Mouse.Sensitivity.Started", sensitivity, 1, 5, 5);
+    }
+  }
   if (!pref_name || *pref_name == prefs::kTouchpadSensitivity) {
-    int sensitivity = sensitivity_.GetValue();
-    system::pointer_settings::SetSensitivity(sensitivity);
+    const int sensitivity = touchpad_sensitivity_.GetValue();
+    system::touchpad_settings::SetSensitivity(sensitivity);
     if (pref_name) {
       UMA_HISTOGRAM_CUSTOM_COUNTS(
           "Touchpad.Sensitivity.Changed", sensitivity, 1, 5, 5);
@@ -338,38 +447,13 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
       UMA_HISTOGRAM_BOOLEAN("Mouse.PrimaryButtonRight.Started", right);
   }
 
-  // We don't handle prefs::kLanguageCurrentInputMethod and PreviousInputMethod
-  // here.
-
-  if (!pref_name || *pref_name == prefs::kLanguageHotkeyNextEngineInMenu) {
-    SetLanguageConfigStringListAsCSV(
-        language_prefs::kHotKeySectionName,
-        language_prefs::kNextEngineInMenuConfigName,
-        language_hotkey_next_engine_in_menu_.GetValue());
-  }
-  if (!pref_name || *pref_name == prefs::kLanguageHotkeyPreviousEngine) {
-    SetLanguageConfigStringListAsCSV(
-        language_prefs::kHotKeySectionName,
-        language_prefs::kPreviousEngineConfigName,
-        language_hotkey_previous_engine_.GetValue());
-  }
   if (!pref_name || *pref_name == prefs::kLanguagePreferredLanguages) {
     // Unlike kLanguagePreloadEngines and some other input method
     // preferencs, we don't need to send this to ibus-daemon.
   }
 
-  // Here, we set up the the modifier key mapping. This has to be done
-  // before changing the current keyboard layout, so that the modifier key
-  // preference is properly preserved. For this reason, we should do this
-  // before setting preload engines, that could change the current
-  // keyboard layout as needed.
-  if (!pref_name || (*pref_name == prefs::kLanguageXkbRemapSearchKeyTo ||
-                     *pref_name == prefs::kLanguageXkbRemapControlKeyTo ||
-                     *pref_name == prefs::kLanguageXkbRemapAltKeyTo)) {
-    UpdateModifierKeyMapping();
-  }
   if (!pref_name || *pref_name == prefs::kLanguageXkbAutoRepeatEnabled) {
-    const bool enabled = language_xkb_auto_repeat_enabled_.GetValue();
+    const bool enabled = xkb_auto_repeat_enabled_.GetValue();
     input_method::XKeyboard::SetAutoRepeatEnabled(enabled);
   }
   if (!pref_name || ((*pref_name == prefs::kLanguageXkbAutoRepeatDelay) ||
@@ -377,18 +461,24 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
     UpdateAutoRepeatRate();
   }
 
-  if (!pref_name || *pref_name == prefs::kLanguagePreloadEngines) {
+  if (!pref_name) {
+    SetInputMethodList();
+  } else if (*pref_name == prefs::kLanguagePreloadEngines) {
     SetLanguageConfigStringListAsCSV(language_prefs::kGeneralSectionName,
                                      language_prefs::kPreloadEnginesConfigName,
-                                     language_preload_engines_.GetValue());
+                                     preload_engines_.GetValue());
   }
+
+  // Do not check |*pref_name| of the prefs for remembering current/previous
+  // input methods here. We're only interested in initial values of the prefs.
+
   for (size_t i = 0; i < language_prefs::kNumChewingBooleanPrefs; ++i) {
     if (!pref_name ||
         *pref_name == language_prefs::kChewingBooleanPrefs[i].pref_name) {
       SetLanguageConfigBoolean(
           language_prefs::kChewingSectionName,
           language_prefs::kChewingBooleanPrefs[i].ibus_config_name,
-          language_chewing_boolean_prefs_[i].GetValue());
+          chewing_boolean_prefs_[i].GetValue());
     }
   }
   for (size_t i = 0; i < language_prefs::kNumChewingMultipleChoicePrefs; ++i) {
@@ -398,7 +488,7 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
       SetLanguageConfigString(
           language_prefs::kChewingSectionName,
           language_prefs::kChewingMultipleChoicePrefs[i].ibus_config_name,
-          language_chewing_multiple_choice_prefs_[i].GetValue());
+          chewing_multiple_choice_prefs_[i].GetValue());
     }
   }
   if (!pref_name ||
@@ -406,7 +496,7 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
     SetLanguageConfigInteger(
         language_prefs::kChewingSectionName,
         language_prefs::kChewingHsuSelKeyType.ibus_config_name,
-        language_chewing_hsu_sel_key_type_.GetValue());
+        chewing_hsu_sel_key_type_.GetValue());
   }
   for (size_t i = 0; i < language_prefs::kNumChewingIntegerPrefs; ++i) {
     if (!pref_name ||
@@ -414,19 +504,19 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
       SetLanguageConfigInteger(
           language_prefs::kChewingSectionName,
           language_prefs::kChewingIntegerPrefs[i].ibus_config_name,
-          language_chewing_integer_prefs_[i].GetValue());
+          chewing_integer_prefs_[i].GetValue());
     }
   }
   if (!pref_name ||
       *pref_name == prefs::kLanguageHangulKeyboard) {
     SetLanguageConfigString(language_prefs::kHangulSectionName,
                             language_prefs::kHangulKeyboardConfigName,
-                            language_hangul_keyboard_.GetValue());
+                            hangul_keyboard_.GetValue());
   }
   if (!pref_name || *pref_name == prefs::kLanguageHangulHanjaBindingKeys) {
     SetLanguageConfigString(language_prefs::kHangulSectionName,
                             language_prefs::kHangulHanjaBindingKeysConfigName,
-                            language_hangul_hanja_binding_keys_.GetValue());
+                            hangul_hanja_binding_keys_.GetValue());
   }
   for (size_t i = 0; i < language_prefs::kNumPinyinBooleanPrefs; ++i) {
     if (!pref_name ||
@@ -434,7 +524,7 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
       SetLanguageConfigBoolean(
           language_prefs::kPinyinSectionName,
           language_prefs::kPinyinBooleanPrefs[i].ibus_config_name,
-          language_pinyin_boolean_prefs_[i].GetValue());
+          pinyin_boolean_prefs_[i].GetValue());
     }
   }
   for (size_t i = 0; i < language_prefs::kNumPinyinIntegerPrefs; ++i) {
@@ -443,7 +533,7 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
       SetLanguageConfigInteger(
           language_prefs::kPinyinSectionName,
           language_prefs::kPinyinIntegerPrefs[i].ibus_config_name,
-          language_pinyin_int_prefs_[i].GetValue());
+          pinyin_int_prefs_[i].GetValue());
     }
   }
   if (!pref_name ||
@@ -451,7 +541,7 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
     SetLanguageConfigInteger(
         language_prefs::kPinyinSectionName,
         language_prefs::kPinyinDoublePinyinSchema.ibus_config_name,
-        language_pinyin_double_pinyin_schema_.GetValue());
+        pinyin_double_pinyin_schema_.GetValue());
   }
   for (size_t i = 0; i < language_prefs::kNumMozcBooleanPrefs; ++i) {
     if (!pref_name ||
@@ -459,7 +549,7 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
       SetLanguageConfigBoolean(
           language_prefs::kMozcSectionName,
           language_prefs::kMozcBooleanPrefs[i].ibus_config_name,
-          language_mozc_boolean_prefs_[i].GetValue());
+          mozc_boolean_prefs_[i].GetValue());
     }
   }
   for (size_t i = 0; i < language_prefs::kNumMozcMultipleChoicePrefs; ++i) {
@@ -468,7 +558,7 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
       SetLanguageConfigString(
           language_prefs::kMozcSectionName,
           language_prefs::kMozcMultipleChoicePrefs[i].ibus_config_name,
-          language_mozc_multiple_choice_prefs_[i].GetValue());
+          mozc_multiple_choice_prefs_[i].GetValue());
     }
   }
   for (size_t i = 0; i < language_prefs::kNumMozcIntegerPrefs; ++i) {
@@ -477,58 +567,82 @@ void Preferences::NotifyPrefChanged(const std::string* pref_name) {
       SetLanguageConfigInteger(
           language_prefs::kMozcSectionName,
           language_prefs::kMozcIntegerPrefs[i].ibus_config_name,
-          language_mozc_integer_prefs_[i].GetValue());
+          mozc_integer_prefs_[i].GetValue());
     }
   }
 
   // Init or update power manager config.
   if (!pref_name || *pref_name == prefs::kEnableScreenLock) {
-    system::screen_locker_settings::EnableScreenLock(
+    system::power_manager_settings::EnableScreenLock(
         enable_screen_lock_.GetValue());
+  }
+
+  if (!pref_name || *pref_name == prefs::kSecondaryDisplayLayout) {
+    int layout = secondary_display_layout_.GetValue();
+    if (static_cast<int>(DisplayController::TOP) <= layout &&
+        layout <= static_cast<int>(DisplayController::LEFT)) {
+      ash::Shell::GetInstance()->display_controller()->
+          SetSecondaryDisplayLayout(
+              static_cast<DisplayController::SecondaryDisplayLayout>(layout));
+    }
+  }
+
+  // Init or update protected content (DRM) support.
+  if (!pref_name || *pref_name == prefs::kEnableCrosDRM) {
+    system::ToggleDrm(enable_drm_.GetValue());
+  }
+
+  // Change the download directory to the default value if a GData directory is
+  // selected and GData is disabled.
+  if (!pref_name || *pref_name == prefs::kDisableGData) {
+    if (disable_gdata_.GetValue()) {
+      const FilePath download_path =
+          prefs_->GetFilePath(prefs::kDownloadDefaultDirectory);
+      if (gdata::util::IsUnderGDataMountPoint(download_path)) {
+        prefs_->SetFilePath(prefs::kDownloadDefaultDirectory,
+                            download_util::GetDefaultDownloadDirectory());
+      }
+    }
   }
 }
 
 void Preferences::SetLanguageConfigBoolean(const char* section,
                                            const char* name,
                                            bool value) {
-  input_method::ImeConfigValue config;
-  config.type = input_method::ImeConfigValue::kValueTypeBool;
+  input_method::InputMethodConfigValue config;
+  config.type = input_method::InputMethodConfigValue::kValueTypeBool;
   config.bool_value = value;
-  input_method::InputMethodManager::GetInstance()->
-      SetImeConfig(section, name, config);
+  input_method_manager_->SetInputMethodConfig(section, name, config);
 }
 
 void Preferences::SetLanguageConfigInteger(const char* section,
                                            const char* name,
                                            int value) {
-  input_method::ImeConfigValue config;
-  config.type = input_method::ImeConfigValue::kValueTypeInt;
+  input_method::InputMethodConfigValue config;
+  config.type = input_method::InputMethodConfigValue::kValueTypeInt;
   config.int_value = value;
-  input_method::InputMethodManager::GetInstance()->
-      SetImeConfig(section, name, config);
+  input_method_manager_->SetInputMethodConfig(section, name, config);
 }
 
 void Preferences::SetLanguageConfigString(const char* section,
                                           const char* name,
                                           const std::string& value) {
-  input_method::ImeConfigValue config;
-  config.type = input_method::ImeConfigValue::kValueTypeString;
+  input_method::InputMethodConfigValue config;
+  config.type = input_method::InputMethodConfigValue::kValueTypeString;
   config.string_value = value;
-  input_method::InputMethodManager::GetInstance()->
-      SetImeConfig(section, name, config);
+  input_method_manager_->SetInputMethodConfig(section, name, config);
 }
 
 void Preferences::SetLanguageConfigStringList(
     const char* section,
     const char* name,
     const std::vector<std::string>& values) {
-  input_method::ImeConfigValue config;
-  config.type = input_method::ImeConfigValue::kValueTypeStringList;
+  input_method::InputMethodConfigValue config;
+  config.type = input_method::InputMethodConfigValue::kValueTypeStringList;
   for (size_t i = 0; i < values.size(); ++i)
     config.string_list_value.push_back(values[i]);
 
-  input_method::InputMethodManager::GetInstance()->
-      SetImeConfig(section, name, config);
+  input_method_manager_->SetInputMethodConfig(section, name, config);
 }
 
 void Preferences::SetLanguageConfigStringListAsCSV(const char* section,
@@ -540,83 +654,53 @@ void Preferences::SetLanguageConfigStringListAsCSV(const char* section,
   if (!value.empty())
     base::SplitString(value, ',', &split_values);
 
+  if (section == std::string(language_prefs::kGeneralSectionName) &&
+      name == std::string(language_prefs::kPreloadEnginesConfigName)) {
+    input_method_manager_->EnableInputMethods(split_values);
+    return;
+  }
+
   // We should call the cros API even when |value| is empty, to disable default
   // config.
   SetLanguageConfigStringList(section, name, split_values);
 }
 
-void Preferences::UpdateModifierKeyMapping() {
-  const int search_remap = language_xkb_remap_search_key_to_.GetValue();
-  const int control_remap = language_xkb_remap_control_key_to_.GetValue();
-  const int alt_remap = language_xkb_remap_alt_key_to_.GetValue();
-  if ((search_remap < input_method::kNumModifierKeys) && (search_remap >= 0) &&
-      (control_remap < input_method::kNumModifierKeys) &&
-      (control_remap >= 0) &&
-      (alt_remap < input_method::kNumModifierKeys) && (alt_remap >= 0)) {
-    input_method::ModifierMap modifier_map;
-    modifier_map.push_back(
-        input_method::ModifierKeyPair(
-            input_method::kSearchKey,
-            input_method::ModifierKey(search_remap)));
-    modifier_map.push_back(
-        input_method::ModifierKeyPair(
-            input_method::kLeftControlKey,
-            input_method::ModifierKey(control_remap)));
-    modifier_map.push_back(
-        input_method::ModifierKeyPair(
-            input_method::kLeftAltKey,
-            input_method::ModifierKey(alt_remap)));
-    input_method::InputMethodManager::GetInstance()->GetXKeyboard()->
-        RemapModifierKeys(modifier_map);
-  } else {
-    LOG(ERROR) << "Failed to remap modifier keys. Unexpected value(s): "
-               << search_remap << ", " << control_remap << ", " << alt_remap;
-  }
+void Preferences::SetInputMethodList() {
+  // When |preload_engines_| are set, InputMethodManager::ChangeInputMethod()
+  // might be called to change the current input method to the first one in the
+  // |preload_engines_| list. This also updates previous/current input method
+  // prefs. That's why GetValue() calls are placed before the
+  // SetLanguageConfigStringListAsCSV() call below.
+  const std::string previous_input_method_id =
+      previous_input_method_.GetValue();
+  const std::string current_input_method_id = current_input_method_.GetValue();
+  SetLanguageConfigStringListAsCSV(language_prefs::kGeneralSectionName,
+                                   language_prefs::kPreloadEnginesConfigName,
+                                   preload_engines_.GetValue());
+
+  // ChangeInputMethod() has to be called AFTER the value of |preload_engines_|
+  // is sent to the InputMethodManager. Otherwise, the ChangeInputMethod request
+  // might be ignored as an invalid input method ID. The ChangeInputMethod()
+  // calls are also necessary to restore the previous/current input method prefs
+  // which could have been modified by the SetLanguageConfigStringListAsCSV call
+  // above to the original state.
+  if (!previous_input_method_id.empty())
+    input_method_manager_->ChangeInputMethod(previous_input_method_id);
+  if (!current_input_method_id.empty())
+    input_method_manager_->ChangeInputMethod(current_input_method_id);
 }
 
 void Preferences::UpdateAutoRepeatRate() {
+  // Avoid setting repeat rate on desktop dev environment.
+  if (!base::chromeos::IsRunningOnChromeOS())
+    return;
+
   input_method::AutoRepeatRate rate;
-  rate.initial_delay_in_ms = language_xkb_auto_repeat_delay_pref_.GetValue();
-  rate.repeat_interval_in_ms =
-      language_xkb_auto_repeat_interval_pref_.GetValue();
+  rate.initial_delay_in_ms = xkb_auto_repeat_delay_pref_.GetValue();
+  rate.repeat_interval_in_ms = xkb_auto_repeat_interval_pref_.GetValue();
   DCHECK(rate.initial_delay_in_ms > 0);
   DCHECK(rate.repeat_interval_in_ms > 0);
   input_method::XKeyboard::SetAutoRepeatRate(rate);
-}
-
-void Preferences::UpdateVirturalKeyboardPreference(PrefService* prefs) {
-  const DictionaryValue* virtual_keyboard_pref =
-      prefs->GetDictionary(prefs::kLanguagePreferredVirtualKeyboard);
-  DCHECK(virtual_keyboard_pref);
-
-  input_method::InputMethodManager* input_method_manager =
-      input_method::InputMethodManager::GetInstance();
-  input_method_manager->ClearAllVirtualKeyboardPreferences();
-
-  std::string url;
-  std::vector<std::string> layouts_to_remove;
-  for (DictionaryValue::key_iterator iter = virtual_keyboard_pref->begin_keys();
-       iter != virtual_keyboard_pref->end_keys();
-       ++iter) {
-    const std::string& layout_id = *iter;  // e.g. "us", "handwriting-vk"
-    if (!virtual_keyboard_pref->GetString(layout_id, &url))
-      continue;
-    if (!input_method_manager->SetVirtualKeyboardPreference(
-            layout_id, GURL(url))) {
-      // Either |layout_id| or |url| is invalid. Remove the key from |prefs|
-      // later.
-      layouts_to_remove.push_back(layout_id);
-      LOG(ERROR) << "Removing invalid virtual keyboard pref: layout="
-                 << layout_id;
-    }
-  }
-
-  // Remove invalid prefs.
-  DictionaryPrefUpdate updater(prefs, prefs::kLanguagePreferredVirtualKeyboard);
-  DictionaryValue* pref_value = updater.Get();
-  for (size_t i = 0; i < layouts_to_remove.size(); ++i) {
-    pref_value->RemoveWithoutPathExpansion(layouts_to_remove[i], NULL);
-  }
 }
 
 }  // namespace chromeos

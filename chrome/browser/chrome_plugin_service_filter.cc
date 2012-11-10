@@ -9,11 +9,11 @@
 #include "chrome/browser/plugin_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "content/browser/resource_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/resource_context.h"
 #include "webkit/plugins/npapi/plugin_group.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 
@@ -70,20 +70,6 @@ void ChromePluginServiceFilter::UnrestrictPlugin(
   restricted_plugins_.erase(plugin_path);
 }
 
-void ChromePluginServiceFilter::DisableNPAPIForRenderView(
-    int render_process_id,
-    int render_view_id) {
-  RenderViewInfo render_view(render_process_id, render_view_id);
-  npapi_disabled_render_views_.insert(render_view);
-}
-
-void ChromePluginServiceFilter::ClearDisabledNPAPIForRenderView(
-    int render_process_id,
-    int render_view_id) {
-  RenderViewInfo render_view(render_process_id, render_view_id);
-  npapi_disabled_render_views_.erase(render_view);
-}
-
 bool ChromePluginServiceFilter::ShouldUsePlugin(
     int render_process_id,
     int render_view_id,
@@ -131,15 +117,6 @@ bool ChromePluginServiceFilter::ShouldUsePlugin(
         (policy_url.scheme() != origin.scheme() ||
          policy_url.host() != origin.host() ||
          policy_url.port() != origin.port())) {
-      return false;
-    }
-  }
-
-  if (plugin->type == webkit::WebPluginInfo::PLUGIN_TYPE_NPAPI) {
-    // Check if the NPAPI plugin has been disabled for this render view.
-    RenderViewInfo render_view(render_process_id, render_view_id);
-    if (npapi_disabled_render_views_.find(render_view) !=
-        npapi_disabled_render_views_.end()) {
       return false;
     }
   }

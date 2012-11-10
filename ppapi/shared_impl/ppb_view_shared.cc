@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,20 +24,15 @@ bool ViewData::Equals(const ViewData& other) const {
          clip_rect.point.x == other.clip_rect.point.x &&
          clip_rect.point.y == other.clip_rect.point.y &&
          clip_rect.size.width == other.clip_rect.size.width &&
-         clip_rect.size.height == other.clip_rect.size.height;
+         clip_rect.size.height == other.clip_rect.size.height &&
+         device_scale == other.device_scale &&
+         css_scale == other.css_scale;
 }
 
-PPB_View_Shared::PPB_View_Shared(const InitAsImpl&,
+PPB_View_Shared::PPB_View_Shared(ResourceObjectType type,
                                  PP_Instance instance,
                                  const ViewData& data)
-    : Resource(instance),
-      data_(data) {
-}
-
-PPB_View_Shared::PPB_View_Shared(const InitAsProxy&,
-                                 PP_Instance instance,
-                                 const ViewData& data)
-    : Resource(HostResource::MakeInstanceOnly(instance)),
+    : Resource(type, instance),
       data_(data) {
 }
 

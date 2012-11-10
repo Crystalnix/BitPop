@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/base/sys_addrinfo.h"
 #include "net/curvecp/protocol.h"
 #include "net/udp/udp_client_socket.h"
 
@@ -33,7 +32,7 @@ ClientPacketizer::ClientPacketizer()
     : Packetizer(),
       next_state_(NONE),
       listener_(NULL),
-      current_address_(NULL),
+      current_address_index_(-1),
       hello_attempts_(0),
       initiate_sent_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(
@@ -235,7 +234,8 @@ int ClientPacketizer::DoSendingHelloComplete(int rv) {
 int ClientPacketizer::DoWaitingCookie() {
   next_state_ = WAITING_COOKIE_COMPLETE;
 
-  StartHelloTimer(kHelloTimeoutMs[hello_attempts_++]);
+  StartHelloTimer(base::TimeDelta::FromMilliseconds(
+      kHelloTimeoutMs[hello_attempts_++]));
 
   read_buffer_ = new IOBuffer(kMaxPacketLength);
   return socket_->Read(read_buffer_, kMaxPacketLength, io_callback_);
@@ -289,35 +289,27 @@ void ClientPacketizer::DoCallback(int result) {
 int ClientPacketizer::ConnectNextAddress() {
   // TODO(mbelshe): plumb Netlog information
 
-  DCHECK(addresses_.head());
+  DCHECK(!addresses_.empty());
 
   socket_.reset(new UDPClientSocket(DatagramSocket::DEFAULT_BIND,
                                     RandIntCallback(),
                                     NULL,
                                     NetLog::Source()));
 
-  // Rotate to next address in the list.
-  if (current_address_)
-    current_address_ = current_address_->ai_next;
-  if (!current_address_)
-    current_address_ = addresses_.head();
+  // Rotate to next address in the list. Note, this sets it to 0 on first call.
+  current_address_index_ = (current_address_index_ + 1) % addresses_.size();
 
-  IPEndPoint endpoint;
-  if (!endpoint.FromSockAddr(current_address_->ai_addr,
-                             current_address_->ai_addrlen))
-    return ERR_FAILED;
-
-  int rv = socket_->Connect(endpoint);
+  int rv = socket_->Connect(addresses_[current_address_index_]);
   DCHECK_NE(ERR_IO_PENDING, rv);
 
   return rv;
 }
 
-void ClientPacketizer::StartHelloTimer(int milliseconds) {
+void ClientPacketizer::StartHelloTimer(base::TimeDelta delay) {
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&ClientPacketizer::OnHelloTimeout, weak_factory_.GetWeakPtr()),
-      milliseconds);
+      delay);
 }
 
 void ClientPacketizer::RevokeHelloTimer() {

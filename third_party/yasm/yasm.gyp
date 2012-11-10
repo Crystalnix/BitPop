@@ -27,7 +27,7 @@
 # be a rule. The problem is that the correct invocation cannot be inferred
 # purely from the file name, or extension.  Nor is it obvious whether the
 # output should be processed as a source or not.  Thus, we are left with a
-# large amount of repetative code.
+# large amount of repetitive code.
 
 {
   'variables': {
@@ -545,11 +545,11 @@
           'xcode_settings': {
             'WARNING_CFLAGS': [
               # re2c is missing CLOSEVOP from one switch.
-              '-Wno-switch-enum',
+              '-Wno-switch',
             ],
           },
           'cflags': [
-            '-Wno-switch-enum',
+            '-Wno-switch',
           ],
         }],
       ],

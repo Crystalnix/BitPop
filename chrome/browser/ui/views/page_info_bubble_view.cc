@@ -8,18 +8,20 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/certificate_viewer.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/toolbar_view.h"
-#include "chrome/browser/ui/views/window.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/cert_store.h"
-#include "content/public/browser/ssl_status.h"
+#include "content/public/browser/cert_store.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/common/ssl_status.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
+#include "net/base/x509_certificate.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/range/range.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
@@ -31,6 +33,7 @@
 using content::OpenURLParams;
 using content::Referrer;
 using content::SSLStatus;
+using content::WebContents;
 
 namespace {
 
@@ -47,7 +50,7 @@ const int kIconVerticalOffset = -7;
 
 // The duration of the animation that resizes the bubble once the async
 // information is provided through the ModelChanged event.
-const int kPageInfoSlideDuration = 1450;
+const int kPageInfoSlideDuration = 250;
 
 // A section contains an image that shows a status (good or bad), a title, an
 // optional head-line (in bold) and a description.
@@ -56,7 +59,7 @@ class Section : public views::View,
  public:
   Section(PageInfoBubbleView* owner,
           const PageInfoModel::SectionInfo& section_info,
-          const SkBitmap* status_icon,
+          const gfx::ImageSkia* status_icon,
           bool show_cert);
   virtual ~Section();
 
@@ -66,9 +69,9 @@ class Section : public views::View,
   void SetAnimationStage(double animation_stage);
 
   // views::View methods:
-  virtual int GetHeightForWidth(int w);
-  virtual void Layout();
-  virtual void Paint(gfx::Canvas* canvas);
+  virtual int GetHeightForWidth(int w) OVERRIDE;
+  virtual void Layout() OVERRIDE;
+  virtual void Paint(gfx::Canvas* canvas) OVERRIDE;
 
   // views::LinkListener methods:
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
@@ -103,21 +106,24 @@ class Section : public views::View,
 // PageInfoBubbleView
 
 PageInfoBubbleView::PageInfoBubbleView(views::View* anchor_view,
-                                       Profile* profile,
+                                       WebContents* web_contents,
                                        const GURL& url,
                                        const SSLStatus& ssl,
-                                       bool show_history)
+                                       bool show_history,
+                                       content::PageNavigator* navigator)
     : BubbleDelegateView(anchor_view, views::BubbleBorder::TOP_LEFT),
-      ALLOW_THIS_IN_INITIALIZER_LIST(model_(profile, url, ssl,
-                                            show_history, this)),
+      ALLOW_THIS_IN_INITIALIZER_LIST(model_(
+          Profile::FromBrowserContext(web_contents->GetBrowserContext()), url,
+          ssl, show_history, this)),
       cert_id_(ssl.cert_id),
       help_center_link_(NULL),
       ALLOW_THIS_IN_INITIALIZER_LIST(resize_animation_(this)),
-      animation_start_height_(0) {
-
+      animation_start_height_(0),
+      navigator_(navigator),
+      web_contents_(web_contents) {
   if (cert_id_ > 0) {
     scoped_refptr<net::X509Certificate> cert;
-    CertStore::GetInstance()->RetrieveCert(cert_id_, &cert);
+    content::CertStore::GetInstance()->RetrieveCert(cert_id_, &cert);
     // When running with fake certificate (Chrome Frame), we have no os
     // certificate, so there is no cert to show. Don't bother showing the cert
     // info link in that case.
@@ -134,7 +140,7 @@ PageInfoBubbleView::~PageInfoBubbleView() {
 void PageInfoBubbleView::ShowCertDialog() {
   gfx::NativeWindow parent =
       anchor_view() ? anchor_view()->GetWidget()->GetNativeWindow() : NULL;
-  ShowCertificateViewerByID(parent, cert_id_);
+  ShowCertificateViewerByID(web_contents_, parent, cert_id_);
 }
 
 gfx::Size PageInfoBubbleView::GetSeparatorSize() {
@@ -148,13 +154,7 @@ gfx::Size PageInfoBubbleView::GetSeparatorSize() {
 }
 
 double PageInfoBubbleView::GetResizeAnimationCurrentValue() {
-#if defined(OS_CHROMEOS)
-  // We don't run the animation on Chrome OS; see explanation in
-  // OnPageInfoModelChanged().
-  return 1.0;
-#else
   return resize_animation_.GetCurrentValue();
-#endif
 }
 
 double PageInfoBubbleView::HeightAnimationValue() {
@@ -196,7 +196,8 @@ void PageInfoBubbleView::LayoutSections() {
     if (count == 1 && info.type == PageInfoModel::SECTION_INFO_INTERNAL_PAGE)
       only_internal_section = true;
     layout->StartRow(0, 0);
-    const SkBitmap* icon = *model_.GetIconImage(info.icon_id);
+    const gfx::ImageSkia* icon = model_.GetIconImage(
+        info.icon_id)->ToImageSkia();
     Section* section = new Section(this, info, icon, cert_id_ > 0);
     if (info.type == PageInfoModel::SECTION_INFO_FIRST_VISIT) {
       // This section is animated into view, so we need to set the height of it
@@ -244,7 +245,8 @@ gfx::Size PageInfoBubbleView::GetPreferredSize() {
   int count = model_.GetSectionCount();
   for (int i = 0; i < count; ++i) {
     PageInfoModel::SectionInfo info = model_.GetSectionInfo(i);
-    const SkBitmap* icon = *model_.GetIconImage(info.icon_id);
+    const gfx::ImageSkia* icon = model_.GetIconImage(
+        info.icon_id)->ToImageSkia();
     Section section(this, info, icon, cert_id_ > 0);
     size.Enlarge(0, section.GetHeightForWidth(size.width()));
   }
@@ -277,26 +279,8 @@ void PageInfoBubbleView::OnPageInfoModelChanged() {
   // into existence.
   animation_start_height_ = bounds().height() + GetSeparatorSize().height();
   LayoutSections();
-#if defined(OS_CHROMEOS)
-  // Animating a window's size doesn't work well in X.  Each resize request gets
-  // rerouted to the window manager, which forwards it on to the X server.
-  // That's okay, but to avoid jank (the window's pixmap will have garbage in it
-  // after being resized), compositing window managers also send
-  // _NET_WM_SYNC_REQUEST messages to clients before resizing to ask for notice
-  // after the window has been repainted at the new size.  Chrome appears to
-  // fall behind in handling the repaints, and the sync request responses
-  // typically don't get sent back to the window manager until the animation is
-  // done, which results in the window being invisible until then:
-  // http://crosbug.com/14993.  Trying to e.g. just animate the first-visit
-  // section's opacity has the same negative effect, so we avoid doing any
-  // animation.
-  // TODO(derat): Remove this once we're not using a toplevel X window for the
-  // bubble.
-  SizeToContents();
-#else
   resize_animation_.SetSlideDuration(kPageInfoSlideDuration);
   resize_animation_.Show();
-#endif
 }
 
 gfx::Rect PageInfoBubbleView::GetAnchorRect() {
@@ -307,11 +291,11 @@ gfx::Rect PageInfoBubbleView::GetAnchorRect() {
 }
 
 void PageInfoBubbleView::LinkClicked(views::Link* source, int event_flags) {
-  Browser* browser = BrowserList::GetLastActive();
-  OpenURLParams params(
-      GURL(chrome::kPageInfoHelpCenterURL), Referrer(), NEW_FOREGROUND_TAB,
-      content::PAGE_TRANSITION_LINK, false);
-  browser->OpenURL(params);
+  navigator_->OpenURL(OpenURLParams(GURL(chrome::kPageInfoHelpCenterURL),
+                                    Referrer(),
+                                    NEW_FOREGROUND_TAB,
+                                    content::PAGE_TRANSITION_LINK,
+                                    false));
   // NOTE: The bubble closes automatically on deactivation as the link opens.
 }
 
@@ -336,7 +320,7 @@ void PageInfoBubbleView::AnimationProgressed(const ui::Animation* animation) {
 
 Section::Section(PageInfoBubbleView* owner,
                  const PageInfoModel::SectionInfo& section_info,
-                 const SkBitmap* state_icon,
+                 const gfx::ImageSkia* state_icon,
                  bool show_cert)
     : owner_(owner),
       info_(section_info),
@@ -441,6 +425,12 @@ gfx::Size Section::LayoutItems(bool compute_bounds_only, int width) {
     if (!compute_bounds_only)
       headline_label_->SetBounds(x, y, w > 0 ? w : 0, size.height());
     y += size.height();
+
+    // Show the leading headline text by moving the textfield cursor there,
+    // otherwise long headlines may initially show the leading text truncated.
+    // This can only be done after the textfield is initialized with the Widget.
+    if (GetWidget())
+      headline_label_->SelectRange(ui::Range());
   } else {
     if (!compute_bounds_only)
       headline_label_->SetBounds(x, y, 0, 0);
@@ -471,17 +461,22 @@ gfx::Size Section::LayoutItems(bool compute_bounds_only, int width) {
   return gfx::Size(width, y);
 }
 
-namespace browser {
+namespace chrome {
 
 void ShowPageInfoBubble(views::View* anchor_view,
-                        Profile* profile,
+                        WebContents* web_contents,
                         const GURL& url,
                         const SSLStatus& ssl,
-                        bool show_history) {
-  PageInfoBubbleView* page_info_bubble =
-      new PageInfoBubbleView(anchor_view, profile, url, ssl, show_history);
-  browser::CreateViewsBubble(page_info_bubble);
+                        bool show_history,
+                        content::PageNavigator* navigator) {
+  PageInfoBubbleView* page_info_bubble = new PageInfoBubbleView(anchor_view,
+                                                                web_contents,
+                                                                url,
+                                                                ssl,
+                                                                show_history,
+                                                                navigator);
+  views::BubbleDelegateView::CreateBubble(page_info_bubble);
   page_info_bubble->Show();
 }
 
-}
+}  // namespace chrome

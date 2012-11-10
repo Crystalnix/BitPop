@@ -4,6 +4,8 @@
 
 #include "ash/wm/video_detector.h"
 
+#include "ash/shell.h"
+#include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/gfx/rect.h"
@@ -49,17 +51,13 @@ class VideoDetector::WindowInfo {
   DISALLOW_COPY_AND_ASSIGN(WindowInfo);
 };
 
-VideoDetector::VideoDetector() {
-  aura::RootWindow::GetInstance()->AddRootWindowObserver(this);
+VideoDetector::VideoDetector()
+    : ALLOW_THIS_IN_INITIALIZER_LIST(observer_manager_(this)) {
+  aura::Env::GetInstance()->AddObserver(this);
 }
 
 VideoDetector::~VideoDetector() {
-  aura::RootWindow::GetInstance()->RemoveRootWindowObserver(this);
-  for (WindowInfoMap::const_iterator it = window_infos_.begin();
-       it != window_infos_.end(); ++it) {
-    aura::Window* window = it->first;
-    window->RemoveObserver(this);
-  }
+  aura::Env::GetInstance()->RemoveObserver(this);
 }
 
 void VideoDetector::AddObserver(VideoDetectorObserver* observer) {
@@ -71,7 +69,7 @@ void VideoDetector::RemoveObserver(VideoDetectorObserver* observer) {
 }
 
 void VideoDetector::OnWindowInitialized(aura::Window* window) {
-  window->AddObserver(this);
+  observer_manager_.Add(window);
 }
 
 void VideoDetector::OnWindowPaintScheduled(aura::Window* window,
@@ -88,6 +86,7 @@ void VideoDetector::OnWindowPaintScheduled(aura::Window* window,
 
 void VideoDetector::OnWindowDestroyed(aura::Window* window) {
   window_infos_.erase(window);
+  observer_manager_.Remove(window);
 }
 
 void VideoDetector::MaybeNotifyObservers(aura::Window* window,
@@ -100,8 +99,8 @@ void VideoDetector::MaybeNotifyObservers(aura::Window* window,
   if (!window->IsVisible())
     return;
 
-  gfx::Rect root_bounds = aura::RootWindow::GetInstance()->bounds();
-  if (!window->GetScreenBounds().Intersects(root_bounds))
+  gfx::Rect root_bounds = window->GetRootWindow()->bounds();
+  if (!window->GetBoundsInRootWindow().Intersects(root_bounds))
     return;
 
   FOR_EACH_OBSERVER(VideoDetectorObserver, observers_, OnVideoDetected());

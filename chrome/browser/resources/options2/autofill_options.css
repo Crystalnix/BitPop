@@ -1,3 +1,20 @@
+/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+#autofill-options {
+  min-width: 550px;
+}
+
+#autofill-help {
+  bottom: 18px;
+  position: absolute;
+}
+
+#autofill-options list {
+  min-height: 172px;
+}
+
 .autofill-list-item {
   -webkit-box-flex: 1;
   -webkit-padding-start: 8px;
@@ -7,7 +24,7 @@
 
 .autofill-list-item + img {
   -webkit-padding-end: 20px;
-  vertical-align: middle;
+  vertical-align: top;
 }
 
 #autofill-options > div:last-child {
@@ -21,17 +38,15 @@
 
 #autofill-add-address,
 #autofill-add-creditcard {
-  margin: 2px 0;
+  margin: 5px 5px;
 }
 
-.autofill-list-item + button,
-.autofill-list-item + img + button {
-  background: #8aaaed !important;  /* Gets overwritten by raw-button:hover */
-  color: #fff;
+#autofill-options .list-inline-button {
   margin-top: 0;
+  vertical-align: top;
 }
 
-#address-list > div:not(:hover) * button,
-#creditcard-list > div:not(:hover) * button {
+#autofill-options div[role='listitem']:not(:hover):not([selected])
+    .list-inline-button {
   display: none;
 }

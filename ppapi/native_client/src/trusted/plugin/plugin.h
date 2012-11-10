@@ -15,18 +15,17 @@
 #include <queue>
 #include <set>
 #include <string>
-#include <vector>
 
 #include "native_client/src/include/nacl_macros.h"
 #include "native_client/src/include/nacl_scoped_ptr.h"
 #include "native_client/src/include/nacl_string.h"
 #include "native_client/src/trusted/plugin/file_downloader.h"
-#include "native_client/src/trusted/plugin/method_map.h"
 #include "native_client/src/trusted/plugin/nacl_subprocess.h"
 #include "native_client/src/trusted/plugin/pnacl_coordinator.h"
 #include "native_client/src/trusted/plugin/service_runtime.h"
 #include "native_client/src/trusted/plugin/utility.h"
 
+#include "ppapi/c/private/ppb_nacl_private.h"
 #include "ppapi/cpp/private/var_private.h"
 // for pp::VarPrivate
 #include "ppapi/cpp/private/instance_private.h"
@@ -61,16 +60,8 @@ namespace plugin {
 
 class ErrorInfo;
 class Manifest;
-class PnaclCoordinator;
 class ProgressEvent;
-class ScriptableHandle;
-
-typedef enum {
-  METHOD_CALL = 0,
-  PROPERTY_GET,
-  PROPERTY_SET
-} CallType;
-
+class ScriptablePlugin;
 
 class Plugin : public pp::InstancePrivate {
  public:
@@ -148,10 +139,10 @@ class Plugin : public pp::InstancePrivate {
   // A helper SRPC NaCl module can be loaded given a DescWrapper.
   // Blocks until the helper module signals initialization is done.
   // Does not update nacl_module_origin().
-  // Returns kInvalidNaClSubprocessId or the ID of the new helper NaCl module.
-  NaClSubprocessId LoadHelperNaClModule(nacl::DescWrapper* wrapper,
-                                        const Manifest* manifest,
-                                        ErrorInfo* error_info);
+  // Returns NULL or the NaClSubprocess of the new helper NaCl module.
+  NaClSubprocess* LoadHelperNaClModule(nacl::DescWrapper* wrapper,
+                                       const Manifest* manifest,
+                                       ErrorInfo* error_info);
 
   // Returns the argument value for the specified key, or NULL if not found.
   // The callee retains ownership of the result.
@@ -169,6 +160,9 @@ class Plugin : public pp::InstancePrivate {
   void ReportLoadError(const ErrorInfo& error_info);
   // Report loading a module was aborted, typically due to user action.
   void ReportLoadAbort();
+
+  // Write a text string on the JavaScript console.
+  void AddToConsole(const nacl::string& text);
 
   // Dispatch a JavaScript event to indicate a key step in loading.
   // |event_type| is a character string indicating which type of progress
@@ -202,18 +196,19 @@ class Plugin : public pp::InstancePrivate {
   char** argn() const { return argn_; }
   char** argv() const { return argv_; }
 
-  BrowserInterface* browser_interface() const { return browser_interface_; }
   Plugin* plugin() const { return const_cast<Plugin*>(this); }
 
   // URL resolution support.
   // plugin_base_url is the URL used for resolving relative URLs used in
   // src="...".
   nacl::string plugin_base_url() const { return plugin_base_url_; }
-  void set_plugin_base_url(nacl::string url) { plugin_base_url_ = url; }
+  void set_plugin_base_url(const nacl::string& url) { plugin_base_url_ = url; }
   // manifest_base_url is the URL used for resolving relative URLs mentioned
   // in manifest files.  If the manifest is a data URI, this is an empty string.
   nacl::string manifest_base_url() const { return manifest_base_url_; }
-  void set_manifest_base_url(nacl::string url) { manifest_base_url_ = url; }
+  void set_manifest_base_url(const nacl::string& url) {
+    manifest_base_url_ = url;
+  }
 
   // The URL of the manifest file as set by the "src" attribute.
   // It is not the fully resolved URL if it was set as relative.
@@ -245,17 +240,6 @@ class Plugin : public pp::InstancePrivate {
     nexe_error_reported_ = val;
   }
 
-  // Get the NaCl module subprocess that was assigned the ID |id|.
-  NaClSubprocess* nacl_subprocess(NaClSubprocessId id) const {
-    if (kInvalidNaClSubprocessId == id) {
-      return NULL;
-    }
-    return nacl_subprocesses_[id];
-  }
-  NaClSubprocessId next_nacl_subprocess_id() const {
-    return static_cast<NaClSubprocessId>(nacl_subprocesses_.size());
-  }
-
   nacl::DescWrapperFactory* wrapper_factory() const { return wrapper_factory_; }
 
   // Requests a NaCl manifest download from a |url| relative to the page origin.
@@ -273,16 +257,15 @@ class Plugin : public pp::InstancePrivate {
   bool StartProxiedExecution(NaClSrpcChannel* srpc_channel,
                              ErrorInfo* error_info);
 
-  // Determines whether experimental APIs are usable.
-  static bool ExperimentalJavaScriptApisAreEnabled();
-
-  // Methods for method and property dispatch.
-  bool InitParams(uintptr_t method_id, CallType call_type, SrpcParams* params);
-  bool HasMethod(uintptr_t method_id, CallType call_type);
-  bool Invoke(uintptr_t method_id, CallType call_type, SrpcParams* params);
-  std::vector<uintptr_t>* GetPropertyIdentifiers() {
-    return property_get_methods_.Keys();
-  }
+  // Support for property getting.
+  typedef void (Plugin::* PropertyGetter)(NaClSrpcArg* prop_value);
+  void AddPropertyGet(const nacl::string& prop_name, PropertyGetter getter);
+  bool HasProperty(const nacl::string& prop_name);
+  bool GetProperty(const nacl::string& prop_name, NaClSrpcArg* prop_value);
+  // The supported property getters.
+  void GetExitStatus(NaClSrpcArg* prop_value);
+  void GetLastError(NaClSrpcArg* prop_value);
+  void GetReadyStateProperty(NaClSrpcArg* prop_value);
 
   // The size returned when a file download operation is unable to determine
   // the size of the file to load.  W3C ProgressEvents specify that unknown
@@ -299,12 +282,7 @@ class Plugin : public pp::InstancePrivate {
   // Requests a URL asynchronously resulting in a call to pp_callback with
   // a PP_Error indicating status. On success an open file descriptor
   // corresponding to the url body is recorded for further lookup.
-  // permits_extension_urls determines whether a call to stream as file
-  // should be allowed to load URLs that are outside of the origin of the
-  // plugin.  This is used by, e.g., the pnacl coordinator, which loads
-  // llc, ld, and various object files from a chrome extension URL.
   bool StreamAsFile(const nacl::string& url,
-                    bool permits_extension_urls,
                     PP_CompletionCallback pp_callback);
   // Returns an open POSIX file descriptor retrieved by StreamAsFile()
   // or NACL_NO_FILE_DESC. The caller must take ownership of the descriptor.
@@ -341,11 +319,10 @@ class Plugin : public pp::InstancePrivate {
     return main_service_runtime()->exit_status();
   }
 
+  const PPB_NaCl_Private* nacl_interface() { return nacl_interface_; }
+
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(Plugin);
-#ifndef HACK_FOR_MACOS_HANG_REMOVED
-  void XYZZY(const nacl::string& url, pp::VarPrivate js_callback);
-#endif  // HACK_FOR_MACOS_HANG_REMOVED
   // Prevent construction and destruction from outside the class:
   // must use factory New() method instead.
   explicit Plugin(PP_Instance instance);
@@ -353,29 +330,20 @@ class Plugin : public pp::InstancePrivate {
   // pointer to this object, not from base's Delete().
   ~Plugin();
 
-  bool Init(BrowserInterface* browser_interface,
-            int argc,
-            char* argn[],
-            char* argv[]);
-  void LoadMethods();
+  bool Init(int argc, char* argn[], char* argv[]);
   // Shuts down socket connection, service runtime, and receive thread,
-  // in this order, for all spun up NaCl module subprocesses.
+  // in this order, for the main nacl subprocess.
   void ShutDownSubprocesses();
 
-  ScriptableHandle* scriptable_handle() const { return scriptable_handle_; }
-  void set_scriptable_handle(ScriptableHandle* scriptable_handle) {
-    scriptable_handle_ = scriptable_handle;
+  ScriptablePlugin* scriptable_plugin() const { return scriptable_plugin_; }
+  void set_scriptable_plugin(ScriptablePlugin* scriptable_plugin) {
+    scriptable_plugin_ = scriptable_plugin;
   }
 
   // Access the service runtime for the main NaCl subprocess.
   ServiceRuntime* main_service_runtime() const {
     return main_subprocess_.service_runtime();
   }
-
-  // Setting the properties and methods exported.
-  void AddPropertyGet(RpcFunction function_ptr,
-                      const char* name,
-                      const char* outs);
 
   // Help load a nacl module, from the file specified in wrapper.
   // This will fully initialize the |subprocess| if the load was successful.
@@ -386,12 +354,6 @@ class Plugin : public pp::InstancePrivate {
                             ErrorInfo* error_info,
                             pp::CompletionCallback init_done_cb,
                             pp::CompletionCallback crash_cb);
-  bool StartSrpcServices(NaClSubprocess* subprocess, ErrorInfo* error_info);
-  bool StartSrpcServicesCommon(NaClSubprocess* subprocess,
-                               ErrorInfo* error_info);
-  bool StartJSObjectProxy(NaClSubprocess* subprocess, ErrorInfo* error_info);
-
-  MethodInfo* GetMethodInfo(uintptr_t method_id, CallType call_type);
 
   // Callback used when getting the URL for the .nexe file.  If the URL loading
   // is successful, the file descriptor is opened and can be passed to sel_ldr
@@ -440,16 +402,6 @@ class Plugin : public pp::InstancePrivate {
   bool SetManifestObject(const nacl::string& manifest_json,
                          ErrorInfo* error_info);
 
-  // Determines the URL of the program module appropriate for the NaCl sandbox
-  // implemented by the installed sel_ldr.  The URL is determined from the
-  // Manifest in |manifest_|.  On success, |true| is returned and |result| is
-  // set to the URL to use for the program, and |is_portable| is set to
-  // |true| if the program is portable bitcode.
-  // On failure, |false| is returned.
-  bool SelectProgramURLFromManifest(nacl::string* result,
-                                    ErrorInfo* error_info,
-                                    bool* is_portable);
-
   // Logs timing information to a UMA histogram, and also logs the same timing
   // information divided by the size of the nexe to another histogram.
   void HistogramStartupTimeSmall(const std::string& name, float dt);
@@ -470,16 +422,20 @@ class Plugin : public pp::InstancePrivate {
   // Shuts down the proxy for PPAPI nexes.
   void ShutdownProxy();  // Nexe shutdown + proxy deletion.
 
-  BrowserInterface* browser_interface_;
-  ScriptableHandle* scriptable_handle_;
+  // Copy the main service runtime's most recent NaClLog output to the
+  // JavaScript console.  Valid to use only after a crash, e.g., via a
+  // detail level LOG_FATAL NaClLog entry.  If the crash was not due
+  // to a LOG_FATAL this method will do nothing.
+  void CopyCrashLogToJsConsole();
+
+  ScriptablePlugin* scriptable_plugin_;
 
   int argc_;
   char** argn_;
   char** argv_;
 
-  // Keep track of the NaCl module subprocesses that were spun up in the plugin.
+  // Keep track of the NaCl module subprocess that was spun up in the plugin.
   NaClSubprocess main_subprocess_;
-  std::vector<NaClSubprocess*> nacl_subprocesses_;
 
   nacl::string plugin_base_url_;
   nacl::string manifest_base_url_;
@@ -489,7 +445,7 @@ class Plugin : public pp::InstancePrivate {
 
   nacl::DescWrapperFactory* wrapper_factory_;
 
-  MethodMap property_get_methods_;
+  std::map<nacl::string, PropertyGetter> property_getters_;
 
   // File download support.  |nexe_downloader_| can be opened with a specific
   // callback to run when the file has been downloaded and is opened for
@@ -572,6 +528,11 @@ class Plugin : public pp::InstancePrivate {
   const FileDownloader* FindFileDownloader(PP_Resource url_loader) const;
 
   int64_t time_of_last_progress_event_;
+
+  // Whether we are using IPC-based PPAPI proxy.
+  bool using_ipc_proxy_;
+
+  const PPB_NaCl_Private* nacl_interface_;
 };
 
 }  // namespace plugin

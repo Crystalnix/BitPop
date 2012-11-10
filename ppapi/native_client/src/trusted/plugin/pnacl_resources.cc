@@ -4,16 +4,11 @@
 
 #include "native_client/src/trusted/plugin/pnacl_resources.h"
 
-#include <utility>
-#include <vector>
-
 #include "native_client/src/include/portability_io.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/trusted/desc/nacl_desc_wrapper.h"
-#include "native_client/src/trusted/plugin/browser_interface.h"
 #include "native_client/src/trusted/plugin/manifest.h"
 #include "native_client/src/trusted/plugin/plugin.h"
-#include "native_client/src/trusted/plugin/plugin_error.h"
 #include "native_client/src/trusted/plugin/pnacl_coordinator.h"
 #include "native_client/src/trusted/plugin/utility.h"
 
@@ -21,7 +16,10 @@
 
 namespace plugin {
 
-class Plugin;
+const char PnaclUrls::kExtensionOrigin[] =
+    "chrome-extension://gcodniebolpnpaiggndmcmmfpldlknih/";
+const char PnaclUrls::kLlcUrl[] = "llc";
+const char PnaclUrls::kLdUrl[] = "ld";
 
 PnaclResources::~PnaclResources() {
   for (std::map<nacl::string, nacl::DescWrapper*>::iterator
@@ -45,10 +43,8 @@ void PnaclResources::StartDownloads() {
   CHECK(resource_urls_.size() > 0);
   for (size_t i = 0; i < resource_urls_.size(); ++i) {
     nacl::string full_url;
-    bool permit_extension_url = false;
     ErrorInfo error_info;
-    if (!manifest_->ResolveURL(resource_urls_[i], &full_url,
-                               &permit_extension_url, &error_info)) {
+    if (!manifest_->ResolveURL(resource_urls_[i], &full_url, &error_info)) {
       coordinator_->ReportNonPpapiError(nacl::string("failed to resolve ") +
                                         resource_urls_[i] + ": " +
                                         error_info.message() + ".");
@@ -59,7 +55,6 @@ void PnaclResources::StartDownloads() {
                                       resource_urls_[i],
                                       full_url);
     if (!plugin_->StreamAsFile(full_url,
-                               permit_extension_url,
                                ready_callback.pp_completion_callback())) {
       coordinator_->ReportNonPpapiError(nacl::string("failed to download ") +
                                         resource_urls_[i] + ".");

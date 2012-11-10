@@ -4,7 +4,7 @@
 
 #include "content/renderer/webplugin_delegate_proxy.h"
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 #include <gtk/gtk.h>
 #elif defined(USE_X11)
 #include <cairo/cairo.h>
@@ -12,12 +12,14 @@
 
 #include <algorithm>
 
+#include "base/auto_reset.h"
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/process.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
@@ -29,7 +31,6 @@
 #include "content/common/plugin_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/renderer/content_renderer_client.h"
-#include "content/renderer/gpu/command_buffer_proxy.h"
 #include "content/renderer/plugin_channel_host.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -39,18 +40,19 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebDragData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebDragData.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "ui/gfx/blit.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
+#include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/plugin_group.h"
 #include "webkit/plugins/npapi/webplugin.h"
+#include "webkit/plugins/plugin_constants.h"
 #include "webkit/plugins/sad_plugin.h"
-#include "webkit/glue/webkit_glue.h"
 
 #if defined(OS_POSIX)
 #include "ipc/ipc_channel_posix.h"
@@ -58,6 +60,10 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
+#endif
+
+#if defined(OS_WIN)
+#include "content/public/common/sandbox_init.h"
 #endif
 
 using WebKit::WebBindings;
@@ -271,36 +277,67 @@ bool WebPluginDelegateProxy::Initialize(
     const std::vector<std::string>& arg_values,
     webkit::npapi::WebPlugin* plugin,
     bool load_manually) {
-  IPC::ChannelHandle channel_handle;
-  if (!RenderThreadImpl::current()->Send(new ViewHostMsg_OpenChannelToPlugin(
-          render_view_->routing_id(), url, page_url_, mime_type_,
-          &channel_handle, &info_))) {
-    return false;
-  }
+  // TODO(shess): Attempt to work around http://crbug.com/97285 and
+  // http://crbug.com/141055 by retrying the connection.  Reports seem
+  // to indicate that the plugin hasn't crashed, and that the problem
+  // is not 100% persistent.
+  const size_t kAttempts = 2;
 
-  if (channel_handle.name.empty()) {
-    // We got an invalid handle.  Either the plugin couldn't be found (which
-    // shouldn't happen, since if we got here the plugin should exist) or the
-    // plugin crashed on initialization.
-    if (!info_.path.empty()) {
-      render_view_->PluginCrashed(info_.path);
+  bool result = false;
+  scoped_refptr<PluginChannelHost> channel_host;
+  int instance_id = 0;
 
-      // Return true so that the plugin widget is created and we can paint the
-      // crashed plugin there.
-      return true;
+  for (size_t attempt = 0; !result && attempt < kAttempts; attempt++) {
+#if defined(OS_MACOSX)
+    // TODO(shess): Debugging for http://crbug.com/97285 .  See comment
+    // in plugin_channel_host.cc.
+    scoped_ptr<AutoReset<bool> > track_nested_removes(new AutoReset<bool>(
+        PluginChannelHost::GetRemoveTrackingFlag(), true));
+#endif
+
+    IPC::ChannelHandle channel_handle;
+    if (!RenderThreadImpl::current()->Send(new ViewHostMsg_OpenChannelToPlugin(
+            render_view_->routing_id(), url, page_url_, mime_type_,
+            &channel_handle, &info_))) {
+      continue;
     }
-    return false;
+
+    if (channel_handle.name.empty()) {
+      // We got an invalid handle.  Either the plugin couldn't be found (which
+      // shouldn't happen, since if we got here the plugin should exist) or the
+      // plugin crashed on initialization.
+      if (!info_.path.empty()) {
+        render_view_->PluginCrashed(info_.path);
+        LOG(ERROR) << "Plug-in crashed on start";
+
+        // Return true so that the plugin widget is created and we can paint the
+        // crashed plugin there.
+        return true;
+      }
+      LOG(ERROR) << "Plug-in couldn't be found";
+      return false;
+    }
+
+    channel_host =
+        PluginChannelHost::GetPluginChannelHost(
+            channel_handle, ChildProcess::current()->io_message_loop_proxy());
+    if (!channel_host.get()) {
+      LOG(ERROR) << "Couldn't get PluginChannelHost";
+      continue;
+    }
+#if defined(OS_MACOSX)
+    track_nested_removes.reset();
+#endif
+
+    result = channel_host->Send(new PluginMsg_CreateInstance(
+        mime_type_, &instance_id));
+    if (!result) {
+      LOG(ERROR) << "Couldn't send PluginMsg_CreateInstance";
+      continue;
+    }
   }
 
-  scoped_refptr<PluginChannelHost> channel_host(
-      PluginChannelHost::GetPluginChannelHost(
-          channel_handle, ChildProcess::current()->io_message_loop_proxy()));
-  if (!channel_host.get())
-    return false;
-
-  int instance_id;
-  bool result = channel_host->Send(new PluginMsg_CreateInstance(
-      mime_type_, &instance_id));
+  // Failed too often, give up.
   if (!result)
     return false;
 
@@ -337,6 +374,9 @@ bool WebPluginDelegateProxy::Initialize(
   result = false;
   IPC::Message* msg = new PluginMsg_Init(instance_id_, params, &result);
   Send(msg);
+
+  if (!result)
+    LOG(ERROR) << "PluginMsg_Init returned false";
 
   render_view_->RegisterPluginDelegate(this);
 
@@ -475,7 +515,8 @@ void WebPluginDelegateProxy::OnChannelError() {
 
 static void CopyTransportDIBHandleForMessage(
     const TransportDIB::Handle& handle_in,
-    TransportDIB::Handle* handle_out) {
+    TransportDIB::Handle* handle_out,
+    base::ProcessId peer_pid) {
 #if defined(OS_MACOSX)
   // On Mac, TransportDIB::Handle is typedef'ed to FileDescriptor, and
   // FileDescriptor message fields needs to remain valid until the message is
@@ -485,6 +526,12 @@ static void CopyTransportDIBHandleForMessage(
     return;
   }
   handle_out->auto_close = true;
+#elif defined(OS_WIN)
+  // On Windows we need to duplicate the handle for the plugin process.
+  *handle_out = NULL;
+  content::BrokerDuplicateHandle(handle_in, peer_pid, handle_out,
+                                 FILE_MAP_READ | FILE_MAP_WRITE, 0);
+  DCHECK(*handle_out != NULL);
 #else
   // Don't need to do anything special for other platforms.
   *handle_out = handle_in;
@@ -511,15 +558,18 @@ void WebPluginDelegateProxy::SendUpdateGeometry(
   {
     if (transport_stores_[0].dib.get())
       CopyTransportDIBHandleForMessage(transport_stores_[0].dib->handle(),
-                                       &param.windowless_buffer0);
+                                       &param.windowless_buffer0,
+                                       channel_host_->peer_pid());
 
     if (transport_stores_[1].dib.get())
       CopyTransportDIBHandleForMessage(transport_stores_[1].dib->handle(),
-                                       &param.windowless_buffer1);
+                                       &param.windowless_buffer1,
+                                       channel_host_->peer_pid());
 
     if (background_store_.dib.get())
       CopyTransportDIBHandleForMessage(background_store_.dib->handle(),
-                                       &param.background_buffer);
+                                       &param.background_buffer,
+                                       channel_host_->peer_pid());
   }
 
   IPC::Message* msg;
@@ -541,10 +591,11 @@ void WebPluginDelegateProxy::UpdateGeometry(const gfx::Rect& window_rect,
   // window_rect becomes either a window in native windowing system
   // coords, or a backing buffer.  In either case things will go bad
   // if the rectangle is very large.
-  if (window_rect.width() < 0  || window_rect.width() > (1<<15) ||
-      window_rect.height() < 0 || window_rect.height() > (1<<15) ||
-      // Clip to 8m pixels; we know this won't overflow due to above checks.
-      window_rect.width() * window_rect.height() > (8<<20)) {
+  if (window_rect.width() < 0  || window_rect.width() > kMaxPluginSideLength ||
+      window_rect.height() < 0 || window_rect.height() > kMaxPluginSideLength ||
+      // We know this won't overflow due to above checks.
+      static_cast<uint32>(window_rect.width()) *
+          static_cast<uint32>(window_rect.height()) > kMaxPluginSize) {
     return;
   }
 
@@ -678,7 +729,6 @@ void WebPluginDelegateProxy::Paint(WebKit::WebCanvas* canvas,
     return;
 
   // We're using the native OS APIs from here on out.
-#if WEBKIT_USING_SKIA
   if (!skia::SupportsPlatformPaint(canvas)) {
     // TODO(alokp): Implement this path.
     // This block will only get hit with --enable-accelerated-drawing flag.
@@ -691,9 +741,6 @@ void WebPluginDelegateProxy::Paint(WebKit::WebCanvas* canvas,
   skia::ScopedPlatformPaint scoped_platform_paint(canvas);
   gfx::NativeDrawingContext context =
       scoped_platform_paint.GetPlatformSurface();
-#elif WEBKIT_USING_CG
-  gfx::NativeDrawingContext context = canvas;
-#endif
 
   gfx::Rect offset_rect = rect;
   offset_rect.Offset(-plugin_rect_.x(), -plugin_rect_.y());
@@ -813,10 +860,11 @@ bool WebPluginDelegateProxy::BackgroundChanged(
   DCHECK_EQ(cairo_image_surface_get_format(page_surface), CAIRO_FORMAT_ARGB32);
 
   // Transform context coordinates into surface coordinates.
-  double page_x_double = rect.x();
-  double page_y_double = rect.y();
-  cairo_user_to_device(context, &page_x_double, &page_y_double);
-  gfx::Rect full_content_rect(0, 0,
+  double page_x_double = 0;
+  double page_y_double = 0;
+  cairo_device_to_user(context, &page_x_double, &page_y_double);
+  gfx::Rect full_content_rect(static_cast<int>(page_x_double),
+                              static_cast<int>(page_y_double),
                               cairo_image_surface_get_width(page_surface),
                               cairo_image_surface_get_height(page_surface));
 #endif
@@ -849,8 +897,8 @@ bool WebPluginDelegateProxy::BackgroundChanged(
   cairo_surface_flush(page_surface);
   const unsigned char* page_bytes = cairo_image_surface_get_data(page_surface);
   int page_stride = cairo_image_surface_get_stride(page_surface);
-  int page_start_x = static_cast<int>(page_x_double);
-  int page_start_y = static_cast<int>(page_y_double);
+  int page_start_x = content_rect.x() - static_cast<int>(page_x_double);
+  int page_start_y = content_rect.y() - static_cast<int>(page_y_double);
 
   skia::ScopedPlatformPaint scoped_platform_paint(
       background_store_.canvas.get());
@@ -1309,7 +1357,7 @@ void WebPluginDelegateProxy::OnBindFakePluginWindowHandle(bool opaque) {
 // the plug-in. Returns true if it successfully sets the window handle on the
 // plug-in.
 bool WebPluginDelegateProxy::BindFakePluginWindowHandle(bool opaque) {
-  gfx::PluginWindowHandle fake_window = NULL;
+  gfx::PluginWindowHandle fake_window = gfx::kNullPluginWindow;
   if (render_view_)
     fake_window = render_view_->AllocateFakePluginWindowHandle(opaque, false);
   // If we aren't running on 10.6, this allocation will fail.
@@ -1407,7 +1455,7 @@ void WebPluginDelegateProxy::OnAcceleratedSurfaceBuffersSwapped(
 
 void WebPluginDelegateProxy::OnAcceleratedPluginEnabledRendering() {
   uses_compositor_ = true;
-  OnSetWindow(NULL);
+  OnSetWindow(gfx::kNullPluginWindow);
 }
 
 void WebPluginDelegateProxy::OnAcceleratedPluginAllocatedIOSurface(

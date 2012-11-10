@@ -9,11 +9,13 @@ namespace master_preferences {
   const char kAltShortcutText[] = "alternate_shortcut_text";
   const char kAutoLaunchChrome[] = "auto_launch_chrome";
   const char kChrome[] = "chrome";
+  const char kChromeAppHost[] = "app_host";
   const char kChromeFrame[] = "chrome_frame";
   const char kChromeFrameReadyMode[] = "ready_mode";
   const char kChromeShortcutIconIndex[] = "chrome_shortcut_icon_index";
   const char kCreateAllShortcuts[] = "create_all_shortcuts";
   const char kDisableLogging[] = "disable_logging";
+  const char kDistroDict[] = "distribution";
   const char kDistroImportBookmarksPref[] = "import_bookmarks";
   const char kDistroImportBookmarksFromFilePref[] =
       "import_bookmarks_from_file";
@@ -24,13 +26,14 @@ namespace master_preferences {
   const char kDistroShowWelcomePage[] = "show_welcome_page";
   const char kDistroSkipFirstRunPref[] = "skip_first_run_ui";
   const char kDistroSuppressFirstRunBubble[] = "suppress_first_run_bubble";
-  const char kDoNotCreateShortcuts[] = "do_not_create_shortcuts";
   const char kDoNotLaunchChrome[] = "do_not_launch_chrome";
   const char kDoNotRegisterForUpdateLaunch[] =
       "do_not_register_for_update_launch";
   const char kLogFile[] = "log_file";
   const char kMakeChromeDefault[] = "make_chrome_default";
   const char kMakeChromeDefaultForUser[] = "make_chrome_default_for_user";
+  const char kSuppressFirstRunDefaultBrowserPrompt[] =
+      "suppress_first_run_default_browser_prompt";
   const char kMsi[] = "msi";
   const char kMultiInstall[] = "multi_install";
   const char kRequireEula[] = "require_eula";

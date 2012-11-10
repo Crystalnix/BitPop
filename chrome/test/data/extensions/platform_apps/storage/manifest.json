@@ -1,12 +1,10 @@
 {
-  "name": "Platform App Test: loalStorage/WebSQL are disallowed",
-  "platform_app": true,
+  "name": "Platform App Test: localStorage/WebSQL are disallowed",
   "version": "1",
   "manifest_version": 2,
   "app": {
-    "launch": {
-      "local_path": "main.html",
-      "container": "shell"
+    "background": {
+      "scripts": ["test.js"]
     }
   }
 }

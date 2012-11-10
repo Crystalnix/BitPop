@@ -14,12 +14,12 @@
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_quota_client.h"
+#include "webkit/fileapi/file_system_task_runners.h"
 #include "webkit/fileapi/file_system_types.h"
 #include "webkit/fileapi/file_system_usage_cache.h"
 #include "webkit/fileapi/file_system_util.h"
 #include "webkit/fileapi/mock_file_system_options.h"
 #include "webkit/fileapi/obfuscated_file_util.h"
-#include "webkit/fileapi/quota_file_util.h"
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/quota/quota_types.h"
 
@@ -48,8 +48,7 @@ class FileSystemQuotaClientTest : public testing::Test {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
     file_system_context_ =
         new FileSystemContext(
-            base::MessageLoopProxy::current(),
-            base::MessageLoopProxy::current(),
+            FileSystemTaskRunners::CreateMockTaskRunners(),
             NULL, NULL,
             data_dir_.path(),
             CreateDisallowFileAccessOptions());
@@ -66,7 +65,6 @@ class FileSystemQuotaClientTest : public testing::Test {
  protected:
   FileSystemQuotaClient* NewQuotaClient(bool is_incognito) {
     return new FileSystemQuotaClient(
-        base::MessageLoopProxy::current(),
         file_system_context_, is_incognito);
   }
 
@@ -119,64 +117,52 @@ class FileSystemQuotaClientTest : public testing::Test {
                    weak_factory_.GetWeakPtr()));
   }
 
-  FilePath GetOriginBasePath(const std::string& origin_url,
-                             quota::StorageType type) {
-    // Note: this test assumes sandbox_provider impl is used for
-    // temporary and persistent filesystem.
-    return file_system_context_->sandbox_provider()->
-        GetBaseDirectoryForOriginAndType(
-            GURL(origin_url), QuotaStorageTypeToFileSystemType(type), true);
-  }
-
-  FileSystemOperationContext* CreateFileSystemOperationContext(
-      FileSystemFileUtil* file_util,
-      const FilePath& virtual_path,
-      const std::string& origin_url,
-      quota::StorageType type) {
+  FileSystemOperationContext* CreateFileSystemOperationContext() {
     FileSystemOperationContext* context =
-        new FileSystemOperationContext(file_system_context_, file_util);
-    context->set_src_origin_url(GURL(origin_url));
-    context->set_src_type(QuotaStorageTypeToFileSystemType(type));
+        new FileSystemOperationContext(file_system_context_);
     context->set_allowed_bytes_growth(100000000);
     return context;
   }
 
-  bool CreateFileSystemDirectory(const FilePath& path,
+  bool CreateFileSystemDirectory(const FilePath& file_path,
                                  const std::string& origin_url,
-                                 quota::StorageType type) {
-    FileSystemFileUtil* file_util = file_system_context_->
-        GetFileUtil(QuotaStorageTypeToFileSystemType(type));
+                                 quota::StorageType storage_type) {
+    FileSystemType type = QuotaStorageTypeToFileSystemType(storage_type);
+    FileSystemFileUtil* file_util = file_system_context_->GetFileUtil(type);
 
+    FileSystemURL url(GURL(origin_url), type, file_path);
     scoped_ptr<FileSystemOperationContext> context(
-        CreateFileSystemOperationContext(file_util, path, origin_url, type));
+        CreateFileSystemOperationContext());
 
     base::PlatformFileError result =
-        file_util->CreateDirectory(context.get(), path, false, false);
+        file_util->CreateDirectory(context.get(), url, false, false);
     if (result != base::PLATFORM_FILE_OK)
       return false;
     return true;
   }
 
-  bool CreateFileSystemFile(const FilePath& path,
+  bool CreateFileSystemFile(const FilePath& file_path,
                             int64 file_size,
                             const std::string& origin_url,
-                            quota::StorageType type) {
-    if (path.empty())
+                            quota::StorageType storage_type) {
+    if (file_path.empty())
       return false;
 
+    FileSystemType type = QuotaStorageTypeToFileSystemType(storage_type);
     FileSystemFileUtil* file_util = file_system_context_->
-        sandbox_provider()->GetFileUtil();
+        sandbox_provider()->GetFileUtil(type);
 
+    FileSystemURL url(GURL(origin_url), type, file_path);
     scoped_ptr<FileSystemOperationContext> context(
-        CreateFileSystemOperationContext(file_util, path, origin_url, type));
+        CreateFileSystemOperationContext());
 
     bool created = false;
     if (base::PLATFORM_FILE_OK !=
-        file_util->EnsureFileExists(context.get(), path, &created))
+        file_util->EnsureFileExists(context.get(), url, &created))
       return false;
     EXPECT_TRUE(created);
     if (base::PLATFORM_FILE_OK !=
-        file_util->Truncate(context.get(), path, file_size))
+        file_util->Truncate(context.get(), url, file_size))
       return false;
     return true;
   }
@@ -263,6 +249,7 @@ class FileSystemQuotaClientTest : public testing::Test {
   }
 
   ScopedTempDir data_dir_;
+  MessageLoop message_loop_;
   scoped_refptr<FileSystemContext> file_system_context_;
   base::WeakPtrFactory<FileSystemQuotaClientTest> weak_factory_;
   int64 usage_;

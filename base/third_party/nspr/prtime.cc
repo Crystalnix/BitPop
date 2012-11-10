@@ -74,6 +74,8 @@
 #elif defined(OS_ANDROID)
 #include <ctype.h>
 #include "base/os_compat_android.h"  // For timegm()
+#elif defined(OS_NACL)
+#include "base/os_compat_nacl.h"  // For timegm()
 #endif
 #include <errno.h>  /* for EINVAL */
 #include <time.h>
@@ -1041,8 +1043,9 @@ PR_ParseTimeString(
           /* "-" is ignored at the beginning of a token if we have not yet
                  parsed a year (e.g., the second "-" in "30-AUG-1966"), or if
                  the character after the dash is not a digit. */         
-          if (*rest == '-' && ((rest > string && isalpha(rest[-1]) && year < 0)
-              || rest[1] < '0' || rest[1] > '9'))
+          if (*rest == '-' && ((rest > string &&
+              isalpha((unsigned char)rest[-1]) && year < 0) ||
+              rest[1] < '0' || rest[1] > '9'))
                 {
                   rest++;
                   goto SKIP_MORE;

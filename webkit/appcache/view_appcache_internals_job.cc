@@ -19,6 +19,7 @@
 #include "base/utf_string_conversions.h"
 #include "net/base/escape.h"
 #include "net/base/io_buffer.h"
+#include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_simple_job.h"
@@ -275,7 +276,7 @@ void EmitHexDump(const char *buf, size_t buf_len, size_t total_len,
   out->append("</pre>");
 }
 
-GURL DecodeBase64URL(const std::string base64) {
+GURL DecodeBase64URL(const std::string& base64) {
   std::string url;
   base::Base64Decode(base64, &url);
   return GURL(url);
@@ -312,6 +313,7 @@ class BaseInternalsJob : public net::URLRequestSimpleJob {
  protected:
   BaseInternalsJob(net::URLRequest* request, AppCacheService* service)
       : URLRequestSimpleJob(request), appcache_service_(service) {}
+  virtual ~BaseInternalsJob() {}
 
   AppCacheService* appcache_service_;
 };
@@ -333,9 +335,10 @@ class MainPageJob : public BaseInternalsJob {
   }
 
   // Produces a page containing the listing
-  virtual bool GetData(std::string* mime_type,
-                       std::string* charset,
-                       std::string* out) const {
+  virtual int GetData(std::string* mime_type,
+                      std::string* charset,
+                      std::string* out,
+                      const net::CompletionCallback& callback) const OVERRIDE {
     mime_type->assign("text/html");
     charset->assign("UTF-8");
 
@@ -360,7 +363,7 @@ class MainPageJob : public BaseInternalsJob {
       EmitAppCacheInfoVector(base_url, appcache_service_, appcaches, out);
     }
     EmitPageEnd(out);
-    return true;
+    return net::OK;
   }
 
  private:
@@ -383,10 +386,11 @@ class RedirectToMainPageJob : public BaseInternalsJob {
   RedirectToMainPageJob(net::URLRequest* request, AppCacheService* service)
       : BaseInternalsJob(request, service) {}
 
-  virtual bool GetData(std::string* mime_type,
-                       std::string* charset,
-                       std::string* data) const {
-    return true;  // IsRedirectResponse induces a redirect.
+  virtual int GetData(std::string* mime_type,
+                      std::string* charset,
+                      std::string* data,
+                      const net::CompletionCallback& callback) const OVERRIDE {
+    return net::OK;  // IsRedirectResponse induces a redirect.
   }
 
   virtual bool IsRedirectResponse(GURL* location, int* http_status_code) {
@@ -394,6 +398,9 @@ class RedirectToMainPageJob : public BaseInternalsJob {
     *http_status_code = 307;
     return true;
   }
+
+ protected:
+  virtual ~RedirectToMainPageJob() {}
 };
 
 // Job that removes an appcache and then redirects back to the main page.
@@ -443,9 +450,10 @@ class ViewAppCacheJob : public BaseInternalsJob,
   }
 
   // Produces a page containing the entries listing.
-  virtual bool GetData(std::string* mime_type,
-                       std::string* charset,
-                       std::string* out) const {
+  virtual int GetData(std::string* mime_type,
+                      std::string* charset,
+                      std::string* out,
+                      const net::CompletionCallback& callback) const OVERRIDE {
     mime_type->assign("text/html");
     charset->assign("UTF-8");
     out->clear();
@@ -462,7 +470,7 @@ class ViewAppCacheJob : public BaseInternalsJob,
                                      out);
     }
     EmitPageEnd(out);
-    return true;
+    return net::OK;
   }
 
  private:
@@ -515,9 +523,10 @@ class ViewEntryJob : public BaseInternalsJob,
   }
 
   // Produces a page containing the response headers and data.
-  virtual bool GetData(std::string* mime_type,
-                       std::string* charset,
-                       std::string* out) const {
+  virtual int GetData(std::string* mime_type,
+                      std::string* charset,
+                      std::string* out,
+                      const net::CompletionCallback& callback) const OVERRIDE {
     mime_type->assign("text/html");
     charset->assign("UTF-8");
     out->clear();
@@ -540,7 +549,7 @@ class ViewEntryJob : public BaseInternalsJob,
       out->append("Failed to read response headers and data.<br>");
     }
     EmitPageEnd(out);
-    return true;
+    return net::OK;
   }
 
  private:

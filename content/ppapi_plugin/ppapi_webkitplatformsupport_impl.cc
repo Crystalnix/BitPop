@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@
 #include "build/build_config.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/child_thread.h"
-#include "ipc/ipc_sync_message_filter.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSerializedScriptValue.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 
@@ -21,9 +20,12 @@
 #elif defined(OS_MACOSX)
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/mac/WebSandboxSupport.h"
 #elif defined(OS_POSIX)
+#if !defined(OS_ANDROID)
 #include "content/common/child_process_sandbox_support_impl_linux.h"
+#endif
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/linux/WebFontFamily.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/linux/WebSandboxSupport.h"
+
 #endif
 
 using WebKit::WebSandboxSupport;
@@ -67,7 +69,7 @@ bool PpapiWebKitPlatformSupportImpl::SandboxSupport::ensureFontLoaded(
   LOGFONT logfont;
   GetObject(font, sizeof(LOGFONT), &logfont);
 
-  return ChildThread::current()->sync_message_filter()->Send(
+  return ChildThread::current()->Send(
       new ChildProcessHostMsg_PreCacheFont(logfont));
 }
 
@@ -81,6 +83,24 @@ bool PpapiWebKitPlatformSupportImpl::SandboxSupport::loadFont(
   // RendererWebKitClientImpl does and request that the browser load the font.
   NOTIMPLEMENTED();
   return false;
+}
+
+#elif defined(OS_ANDROID)
+
+// TODO(jrg): resolve (and implement?) PPAPI SandboxSupport for Android.
+
+void
+PpapiWebKitPlatformSupportImpl::SandboxSupport::getFontFamilyForCharacters(
+    const WebUChar* characters,
+    size_t num_characters,
+    const char* preferred_locale,
+    WebKit::WebFontFamily* family) {
+  NOTIMPLEMENTED();
+}
+
+void PpapiWebKitPlatformSupportImpl::SandboxSupport::getRenderStyleForStrike(
+    const char* family, int sizeAndStyle, WebKit::WebFontRenderStyle* out) {
+  NOTIMPLEMENTED();
 }
 
 #elif defined(OS_POSIX)
@@ -242,7 +262,7 @@ int PpapiWebKitPlatformSupportImpl::databaseDeleteFile(
 
 void PpapiWebKitPlatformSupportImpl::createIDBKeysFromSerializedValuesAndKeyPath(
     const WebKit::WebVector<WebKit::WebSerializedScriptValue>& values,
-    const WebKit::WebString& keyPath,
+    const WebKit::WebIDBKeyPath& keyPath,
     WebKit::WebVector<WebKit::WebIDBKey>& keys) {
   NOTREACHED();
 }
@@ -251,7 +271,7 @@ WebKit::WebSerializedScriptValue
 PpapiWebKitPlatformSupportImpl::injectIDBKeyIntoSerializedValue(
     const WebKit::WebIDBKey& key,
     const WebKit::WebSerializedScriptValue& value,
-    const WebKit::WebString& keyPath) {
+    const WebKit::WebIDBKeyPath& keyPath) {
   NOTREACHED();
   return WebKit::WebSerializedScriptValue();
 }

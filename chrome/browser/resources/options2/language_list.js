@@ -1,25 +1,25 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  const ArrayDataModel = cr.ui.ArrayDataModel;
-  const DeletableItem = options.DeletableItem;
-  const DeletableItemList = options.DeletableItemList;
-  const List = cr.ui.List;
-  const ListItem = cr.ui.ListItem;
-  const ListSingleSelectionModel = cr.ui.ListSingleSelectionModel;
+  /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
+  /** @const */ var DeletableItem = options.DeletableItem;
+  /** @const */ var DeletableItemList = options.DeletableItemList;
+  /** @const */ var List = cr.ui.List;
+  /** @const */ var ListItem = cr.ui.ListItem;
+  /** @const */ var ListSingleSelectionModel = cr.ui.ListSingleSelectionModel;
 
   /**
    * Creates a new Language list item.
-   * @param {String} languageCode the languageCode.
+   * @param {Object} languageInfo The information of the language.
    * @constructor
    * @extends {DeletableItem.ListItem}
    */
-  function LanguageListItem(languageCode) {
+  function LanguageListItem(languageInfo) {
     var el = cr.doc.createElement('li');
     el.__proto__ = LanguageListItem.prototype;
-    el.languageCode_ = languageCode;
+    el.language_ = languageInfo;
     el.decorate();
     return el;
   };
@@ -38,17 +38,16 @@ cr.define('options', function() {
     decorate: function() {
       DeletableItem.prototype.decorate.call(this);
 
-      var languageCode = this.languageCode_;
+      var languageCode = this.language_.code;
       var languageOptions = options.LanguageOptions.getInstance();
       this.deletable = languageOptions.languageIsDeletable(languageCode);
       this.languageCode = languageCode;
       this.languageName = cr.doc.createElement('div');
       this.languageName.className = 'language-name';
-      this.languageName.textContent =
-          LanguageList.getDisplayNameFromLanguageCode(languageCode);
+      this.languageName.dir = this.language_.textDirection;
+      this.languageName.textContent = this.language_.displayName;
       this.contentElement.appendChild(this.languageName);
-      this.title =
-          LanguageList.getNativeDisplayNameFromLanguageCode(languageCode);
+      this.title = this.language_.nativeDisplayName;
       this.draggable = true;
     },
   };
@@ -62,40 +61,21 @@ cr.define('options', function() {
   var LanguageList = cr.ui.define('list');
 
   /**
-   * Gets display name from the given language code.
+   * Gets information of a language from the given language code.
    * @param {string} languageCode Language code (ex. "fr").
    */
-  LanguageList.getDisplayNameFromLanguageCode = function(languageCode) {
-    // Build the language code to display name dictionary at first time.
-    if (!this.languageCodeToDisplayName_) {
-      this.languageCodeToDisplayName_ = {};
-      var languageList = templateData.languageList;
+  LanguageList.getLanguageInfoFromLanguageCode = function(languageCode) {
+    // Build the language code to language info dictionary at first time.
+    if (!this.languageCodeToLanguageInfo_) {
+      this.languageCodeToLanguageInfo_ = {};
+      var languageList = loadTimeData.getValue('languageList');
       for (var i = 0; i < languageList.length; i++) {
-        var language = languageList[i];
-        this.languageCodeToDisplayName_[language.code] = language.displayName;
+        var languageInfo = languageList[i];
+        this.languageCodeToLanguageInfo_[languageInfo.code] = languageInfo;
       }
     }
 
-    return this.languageCodeToDisplayName_[languageCode];
-  }
-
-  /**
-   * Gets native display name from the given language code.
-   * @param {string} languageCode Language code (ex. "fr").
-   */
-  LanguageList.getNativeDisplayNameFromLanguageCode = function(languageCode) {
-    // Build the language code to display name dictionary at first time.
-    if (!this.languageCodeToNativeDisplayName_) {
-      this.languageCodeToNativeDisplayName_ = {};
-      var languageList = templateData.languageList;
-      for (var i = 0; i < languageList.length; i++) {
-        var language = languageList[i];
-        this.languageCodeToNativeDisplayName_[language.code] =
-            language.nativeDisplayName;
-      }
-    }
-
-    return this.languageCodeToNativeDisplayName_[languageCode];
+    return this.languageCodeToLanguageInfo_[languageCode];
   }
 
   /**
@@ -105,7 +85,7 @@ cr.define('options', function() {
   LanguageList.isValidLanguageCode = function(languageCode) {
     // Having the display name for the language code means that the
     // language code is valid.
-    if (LanguageList.getDisplayNameFromLanguageCode(languageCode)) {
+    if (LanguageList.getLanguageInfoFromLanguageCode(languageCode)) {
       return true;
     }
     return false;
@@ -153,7 +133,8 @@ cr.define('options', function() {
     },
 
     createItem: function(languageCode) {
-      return new LanguageListItem(languageCode);
+      languageInfo = LanguageList.getLanguageInfoFromLanguageCode(languageCode);
+      return new LanguageListItem(languageInfo);
     },
 
     /*
@@ -230,7 +211,7 @@ cr.define('options', function() {
      * @param {Event} e The drop or dragover event.
      * @private
      */
-    getTargetFromDropEvent_ : function(e) {
+    getTargetFromDropEvent_: function(e) {
       var target = e.target;
       // e.target may be an inner element of the list item
       while (target != null && !(target instanceof ListItem)) {
@@ -321,7 +302,7 @@ cr.define('options', function() {
      * @param {Event} e The dragleave event
      * @private
      */
-    handleDragLeave_ : function(e) {
+    handleDragLeave_: function(e) {
       this.hideDropMarker_();
     },
 
@@ -331,15 +312,15 @@ cr.define('options', function() {
      * @param {string} pos 'below' or 'above'
      * @private
      */
-    showDropMarker_ : function(target, pos) {
+    showDropMarker_: function(target, pos) {
       window.clearTimeout(this.hideDropMarkerTimer_);
       var marker = $('language-options-list-dropmarker');
       var rect = target.getBoundingClientRect();
       var markerHeight = 8;
       if (pos == 'above') {
-        marker.style.top = (rect.top - markerHeight/2) + 'px';
+        marker.style.top = (rect.top - markerHeight / 2) + 'px';
       } else {
-        marker.style.top = (rect.bottom - markerHeight/2) + 'px';
+        marker.style.top = (rect.bottom - markerHeight / 2) + 'px';
       }
       marker.style.width = rect.width + 'px';
       marker.style.left = rect.left + 'px';
@@ -350,7 +331,7 @@ cr.define('options', function() {
      * Hides the drop marker.
      * @private
      */
-    hideDropMarker_ : function() {
+    hideDropMarker_: function() {
       // Hide the marker in a timeout to reduce flickering as we move between
       // valid drop targets.
       window.clearTimeout(this.hideDropMarkerTimer_);
@@ -407,7 +388,7 @@ cr.define('options', function() {
         this.selectionModel.selectedIndex = originalSelectedIndex;
         // The lead index should be updated too.
         this.selectionModel.leadIndex = originalSelectedIndex;
-      } else if (this.dataModel.length > 0){
+      } else if (this.dataModel.length > 0) {
         // Otherwise, select the first item if it's not empty.
         // Note that ListSingleSelectionModel won't select an item
         // automatically, hence we manually select the first item here.

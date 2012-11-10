@@ -13,35 +13,27 @@
 #include "media/audio/audio_device_name.h"
 #include "media/audio/audio_parameters.h"
 
-class AudioInputStream;
-class AudioOutputStream;
 class MessageLoop;
+
 namespace base {
 class MessageLoopProxy;
 }
 
+namespace media {
+
+class AudioInputStream;
+class AudioOutputStream;
+
 // Manages all audio resources. In particular it owns the AudioOutputStream
 // objects. Provides some convenience functions that avoid the need to provide
 // iterators over the existing streams.
-// TODO(tommi): Make the manager non-refcounted when it's safe to do so.
-// -> Bug 107087.
-class MEDIA_EXPORT AudioManager
-    : public base::RefCountedThreadSafe<AudioManager> {
+class MEDIA_EXPORT AudioManager {
  public:
-  AudioManager();
-
-#ifndef NDEBUG
-  // Allow base classes in debug builds to override the reference counting
-  // functions.  This allows us to protect against regressions and enforce
-  // correct usage.  The default implementation just calls the base class.
-  virtual void AddRef() const;
-  virtual void Release() const;
-#endif
+  virtual ~AudioManager();
 
   // Use to construct the audio manager.
-  // NOTE: There should only be one instance.  If you try to create more than
-  // one instance, it will hit a CHECK().
-  static scoped_refptr<AudioManager> Create();
+  // NOTE: There should only be one instance.
+  static AudioManager* Create();
 
   // Returns true if the OS reports existence of audio devices. This does not
   // guarantee that the existing devices support all formats and sample rates.
@@ -69,8 +61,7 @@ class MEDIA_EXPORT AudioManager
   // Appends a list of available input devices. It is not guaranteed that
   // all the devices in the list support all formats and sample rates for
   // recording.
-  virtual void GetAudioInputDeviceNames(
-      media::AudioDeviceNames* device_names) = 0;
+  virtual void GetAudioInputDeviceNames(AudioDeviceNames* device_names) = 0;
 
   // Factory for all the supported stream formats. |params| defines parameters
   // of the audio stream to be created.
@@ -127,11 +118,15 @@ class MEDIA_EXPORT AudioManager
   virtual scoped_refptr<base::MessageLoopProxy> GetMessageLoop() = 0;
 
  protected:
+  AudioManager();
+
   // Called from Create() to initialize the instance.
   virtual void Init() = 0;
 
-  friend class base::RefCountedThreadSafe<AudioManager>;
-  virtual ~AudioManager();
+ private:
+  DISALLOW_COPY_AND_ASSIGN(AudioManager);
 };
+
+}  // namespace media
 
 #endif  // MEDIA_AUDIO_AUDIO_MANAGER_H_

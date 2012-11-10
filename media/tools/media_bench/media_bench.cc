@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -228,12 +228,11 @@ int main(int argc, const char** argv) {
 #endif
 
   // Register FFmpeg and attempt to open file.
-  avcodec_init();
   av_log_set_level(verbose_level);
   av_register_all();
   av_register_protocol2(&kFFmpegFileProtocol, sizeof(kFFmpegFileProtocol));
   AVFormatContext* format_context = NULL;
-  // av_open_input_file wants a char*, which can't work with wide paths.
+  // avformat_open_input() wants a char*, which can't work with wide paths.
   // So we assume ASCII on Windows.  On other platforms we can pass the
   // path bytes through verbatim.
 #if defined(OS_WIN)
@@ -241,8 +240,8 @@ int main(int argc, const char** argv) {
 #else
   const std::string& string_path = in_path.value();
 #endif
-  int result = av_open_input_file(&format_context, string_path.c_str(),
-                                  NULL, 0, NULL);
+  int result = avformat_open_input(&format_context, string_path.c_str(),
+                                   NULL, NULL);
   if (result < 0) {
     switch (result) {
       case AVERROR(EINVAL):
@@ -279,7 +278,7 @@ int main(int argc, const char** argv) {
   }
 
   // Parse a little bit of the stream to fill out the format context.
-  if (av_find_stream_info(format_context) < 0) {
+  if (avformat_find_stream_info(format_context, NULL) < 0) {
     std::cerr << "Error: Could not find stream info for "
               << in_path.value() << std::endl;
     return 1;
@@ -341,7 +340,7 @@ int main(int argc, const char** argv) {
   }
   if (error_correction) {
     codec_context->error_concealment = FF_EC_GUESS_MVS | FF_EC_DEBLOCK;
-    codec_context->error_recognition = FF_ER_CAREFUL;
+    codec_context->err_recognition = AV_EF_CAREFUL;
   }
 
   // Initialize threaded decode.
@@ -350,7 +349,7 @@ int main(int argc, const char** argv) {
   }
 
   // Initialize our codec.
-  if (avcodec_open(codec_context, codec) < 0) {
+  if (avcodec_open2(codec_context, codec, NULL) < 0) {
     std::cerr << "Error: Could not open codec "
               << (codec_context->codec ? codec_context->codec->name : "(NULL)")
               << " for " << in_path.value() << std::endl;
@@ -358,13 +357,18 @@ int main(int argc, const char** argv) {
   }
 
   // Buffer used for audio decoding.
-  scoped_ptr_malloc<int16, media::ScopedPtrAVFree> samples(
-      reinterpret_cast<int16*>(av_malloc(AVCODEC_MAX_AUDIO_FRAME_SIZE)));
+  scoped_ptr_malloc<AVFrame, media::ScopedPtrAVFree> audio_frame(
+      avcodec_alloc_frame());
+  if (!audio_frame.get()) {
+    std::cerr << "Error: avcodec_alloc_frame for "
+              << in_path.value() << std::endl;
+    return 1;
+  }
 
   // Buffer used for video decoding.
-  scoped_ptr_malloc<AVFrame, media::ScopedPtrAVFree> frame(
+  scoped_ptr_malloc<AVFrame, media::ScopedPtrAVFree> video_frame(
       avcodec_alloc_frame());
-  if (!frame.get()) {
+  if (!video_frame.get()) {
     std::cerr << "Error: avcodec_alloc_frame for "
               << in_path.value() << std::endl;
     return 1;
@@ -406,20 +410,29 @@ int main(int argc, const char** argv) {
     if (packet.stream_index == target_stream) {
       int result = -1;
       if (target_codec == AVMEDIA_TYPE_AUDIO) {
-        int size_out = AVCODEC_MAX_AUDIO_FRAME_SIZE;
+        int size_out = 0;
+        int got_audio = 0;
+
+        avcodec_get_frame_defaults(audio_frame.get());
 
         base::TimeTicks decode_start = base::TimeTicks::HighResNow();
-        result = avcodec_decode_audio3(codec_context, samples.get(), &size_out,
-                                       &packet);
+        result = avcodec_decode_audio4(codec_context, audio_frame.get(),
+                                       &got_audio, &packet);
         base::TimeDelta delta = base::TimeTicks::HighResNow() - decode_start;
 
-        if (size_out) {
+        if (got_audio) {
+          size_out = av_samples_get_buffer_size(
+              NULL, codec_context->channels, audio_frame->nb_samples,
+              codec_context->sample_fmt, 1);
+        }
+
+        if (got_audio && size_out) {
           decode_times.push_back(delta.InMillisecondsF());
           ++frames;
           read_result = 0;  // Force continuation.
 
           if (output) {
-            if (fwrite(samples.get(), 1, size_out, output) !=
+            if (fwrite(audio_frame->data[0], 1, size_out, output) !=
                 static_cast<size_t>(size_out)) {
               std::cerr << "Error: Could not write "
                         << size_out << " bytes for " << in_path.value()
@@ -429,7 +442,7 @@ int main(int argc, const char** argv) {
           }
 
           const uint8* u8_samples =
-              reinterpret_cast<const uint8*>(samples.get());
+              reinterpret_cast<const uint8*>(audio_frame->data[0]);
           if (hash_djb2) {
             hash_value = DJB2Hash(u8_samples, size_out, hash_value);
           }
@@ -443,8 +456,10 @@ int main(int argc, const char** argv) {
       } else if (target_codec == AVMEDIA_TYPE_VIDEO) {
         int got_picture = 0;
 
+        avcodec_get_frame_defaults(video_frame.get());
+
         base::TimeTicks decode_start = base::TimeTicks::HighResNow();
-        result = avcodec_decode_video2(codec_context, frame.get(),
+        result = avcodec_decode_video2(codec_context, video_frame.get(),
                                        &got_picture, &packet);
         base::TimeDelta delta = base::TimeTicks::HighResNow() - decode_start;
 
@@ -454,8 +469,8 @@ int main(int argc, const char** argv) {
           read_result = 0;  // Force continuation.
 
           for (int plane = 0; plane < 3; ++plane) {
-            const uint8* source = frame->data[plane];
-            const size_t source_stride = frame->linesize[plane];
+            const uint8* source = video_frame->data[plane];
+            const size_t source_stride = video_frame->linesize[plane];
             size_t bytes_per_line = codec_context->width;
             size_t copy_lines = codec_context->height;
             if (plane != 0) {
@@ -533,7 +548,7 @@ int main(int argc, const char** argv) {
   if (codec_context)
     avcodec_close(codec_context);
   if (format_context)
-    av_close_input_file(format_context);
+    avformat_close_input(&format_context);
 
   // Calculate the sum of times.  Note that some of these may be zero.
   double sum = 0;

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,12 +8,14 @@
 
 #include "base/compiler_specific.h"
 #include "base/file_path.h"
+#include "base/thread_task_runner_handle.h"
+#include "base/threading/worker_pool.h"
 #include "net/base/cert_verifier.h"
-#include "net/base/cookie_monster.h"
-#include "net/base/default_origin_bound_cert_store.h"
+#include "net/base/default_server_bound_cert_store.h"
 #include "net/base/host_resolver.h"
-#include "net/base/origin_bound_cert_service.h"
+#include "net/base/server_bound_cert_service.h"
 #include "net/base/ssl_config_service_defaults.h"
+#include "net/cookies/cookie_monster.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_server_properties_impl.h"
@@ -49,8 +51,9 @@ void TestShellRequestContext::Init(
     net::HttpCache::Mode cache_mode,
     bool no_proxy) {
   storage_.set_cookie_store(new net::CookieMonster(NULL, NULL));
-  storage_.set_origin_bound_cert_service(new net::OriginBoundCertService(
-      new net::DefaultOriginBoundCertStore(NULL)));
+  storage_.set_server_bound_cert_service(new net::ServerBoundCertService(
+      new net::DefaultServerBoundCertStore(NULL),
+      base::WorkerPool::GetTaskRunner(true)));
 
   // hard-code A-L and A-C for test shells
   set_accept_language("en-us,en");
@@ -71,13 +74,13 @@ void TestShellRequestContext::Init(
   // Use the system proxy settings.
   scoped_ptr<net::ProxyConfigService> proxy_config_service(
       net::ProxyService::CreateSystemProxyConfigService(
-          MessageLoop::current(), NULL));
+          base::ThreadTaskRunnerHandle::Get(), NULL));
 #endif
   storage_.set_host_resolver(
       net::CreateSystemHostResolver(net::HostResolver::kDefaultParallelism,
                                     net::HostResolver::kDefaultRetryAttempts,
                                     NULL));
-  storage_.set_cert_verifier(new net::CertVerifier);
+  storage_.set_cert_verifier(net::CertVerifier::CreateDefault());
   storage_.set_proxy_service(net::ProxyService::CreateUsingSystemProxyResolver(
       proxy_config_service.release(), 0, NULL));
   storage_.set_ssl_config_service(
@@ -95,16 +98,17 @@ void TestShellRequestContext::Init(
   net::HttpCache* cache =
       new net::HttpCache(host_resolver(),
                          cert_verifier(),
-                         origin_bound_cert_service(),
-                         NULL, // transport_security_state
+                         server_bound_cert_service(),
+                         NULL, /* transport_security_state */
                          proxy_service(),
-                         "",  // ssl_session_cache_shard
+                         "",  /* ssl_session_cache_shard */
                          ssl_config_service(),
                          http_auth_handler_factory(),
-                         NULL,  // network_delegate
+                         NULL,  /* network_delegate */
                          http_server_properties(),
-                         NULL,  // netlog
-                         backend);
+                         NULL,  /* netlog */
+                         backend,
+                         "" /* trusted_spdy_proxy */ );
 
   cache->set_mode(cache_mode);
   storage_.set_http_transaction_factory(cache);
@@ -124,9 +128,7 @@ void TestShellRequestContext::Init(
           SimpleResourceLoaderBridge::GetIoThread()));
   job_factory->SetProtocolHandler(
       "filesystem",
-      fileapi::CreateFileSystemProtocolHandler(
-          file_system_context_.get(),
-          SimpleResourceLoaderBridge::GetIoThread()));
+      fileapi::CreateFileSystemProtocolHandler(file_system_context_.get()));
   storage_.set_job_factory(job_factory);
 }
 

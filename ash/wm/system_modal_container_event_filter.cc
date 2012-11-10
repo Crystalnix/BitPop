@@ -11,22 +11,22 @@ namespace ash {
 namespace internal {
 
 SystemModalContainerEventFilter::SystemModalContainerEventFilter(
-    aura::Window* container,
     SystemModalContainerEventFilterDelegate* delegate)
-    : EventFilter(container),
-      delegate_(delegate) {
+    : delegate_(delegate) {
 }
 
 SystemModalContainerEventFilter::~SystemModalContainerEventFilter() {
 }
 
-bool SystemModalContainerEventFilter::PreHandleKeyEvent(aura::Window* target,
-                                            aura::KeyEvent* event) {
+bool SystemModalContainerEventFilter::PreHandleKeyEvent(
+    aura::Window* target,
+    aura::KeyEvent* event) {
   return !delegate_->CanWindowReceiveEvents(target);
 }
 
-bool SystemModalContainerEventFilter::PreHandleMouseEvent(aura::Window* target,
-                                              aura::MouseEvent* event) {
+bool SystemModalContainerEventFilter::PreHandleMouseEvent(
+    aura::Window* target,
+    aura::MouseEvent* event) {
   return !delegate_->CanWindowReceiveEvents(target);
 }
 

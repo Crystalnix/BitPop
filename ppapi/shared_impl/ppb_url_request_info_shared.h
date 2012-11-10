@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,7 +32,7 @@ struct PPAPI_SHARED_EXPORT PPB_URLRequestInfo_Data {
     // may still be NULL in some cases, such as deserialization errors.
     //
     // This is a bit tricky. In the plugin side of the proxy, both the file ref
-    // and the file_ref_host_resource will be set and valid. The scoped_ptr
+    // and the file_ref_host_resource will be set and valid. The scoped_refptr
     // ensures that the resource is alive for as long as the BodyItem is.
     //
     // When we deserialize this in the renderer, only the
@@ -73,9 +73,11 @@ struct PPAPI_SHARED_EXPORT PPB_URLRequestInfo_Data {
   bool allow_credentials;
 
   // Similar to the custom referrer (above), but for custom content transfer
-  // encoding.
+  // encoding and custom user agent, respectively.
   bool has_custom_content_transfer_encoding;
   std::string custom_content_transfer_encoding;
+  bool has_custom_user_agent;
+  std::string custom_user_agent;
 
   int32_t prefetch_buffer_upper_threshold;
   int32_t prefetch_buffer_lower_threshold;
@@ -90,11 +92,9 @@ class PPAPI_SHARED_EXPORT PPB_URLRequestInfo_Shared
     : public ::ppapi::Resource,
       public ::ppapi::thunk::PPB_URLRequestInfo_API {
  public:
-  // This constructor initializes the object as a proxy object with the given
-  // host resource.
-  PPB_URLRequestInfo_Shared(const HostResource& host_resource,
-                     const PPB_URLRequestInfo_Data& data);
-
+  PPB_URLRequestInfo_Shared(ResourceObjectType type,
+                            PP_Instance instance,
+                            const PPB_URLRequestInfo_Data& data);
   ~PPB_URLRequestInfo_Shared();
 
   // Resource overrides.

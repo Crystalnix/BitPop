@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_INSTALLER_UTIL_PRODUCT_H_
 #define CHROME_INSTALLER_UTIL_PRODUCT_H_
-#pragma once
 
 #include <set>
 #include <string>
@@ -57,6 +56,14 @@ class Product {
     return distribution_->GetType() == BrowserDistribution::CHROME_FRAME;
   }
 
+  bool is_chrome_app_host() const {
+    return distribution_->GetType() == BrowserDistribution::CHROME_APP_HOST;
+  }
+
+  bool is_chrome_binaries() const {
+    return distribution_->GetType() == BrowserDistribution::CHROME_BINARIES;
+  }
+
   bool HasOption(const std::wstring& option) const {
     return options_.find(option) != options_.end();
   }
@@ -69,11 +76,15 @@ class Product {
       return options_.erase(option) != 0;
   }
 
-  // Returns the path to the directory that holds the user data.  This is always
-  // inside "Users\<user>\Local Settings".  Note that this is the default user
-  // data directory and does not take into account that it can be overriden with
-  // a command line parameter.
-  FilePath GetUserDataPath() const;
+  // Returns the path(s) to the directory that holds the user data (primary
+  // and, if applicable to |dist|, alternate).  This is always inside a user's
+  // local application data folder (e.g., "AppData\Local or "Local
+  // Settings\Application Data" in %USERPROFILE%). Note that these are the
+  // defaults and do not take into account that they can be overriden with a
+  // command line parameter.  |paths| may be empty on return, but is guaranteed
+  // not to contain empty paths otherwise. If more than one path is returned,
+  // they are guaranteed to be siblings.
+  void GetUserDataPaths(std::vector<FilePath>* paths) const;
 
   // Launches Chrome without waiting for it to exit.
   bool LaunchChrome(const FilePath& application_path) const;
@@ -103,8 +114,8 @@ class Product {
   // See ProductOperations::AddComDllList.
   void AddComDllList(std::vector<FilePath>* com_dll_list) const;
 
-  // See ProductOperations::AppendUninstallFlags.
-  void AppendUninstallFlags(CommandLine* command_line) const;
+  // See ProductOperations::AppendProductFlags.
+  void AppendProductFlags(CommandLine* command_line) const;
 
   // See ProductOperations::AppendRenameFlags.
   void AppendRenameFlags(CommandLine* command_line) const;

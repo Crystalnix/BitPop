@@ -21,17 +21,17 @@
 #include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/logging.h"
+#include "base/mac/authorization_util.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_logging.h"
 #import "base/mac/mac_util.h"
+#include "base/mac/scoped_authorizationref.h"
 #include "base/mac/scoped_cftyperef.h"
+#include "base/mac/scoped_ioobject.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
-#include "chrome/browser/mac/authorization_util.h"
 #include "chrome/browser/mac/dock.h"
-#include "chrome/browser/mac/scoped_authorizationref.h"
-#include "chrome/browser/mac/scoped_ioobject.h"
 #import "chrome/browser/mac/keystone_glue.h"
 #include "chrome/browser/mac/relauncher.h"
 #include "chrome/common/chrome_constants.h"
@@ -82,17 +82,18 @@ io_service_t CopyHDIXDriveServiceForMedia(io_service_t media) {
                                     &iterator_ref);
   if (kr != KERN_SUCCESS) {
     LOG(ERROR) << "IORegistryEntryCreateIterator: " << kr;
-    return NULL;
+    return IO_OBJECT_NULL;
   }
-  ScopedIOObject<io_iterator_t> iterator(iterator_ref);
-  iterator_ref = NULL;
+  base::mac::ScopedIOObject<io_iterator_t> iterator(iterator_ref);
+  iterator_ref = IO_OBJECT_NULL;
 
   // Look at each of the ancestor services, beginning with the parent,
   // iterating all the way up to the device tree's root. If any ancestor
   // service matches the class used for disk images, the media resides on a
   // disk image, and the disk image file's path can be determined by examining
   // the image-path property.
-  for (ScopedIOObject<io_service_t> ancestor(IOIteratorNext(iterator));
+  for (base::mac::ScopedIOObject<io_service_t> ancestor(
+           IOIteratorNext(iterator));
        ancestor;
        ancestor.reset(IOIteratorNext(iterator))) {
     if (IOObjectConformsTo(ancestor, disk_image_class)) {
@@ -101,7 +102,7 @@ io_service_t CopyHDIXDriveServiceForMedia(io_service_t media) {
   }
 
   // The media does not reside on a disk image.
-  return NULL;
+  return IO_OBJECT_NULL;
 }
 
 // Given an io_service_t (expected to be of class IOMedia), determines whether
@@ -113,7 +114,8 @@ bool MediaResidesOnDiskImage(io_service_t media, std::string* image_path) {
     image_path->clear();
   }
 
-  ScopedIOObject<io_service_t> hdix_drive(CopyHDIXDriveServiceForMedia(media));
+  base::mac::ScopedIOObject<io_service_t> hdix_drive(
+      CopyHDIXDriveServiceForMedia(media));
   if (!hdix_drive) {
     return false;
   }
@@ -210,16 +212,17 @@ bool IsPathOnReadOnlyDiskImage(const char path[],
     LOG(ERROR) << "IOServiceGetMatchingServices: " << kr;
     return false;
   }
-  ScopedIOObject<io_iterator_t> iterator(iterator_ref);
-  iterator_ref = NULL;
+  base::mac::ScopedIOObject<io_iterator_t> iterator(iterator_ref);
+  iterator_ref = IO_OBJECT_NULL;
 
   // There needs to be exactly one matching service.
-  ScopedIOObject<io_service_t> media(IOIteratorNext(iterator));
+  base::mac::ScopedIOObject<io_service_t> media(IOIteratorNext(iterator));
   if (!media) {
     LOG(ERROR) << "IOIteratorNext: no service";
     return false;
   }
-  ScopedIOObject<io_service_t> unexpected_service(IOIteratorNext(iterator));
+  base::mac::ScopedIOObject<io_service_t> unexpected_service(
+      IOIteratorNext(iterator));
   if (unexpected_service) {
     LOG(ERROR) << "IOIteratorNext: too many services";
     return false;
@@ -279,7 +282,7 @@ AuthorizationRef MaybeShowAuthorizationDialog(NSString* application_directory) {
   NSString* prompt = l10n_util::GetNSStringFWithFixup(
       IDS_INSTALL_FROM_DMG_AUTHENTICATION_PROMPT,
       l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
-  return authorization_util::AuthorizationCreateToRunAsRoot(
+  return base::mac::AuthorizationCreateToRunAsRoot(
       base::mac::NSToCFCast(prompt));
 }
 
@@ -292,7 +295,7 @@ bool InstallFromDiskImage(AuthorizationRef authorization_arg,
                           NSString* installer_path,
                           NSString* source_path,
                           NSString* target_path) {
-  ScopedAuthorizationRef authorization(authorization_arg);
+  base::mac::ScopedAuthorizationRef authorization(authorization_arg);
   authorization_arg = NULL;
   int exit_status;
   if (authorization) {
@@ -301,7 +304,7 @@ bool InstallFromDiskImage(AuthorizationRef authorization_arg,
     const char* target_path_c = [target_path fileSystemRepresentation];
     const char* arguments[] = {source_path_c, target_path_c, NULL};
 
-    OSStatus status = authorization_util::ExecuteWithPrivilegesAndWait(
+    OSStatus status = base::mac::ExecuteWithPrivilegesAndWait(
         authorization,
         installer_path_c,
         kAuthorizationFlagDefaults,
@@ -448,7 +451,7 @@ bool MaybeInstallFromDiskImage() {
     return false;
   }
 
-  ScopedAuthorizationRef authorization(
+  base::mac::ScopedAuthorizationRef authorization(
       MaybeShowAuthorizationDialog(application_directory));
   // authorization will be NULL if it's deemed unnecessary or if
   // authentication fails.  In either case, try to install without privilege
@@ -626,7 +629,7 @@ void EjectAndTrashDiskImage(const std::string& dmg_bsd_device_name) {
     return;
   }
 
-  ScopedIOObject<io_service_t> media(DADiskCopyIOMedia(disk));
+  base::mac::ScopedIOObject<io_service_t> media(DADiskCopyIOMedia(disk));
   if (!media.get()) {
     LOG(ERROR) << "DADiskCopyIOMedia";
     return;

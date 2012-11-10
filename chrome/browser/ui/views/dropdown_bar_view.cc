@@ -8,15 +8,15 @@
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources_standard.h"
+#include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/views/background.h"
 #include "ui/views/border.h"
 #include "ui/views/painter.h"
-#include "ui/views/background.h"
 #include "ui/views/widget/widget.h"
 
 namespace {
@@ -30,8 +30,8 @@ const int kAnimatingEdgeHeight = 5;
 class DropdownBackground : public views::Background {
  public:
   explicit DropdownBackground(BrowserView* browser,
-                              const SkBitmap* left_alpha_mask,
-                              const SkBitmap* right_alpha_mask);
+                              const gfx::ImageSkia* left_alpha_mask,
+                              const gfx::ImageSkia* right_alpha_mask);
   virtual ~DropdownBackground() {}
 
   // Overridden from views::Background.
@@ -39,15 +39,15 @@ class DropdownBackground : public views::Background {
 
  private:
   BrowserView* browser_view_;
-  const SkBitmap* left_alpha_mask_;
-  const SkBitmap* right_alpha_mask_;
+  const gfx::ImageSkia* left_alpha_mask_;
+  const gfx::ImageSkia* right_alpha_mask_;
 
   DISALLOW_COPY_AND_ASSIGN(DropdownBackground);
 };
 
 DropdownBackground::DropdownBackground(BrowserView* browser_view,
-                                     const SkBitmap* left_alpha_mask,
-                                     const SkBitmap* right_alpha_mask)
+                                     const gfx::ImageSkia* left_alpha_mask,
+                                     const gfx::ImageSkia* right_alpha_mask)
     : browser_view_(browser_view),
       left_alpha_mask_(left_alpha_mask),
       right_alpha_mask_(right_alpha_mask) {
@@ -56,14 +56,14 @@ DropdownBackground::DropdownBackground(BrowserView* browser_view,
 void DropdownBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
   // Find the offset from which to tile the toolbar background image.
   // First, get the origin with respect to the screen.
-  gfx::Point origin = view->GetWidget()->GetWindowScreenBounds().origin();
+  gfx::Point origin = view->GetWidget()->GetWindowBoundsInScreen().origin();
   // Now convert from screen to parent coordinates.
   view->ConvertPointToView(NULL, browser_view_, &origin);
   // Finally, calculate the background image tiling offset.
   origin = browser_view_->OffsetPointForToolbarBackgroundImage(origin);
 
   ui::ThemeProvider* tp = view->GetThemeProvider();
-  SkBitmap background = *tp->GetBitmapNamed(IDR_THEME_TOOLBAR);
+  gfx::ImageSkia background = *tp->GetImageSkiaNamed(IDR_THEME_TOOLBAR);
 
   int left_edge_width = left_alpha_mask_->width();
   int right_edge_width = right_alpha_mask_->width();
@@ -77,12 +77,12 @@ void DropdownBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
   SkPaint paint;
   paint.setXfermodeMode(SkXfermode::kDstIn_Mode);
   // Draw left edge.
-  canvas->DrawBitmapInt(*left_alpha_mask_, 0, 0, left_edge_width, mask_height,
+  canvas->DrawImageInt(*left_alpha_mask_, 0, 0, left_edge_width, mask_height,
       0, 0, left_edge_width, height, false, paint);
 
   // Draw right edge.
   int x_right_edge = view->bounds().width() - right_edge_width;
-  canvas->DrawBitmapInt(*right_alpha_mask_, 0, 0, right_edge_width,
+  canvas->DrawImageInt(*right_alpha_mask_, 0, 0, right_edge_width,
       mask_height, x_right_edge, 0, right_edge_width, height, false, paint);
 }
 
@@ -110,12 +110,14 @@ void DropdownBarView::OnPaint(gfx::Canvas* canvas) {
   OnPaintBorder(canvas);
 
   if (animation_offset() > 0) {
-     gfx::CanvasSkia animating_edges(
-         gfx::Size(bounds().width(), kAnimatingEdgeHeight), false);
+     gfx::Canvas animating_edges(
+         gfx::Size(bounds().width(), kAnimatingEdgeHeight),
+         canvas->scale_factor(),
+         false);
      canvas->Translate(bounds().origin());
      OnPaintBackground(&animating_edges);
      OnPaintBorder(&animating_edges);
-     canvas->DrawBitmapInt(animating_edges.ExtractBitmap(), bounds().x(),
+     canvas->DrawImageInt(animating_edges.ExtractImageRep(), bounds().x(),
          animation_offset());
   }
 }
@@ -123,17 +125,17 @@ void DropdownBarView::OnPaint(gfx::Canvas* canvas) {
 ////////////////////////////////////////////////////////////////////////////////
 // DropDownBarView, protected:
 
-void DropdownBarView::SetBackground(const SkBitmap* left_alpha_mask,
-                                    const SkBitmap* right_alpha_mask) {
+void DropdownBarView::SetBackground(const gfx::ImageSkia* left_alpha_mask,
+                                    const gfx::ImageSkia* right_alpha_mask) {
   set_background(new DropdownBackground(host()->browser_view(), left_alpha_mask,
       right_alpha_mask));
 }
 
-void DropdownBarView::SetBorder(int left_border_bitmap_id,
-                                int middle_border_bitmap_id,
-                                int right_border_bitmap_id) {
-  int border_bitmap_ids[3] = {left_border_bitmap_id, middle_border_bitmap_id,
-      right_border_bitmap_id};
+void DropdownBarView::SetBorder(int left_border_image_id,
+                                int middle_border_image_id,
+                                int right_border_image_id) {
+  int border_image_ids[3] = {left_border_image_id, middle_border_image_id,
+      right_border_image_id};
   set_border(views::Border::CreateBorderPainter(
-      new views::HorizontalPainter(border_bitmap_ids)));
+      new views::HorizontalPainter(border_image_ids)));
 }

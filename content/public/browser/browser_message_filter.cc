@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "base/process.h"
 #include "base/process_util.h"
+#include "base/task_runner.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/result_codes.h"
 #include "ipc/ipc_sync_message.h"
@@ -19,10 +20,6 @@ namespace content {
 
 BrowserMessageFilter::BrowserMessageFilter()
     : channel_(NULL), peer_handle_(base::kNullProcessHandle) {
-}
-
-BrowserMessageFilter::~BrowserMessageFilter() {
-  base::CloseProcessHandle(peer_handle_);
 }
 
 void BrowserMessageFilter::OnFilterAdded(IPC::Channel* channel) {
@@ -37,6 +34,32 @@ void BrowserMessageFilter::OnChannelConnected(int32 peer_pid) {
   if (!base::OpenProcessHandle(peer_pid, &peer_handle_)) {
     NOTREACHED();
   }
+}
+
+bool BrowserMessageFilter::OnMessageReceived(const IPC::Message& message) {
+  BrowserThread::ID thread = BrowserThread::IO;
+  OverrideThreadForMessage(message, &thread);
+
+  if (thread == BrowserThread::IO) {
+    scoped_refptr<base::TaskRunner> runner =
+        OverrideTaskRunnerForMessage(message);
+    if (runner) {
+      runner->PostTask(FROM_HERE,
+          base::Bind(base::IgnoreResult(&BrowserMessageFilter::DispatchMessage),
+                     this, message));
+      return true;
+    }
+    return DispatchMessage(message);
+  }
+
+  if (thread == BrowserThread::UI && !CheckCanDispatchOnUI(message, this))
+    return true;
+
+  BrowserThread::PostTask(
+      thread, FROM_HERE,
+      base::Bind(base::IgnoreResult(&BrowserMessageFilter::DispatchMessage),
+                 this, message));
+  return true;
 }
 
 bool BrowserMessageFilter::Send(IPC::Message* message) {
@@ -69,42 +92,13 @@ void BrowserMessageFilter::OverrideThreadForMessage(const IPC::Message& message,
                                                     BrowserThread::ID* thread) {
 }
 
-bool BrowserMessageFilter::OnMessageReceived(const IPC::Message& message) {
-  BrowserThread::ID thread = BrowserThread::IO;
-  OverrideThreadForMessage(message, &thread);
-  if (thread == BrowserThread::IO)
-    return DispatchMessage(message);
-
-  if (thread == BrowserThread::UI && !CheckCanDispatchOnUI(message, this))
-    return true;
-
-  BrowserThread::PostTask(
-      thread, FROM_HERE,
-      base::Bind(base::IgnoreResult(&BrowserMessageFilter::DispatchMessage),
-                 this, message));
-  return true;
-}
-
-bool BrowserMessageFilter::DispatchMessage(const IPC::Message& message) {
-  bool message_was_ok = true;
-  bool rv = OnMessageReceived(message, &message_was_ok);
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO) || rv) <<
-      "Must handle messages that were dispatched to another thread!";
-  if (!message_was_ok) {
-    content::RecordAction(UserMetricsAction("BadMessageTerminate_BMF"));
-    BadMessageReceived();
-  }
-
-  return rv;
-}
-
-void BrowserMessageFilter::BadMessageReceived() {
-  base::KillProcess(peer_handle(), content::RESULT_CODE_KILLED_BAD_MESSAGE,
-                    false);
+base::TaskRunner* BrowserMessageFilter::OverrideTaskRunnerForMessage(
+    const IPC::Message& message) {
+  return NULL;
 }
 
 bool BrowserMessageFilter::CheckCanDispatchOnUI(const IPC::Message& message,
-                                                IPC::Message::Sender* sender) {
+                                                IPC::Sender* sender) {
 #if defined(OS_WIN) && !defined(USE_AURA)
   // On Windows there's a potential deadlock with sync messsages going in
   // a circle from browser -> plugin -> renderer -> browser.
@@ -126,6 +120,28 @@ bool BrowserMessageFilter::CheckCanDispatchOnUI(const IPC::Message& message,
   }
 #endif
   return true;
+}
+
+void BrowserMessageFilter::BadMessageReceived() {
+  base::KillProcess(peer_handle(), content::RESULT_CODE_KILLED_BAD_MESSAGE,
+                    false);
+}
+
+BrowserMessageFilter::~BrowserMessageFilter() {
+  base::CloseProcessHandle(peer_handle_);
+}
+
+bool BrowserMessageFilter::DispatchMessage(const IPC::Message& message) {
+  bool message_was_ok = true;
+  bool rv = OnMessageReceived(message, &message_was_ok);
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO) || rv) <<
+      "Must handle messages that were dispatched to another thread!";
+  if (!message_was_ok) {
+    content::RecordAction(UserMetricsAction("BadMessageTerminate_BMF"));
+    BadMessageReceived();
+  }
+
+  return rv;
 }
 
 }  // namespace content

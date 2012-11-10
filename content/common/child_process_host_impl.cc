@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,7 @@
 #include "content/public/common/child_process_host_delegate.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
+#include "ipc/ipc_channel.h"
 #include "ipc/ipc_logging.h"
 
 #if defined(OS_LINUX)
@@ -75,6 +76,8 @@ FilePath TransformPathForFeature(const FilePath& path,
 #endif  // OS_MACOSX
 
 namespace content {
+
+int ChildProcessHostImpl::kInvalidChildProcessId = -1;
 
 // static
 ChildProcessHost* ChildProcessHost::Create(ChildProcessHostDelegate* delegate) {
@@ -155,7 +158,7 @@ void ChildProcessHostImpl::ForceShutdown() {
 }
 
 std::string ChildProcessHostImpl::CreateChannel() {
-  channel_id_ = GenerateRandomChannelID(this);
+  channel_id_ = IPC::Channel::GenerateVerifiedChannelID(std::string());
   channel_.reset(new IPC::Channel(
       channel_id_, IPC::Channel::MODE_SERVER, this));
   if (!channel_->Connect())
@@ -205,22 +208,16 @@ void ChildProcessHostImpl::AllocateSharedMemory(
   shared_buf.GiveToProcess(child_process_handle, shared_memory_handle);
 }
 
-std::string ChildProcessHostImpl::GenerateRandomChannelID(void* instance) {
-  // Note: the string must start with the current process id, this is how
-  // child processes determine the pid of the parent.
-  // Build the channel ID.  This is composed of a unique identifier for the
-  // parent browser process, an identifier for the child instance, and a random
-  // component. We use a random component so that a hacked child process can't
-  // cause denial of service by causing future named pipe creation to fail.
-  return base::StringPrintf("%d.%p.%d",
-                            base::GetCurrentProcId(), instance,
-                            base::RandInt(0, std::numeric_limits<int>::max()));
-}
-
 int ChildProcessHostImpl::GenerateChildProcessUniqueId() {
   // This function must be threadsafe.
+  //
+  // TODO(ajwong): Why not StaticAtomicSequenceNumber?
   static base::subtle::Atomic32 last_unique_child_id = 0;
-  return base::subtle::NoBarrier_AtomicIncrement(&last_unique_child_id, 1);
+  int id = base::subtle::NoBarrier_AtomicIncrement(&last_unique_child_id, 1);
+
+  CHECK_NE(kInvalidChildProcessId, id);
+
+  return id;
 }
 
 bool ChildProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {

@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_NON_CLIENT_FRAME_VIEW_H_
 #define CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_NON_CLIENT_FRAME_VIEW_H_
-#pragma once
 
 #include "base/memory/scoped_ptr.h"
 #include "ui/views/window/non_client_view.h"
@@ -17,6 +16,19 @@ class BrowserView;
 // Browser-specific methods.
 class BrowserNonClientFrameView : public views::NonClientFrameView {
  public:
+  // Insets around the tabstrip.
+  struct TabStripInsets {
+    TabStripInsets() : top(0), left(0), right(0) {}
+    TabStripInsets(int top, int left, int right)
+        : top(top),
+          left(left),
+          right(right) {}
+
+    int top;
+    int left;
+    int right;
+  };
+
   BrowserNonClientFrameView(BrowserFrame* frame, BrowserView* browser_view);
   virtual ~BrowserNonClientFrameView();
 
@@ -25,22 +37,17 @@ class BrowserNonClientFrameView : public views::NonClientFrameView {
   // Returns the bounds within which the TabStrip should be laid out.
   virtual gfx::Rect GetBoundsForTabStrip(views::View* tabstrip) const = 0;
 
-  // Returns the y coordinate within the window at which the horizontal TabStrip
-  // begins, or (in vertical tabs mode) would begin.  If |restored| is true,
-  // this is calculated as if we were in restored mode regardless of the current
-  // mode.  This is used to correctly align theme images.
-  virtual int GetHorizontalTabStripVerticalOffset(bool restored) const = 0;
+  // Returns the TabStripInsets within the window at which the tab strip is
+  // positioned. If |as_restored| is true, this is calculated as if we were in
+  // restored mode regardless of the current mode.
+  virtual TabStripInsets GetTabStripInsets(bool force_restored) const = 0;
 
   // Updates the throbber.
   virtual void UpdateThrobber(bool running) = 0;
 
-#if defined(OS_WIN)
-  // Overriden from views::View. For some reason just the do-nothing override
-  // causes view's gtk version to crash. TODO(cpu): remove ifdef when
-  // views:gtk is gone.
+  // Overriden from views::View.
   virtual void VisibilityChanged(views::View* starting_from,
                                  bool is_visible) OVERRIDE;
-#endif
 
  protected:
   BrowserView* browser_view() const { return browser_view_; }
@@ -61,12 +68,12 @@ class BrowserNonClientFrameView : public views::NonClientFrameView {
   scoped_ptr<AvatarMenuButton> avatar_button_;
 };
 
-namespace browser {
+namespace chrome {
 
 // Provided by a browser_non_client_frame_view_factory_*.cc implementation
 BrowserNonClientFrameView* CreateBrowserNonClientFrameView(
     BrowserFrame* frame, BrowserView* browser_view);
 
-}  // browser
+}  // namespace chrome
 
 #endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_NON_CLIENT_FRAME_VIEW_H_

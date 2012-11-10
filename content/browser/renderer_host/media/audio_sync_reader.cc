@@ -12,7 +12,9 @@
 #include "media/audio/audio_buffers_state.h"
 #include "media/audio/audio_util.h"
 
+#if defined(OS_WIN)
 const int kMinIntervalBetweenReadCallsInMs = 10;
+#endif
 
 AudioSyncReader::AudioSyncReader(base::SharedMemory* shared_memory)
     : shared_memory_(shared_memory) {
@@ -36,7 +38,7 @@ void AudioSyncReader::UpdatePendingBytes(uint32 bytes) {
         shared_memory_,
         media::PacketSizeSizeInBytes(shared_memory_->created_size()));
   }
-  base::AutoLock auto_lock(lock_);
+
   if (socket_.get()) {
     socket_->Send(&bytes, sizeof(bytes));
   }
@@ -84,17 +86,16 @@ uint32 AudioSyncReader::Read(void* data, uint32 size) {
 }
 
 void AudioSyncReader::Close() {
-  base::AutoLock auto_lock(lock_);
   if (socket_.get()) {
     socket_->Close();
-    socket_.reset(NULL);
   }
 }
 
 bool AudioSyncReader::Init() {
-  socket_.reset(new base::SyncSocket());
-  foreign_socket_.reset(new base::SyncSocket());
-  return base::SyncSocket::CreatePair(socket_.get(), foreign_socket_.get());
+  socket_.reset(new base::CancelableSyncSocket());
+  foreign_socket_.reset(new base::CancelableSyncSocket());
+  return base::CancelableSyncSocket::CreatePair(socket_.get(),
+                                                foreign_socket_.get());
 }
 
 #if defined(OS_WIN)

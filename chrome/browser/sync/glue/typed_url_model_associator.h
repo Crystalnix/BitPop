@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_SYNC_GLUE_TYPED_URL_MODEL_ASSOCIATOR_H_
 #define CHROME_BROWSER_SYNC_GLUE_TYPED_URL_MODEL_ASSOCIATOR_H_
-#pragma once
 
 #include <map>
 #include <string>
@@ -15,8 +14,9 @@
 #include "base/compiler_specific.h"
 #include "base/string16.h"
 #include "chrome/browser/history/history_types.h"
+#include "chrome/browser/sync/glue/data_type_error_handler.h"
 #include "chrome/browser/sync/glue/model_associator.h"
-#include "chrome/browser/sync/protocol/typed_url_specifics.pb.h"
+#include "sync/protocol/typed_url_specifics.pb.h"
 
 class GURL;
 class MessageLoop;
@@ -27,7 +27,7 @@ class HistoryBackend;
 class URLRow;
 };
 
-namespace sync_api {
+namespace syncer {
 class WriteNode;
 class WriteTransaction;
 };
@@ -41,30 +41,30 @@ extern const char kTypedUrlTag[];
 // * Persisting model associations and loading them back.
 // We do not check if we have local data before this run; we always
 // merge and sync.
-class TypedUrlModelAssociator
-  : public AbortablePerDataTypeAssociatorInterface<std::string, std::string> {
+class TypedUrlModelAssociator : public AssociatorInterface {
  public:
-  typedef std::vector<history::URLRow> TypedUrlVector;
   typedef std::vector<std::pair<history::URLID, history::URLRow> >
       TypedUrlUpdateVector;
   typedef std::vector<std::pair<GURL, std::vector<history::VisitInfo> > >
       TypedUrlVisitVector;
 
-  static syncable::ModelType model_type() { return syncable::TYPED_URLS; }
+  static syncer::ModelType model_type() { return syncer::TYPED_URLS; }
   TypedUrlModelAssociator(ProfileSyncService* sync_service,
-                          history::HistoryBackend* history_backend);
+                          history::HistoryBackend* history_backend,
+                          DataTypeErrorHandler* error_handler);
   virtual ~TypedUrlModelAssociator();
 
-  // PerDataTypeAssociatorInterface implementation.
+  // AssociatorInterface implementation.
   //
   // Iterates through the sync model looking for matched pairs of items.
-  virtual bool AssociateModels(SyncError* error) OVERRIDE;
-
-  // Delete all typed url nodes.
-  bool DeleteAllNodes(sync_api::WriteTransaction* trans);
+  virtual syncer::SyncError AssociateModels() OVERRIDE;
 
   // Clears all associations.
-  virtual bool DisassociateModels(SyncError* error) OVERRIDE;
+  virtual syncer::SyncError DisassociateModels() OVERRIDE;
+
+  // Called from the main thread, to abort the currently active model
+  // association (for example, if we are shutting down).
+  virtual void AbortAssociation() OVERRIDE;
 
   // The has_nodes out param is true if the sync model has nodes other
   // than the permanent tagged nodes.
@@ -72,28 +72,10 @@ class TypedUrlModelAssociator
 
   virtual bool CryptoReadyIfNecessary() OVERRIDE;
 
-  // Not implemented.
-  virtual const std::string* GetChromeNodeFromSyncId(int64 sync_id) OVERRIDE;
+  // Delete all typed url nodes.
+  bool DeleteAllNodes(syncer::WriteTransaction* trans);
 
-  // Not implemented.
-  virtual bool InitSyncNodeFromChromeId(const std::string& node_id,
-                                        sync_api::BaseNode* sync_node) OVERRIDE;
-
-  // Returns the sync id for the given typed_url name, or sync_api::kInvalidId
-  // if the typed_url name is not associated to any sync id.
-  virtual int64 GetSyncIdFromChromeId(const std::string& node_id) OVERRIDE;
-
-  // Associates the given typed_url name with the given sync id.
-  virtual void Associate(const std::string* node, int64 sync_id) OVERRIDE;
-
-  // Remove the association that corresponds to the given sync id.
-  virtual void Disassociate(int64 sync_id) OVERRIDE;
-
-  // Returns whether a node with the given permanent tag was found and update
-  // |sync_id| with that node's id.
-  virtual bool GetSyncIdForTaggedNode(const std::string& tag, int64* sync_id);
-
-  bool WriteToHistoryBackend(const TypedUrlVector* new_urls,
+  void WriteToHistoryBackend(const history::URLRows* new_urls,
                              const TypedUrlUpdateVector* updated_urls,
                              const TypedUrlVisitVector* new_visits,
                              const history::VisitVector* deleted_visits);
@@ -105,12 +87,11 @@ class TypedUrlModelAssociator
   // visits to add to/remove from the history DB, and adds a new entry to either
   // |updated_urls| or |new_urls| depending on whether the URL already existed
   // in the history DB.
-  // Returns false if we encountered an error trying to access the history DB.
-  bool UpdateFromSyncDB(const sync_pb::TypedUrlSpecifics& typed_url,
+  void UpdateFromSyncDB(const sync_pb::TypedUrlSpecifics& typed_url,
                         TypedUrlVisitVector* visits_to_add,
                         history::VisitVector* visits_to_remove,
                         TypedUrlUpdateVector* updated_urls,
-                        TypedUrlVector* new_urls);
+                        history::URLRows* new_urls);
 
   // Given a TypedUrlSpecifics object, removes all visits that are older than
   // the current expiration time. Note that this can result in having no visits
@@ -118,6 +99,8 @@ class TypedUrlModelAssociator
   sync_pb::TypedUrlSpecifics FilterExpiredVisits(
       const sync_pb::TypedUrlSpecifics& specifics);
 
+  // Returns the percentage of DB accesses that have resulted in an error.
+  int GetErrorPercentage() const;
 
   // Bitfield returned from MergeUrls to specify the result of the merge.
   typedef uint32 MergeResult;
@@ -143,7 +126,7 @@ class TypedUrlModelAssociator
                                std::vector<history::VisitInfo>* new_visits);
   static void WriteToSyncNode(const history::URLRow& url,
                               const history::VisitVector& visits,
-                              sync_api::WriteNode* node);
+                              syncer::WriteNode* node);
 
   // Diffs the set of visits between the history DB and the sync DB, using the
   // sync DB as the canonical copy. Result is the set of |new_visits| and
@@ -161,16 +144,15 @@ class TypedUrlModelAssociator
                                        const history::VisitVector& visits,
                                        sync_pb::TypedUrlSpecifics* specifics);
 
-  // Helper function that fetches visits from the history DB corresponding to
-  // the passed URL. This function compensates for the fact that the history DB
-  // has rather poor data integrity (duplicate visits, visit timestamps that
-  // don't match the last_visit timestamp, huge data sets that exhaust memory
-  // when fetched, etc) by modifying the passed |url| object and |visits|
-  // vector.
-  // Returns false if we could not fetch the visits for the passed URL.
-  static bool FixupURLAndGetVisits(history::HistoryBackend* backend,
-                                   history::URLRow* url,
-                                   history::VisitVector* visits);
+  // Fetches visits from the history DB corresponding to the passed URL. This
+  // function compensates for the fact that the history DB has rather poor data
+  // integrity (duplicate visits, visit timestamps that don't match the
+  // last_visit timestamp, huge data sets that exhaust memory when fetched,
+  // etc) by modifying the passed |url| object and |visits| vector.
+  // Returns false if we could not fetch the visits for the passed URL, and
+  // tracks DB error statistics internally for reporting via UMA.
+  bool FixupURLAndGetVisits(history::URLRow* url,
+                            history::VisitVector* visits);
 
   // Updates the passed |url_row| based on the values in |specifics|. Fields
   // that are not contained in |specifics| (such as typed_count) are left
@@ -178,27 +160,42 @@ class TypedUrlModelAssociator
   static void UpdateURLRowFromTypedUrlSpecifics(
       const sync_pb::TypedUrlSpecifics& specifics, history::URLRow* url_row);
 
- private:
-  typedef std::map<std::string, int64> TypedUrlToSyncIdMap;
-  typedef std::map<int64, std::string> SyncIdToTypedUrlMap;
+ protected:
+  // Returns true if pending_abort_ is true. Overridable by tests.
+  virtual bool IsAbortPending();
 
-  // Makes sure that the node with the specified tag is already in our
-  // association map.
-  bool IsAssociated(const std::string& node_tag);
+  // Helper function that clears our error counters (used to reset stats after
+  // model association so we can track model association errors separately).
+  // Overridden by tests.
+  virtual void ClearErrorStats();
+
+ private:
+
+  // Helper routine that actually does the work of associating models.
+  syncer::SyncError DoAssociateModels();
 
   // Helper function that determines if we should ignore a URL for the purposes
-  // of sync, because it's import-only.
+  // of sync, because it contains invalid data or is import-only.
   bool ShouldIgnoreUrl(const history::URLRow& url,
                        const history::VisitVector& visits);
 
   ProfileSyncService* sync_service_;
   history::HistoryBackend* history_backend_;
-  int64 typed_url_node_id_;
 
   MessageLoop* expected_loop_;
 
-  TypedUrlToSyncIdMap id_map_;
-  SyncIdToTypedUrlMap id_map_inverse_;
+  // Lock to ensure exclusive access to the pending_abort_ flag.
+  base::Lock pending_abort_lock_;
+
+  // Set to true if there's a pending abort.
+  bool pending_abort_;
+
+  DataTypeErrorHandler* error_handler_; // Guaranteed to outlive datatypes.
+
+  // Statistics for the purposes of tracking the percentage of DB accesses that
+  // fail for each client via UMA.
+  int num_db_accesses_;
+  int num_db_errors_;
 
   DISALLOW_COPY_AND_ASSIGN(TypedUrlModelAssociator);
 };

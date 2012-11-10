@@ -4,18 +4,19 @@
 
 #ifndef CHROME_BROWSER_UI_WEBUI_WEB_UI_TEST_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_WEB_UI_TEST_HANDLER_H_
-#pragma once
 
 #include "base/compiler_specific.h"
 #include "base/string16.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
-class RenderViewHost;
-
 namespace base {
 class ListValue;
-}  // namespace base
+}
+
+namespace content {
+class RenderViewHost;
+}
 
 // This class registers test framework specific handlers on WebUI objects.
 class WebUITestHandler : public content::WebUIMessageHandler,
@@ -26,7 +27,7 @@ class WebUITestHandler : public content::WebUIMessageHandler,
   // Sends a message through |preload_host| with the |js_text| to preload at the
   // appropriate time before the onload call is made.
   void PreloadJavaScript(const string16& js_text,
-                         RenderViewHost* preload_host);
+                         content::RenderViewHost* preload_host);
 
   // Runs |js_text| in this object's WebUI frame. Does not wait for any result.
   void RunJavaScript(const string16& js_text);

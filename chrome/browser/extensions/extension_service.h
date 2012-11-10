@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_EXTENSIONS_EXTENSION_SERVICE_H_
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_SERVICE_H_
-#pragma once
 
 #include <list>
 #include <map>
@@ -20,76 +19,87 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/property_bag.h"
+#include "base/string16.h"
 #include "base/time.h"
 #include "base/tuple.h"
-#include "chrome/browser/extensions/apps_promo.h"
+#include "chrome/browser/extensions/app_shortcut_manager.h"
+#include "chrome/browser/extensions/app_sync_bundle.h"
 #include "chrome/browser/extensions/extension_icon_manager.h"
-#include "chrome/browser/extensions/extension_menu_manager.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
-#include "chrome/browser/extensions/extension_sync_data.h"
+#include "chrome/browser/extensions/extension_sync_bundle.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/extensions/extension_warning_set.h"
 #include "chrome/browser/extensions/extensions_quota_service.h"
-#include "chrome/browser/extensions/external_extension_provider_interface.h"
+#include "chrome/browser/extensions/external_provider_interface.h"
+#include "chrome/browser/extensions/menu_manager.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/extensions/process_map.h"
-#include "chrome/browser/extensions/sandboxed_extension_unpacker.h"
 #include "chrome/browser/prefs/pref_change_registrar.h"
-#include "chrome/browser/shell_integration.h"
-#include "chrome/browser/sync/api/sync_change.h"
-#include "chrome/browser/sync/api/syncable_service.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "sync/api/sync_change.h"
+#include "sync/api/syncable_service.h"
 
-class AppNotificationManager;
 class BookmarkExtensionEventRouter;
-class CrxInstaller;
-class ExtensionBrowserEventRouter;
-class ExtensionContentSettingsStore;
-class ExtensionCookiesEventRouter;
-class ExtensionDownloadsEventRouter;
-class ExtensionFileBrowserEventRouter;
-class ExtensionGlobalError;
+class ExtensionErrorUI;
+class ExtensionFontSettingsEventRouter;
 class ExtensionManagementEventRouter;
 class ExtensionPreferenceEventRouter;
 class ExtensionSyncData;
 class ExtensionToolbarModel;
-class ExtensionUpdater;
-class ExtensionWebNavigationEventRouter;
 class HistoryExtensionEventRouter;
 class GURL;
-class PendingExtensionManager;
 class Profile;
-class SyncData;
 class Version;
 
 namespace chromeos {
+class ExtensionBluetoothEventRouter;
 class ExtensionInputMethodEventRouter;
 }
 
 namespace extensions {
+class AppNotificationManager;
+class AppSyncData;
+class BrowserEventRouter;
 class ComponentLoader;
+class ContentSettingsStore;
+class CrxInstaller;
+class Extension;
+class ExtensionCookiesEventRouter;
+class ExtensionManagedModeEventRouter;
+class PushMessagingEventRouter;
+class ExtensionSyncData;
+class ExtensionSystem;
+class ExtensionUpdater;
+class PendingExtensionManager;
 class SettingsFrontend;
-class SocketController;
+class WebNavigationEventRouter;
+class WindowEventRouter;
+}
+
+namespace syncer {
+class SyncData;
+class SyncErrorFactory;
 }
 
 // This is an interface class to encapsulate the dependencies that
 // various classes have on ExtensionService. This allows easy mocking.
-class ExtensionServiceInterface : public SyncableService {
+class ExtensionServiceInterface : public syncer::SyncableService {
  public:
   // A function that returns true if the given extension should be
   // included and false if it should be filtered out.  Identical to
   // PendingExtensionInfo::ShouldAllowInstallPredicate.
-  typedef bool (*ExtensionFilter)(const Extension&);
+  typedef bool (*ExtensionFilter)(const extensions::Extension&);
 
   virtual ~ExtensionServiceInterface() {}
   virtual const ExtensionSet* extensions() const = 0;
-  virtual PendingExtensionManager* pending_extension_manager() = 0;
+  virtual const ExtensionSet* disabled_extensions() const = 0;
+  virtual extensions::PendingExtensionManager* pending_extension_manager() = 0;
 
   // Install an update.  Return true if the install can be started.
   // Set out_crx_installer to the installer if one was started.
@@ -97,10 +107,10 @@ class ExtensionServiceInterface : public SyncableService {
       const std::string& id,
       const FilePath& path,
       const GURL& download_url,
-      CrxInstaller** out_crx_installer) = 0;
-  virtual const Extension* GetExtensionById(const std::string& id,
+      extensions::CrxInstaller** out_crx_installer) = 0;
+  virtual const extensions::Extension* GetExtensionById(const std::string& id,
                                             bool include_disabled) const = 0;
-  virtual const Extension* GetInstalledExtension(
+  virtual const extensions::Extension* GetInstalledExtension(
       const std::string& id) const = 0;
 
   virtual bool IsExtensionEnabled(const std::string& extension_id) const = 0;
@@ -117,11 +127,14 @@ class ExtensionServiceInterface : public SyncableService {
   // themes sync to not use it directly.
   virtual void CheckForUpdatesSoon() = 0;
 
-  virtual void AddExtension(const Extension* extension) = 0;
+  virtual void AddExtension(const extensions::Extension* extension) = 0;
 
   virtual void UnloadExtension(
       const std::string& extension_id,
       extension_misc::UnloadedExtensionReason reason) = 0;
+
+  virtual void SyncExtensionChangeIfNeeded(
+      const extensions::Extension& extension) = 0;
 
   virtual bool is_ready() = 0;
 };
@@ -129,13 +142,9 @@ class ExtensionServiceInterface : public SyncableService {
 // Manages installed and running Chromium extensions.
 class ExtensionService
     : public ExtensionServiceInterface,
-      public ExternalExtensionProviderInterface::VisitorInterface,
-      public base::SupportsWeakPtr<ExtensionService>,
-      public content::NotificationObserver,
-      public ImageLoadingTracker::Observer {
+      public extensions::ExternalProviderInterface::VisitorInterface,
+      public content::NotificationObserver {
  public:
-  using base::SupportsWeakPtr<ExtensionService>::AsWeakPtr;
-
   // The name of the directory inside the profile where extensions are
   // installed to.
   static const char* kInstallDirectoryName;
@@ -159,24 +168,24 @@ class ExtensionService
   // settings are stored.
   static const char* kSyncExtensionSettingsDirectoryName;
 
-  // Determine if a given extension download should be treated as if it came
-  // from the gallery. Note that this is requires *both* that the download_url
-  // match and that the download was referred from a gallery page.
-  bool IsDownloadFromGallery(const GURL& download_url,
-                             const GURL& referrer_url);
+  // The name of the database inside the profile where chrome-internal
+  // extension state resides.
+  static const char* kStateStoreName;
 
   // Returns the Extension of hosted or packaged apps, NULL otherwise.
-  const Extension* GetInstalledApp(const GURL& url);
+  const extensions::Extension* GetInstalledApp(const GURL& url);
 
   // Returns whether the URL is from either a hosted or packaged app.
   bool IsInstalledApp(const GURL& url);
 
   // Associates a renderer process with the given installed app.
-  void SetInstalledAppForRenderer(int renderer_child_id, const Extension* app);
+  void SetInstalledAppForRenderer(int renderer_child_id,
+      const extensions::Extension* app);
 
   // If the renderer is hosting an installed app, returns it, otherwise returns
   // NULL.
-  const Extension* GetInstalledAppForRenderer(int renderer_child_id);
+  const extensions::Extension* GetInstalledAppForRenderer(
+      int renderer_child_id);
 
   // Attempts to uninstall an extension from a given ExtensionService. Returns
   // true iff the target extension exists.
@@ -188,7 +197,7 @@ class ExtensionService
   ExtensionService(Profile* profile,
                    const CommandLine* command_line,
                    const FilePath& install_directory,
-                   ExtensionPrefs* extension_prefs,
+                   extensions::ExtensionPrefs* extension_prefs,
                    bool autoupdate_enabled,
                    bool extensions_enabled);
 
@@ -196,7 +205,7 @@ class ExtensionService
 
   // Gets the list of currently installed extensions.
   virtual const ExtensionSet* extensions() const OVERRIDE;
-  const ExtensionSet* disabled_extensions() const;
+  virtual const ExtensionSet* disabled_extensions() const OVERRIDE;
   const ExtensionSet* terminated_extensions() const;
 
   // Retuns a set of all installed, disabled, and terminated extensions and
@@ -204,11 +213,10 @@ class ExtensionService
   const ExtensionSet* GenerateInstalledExtensionsSet() const;
 
   // Gets the object managing the set of pending extensions.
-  virtual PendingExtensionManager* pending_extension_manager() OVERRIDE;
+  virtual extensions::PendingExtensionManager*
+      pending_extension_manager() OVERRIDE;
 
   const FilePath& install_directory() const { return install_directory_; }
-
-  AppsPromo* apps_promo() { return &apps_promo_; }
 
   extensions::ProcessMap* process_map() { return &process_map_; }
 
@@ -226,17 +234,6 @@ class ExtensionService
   virtual void SetAppNotificationDisabled(const std::string& extension_id,
       bool value);
 
-  // Getters and setters for the position of Apps in the NTP. The setters
-  // will trigger a sync if needed.
-  // The getters return invalid StringOridinals for non-app extensions and
-  // setting ordinals for non-apps is an error.
-  StringOrdinal GetAppLaunchOrdinal(const std::string& extension_id) const;
-  void SetAppLaunchOrdinal(const std::string& extension_id,
-                           const StringOrdinal& app_launch_ordinal);
-  StringOrdinal GetPageOrdinal(const std::string& extension_id) const;
-  void SetPageOrdinal(const std::string& extension_id,
-                      const StringOrdinal& page_ordinal);
-
   // Updates the app launcher value for the moved extension so that it is now
   // located after the given predecessor and before the successor. This will
   // trigger a sync if needed. Empty strings are used to indicate no successor
@@ -247,40 +244,36 @@ class ExtensionService
 
   // Returns true if the given extension can see events and data from another
   // sub-profile (incognito to original profile, or vice versa).
-  bool CanCrossIncognito(const Extension* extension);
+  bool CanCrossIncognito(const extensions::Extension* extension);
 
   // Returns true if the given extension can be loaded in incognito.
-  bool CanLoadInIncognito(const Extension* extension) const;
+  bool CanLoadInIncognito(const extensions::Extension* extension) const;
 
   // Whether this extension can inject scripts into pages with file URLs.
-  bool AllowFileAccess(const Extension* extension);
+  bool AllowFileAccess(const extensions::Extension* extension);
   // Will reload the extension since this permission is applied at loading time
   // only.
-  void SetAllowFileAccess(const Extension* extension, bool allow);
+  void SetAllowFileAccess(const extensions::Extension* extension, bool allow);
 
-  // Getter and setter for the Browser Action visibility in the toolbar.
-  bool GetBrowserActionVisibility(const Extension* extension);
-  void SetBrowserActionVisibility(const Extension* extension, bool visible);
-
-  // Whether the background page, if any, is ready. We don't load other
-  // components until then. If there is no background page, we consider it to
-  // be ready.
-  bool IsBackgroundPageReady(const Extension* extension);
-  void SetBackgroundPageReady(const Extension* extension);
+  // Whether the persistent background page, if any, is ready. We don't load
+  // other components until then. If there is no background page, or if it is
+  // non-persistent (lazy), we consider it to be ready.
+  bool IsBackgroundPageReady(const extensions::Extension* extension);
+  void SetBackgroundPageReady(const extensions::Extension* extension);
 
   // Getter and setter for the flag that specifies whether the extension is
   // being upgraded.
-  bool IsBeingUpgraded(const Extension* extension);
-  void SetBeingUpgraded(const Extension* extension, bool value);
+  bool IsBeingUpgraded(const extensions::Extension* extension);
+  void SetBeingUpgraded(const extensions::Extension* extension, bool value);
 
   // Getter and setter for the flag that specifies if the extension has used
   // the webrequest API.
   // TODO(mpcomplete): remove. http://crbug.com/100411
-  bool HasUsedWebRequest(const Extension* extension);
-  void SetHasUsedWebRequest(const Extension* extension, bool value);
+  bool HasUsedWebRequest(const extensions::Extension* extension);
+  void SetHasUsedWebRequest(const extensions::Extension* extension, bool value);
 
   // Getter for the extension's runtime data PropertyBag.
-  base::PropertyBag* GetPropertyBag(const Extension* extension);
+  base::PropertyBag* GetPropertyBag(const extensions::Extension* extension);
 
   // Initialize and start all installed extensions.
   void Init();
@@ -299,15 +292,16 @@ class ExtensionService
 
   // Look up an extension by ID.  Does not include terminated
   // extensions.
-  virtual const Extension* GetExtensionById(
+  virtual const extensions::Extension* GetExtensionById(
       const std::string& id, bool include_disabled) const OVERRIDE;
 
   // Looks up a terminated (crashed) extension by ID.
-  const Extension* GetTerminatedExtension(const std::string& id) const;
+  const extensions::Extension*
+      GetTerminatedExtension(const std::string& id) const;
 
   // Looks up an extension by ID, regardless of whether it's enabled,
   // disabled, or terminated.
-  virtual const Extension* GetInstalledExtension(
+  virtual const extensions::Extension* GetInstalledExtension(
       const std::string& id) const OVERRIDE;
 
   // Updates a currently-installed extension with the contents from
@@ -318,7 +312,7 @@ class ExtensionService
       const std::string& id,
       const FilePath& extension_path,
       const GURL& download_url,
-      CrxInstaller** out_crx_installer) OVERRIDE;
+      extensions::CrxInstaller** out_crx_installer) OVERRIDE;
 
   // Reloads the specified extension.
   void ReloadExtension(const std::string& extension_id);
@@ -336,7 +330,7 @@ class ExtensionService
   // to ExtensionPrefs some other way.
   virtual bool UninstallExtension(std::string extension_id,
                                   bool external_uninstall,
-                                  std::string* error);
+                                  string16* error);
 
   virtual bool IsExtensionEnabled(
       const std::string& extension_id) const OVERRIDE;
@@ -349,12 +343,15 @@ class ExtensionService
 
   // Disables the extension.  If the extension is already disabled, or
   // cannot be disabled, does nothing.
-  virtual void DisableExtension(const std::string& extension_id);
+  virtual void DisableExtension(const std::string& extension_id,
+      extensions::Extension::DisableReason disable_reason);
 
   // Updates the |extension|'s granted permissions lists to include all
   // permissions in the |extension|'s manifest and re-enables the
   // extension.
-  void GrantPermissionsAndEnableExtension(const Extension* extension);
+  void GrantPermissionsAndEnableExtension(
+      const extensions::Extension* extension,
+      bool record_oauth2_grant);
 
   // Check for updates (or potentially new extensions from external providers)
   void CheckForExternalUpdates();
@@ -374,8 +371,10 @@ class ExtensionService
   // Scan the extension directory and clean up the cruft.
   void GarbageCollectExtensions();
 
-  // The App that represents the web store.
-  const Extension* GetWebStoreApp();
+  // Notifies Sync (if needed) of a newly-installed extension or a change to
+  // an existing extension.
+  virtual void SyncExtensionChangeIfNeeded(
+      const extensions::Extension& extension) OVERRIDE;
 
   // Returns true if |url| should get extension api bindings and be permitted
   // to make api calls. Note that this is independent of what extension
@@ -395,17 +394,17 @@ class ExtensionService
   // Adds |extension| to this ExtensionService and notifies observers than an
   // extension has been loaded.  Called by the backend after an extension has
   // been loaded from a file and installed.
-  virtual void AddExtension(const Extension* extension) OVERRIDE;
+  virtual void AddExtension(const extensions::Extension* extension) OVERRIDE;
 
   // Called by the backend when an extension has been installed.
   void OnExtensionInstalled(
-      const Extension* extension,
+      const extensions::Extension* extension,
       bool from_webstore,
       const StringOrdinal& page_ordinal);
 
   // Initializes the |extension|'s active permission set and disables the
   // extension if the privilege level has increased (e.g., due to an upgrade).
-  void InitializePermissions(const Extension* extension);
+  void InitializePermissions(const extensions::Extension* extension);
 
   // Go through each extensions in pref, unload blacklisted extensions
   // and update the blacklist state in pref.
@@ -413,22 +412,49 @@ class ExtensionService
       const std::vector<std::string>& blacklist) OVERRIDE;
 
   // Go through each extension and unload those that the network admin has
-  // put on the blacklist (not to be confused with the Google managed blacklist
+  // put on the blacklist (not to be confused with the Google-managed blacklist)
   // set of extensions.
   virtual void CheckAdminBlacklist() OVERRIDE;
 
   virtual void CheckForUpdatesSoon() OVERRIDE;
 
-  // SyncableService implementation.
-  virtual SyncError MergeDataAndStartSyncing(
-      syncable::ModelType type,
-      const SyncDataList& initial_sync_data,
-      SyncChangeProcessor* sync_processor) OVERRIDE;
-  virtual void StopSyncing(syncable::ModelType type) OVERRIDE;
-  virtual SyncDataList GetAllSyncData(syncable::ModelType type) const OVERRIDE;
-  virtual SyncError ProcessSyncChanges(
+  // syncer::SyncableService implementation.
+  virtual syncer::SyncError MergeDataAndStartSyncing(
+      syncer::ModelType type,
+      const syncer::SyncDataList& initial_sync_data,
+      scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
+      scoped_ptr<syncer::SyncErrorFactory> sync_error_factory) OVERRIDE;
+  virtual void StopSyncing(syncer::ModelType type) OVERRIDE;
+  virtual syncer::SyncDataList GetAllSyncData(
+      syncer::ModelType type) const OVERRIDE;
+  virtual syncer::SyncError ProcessSyncChanges(
       const tracked_objects::Location& from_here,
-      const SyncChangeList& change_list) OVERRIDE;
+      const syncer::SyncChangeList& change_list) OVERRIDE;
+
+  // Gets the sync data for the given extension, assuming that the extension is
+  // syncable.
+  extensions::ExtensionSyncData GetExtensionSyncData(
+      const extensions::Extension& extension) const;
+
+  // Gets the sync data for the given app, assuming that the app is
+  // syncable.
+  extensions::AppSyncData GetAppSyncData(
+      const extensions::Extension& extension) const;
+
+  // Gets the ExtensionSyncData for all extensions.
+  std::vector<extensions::ExtensionSyncData> GetExtensionSyncDataList() const;
+
+  // Gets the AppSyncData for all extensions.
+  std::vector<extensions::AppSyncData> GetAppSyncDataList() const;
+
+  // Applies the change specified passed in by either ExtensionSyncData or
+  // AppSyncData to the current system.
+  // Returns false if the changes were not completely applied and were added
+  // to the pending list to be tried again.
+  bool ProcessExtensionSyncData(
+      const extensions::ExtensionSyncData& extension_sync_data);
+  bool ProcessAppSyncData(const extensions::AppSyncData& app_sync_data);
+
 
   void set_extensions_enabled(bool enabled) { extensions_enabled_ = enabled; }
   bool extensions_enabled() { return extensions_enabled_; }
@@ -445,11 +471,11 @@ class ExtensionService
 
   // TODO(skerner): Change to const ExtensionPrefs& extension_prefs() const,
   // ExtensionPrefs* mutable_extension_prefs().
-  ExtensionPrefs* extension_prefs();
+  extensions::ExtensionPrefs* extension_prefs();
 
   extensions::SettingsFrontend* settings_frontend();
 
-  ExtensionContentSettingsStore* GetExtensionContentSettingsStore();
+  extensions::ContentSettingsStore* GetContentSettingsStore();
 
   // Whether the extension service is ready.
   virtual bool is_ready() OVERRIDE;
@@ -459,30 +485,38 @@ class ExtensionService
   }
 
   // Note that this may return NULL if autoupdate is not turned on.
-  ExtensionUpdater* updater();
+  extensions::ExtensionUpdater* updater();
 
   ExtensionToolbarModel* toolbar_model() { return &toolbar_model_; }
 
   ExtensionsQuotaService* quota_service() { return &quota_service_; }
 
-  ExtensionMenuManager* menu_manager() { return &menu_manager_; }
+  extensions::MenuManager* menu_manager() { return &menu_manager_; }
 
-  AppNotificationManager* app_notification_manager() {
+  extensions::AppNotificationManager* app_notification_manager() {
     return app_notification_manager_.get();
   }
 
-  ExtensionBrowserEventRouter* browser_event_router() {
+  extensions::BrowserEventRouter* browser_event_router() {
     return browser_event_router_.get();
   }
 
+  extensions::WindowEventRouter* window_event_router() {
+    return window_event_router_.get();
+  }
+
 #if defined(OS_CHROMEOS)
-  ExtensionFileBrowserEventRouter* file_browser_event_router() {
-    return file_browser_event_router_.get();
+  chromeos::ExtensionBluetoothEventRouter* bluetooth_event_router() {
+    return bluetooth_event_router_.get();
   }
   chromeos::ExtensionInputMethodEventRouter* input_method_event_router() {
     return input_method_event_router_.get();
   }
 #endif
+
+  extensions::PushMessagingEventRouter* push_messaging_event_router() {
+    return push_messaging_event_router_.get();
+  }
 
   // Notify the frontend that there was an error loading an extension.
   // This method is public because UnpackedInstaller and InstalledLoader
@@ -495,41 +529,52 @@ class ExtensionService
 
   // ExtensionHost of background page calls this method right after its render
   // view has been created.
-  void DidCreateRenderViewForBackgroundPage(ExtensionHost* host);
+  void DidCreateRenderViewForBackgroundPage(extensions::ExtensionHost* host);
 
   // For the extension in |version_path| with |id|, check to see if it's an
   // externally managed extension.  If so, uninstall it.
   void CheckExternalUninstall(const std::string& id);
 
-  // Clear all ExternalExtensionProviders.
+  // Clear all ExternalProviders.
   void ClearProvidersForTesting();
 
-  // Adds an ExternalExtensionProviderInterface for the service to use during
-  // testing. Takes ownership of |test_provider|.
-  void AddProviderForTesting(ExternalExtensionProviderInterface* test_provider);
+  // Adds an ExternalProviderInterface for the service to use during testing.
+  // Takes ownership of |test_provider|.
+  void AddProviderForTesting(
+      extensions::ExternalProviderInterface* test_provider);
 
-  // ExternalExtensionProvider::Visitor implementation.
-  virtual bool OnExternalExtensionFileFound(const std::string& id,
-                                            const Version* version,
-                                            const FilePath& path,
-                                            Extension::Location location,
-                                            int creation_flags,
-                                            bool mark_acknowledged)
-      OVERRIDE;
+  // ExternalProvider::Visitor implementation.
+  virtual bool OnExternalExtensionFileFound(
+      const std::string& id,
+      const Version* version,
+      const FilePath& path,
+      extensions::Extension::Location location,
+      int creation_flags,
+      bool mark_acknowledged) OVERRIDE;
 
-  virtual bool OnExternalExtensionUpdateUrlFound(const std::string& id,
-                                                 const GURL& update_url,
-                                                 Extension::Location location)
-      OVERRIDE;
+  virtual bool OnExternalExtensionUpdateUrlFound(
+      const std::string& id,
+      const GURL& update_url,
+      extensions::Extension::Location location) OVERRIDE;
 
   virtual void OnExternalProviderReady(
-      const ExternalExtensionProviderInterface* provider) OVERRIDE;
+      const extensions::ExternalProviderInterface* provider) OVERRIDE;
+
+  // Returns true when all the external extension providers are ready.
+  bool AreAllExternalProvidersReady() const;
 
   void OnAllExternalProvidersReady();
 
   // Once all external providers are done, generates any needed alerts about
   // extensions.
   void IdentifyAlertableExtensions();
+
+  // Given an ExtensionErrorUI alert, populates it with any extensions that
+  // need alerting. Returns true if the alert should be displayed at all.
+  //
+  // This method takes the extension_error_ui argument rather than using
+  // the member variable to make it easier to test the method in isolation.
+  bool PopulateExtensionErrorUI(ExtensionErrorUI* extension_error_ui);
 
   // Marks alertable extensions as acknowledged, after the user presses the
   // accept button.
@@ -541,7 +586,7 @@ class ExtensionService
 
   // Opens the Extensions page because the user wants to get more details
   // about the alerts.
-  void HandleExtensionAlertDetails(Browser* browser);
+  void HandleExtensionAlertDetails();
 
   // Called when the extension alert is closed.
   void HandleExtensionAlertClosed();
@@ -555,17 +600,17 @@ class ExtensionService
   bool HasApps() const;
 
   // Gets the set of loaded app ids. Component apps are not included.
-  ExtensionIdSet GetAppIds() const;
+  extensions::ExtensionIdSet GetAppIds() const;
 
   // Record a histogram using the PermissionMessage enum values for each
   // permission in |e|.
   // NOTE: If this is ever called with high frequency, the implementation may
   // need to be made more efficient.
   static void RecordPermissionMessagesHistogram(
-      const Extension* e, const char* histogram);
+      const extensions::Extension* e, const char* histogram);
 
 #if defined(UNIT_TEST)
-  void TrackTerminatedExtensionForTest(const Extension* extension) {
+  void TrackTerminatedExtensionForTest(const extensions::Extension* extension) {
     TrackTerminatedExtension(extension);
   }
 #endif
@@ -574,31 +619,12 @@ class ExtensionService
     return &extension_warnings_;
   }
 
-  // Call only from IO thread.
-  extensions::SocketController* socket_controller();
+  AppShortcutManager* app_shortcut_manager() { return &app_shortcut_manager_; }
 
-  // Implement ImageLoadingTracker::Observer. |tracker_| is used to
-  // load the application's icon, which is done when we start creating an
-  // application's shortcuts. This method receives the icon, and completes
-  // the process of installing the shortcuts.
-  virtual void OnImageLoaded(SkBitmap* image,
-                             const ExtensionResource& resource,
-                             int index) OVERRIDE;
+  // Specialization of syncer::SyncableService::AsWeakPtr.
+  base::WeakPtr<ExtensionService> AsWeakPtr() { return base::AsWeakPtr(this); }
+
  private:
-  // Bundle of type (app or extension)-specific sync stuff.
-  struct SyncBundle {
-    SyncBundle();
-    ~SyncBundle();
-
-    bool HasExtensionId(const std::string& id) const;
-    bool HasPendingExtensionId(const std::string& id) const;
-
-    ExtensionFilter filter;
-    std::set<std::string> synced_extensions;
-    std::map<std::string, ExtensionSyncData> pending_sync_data;
-    SyncChangeProcessor* sync_processor;
-  };
-
   // Contains Extension data that can change during the life of the process,
   // but does not persist across restarts.
   struct ExtensionRuntimeData {
@@ -628,58 +654,40 @@ class ExtensionService
   };
   typedef std::list<NaClModuleInfo> NaClModuleInfoList;
 
-  // Notifies Sync (if needed) of a newly-installed extension or a change to
-  // an existing extension.
-  void SyncExtensionChangeIfNeeded(const Extension& extension);
-
-  // Get the appropriate SyncBundle, given some representation of Sync data.
-  SyncBundle* GetSyncBundleForExtension(const Extension& extension);
-  SyncBundle* GetSyncBundleForExtensionSyncData(
-      const ExtensionSyncData& extension_sync_data);
-  SyncBundle* GetSyncBundleForModelType(syncable::ModelType type);
-  const SyncBundle* GetSyncBundleForModelTypeConst(syncable::ModelType type)
+  // Return true if the sync type of |extension| matches |type|.
+  bool IsCorrectSyncType(const extensions::Extension& extension,
+                         syncer::ModelType type)
       const;
 
-  // Gets the ExtensionSyncData for all extensions.
-  std::vector<ExtensionSyncData> GetSyncDataList(
-      const SyncBundle& bundle) const;
-
-  // Gets the sync data for the given extension, assuming that the extension is
-  // syncable.
-  ExtensionSyncData GetSyncData(const Extension& extension) const;
-
-  // Appends sync data objects for every extension in |extensions|
-  // that passes |filter|.
-  void GetSyncDataListHelper(
-      const ExtensionSet& extensions,
-      const SyncBundle& bundle,
-      std::vector<ExtensionSyncData>* sync_data_list) const;
-
-  // Applies the change specified in an ExtensionSyncData to the current system.
-  void ProcessExtensionSyncData(
-      const ExtensionSyncData& extension_sync_data,
-      SyncBundle& bundle);
+  // Handles setting the extension specific values in |extension_sync_data| to
+  // the current system.
+  // Returns false if the changes were not completely applied and need to be
+  // tried again later.
+  bool ProcessExtensionSyncDataHelper(
+      const extensions::ExtensionSyncData& extension_sync_data,
+      syncer::ModelType type);
 
   // Look up an extension by ID, optionally including either or both of enabled
   // and disabled extensions.
-  const Extension* GetExtensionByIdInternal(const std::string& id,
-                                            bool include_enabled,
-                                            bool include_disabled,
-                                            bool include_terminated) const;
+  const extensions::Extension* GetExtensionByIdInternal(
+      const std::string& id,
+      bool include_enabled,
+      bool include_disabled,
+      bool include_terminated) const;
 
   // Adds the given extension to the list of terminated extensions if
   // it is not already there and unloads it.
-  void TrackTerminatedExtension(const Extension* extension);
+  void TrackTerminatedExtension(const extensions::Extension* extension);
 
   // Removes the extension with the given id from the list of
   // terminated extensions if it is there.
   void UntrackTerminatedExtension(const std::string& id);
 
   // Handles sending notification that |extension| was loaded.
-  void NotifyExtensionLoaded(const Extension* extension);
+  void NotifyExtensionLoaded(const extensions::Extension* extension);
 
   // Handles sending notification that |extension| was unloaded.
-  void NotifyExtensionUnloaded(const Extension* extension,
+  void NotifyExtensionUnloaded(const extensions::Extension* extension,
                                extension_misc::UnloadedExtensionReason reason);
 
   // Helper that updates the active extension list used for crash reporting.
@@ -698,23 +706,21 @@ class ExtensionService
   // a NaCl module to see those changes reflected in the PluginList.
   void UpdatePluginListWithNaClModules();
 
-  // Start the process of installing an application shortcut.
-  // The process is finished when OnImageLoaded is called.
-  void StartInstallApplicationShortcut(const Extension* extension);
-
   NaClModuleInfoList::iterator FindNaClModule(const GURL& url);
 
-  // The profile this ExtensionService is part of.
+  // The normal profile associated with this ExtensionService.
   Profile* profile_;
 
+  // The ExtensionSystem for the profile above.
+  extensions::ExtensionSystem* system_;
+
   // Preferences for the owning profile (weak reference).
-  ExtensionPrefs* extension_prefs_;
+  extensions::ExtensionPrefs* extension_prefs_;
 
   // Settings for the owning profile.
   scoped_ptr<extensions::SettingsFrontend> settings_frontend_;
 
   // The current list of installed extensions.
-  // TODO(aa): This should use chrome/common/extensions/extension_set.h.
   ExtensionSet extensions_;
 
   // The list of installed extensions that have been disabled.
@@ -724,14 +730,15 @@ class ExtensionService
   ExtensionSet terminated_extensions_;
 
   // Hold the set of pending extensions.
-  PendingExtensionManager pending_extension_manager_;
+  extensions::PendingExtensionManager pending_extension_manager_;
 
   // The map of extension IDs to their runtime data.
   ExtensionRuntimeDataMap extension_runtime_data_;
 
   // Holds a map between renderer process IDs that are associated with an
   // installed app and their app.
-  typedef std::map<int, scoped_refptr<const Extension> > InstalledAppMap;
+  typedef std::map<int, scoped_refptr<const extensions::Extension> >
+      InstalledAppMap;
   InstalledAppMap installed_app_hosts_;
 
   // The full path to the directory where extensions are installed.
@@ -751,7 +758,7 @@ class ExtensionService
   bool ready_;
 
   // Our extension updater, if updates are turned on.
-  scoped_ptr<ExtensionUpdater> updater_;
+  scoped_ptr<extensions::ExtensionUpdater> updater_;
 
   // The model that tracks extensions with BrowserAction buttons.
   ExtensionToolbarModel toolbar_model_;
@@ -780,39 +787,44 @@ class ExtensionService
   scoped_ptr<extensions::ComponentLoader> component_loader_;
 
   // Keeps track of menu items added by extensions.
-  ExtensionMenuManager menu_manager_;
+  extensions::MenuManager menu_manager_;
 
   // Keeps track of app notifications.
-  scoped_refptr<AppNotificationManager> app_notification_manager_;
+  scoped_refptr<extensions::AppNotificationManager> app_notification_manager_;
 
   // Keeps track of favicon-sized omnibox icons for extensions.
   ExtensionIconManager omnibox_icon_manager_;
   ExtensionIconManager omnibox_popup_icon_manager_;
 
-  // Manages the promotion of the web store.
-  AppsPromo apps_promo_;
-
   // Flag to make sure event routers are only initialized once.
   bool event_routers_initialized_;
 
-  scoped_ptr<ExtensionDownloadsEventRouter> downloads_event_router_;
-
   scoped_ptr<HistoryExtensionEventRouter> history_event_router_;
 
-  scoped_ptr<ExtensionBrowserEventRouter> browser_event_router_;
+  scoped_ptr<extensions::BrowserEventRouter> browser_event_router_;
+
+  scoped_ptr<extensions::WindowEventRouter> window_event_router_;
 
   scoped_ptr<ExtensionPreferenceEventRouter> preference_event_router_;
 
   scoped_ptr<BookmarkExtensionEventRouter> bookmark_event_router_;
 
-  scoped_ptr<ExtensionCookiesEventRouter> cookies_event_router_;
+  scoped_ptr<extensions::ExtensionCookiesEventRouter> cookies_event_router_;
 
   scoped_ptr<ExtensionManagementEventRouter> management_event_router_;
 
-  scoped_ptr<ExtensionWebNavigationEventRouter> web_navigation_event_router_;
+  scoped_ptr<extensions::PushMessagingEventRouter>
+      push_messaging_event_router_;
+
+  scoped_ptr<extensions::WebNavigationEventRouter> web_navigation_event_router_;
+
+  scoped_ptr<ExtensionFontSettingsEventRouter> font_settings_event_router_;
+
+  scoped_ptr<extensions::ExtensionManagedModeEventRouter>
+      managed_mode_event_router_;
 
 #if defined(OS_CHROMEOS)
-  scoped_ptr<ExtensionFileBrowserEventRouter> file_browser_event_router_;
+  scoped_ptr<chromeos::ExtensionBluetoothEventRouter> bluetooth_event_router_;
   scoped_ptr<chromeos::ExtensionInputMethodEventRouter>
       input_method_event_router_;
 #endif
@@ -820,32 +832,28 @@ class ExtensionService
   // A collection of external extension providers.  Each provider reads
   // a source of external extension information.  Examples include the
   // windows registry and external_extensions.json.
-  ProviderCollection external_extension_providers_;
+  extensions::ProviderCollection external_extension_providers_;
 
   // Set to true by OnExternalExtensionUpdateUrlFound() when an external
-  // extension URL is found.  Used in CheckForExternalUpdates() to see
-  // if an update check is needed to install pending extensions.
-  bool external_extension_url_added_;
+  // extension URL is found, and by CheckForUpdatesSoon() when an update check
+  // has to wait for the external providers.  Used in
+  // OnAllExternalProvidersReady() to determine if an update check is needed to
+  // install pending extensions.
+  bool update_once_all_providers_are_ready_;
 
   NaClModuleInfoList nacl_module_list_;
 
-  SyncBundle app_sync_bundle_;
-  SyncBundle extension_sync_bundle_;
+  extensions::AppSyncBundle app_sync_bundle_;
+  extensions::ExtensionSyncBundle extension_sync_bundle_;
 
   // Contains an entry for each warning that shall be currently shown.
   ExtensionWarningSet extension_warnings_;
 
-  // We need to control destruction of this object (it needs to happen on the
-  // IO thread), so we don't get to use any RAII devices with it.
-  extensions::SocketController* socket_controller_;
-
   extensions::ProcessMap process_map_;
 
-  // Fields used when installing application shortcuts.
-  ShellIntegration::ShortcutInfo shortcut_info_;
-  ImageLoadingTracker tracker_;
+  AppShortcutManager app_shortcut_manager_;
 
-  scoped_ptr<ExtensionGlobalError> extension_global_error_;
+  scoped_ptr<ExtensionErrorUI> extension_error_ui_;
 
   FRIEND_TEST_ALL_PREFIXES(ExtensionServiceTest,
                            InstallAppsWithUnlimtedStorage);

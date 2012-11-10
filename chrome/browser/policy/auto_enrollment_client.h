@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_POLICY_AUTO_ENROLLMENT_CLIENT_H_
 #define CHROME_BROWSER_POLICY_AUTO_ENROLLMENT_CLIENT_H_
-#pragma once
 
 #include <string>
 
@@ -55,6 +54,12 @@ class AutoEnrollmentClient {
 
   // Convenience method to create instances of this class.
   static AutoEnrollmentClient* Create(const base::Closure& completion_callback);
+
+  // Cancels auto-enrollment.
+  // This function does not interrupt a running auto-enrollment check. It only
+  // stores a pref in |local_state| that prevents the client from entering
+  // auto-enrollment mode for the future.
+  static void CancelAutoEnrollment();
 
   // Starts the auto-enrollment check protocol with the device management
   // service. Subsequent calls drop any previous requests. Notice that this
@@ -118,9 +123,9 @@ class AutoEnrollmentClient {
   // a retry response from the server.
   int power_limit_;
 
-  // Modulus used in the last request sent to the server.
-  // Used to determine if the server is asking for the same modulus.
-  int last_power_used_;
+  // Number of requests sent to the server so far.
+  // Used to determine if the server keeps asking for different moduli.
+  int requests_sent_;
 
   // Used to communicate with the device management service.
   scoped_ptr<DeviceManagementService> device_management_service_;

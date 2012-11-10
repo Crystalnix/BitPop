@@ -17,12 +17,9 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/browser/plugin_loader_posix.h"
-#include "content/browser/plugin_service_filter.h"
 #include "content/browser/ppapi_plugin_process_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
-#include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/resource_context.h"
-#include "content/browser/utility_process_host.h"
+#include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/pepper_plugin_registry.h"
 #include "content/common/plugin_messages.h"
 #include "content/common/utility_messages.h"
@@ -31,6 +28,8 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/plugin_service_filter.h"
+#include "content/public/browser/resource_context.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/process_type.h"
 #include "webkit/plugins/npapi/plugin_constants_win.h"
@@ -48,14 +47,6 @@ using content::PluginServiceFilter;
 
 namespace {
 
-// Helper function that merely runs the callback with the result. Called on the
-// thread on which the original GetPlugins() call was made.
-static void RunGetPluginsCallback(
-    const PluginService::GetPluginsCallback& callback,
-    const std::vector<webkit::WebPluginInfo>& result) {
-  callback.Run(result);
-}
-
 // A callback for GetPlugins() that then gets the freshly loaded plugin groups
 // and runs the callback for GetPluginGroups().
 static void GetPluginsForGroupsCallback(
@@ -68,13 +59,17 @@ static void GetPluginsForGroupsCallback(
 
 // Callback set on the PluginList to assert that plugin loading happens on the
 // correct thread.
-void WillLoadPluginsCallback() {
 #if defined(OS_WIN)
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-#else
-  CHECK(false) << "Plugin loading should happen out-of-process.";
-#endif
+void WillLoadPluginsCallbackWin(
+    base::SequencedWorkerPool::SequenceToken token) {
+  CHECK(BrowserThread::GetBlockingPool()->IsRunningSequenceOnCurrentThread(
+      token));
 }
+#else
+void WillLoadPluginsCallbackPosix() {
+  CHECK(false) << "Plugin loading should happen out-of-process.";
+}
+#endif
 
 }  // namespace
 
@@ -104,6 +99,9 @@ class PluginDirWatcherDelegate : public FilePathWatcher::Delegate {
     // stopping the watcher would be enough. Or possibly restart it.
     NOTREACHED();
   }
+
+ protected:
+  virtual ~PluginDirWatcherDelegate() {}
 };
 #endif
 
@@ -152,8 +150,14 @@ void PluginServiceImpl::Init() {
   if (!plugin_list_)
     plugin_list_ = webkit::npapi::PluginList::Singleton();
 
+#if defined(OS_WIN)
+  plugin_list_token_ = BrowserThread::GetBlockingPool()->GetSequenceToken();
   plugin_list_->set_will_load_plugins_callback(
-      base::Bind(&WillLoadPluginsCallback));
+      base::Bind(&WillLoadPluginsCallbackWin, plugin_list_token_));
+#else
+  plugin_list_->set_will_load_plugins_callback(
+      base::Bind(&WillLoadPluginsCallbackPosix));
+#endif
 
   RegisterPepperPlugins();
 
@@ -167,6 +171,7 @@ void PluginServiceImpl::Init() {
   path = command_line->GetSwitchValuePath(switches::kExtraPluginDir);
   if (!path.empty())
     plugin_list_->AddExtraPluginDir(path);
+
 
 #if defined(OS_MACOSX)
   // We need to know when the browser comes forward so we can bring modal plugin
@@ -197,7 +202,8 @@ void PluginServiceImpl::StartWatchingPlugins() {
       hklm_watcher_.StartWatching(hklm_event_.get(), this);
     }
   }
-#elif defined(OS_POSIX) && !defined(OS_OPENBSD)
+#endif
+#if defined(OS_POSIX) && !defined(OS_OPENBSD)
 // On ChromeOS the user can't install plugins anyway and on Windows all
 // important plugins register themselves in the registry so no need to do that.
   file_watcher_delegate_ = new PluginDirWatcherDelegate();
@@ -236,12 +242,14 @@ PluginProcessHost* PluginServiceImpl::FindNpapiPluginProcess(
 }
 
 PpapiPluginProcessHost* PluginServiceImpl::FindPpapiPluginProcess(
-    const FilePath& plugin_path) {
+    const FilePath& plugin_path,
+    const FilePath& profile_data_directory) {
   for (PpapiPluginProcessHostIterator iter; !iter.Done(); ++iter) {
-    if (iter->plugin_path() == plugin_path)
+    if (iter->plugin_path() == plugin_path &&
+        iter->profile_data_directory() == profile_data_directory) {
       return *iter;
+    }
   }
-
   return NULL;
 }
 
@@ -279,10 +287,12 @@ PluginProcessHost* PluginServiceImpl::FindOrStartNpapiPluginProcess(
 
 PpapiPluginProcessHost* PluginServiceImpl::FindOrStartPpapiPluginProcess(
     const FilePath& plugin_path,
+    const FilePath& profile_data_directory,
     PpapiPluginProcessHost::PluginClient* client) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  PpapiPluginProcessHost* plugin_host = FindPpapiPluginProcess(plugin_path);
+  PpapiPluginProcessHost* plugin_host =
+      FindPpapiPluginProcess(plugin_path, profile_data_directory);
   if (plugin_host)
     return plugin_host;
 
@@ -293,8 +303,8 @@ PpapiPluginProcessHost* PluginServiceImpl::FindOrStartPpapiPluginProcess(
 
   // This plugin isn't loaded by any plugin process, so create a new process.
   return PpapiPluginProcessHost::CreatePluginHost(
-      *info,
-      client->GetResourceContext()->host_resolver());
+      *info, profile_data_directory,
+      client->GetResourceContext()->GetHostResolver());
 }
 
 PpapiPluginProcessHost* PluginServiceImpl::FindOrStartPpapiBrokerProcess(
@@ -329,11 +339,11 @@ void PluginServiceImpl::OpenChannelToNpapiPlugin(
   pending_plugin_clients_.insert(client);
 
   // Make sure plugins are loaded if necessary.
-  content::PluginServiceFilterParams params = {
+  PluginServiceFilterParams params = {
     render_process_id,
     render_view_id,
     page_url,
-    &client->GetResourceContext()
+    client->GetResourceContext()
   };
   GetPlugins(base::Bind(
       &PluginServiceImpl::ForwardGetAllowedPluginForOpenChannelToPlugin,
@@ -341,24 +351,29 @@ void PluginServiceImpl::OpenChannelToNpapiPlugin(
 }
 
 void PluginServiceImpl::OpenChannelToPpapiPlugin(
-    const FilePath& path,
+    const FilePath& plugin_path,
+    const FilePath& profile_data_directory,
     PpapiPluginProcessHost::PluginClient* client) {
   PpapiPluginProcessHost* plugin_host = FindOrStartPpapiPluginProcess(
-      path, client);
-  if (plugin_host)
+      plugin_path, profile_data_directory, client);
+  if (plugin_host) {
     plugin_host->OpenChannelToPlugin(client);
-  else  // Send error.
-    client->OnChannelOpened(base::kNullProcessHandle, IPC::ChannelHandle());
+  } else {
+    // Send error.
+    client->OnPpapiChannelOpened(IPC::ChannelHandle(), 0);
+  }
 }
 
 void PluginServiceImpl::OpenChannelToPpapiBroker(
     const FilePath& path,
     PpapiPluginProcessHost::BrokerClient* client) {
   PpapiPluginProcessHost* plugin_host = FindOrStartPpapiBrokerProcess(path);
-  if (plugin_host)
+  if (plugin_host) {
     plugin_host->OpenChannelToPlugin(client);
-  else  // Send error.
-    client->OnChannelOpened(base::kNullProcessHandle, IPC::ChannelHandle());
+  } else {
+    // Send error.
+    client->OnPpapiChannelOpened(IPC::ChannelHandle(), 0);
+  }
 }
 
 void PluginServiceImpl::CancelOpenChannelToNpapiPlugin(
@@ -369,7 +384,7 @@ void PluginServiceImpl::CancelOpenChannelToNpapiPlugin(
 }
 
 void PluginServiceImpl::ForwardGetAllowedPluginForOpenChannelToPlugin(
-    const content::PluginServiceFilterParams& params,
+    const PluginServiceFilterParams& params,
     const GURL& url,
     const std::string& mime_type,
     PluginProcessHost::Client* client,
@@ -386,11 +401,11 @@ void PluginServiceImpl::GetAllowedPluginForOpenChannelToPlugin(
     const GURL& page_url,
     const std::string& mime_type,
     PluginProcessHost::Client* client,
-    const content::ResourceContext* resource_context) {
+    content::ResourceContext* resource_context) {
   webkit::WebPluginInfo info;
   bool allow_wildcard = true;
   bool found = GetPluginInfo(
-      render_process_id, render_view_id, *resource_context,
+      render_process_id, render_view_id, resource_context,
       url, page_url, mime_type, allow_wildcard,
       NULL, &info, NULL);
   FilePath plugin_path;
@@ -437,7 +452,7 @@ bool PluginServiceImpl::GetPluginInfoArray(
 
 bool PluginServiceImpl::GetPluginInfo(int render_process_id,
                                       int render_view_id,
-                                      const content::ResourceContext& context,
+                                      content::ResourceContext* context,
                                       const GURL& url,
                                       const GURL& page_url,
                                       const std::string& mime_type,
@@ -455,7 +470,7 @@ bool PluginServiceImpl::GetPluginInfo(int render_process_id,
   for (size_t i = 0; i < plugins.size(); ++i) {
     if (!filter_ || filter_->ShouldUsePlugin(render_process_id,
                                              render_view_id,
-                                             &context,
+                                             context,
                                              url,
                                              page_url,
                                              &plugins[i])) {
@@ -471,7 +486,7 @@ bool PluginServiceImpl::GetPluginInfo(int render_process_id,
 bool PluginServiceImpl::GetPluginInfoByPath(const FilePath& plugin_path,
                                             webkit::WebPluginInfo* info) {
   std::vector<webkit::WebPluginInfo> plugins;
-  plugin_list_->GetPluginsIfNoRefreshNeeded(&plugins);
+  plugin_list_->GetPluginsNoRefresh(&plugins);
 
   for (std::vector<webkit::WebPluginInfo>::iterator it = plugins.begin();
        it != plugins.end();
@@ -485,21 +500,40 @@ bool PluginServiceImpl::GetPluginInfoByPath(const FilePath& plugin_path,
   return false;
 }
 
+string16 PluginServiceImpl::GetPluginDisplayNameByPath(const FilePath& path) {
+  string16 plugin_name = path.LossyDisplayName();
+  webkit::WebPluginInfo info;
+  if (PluginService::GetInstance()->GetPluginInfoByPath(path, &info) &&
+      !info.name.empty()) {
+    plugin_name = info.name;
+#if defined(OS_MACOSX)
+    // Many plugins on the Mac have .plugin in the actual name, which looks
+    // terrible, so look for that and strip it off if present.
+    const std::string kPluginExtension = ".plugin";
+    if (EndsWith(plugin_name, ASCIIToUTF16(kPluginExtension), true))
+      plugin_name.erase(plugin_name.length() - kPluginExtension.length());
+#endif  // OS_MACOSX
+  }
+  return plugin_name;
+}
+
 void PluginServiceImpl::GetPlugins(const GetPluginsCallback& callback) {
   scoped_refptr<base::MessageLoopProxy> target_loop(
       MessageLoop::current()->message_loop_proxy());
 
 #if defined(OS_WIN)
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
+  BrowserThread::GetBlockingPool()->PostSequencedWorkerTaskWithShutdownBehavior(
+      plugin_list_token_,
+      FROM_HERE,
       base::Bind(&PluginServiceImpl::GetPluginsInternal, base::Unretained(this),
-          target_loop, callback));
-#else
+                 target_loop, callback),
+      base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
+#elif defined(OS_POSIX)
   std::vector<webkit::WebPluginInfo> cached_plugins;
-  if (plugin_list_->GetPluginsIfNoRefreshNeeded(&cached_plugins)) {
+  if (plugin_list_->GetPluginsNoRefresh(&cached_plugins)) {
     // Can't assume the caller is reentrant.
     target_loop->PostTask(FROM_HERE,
-        base::Bind(&RunGetPluginsCallback, callback, cached_plugins));
+        base::Bind(callback, cached_plugins));
   } else {
     // If we switch back to loading plugins in process, then we need to make
     // sure g_thread_init() gets called since plugins may call glib at load.
@@ -509,6 +543,8 @@ void PluginServiceImpl::GetPlugins(const GetPluginsCallback& callback) {
         base::Bind(&PluginLoaderPosix::LoadPlugins, plugin_loader_,
                    target_loop, callback));
   }
+#else
+#error Not implemented
 #endif
 }
 
@@ -517,17 +553,20 @@ void PluginServiceImpl::GetPluginGroups(
   GetPlugins(base::Bind(&GetPluginsForGroupsCallback, callback));
 }
 
+#if defined(OS_WIN)
 void PluginServiceImpl::GetPluginsInternal(
      base::MessageLoopProxy* target_loop,
      const PluginService::GetPluginsCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK(BrowserThread::GetBlockingPool()->IsRunningSequenceOnCurrentThread(
+      plugin_list_token_));
 
   std::vector<webkit::WebPluginInfo> plugins;
   plugin_list_->GetPlugins(&plugins);
 
   target_loop->PostTask(FROM_HERE,
-      base::Bind(&RunGetPluginsCallback, callback, plugins));
+      base::Bind(callback, plugins));
 }
+#endif
 
 void PluginServiceImpl::OnWaitableEventSignaled(
     base::WaitableEvent* waitable_event) {
@@ -611,6 +650,20 @@ void PluginServiceImpl::SetFilter(content::PluginServiceFilter* filter) {
 
 content::PluginServiceFilter* PluginServiceImpl::GetFilter() {
   return filter_;
+}
+
+void PluginServiceImpl::ForcePluginShutdown(const FilePath& plugin_path) {
+  if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&PluginServiceImpl::ForcePluginShutdown,
+                   base::Unretained(this), plugin_path));
+    return;
+  }
+
+  PluginProcessHost* plugin = FindNpapiPluginProcess(plugin_path);
+  if (plugin)
+    plugin->ForceShutdown();
 }
 
 static const unsigned int kMaxCrashesPerInterval = 3;

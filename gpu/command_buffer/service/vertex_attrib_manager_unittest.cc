@@ -31,6 +31,12 @@ class VertexAttribManagerTest : public testing::Test {
     gl_.reset(new ::testing::StrictMock< ::gfx::MockGLInterface>());
     ::gfx::GLInterface::SetGLInterface(gl_.get());
 
+    for (uint32 ii = 0; ii < kNumVertexAttribs; ++ii) {
+      EXPECT_CALL(*gl_, VertexAttrib4f(ii, 0.0f, 0.0f, 0.0f, 1.0f))
+          .Times(1)
+          .RetiresOnSaturation();
+    }
+
     manager_.reset(new VertexAttribManager());
     manager_->Initialize(kNumVertexAttribs);
   }
@@ -106,7 +112,7 @@ TEST_F(VertexAttribManagerTest, Enable) {
 }
 
 TEST_F(VertexAttribManagerTest, SetAttribInfo) {
-  BufferManager buffer_manager;
+  BufferManager buffer_manager(NULL);
   buffer_manager.CreateBufferInfo(1, 2);
   BufferManager::BufferInfo* buffer = buffer_manager.GetBufferInfo(1);
   ASSERT_TRUE(buffer != NULL);
@@ -142,7 +148,7 @@ TEST_F(VertexAttribManagerTest, HaveFixedAttribs) {
 }
 
 TEST_F(VertexAttribManagerTest, CanAccess) {
-  BufferManager buffer_manager;
+  BufferManager buffer_manager(NULL);
   buffer_manager.CreateBufferInfo(1, 2);
   BufferManager::BufferInfo* buffer = buffer_manager.GetBufferInfo(1);
   ASSERT_TRUE(buffer != NULL);
@@ -184,7 +190,7 @@ TEST_F(VertexAttribManagerTest, CanAccess) {
 }
 
 TEST_F(VertexAttribManagerTest, Unbind) {
-  BufferManager buffer_manager;
+  BufferManager buffer_manager(NULL);
   buffer_manager.CreateBufferInfo(1, 2);
   buffer_manager.CreateBufferInfo(3, 4);
   BufferManager::BufferInfo* buffer1 = buffer_manager.GetBufferInfo(1);

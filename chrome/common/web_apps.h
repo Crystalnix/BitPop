@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_COMMON_WEB_APPS_H_
 #define CHROME_COMMON_WEB_APPS_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -75,6 +74,9 @@ struct WebApplicationInfo {
   // The type of launch container to use with the app. Currently supported
   // values are 'tab' and 'panel'. Only supported with manifest-based apps.
   std::string launch_container;
+
+  // This indicates if the app is functional in offline mode or not.
+  bool is_offline_enabled;
 };
 
 

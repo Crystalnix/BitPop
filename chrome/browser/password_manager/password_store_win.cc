@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,6 +38,9 @@ class FormGetLoginsRequest : public PasswordStore::GetLoginsRequest {
     return form_.get();
   }
   bool IsLoginsRequest() const { return !!form_.get(); }
+
+ protected:
+  virtual ~FormGetLoginsRequest() {}
 
  private:
   scoped_ptr<PasswordForm> form_;
@@ -162,13 +165,17 @@ void PasswordStoreWin::DBHandler::OnWebDataServiceRequestDone(
   if (ie7_form)
     request->value.push_back(ie7_form);
 
+  // Since we aren't using ForwardLoginsResult(), we must call
+  // ApplyIgnoreLoginsCutoff() manually here as is done in
+  // PasswordStore::ForwardLoginsResult().
+  request->ApplyIgnoreLoginsCutoff();
   request->ForwardResult(request->handle(), request->value);
 }
 
 PasswordStoreWin::PasswordStoreWin(LoginDatabase* login_database,
                                    Profile* profile,
                                    WebDataService* web_data_service)
-    : PasswordStoreDefault(login_database, profile, web_data_service) {
+    : PasswordStoreDefault(login_database, profile) {
   db_handler_.reset(new DBHandler(web_data_service, this));
 }
 
@@ -185,11 +192,11 @@ PasswordStore::GetLoginsRequest* PasswordStoreWin::NewGetLoginsRequest(
   return new FormGetLoginsRequest(callback);
 }
 
-void PasswordStoreWin::Shutdown() {
+void PasswordStoreWin::ShutdownOnUIThread() {
   BrowserThread::PostTask(
       BrowserThread::DB, FROM_HERE,
       base::Bind(&PasswordStoreWin::ShutdownOnDBThread, this));
-  PasswordStoreDefault::Shutdown();
+  PasswordStoreDefault::ShutdownOnUIThread();
 }
 
 void PasswordStoreWin::ForwardLoginsResult(GetLoginsRequest* request) {

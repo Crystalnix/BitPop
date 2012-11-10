@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,11 @@
 #include "base/string_number_conversions.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "ui/gfx/gl/gl_switches.h"
+#include "ui/gl/gl_switches.h"
+
+#if defined(USE_ASH)
+#include "ash/ash_switches.h"
+#endif
 
 namespace test_launcher_utils {
 
@@ -45,8 +49,11 @@ void PrepareBrowserCommandLineForTests(CommandLine* command_line) {
   // auto-update.
   command_line->AppendSwitch(switches::kSkipGpuDataLoading);
 
-  // The tests assume that file:// URIs can freely access other file:// URIs.
-  command_line->AppendSwitch(switches::kAllowFileAccessFromFiles);
+#if defined(USE_ASH)
+  // Disable window animations under Ash as the animations effect the
+  // coordinates returned and result in flake.
+  command_line->AppendSwitch(ash::switches::kAshWindowAnimationsDisabled);
+#endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
   // Don't use the native password stores on Linux since they may
@@ -62,9 +69,7 @@ void PrepareBrowserCommandLineForTests(CommandLine* command_line) {
   command_line->AppendSwitch(switches::kUseMockKeychain);
 #endif
 
-  // Disable the Instant field trial, which may cause unexpected page loads.
-  if (!command_line->HasSwitch(switches::kInstantFieldTrial))
-    command_line->AppendSwitchASCII(switches::kInstantFieldTrial, "disabled");
+  command_line->AppendSwitch(switches::kDisableComponentUpdate);
 }
 
 bool OverrideUserDataDir(const FilePath& user_data_dir) {

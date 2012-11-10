@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_EXTENSIONS_EXTENSION_WARNING_SET_H_
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_WARNING_SET_H_
-#pragma once
 
 #include <set>
 #include <string>
@@ -78,6 +77,7 @@ class ExtensionWarningSet {
 
  private:
   typedef std::set<ExtensionWarning>::const_iterator const_iterator;
+  typedef std::set<ExtensionWarning>::iterator iterator;
 
   // Shows or hides the warning badge on the wrench menu depending on whether
   // any non-suppressed warnings exist.

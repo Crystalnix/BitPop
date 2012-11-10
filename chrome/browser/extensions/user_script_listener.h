@@ -1,29 +1,31 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_EXTENSIONS_USER_SCRIPT_LISTENER_H_
 #define CHROME_BROWSER_EXTENSIONS_USER_SCRIPT_LISTENER_H_
-#pragma once
 
+#include <deque>
 #include <list>
+#include <map>
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "content/browser/renderer_host/resource_queue.h"
+#include "base/memory/weak_ptr.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "webkit/glue/resource_type.h"
+
+class GURL;
+class URLPattern;
 
 namespace content {
-struct GlobalRequestID;
+class ResourceThrottle;
 }
 
-namespace net {
-class URLRequest;
-}  // namespace net
-
+namespace extensions {
 class Extension;
-class URLPattern;
 
 // This class handles delaying of resource loads that depend on unloaded user
 // scripts. For each request that comes in, we check if it depends on a user
@@ -31,29 +33,32 @@ class URLPattern;
 // request.
 //
 // This class lives mostly on the IO thread. It listens on the UI thread for
-// updates to loaded extensions. It will delete itself on the UI thread after
-// WillShutdownResourceQueue is called (on the IO thread).
+// updates to loaded extensions.
 class UserScriptListener
-    : public base::RefCountedThreadSafe<UserScriptListener>,
-      public ResourceQueueDelegate,
+    : public base::RefCountedThreadSafe<
+          UserScriptListener,
+          content::BrowserThread::DeleteOnUIThread>,
       public content::NotificationObserver {
  public:
   UserScriptListener();
 
- private:
-  // ResourceQueueDelegate:
-  virtual void Initialize(ResourceQueue* resource_queue) OVERRIDE;
-  virtual bool ShouldDelayRequest(
-      net::URLRequest* request,
-      const ResourceDispatcherHostRequestInfo& request_info,
-      const content::GlobalRequestID& request_id) OVERRIDE;
-  virtual void WillShutdownResourceQueue() OVERRIDE;
+  // Constructs a ResourceThrottle if the UserScriptListener needs to delay the
+  // given URL.  Otherwise, this method returns NULL.
+  content::ResourceThrottle* CreateResourceThrottle(
+      const GURL& url,
+      ResourceType::Type resource_type);
 
-  friend class base::RefCountedThreadSafe<UserScriptListener>;
+ private:
+  friend struct content::BrowserThread::DeleteOnThread<
+      content::BrowserThread::UI>;
+  friend class base::DeleteHelper<UserScriptListener>;
 
   typedef std::list<URLPattern> URLPatterns;
 
   virtual ~UserScriptListener();
+
+  bool ShouldDelayRequest(const GURL& url, ResourceType::Type resource_type);
+  void StartDelayedRequests();
 
   // Update user_scripts_ready_ based on the status of all profiles. On a
   // transition from false to true, we resume all delayed requests.
@@ -73,13 +78,14 @@ class UserScriptListener
   // deleted, so user_scripts_ready_ remains unchanged.
   void ReplaceURLPatterns(void* profile_id, const URLPatterns& patterns);
 
-  // Cleanup on UI thread.
-  void Cleanup();
-
-  ResourceQueue* resource_queue_;
-
   // True if all user scripts from all profiles are ready.
   bool user_scripts_ready_;
+
+  // Stores a throttle per URL request that we have delayed.
+  class Throttle;
+  typedef base::WeakPtr<Throttle> WeakThrottle;
+  typedef std::deque<WeakThrottle> WeakThrottleList;
+  WeakThrottleList throttles_;
 
   // Per-profile bookkeeping so we know when all user scripts are ready.
   struct ProfileData;
@@ -90,7 +96,8 @@ class UserScriptListener
 
   // Helper to collect the extension's user script URL patterns in a list and
   // return it.
-  void CollectURLPatterns(const Extension* extension, URLPatterns* patterns);
+  void CollectURLPatterns(const Extension* extension,
+                          URLPatterns* patterns);
 
   // content::NotificationObserver
   virtual void Observe(int type,
@@ -101,5 +108,7 @@ class UserScriptListener
 
   DISALLOW_COPY_AND_ASSIGN(UserScriptListener);
 };
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_EXTENSIONS_USER_SCRIPT_LISTENER_H_

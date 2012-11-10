@@ -4,13 +4,12 @@
 
 #ifndef SKIA_EXT_SKIA_SANDBOX_SUPPORT_WIN_H_
 #define SKIA_EXT_SKIA_SANDBOX_SUPPORT_WIN_H_
-#pragma once
 
 #include <windows.h>
 
 #include "SkPreConfig.h"
 
-typedef void (*SkiaEnsureTypefaceAccessible)(LOGFONT font);
+typedef void (*SkiaEnsureTypefaceAccessible)(const LOGFONT& font);
 
 SK_API void SetSkiaEnsureTypefaceAccessible(SkiaEnsureTypefaceAccessible func);
 

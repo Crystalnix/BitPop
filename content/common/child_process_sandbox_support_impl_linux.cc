@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,8 +9,8 @@
 #include "base/eintr_wrapper.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/pickle.h"
-#include "content/common/sandbox_methods_linux.h"
-#include "content/common/unix_domain_socket_posix.h"
+#include "base/posix/unix_domain_socket.h"
+#include "content/common/sandbox_linux.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/linux/WebFontFamily.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/linux/WebFontRenderStyle.h"
 
@@ -36,7 +36,7 @@ void GetFontFamilyForCharacters(const uint16_t* utf16,
   bool isItalic = false;
   if (n != -1) {
     Pickle reply(reinterpret_cast<char*>(buf), n);
-    void* pickle_iter = NULL;
+    PickleIterator pickle_iter(reply);
     if (reply.ReadString(&pickle_iter, &family_name) &&
         reply.ReadBool(&pickle_iter, &isBold) &&
         reply.ReadBool(&pickle_iter, &isItalic)) {
@@ -64,20 +64,23 @@ void GetRenderStyleForStrike(const char* family, int sizeAndStyle,
   }
 
   Pickle reply(reinterpret_cast<char*>(buf), n);
-  void* pickle_iter = NULL;
-  int useBitmaps, useAutoHint, useHinting, hintStyle, useAntiAlias, useSubpixel;
+  PickleIterator pickle_iter(reply);
+  int useBitmaps, useAutoHint, useHinting, hintStyle, useAntiAlias;
+  int useSubpixelRendering, useSubpixelPositioning;
   if (reply.ReadInt(&pickle_iter, &useBitmaps) &&
       reply.ReadInt(&pickle_iter, &useAutoHint) &&
       reply.ReadInt(&pickle_iter, &useHinting) &&
       reply.ReadInt(&pickle_iter, &hintStyle) &&
       reply.ReadInt(&pickle_iter, &useAntiAlias) &&
-      reply.ReadInt(&pickle_iter, &useSubpixel)) {
+      reply.ReadInt(&pickle_iter, &useSubpixelRendering) &&
+      reply.ReadInt(&pickle_iter, &useSubpixelPositioning)) {
     out->useBitmaps = useBitmaps;
     out->useAutoHint = useAutoHint;
     out->useHinting = useHinting;
     out->hintStyle = hintStyle;
     out->useAntiAlias = useAntiAlias;
-    out->useSubpixel = useSubpixel;
+    out->useSubpixelRendering = useSubpixelRendering;
+    out->useSubpixelPositioning = useSubpixelPositioning;
   }
 }
 

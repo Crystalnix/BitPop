@@ -4,7 +4,6 @@
 
 #ifndef CHROME_COMMON_MAC_MOCK_LAUNCHD_H_
 #define CHROME_COMMON_MAC_MOCK_LAUNCHD_H_
-#pragma once
 
 #include <launch.h>
 
@@ -69,7 +68,6 @@ class MockLaunchd : public Launchd {
   bool as_service_;
   bool restart_called_;
   bool remove_called_;
-  bool job_called_;
   bool checkin_called_;
   bool write_called_;
   bool delete_called_;

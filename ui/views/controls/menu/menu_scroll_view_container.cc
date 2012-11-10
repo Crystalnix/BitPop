@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,17 +10,19 @@
 #include <Vssym32.h>
 #endif
 
+#include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkPath.h"
 #include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/base/native_theme/native_theme.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/gfx/native_theme.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/submenu_view.h"
 
-using gfx::NativeTheme;
+using ui::NativeTheme;
 
 // Height of the scroll arrow.
 // This goes up to 4 with large fonts, but this is close enough for now.
@@ -81,7 +83,7 @@ class MenuScrollButton : public View {
     gfx::Rect item_bounds(0, 0, width(), height());
     NativeTheme::ExtraParams extra;
     extra.menu_item.is_selected = false;
-    NativeTheme::instance()->Paint(canvas->GetSkCanvas(),
+    NativeTheme::instance()->Paint(canvas->sk_canvas(),
                                    NativeTheme::kMenuItemBackground,
                                    NativeTheme::kNormal, item_bounds, extra);
 #if defined(OS_WIN)
@@ -93,13 +95,28 @@ class MenuScrollButton : public View {
     // Then the arrow.
     int x = width() / 2;
     int y = (height() - config.scroll_arrow_height) / 2;
-    int delta_y = 1;
+
+    int x_left = x - config.scroll_arrow_height;
+    int x_right = x + config.scroll_arrow_height;
+    int y_bottom;
+
     if (!is_up_) {
-      delta_y = -1;
-      y += config.scroll_arrow_height;
+      y_bottom = y;
+      y = y_bottom + config.scroll_arrow_height;
+    } else {
+      y_bottom = y + config.scroll_arrow_height;
     }
-    for (int i = 0; i < config.scroll_arrow_height; ++i, --x, y += delta_y)
-      canvas->FillRect(arrow_color, gfx::Rect(x, y, (i * 2) + 1, 1));
+    SkPath path;
+    path.setFillType(SkPath::kWinding_FillType);
+    path.moveTo(SkIntToScalar(x), SkIntToScalar(y));
+    path.lineTo(SkIntToScalar(x_left), SkIntToScalar(y_bottom));
+    path.lineTo(SkIntToScalar(x_right), SkIntToScalar(y_bottom));
+    path.lineTo(SkIntToScalar(x), SkIntToScalar(y));
+    SkPaint paint;
+    paint.setStyle(SkPaint::kFill_Style);
+    paint.setAntiAlias(true);
+    paint.setColor(arrow_color);
+    canvas->DrawPath(path, paint);
   }
 
  private:
@@ -165,11 +182,11 @@ MenuScrollViewContainer::MenuScrollViewContainer(SubmenuView* content_view)
   scroll_view_ = new MenuScrollView(content_view);
   AddChildView(scroll_view_);
 
-  set_border(Border::CreateEmptyBorder(
-                 SubmenuView::kSubmenuBorderSize,
-                 SubmenuView::kSubmenuBorderSize,
-                 SubmenuView::kSubmenuBorderSize,
-                 SubmenuView::kSubmenuBorderSize));
+  MenuDelegate* delegate = content_view_->GetMenuItem()->GetDelegate();
+  if (delegate) {
+    set_border(delegate->CreateMenuBorder());
+    set_background(delegate->CreateMenuBackground());
+  }
 }
 
 void MenuScrollViewContainer::OnPaintBackground(gfx::Canvas* canvas) {
@@ -183,7 +200,7 @@ void MenuScrollViewContainer::OnPaintBackground(gfx::Canvas* canvas) {
 #endif
   gfx::Rect bounds(0, 0, width(), height());
   NativeTheme::ExtraParams extra;
-  NativeTheme::instance()->Paint(canvas->GetSkCanvas(),
+  NativeTheme::instance()->Paint(canvas->sk_canvas(),
       NativeTheme::kMenuPopupBackground, NativeTheme::kNormal, bounds, extra);
 #if defined(OS_WIN)
   canvas->EndPlatformPaint();

@@ -1,4 +1,5 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -6,21 +7,13 @@
 
 
 import os
-import re
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../../../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../../../..'))
 
-import tempfile
 import unittest
-import StringIO
-from xml.dom import minidom
 
-from grit.format import rc
 from grit.format.policy_templates.writers import writer_unittest_common
-from grit import grd_reader
-from grit import util
-from grit.tool import build
 
 
 class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
@@ -327,6 +320,53 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
           <string>one</string>
           <string>two</string>
         </array>
+      </dict>
+    </array>''')
+    self.assertEquals(output.strip(), expected_output.strip())
+
+  def testDictionaryPolicy(self):
+    # Tests a policy group with a single policy of type 'dict'.
+    grd = self.PrepareTest('''
+      {
+        'policy_definitions': [
+          {
+            'name': 'DictionaryGroup',
+            'type': 'group',
+            'desc': '',
+            'caption': '',
+            'policies': [{
+              'name': 'DictionaryPolicy',
+              'type': 'dict',
+              'supported_on': ['chrome.mac:8-'],
+              'desc': '',
+              'caption': '',
+            }],
+          },
+        ],
+        'placeholders': [],
+        'messages': {},
+      }''')
+    output = self.GetOutput(
+        grd,
+        'fr',
+        {'_chromium' : '1', 'mac_bundle_id': 'com.example.Test'},
+        'plist',
+        'en')
+    expected_output = self._GetExpectedOutputs(
+        'Chromium', 'com.example.Test', '''<array>
+      <dict>
+        <key>pfm_name</key>
+        <string>DictionaryPolicy</string>
+        <key>pfm_description</key>
+        <string/>
+        <key>pfm_title</key>
+        <string/>
+        <key>pfm_targets</key>
+        <array>
+          <string>user-managed</string>
+        </array>
+        <key>pfm_type</key>
+        <string>dictionary</string>
       </dict>
     </array>''')
     self.assertEquals(output.strip(), expected_output.strip())

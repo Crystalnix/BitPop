@@ -1,40 +1,29 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // IPC messages for spellcheck.
 // Multiply-included message file, hence no include guard.
 
+#include "chrome/common/spellcheck_result.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingResult.h"
+
 
 #define IPC_MESSAGE_START SpellCheckMsgStart
 
-IPC_ENUM_TRAITS(WebKit::WebTextCheckingResult::Error)
+IPC_ENUM_TRAITS(SpellCheckResult::Type)
 
-IPC_STRUCT_TRAITS_BEGIN(WebKit::WebTextCheckingResult)
-  IPC_STRUCT_TRAITS_MEMBER(error)
-  IPC_STRUCT_TRAITS_MEMBER(position)
+IPC_STRUCT_TRAITS_BEGIN(SpellCheckResult)
+  IPC_STRUCT_TRAITS_MEMBER(type)
+  IPC_STRUCT_TRAITS_MEMBER(location)
   IPC_STRUCT_TRAITS_MEMBER(length)
+  IPC_STRUCT_TRAITS_MEMBER(replacement)
 IPC_STRUCT_TRAITS_END()
-
 
 // Messages sent from the browser to the renderer.
 
 IPC_MESSAGE_ROUTED0(SpellCheckMsg_ToggleSpellCheck)
-
-IPC_MESSAGE_ROUTED1(SpellCheckMsg_ToggleSpellPanel,
-                    bool)
-
-IPC_MESSAGE_ROUTED3(SpellCheckMsg_RespondTextCheck,
-                    int        /* request identifier given by WebKit */,
-                    int        /* document tag */,
-                    std::vector<WebKit::WebTextCheckingResult>)
-
-// This message tells the renderer to advance to the next misspelling. It is
-// sent when the user clicks the "Find Next" button on the spelling panel.
-IPC_MESSAGE_ROUTED0(SpellCheckMsg_AdvanceToNextMisspelling)
 
 // Passes some initialization params to the renderer's spellchecker. This can
 // be called directly after startup or in (async) response to a
@@ -54,6 +43,34 @@ IPC_MESSAGE_CONTROL1(SpellCheckMsg_WordAdded,
 IPC_MESSAGE_CONTROL1(SpellCheckMsg_EnableAutoSpellCorrect,
                      bool /* enable */)
 
+#if !defined(OS_MACOSX)
+// Sends text-check results from the Spelling service when the service finishes
+// checking text reveived by a SpellCheckHostMsg_CallSpellingService message.
+// If the service is not available, the 4th parameter should be false and
+// the 5th parameter should contain the requested setence.
+IPC_MESSAGE_ROUTED5(SpellCheckMsg_RespondSpellingService,
+                    int         /* request identifier given by WebKit */,
+                    int         /* offset */,
+                    bool        /* succeeded calling serivce */,
+                    string16    /* sentence */,
+                    std::vector<SpellCheckResult>)
+#endif
+
+#if defined(OS_MACOSX)
+// This message tells the renderer to advance to the next misspelling. It is
+// sent when the user clicks the "Find Next" button on the spelling panel.
+IPC_MESSAGE_ROUTED0(SpellCheckMsg_AdvanceToNextMisspelling)
+
+// Sends when NSSpellChecker finishes checking text received by a preceeding
+// SpellCheckHostMsg_RequestTextCheck message.
+IPC_MESSAGE_ROUTED3(SpellCheckMsg_RespondTextCheck,
+                    int        /* request identifier given by WebKit */,
+                    int        /* document tag */,
+                    std::vector<SpellCheckResult>)
+
+IPC_MESSAGE_ROUTED1(SpellCheckMsg_ToggleSpellPanel,
+                    bool)
+#endif
 
 // Messages sent from the renderer to the browser.
 
@@ -66,6 +83,17 @@ IPC_MESSAGE_CONTROL0(SpellCheckHostMsg_RequestDictionary)
 IPC_MESSAGE_ROUTED2(SpellCheckHostMsg_NotifyChecked,
                     string16 /* word */,
                     bool /* true if checked word is misspelled */)
+
+#if !defined(OS_MACOSX)
+// Asks the Spelling service to check text. When the service finishes checking
+// the input text, it sends a SpellingCheckMsg_RespondSpellingService with
+// text-check results.
+IPC_MESSAGE_CONTROL4(SpellCheckHostMsg_CallSpellingService,
+                     int /* route_id for response */,
+                     int /* request identifier given by WebKit */,
+                     int /* offset */,
+                     string16 /* sentence */)
+#endif
 
 #if defined(OS_MACOSX)
 // Asks the browser for a unique document tag.

@@ -1,14 +1,21 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_COMMON_NET_GAIA_GAIA_AUTH_CONSUMER_H_
 #define CHROME_COMMON_NET_GAIA_GAIA_AUTH_CONSUMER_H_
-#pragma once
 
 #include <string>
+#include <map>
+#include <vector>
 
 class GoogleServiceAuthError;
+
+namespace net {
+typedef std::vector<std::string> ResponseCookies;
+}
+
+typedef std::map<std::string, std::string> UserInfoMap;
 
 // An interface that defines the callbacks for objects that
 // GaiaAuthFetcher can return data to.
@@ -32,6 +39,26 @@ class GaiaAuthConsumer {
     bool two_factor;  // set to true if there was a TWO_FACTOR "failure".
   };
 
+  struct ClientOAuthResult {
+    ClientOAuthResult();
+    ClientOAuthResult(const std::string& new_refresh_token,
+                      const std::string& new_access_token,
+                      int new_expires_in_secs);
+    ~ClientOAuthResult();
+
+    bool operator==(const ClientOAuthResult &b) const;
+
+    // OAuth2 refresh token.  Used to mint new access tokens when needed.
+    std::string refresh_token;
+
+    // OAuth2 access token.  Token to pass to endpoints that require oauth2
+    // authentication.
+    std::string access_token;
+
+    // The lifespan of |access_token| in seconds.
+    int expires_in_secs;
+  };
+
   virtual ~GaiaAuthConsumer() {}
 
   virtual void OnClientLoginSuccess(const ClientLoginResult& result) {}
@@ -42,18 +69,14 @@ class GaiaAuthConsumer {
   virtual void OnIssueAuthTokenFailure(const std::string& service,
                                        const GoogleServiceAuthError& error) {}
 
-  virtual void OnOAuthLoginTokenSuccess(const std::string& refresh_token,
-                                        const std::string& access_token,
-                                        int expires_in_secs) {}
-  virtual void OnOAuthLoginTokenFailure(const GoogleServiceAuthError& error) {}
+  virtual void OnClientOAuthSuccess(const ClientOAuthResult& result) {}
+  virtual void OnClientOAuthFailure(const GoogleServiceAuthError& error) {}
 
-  virtual void OnGetUserInfoSuccess(const std::string& key,
-                                    const std::string& value) {}
-  virtual void OnGetUserInfoKeyNotFound(const std::string& key) {}
+  virtual void OnGetUserInfoSuccess(const UserInfoMap& data) {}
   virtual void OnGetUserInfoFailure(const GoogleServiceAuthError& error) {}
 
-  virtual void OnTokenAuthSuccess(const std::string& data) {}
-  virtual void OnTokenAuthFailure(const GoogleServiceAuthError& error) {}
+  virtual void OnUberAuthTokenSuccess(const std::string& token) {}
+  virtual void OnUberAuthTokenFailure(const GoogleServiceAuthError& error) {}
 
   virtual void OnMergeSessionSuccess(const std::string& data) {}
   virtual void OnMergeSessionFailure(const GoogleServiceAuthError& error) {}

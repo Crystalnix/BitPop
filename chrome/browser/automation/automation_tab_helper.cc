@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -55,11 +55,18 @@ void AutomationTabHelper::SnapshotEntirePage() {
   Send(new AutomationMsg_SnapshotEntirePage(routing_id()));
 }
 
+#if !defined(NO_TCMALLOC) && (defined(OS_LINUX) || defined(OS_CHROMEOS))
+void AutomationTabHelper::HeapProfilerDump(const std::string& reason) {
+  Send(new AutomationMsg_HeapProfilerDump(routing_id(), reason));
+}
+#endif  // !defined(NO_TCMALLOC) && (defined(OS_LINUX) || defined(OS_CHROMEOS))
+
 bool AutomationTabHelper::has_pending_loads() const {
   return is_loading_ || !pending_client_redirects_.empty();
 }
 
-void AutomationTabHelper::DidStartLoading() {
+void AutomationTabHelper::DidStartLoading(
+    content::RenderViewHost* render_view_host) {
   if (is_loading_) {
     // DidStartLoading is often called twice. Once when the renderer sends a
     // load start message, and once when the browser calls it directly as a
@@ -75,7 +82,8 @@ void AutomationTabHelper::DidStartLoading() {
   }
 }
 
-void AutomationTabHelper::DidStopLoading() {
+void AutomationTabHelper::DidStopLoading(
+    content::RenderViewHost* render_view_host) {
   if (!is_loading_) {
     LOG(WARNING) << "Received DidStopLoading while loading already stopped.";
     return;

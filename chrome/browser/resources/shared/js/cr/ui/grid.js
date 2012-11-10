@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,9 +13,9 @@
  */
 
 cr.define('cr.ui', function() {
-  const ListSelectionController = cr.ui.ListSelectionController;
-  const List = cr.ui.List;
-  const ListItem = cr.ui.ListItem;
+  /** @const */ var ListSelectionController = cr.ui.ListSelectionController;
+  /** @const */ var List = cr.ui.List;
+  /** @const */ var ListItem = cr.ui.ListItem;
 
   /**
    * Creates a new grid item element.
@@ -24,7 +24,7 @@ cr.define('cr.ui', function() {
    * @extends {cr.ui.ListItem}
    */
   function GridItem(dataItem) {
-    var el = cr.doc.createElement('span');
+    var el = cr.doc.createElement('li');
     el.dataItem = dataItem;
     el.__proto__ = GridItem.prototype;
     return el;
@@ -94,8 +94,69 @@ cr.define('cr.ui', function() {
       // inline-block elements according to css spec which are thumbnail items.
 
       var width = size.width + Math.min(size.marginLeft, size.marginRight);
+      var height = size.width + Math.min(size.marginTop, size.marginBottom);
 
-      return width ? Math.floor(this.clientWidth / width) : 0;
+      if (!width || !height)
+        return 0;
+
+      var itemCount = this.dataModel ? this.dataModel.length : 0;
+      if (!itemCount)
+        return 0;
+
+      var columns = Math.floor(this.clientWidthWithoutScrollbar_ / width);
+      if (!columns)
+        return 0;
+
+      var rows = Math.ceil(itemCount / columns);
+      if (rows * height <= this.clientHeight_)
+        return columns;
+
+      return Math.floor(this.clientWidthWithScrollbar_ / width);
+    },
+
+    /**
+     * Measure and cache client width and height with and without scrollbar.
+     * Must be updated when offsetWidth and/or offsetHeight changed.
+     */
+    updateMetrics_: function() {
+      // Check changings that may affect number of columns.
+      var offsetWidth = this.offsetWidth;
+      var offsetHeight = this.offsetHeight;
+      var overflowY = getComputedStyle(this).overflowY;
+
+      if (this.lastOffsetWidth_ == offsetWidth &&
+          this.lastOverflowY == overflowY) {
+        this.lastOffsetHeight_ = offsetHeight;
+        return;
+      }
+
+      this.lastOffsetWidth_ = offsetWidth;
+      this.lastOffsetHeight_ = offsetHeight;
+      this.lastOverflowY = overflowY;
+      this.columns_ = 0;
+
+      if (overflowY == 'auto' && offsetWidth > 0) {
+        // Column number may depend on whether scrollbar is present or not.
+        var originalClientWidth = this.clientWidth;
+        // At first make sure there is no scrollbar and calculate clientWidth
+        // (triggers reflow).
+        this.style.overflowY = 'hidden';
+        this.clientWidthWithoutScrollbar_ = this.clientWidth;
+        this.clientHeight_ = this.clientHeight;
+        if (this.clientWidth != originalClientWidth) {
+          // If clientWidth changed then previously scrollbar was shown.
+          this.clientWidthWithScrollbar_ = originalClientWidth;
+        } else {
+          // Show scrollbar and recalculate clientWidth (triggers reflow).
+          this.style.overflowY = 'scroll';
+          this.clientWidthWithScrollbar_ = this.clientWidth;
+        }
+        this.style.overflowY = '';
+      } else {
+        this.clientWidthWithoutScrollbar_ = this.clientWidthWithScrollbar_ =
+            this.clientWidth;
+        this.clientHeight_ = this.clientHeight;
+      }
     },
 
     /**
@@ -257,6 +318,18 @@ cr.define('cr.ui', function() {
       // Non-items are before-, afterFiller and spacers added in mergeItems.
       return child.nodeType == Node.ELEMENT_NODE &&
              !child.classList.contains('spacer');
+    },
+
+    redraw: function() {
+      this.updateMetrics_();
+      var itemCount = this.dataModel ? this.dataModel.length : 0;
+      if (this.lastItemCount_ != itemCount) {
+        this.lastItemCount_ = itemCount;
+        // Force recalculation.
+        this.columns_ = 0;
+      }
+
+      List.prototype.redraw.call(this);
     }
   };
 
@@ -277,16 +350,30 @@ cr.define('cr.ui', function() {
     __proto__: ListSelectionController.prototype,
 
     /**
+     * Check if accessibility is enabled: if ChromeVox is running
+     * (which provides spoken feedback for accessibility), make up/down
+     * behave the same as left/right. That's because the 2-dimensional
+     * structure of the grid isn't exposed, so it makes more sense to a
+     * user who is relying on spoken feedback to flatten it.
+     * @return {boolean} True if accessibility is enabled.
+     */
+    isAccessibilityEnabled: function() {
+      return window.cvox && cvox.Api &&
+             cvox.Api.isChromeVoxActive && cvox.Api.isChromeVoxActive();
+    },
+
+    /**
      * Returns the index below (y axis) the given element.
      * @param {number} index The index to get the index below.
      * @return {number} The index below or -1 if not found.
      * @override
      */
     getIndexBelow: function(index) {
+      if (this.isAccessibilityEnabled())
+        return this.getIndexAfter(index);
       var last = this.getLastIndex();
-      if (index == last) {
+      if (index == last)
         return -1;
-      }
       index += this.grid_.columns;
       return Math.min(index, last);
     },
@@ -298,9 +385,10 @@ cr.define('cr.ui', function() {
      * @override
      */
     getIndexAbove: function(index) {
-      if (index == 0) {
+      if (this.isAccessibilityEnabled())
+        return this.getIndexBefore(index);
+      if (index == 0)
         return -1;
-      }
       index -= this.grid_.columns;
       return Math.max(index, 0);
     },
@@ -333,5 +421,5 @@ cr.define('cr.ui', function() {
     Grid: Grid,
     GridItem: GridItem,
     GridSelectionController: GridSelectionController
-  }
+  };
 });

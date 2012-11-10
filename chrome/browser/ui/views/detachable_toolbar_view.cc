@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,10 @@
 
 #include "chrome/browser/themes/theme_service.h"
 #include "grit/theme_resources.h"
-#include "grit/theme_resources_standard.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/canvas.h"
+#include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/window/non_client_view.h"
 
@@ -26,13 +25,28 @@ const SkColor DetachableToolbarView::kMiddleDividerColor =
 void DetachableToolbarView::PaintBackgroundAttachedMode(
     gfx::Canvas* canvas,
     views::View* view,
-    const gfx::Point& background_origin) {
-  ui::ThemeProvider* tp = view->GetThemeProvider();
-  SkColor theme_toolbar_color = tp->GetColor(ThemeService::COLOR_TOOLBAR);
-  canvas->FillRect(theme_toolbar_color, view->GetLocalBounds());
-  canvas->TileImageInt(*tp->GetBitmapNamed(IDR_THEME_TOOLBAR),
+    const gfx::Point& background_origin,
+    SkColor toolbar_background_color,
+    gfx::ImageSkia* toolbar_background_image) {
+  canvas->FillRect(view->GetLocalBounds(), toolbar_background_color);
+  canvas->TileImageInt(*toolbar_background_image,
                        background_origin.x(), background_origin.y(), 0, 0,
                        view->width(), view->height());
+#if defined(USE_ASH)
+  // Ash provides additional lightening at the edges of the toolbar.
+  ui::ThemeProvider* tp = view->GetThemeProvider();
+  gfx::ImageSkia* toolbar_left = tp->GetImageSkiaNamed(IDR_TOOLBAR_SHADE_LEFT);
+  canvas->TileImageInt(*toolbar_left,
+                       0, 0,
+                       0, 0,
+                       toolbar_left->width(), view->height());
+  gfx::ImageSkia* toolbar_right =
+      tp->GetImageSkiaNamed(IDR_TOOLBAR_SHADE_RIGHT);
+  canvas->TileImageInt(*toolbar_right,
+                       0, 0,
+                       view->width() - toolbar_right->width(), 0,
+                       toolbar_right->width(), view->height());
+#endif
 }
 
 // static
@@ -56,8 +70,8 @@ void DetachableToolbarView::PaintHorizontalBorder(gfx::Canvas* canvas,
   // the view (bar/shelf) is attached or detached.
   int thickness = views::NonClientFrameView::kClientEdgeThickness;
   int y = view->IsDetached() ? 0 : (view->height() - thickness);
-  canvas->FillRect(ResourceBundle::toolbar_separator_color,
-                   gfx::Rect(0, y, view->width(), thickness));
+  canvas->FillRect(gfx::Rect(0, y, view->width(), thickness),
+      ThemeService::GetDefaultColor(ThemeService::COLOR_TOOLBAR_SEPARATOR));
 }
 
 // static
@@ -70,7 +84,7 @@ void DetachableToolbarView::PaintContentAreaBackground(
   paint.setAntiAlias(true);
   paint.setColor(theme_provider->GetColor(ThemeService::COLOR_TOOLBAR));
 
-  canvas->GetSkCanvas()->drawRoundRect(
+  canvas->sk_canvas()->drawRoundRect(
       rect, SkDoubleToScalar(roundness), SkDoubleToScalar(roundness), paint);
 }
 
@@ -85,17 +99,19 @@ void DetachableToolbarView::PaintContentAreaBorder(
   border_paint.setAlpha(96);
   border_paint.setAntiAlias(true);
 
-  canvas->GetSkCanvas()->drawRoundRect(
+  canvas->sk_canvas()->drawRoundRect(
       rect, SkDoubleToScalar(roundness), SkDoubleToScalar(roundness),
       border_paint);
 }
 
 // static
-void DetachableToolbarView::PaintVerticalDivider(
-    gfx::Canvas* canvas, int x, int height, int vertical_padding,
-    const SkColor& top_color,
-    const SkColor& middle_color,
-    const SkColor& bottom_color) {
+void DetachableToolbarView::PaintVerticalDivider(gfx::Canvas* canvas,
+                                                 int x,
+                                                 int height,
+                                                 int vertical_padding,
+                                                 SkColor top_color,
+                                                 SkColor middle_color,
+                                                 SkColor bottom_color) {
   // Draw the upper half of the divider.
   SkPaint paint;
   SkSafeUnref(paint.setShader(gfx::CreateGradientShader(vertical_padding + 1,
@@ -106,7 +122,7 @@ void DetachableToolbarView::PaintVerticalDivider(
                 SkIntToScalar(vertical_padding + 1),
                 SkIntToScalar(x + 1),
                 SkIntToScalar(height / 2) };
-  canvas->GetSkCanvas()->drawRect(rc, paint);
+  canvas->sk_canvas()->drawRect(rc, paint);
 
   // Draw the lower half of the divider.
   SkPaint paint_down;
@@ -116,5 +132,5 @@ void DetachableToolbarView::PaintVerticalDivider(
                      SkIntToScalar(height / 2),
                      SkIntToScalar(x + 1),
                      SkIntToScalar(height - vertical_padding) };
-  canvas->GetSkCanvas()->drawRect(rc_down, paint_down);
+  canvas->sk_canvas()->drawRect(rc_down, paint_down);
 }

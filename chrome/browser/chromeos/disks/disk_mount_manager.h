@@ -1,14 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_CHROMEOS_DISKS_DISK_MOUNT_MANAGER_H_
 #define CHROME_BROWSER_CHROMEOS_DISKS_DISK_MOUNT_MANAGER_H_
-#pragma once
 
 #include <map>
 
-#include "chrome/browser/chromeos/dbus/cros_disks_client.h"
+#include "chromeos/dbus/cros_disks_client.h"
 
 namespace chromeos {
 namespace disks {
@@ -53,6 +52,7 @@ class DiskMountManager {
          const std::string& file_path,
          const std::string& device_label,
          const std::string& drive_label,
+         const std::string& fs_uuid,
          const std::string& system_path_prefix,
          DeviceType device_type,
          uint64 total_size_in_bytes,
@@ -85,6 +85,9 @@ class DiskMountManager {
     // If disk is a parent, then its label, else parents label.
     // (e.g. "TransMemory")
     const std::string& drive_label() const { return drive_label_; }
+
+    // Returns the file system uuid string.
+    const std::string& fs_uuid() const { return fs_uuid_; }
 
     // Path of the system device this device's block is a part of.
     // (e.g. /sys/devices/pci0000:00/.../8:0:0:0/)
@@ -126,6 +129,7 @@ class DiskMountManager {
     std::string file_path_;
     std::string device_label_;
     std::string drive_label_;
+    std::string fs_uuid_;
     std::string system_path_prefix_;
     DeviceType device_type_;
     uint64 total_size_in_bytes_;
@@ -194,6 +198,10 @@ class DiskMountManager {
   // Gets the list of disks found.
   virtual const DiskMap& disks() const = 0;
 
+  // Returns Disk object corresponding to |source_path| or NULL on failure.
+  virtual const Disk* FindDiskBySourcePath(
+      const std::string& source_path) const = 0;
+
   // Gets the list of mount points.
   virtual const MountPointMap& mount_points() const = 0;
 
@@ -201,7 +209,10 @@ class DiskMountManager {
   virtual void RequestMountInfoRefresh() = 0;
 
   // Mounts a device.
-  virtual void MountPath(const std::string& source_path, MountType type) = 0;
+  virtual void MountPath(const std::string& source_path,
+                         const std::string& source_format,
+                         const std::string& mount_label,
+                         MountType type) = 0;
 
   // Unmounts a mounted disk.
   virtual void UnmountPath(const std::string& mount_path) = 0;
@@ -232,6 +243,9 @@ class DiskMountManager {
 
   // Returns corresponding string to |type| like "unknown_filesystem".
   static std::string MountConditionToString(MountCondition type);
+
+  // Returns corresponding string to |type|, like "sd", "usb".
+  static std::string DeviceTypeToString(DeviceType type);
 
   // Creates the global DiskMountManager instance.
   static void Initialize();

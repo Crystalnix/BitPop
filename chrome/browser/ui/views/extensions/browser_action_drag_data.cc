@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,7 +51,7 @@ bool BrowserActionDragData::Read(const ui::OSExchangeData& data) {
 // static
 ui::OSExchangeData::CustomFormat
     BrowserActionDragData::GetBrowserActionCustomFormat() {
-  static ui::OSExchangeData::CustomFormat format;
+  CR_DEFINE_STATIC_LOCAL(ui::OSExchangeData::CustomFormat, format, ());
   static bool format_valid = false;
 
   if (!format_valid) {
@@ -67,11 +67,11 @@ void BrowserActionDragData::WriteToPickle(
     Profile* profile, Pickle* pickle) const {
   pickle->WriteBytes(&profile, sizeof(profile));
   pickle->WriteString(id_);
-  pickle->WriteSize(index_);
+  pickle->WriteUInt64(index_);
 }
 
 bool BrowserActionDragData::ReadFromPickle(Pickle* pickle) {
-  void* data_iterator = NULL;
+  PickleIterator data_iterator(*pickle);
 
   const char* tmp;
   if (!pickle->ReadBytes(&data_iterator, &tmp, sizeof(profile_)))
@@ -81,8 +81,10 @@ bool BrowserActionDragData::ReadFromPickle(Pickle* pickle) {
   if (!pickle->ReadString(&data_iterator, &id_))
     return false;
 
-  if (!pickle->ReadSize(&data_iterator, &index_))
+  uint64 index;
+  if (!pickle->ReadUInt64(&data_iterator, &index))
     return false;
+  index_ = static_cast<size_t>(index);
 
   return true;
 }

@@ -1,18 +1,17 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/test/webdriver/webdriver_capabilities_parser.h"
 
-#include "base/base64.h"
 #include "base/file_util.h"
 #include "base/format_macros.h"
 #include "base/stringprintf.h"
 #include "base/string_util.h"
 #include "base/values.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/zip.h"
 #include "chrome/test/webdriver/webdriver_error.h"
+#include "chrome/test/webdriver/webdriver_logging.h"
 #include "chrome/test/webdriver/webdriver_util.h"
 
 using base::DictionaryValue;
@@ -38,8 +37,10 @@ Capabilities::Capabilities()
     : command(CommandLine::NO_PROGRAM),
       detach(false),
       load_async(false),
+      local_state(new DictionaryValue()),
       native_events(false),
-      no_website_testing_defaults(false) {
+      no_website_testing_defaults(false),
+      prefs(new DictionaryValue()) {
   log_levels[LogType::kDriver] = kAllLogLevel;
 }
 
@@ -71,7 +72,7 @@ Error* CapabilitiesParser::Parse() {
     { "loggingPrefs", &CapabilitiesParser::ParseLoggingPrefs }
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(name_and_parser); ++i) {
-    Value* value;
+    const Value* value;
     if (dict_->Get(name_and_parser[i].name, &value)) {
       Error* error = (this->*name_and_parser[i].parser)(value);
       if (error)
@@ -83,11 +84,11 @@ Error* CapabilitiesParser::Parse() {
   const char kOptionsKey[] = "chromeOptions";
   const DictionaryValue* options = dict_;
   bool legacy_options = true;
-  Value* options_value;
+  const Value* options_value;
   if (dict_->Get(kOptionsKey, &options_value)) {
     legacy_options = false;
     if (options_value->IsType(Value::TYPE_DICTIONARY)) {
-      options = static_cast<DictionaryValue*>(options_value);
+      options = static_cast<const DictionaryValue*>(options_value);
     } else {
       return CreateBadInputError(
           kOptionsKey, Value::TYPE_DICTIONARY, options_value);
@@ -101,7 +102,9 @@ Error* CapabilitiesParser::Parse() {
     parser_map["chrome.detach"] = &CapabilitiesParser::ParseDetach;
     parser_map["chrome.extensions"] = &CapabilitiesParser::ParseExtensions;
     parser_map["chrome.loadAsync"] = &CapabilitiesParser::ParseLoadAsync;
+    parser_map["chrome.localState"] = &CapabilitiesParser::ParseLocalState;
     parser_map["chrome.nativeEvents"] = &CapabilitiesParser::ParseNativeEvents;
+    parser_map["chrome.prefs"] = &CapabilitiesParser::ParsePrefs;
     parser_map["chrome.profile"] = &CapabilitiesParser::ParseProfile;
     parser_map["chrome.switches"] = &CapabilitiesParser::ParseArgs;
     parser_map["chrome.noWebsiteTestingDefaults"] =
@@ -113,7 +116,9 @@ Error* CapabilitiesParser::Parse() {
     parser_map["detach"] = &CapabilitiesParser::ParseDetach;
     parser_map["extensions"] = &CapabilitiesParser::ParseExtensions;
     parser_map["loadAsync"] = &CapabilitiesParser::ParseLoadAsync;
+    parser_map["localState"] = &CapabilitiesParser::ParseLocalState;
     parser_map["nativeEvents"] = &CapabilitiesParser::ParseNativeEvents;
+    parser_map["prefs"] = &CapabilitiesParser::ParsePrefs;
     parser_map["profile"] = &CapabilitiesParser::ParseProfile;
     parser_map["noWebsiteTestingDefaults"] =
         &CapabilitiesParser::ParseNoWebsiteTestingDefaults;
@@ -127,7 +132,7 @@ Error* CapabilitiesParser::Parse() {
                          "Unrecognized chrome capability: " +  *key_iter);
       continue;
     }
-    Value* option = NULL;
+    const Value* option = NULL;
     options->GetWithoutPathExpansion(*key_iter, &option);
     Error* error = (this->*parser_map[*key_iter])(option);
     if (error) {
@@ -196,13 +201,13 @@ Error* CapabilitiesParser::ParseExtensions(const Value* option) {
     }
     FilePath extension = root_.AppendASCII(
         base::StringPrintf("extension%" PRIuS ".crx", i));
-    std::string error_msg;
-    if (!DecodeAndWriteFile(extension, extension_base64, false /* unzip */,
-                            &error_msg)) {
-      return new Error(
-          kUnknownError,
-          "Error occurred while parsing extension: " + error_msg);
-    }
+    std::string decoded_extension;
+    if (!Base64Decode(extension_base64, &decoded_extension))
+      return new Error(kUnknownError, "Failed to base64 decode extension");
+    int size = static_cast<int>(decoded_extension.length());
+    if (file_util::WriteFile(
+            extension, decoded_extension.c_str(), size) != size)
+      return new Error(kUnknownError, "Failed to write extension file");
     caps_->extensions.push_back(extension);
   }
   return NULL;
@@ -211,6 +216,14 @@ Error* CapabilitiesParser::ParseExtensions(const Value* option) {
 Error* CapabilitiesParser::ParseLoadAsync(const Value* option) {
   if (!option->GetAsBoolean(&caps_->load_async))
     return CreateBadInputError("loadAsync", Value::TYPE_BOOLEAN, option);
+  return NULL;
+}
+
+Error* CapabilitiesParser::ParseLocalState(const Value* option) {
+  const base::DictionaryValue* local_state;
+  if (!option->GetAsDictionary(&local_state))
+    return CreateBadInputError("localState", Value::TYPE_DICTIONARY, option);
+  caps_->local_state.reset(local_state->DeepCopy());
   return NULL;
 }
 
@@ -225,16 +238,16 @@ Error* CapabilitiesParser::ParseLoggingPrefs(const base::Value* option) {
     if (!LogType::FromString(*key_iter, &log_type))
       continue;
 
-    Value* level_value;
+    const Value* level_value;
     logging_prefs->Get(*key_iter, &level_value);
-    int level;
-    if (!level_value->GetAsInteger(&level)) {
+    std::string level_name;
+    if (!level_value->GetAsString(&level_name)) {
       return CreateBadInputError(
           std::string("loggingPrefs.") + *key_iter,
-          Value::TYPE_INTEGER,
+          Value::TYPE_STRING,
           level_value);
     }
-    caps_->log_levels[log_type.type()] = static_cast<LogLevel>(level);
+    caps_->log_levels[log_type.type()] = LogLevelFromString(level_name);
   }
   return NULL;
 }
@@ -245,14 +258,21 @@ Error* CapabilitiesParser::ParseNativeEvents(const Value* option) {
   return NULL;
 }
 
+Error* CapabilitiesParser::ParsePrefs(const Value* option) {
+  const base::DictionaryValue* prefs;
+  if (!option->GetAsDictionary(&prefs))
+    return CreateBadInputError("prefs", Value::TYPE_DICTIONARY, option);
+  caps_->prefs.reset(prefs->DeepCopy());
+  return NULL;
+}
+
 Error* CapabilitiesParser::ParseProfile(const Value* option) {
   std::string profile_base64;
   if (!option->GetAsString(&profile_base64))
     return CreateBadInputError("profile", Value::TYPE_STRING, option);
   std::string error_msg;
   caps_->profile = root_.AppendASCII("profile");
-  if (!DecodeAndWriteFile(caps_->profile, profile_base64, true /* unzip */,
-                          &error_msg))
+  if (!Base64DecodeAndUnzip(caps_->profile, profile_base64, &error_msg))
     return new Error(kUnknownError, "unable to unpack profile: " + error_msg);
   return NULL;
 }
@@ -290,7 +310,7 @@ Error* CapabilitiesParser::ParseProxy(const base::Value* option) {
   proxy_type_parser_map["direct"] = NULL;
   proxy_type_parser_map["system"] = NULL;
 
-  Value* proxy_type_value;
+  const Value* proxy_type_value;
   if (!options->Get("proxyType", &proxy_type_value))
     return new Error(kBadRequest, "Missing 'proxyType' capability.");
 
@@ -319,7 +339,7 @@ Error* CapabilitiesParser::ParseProxy(const base::Value* option) {
 }
 
 Error* CapabilitiesParser::ParseProxyAutoDetect(
-    const DictionaryValue* options){
+    const DictionaryValue* options) {
   const char kProxyAutoDetectKey[] = "autodetect";
   bool proxy_auto_detect = false;
   if (!options->GetBoolean(kProxyAutoDetectKey, &proxy_auto_detect))
@@ -354,7 +374,7 @@ Error* CapabilitiesParser::ParseProxyServers(
   proxy_servers_options.insert(kSslProxy);
 
   Error* error = NULL;
-  Value* option = NULL;
+  const Value* option = NULL;
   bool has_manual_settings = false;
   if (options->Get(kNoProxy, &option) && !option->IsType(Value::TYPE_NULL)) {
     error = ParseNoProxy(option);
@@ -408,35 +428,6 @@ Error* CapabilitiesParser::ParseNoWebsiteTestingDefaults(const Value* option) {
     return CreateBadInputError("noWebsiteTestingDefaults",
                                Value::TYPE_BOOLEAN, option);
   return NULL;
-}
-
-bool CapabilitiesParser::DecodeAndWriteFile(
-    const FilePath& path,
-    const std::string& base64,
-    bool unzip,
-    std::string* error_msg) {
-  std::string data;
-  if (!base::Base64Decode(base64, &data)) {
-    *error_msg = "Could not decode base64 data";
-    return false;
-  }
-  if (unzip) {
-    FilePath temp_file(root_.AppendASCII(GenerateRandomID()));
-    if (!file_util::WriteFile(temp_file, data.c_str(), data.length())) {
-      *error_msg = "Could not write file";
-      return false;
-    }
-    if (!zip::Unzip(temp_file, path)) {
-      *error_msg = "Could not unzip archive";
-      return false;
-    }
-  } else {
-    if (!file_util::WriteFile(path, data.c_str(), data.length())) {
-      *error_msg = "Could not write file";
-      return false;
-    }
-  }
-  return true;
 }
 
 }  // namespace webdriver

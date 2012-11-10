@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,50 +6,36 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "net/base/net_errors.h"
 
 namespace remoting {
 namespace protocol {
 
-class BufferedSocketWriterBase::PendingPacket {
- public:
+struct BufferedSocketWriterBase::PendingPacket {
   PendingPacket(scoped_refptr<net::IOBufferWithSize> data,
                 const base::Closure& done_task)
-      : data_(data),
-        done_task_(done_task) {
-  }
-  ~PendingPacket() {
-    if (!done_task_.is_null())
-      done_task_.Run();
+      : data(data),
+        done_task(done_task) {
   }
 
-  net::IOBufferWithSize* data() {
-    return data_;
-  }
-
- private:
-  scoped_refptr<net::IOBufferWithSize> data_;
-  base::Closure done_task_;
-
-  DISALLOW_COPY_AND_ASSIGN(PendingPacket);
+  scoped_refptr<net::IOBufferWithSize> data;
+  base::Closure done_task;
 };
 
-BufferedSocketWriterBase::BufferedSocketWriterBase(
-    base::MessageLoopProxy* message_loop)
+BufferedSocketWriterBase::BufferedSocketWriterBase()
     : buffer_size_(0),
       socket_(NULL),
-      message_loop_(message_loop),
       write_pending_(false),
-      closed_(false) {
+      closed_(false),
+      destroyed_flag_(NULL) {
 }
-
-BufferedSocketWriterBase::~BufferedSocketWriterBase() { }
 
 void BufferedSocketWriterBase::Init(net::Socket* socket,
                                     const WriteFailedCallback& callback) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(CalledOnValidThread());
   DCHECK(socket);
   socket_ = socket;
   write_failed_callback_ = callback;
@@ -57,18 +43,23 @@ void BufferedSocketWriterBase::Init(net::Socket* socket,
 
 bool BufferedSocketWriterBase::Write(
     scoped_refptr<net::IOBufferWithSize> data, const base::Closure& done_task) {
-  {
-    base::AutoLock auto_lock(lock_);
-    queue_.push_back(new PendingPacket(data, done_task));
-    buffer_size_ += data->size();
-  }
-  message_loop_->PostTask(
-      FROM_HERE, base::Bind(&BufferedSocketWriterBase::DoWrite, this));
+  DCHECK(CalledOnValidThread());
+  DCHECK(socket_);
+  DCHECK(data.get());
+
+  // Don't write after Close().
+  if (closed_)
+    return false;
+
+  queue_.push_back(new PendingPacket(data, done_task));
+  buffer_size_ += data->size();
+
+  DoWrite();
   return true;
 }
 
 void BufferedSocketWriterBase::DoWrite() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(CalledOnValidThread());
   DCHECK(socket_);
 
   // Don't try to write if there is another write pending.
@@ -82,10 +73,7 @@ void BufferedSocketWriterBase::DoWrite() {
   while (true) {
     net::IOBuffer* current_packet;
     int current_packet_size;
-    {
-      base::AutoLock auto_lock(lock_);
-      GetNextPacket_Locked(&current_packet, &current_packet_size);
-    }
+    GetNextPacket(&current_packet, &current_packet_size);
 
     // Return if the queue is empty.
     if (!current_packet)
@@ -95,86 +83,95 @@ void BufferedSocketWriterBase::DoWrite() {
         current_packet, current_packet_size,
         base::Bind(&BufferedSocketWriterBase::OnWritten,
                    base::Unretained(this)));
-    if (result >= 0) {
-      base::AutoLock auto_lock(lock_);
-      AdvanceBufferPosition_Locked(result);
-    } else {
-      if (result == net::ERR_IO_PENDING) {
-        write_pending_ = true;
-      } else {
-        HandleError(result);
-        if (!write_failed_callback_.is_null())
-          write_failed_callback_.Run(result);
-      }
+    bool write_again = false;
+    HandleWriteResult(result, &write_again);
+    if (!write_again)
       return;
-    }
   }
 }
 
-void BufferedSocketWriterBase::OnWritten(int result) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  write_pending_ = false;
-
+void BufferedSocketWriterBase::HandleWriteResult(int result,
+                                                 bool* write_again) {
+  *write_again = false;
   if (result < 0) {
-    HandleError(result);
-    if (!write_failed_callback_.is_null())
-      write_failed_callback_.Run(result);
+    if (result == net::ERR_IO_PENDING) {
+      write_pending_ = true;
+    } else {
+      HandleError(result);
+      if (!write_failed_callback_.is_null())
+        write_failed_callback_.Run(result);
+    }
     return;
   }
 
-  {
-    base::AutoLock auto_lock(lock_);
-    AdvanceBufferPosition_Locked(result);
+  base::Closure done_task = AdvanceBufferPosition(result);
+  if (!done_task.is_null()) {
+    bool destroyed = false;
+    destroyed_flag_ = &destroyed;
+    done_task.Run();
+    if (destroyed) {
+      // Stop doing anything if we've been destroyed by the callback.
+      return;
+    }
+    destroyed_flag_ = NULL;
   }
 
-  // Schedule next write.
-  message_loop_->PostTask(
-      FROM_HERE, base::Bind(&BufferedSocketWriterBase::DoWrite, this));
+  *write_again = true;
+}
+
+void BufferedSocketWriterBase::OnWritten(int result) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(write_pending_);
+  write_pending_ = false;
+
+  bool write_again;
+  HandleWriteResult(result, &write_again);
+  if (write_again)
+    DoWrite();
 }
 
 void BufferedSocketWriterBase::HandleError(int result) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(CalledOnValidThread());
 
   closed_ = true;
 
-  base::AutoLock auto_lock(lock_);
   STLDeleteElements(&queue_);
 
   // Notify subclass that an error is received.
-  OnError_Locked(result);
+  OnError(result);
 }
 
 int BufferedSocketWriterBase::GetBufferSize() {
-  base::AutoLock auto_lock(lock_);
   return buffer_size_;
 }
 
 int BufferedSocketWriterBase::GetBufferChunks() {
-  base::AutoLock auto_lock(lock_);
   return queue_.size();
 }
 
 void BufferedSocketWriterBase::Close() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(CalledOnValidThread());
   closed_ = true;
 }
 
-void BufferedSocketWriterBase::PopQueue() {
-  // This also calls |done_task|.
-  delete queue_.front();
-  queue_.pop_front();
-}
+BufferedSocketWriterBase::~BufferedSocketWriterBase() {
+  if (destroyed_flag_)
+    *destroyed_flag_ = true;
 
-BufferedSocketWriter::BufferedSocketWriter(
-    base::MessageLoopProxy* message_loop)
-  : BufferedSocketWriterBase(message_loop) {
-}
-
-BufferedSocketWriter::~BufferedSocketWriter() {
   STLDeleteElements(&queue_);
 }
 
-void BufferedSocketWriter::GetNextPacket_Locked(
+base::Closure BufferedSocketWriterBase::PopQueue() {
+  base::Closure result = queue_.front()->done_task;
+  delete queue_.front();
+  queue_.pop_front();
+  return result;
+}
+
+BufferedSocketWriter::BufferedSocketWriter() {
+}
+
+void BufferedSocketWriter::GetNextPacket(
     net::IOBuffer** buffer, int* size) {
   if (!current_buf_) {
     if (queue_.empty()) {
@@ -182,51 +179,55 @@ void BufferedSocketWriter::GetNextPacket_Locked(
       return;  // Nothing to write.
     }
     current_buf_ = new net::DrainableIOBuffer(
-        queue_.front()->data(), queue_.front()->data()->size());
+        queue_.front()->data, queue_.front()->data->size());
   }
 
   *buffer = current_buf_;
   *size = current_buf_->BytesRemaining();
 }
 
-void BufferedSocketWriter::AdvanceBufferPosition_Locked(int written) {
+base::Closure BufferedSocketWriter::AdvanceBufferPosition(int written) {
   buffer_size_ -= written;
   current_buf_->DidConsume(written);
 
   if (current_buf_->BytesRemaining() == 0) {
-    PopQueue();
     current_buf_ = NULL;
+    return PopQueue();
   }
+  return base::Closure();
 }
 
-void BufferedSocketWriter::OnError_Locked(int result) {
+void BufferedSocketWriter::OnError(int result) {
   current_buf_ = NULL;
 }
 
-BufferedDatagramWriter::BufferedDatagramWriter(
-    base::MessageLoopProxy* message_loop)
-    : BufferedSocketWriterBase(message_loop) {
+BufferedSocketWriter::~BufferedSocketWriter() {
 }
-BufferedDatagramWriter::~BufferedDatagramWriter() { }
 
-void BufferedDatagramWriter::GetNextPacket_Locked(
+BufferedDatagramWriter::BufferedDatagramWriter() {
+}
+
+void BufferedDatagramWriter::GetNextPacket(
     net::IOBuffer** buffer, int* size) {
   if (queue_.empty()) {
     *buffer = NULL;
     return;  // Nothing to write.
   }
-  *buffer = queue_.front()->data();
-  *size = queue_.front()->data()->size();
+  *buffer = queue_.front()->data;
+  *size = queue_.front()->data->size();
 }
 
-void BufferedDatagramWriter::AdvanceBufferPosition_Locked(int written) {
-  DCHECK_EQ(written, queue_.front()->data()->size());
-  buffer_size_ -= queue_.front()->data()->size();
-  PopQueue();
+base::Closure BufferedDatagramWriter::AdvanceBufferPosition(int written) {
+  DCHECK_EQ(written, queue_.front()->data->size());
+  buffer_size_ -= queue_.front()->data->size();
+  return PopQueue();
 }
 
-void BufferedDatagramWriter::OnError_Locked(int result) {
+void BufferedDatagramWriter::OnError(int result) {
   // Nothing to do here.
+}
+
+BufferedDatagramWriter::~BufferedDatagramWriter() {
 }
 
 }  // namespace protocol

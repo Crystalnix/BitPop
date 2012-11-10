@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -43,6 +43,8 @@
 #include <string>
 
 #include "content/common/content_export.h"
+#include "content/public/common/common_param_traits.h"
+#include "content/public/common/console_message_level.h"
 #include "ipc/ipc_message_macros.h"
 
 #undef IPC_MESSAGE_EXPORT
@@ -78,6 +80,11 @@ IPC_MESSAGE_ROUTED1(DevToolsAgentMsg_DispatchOnInspectorBackend,
 IPC_MESSAGE_ROUTED2(DevToolsAgentMsg_InspectElement,
                     int /* x */,
                     int /* y */)
+
+// Add message to the devtools console.
+IPC_MESSAGE_ROUTED2(DevToolsAgentMsg_AddMessageToConsole,
+                    content::ConsoleMessageLevel /* level */,
+                    std::string /* message */)
 
 // Notifies worker devtools agent that it should pause worker context
 // when it starts and wait until either DevTools client is attached or
@@ -126,8 +133,15 @@ IPC_MESSAGE_ROUTED1(DevToolsHostMsg_OpenInNewTab,
                     std::string /* url */)
 
 // Shows Save As dialog for content.
-IPC_MESSAGE_ROUTED2(DevToolsHostMsg_SaveAs,
-                    std::string /* file_name */,
+IPC_MESSAGE_ROUTED3(DevToolsHostMsg_Save,
+                    std::string /* url */,
+                    std::string /* content */,
+                    bool /* save_as */)
+
+// Appends given |content| to the file that has been associated with the
+// given |url| by Save message handler.
+IPC_MESSAGE_ROUTED2(DevToolsHostMsg_Append,
+                    std::string /* url */,
                     std::string /* content */)
 
 // Updates agent runtime state stored in devtools manager in order to support

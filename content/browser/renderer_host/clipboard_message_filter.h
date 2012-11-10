@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,6 +35,7 @@ class ClipboardMessageFilter : public content::BrowserMessageFilter {
   void OnIsFormatAvailable(const ui::Clipboard::FormatType& format,
                            ui::Clipboard::Buffer buffer,
                            bool* result);
+  void OnClear(ui::Clipboard::Buffer buffer);
   void OnReadAvailableTypes(ui::Clipboard::Buffer buffer,
                             std::vector<string16>* types,
                             bool* contains_filenames);
@@ -42,6 +43,7 @@ class ClipboardMessageFilter : public content::BrowserMessageFilter {
   void OnReadAsciiText(ui::Clipboard::Buffer buffer, std::string* result);
   void OnReadHTML(ui::Clipboard::Buffer buffer, string16* markup, GURL* url,
                   uint32* fragment_start, uint32* fragment_end);
+  void OnReadRTF(ui::Clipboard::Buffer buffer, std::string* result);
   void OnReadImage(ui::Clipboard::Buffer buffer, IPC::Message* reply_msg);
   void OnReadImageReply(const SkBitmap& bitmap, IPC::Message* reply_msg);
   void OnReadCustomData(ui::Clipboard::Buffer buffer,

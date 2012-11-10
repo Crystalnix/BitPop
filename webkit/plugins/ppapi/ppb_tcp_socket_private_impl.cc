@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,16 +22,36 @@ PPB_TCPSocket_Private_Impl::~PPB_TCPSocket_Private_Impl() {
 }
 
 PP_Resource PPB_TCPSocket_Private_Impl::CreateResource(PP_Instance instance) {
-  PluginInstance* plugin_instance = HostGlobals::Get()->GetInstance(instance);
-  if (!plugin_instance)
+  PluginDelegate* plugin_delegate = GetPluginDelegate(instance);
+  if (!plugin_delegate)
     return 0;
 
-  PluginDelegate* plugin_delegate = plugin_instance->delegate();
   uint32 socket_id = plugin_delegate->TCPSocketCreate();
   if (!socket_id)
     return 0;
 
   return (new PPB_TCPSocket_Private_Impl(instance, socket_id))->GetReference();
+}
+
+PP_Resource PPB_TCPSocket_Private_Impl::CreateConnectedSocket(
+    PP_Instance instance,
+    uint32 socket_id,
+    const PP_NetAddress_Private& local_addr,
+    const PP_NetAddress_Private& remote_addr) {
+  PluginDelegate* plugin_delegate = GetPluginDelegate(instance);
+  if (!plugin_delegate)
+    return 0;
+
+  PPB_TCPSocket_Private_Impl* socket =
+      new PPB_TCPSocket_Private_Impl(instance, socket_id);
+
+  socket->connection_state_ = PPB_TCPSocket_Private_Impl::CONNECTED;
+  socket->local_addr_ = local_addr;
+  socket->remote_addr_ = remote_addr;
+
+  plugin_delegate->RegisterTCPSocket(socket, socket_id);
+
+  return socket->GetReference();
 }
 
 void PPB_TCPSocket_Private_Impl::SendConnect(const std::string& host,
@@ -54,12 +74,15 @@ void PPB_TCPSocket_Private_Impl::SendConnectWithNetAddress(
 
 void PPB_TCPSocket_Private_Impl::SendSSLHandshake(
     const std::string& server_name,
-    uint16_t server_port) {
+    uint16_t server_port,
+    const std::vector<std::vector<char> >& trusted_certs,
+    const std::vector<std::vector<char> >& untrusted_certs) {
   PluginDelegate* plugin_delegate = ResourceHelper::GetPluginDelegate(this);
   if (!plugin_delegate)
     return;
 
-  plugin_delegate->TCPSocketSSLHandshake(socket_id_, server_name, server_port);
+  plugin_delegate->TCPSocketSSLHandshake(socket_id_, server_name, server_port,
+                                         trusted_certs, untrusted_certs);
 }
 
 void PPB_TCPSocket_Private_Impl::SendRead(int32_t bytes_to_read) {
@@ -85,6 +108,14 @@ void PPB_TCPSocket_Private_Impl::SendDisconnect() {
     return;
 
   plugin_delegate->TCPSocketDisconnect(socket_id_);
+}
+
+PluginDelegate* PPB_TCPSocket_Private_Impl::GetPluginDelegate(
+    PP_Instance instance) {
+  PluginInstance* plugin_instance = HostGlobals::Get()->GetInstance(instance);
+  if (!plugin_instance)
+    return NULL;
+  return plugin_instance->delegate();
 }
 
 }  // namespace ppapi

@@ -1,14 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_PREFS_COMMAND_LINE_PREF_STORE_H_
 #define CHROME_BROWSER_PREFS_COMMAND_LINE_PREF_STORE_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/prefs/value_map_pref_store.h"
 
@@ -17,14 +15,17 @@
 class CommandLinePrefStore : public ValueMapPrefStore {
  public:
   explicit CommandLinePrefStore(const CommandLine* command_line);
-  virtual ~CommandLinePrefStore();
 
  protected:
+  virtual ~CommandLinePrefStore();
+
   // Logs a message and returns false if the proxy switches are
   // self-contradictory. Protected so it can be used in unit testing.
   bool ValidateProxySwitches();
 
  private:
+  friend class TestCommandLinePrefStore;
+
   struct StringSwitchToPreferenceMapEntry {
     const char* switch_name;
     const char* preference_path;
@@ -52,6 +53,9 @@ class CommandLinePrefStore : public ValueMapPrefStore {
 
   // Apply the SSL/TLS preferences from the given switches.
   void ApplySSLSwitches();
+
+  // Determines whether the background mode is force-disabled.
+  void ApplyBackgroundModeSwitches();
 
   // Weak reference.
   const CommandLine* command_line_;

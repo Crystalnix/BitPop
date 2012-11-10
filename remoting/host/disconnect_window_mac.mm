@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,8 @@ class DisconnectWindowMac : public remoting::DisconnectWindow {
   DisconnectWindowMac();
   virtual ~DisconnectWindowMac();
 
-  virtual void Show(remoting::ChromotingHost* host,
+  virtual void Show(ChromotingHost* host,
+                    const base::Closure& disconnect_callback,
                     const std::string& username) OVERRIDE;
   virtual void Hide() OVERRIDE;
 
@@ -37,12 +38,14 @@ DisconnectWindowMac::~DisconnectWindowMac() {
   [window_controller_ close];
 }
 
-void DisconnectWindowMac::Show(remoting::ChromotingHost* host,
+void DisconnectWindowMac::Show(ChromotingHost* host,
+                               const base::Closure& disconnect_callback,
                                const std::string& username) {
   CHECK(window_controller_ == nil);
   NSString* nsUsername = base::SysUTF8ToNSString(username);
   window_controller_ =
       [[DisconnectWindowController alloc] initWithHost:host
+                                              callback:disconnect_callback
                                               username:nsUsername];
   [window_controller_ showWindow:nil];
 }
@@ -54,30 +57,24 @@ void DisconnectWindowMac::Hide() {
   window_controller_ = nil;
 }
 
-remoting::DisconnectWindow* remoting::DisconnectWindow::Create() {
-  return new DisconnectWindowMac;
+scoped_ptr<DisconnectWindow> DisconnectWindow::Create() {
+  return scoped_ptr<DisconnectWindow>(new DisconnectWindowMac());
 }
 
 }  // namespace remoting
 
 @interface DisconnectWindowController()
-@property (nonatomic, assign) remoting::ChromotingHost* host;
-@property (nonatomic, copy) NSString* username;
-
 - (BOOL)isRToL;
-
 @end
 
 @implementation DisconnectWindowController
-
-@synthesize host = host_;
-@synthesize username = username_;
-
 - (id)initWithHost:(remoting::ChromotingHost*)host
+          callback:(const base::Closure&)disconnect_callback
           username:(NSString*)username {
   self = [super initWithWindowNibName:@"disconnect_window"];
   if (self) {
     host_ = host;
+    disconnect_callback_ = disconnect_callback;
     username_ = [username copy];
   }
   return self;
@@ -89,25 +86,28 @@ remoting::DisconnectWindow* remoting::DisconnectWindow::Create() {
 }
 
 - (IBAction)stopSharing:(id)sender {
-  if (self.host) {
-    self.host->Shutdown(base::Closure());
-    self.host = NULL;
+  if (host_ != NULL && !disconnect_callback_.is_null()) {
+    disconnect_callback_.Run();
   }
 }
 
 - (BOOL)isRToL {
-  return host_->ui_strings().direction == remoting::UiStrings::RTL;
+  if (host_) {
+    return host_->ui_strings().direction == remoting::UiStrings::RTL;
+  } else {
+    return false;
+  }
 }
 
 - (void)close {
-  self.host = NULL;
+  host_ = NULL;
   [super close];
 }
 
 - (void)windowDidLoad {
   string16 text = ReplaceStringPlaceholders(
       host_->ui_strings().disconnect_message,
-      base::SysNSStringToUTF16(self.username),
+      base::SysNSStringToUTF16(username_),
       NULL);
   [connectedToField_ setStringValue:base::SysUTF16ToNSString(text)];
 

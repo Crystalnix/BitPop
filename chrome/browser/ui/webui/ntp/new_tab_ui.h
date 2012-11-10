@@ -4,13 +4,14 @@
 
 #ifndef CHROME_BROWSER_UI_WEBUI_NTP_NEW_TAB_UI_H_
 #define CHROME_BROWSER_UI_WEBUI_NTP_NEW_TAB_UI_H_
-#pragma once
 
+#include <map>
 #include <string>
 
 #include "base/gtest_prod_util.h"
 #include "base/time.h"
 #include "base/timer.h"
+#include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "content/public/browser/notification_observer.h"
@@ -21,7 +22,7 @@ class GURL;
 class PrefService;
 class Profile;
 
-// The TabContents used for the New Tab page.
+// The WebContents used for the New Tab page.
 class NewTabUI : public content::WebUIController,
                  public content::NotificationObserver {
  public:
@@ -30,12 +31,11 @@ class NewTabUI : public content::WebUIController,
 
   static void RegisterUserPrefs(PrefService* prefs);
 
-  // Sets up any experiment in which the NTP might want to participate.
-  // The CWS footer link is one such example.
-  static void SetupFieldTrials();
+  // Returns whether or not to show apps pages.
+  static bool ShouldShowApps();
 
-  // Returns whether or not the CWS footer experiment is enabled.
-  static bool IsWebStoreExperimentEnabled();
+  // Returns whether or not the "suggestions links page" is enabled.
+  static bool IsSuggestionsPageEnabled();
 
   // Adds "url", "title", and "direction" keys on incoming dictionary, setting
   // title as the url as a fallback on empty title.
@@ -51,8 +51,10 @@ class NewTabUI : public content::WebUIController,
   static int current_pref_version() { return current_pref_version_; }
 
   // WebUIController implementation:
-  virtual void RenderViewCreated(RenderViewHost* render_view_host) OVERRIDE;
-  virtual void RenderViewReused(RenderViewHost* render_view_host) OVERRIDE;
+  virtual void RenderViewCreated(
+      content::RenderViewHost* render_view_host) OVERRIDE;
+  virtual void RenderViewReused(
+      content::RenderViewHost* render_view_host) OVERRIDE;
 
   // Returns true if the bookmark bar can be displayed over this webui, detached
   // from the location bar.
@@ -75,11 +77,21 @@ class NewTabUI : public content::WebUIController,
 
     virtual bool ShouldReplaceExistingSource() const OVERRIDE;
 
+    // Adds |resource| to the source. |resource_id| is resource id or 0,
+    // which means return empty data set. |mime_type| is mime type of the
+    // resource.
+    void AddResource(const char* resource,
+                     const char *mime_type,
+                     int resource_id);
+
    private:
     virtual ~NewTabHTMLSource() {}
 
     // Pointer back to the original profile.
     Profile* profile_;
+
+    // Maps resource files to mime types an resource ids.
+    std::map<std::string, std::pair<std::string, int> > resource_map_;
 
     DISALLOW_COPY_AND_ASSIGN(NewTabHTMLSource);
   };
@@ -94,7 +106,7 @@ class NewTabUI : public content::WebUIController,
   // Reset the CSS caches.
   void InitializeCSSCaches();
 
-  void StartTimingPaint(RenderViewHost* render_view_host);
+  void StartTimingPaint(content::RenderViewHost* render_view_host);
   void PaintTimeout();
 
   Profile* GetProfile() const;
@@ -112,6 +124,8 @@ class NewTabUI : public content::WebUIController,
 
   // If the sync promo NTP bubble is being shown.
   bool showing_sync_bubble_;
+
+  PrefChangeRegistrar pref_change_registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(NewTabUI);
 };

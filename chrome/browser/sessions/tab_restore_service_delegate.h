@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,11 +11,11 @@
 #include "chrome/browser/sessions/session_id.h"
 
 class Profile;
-class SessionStorageNamespace;
 class TabNavigation;
 
 namespace content {
 class NavigationController;
+class SessionStorageNamespace;
 class WebContents;
 }
 
@@ -36,9 +36,12 @@ class TabRestoreServiceDelegate {
   // see Browser::active_index()
   virtual int GetSelectedIndex() const = 0;
 
+  // see Browser::app_name()
+  virtual std::string GetAppName() const = 0;
+
   // see Browser methods with the same names
   virtual content::WebContents* GetWebContentsAt(int index) const = 0;
-  virtual content::WebContents* GetSelectedWebContents() const = 0;
+  virtual content::WebContents* GetActiveWebContents() const = 0;
   virtual bool IsTabPinned(int index) const = 0;
   virtual content::WebContents* AddRestoredTab(
       const std::vector<TabNavigation>& navigations,
@@ -48,24 +51,24 @@ class TabRestoreServiceDelegate {
       bool select,
       bool pin,
       bool from_last_session,
-      SessionStorageNamespace* storage_namespace) = 0;
+      content::SessionStorageNamespace* storage_namespace) = 0;
   virtual void ReplaceRestoredTab(
       const std::vector<TabNavigation>& navigations,
       int selected_navigation,
       bool from_last_session,
       const std::string& extension_app_id,
-      SessionStorageNamespace* session_storage_namespace) = 0;
+      content::SessionStorageNamespace* session_storage_namespace) = 0;
   virtual void CloseTab() = 0;
 
   // see Browser::Create
-  static TabRestoreServiceDelegate* Create(Profile* profile);
+  static TabRestoreServiceDelegate* Create(Profile* profile,
+                                           const std::string& app_name);
 
-  // see BrowserList::GetBrowserForController
-  static TabRestoreServiceDelegate* FindDelegateForController(
-      const content::NavigationController* controller,
-      int* index);
+  // see browser::FindBrowserForWebContents
+  static TabRestoreServiceDelegate* FindDelegateForWebContents(
+      const content::WebContents* contents);
 
-  // see BrowserList::FindBrowserWithID
+  // see browser::FindBrowserWithID
   static TabRestoreServiceDelegate* FindDelegateWithID(
       SessionID::id_type desired_id);
 

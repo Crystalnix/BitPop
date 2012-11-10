@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_POLICY_CLOUD_POLICY_CACHE_BASE_H_
 #define CHROME_BROWSER_POLICY_CLOUD_POLICY_CACHE_BASE_H_
-#pragma once
 
 #include "base/observer_list.h"
 #include "base/threading/non_thread_safe.h"
@@ -39,8 +38,9 @@ class CloudPolicyCacheBase : public base::NonThreadSafe {
   // Loads persisted policy information.
   virtual void Load() = 0;
 
-  // Resets the policy information.
-  virtual void SetPolicy(
+  // Resets the policy information. Returns true if |policy| was accepted and
+  // stored.
+  virtual bool SetPolicy(
       const enterprise_management::PolicyFetchResponse& policy) = 0;
 
   virtual void SetUnmanaged() = 0;

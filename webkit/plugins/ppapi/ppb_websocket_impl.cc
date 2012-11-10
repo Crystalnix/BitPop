@@ -8,7 +8,6 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/logging.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
 #include "ppapi/c/pp_completion_callback.h"
@@ -18,13 +17,13 @@
 #include "ppapi/c/ppb_var_array_buffer.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/shared_impl/var_tracker.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebArrayBuffer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSocket.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "webkit/plugins/ppapi/host_array_buffer_var.h"
 #include "webkit/plugins/ppapi/host_globals.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
@@ -78,7 +77,7 @@ namespace webkit {
 namespace ppapi {
 
 PPB_WebSocket_Impl::PPB_WebSocket_Impl(PP_Instance instance)
-    : Resource(instance),
+    : Resource(::ppapi::OBJECT_IS_IMPL, instance),
       state_(PP_WEBSOCKETREADYSTATE_INVALID),
       error_was_received_(false),
       receive_callback_var_(NULL),
@@ -108,7 +107,7 @@ PPB_WebSocket_API* PPB_WebSocket_Impl::AsPPB_WebSocket_API() {
 int32_t PPB_WebSocket_Impl::Connect(PP_Var url,
                                     const PP_Var protocols[],
                                     uint32_t protocol_count,
-                                    PP_CompletionCallback callback) {
+                                    scoped_refptr<TrackedCallback> callback) {
   // Check mandatory interfaces.
   PluginInstance* plugin_instance = ResourceHelper::GetPluginInstance(this);
   DCHECK(plugin_instance);
@@ -145,23 +144,22 @@ int32_t PPB_WebSocket_Impl::Connect(PP_Var url,
     // TODO(toyoshim): Similar function exist in WebKit::WebSocket.
     // We must rearrange them into WebKit::WebChannel and share its protocol
     // related implementation via WebKit API.
-    scoped_refptr<StringVar> string_var;
-    string_var = StringVar::FromPPVar(protocols[i]);
-
-    // Check duplicated protocol entries.
-    if (protocol_set.find(string_var->value()) != protocol_set.end())
-      return PP_ERROR_BADARGUMENT;
-    protocol_set.insert(string_var->value());
+    scoped_refptr<StringVar> protocol(StringVar::FromPPVar(protocols[i]));
 
     // Check invalid and empty entries.
-    if (!string_var || !string_var->value().length())
+    if (!protocol || !protocol->value().length())
       return PP_ERROR_BADARGUMENT;
 
+    // Check duplicated protocol entries.
+    if (protocol_set.find(protocol->value()) != protocol_set.end())
+      return PP_ERROR_BADARGUMENT;
+    protocol_set.insert(protocol->value());
+
     // Check containing characters.
-    for (std::string::const_iterator it = string_var->value().begin();
-        it != string_var->value().end();
+    for (std::string::const_iterator it = protocol->value().begin();
+        it != protocol->value().end();
         ++it) {
-      uint8_t character = static_cast<uint8_t>(*it);
+      uint8_t character = *it;
       // WebSocket specification says "(Subprotocol string must consist of)
       // characters in the range U+0021 to U+007E not including separator
       // characters as defined in [RFC2616]."
@@ -179,13 +177,9 @@ int32_t PPB_WebSocket_Impl::Connect(PP_Var url,
     // Join protocols with the comma separator.
     if (i != 0)
       protocol_string.append(",");
-    protocol_string.append(string_var->value());
+    protocol_string.append(protocol->value());
   }
   WebString web_protocols = WebString::fromUTF8(protocol_string);
-
-  // Validate |callback| (Doesn't support blocking callback)
-  if (!callback.func)
-    return PP_ERROR_BLOCKS_MAIN_THREAD;
 
   // Create WebKit::WebSocket object and connect.
   WebDocument document = plugin_instance->container()->element().document();
@@ -201,48 +195,57 @@ int32_t PPB_WebSocket_Impl::Connect(PP_Var url,
   state_ = PP_WEBSOCKETREADYSTATE_CONNECTING;
 
   // Install callback.
-  connect_callback_ = new TrackedCallback(this, callback);
+  connect_callback_ = callback;
 
   return PP_OK_COMPLETIONPENDING;
 }
 
 int32_t PPB_WebSocket_Impl::Close(uint16_t code,
                                   PP_Var reason,
-                                  PP_CompletionCallback callback) {
+                                  scoped_refptr<TrackedCallback> callback) {
   // Check mandarory interfaces.
   if (!websocket_.get())
     return PP_ERROR_FAILED;
 
-  // Validate |code|. Need to cast |CloseEventCodeNotSpecified| which is -1 to
-  // uint16_t for the comparison to work.
-  if (code != static_cast<uint16_t>(WebSocket::CloseEventCodeNotSpecified)) {
-    if (!(code == WebSocket::CloseEventCodeNormalClosure ||
-        (WebSocket::CloseEventCodeMinimumUserDefined <= code &&
-        code <= WebSocket::CloseEventCodeMaximumUserDefined)))
-    // RFC 6455 limits applications to use reserved connection close code in
-    // section 7.4.2.. The WebSocket API (http://www.w3.org/TR/websockets/)
-    // defines this out of range error as InvalidAccessError in JavaScript.
-    return PP_ERROR_NOACCESS;
+  // Validate |code| and |reason|.
+  scoped_refptr<StringVar> reason_string;
+  WebString web_reason;
+  WebSocket::CloseEventCode event_code =
+      static_cast<WebSocket::CloseEventCode>(code);
+  if (code == PP_WEBSOCKETSTATUSCODE_NOT_SPECIFIED) {
+    // PP_WEBSOCKETSTATUSCODE_NOT_SPECIFIED and CloseEventCodeNotSpecified are
+    // assigned to different values. A conversion is needed if
+    // PP_WEBSOCKETSTATUSCODE_NOT_SPECIFIED is specified.
+    event_code = WebSocket::CloseEventCodeNotSpecified;
+  } else {
+    if (!(code == PP_WEBSOCKETSTATUSCODE_NORMAL_CLOSURE ||
+        (PP_WEBSOCKETSTATUSCODE_USER_REGISTERED_MIN <= code &&
+        code <= PP_WEBSOCKETSTATUSCODE_USER_PRIVATE_MAX)))
+      // RFC 6455 limits applications to use reserved connection close code in
+      // section 7.4.2.. The WebSocket API (http://www.w3.org/TR/websockets/)
+      // defines this out of range error as InvalidAccessError in JavaScript.
+      return PP_ERROR_NOACCESS;
+
+    // |reason| must be ignored if it is PP_VARTYPE_UNDEFINED or |code| is
+    // PP_WEBSOCKETSTATUSCODE_NOT_SPECIFIED.
+    if (reason.type != PP_VARTYPE_UNDEFINED) {
+      // Validate |reason|.
+      reason_string = StringVar::FromPPVar(reason);
+      if (!reason_string ||
+          reason_string->value().size() > kMaxReasonSizeInBytes)
+        return PP_ERROR_BADARGUMENT;
+      web_reason = WebString::fromUTF8(reason_string->value());
+    }
   }
 
-  // Validate |reason|.
-  // TODO(toyoshim): Returns PP_ERROR_BADARGUMENT if |reason| contains any
-  // surrogates.
-  scoped_refptr<StringVar> reason_string = StringVar::FromPPVar(reason);
-  if (!reason_string || reason_string->value().size() > kMaxReasonSizeInBytes)
-    return PP_ERROR_BADARGUMENT;
-
   // Check state.
-  if (state_ == PP_WEBSOCKETREADYSTATE_CLOSING ||
-      state_ == PP_WEBSOCKETREADYSTATE_CLOSED)
+  if (state_ == PP_WEBSOCKETREADYSTATE_CLOSING)
     return PP_ERROR_INPROGRESS;
-
-  // Validate |callback| (Doesn't support blocking callback)
-  if (!callback.func)
-    return PP_ERROR_BLOCKS_MAIN_THREAD;
+  if (state_ == PP_WEBSOCKETREADYSTATE_CLOSED)
+    return PP_OK;
 
   // Install |callback|.
-  close_callback_ = new TrackedCallback(this, callback);
+  close_callback_ = callback;
 
   // Abort ongoing connect.
   if (state_ == PP_WEBSOCKETREADYSTATE_CONNECTING) {
@@ -267,14 +270,14 @@ int32_t PPB_WebSocket_Impl::Close(uint16_t code,
 
   // Close connection.
   state_ = PP_WEBSOCKETREADYSTATE_CLOSING;
-  WebString web_reason = WebString::fromUTF8(reason_string->value());
-  websocket_->close(code, web_reason);
+  websocket_->close(event_code, web_reason);
 
   return PP_OK_COMPLETIONPENDING;
 }
 
-int32_t PPB_WebSocket_Impl::ReceiveMessage(PP_Var* message,
-                                           PP_CompletionCallback callback) {
+int32_t PPB_WebSocket_Impl::ReceiveMessage(
+    PP_Var* message,
+    scoped_refptr<TrackedCallback> callback) {
   // Check state.
   if (state_ == PP_WEBSOCKETREADYSTATE_INVALID ||
       state_ == PP_WEBSOCKETREADYSTATE_CONNECTING)
@@ -295,14 +298,10 @@ int32_t PPB_WebSocket_Impl::ReceiveMessage(PP_Var* message,
   if (error_was_received_)
     return PP_ERROR_FAILED;
 
-  // Validate |callback| (Doesn't support blocking callback)
-  if (!callback.func)
-    return PP_ERROR_BLOCKS_MAIN_THREAD;
-
   // Or retain |message| as buffer to store and install |callback|.
   wait_for_receive_ = true;
   receive_callback_var_ = message;
-  receive_callback_ = new TrackedCallback(this, callback);
+  receive_callback_ = callback;
 
   return PP_OK_COMPLETIONPENDING;
 }
@@ -386,11 +385,12 @@ PP_Bool PPB_WebSocket_Impl::GetCloseWasClean() {
 }
 
 PP_Var PPB_WebSocket_Impl::GetExtensions() {
-  // TODO(toyoshim): For now, always returns empty string because WebKit side
-  // doesn't support it yet.
-  if (!extensions_)
+  // Check mandatory interfaces.
+  if (!websocket_.get())
     return empty_string_->GetPPVar();
-  return extensions_->GetPPVar();
+
+  std::string extensions = websocket_->extensions().utf8();
+  return StringVar::StringToPPVar(extensions);
 }
 
 PP_Var PPB_WebSocket_Impl::GetProtocol() {
@@ -485,8 +485,7 @@ void PPB_WebSocket_Impl::didClose(unsigned long unhandled_buffered_amount,
                                   const WebString& reason) {
   // Store code and reason.
   close_code_ = code;
-  std::string reason_string = reason.utf8();
-  close_reason_ = new StringVar(reason_string);
+  close_reason_ = new StringVar(reason.utf8());
 
   // Set close_was_clean_.
   bool was_clean =
@@ -503,16 +502,20 @@ void PPB_WebSocket_Impl::didClose(unsigned long unhandled_buffered_amount,
   PP_WebSocketReadyState state = state_;
   state_ = PP_WEBSOCKETREADYSTATE_CLOSED;
 
+  // User handlers may release WebSocket PP_Resource in the following
+  // completion callbacks. Retain |this| here to assure that this object
+  // keep on being valid in this function.
+  scoped_refptr<PPB_WebSocket_Impl> retain_this(this);
   if (state == PP_WEBSOCKETREADYSTATE_CONNECTING)
     TrackedCallback::ClearAndRun(&connect_callback_, PP_ERROR_FAILED);
 
   if (wait_for_receive_) {
     wait_for_receive_ = false;
     receive_callback_var_ = NULL;
-    TrackedCallback::ClearAndAbort(&receive_callback_);
+    TrackedCallback::ClearAndRun(&receive_callback_, PP_ERROR_FAILED);
   }
 
-  if (state == PP_WEBSOCKETREADYSTATE_CLOSING)
+  if ((state == PP_WEBSOCKETREADYSTATE_CLOSING) && close_callback_.get())
     TrackedCallback::ClearAndRun(&close_callback_, PP_OK);
 
   // Disconnect.

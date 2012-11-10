@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -7,7 +7,6 @@
 
 #ifndef CHROME_INSTALLER_SETUP_INSTALL_WORKER_H_
 #define CHROME_INSTALLER_SETUP_INSTALL_WORKER_H_
-#pragma once
 
 #include <windows.h>
 
@@ -64,7 +63,6 @@ void AddUsageStatsWorkItems(const InstallationState& original_state,
 // false.
 bool AppendPostInstallTasks(const InstallerState& installer_state,
                             const FilePath& setup_path,
-                            const FilePath& new_chrome_exe,
                             const Version* current_version,
                             const Version& new_version,
                             const FilePath& temp_path,
@@ -122,6 +120,24 @@ void AddChromeFrameWorkItems(const InstallationState& original_state,
                              const Product& product,
                              WorkItemList* list);
 
+// Called for either installation or uninstallation. This method adds or
+// removes COM registration for a product's DelegateExecute verb handler.
+void AddDelegateExecuteWorkItems(const InstallerState& installer_state,
+                                 const FilePath& src_path,
+                                 const Version& new_version,
+                                 const Product& product,
+                                 WorkItemList* list);
+
+// Adds Active Setup registration for sytem-level setup to be called by Windows
+// on user-login post-install/update.
+// This method should be called for installation only.
+// |product|: The product being installed. This method is a no-op if this is
+// anything other than system-level Chrome/Chromium.
+void AddActiveSetupWorkItems(const InstallerState& installer_state,
+                             const Version& new_version,
+                             const Product& product,
+                             WorkItemList* list);
+
 // This method adds work items to create (or update) Chrome uninstall entry in
 // either the Control Panel->Add/Remove Programs list or in the Omaha client
 // state key if running under an MSI installer.
@@ -165,11 +181,25 @@ void RefreshElevationPolicy();
 // run) and |new_version| (the version of the product(s) currently being
 // installed) are required when processing product installation; they are unused
 // (and may therefore be NULL) when uninstalling.
-void AddQuickEnableWorkItems(const InstallerState& installer_state,
-                             const InstallationState& machine_state,
-                             const FilePath* setup_path,
-                             const Version* new_version,
-                             WorkItemList* work_item_list);
+void AddQuickEnableChromeFrameWorkItems(const InstallerState& installer_state,
+                                        const InstallationState& machine_state,
+                                        const FilePath* setup_path,
+                                        const Version* new_version,
+                                        WorkItemList* work_item_list);
+
+// Add work items to add or remove the "quick-enable-application-host" command
+// to the multi-installer binaries' version key on the basis of the current
+// operation (represented in |installer_state|) and the pre-existing machine
+// configuration (represented in |machine_state|).  |setup_path| (the path to
+// the executable currently being run) and |new_version| (the version of the
+// product(s) currently being installed) are required when processing product
+// installation; they are unused (and may therefore be NULL) when uninstalling.
+void AddQuickEnableApplicationHostWorkItems(
+    const InstallerState& installer_state,
+    const InstallationState& machine_state,
+    const FilePath* setup_path,
+    const Version* new_version,
+    WorkItemList* work_item_list);
 
 }  // namespace installer
 

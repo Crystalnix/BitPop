@@ -6,12 +6,13 @@
 
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/ui/gtk/extensions/extension_popup_gtk.h"
-#include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/renderer_host/render_widget_host_view.h"
+#include "chrome/common/view_type.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 
-ExtensionViewGtk::ExtensionViewGtk(ExtensionHost* extension_host,
+ExtensionViewGtk::ExtensionViewGtk(extensions::ExtensionHost* extension_host,
                                    Browser* browser)
     : browser_(browser),
       extension_host_(extension_host),
@@ -26,21 +27,21 @@ gfx::NativeView ExtensionViewGtk::native_view() {
   return extension_host_->host_contents()->GetView()->GetNativeView();
 }
 
-RenderViewHost* ExtensionViewGtk::render_view_host() const {
+content::RenderViewHost* ExtensionViewGtk::render_view_host() const {
   return extension_host_->render_view_host();
 }
 
 void ExtensionViewGtk::SetBackground(const SkBitmap& background) {
-  if (render_view_host()->IsRenderViewLive() && render_view_host()->view()) {
-    render_view_host()->view()->SetBackground(background);
+  if (render_view_host()->IsRenderViewLive() && render_view_host()->GetView()) {
+    render_view_host()->GetView()->SetBackground(background);
   } else {
     pending_background_ = background;
   }
 }
 
-void ExtensionViewGtk::UpdatePreferredSize(const gfx::Size& new_size) {
+void ExtensionViewGtk::ResizeDueToAutoResize(const gfx::Size& new_size) {
   if (container_)
-    container_->OnExtensionPreferredSizeChanged(this, new_size);
+    container_->OnExtensionSizeChanged(this, new_size);
 }
 
 void ExtensionViewGtk::CreateWidgetHostView() {
@@ -48,14 +49,17 @@ void ExtensionViewGtk::CreateWidgetHostView() {
 }
 
 void ExtensionViewGtk::RenderViewCreated() {
-  if (!pending_background_.empty() && render_view_host()->view()) {
-    render_view_host()->view()->SetBackground(pending_background_);
+  if (!pending_background_.empty() && render_view_host()->GetView()) {
+    render_view_host()->GetView()->SetBackground(pending_background_);
     pending_background_.reset();
   }
 
-  // Tell the renderer not to draw scrollbars in popups unless the
-  // popups are at the maximum allowed size.
-  gfx::Size largest_popup_size(ExtensionPopupGtk::kMaxWidth,
-                               ExtensionPopupGtk::kMaxHeight);
-  extension_host_->DisableScrollbarsForSmallWindows(largest_popup_size);
+  chrome::ViewType host_type = extension_host_->extension_host_type();
+  if (host_type == chrome::VIEW_TYPE_EXTENSION_POPUP) {
+    gfx::Size min_size(ExtensionPopupGtk::kMinWidth,
+                       ExtensionPopupGtk::kMinHeight);
+    gfx::Size max_size(ExtensionPopupGtk::kMaxWidth,
+                       ExtensionPopupGtk::kMaxHeight);
+    render_view_host()->EnableAutoResize(min_size, max_size);
+  }
 }

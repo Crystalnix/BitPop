@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@
 #include "grit/theme_resources.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/canvas.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/label.h"
 
@@ -129,7 +129,7 @@ void TranslateInfoBarBase::FadeBackground(gfx::Canvas* canvas,
   // Draw the background into an offscreen buffer with alpha value per animation
   // value, then blend it back into the current canvas.
   canvas->SaveLayerAlpha(static_cast<int>(animation_value * 255));
-  canvas->GetSkCanvas()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
+  canvas->sk_canvas()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
   background.Paint(canvas, this);
   canvas->Restore();
 }

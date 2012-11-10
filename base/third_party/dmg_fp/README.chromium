@@ -1,5 +1,6 @@
 Name: David M. Gay's floating point routines
 URL: http://www.netlib.org/fp/
+License: MIT-like
 
 Original dtoa.c file can be found at <http://www.netlib.org/fp/dtoa.c>.
 Original g_fmt.c file can be found at <http://www.netlib.org/fp/g_fmt.c>.
@@ -14,3 +15,5 @@ List of changes made to original code:
     gcc_warnings.patch.
   - made some minor changes to build on 64-bit, see gcc_64_bit.patch.
   - made minor changes for -Wextra for Mac build, see mac_wextra.patch
+  - crash fix for running with reduced CPU float precision, see
+    float_precision_crash.patch and crbug.com/123157

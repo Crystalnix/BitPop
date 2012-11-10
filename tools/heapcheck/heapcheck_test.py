@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -24,7 +24,7 @@ class HeapcheckWrapper(object):
 
   def __init__(self, supp_files):
     self._mode = 'strict'
-    self._timeout = 1200
+    self._timeout = 1800
     self._nocleanup_on_exit = False
     self._suppressions = []
     for fname in supp_files:
@@ -48,6 +48,7 @@ class HeapcheckWrapper(object):
     self.PutEnvAndLog('NSS_DISABLE_UNLOAD', '1')
     self.PutEnvAndLog('GTEST_DEATH_TEST_USE_FORK', '1')
     self.PutEnvAndLog('HEAPCHECK', self._mode)
+    self.PutEnvAndLog('HEAP_CHECK_ERROR_EXIT_CODE', '0')
     self.PutEnvAndLog('HEAP_CHECK_MAX_LEAKS', '-1')
     self.PutEnvAndLog('KEEP_SHADOW_STACKS', '1')
     self.PutEnvAndLog('PPROF_PATH',
@@ -55,12 +56,10 @@ class HeapcheckWrapper(object):
         '/../../third_party/tcmalloc/chromium/src/pprof')
     self.PutEnvAndLog('LD_LIBRARY_PATH',
                       '/usr/lib/debug/:/usr/lib32/debug/')
+    # CHROME_DEVEL_SANDBOX causes problems with heapcheck
+    self.PutEnvAndLog('CHROME_DEVEL_SANDBOX', '');
 
-    common.RunSubprocess(proc, self._timeout)
-
-    # Always return true, even if running the subprocess failed. We depend on
-    # Analyze to determine if the run was valid.
-    return True
+    return common.RunSubprocess(proc, self._timeout)
 
   def Analyze(self, log_lines, check_sanity=False):
     """Analyzes the app's output and applies suppressions to the reports.
@@ -197,11 +196,22 @@ class HeapcheckWrapper(object):
       return return_code
 
   def RunTestsAndAnalyze(self, check_sanity):
-    self.Execute()
+    exec_retcode = self.Execute()
     log_file = file(self.TMP_FILE, 'r')
-    ret = self.Analyze(log_file, check_sanity)
+    analyze_retcode = self.Analyze(log_file, check_sanity)
     log_file.close()
-    return ret
+
+    if analyze_retcode:
+      logging.error("Analyze failed.")
+      return analyze_retcode
+
+    if exec_retcode:
+      logging.error("Test execution failed.")
+      return exec_retcode
+    else:
+      logging.info("Test execution completed successfully.")
+
+    return 0
 
   def Main(self, args, check_sanity=False):
     self._args = args

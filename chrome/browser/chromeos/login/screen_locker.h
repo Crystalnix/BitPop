@@ -4,14 +4,14 @@
 
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_SCREEN_LOCKER_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_SCREEN_LOCKER_H_
-#pragma once
 
 #include <string>
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop_helpers.h"
+#include "base/sequenced_task_runner_helpers.h"
 #include "base/time.h"
+#include "chrome/browser/chromeos/login/help_app_launcher.h"
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
 #include "chrome/browser/chromeos/login/screen_locker_delegate.h"
 #include "ui/base/accelerators/accelerator.h"
@@ -49,7 +49,6 @@ class ScreenLocker : public LoginStatusConsumer {
   virtual void OnLoginFailure(const chromeos::LoginFailure& error) OVERRIDE;
   virtual void OnLoginSuccess(const std::string& username,
                               const std::string& password,
-                              const GaiaAuthConsumer::ClientLoginResult& result,
                               bool pending_requests,
                               bool using_oauth) OVERRIDE;
 
@@ -65,15 +64,12 @@ class ScreenLocker : public LoginStatusConsumer {
   // Exit the chrome, which will sign out the current session.
   void Signout();
 
-  // Present user a CAPTCHA challenge with image from |captcha_url|,
-  // After that shows error bubble with |message|.
-  void ShowCaptchaAndErrorMessage(const GURL& captcha_url,
-                                  const string16& message);
-
   // Disables all UI needed and shows error bubble with |message|.
   // If |sign_out_only| is true then all other input except "Sign Out"
   // button is blocked.
-  void ShowErrorMessage(const string16& message, bool sign_out_only);
+  void ShowErrorMessage(int error_msg_id,
+                        HelpAppLauncher::HelpTopic help_topic_id,
+                        bool sign_out_only);
 
   // Returns the screen locker's delegate.
   ScreenLockerDelegate* delegate() const { return delegate_.get(); }
@@ -95,9 +91,6 @@ class ScreenLocker : public LoginStatusConsumer {
 
   // Hide the screen locker.
   static void Hide();
-
-  // Notifies that PowerManager rejected UnlockScreen request.
-  static void UnlockScreenFailed();
 
   // Returns the tester
   static test::ScreenLockerTester* GetTester();
@@ -147,6 +140,9 @@ class ScreenLocker : public LoginStatusConsumer {
   // Delegate to forward all login status events to.
   // Tests can use this to receive login status events.
   LoginStatusConsumer* login_status_consumer_;
+
+  // Number of bad login attempts in a row.
+  int incorrect_passwords_count_;
 
   DISALLOW_COPY_AND_ASSIGN(ScreenLocker);
 };

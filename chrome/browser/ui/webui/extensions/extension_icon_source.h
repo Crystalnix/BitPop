@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_WEBUI_EXTENSIONS_EXTENSION_ICON_SOURCE_H_
 #define CHROME_BROWSER_UI_WEBUI_EXTENSIONS_EXTENSION_ICON_SOURCE_H_
-#pragma once
 
 #include <map>
 #include <string>
@@ -13,11 +12,15 @@
 #include "chrome/browser/extensions/image_loading_tracker.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_icon_set.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 class ExtensionIconSet;
 class Profile;
+
+namespace extensions {
+class Extension;
+}
 
 // ExtensionIconSource serves extension icons through network level chrome:
 // requests. Icons can be retrieved for any installed extension or app.
@@ -49,15 +52,14 @@ class ExtensionIconSource : public ChromeURLDataManager::DataSource,
                             public ImageLoadingTracker::Observer {
  public:
   explicit ExtensionIconSource(Profile* profile);
-  virtual ~ExtensionIconSource();
 
-  // Gets the URL of the |extension| icon in the given |size|, falling back
+  // Gets the URL of the |extension| icon in the given |icon_size|, falling back
   // based on the |match| type. If |grayscale|, the URL will be for the
   // desaturated version of the icon. |exists|, if non-NULL, will be set to true
   // if the icon exists; false if it will lead to a default or not-present
   // image.
-  static GURL GetIconURL(const Extension* extension,
-                         Extension::Icons icon_size,
+  static GURL GetIconURL(const extensions::Extension* extension,
+                         int icon_size,
                          ExtensionIconSet::MatchType match,
                          bool grayscale,
                          bool* exists);
@@ -78,6 +80,8 @@ class ExtensionIconSource : public ChromeURLDataManager::DataSource,
   // Encapsulates the request parameters for |request_id|.
   struct ExtensionIconRequest;
 
+  virtual ~ExtensionIconSource();
+
   // Returns the bitmap for the webstore icon.
   const SkBitmap* GetWebStoreImage();
 
@@ -90,16 +94,10 @@ class ExtensionIconSource : public ChromeURLDataManager::DataSource,
   // Performs any remaining transformations (like desaturating the |image|),
   // then returns the |image| to the client and clears up any temporary data
   // associated with the |request_id|.
-  void FinalizeImage(SkBitmap* image, int request_id);
+  void FinalizeImage(const SkBitmap* image, int request_id);
 
   // Loads the default image for |request_id| and returns to the client.
   void LoadDefaultImage(int request_id);
-
-  // Tries loading component extension image. These usually come from resources
-  // instead of file system. Returns false if a given |icon| does not have
-  // a corresponding image in bundled resources.
-  bool TryLoadingComponentExtensionImage(const ExtensionResource& icon,
-                                         int request_id);
 
   // Loads the extension's |icon| for the given |request_id| and returns the
   // image to the client.
@@ -114,8 +112,8 @@ class ExtensionIconSource : public ChromeURLDataManager::DataSource,
                               history::FaviconData favicon);
 
   // ImageLoadingTracker::Observer
-  virtual void OnImageLoaded(SkBitmap* image,
-                             const ExtensionResource& resource,
+  virtual void OnImageLoaded(const gfx::Image& image,
+                             const std::string& extension_id,
                              int id) OVERRIDE;
 
   // Called when the extension doesn't have an icon. We fall back to multiple
@@ -136,9 +134,9 @@ class ExtensionIconSource : public ChromeURLDataManager::DataSource,
   // Stores the parameters associated with the |request_id|, making them
   // as an ExtensionIconRequest via GetData.
   void SetData(int request_id,
-               const Extension* extension,
+               const extensions::Extension* extension,
                bool grayscale,
-               Extension::Icons size,
+               int size,
                ExtensionIconSet::MatchType match);
 
   // Returns the ExtensionIconRequest for the given |request_id|.

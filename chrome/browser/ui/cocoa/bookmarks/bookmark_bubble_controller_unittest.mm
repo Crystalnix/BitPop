@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "base/memory/scoped_nsobject.h"
 #include "base/string16.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bubble_controller.h"
 #include "chrome/browser/ui/cocoa/browser_window_controller.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
@@ -79,7 +80,8 @@ class BookmarkBubbleControllerTest : public CocoaProfileTest {
     }
     controller_ = [[BookmarkBubbleController alloc]
                       initWithParentWindow:test_window()
-                                     model:profile()->GetBookmarkModel()
+                                     model:BookmarkModelFactory::GetForProfile(
+                                         profile())
                                       node:node
                          alreadyBookmarked:YES];
     EXPECT_TRUE([controller_ window]);
@@ -90,7 +92,7 @@ class BookmarkBubbleControllerTest : public CocoaProfileTest {
   }
 
   BookmarkModel* GetBookmarkModel() {
-    return profile()->GetBookmarkModel();
+    return BookmarkModelFactory::GetForProfile(profile());
   }
 
   bool IsWindowClosing() {
@@ -395,7 +397,7 @@ TEST_F(BookmarkBubbleControllerTest, EscapeRemovesNewBookmark) {
   BookmarkBubbleController* controller =
       [[BookmarkBubbleController alloc]
           initWithParentWindow:test_window()
-                         model:profile()->GetBookmarkModel()
+                         model:BookmarkModelFactory::GetForProfile(profile())
                           node:node
              alreadyBookmarked:NO];  // The last param is the key difference.
   EXPECT_TRUE([controller window]);
@@ -454,36 +456,6 @@ TEST_F(BookmarkBubbleControllerTest, TestMenuIndentation) {
         << "Unexpected indent for menu item #" << itemNo;
   }
 }
-
-// Confirm bubble goes away when a new tab is created.
-TEST_F(BookmarkBubbleControllerTest, BubbleGoesAwayOnNewTab) {
-
-  BookmarkModel* model = GetBookmarkModel();
-  const BookmarkNode* node = model->AddURL(model->bookmark_bar_node(),
-                                           0,
-                                           ASCIIToUTF16("Bookie markie title"),
-                                           GURL("http://www.google.com"));
-  EXPECT_EQ(edits_, 0);
-
-  BookmarkBubbleController* controller = ControllerForNode(node);
-  EXPECT_TRUE(controller);
-  EXPECT_FALSE(IsWindowClosing());
-
-  // We can't actually create a new tab here, e.g.
-  //   browser()->AddTabWithURL(...);
-  // Many of our browser objects (Browser, Profile, RequestContext)
-  // are "just enough" to run tests without being complete.  Instead
-  // we fake the notification that would be triggered by a tab
-  // creation. See TabContents::NotifyConnected().
-  content::NotificationService::current()->Notify(
-      content::NOTIFICATION_WEB_CONTENTS_CONNECTED,
-      content::Source<WebContents>(NULL),
-      content::NotificationService::NoDetails());
-
-  // Confirm bubble going bye-bye.
-  EXPECT_TRUE(IsWindowClosing());
-}
-
 
 }  // namespace
 

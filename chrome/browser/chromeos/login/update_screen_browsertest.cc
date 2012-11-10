@@ -1,16 +1,16 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/message_loop.h"
 #include "chrome/browser/chromeos/cros/mock_network_library.h"
-#include "chrome/browser/chromeos/dbus/mock_dbus_thread_manager.h"
-#include "chrome/browser/chromeos/dbus/mock_session_manager_client.h"
-#include "chrome/browser/chromeos/dbus/mock_update_engine_client.h"
 #include "chrome/browser/chromeos/login/mock_screen_observer.h"
 #include "chrome/browser/chromeos/login/update_screen.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/login/wizard_in_process_browser_test.h"
+#include "chromeos/dbus/mock_dbus_thread_manager.h"
+#include "chromeos/dbus/mock_session_manager_client.h"
+#include "chromeos/dbus/mock_update_engine_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
@@ -62,6 +62,8 @@ class UpdateScreenTest : public WizardInProcessBrowserTest {
         .WillOnce(Invoke(RequestUpdateCheckSuccess));
 
     mock_network_library_ = cros_mock_->mock_network_library();
+    EXPECT_CALL(*mock_network_library_, SetDefaultCheckPortalList())
+        .Times(1);
     EXPECT_CALL(*mock_network_library_, Connected())
         .Times(1)  // also called by NetworkMenu::InitMenuItems()
         .WillRepeatedly((Return(false)))
@@ -69,6 +71,8 @@ class UpdateScreenTest : public WizardInProcessBrowserTest {
     EXPECT_CALL(*mock_network_library_, AddNetworkManagerObserver(_))
         .Times(1)
         .RetiresOnSaturation();
+    EXPECT_CALL(*mock_network_library_, AddUserActionObserver(_))
+        .Times(AnyNumber());
     EXPECT_CALL(*mock_network_library_, FindWifiDevice())
         .Times(AnyNumber());
     EXPECT_CALL(*mock_network_library_, FindEthernetDevice())
@@ -76,16 +80,17 @@ class UpdateScreenTest : public WizardInProcessBrowserTest {
   }
 
   virtual void SetUpOnMainThread() {
+    WizardInProcessBrowserTest::SetUpOnMainThread();
     mock_screen_observer_.reset(new MockScreenObserver());
-    ASSERT_TRUE(controller() != NULL);
-    update_screen_ = controller()->GetUpdateScreen();
+    ASSERT_TRUE(WizardController::default_controller() != NULL);
+    update_screen_ = WizardController::default_controller()->GetUpdateScreen();
     ASSERT_TRUE(update_screen_ != NULL);
-    ASSERT_EQ(controller()->current_screen(), update_screen_);
+    ASSERT_EQ(WizardController::default_controller()->current_screen(),
+              update_screen_);
     update_screen_->screen_observer_ = mock_screen_observer_.get();
   }
 
   virtual void TearDownInProcessBrowserTestFixture() {
-    update_screen_->screen_observer_ = (controller());
     WizardInProcessBrowserTest::TearDownInProcessBrowserTestFixture();
     DBusThreadManager::Shutdown();
   }

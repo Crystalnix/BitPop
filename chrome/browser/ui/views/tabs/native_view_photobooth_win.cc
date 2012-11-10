@@ -1,11 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/tabs/native_view_photobooth_win.h"
 
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/widget/widget.h"
@@ -72,7 +72,7 @@ void NativeViewPhotoboothWin::Replace(HWND new_hwnd) {
   current_hwnd_ = new_hwnd;
 
   if (IsWindow(new_hwnd)) {
-    // Insert the TabContents into the capture window.
+    // Insert the WebContents into the capture window.
     SetParent(current_hwnd_, capture_window_->GetNativeView());
 
     // Show the window (it may not be visible). This is the only safe way of
@@ -109,7 +109,7 @@ void NativeViewPhotoboothWin::PaintScreenshotIntoCanvas(
          SRCCOPY);
   // Windows screws up the alpha channel on all text it draws, and so we need
   // to call makeOpaque _after_ the blit to correct for this.
-  skia::MakeOpaque(canvas->GetSkCanvas(), target_bounds.x(),
+  skia::MakeOpaque(canvas->sk_canvas(), target_bounds.x(),
                    target_bounds.y(), target_bounds.width(),
                    target_bounds.height());
   ReleaseDC(current_hwnd_, source_dc);
@@ -155,7 +155,7 @@ void NativeViewPhotoboothWin::CreateCaptureWindow(HWND initial_hwnd) {
   params.transparent = true;
   params.bounds = capture_bounds;
   capture_window_->Init(params);
-  // If the capture window isn't visible, blitting from the TabContents'
+  // If the capture window isn't visible, blitting from the WebContents's
   // HWND's DC to the capture bitmap produces blankness.
   capture_window_->Show();
   SetLayeredWindowAttributes(

@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_VIEWS_INFOBARS_INFOBAR_VIEW_H_
 #define CHROME_BROWSER_UI_VIEWS_INFOBARS_INFOBAR_VIEW_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -28,7 +27,7 @@ class LinkListener;
 class MenuButton;
 class MenuRunner;
 class TextButton;
-class ViewMenuDelegate;
+class MenuButtonListener;
 }
 
 class InfoBarView : public InfoBar,
@@ -59,7 +58,7 @@ class InfoBarView : public InfoBar,
   // NOTE: Subclasses must ignore button presses if we're unowned.
   static views::MenuButton* CreateMenuButton(
       const string16& text,
-      views::ViewMenuDelegate* menu_delegate);
+      views::MenuButtonListener* menu_button_listener);
 
   // Creates a text button with an infobar-specific appearance.
   // NOTE: Subclasses must ignore button presses if we're unowned.

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,6 +37,10 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
 
+#if defined(OS_WIN)
+#include "base/win/metro.h"
+#endif
+
 // The task manager window default size.
 static const int kDefaultWidth = 460;
 static const int kDefaultHeight = 270;
@@ -67,7 +71,7 @@ class TaskManagerTableModel : public views::GroupTableModel,
   // GroupTableModel.
   int RowCount() OVERRIDE;
   string16 GetText(int row, int column) OVERRIDE;
-  SkBitmap GetIcon(int row) OVERRIDE;
+  gfx::ImageSkia GetIcon(int row) OVERRIDE;
   void GetGroupRangeForItem(int item, views::GroupRange* range) OVERRIDE;
   void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
   virtual int CompareValues(int row1, int row2, int column_id) OVERRIDE;
@@ -92,7 +96,7 @@ int TaskManagerTableModel::RowCount() {
 
 string16 TaskManagerTableModel::GetText(int row, int col_id) {
   switch (col_id) {
-    case IDS_TASK_MANAGER_PAGE_COLUMN:  // Process
+    case IDS_TASK_MANAGER_TASK_COLUMN:  // Process
       return model_->GetResourceTitle(row);
 
     case IDS_TASK_MANAGER_PROFILE_NAME_COLUMN:  // Profile Name
@@ -163,14 +167,15 @@ string16 TaskManagerTableModel::GetText(int row, int col_id) {
   }
 }
 
-SkBitmap TaskManagerTableModel::GetIcon(int row) {
+gfx::ImageSkia TaskManagerTableModel::GetIcon(int row) {
   return model_->GetResourceIcon(row);
 }
 
 
 void TaskManagerTableModel::GetGroupRangeForItem(int item,
                                                  views::GroupRange* range) {
-  std::pair<int, int> range_pair = model_->GetGroupRangeForResource(item);
+  TaskManagerModel::GroupRange range_pair =
+      model_->GetGroupRangeForResource(item);
   range->start = range_pair.first;
   range->length = range_pair.second;
 }
@@ -276,17 +281,17 @@ class TaskManagerView : public views::ButtonListener,
   // resources in the resource display.
   static void Show(bool highlight_background_resources);
 
-  // views::View
+  // views::View:
   virtual void Layout() OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void ViewHierarchyChanged(bool is_add, views::View* parent,
                                     views::View* child) OVERRIDE;
 
-  // ButtonListener implementation.
+  // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
                              const views::Event& event) OVERRIDE;
 
-  // views::DialogDelegate
+  // views::DialogDelegateView:
   virtual bool CanResize() const OVERRIDE;
   virtual bool CanMaximize() const OVERRIDE;
   virtual bool ExecuteWindowsCommand(int command_id) OVERRIDE;
@@ -296,24 +301,23 @@ class TaskManagerView : public views::ButtonListener,
   virtual void WindowClosing() OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
 
-  // views::TableViewObserver implementation.
+  // views::TableViewObserver:
   virtual void OnSelectionChanged() OVERRIDE;
   virtual void OnDoubleClick() OVERRIDE;
   virtual void OnKeyDown(ui::KeyboardCode keycode) OVERRIDE;
 
-  // views::LinkListener implementation.
+  // views::LinkListener:
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
 
   // Called by the column picker to pick up any new stat counters that
   // may have appeared since last time.
   void UpdateStatsCounters();
 
-  // views::ContextMenuController
+  // views::ContextMenuController:
   virtual void ShowContextMenuForView(views::View* source,
-                                      const gfx::Point& p,
-                                      bool is_mouse_gesture) OVERRIDE;
+                                      const gfx::Point& point) OVERRIDE;
 
-  // views::Menu::Delegate
+  // views::Menu::Delegate:
   virtual bool IsItemChecked(int id) const OVERRIDE;
   virtual void ExecuteCommand(int id) OVERRIDE;
 
@@ -354,7 +358,7 @@ class TaskManagerView : public views::ButtonListener,
   bool highlight_background_resources_;
 
   // We need to own the text of the menu, the Windows API does not copy it.
-  std::wstring always_on_top_menu_text_;
+  string16 always_on_top_menu_text_;
 
   // An open Task manager window. There can only be one open at a time. This
   // is reset to NULL when the window is closed.
@@ -385,7 +389,7 @@ void TaskManagerView::Init() {
   table_model_.reset(new TaskManagerTableModel(model_));
 
   // Page column has no header label.
-  columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_PAGE_COLUMN,
+  columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_TASK_COLUMN,
                                      ui::TableColumn::LEFT, -1, 1));
   columns_.back().sortable = true;
   columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_PROFILE_NAME_COLUMN,
@@ -460,12 +464,11 @@ void TaskManagerView::Init() {
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kPurgeMemoryButton)) {
     purge_memory_button_ = new views::NativeTextButton(this,
-        UTF16ToWide(l10n_util::GetStringUTF16(IDS_TASK_MANAGER_PURGE_MEMORY)));
+        l10n_util::GetStringUTF16(IDS_TASK_MANAGER_PURGE_MEMORY));
   }
   kill_button_ = new views::NativeTextButton(
-      this, UTF16ToWide(l10n_util::GetStringUTF16(IDS_TASK_MANAGER_KILL)));
-  kill_button_->AddAccelerator(ui::Accelerator(ui::VKEY_E, false, false,
-                                               false));
+      this, l10n_util::GetStringUTF16(IDS_TASK_MANAGER_KILL));
+  kill_button_->AddAccelerator(ui::Accelerator(ui::VKEY_E, ui::EF_NONE));
   kill_button_->SetAccessibleKeyboardShortcut(L"E");
   kill_button_->set_prefix_type(views::TextButtonBase::PREFIX_SHOW);
   about_memory_link_ = new views::Link(
@@ -575,6 +578,9 @@ gfx::Size TaskManagerView::GetPreferredSize() {
 
 // static
 void TaskManagerView::Show(bool highlight_background_resources) {
+  // In Windows Metro it's not good to open this native window.
+  DCHECK(!base::win::IsMetroProcess());
+
   if (instance_) {
     if (instance_->highlight_background_resources_ !=
         highlight_background_resources) {
@@ -603,7 +609,7 @@ void TaskManagerView::ButtonPressed(
   if (purge_memory_button_ && (sender == purge_memory_button_)) {
     MemoryPurger::PurgeAll();
   } else {
-    DCHECK_EQ(sender, kill_button_);
+    DCHECK_EQ(kill_button_, sender);
     for (views::TableSelectionIterator iter  = tab_table_->SelectionBegin();
          iter != tab_table_->SelectionEnd(); ++iter)
       task_manager_->KillProcess(*iter);
@@ -707,17 +713,16 @@ void TaskManagerView::LinkClicked(views::Link* source, int event_flags) {
 }
 
 void TaskManagerView::ShowContextMenuForView(views::View* source,
-                                             const gfx::Point& p,
-                                             bool is_mouse_gesture) {
+                                             const gfx::Point& point) {
   UpdateStatsCounters();
   scoped_ptr<views::Menu> menu(views::Menu::Create(
       this, views::Menu::TOPLEFT, source->GetWidget()->GetNativeView()));
-  for (std::vector<ui::TableColumn>::iterator i =
-       columns_.begin(); i != columns_.end(); ++i) {
+  for (std::vector<ui::TableColumn>::iterator i(columns_.begin());
+       i != columns_.end(); ++i) {
     menu->AppendMenuItem(i->id, l10n_util::GetStringUTF16(i->id),
         views::Menu::CHECKBOX);
   }
-  menu->RunMenuAt(p.x(), p.y());
+  menu->RunMenuAt(point.x(), point.y());
 }
 
 bool TaskManagerView::IsItemChecked(int id) const {
@@ -748,8 +753,7 @@ void TaskManagerView::ActivateFocusedTab() {
 void TaskManagerView::AddAlwaysOnTopSystemMenuItem() {
 #if defined(OS_WIN) && !defined(USE_AURA)
   // The Win32 API requires that we own the text.
-  always_on_top_menu_text_ =
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_ALWAYS_ON_TOP));
+  always_on_top_menu_text_ = l10n_util::GetStringUTF16(IDS_ALWAYS_ON_TOP);
 
   // Let's insert a menu to the window.
   HMENU system_menu = ::GetSystemMenu(GetWidget()->GetNativeWindow(), FALSE);
@@ -791,7 +795,7 @@ bool TaskManagerView::GetSavedAlwaysOnTopState(bool* always_on_top) const {
 
 }  // namespace
 
-namespace browser {
+namespace chrome {
 
 // Declared in browser_dialogs.h so others don't need to depend on our header.
 void ShowTaskManager() {
@@ -802,4 +806,4 @@ void ShowBackgroundPages() {
   TaskManagerView::Show(true);
 }
 
-}  // namespace browser
+}  // namespace chrome

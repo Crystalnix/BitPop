@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,16 +11,19 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/browser/renderer_host/render_view_host.h"
 #include "content/public/browser/devtools_agent_host_registry.h"
 #include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_manager.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/browser_test_utils.h"
 #include "net/base/net_util.h"
 
 using content::DevToolsAgentHost;
@@ -28,16 +31,21 @@ using content::DevToolsAgentHostRegistry;
 using content::DevToolsClientHost;
 using content::DevToolsManager;
 using content::WebContents;
+using extensions::ExtensionHost;
 
-// Looks for an ExtensionHost whose URL has the given path component (including
-// leading slash).  Also verifies that the expected number of hosts are loaded.
-static ExtensionHost* FindHostWithPath(ExtensionProcessManager* manager,
-                                       const std::string& path,
-                                       int expected_hosts) {
+// Looks for an background ExtensionHost whose URL has the given path component
+// (including leading slash).  Also verifies that the expected number of hosts
+// are loaded.
+static ExtensionHost* FindBackgroundHostWithPath(
+    ExtensionProcessManager* manager,
+    const std::string& path,
+    int expected_hosts) {
   ExtensionHost* host = NULL;
   int num_hosts = 0;
-  for (ExtensionProcessManager::const_iterator iter = manager->begin();
-       iter != manager->end(); ++iter) {
+  ExtensionProcessManager::ExtensionHostSet background_hosts =
+      manager->background_hosts();
+  for (ExtensionProcessManager::const_iterator iter = background_hosts.begin();
+       iter != background_hosts.end(); ++iter) {
     if ((*iter)->GetURL().path() == path) {
       EXPECT_FALSE(host);
       host = *iter;
@@ -50,21 +58,21 @@ static ExtensionHost* FindHostWithPath(ExtensionProcessManager* manager,
 }
 
 // Tests for the experimental timeline extensions API.
-// TODO(johnnyg): crbug.com/52544 Test was broken by webkit r65510.
-IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, FLAKY_TimelineApi) {
+IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, TimelineApi) {
   ASSERT_TRUE(LoadExtension(
       test_data_dir_.AppendASCII("devtools").AppendASCII("timeline_api")));
 
   // Get the ExtensionHost that is hosting our background page.
   ExtensionProcessManager* manager =
       browser()->profile()->GetExtensionProcessManager();
-  ExtensionHost* host = FindHostWithPath(manager, "/background.html", 1);
+  ExtensionHost* host = FindBackgroundHostWithPath(manager,
+                                                   "/background.html", 1);
 
   // Grab a handle to the DevToolsManager so we can forward messages to it.
   DevToolsManager* devtools_manager = DevToolsManager::GetInstance();
 
   // Grab the tab_id of whatever tab happens to be first.
-  WebContents* web_contents = browser()->GetWebContentsAt(0);
+  WebContents* web_contents = chrome::GetWebContentsAt(browser(), 0);
   ASSERT_TRUE(web_contents);
   int tab_id = ExtensionTabUtil::GetTabId(web_contents);
 
@@ -72,7 +80,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, FLAKY_TimelineApi) {
   bool result = false;
   std::wstring register_listeners_js = base::StringPrintf(
       L"setListenersOnTab(%d)", tab_id);
-  ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
+  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
       host->render_view_host(), L"", register_listeners_js, &result));
   EXPECT_TRUE(result);
 
@@ -88,7 +96,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, FLAKY_TimelineApi) {
   result = false;
 
   devtools_client_host->DispatchOnInspectorFrontend("");
-  ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
+  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
       host->render_view_host(), L"", L"testReceivePageEvent()", &result));
   EXPECT_TRUE(result);
 
@@ -97,7 +105,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, FLAKY_TimelineApi) {
   devtools_manager->UnregisterDevToolsClientHostFor(
       DevToolsAgentHostRegistry::GetDevToolsAgentHost(
           web_contents->GetRenderViewHost()));
-  ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
+  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
       host->render_view_host(), L"", L"testReceiveTabCloseEvent()", &result));
   EXPECT_TRUE(result);
 }
@@ -111,17 +119,19 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, ProcessRefCounting) {
   // Get the ExtensionHost that is hosting our background page.
   ExtensionProcessManager* manager =
       browser()->profile()->GetExtensionProcessManager();
-  ExtensionHost* host_one = FindHostWithPath(manager, "/background.html", 1);
+  ExtensionHost* host_one = FindBackgroundHostWithPath(manager,
+                                                       "/background.html", 1);
 
   ASSERT_TRUE(LoadExtension(
       test_data_dir_.AppendASCII("devtools").AppendASCII("timeline_api_two")));
-  ExtensionHost* host_two = FindHostWithPath(manager,
-                                             "/background_two.html", 2);
+  ExtensionHost* host_two = FindBackgroundHostWithPath(manager,
+                                                       "/background_two.html",
+                                                       2);
 
   DevToolsManager* devtools_manager = DevToolsManager::GetInstance();
 
   // Grab the tab_id of whatever tab happens to be first.
-  WebContents* web_contents = browser()->GetWebContentsAt(0);
+  WebContents* web_contents = chrome::GetWebContentsAt(browser(), 0);
   ASSERT_TRUE(web_contents);
   int tab_id = ExtensionTabUtil::GetTabId(web_contents);
 
@@ -129,7 +139,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, ProcessRefCounting) {
   bool result = false;
   std::wstring register_listeners_js = base::StringPrintf(
       L"setListenersOnTab(%d)", tab_id);
-  ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
+  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
       host_one->render_view_host(), L"", register_listeners_js, &result));
   EXPECT_TRUE(result);
 
@@ -142,14 +152,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, ProcessRefCounting) {
   // Register listeners from the second extension as well.
   std::wstring script = base::StringPrintf(L"registerListenersForTab(%d)",
                                            tab_id);
-  ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
+  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
       host_two->render_view_host(), L"", script, &result));
   EXPECT_TRUE(result);
 
   // Removing the listeners from the first extension should leave the bridge
   // alive.
   result = false;
-  ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
+  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
       host_one->render_view_host(), L"", L"unregisterListeners()", &result));
   EXPECT_TRUE(result);
   ASSERT_TRUE(devtools_manager->GetDevToolsClientHostFor(
@@ -159,7 +169,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, ProcessRefCounting) {
   // Removing the listeners from the second extension should tear the bridge
   // down.
   result = false;
-  ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
+  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
       host_two->render_view_host(), L"", L"unregisterListeners()", &result));
   EXPECT_TRUE(result);
   ASSERT_FALSE(devtools_manager->GetDevToolsClientHostFor(

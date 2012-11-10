@@ -8,36 +8,39 @@
 
 cr.define('login', function() {
   // Screens that should have offline message overlay.
-  const MANAGED_SCREENS = ['gaia-signin'];
+  /** @const */ var MANAGED_SCREENS = ['gaia-signin'];
 
   // Network state constants.
-  const NET_STATE = {
+  var NET_STATE = {
     OFFLINE: 0,
     ONLINE: 1,
     PORTAL: 2
   };
 
   // Error reasons which are passed to updateState_() method.
-  const ERROR_REASONS = {
+  /** @const */ var ERROR_REASONS = {
     PROXY_AUTH_CANCELLED: 'frame error:111',
     PROXY_CONNECTION_FAILED: 'frame error:130',
     PROXY_CONFIG_CHANGED: 'proxy changed',
-    LOADING_TIMEOUT: 'loading timeout'
+    LOADING_TIMEOUT: 'loading timeout',
+    PORTAL_DETECTED: 'portal detected'
   };
 
   // Frame loading errors.
-  const NET_ERROR = {
+  var NET_ERROR = {
     ABORTED_BY_USER: 3
   };
 
   // Link which starts guest session for captive portal fixing.
-  const FIX_CAPTIVE_PORTAL_ID = 'captive-portal-fix-link';
+  /** @const */ var FIX_CAPTIVE_PORTAL_ID = 'captive-portal-fix-link';
+
+  /** @const */ var FIX_PROXY_SETTINGS_ID = 'proxy-settings-fix-link';
 
   // Id of the element which holds current network name.
-  const CURRENT_NETWORK_NAME_ID = 'captive-portal-network-name';
+  /** @const */ var CURRENT_NETWORK_NAME_ID = 'captive-portal-network-name';
 
   // Link which triggers frame reload.
-  const RELOAD_PAGE_ID = 'proxy-error-retry-link';
+  /** @const */ var RELOAD_PAGE_ID = 'proxy-error-retry-link';
 
   /**
    * Creates a new offline message screen div.
@@ -79,7 +82,16 @@ cr.define('login', function() {
         '<a id="' + FIX_CAPTIVE_PORTAL_ID + '" class="signin-link" href="#">',
         '</a>');
       $(FIX_CAPTIVE_PORTAL_ID).onclick = function() {
-        chrome.send('fixCaptivePortal');
+        chrome.send('showCaptivePortal');
+      };
+
+      $('captive-portal-proxy-message-text').innerHTML =
+        localStrings.getStringF(
+          'captivePortalProxyMessage',
+          '<a id="' + FIX_PROXY_SETTINGS_ID + '" class="signin-link" href="#">',
+          '</a>');
+      $(FIX_PROXY_SETTINGS_ID).onclick = function() {
+        chrome.send('openProxySettings');
       };
 
       $('proxy-message-text').innerHTML = localStrings.getStringF(
@@ -105,7 +117,7 @@ cr.define('login', function() {
           '<a id="error-offline-login-link" class="signin-link" href="#">',
           '</a>');
       $('error-offline-login-link').onclick = function() {
-        chrome.send('offlineLogin', []);
+        chrome.send('offlineLogin');
       };
     },
 
@@ -132,10 +144,10 @@ cr.define('login', function() {
 
     /**
      * Shows or hides offline message based on network on/offline state.
-     * @param {Integer} state Current state of the network (see NET_STATE).
+     * @param {number} state Current state of the network (see NET_STATE).
      * @param {string} network Name of the current network.
      * @param {string} reason Reason the callback was called.
-     * @param {int} lastNetworkType Last active network type.
+     * @param {number} lastNetworkType Last active network type.
      */
     updateState_: function(state, network, reason, lastNetworkType) {
       var currentScreen = Oobe.getInstance().currentScreen;
@@ -146,12 +158,16 @@ cr.define('login', function() {
           reason == ERROR_REASONS.PROXY_CONNECTION_FAILED;
       var shouldOverlay = MANAGED_SCREENS.indexOf(currentScreen.id) != -1 &&
           !currentScreen.isLocal;
+      var isTimeout = false;
+      var isShown = !offlineMessage.classList.contains('hidden') &&
+          !offlineMessage.classList.contains('faded');
+      var currentScreenReloaded = false;
 
       if (reason == ERROR_REASONS.PROXY_CONFIG_CHANGED && shouldOverlay &&
-          !offlineMessage.classList.contains('hidden') &&
-          offlineMessage.classList.contains('show-captive-portal')) {
+          !currentScreenReloaded) {
         // Schedules a immediate retry.
         currentScreen.doReload();
+        currentScreenReloaded = true;
         console.log('Retry page load since proxy settings has been changed');
       }
 
@@ -159,13 +175,45 @@ cr.define('login', function() {
       if (reason == ERROR_REASONS.LOADING_TIMEOUT) {
         isOnline = false;
         isUnderCaptivePortal = true;
+        isTimeout = true;
+      }
+
+      // Portal was detected via generate_204 redirect on Chrome side.
+      // Subsequent call to show dialog if it's already shown does nothing.
+      if (reason == ERROR_REASONS.PORTAL_DETECTED) {
+        isOnline = false;
+        isUnderCaptivePortal = true;
       }
 
       if (!isOnline && shouldOverlay) {
         console.log('Show offline message: state=' + state +
-                    ', network=' + network +
+                    ', network=' + network + ', reason=' + reason +
                     ', isUnderCaptivePortal=' + isUnderCaptivePortal);
+
+        // Clear any error messages that might still be around.
+        Oobe.clearErrors();
+
         offlineMessage.onBeforeShow(lastNetworkType);
+
+        if (isUnderCaptivePortal && !isProxyError) {
+          // Do not bother a user with obsessive captive portal showing. This
+          // check makes captive portal being shown only once: either when error
+          // screen is shown for the first time or when switching from another
+          // error screen (offline, proxy).
+          if (!isShown ||
+              !offlineMessage.classList.contains('show-captive-portal')) {
+            // In case of timeout we're suspecting that network might be
+            // a captive portal but would like to check that first.
+            // Otherwise (signal from flimflam / generate_204 got redirected)
+            // show dialog right away.
+            if (isTimeout)
+              chrome.send('fixCaptivePortal');
+            else
+              chrome.send('showCaptivePortal');
+          }
+        } else {
+          chrome.send('hideCaptivePortal');
+        }
 
         if (isUnderCaptivePortal) {
           if (isProxyError) {
@@ -187,6 +235,9 @@ cr.define('login', function() {
         offlineMessage.classList.remove('hidden');
         offlineMessage.classList.remove('faded');
 
+        if (Oobe.getInstance().isNewOobe())
+          Oobe.getInstance().updateInnerContainerSize_(offlineMessage);
+
         if (!currentScreen.classList.contains('faded')) {
           currentScreen.classList.add('faded');
           currentScreen.addEventListener('webkitTransitionEnd',
@@ -196,25 +247,43 @@ cr.define('login', function() {
                 currentScreen.classList.add('hidden');
             });
         }
+        chrome.send('networkErrorShown');
+        // Report back error screen UI being painted.
+        window.webkitRequestAnimationFrame(function() {
+          chrome.send('loginVisible');
+        });
       } else {
+        chrome.send('hideCaptivePortal');
+
         if (!offlineMessage.classList.contains('faded')) {
-          console.log('Hide offline message.');
+          console.log('Hide offline message. state=' + state +
+                      ', network=' + network + ', reason=' + reason);
+
           offlineMessage.onBeforeHide();
 
           offlineMessage.classList.add('faded');
-          offlineMessage.addEventListener('webkitTransitionEnd',
-            function f(e) {
-              offlineMessage.removeEventListener('webkitTransitionEnd', f);
-              if (offlineMessage.classList.contains('faded'))
-                offlineMessage.classList.add('hidden');
-            });
+          if (offlineMessage.classList.contains('animated')) {
+            offlineMessage.addEventListener('webkitTransitionEnd',
+              function f(e) {
+                offlineMessage.removeEventListener('webkitTransitionEnd', f);
+                if (offlineMessage.classList.contains('faded'))
+                  offlineMessage.classList.add('hidden');
+              });
+          } else {
+            offlineMessage.classList.add('hidden');
+          }
 
           currentScreen.classList.remove('hidden');
           currentScreen.classList.remove('faded');
 
-          // Ensures 'loading' state really means loading for Gaia screen.
-          if (currentScreen.id == 'gaia-signin' && currentScreen.loading)
+          if (Oobe.getInstance().isNewOobe())
+            Oobe.getInstance().updateInnerContainerSize_(currentScreen);
+
+          // Forces a reload for Gaia screen on hiding error message.
+          if (currentScreen.id == 'gaia-signin' && !currentScreenReloaded) {
             currentScreen.doReload();
+            currentScreenReloaded = true;
+          }
         }
       }
     },
@@ -232,10 +301,10 @@ cr.define('login', function() {
 
   /**
    * Network state changed callback.
-   * @param {Integer} state Current state of the network (see NET_STATE).
+   * @param {number} state Current state of the network (see NET_STATE).
    * @param {string} network Name of the current network.
    * @param {string} reason Reason the callback was called.
-   * @param {int} lastNetworkType Last active network type.
+   * @param {number} lastNetworkType Last active network type.
    */
   ErrorMessageScreen.updateState = function(
       state, network, reason, lastNetworkType) {
@@ -254,17 +323,12 @@ cr.define('login', function() {
       return;
     }
     $('gaia-signin').onFrameError(error);
-    // Offline and simple captive portal cases are handled by the
-    // NetworkStateInformer, so only the case when browser is online is
-    // valuable.
-    if (window.navigator.onLine) {
-      // Check current network state if currentScreen is a managed one.
-      var currentScreen = Oobe.getInstance().currentScreen;
-      if (MANAGED_SCREENS.indexOf(currentScreen.id) != -1) {
-        chrome.send('loginRequestNetworkState',
-                    ['login.ErrorMessageScreen.maybeRetry',
-                     'frame error:' + error]);
-      }
+    // Check current network state if currentScreen is a managed one.
+    var currentScreen = Oobe.getInstance().currentScreen;
+    if (MANAGED_SCREENS.indexOf(currentScreen.id) != -1) {
+      chrome.send('loginRequestNetworkState',
+                  ['login.ErrorMessageScreen.maybeRetry',
+                   'frame error:' + error]);
     }
   };
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,10 @@
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/sessions/session_restore.h"
+#endif
 
 namespace {
 
@@ -61,10 +65,7 @@ RecentlyClosedTabsHandler::~RecentlyClosedTabsHandler() {
 }
 
 void RecentlyClosedTabsHandler::HandleReopenTab(const ListValue* args) {
-  TabRestoreServiceDelegate* delegate =
-      TabRestoreServiceDelegate::FindDelegateForController(
-          &web_ui()->GetWebContents()->GetController(), NULL);
-  if (!delegate || !tab_restore_service_)
+  if (!tab_restore_service_)
     return;
 
   double index = -1.0;
@@ -77,6 +78,28 @@ void RecentlyClosedTabsHandler::HandleReopenTab(const ListValue* args) {
   double session_to_restore = 0.0;
   CHECK(args->GetDouble(0, &session_to_restore));
 
+#if defined(OS_ANDROID)
+  // Find and remove the corresponding tab entry from TabRestoreService.
+  // We take ownership of the returned tab.
+  scoped_ptr<TabRestoreService::Tab> tab_entry(
+      tab_restore_service_->RemoveTabEntryById(static_cast<int>(
+          session_to_restore)));
+  if (tab_entry.get() == NULL)
+    return;
+
+  // RestoreForeignSessionTab needs a SessionTab.
+  SessionTab session_tab;
+  session_tab.current_navigation_index = tab_entry->current_navigation_index;
+  session_tab.navigations = tab_entry->navigations;
+
+  SessionRestore::RestoreForeignSessionTab(web_ui()->GetWebContents(),
+                                           session_tab, NEW_FOREGROUND_TAB);
+#else
+  TabRestoreServiceDelegate* delegate =
+      TabRestoreServiceDelegate::FindDelegateForWebContents(
+          web_ui()->GetWebContents());
+  if (!delegate)
+    return;
   WindowOpenDisposition disposition =
       web_ui_util::GetDispositionFromClick(args, 2);
   tab_restore_service_->RestoreEntryById(delegate,
@@ -84,6 +107,7 @@ void RecentlyClosedTabsHandler::HandleReopenTab(const ListValue* args) {
                                          disposition);
   // The current tab has been nuked at this point; don't touch any member
   // variables.
+#endif
 }
 
 void RecentlyClosedTabsHandler::HandleGetRecentlyClosedTabs(
@@ -113,7 +137,7 @@ void RecentlyClosedTabsHandler::TabRestoreServiceChanged(
   TabRestoreService::Entries entries = service->entries();
   CreateRecentlyClosedValues(entries, &list_value);
 
-  web_ui()->CallJavascriptFunction("recentlyClosedTabs", list_value);
+  web_ui()->CallJavascriptFunction("ntp.setRecentlyClosedTabs", list_value);
 }
 
 void RecentlyClosedTabsHandler::TabRestoreServiceDestroyed(

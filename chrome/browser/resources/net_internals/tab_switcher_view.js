@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -73,8 +73,7 @@ var TabSwitcherView = (function() {
     },
 
     /**
-     * Returns the currently selected tab, or null if there is none.
-     * @returns {!TabEntry}
+     * @return {?TabEntry} The currently selected tab, or null if there is none.
      */
     findActiveTab: function() {
       for (var i = 0; i < this.tabs_.length; ++i) {
@@ -86,8 +85,7 @@ var TabSwitcherView = (function() {
     },
 
     /**
-     * Returns the tab with ID |id|.
-     * @returns {!TabEntry}
+     * @return {?TabEntry} The tab with ID |id|, or null if there is none.
      */
     findTabById: function(id) {
       for (var i = 0; i < this.tabs_.length; ++i) {
@@ -125,10 +123,22 @@ var TabSwitcherView = (function() {
       return ids;
     },
 
-    // Shows/hides the DOM node that is used to select the tab.  Will not change
-    // the active tab.
+    /**
+     * Shows/hides the DOM node that is used to select the tab.  If the
+     * specified tab is the active tab, switches the active tab to the first
+     * still visible tab in the tab list.
+     */
     showTabHandleNode: function(id, isVisible) {
       var tab = this.findTabById(id);
+      if (!isVisible && tab == this.findActiveTab()) {
+        for (var i = 0; i < this.tabs_.length; ++i) {
+          if (this.tabs_[i].id != id &&
+              this.tabs_[i].getTabHandleNode().style.display != 'none') {
+            this.switchToTab(this.tabs_[i].id, null);
+            break;
+          }
+        }
+      }
       setNodeDisplay(tab.getTabHandleNode(), isVisible);
     }
   };
@@ -145,7 +155,10 @@ var TabSwitcherView = (function() {
 
   TabEntry.prototype.setSelected = function(isSelected) {
     this.active = isSelected;
-    changeClassName(this.getTabHandleNode(), 'selected', isSelected);
+    if (isSelected)
+      this.getTabHandleNode().classList.add('selected');
+    else
+      this.getTabHandleNode().classList.remove('selected');
     this.contentView.show(isSelected);
   };
 

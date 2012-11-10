@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -441,7 +441,8 @@ RenderNode* InterpretNode(DictionaryValue* node) {
 
 
   string outjson;
-  JSONWriter::Write(node, true, &outjson);
+  JSONWriter::WriteWithOptions(node, base::JSONWriter::OPTIONS_PRETTY_PRINT,
+                               &outjson);
   LOG(ERROR) << "Unrecognized node type! JSON:\n\n"
       "-----------------------\n" <<
       outjson <<
@@ -460,7 +461,7 @@ RenderNode* BuildRenderTreeFromFile(const FilePath& path) {
   int error_code = 0;
   string error_message;
   root.reset(JSONReader::ReadAndReturnError(contents,
-            true,
+            base::JSON_ALLOW_TRAILING_COMMAS,
             &error_code,
             &error_message));
   if (!root.get()) {

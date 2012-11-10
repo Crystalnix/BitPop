@@ -22,8 +22,17 @@ cr.define('oobe', function() {
   };
 
   /**
+   * Sets the |isAutoEnrollment| flag of the OAuthEnrollmentScreen class and
+   * updates the UI.
+   * @param {boolean} is_auto_enrollment the new value of the flag.
+   */
+  OAuthEnrollmentScreen.setIsAutoEnrollment = function(is_auto_enrollment) {
+    $('oauth-enrollment').setIsAutoEnrollment(is_auto_enrollment);
+  };
+
+  /**
    * Switches between the different steps in the enrollment flow.
-   * @param screen {string} the steps to show, one of "signin", "working",
+   * @param {string} screen the steps to show, one of "signin", "working",
    * "error", "success".
    */
   OAuthEnrollmentScreen.showStep = function(step) {
@@ -32,8 +41,8 @@ cr.define('oobe', function() {
 
   /**
    * Sets an error message and switches to the error screen.
-   * @param message {string} the error message.
-   * @param retry {bool} whether the retry link should be shown.
+   * @param {string} message the error message.
+   * @param {boolean} retry whether the retry link should be shown.
    */
   OAuthEnrollmentScreen.showError = function(message, retry) {
     $('oauth-enrollment').showError(message, retry);
@@ -41,7 +50,7 @@ cr.define('oobe', function() {
 
   /**
    * Sets a progressing message and switches to the working screen.
-   * @param message {string} the progress message.
+   * @param {string} message the progress message.
    */
 
   OAuthEnrollmentScreen.showWorking = function(message) {
@@ -76,9 +85,6 @@ cr.define('oobe', function() {
     decorate: function() {
       $('oauth-enroll-error-retry').addEventListener('click',
                                                      this.doRetry_.bind(this));
-      $('oauth-enroll-cancel-auto-link').addEventListener(
-          'click',
-          this.confirmCancelAutoEnrollment_.bind(this));
       var links = document.querySelectorAll('.oauth-enroll-explain-link');
       for (var i = 0; i < links.length; i++) {
         links[i].addEventListener('click', this.showStep.bind(this, 'explain'));
@@ -139,24 +145,10 @@ cr.define('oobe', function() {
     },
 
     /**
-     * Event handler that is invoked just before the frame is shown.
-     * @param data {dictionary} Screen init payload, contains the signin frame
-     * URL.
+     * Changes the auto-enrollment flag and updates the UI.
      */
-    onBeforeShow: function(data) {
-      var url = data.signin_url;
-      if (data.gaiaOrigin)
-        url += '?gaiaOrigin=' + encodeURIComponent(data.gaiaOrigin);
-      if (data.test_email) {
-        url += '&test_email=' + encodeURIComponent(data.test_email);
-        url += '&test_password=' + encodeURIComponent(data.test_password);
-      }
-      this.signInUrl_ = url;
-      this.isAutoEnrollment_ = data.is_auto_enrollment;
-
-      $('oauth-enroll-signin-frame').contentWindow.location.href =
-          this.signInUrl_;
-
+    setIsAutoEnrollment: function(is_auto_enrollment) {
+      this.isAutoEnrollment_ = is_auto_enrollment;
       // The cancel button is not available during auto-enrollment.
       var cancel = this.isAutoEnrollment_ ? null : 'cancel';
       // During auto-enrollment the user must try again from the error screen.
@@ -180,6 +172,27 @@ cr.define('oobe', function() {
       var links = document.querySelectorAll('.oauth-enroll-explain-link');
       for (var i = 0; i < links.length; i++)
         links[i].hidden = !this.isAutoEnrollment_;
+    },
+
+    /**
+     * Event handler that is invoked just before the frame is shown.
+     * @param {Object} data Screen init payload, contains the signin frame
+     * URL.
+     */
+    onBeforeShow: function(data) {
+      var url = data.signin_url;
+      url += '?gaiaOrigin=' + encodeURIComponent(data.gaiaOrigin);
+      if (data.gaiaUrlBase)
+        url += '&gaiaUrlPath=' + encodeURIComponent(data.gaiaUrlPath);
+      if (data.test_email) {
+        url += '&test_email=' + encodeURIComponent(data.test_email);
+        url += '&test_password=' + encodeURIComponent(data.test_password);
+      }
+      this.signInUrl_ = url;
+      this.setIsAutoEnrollment(data.is_auto_enrollment);
+
+      $('oauth-enroll-signin-frame').contentWindow.location.href =
+          this.signInUrl_;
 
       this.showStep('signin');
     },
@@ -194,7 +207,7 @@ cr.define('oobe', function() {
 
     /**
      * Switches between the different steps in the enrollment flow.
-     * @param step {string} the steps to show, one of "signin", "working",
+     * @param {string} step the steps to show, one of "signin", "working",
      * "error", "success".
      */
     showStep: function(step) {
@@ -217,8 +230,8 @@ cr.define('oobe', function() {
 
     /**
      * Sets an error message and switches to the error screen.
-     * @param message {string} the error message.
-     * @param retry {bool} whether the retry link should be shown.
+     * @param {string} message the error message.
+     * @param {boolean} retry whether the retry link should be shown.
      */
     showError: function(message, retry) {
       $('oauth-enroll-error-message').textContent = message;
@@ -228,7 +241,7 @@ cr.define('oobe', function() {
 
     /**
      * Sets a progressing message and switches to the working screen.
-     * @param message {string} the progress message.
+     * @param {string} message the progress message.
      */
     showWorking: function(message) {
       $('oauth-enroll-working-message').textContent = message;
@@ -236,18 +249,11 @@ cr.define('oobe', function() {
     },
 
     /**
-     * Retries the enrollment process after an error occurred in a previous
-     * attempt. This goes to the C++ side through |chrome| first to clean up the
-     * profile, so that the next attempt is performed with a clean state.
-     */
-    doRetry_: function() {
-      chrome.send('oauthEnrollRetry', []);
-    },
-
-    /**
      * Handler for cancellations of an enforced auto-enrollment.
      */
-    confirmCancelAutoEnrollment_: function() {
+    cancelAutoEnrollment: function() {
+      if (!this.isAutoEnrollment_)
+        return;
       if (!this.confirmDialog_) {
         this.confirmDialog_ = new cr.ui.dialogs.ConfirmDialog(document.body);
         this.confirmDialog_.setOkLabel(
@@ -262,6 +268,15 @@ cr.define('oobe', function() {
     },
 
     /**
+     * Retries the enrollment process after an error occurred in a previous
+     * attempt. This goes to the C++ side through |chrome| first to clean up the
+     * profile, so that the next attempt is performed with a clean state.
+     */
+    doRetry_: function() {
+      chrome.send('oauthEnrollRetry');
+    },
+
+    /**
      * Handler for confirmation of cancellation of auto-enrollment.
      */
     onConfirmCancelAutoEnrollment_: function() {
@@ -271,8 +286,8 @@ cr.define('oobe', function() {
     /**
      * Checks if a given HTML5 message comes from the URL loaded into the signin
      * frame.
-     * @param m {object} HTML5 message.
-     * @type {bool} whether the message comes from the signin frame.
+     * @param {Object} m HTML5 message.
+     * @type {boolean} whether the message comes from the signin frame.
      */
     isSigninMessage_: function(m) {
       return this.signInUrl_ != null &&
@@ -282,12 +297,12 @@ cr.define('oobe', function() {
 
     /**
      * Event handler for HTML5 messages.
-     * @param m {object} HTML5 message.
+     * @param {Object} m HTML5 message.
      */
     onMessage_: function(m) {
       var msg = m.data;
       if (msg.method == 'completeLogin' && this.isSigninMessage_(m))
-        chrome.send('oauthEnrollCompleteLogin', [ msg.email, msg.password ]);
+        chrome.send('oauthEnrollCompleteLogin', [msg.email, msg.password]);
     }
   };
 

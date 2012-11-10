@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_EXTENSIONS_APP_NOTIFICATION_H_
 #define CHROME_BROWSER_EXTENSIONS_APP_NOTIFICATION_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -13,6 +12,8 @@
 #include "base/memory/linked_ptr.h"
 #include "base/values.h"
 #include "googleurl/src/gurl.h"
+
+namespace extensions {
 
 // This class is used to represent a notification for an installed app, to be
 // displayed on the New Tab Page.
@@ -51,11 +52,12 @@ class AppNotification {
   const std::string& link_text() const { return link_text_; }
 
   // Useful methods for serialization.
-  void ToDictionaryValue(DictionaryValue* result);
+  void ToDictionaryValue(DictionaryValue* result) const;
   static AppNotification* FromDictionaryValue(const DictionaryValue& value);
 
   // Return whether |other| is equal to this object. Useful for tests.
   bool Equals(const AppNotification& other) const;
+  std::string ToString() const;
 
  private:
   // If you add to the list of data members, make sure to add appropriate checks
@@ -83,5 +85,7 @@ typedef std::vector<linked_ptr<AppNotification> > AppNotificationList;
 // each element.
 // Caller owns the returned instance.
 AppNotificationList* CopyAppNotificationList(const AppNotificationList& source);
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_EXTENSIONS_APP_NOTIFICATION_H_

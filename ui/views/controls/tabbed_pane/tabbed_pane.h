@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_VIEWS_CONTROLS_TABBED_PANE_TABBED_PANE_H_
 #define UI_VIEWS_CONTROLS_TABBED_PANE_TABBED_PANE_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -25,10 +24,12 @@ class VIEWS_EXPORT TabbedPane : public View {
 
   TabbedPaneListener* listener() const { return listener_; }
   void set_listener(TabbedPaneListener* listener) { listener_ = listener; }
-
-  NativeTabbedPaneWrapper* native_wrapper() const {
-    return native_tabbed_pane_;
+#if defined(OS_WIN) && !defined(USE_AURA)
+  bool use_native_win_control() { return use_native_win_control_; }
+  void set_use_native_win_control(bool use_native_win_control) {
+    use_native_win_control_ = use_native_win_control;
   }
+#endif
 
   // Returns the number of tabs.
   int GetTabCount();
@@ -64,7 +65,7 @@ class VIEWS_EXPORT TabbedPane : public View {
 
   void SetAccessibleName(const string16& name);
 
-  // View:
+  // Overridden from View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
  protected:
@@ -79,7 +80,7 @@ class VIEWS_EXPORT TabbedPane : public View {
   // We support Ctrl+Tab and Ctrl+Shift+Tab to navigate tabbed option pages.
   void LoadAccelerators();
 
-  // View:
+  // Overridden from View:
   virtual void Layout() OVERRIDE;
   virtual void ViewHierarchyChanged(bool is_add,
                                     View* parent,
@@ -91,10 +92,14 @@ class VIEWS_EXPORT TabbedPane : public View {
   virtual void OnPaintFocusBorder(gfx::Canvas* canvas) OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
 
-  // The listener we notify about tab selection changes.
+#if defined(OS_WIN) && !defined(USE_AURA)
+  bool use_native_win_control_;
+#endif
+
+  // Our listener. Not owned. Notified when tab selection changes.
   TabbedPaneListener* listener_;
 
-  // The accessible name of this view.
+  // The accessible name of this tabbed pane.
   string16 accessible_name_;
 
   DISALLOW_COPY_AND_ASSIGN(TabbedPane);

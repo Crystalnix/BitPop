@@ -8,7 +8,7 @@
 #include "base/lazy_instance.h"
 #include "base/threading/thread.h"
 #include "content/browser/renderer_host/java/java_bridge_channel_host.h"
-#include "content/browser/renderer_host/render_view_host.h"
+#include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/child_process.h"
 #include "content/common/java_bridge_messages.h"
 #include "content/common/npobject_stub.h"
@@ -18,6 +18,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 
 using content::BrowserThread;
+using content::RenderViewHost;
 
 namespace {
 class JavaBridgeThread : public base::Thread {
@@ -129,7 +130,7 @@ void JavaBridgeDispatcherHost::CreateObjectStub(NPObject* object,
   DCHECK_EQ(g_background_thread.Get().message_loop(), MessageLoop::current());
   if (!channel_) {
     channel_ = JavaBridgeChannelHost::GetJavaBridgeChannelHost(
-        render_view_host()->process()->GetID(),
+        render_view_host()->GetProcess()->GetID(),
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
   }
 

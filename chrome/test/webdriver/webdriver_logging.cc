@@ -10,8 +10,10 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
+#include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/time.h"
+#include "build/build_config.h"
 
 using base::DictionaryValue;
 using base::ListValue;
@@ -22,6 +24,28 @@ namespace webdriver {
 FileLog* FileLog::singleton_ = NULL;
 
 double start_time = 0;
+
+LogLevel LogLevelFromString(const std::string& name) {
+  // Default logging level is INFO.
+  LogLevel level = kInfoLogLevel;
+  const std::string upper_case_name = StringToUpperASCII(name);
+  if (upper_case_name == "OFF") {
+    level = kOffLogLevel;
+  } else if (upper_case_name == "SEVERE") {
+    level = kSevereLogLevel;
+  } else if (upper_case_name == "WARNING") {
+    level = kWarningLogLevel;
+  } else if (upper_case_name == "INFO" || upper_case_name == "CONFIG") {
+
+  } else if (upper_case_name == "FINE") {
+    level = kFineLogLevel;
+  } else if (upper_case_name == "FINER") {
+    level = kFinerLogLevel;
+  } else if (upper_case_name == "ALL" || upper_case_name == "FINEST") {
+    level = kAllLogLevel;
+  }
+  return level;
+}
 
 // static
 bool LogType::FromString(const std::string& name, LogType* log_type) {
@@ -98,6 +122,9 @@ void FileLog::Log(LogLevel level, const base::Time& time,
 
   const char* level_name = "UNKNOWN";
   switch (level) {
+    case kOffLogLevel:
+      level_name = "OFF";
+      break;
     case kSevereLogLevel:
       level_name = "SEVERE";
       break;
@@ -124,8 +151,12 @@ void FileLog::Log(LogLevel level, const base::Time& time,
   if (pad_length < 1)
     pad_length = 1;
   std::string padding(pad_length, ' ');
-  entry += base::StringPrintf(
-      "%s%s\n", padding.c_str(), message.c_str());
+  entry += padding + message;
+#if defined(OS_WIN)
+  entry += "\r\n";
+#else
+  entry += "\n";
+#endif
 
   base::AutoLock auto_lock(lock_);
   fprintf(file_.get(), "%s", entry.c_str());
@@ -156,17 +187,10 @@ InMemoryLog::~InMemoryLog() {  }
 
 void InMemoryLog::Log(LogLevel level, const base::Time& time,
                       const std::string& message) {
-  // base's JSONWriter doesn't obey the spec, and writes
-  // doubles without a fraction with a '.0' postfix. base's Value class
-  // only includes doubles or int types. Instead of returning the timestamp
-  // in unix epoch time, we return it based on the start of chromedriver so
-  // a 32-bit int doesn't overflow.
-  // TODO(kkania): Add int64_t to base Values or fix the JSONWriter/Reader and
-  // use unix epoch time.
-  base::TimeDelta delta(time - base::Time::FromDoubleT(start_time));
+  base::TimeDelta delta = time - base::Time::UnixEpoch();
   DictionaryValue* entry = new DictionaryValue();
   entry->SetInteger("level", level);
-  entry->SetInteger("timestamp", delta.InMilliseconds());
+  entry->SetDouble("timestamp", std::floor(delta.InMillisecondsF()));
   entry->SetString("message", message);
   base::AutoLock auto_lock(entries_lock_);
   entries_list_.Append(entry);

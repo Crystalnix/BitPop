@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,15 @@
 #include <atlbase.h>
 
 #include "base/logging.h"
+#include "chrome/browser/hang_monitor/hang_crash_dump_win.h"
 #include "content/public/common/result_codes.h"
+
+namespace {
 
 // How long do we wait for the terminated thread or process to die (in ms)
 static const int kTerminateTimeout = 2000;
+
+}  // namespace
 
 const wchar_t HungWindowDetector::kHungChildWindowTimeout[] =
     L"Chrome_HungChildWindowTimeout";
@@ -142,7 +147,7 @@ bool HungWindowDetector::CheckChildWindow(HWND child_window) {
         }
         case HungWindowNotification::HUNG_WINDOW_TERMINATE_PROCESS: {
           RemoveProp(child_window, kHungChildWindowTimeout);
-          CHandle child_process(OpenProcess(PROCESS_TERMINATE,
+          CHandle child_process(OpenProcess(PROCESS_ALL_ACCESS,
                                             FALSE,
                                             child_window_process_id));
 
@@ -156,8 +161,10 @@ bool HungWindowDetector::CheckChildWindow(HWND child_window) {
           if (process_id_check !=  child_window_process_id) {
             break;
           }
-          TerminateProcess(child_process, content::RESULT_CODE_HUNG);
-          WaitForSingleObject(child_process, kTerminateTimeout);
+
+          // Before terminating the process we try collecting a dump. Which
+          // a transient thread in the child process will do for us.
+          CrashDumpAndTerminateHungChildProcess(child_process);
           child_process.Close();
           break;
         }

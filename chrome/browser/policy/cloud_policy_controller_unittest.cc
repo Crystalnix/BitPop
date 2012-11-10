@@ -15,7 +15,7 @@
 #include "chrome/browser/policy/proto/cloud_policy.pb.h"
 #include "chrome/browser/policy/proto/device_management_backend.pb.h"
 #include "chrome/browser/policy/user_policy_cache.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "policy/policy_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -40,6 +40,7 @@ class MockDeviceTokenFetcher : public DeviceTokenFetcher {
   MOCK_METHOD0(FetchToken, void());
   MOCK_METHOD0(SetUnmanagedState, void());
   MOCK_METHOD0(SetSerialNumberInvalidState, void());
+  MOCK_METHOD0(SetMissingLicensesState, void());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockDeviceTokenFetcher);
@@ -76,7 +77,7 @@ class CloudPolicyControllerTest : public testing::Test {
         temp_user_data_dir_.path().AppendASCII("CloudPolicyControllerTest"),
         false  /* wait_for_policy_fetch */));
     token_fetcher_.reset(new MockDeviceTokenFetcher(cache_.get()));
-    EXPECT_CALL(service_, StartJob(_)).Times(AnyNumber());
+    EXPECT_CALL(service_, StartJob(_, _, _, _, _, _, _)).Times(AnyNumber());
     data_store_.reset(CloudPolicyDataStore::CreateForUserPolicies());
   }
 
@@ -269,6 +270,20 @@ TEST_F(CloudPolicyControllerTest, InvalidSerialNumber) {
   loop_.RunAllPending();
 }
 
+// If the backend reports that the domain has run out of licenses, the
+// controller should instruct the token fetcher not to fetch a new token
+// (which will in turn set and persist the correct 'missing licenses' state).
+TEST_F(CloudPolicyControllerTest, MissingLicenses) {
+  data_store_->SetupForTesting("device_token", "device_id",
+                               "who@what.com", "auth", true);
+  EXPECT_CALL(service_,
+              CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH))
+      .WillOnce(service_.FailJob(DM_STATUS_MISSING_LICENSES));
+  EXPECT_CALL(*token_fetcher_.get(), SetMissingLicensesState()).Times(1);
+  CreateNewController();
+  loop_.RunAllPending();
+}
+
 TEST_F(CloudPolicyControllerTest, DontSetFetchingDoneWithoutTokens) {
   CreateNewWaitingCache();
   CreateNewController();
@@ -290,7 +305,7 @@ TEST_F(CloudPolicyControllerTest, RefreshPoliciesWithoutMaterial) {
 
   // Same scenario as the last test, but the RefreshPolicies call must always
   // notify the cache.
-  controller_->RefreshPolicies();
+  controller_->RefreshPolicies(false);
   loop_.RunAllPending();
   EXPECT_TRUE(cache_->IsReady());
 }
@@ -343,6 +358,41 @@ TEST_F(CloudPolicyControllerTest, SetFetchingDoneAfterPolicyFetchFails) {
   loop_.RunAllPending();
   EXPECT_TRUE(cache_->IsReady());
   EXPECT_TRUE(cache_->last_policy_refresh_time().is_null());
+}
+
+TEST_F(CloudPolicyControllerTest, DelayRefreshesIfPolicyIsInvalid) {
+  // Reply with a protobuf whose timestamp is too far in the future. The policy
+  // cache will reject it, and the controller should detect that and go into
+  // STATE_POLICY_ERROR instead of STATE_POLICY_VALID.
+
+  // Build the |response|.
+  em::DeviceManagementResponse response;
+  em::PolicyData data;
+  em::CloudPolicySettings settings;
+  EXPECT_TRUE(settings.SerializeToString(data.mutable_policy_value()));
+  base::Time far_in_the_future =
+      base::Time::NowFromSystemTime() + base::TimeDelta::FromDays(42);
+  base::TimeDelta timestamp = far_in_the_future - base::Time::UnixEpoch();
+  data.set_timestamp(timestamp.InMilliseconds());
+  std::string serialized_data;
+  EXPECT_TRUE(data.SerializeToString(&serialized_data));
+  em::PolicyFetchResponse* fetch_response =
+      response.mutable_policy_response()->add_response();
+  fetch_response->set_policy_data(serialized_data);
+
+  data_store_->SetupForTesting("device_token", "device_id",
+                               "madmax@managedchrome.com",
+                               "auth_token", true);
+
+  EXPECT_CALL(service_,
+              CreateJob(DeviceManagementRequestJob::TYPE_POLICY_FETCH))
+      .WillOnce(DoAll(InvokeWithoutArgs(&loop_, &MessageLoop::QuitNow),
+                      service_.SucceedJob(response)));
+  CreateNewController();
+  loop_.RunAllPending();
+  EXPECT_EQ(CloudPolicySubsystem::NETWORK_ERROR, notifier_.state());
+  EXPECT_EQ(CloudPolicySubsystem::POLICY_NETWORK_ERROR,
+            notifier_.error_details());
 }
 
 }  // namespace policy

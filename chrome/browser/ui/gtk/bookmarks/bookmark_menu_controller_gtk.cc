@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,9 +9,12 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/gtk/bookmarks/bookmark_utils_gtk.h"
+#include "chrome/browser/ui/gtk/event_utils.h"
 #include "chrome/browser/ui/gtk/gtk_chrome_button.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
@@ -64,15 +67,15 @@ void OnContextMenuHide(GtkWidget* context_menu, GtkWidget* grab_menu) {
 
 }  // namespace
 
-BookmarkMenuController::BookmarkMenuController(Profile* profile,
+BookmarkMenuController::BookmarkMenuController(Browser* browser,
                                                PageNavigator* navigator,
                                                GtkWindow* window,
                                                const BookmarkNode* node,
                                                int start_child_index)
-    : profile_(profile),
+    : browser_(browser),
       page_navigator_(navigator),
       parent_window_(window),
-      model_(profile->GetBookmarkModel()),
+      model_(BookmarkModelFactory::GetForProfile(browser->profile())),
       node_(node),
       drag_icon_(NULL),
       ignore_button_release_(false),
@@ -240,9 +243,8 @@ gboolean BookmarkMenuController::OnMenuButtonPressedOrReleased(
       menu_item ? GetNodeFromMenuItem(menu_item) : NULL;
 
   if (event->button == 2 && node && node->is_folder()) {
-    bookmark_utils::OpenAll(parent_window_,
-                            profile_, page_navigator_,
-                            node, NEW_BACKGROUND_TAB);
+    bookmark_utils::OpenAll(parent_window_, page_navigator_, node,
+                            NEW_BACKGROUND_TAB);
     gtk_menu_popdown(GTK_MENU(menu_));
     return TRUE;
   } else if (event->button == 3) {
@@ -256,7 +258,7 @@ gboolean BookmarkMenuController::OnMenuButtonPressedOrReleased(
       nodes.push_back(node);
     context_menu_controller_.reset(
         new BookmarkContextMenuController(
-            parent_window_, this, profile_,
+            parent_window_, this, browser_, browser_->profile(),
             page_navigator_, parent, nodes));
     context_menu_.reset(
         new MenuGtk(NULL, context_menu_controller_->menu_model()));
@@ -342,7 +344,7 @@ void BookmarkMenuController::OnMenuItemDragBegin(GtkWidget* menu_item,
 
   const BookmarkNode* node = bookmark_utils::BookmarkNodeForWidget(menu_item);
   drag_icon_ = bookmark_utils::GetDragRepresentationForNode(
-      node, model_, GtkThemeService::GetFrom(profile_));
+      node, model_, GtkThemeService::GetFrom(browser_->profile()));
   gint x, y;
   gtk_widget_get_pointer(menu_item, &x, &y);
   gtk_drag_set_icon_widget(drag_context, drag_icon_, x, y);
@@ -366,5 +368,5 @@ void BookmarkMenuController::OnMenuItemDragGet(
     guint target_type, guint time) {
   const BookmarkNode* node = bookmark_utils::BookmarkNodeForWidget(widget);
   bookmark_utils::WriteBookmarkToSelection(node, selection_data, target_type,
-                                           profile_);
+                                           browser_->profile());
 }

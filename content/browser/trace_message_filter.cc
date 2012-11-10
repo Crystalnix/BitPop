@@ -1,22 +1,20 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/browser/trace_message_filter.h"
 
-#include "content/browser/trace_controller.h"
+#include "content/browser/trace_controller_impl.h"
 #include "content/common/child_process_messages.h"
 
 using content::BrowserMessageFilter;
 using content::BrowserThread;
+using content::TraceControllerImpl;
 
 TraceMessageFilter::TraceMessageFilter() :
     has_child_(false),
     is_awaiting_end_ack_(false),
-    is_awaiting_bpf_ack_(false) {
-}
-
-TraceMessageFilter::~TraceMessageFilter() {
+    is_awaiting_buffer_percent_full_ack_(false) {
 }
 
 void TraceMessageFilter::OnFilterAdded(IPC::Channel* channel) {
@@ -29,13 +27,13 @@ void TraceMessageFilter::OnChannelClosing() {
   BrowserMessageFilter::OnChannelClosing();
 
   if (has_child_) {
-    if (is_awaiting_bpf_ack_)
+    if (is_awaiting_end_ack_)
       OnEndTracingAck(std::vector<std::string>());
 
-    if (is_awaiting_end_ack_)
+    if (is_awaiting_buffer_percent_full_ack_)
       OnTraceBufferPercentFullReply(0.0f);
 
-    TraceController::GetInstance()->RemoveFilter(this);
+    TraceControllerImpl::GetInstance()->RemoveFilter(this);
   }
 }
 
@@ -75,14 +73,16 @@ void TraceMessageFilter::SendEndTracing() {
 
 void TraceMessageFilter::SendGetTraceBufferPercentFull() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!is_awaiting_bpf_ack_);
-  is_awaiting_bpf_ack_ = true;
+  DCHECK(!is_awaiting_buffer_percent_full_ack_);
+  is_awaiting_buffer_percent_full_ack_ = true;
   Send(new ChildProcessMsg_GetTraceBufferPercentFull);
 }
 
+TraceMessageFilter::~TraceMessageFilter() {}
+
 void TraceMessageFilter::OnChildSupportsTracing() {
   has_child_ = true;
-  TraceController::GetInstance()->AddFilter(this);
+  TraceControllerImpl::GetInstance()->AddFilter(this);
 }
 
 void TraceMessageFilter::OnEndTracingAck(
@@ -91,24 +91,29 @@ void TraceMessageFilter::OnEndTracingAck(
   // child process is compromised.
   if (is_awaiting_end_ack_) {
     is_awaiting_end_ack_ = false;
-    TraceController::GetInstance()->OnEndTracingAck(known_categories);
+    TraceControllerImpl::GetInstance()->OnEndTracingAck(known_categories);
+  } else {
+    NOTREACHED();
   }
 }
 
 void TraceMessageFilter::OnTraceDataCollected(const std::string& data) {
-  TraceController::GetInstance()->OnTraceDataCollected(
-      make_scoped_refptr(new base::debug::TraceLog::RefCountedString(data)));
+  scoped_refptr<base::RefCountedString> data_ptr(new base::RefCountedString());
+  data_ptr->data() = data;
+  TraceControllerImpl::GetInstance()->OnTraceDataCollected(data_ptr);
 }
 
 void TraceMessageFilter::OnTraceBufferFull() {
-  TraceController::GetInstance()->OnTraceBufferFull();
+  TraceControllerImpl::GetInstance()->OnTraceBufferFull();
 }
 
 void TraceMessageFilter::OnTraceBufferPercentFullReply(float percent_full) {
-  if (is_awaiting_bpf_ack_) {
-    is_awaiting_bpf_ack_ = false;
-    TraceController::GetInstance()->OnTraceBufferPercentFullReply(
+  if (is_awaiting_buffer_percent_full_ack_) {
+    is_awaiting_buffer_percent_full_ack_ = false;
+    TraceControllerImpl::GetInstance()->OnTraceBufferPercentFullReply(
         percent_full);
+  } else {
+    NOTREACHED();
   }
 }
 

@@ -1,63 +1,203 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 '''Utilities used by GRIT.
 '''
 
-import sys
-import os.path
 import codecs
 import htmlentitydefs
+import os
 import re
+import shutil
+import sys
+import tempfile
 import time
+import types
 from xml.sax import saxutils
+
+from grit import lazy_re
 
 _root_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), '..'))
 
 
+# Unique constants for use by ReadFile().
+BINARY, RAW_TEXT = range(2)
+
+
+# Matches all different types of linebreaks.
+LINEBREAKS = re.compile('\r\n|\n|\r')
+
+def MakeRelativePath(base_path, path_to_make_relative):
+  """Returns a relative path such from the base_path to
+  the path_to_make_relative.
+
+  In other words, os.join(base_path,
+    MakeRelativePath(base_path, path_to_make_relative))
+  is the same location as path_to_make_relative.
+
+  Args:
+    base_path: the root path
+    path_to_make_relative: an absolute path that is on the same drive
+      as base_path
+  """
+
+  def _GetPathAfterPrefix(prefix_path, path_with_prefix):
+    """Gets the subpath within in prefix_path for the path_with_prefix
+    with no beginning or trailing path separators.
+
+    Args:
+      prefix_path: the base path
+      path_with_prefix: a path that starts with prefix_path
+    """
+    assert path_with_prefix.startswith(prefix_path)
+    path_without_prefix = path_with_prefix[len(prefix_path):]
+    normalized_path = os.path.normpath(path_without_prefix.strip(os.path.sep))
+    if normalized_path == '.':
+      normalized_path = ''
+    return normalized_path
+
+  def _GetCommonBaseDirectory(*args):
+    """Returns the common prefix directory for the given paths
+
+    Args:
+      The list of paths (at least one of which should be a directory)
+    """
+    prefix = os.path.commonprefix(args)
+    # prefix is a character-by-character prefix (i.e. it does not end
+    # on a directory bound, so this code fixes that)
+
+    # if the prefix ends with the separator, then it is prefect.
+    if len(prefix) > 0 and prefix[-1] == os.path.sep:
+      return prefix
+
+    # We need to loop through all paths or else we can get
+    # tripped up by "c:\a" and "c:\abc".  The common prefix
+    # is "c:\a" which is a directory and looks good with
+    # respect to the first directory but it is clear that
+    # isn't a common directory when the second path is
+    # examined.
+    for path in args:
+      assert len(path) >= len(prefix)
+      # If the prefix the same length as the path,
+      # then the prefix must be a directory (since one
+      # of the arguements should be a directory).
+      if path == prefix:
+        continue
+      # if the character after the prefix in the path
+      # is the separator, then the prefix appears to be a
+      # valid a directory as well for the given path
+      if path[len(prefix)] == os.path.sep:
+        continue
+      # Otherwise, the prefix is not a directory, so it needs
+      # to be shortened to be one
+      index_sep = prefix.rfind(os.path.sep)
+      # The use "index_sep + 1" because it includes the final sep
+      # and it handles the case when the index_sep is -1 as well
+      prefix = prefix[:index_sep + 1]
+      # At this point we backed up to a directory bound which is
+      # common to all paths, so we can quit going through all of
+      # the paths.
+      break
+    return prefix
+
+  prefix =  _GetCommonBaseDirectory(base_path, path_to_make_relative)
+  # If the paths had no commonality at all, then return the absolute path
+  # because it is the best that can be done.  If the path had to be relative
+  # then eventually this absolute path will be discovered (when a build breaks)
+  # and an appropriate fix can be made, but having this allows for the best
+  # backward compatibility with the absolute path behavior in the past.
+  if len(prefix) <= 0:
+    return path_to_make_relative
+  # Build a path from the base dir to the common prefix
+  remaining_base_path = _GetPathAfterPrefix(prefix, base_path)
+
+  #  The follow handles two case: "" and "foo\\bar"
+  path_pieces = remaining_base_path.split(os.path.sep)
+  base_depth_from_prefix = len([d for d in path_pieces if len(d)])
+  base_to_prefix = (".." + os.path.sep) * base_depth_from_prefix
+
+  # Put add in the path from the prefix to the path_to_make_relative
+  remaining_other_path = _GetPathAfterPrefix(prefix, path_to_make_relative)
+  return base_to_prefix + remaining_other_path
+
+
+KNOWN_SYSTEM_IDENTIFIERS = set()
+
+SYSTEM_IDENTIFIERS = None
+
+def SetupSystemIdentifiers(ids):
+  '''Adds ids to a regexp of known system identifiers.
+
+  Can be called many times, ids will be accumulated.
+
+  Args:
+    ids: an iterable of strings
+  '''
+  KNOWN_SYSTEM_IDENTIFIERS.update(ids)
+  global SYSTEM_IDENTIFIERS
+  SYSTEM_IDENTIFIERS = lazy_re.compile(
+      ' | '.join([r'\b%s\b' % i for i in KNOWN_SYSTEM_IDENTIFIERS]),
+      re.VERBOSE)
+
+
 # Matches all of the resource IDs predefined by Windows.
-# The '\b' before and after each word makes sure these match only whole words and
-# not the beginning of any word.. eg. ID_FILE_NEW will not match ID_FILE_NEW_PROJECT
-# see http://www.amk.ca/python/howto/regex/ (search for "\bclass\b" inside the html page)
-SYSTEM_IDENTIFIERS = re.compile(
-  r'''\bIDOK\b | \bIDCANCEL\b | \bIDC_STATIC\b | \bIDYES\b | \bIDNO\b |
-      \bID_FILE_NEW\b | \bID_FILE_OPEN\b | \bID_FILE_CLOSE\b | \bID_FILE_SAVE\b |
-      \bID_FILE_SAVE_AS\b | \bID_FILE_PAGE_SETUP\b | \bID_FILE_PRINT_SETUP\b |
-      \bID_FILE_PRINT\b | \bID_FILE_PRINT_DIRECT\b | \bID_FILE_PRINT_PREVIEW\b |
-      \bID_FILE_UPDATE\b | \bID_FILE_SAVE_COPY_AS\b | \bID_FILE_SEND_MAIL\b |
-      \bID_FILE_MRU_FIRST\b | \bID_FILE_MRU_LAST\b |
-      \bID_EDIT_CLEAR\b | \bID_EDIT_CLEAR_ALL\b | \bID_EDIT_COPY\b |
-      \bID_EDIT_CUT\b | \bID_EDIT_FIND\b | \bID_EDIT_PASTE\b | \bID_EDIT_PASTE_LINK\b |
-      \bID_EDIT_PASTE_SPECIAL\b | \bID_EDIT_REPEAT\b | \bID_EDIT_REPLACE\b |
-      \bID_EDIT_SELECT_ALL\b | \bID_EDIT_UNDO\b | \bID_EDIT_REDO\b |
-      \bVS_VERSION_INFO\b | \bIDRETRY''', re.VERBOSE);
+SetupSystemIdentifiers((
+    'IDOK', 'IDCANCEL', 'IDC_STATIC', 'IDYES', 'IDNO',
+    'ID_FILE_NEW', 'ID_FILE_OPEN', 'ID_FILE_CLOSE', 'ID_FILE_SAVE',
+    'ID_FILE_SAVE_AS', 'ID_FILE_PAGE_SETUP', 'ID_FILE_PRINT_SETUP',
+    'ID_FILE_PRINT', 'ID_FILE_PRINT_DIRECT', 'ID_FILE_PRINT_PREVIEW',
+    'ID_FILE_UPDATE', 'ID_FILE_SAVE_COPY_AS', 'ID_FILE_SEND_MAIL',
+    'ID_FILE_MRU_FIRST', 'ID_FILE_MRU_LAST',
+    'ID_EDIT_CLEAR', 'ID_EDIT_CLEAR_ALL', 'ID_EDIT_COPY',
+    'ID_EDIT_CUT', 'ID_EDIT_FIND', 'ID_EDIT_PASTE', 'ID_EDIT_PASTE_LINK',
+    'ID_EDIT_PASTE_SPECIAL', 'ID_EDIT_REPEAT', 'ID_EDIT_REPLACE',
+    'ID_EDIT_SELECT_ALL', 'ID_EDIT_UNDO', 'ID_EDIT_REDO',
+    'VS_VERSION_INFO', 'IDRETRY',
+    'ID_APP_ABOUT', 'ID_APP_EXIT',
+    'ID_NEXT_PANE', 'ID_PREV_PANE',
+    'ID_WINDOW_NEW', 'ID_WINDOW_ARRANGE', 'ID_WINDOW_CASCADE',
+    'ID_WINDOW_TILE_HORZ', 'ID_WINDOW_TILE_VERT', 'ID_WINDOW_SPLIT',
+    'ATL_IDS_SCSIZE', 'ATL_IDS_SCMOVE', 'ATL_IDS_SCMINIMIZE',
+    'ATL_IDS_SCMAXIMIZE', 'ATL_IDS_SCNEXTWINDOW', 'ATL_IDS_SCPREVWINDOW',
+    'ATL_IDS_SCCLOSE', 'ATL_IDS_SCRESTORE', 'ATL_IDS_SCTASKLIST',
+    'ATL_IDS_MDICHILD', 'ATL_IDS_IDLEMESSAGE', 'ATL_IDS_MRU_FILE' ))
 
 
 # Matches character entities, whether specified by name, decimal or hex.
-_HTML_ENTITY = re.compile(
+_HTML_ENTITY = lazy_re.compile(
   '&(#(?P<decimal>[0-9]+)|#x(?P<hex>[a-fA-F0-9]+)|(?P<named>[a-z0-9]+));',
   re.IGNORECASE)
 
 # Matches characters that should be HTML-escaped.  This is <, > and &, but only
 # if the & is not the start of an HTML character entity.
-_HTML_CHARS_TO_ESCAPE = re.compile('"|<|>|&(?!#[0-9]+|#x[0-9a-z]+|[a-z]+;)',
-                                   re.IGNORECASE | re.MULTILINE)
+_HTML_CHARS_TO_ESCAPE = lazy_re.compile(
+    '"|<|>|&(?!#[0-9]+|#x[0-9a-z]+|[a-z]+;)',
+    re.IGNORECASE | re.MULTILINE)
 
 
-def WrapInputStream(stream, encoding = 'utf-8'):
-  '''Returns a stream that wraps the provided stream, making it read characters
-  using the specified encoding.'''
-  (e, d, sr, sw) = codecs.lookup(encoding)
-  return sr(stream)
+def ReadFile(filename, encoding):
+  '''Reads and returns the entire contents of the given file.
+
+  Args:
+    filename: The path to the file.
+    encoding: A Python codec name or one of two special values: BINARY to read
+              the file in binary mode, or RAW_TEXT to read it with newline
+              conversion but without decoding to Unicode.
+  '''
+  mode = 'rb' if encoding == BINARY else 'rU'
+  with open(filename, mode) as f:
+    data = f.read()
+  if encoding not in (BINARY, RAW_TEXT):
+    data = data.decode(encoding)
+  return data
 
 
 def WrapOutputStream(stream, encoding = 'utf-8'):
   '''Returns a stream that wraps the provided stream, making it write
   characters using the specified encoding.'''
-  (e, d, sr, sw) = codecs.lookup(encoding)
-  return sw(stream)
+  return codecs.getwriter(encoding)(stream)
 
 
 def ChangeStdoutEncoding(encoding = 'utf-8'):
@@ -194,7 +334,7 @@ def normpath(path):
   return os.path.normpath(path)
 
 
-_LANGUAGE_SPLIT_RE = re.compile('-|_|/')
+_LANGUAGE_SPLIT_RE = lazy_re.compile('-|_|/')
 
 
 def CanonicalLanguage(code):
@@ -308,3 +448,183 @@ def GetCurrentYear():
   '''Returns the current 4-digit year as an integer.'''
   return time.localtime()[0]
 
+def ParseDefine(define):
+  '''Parses a define argument and returns the name and value.
+
+  The format is either "NAME=VAL" or "NAME", using True as the default value.
+  Values of "1" and "0" are transformed to True and False respectively.
+
+  Args:
+    define: a string of the form "NAME=VAL" or "NAME".
+
+  Returns:
+    A (name, value) pair. name is a string, value a string or boolean.
+  '''
+  parts = [part.strip() for part in define.split('=')]
+  assert len(parts) >= 1
+  name = parts[0]
+  val = True
+  if len(parts) > 1:
+    val = parts[1]
+  if val == "1": val = True
+  elif val == "0": val = False
+  return (name, val)
+
+
+class Substituter(object):
+  '''Finds and substitutes variable names in text strings.
+
+  Given a dictionary of variable names and values, prepares to
+  search for patterns of the form [VAR_NAME] in a text.
+  The value will be substituted back efficiently.
+  Also applies to tclib.Message objects.
+  '''
+
+  def __init__(self):
+    '''Create an empty substituter.'''
+    self.substitutions_ = {}
+    self.dirty_ = True
+
+  def AddSubstitutions(self, subs):
+    '''Add new values to the substitutor.
+
+    Args:
+      subs: A dictionary of new substitutions.
+    '''
+    self.substitutions_.update(subs)
+    self.dirty_ = True
+
+  def AddMessages(self, messages, lang):
+    '''Adds substitutions extracted from node.Message objects.
+
+    Args:
+      messages: a list of node.Message objects.
+      lang: The translation language to use in substitutions.
+    '''
+    subs = [(str(msg.attrs['name']), msg.Translate(lang)) for msg in messages]
+    self.AddSubstitutions(dict(subs))
+    self.dirty_ = True
+
+  def GetExp(self):
+    '''Obtain a regular expression that will find substitution keys in text.
+
+    Create and cache if the substituter has been updated. Use the cached value
+    otherwise. Keys will be enclosed in [square brackets] in text.
+
+    Returns:
+      A regular expression object.
+    '''
+    if self.dirty_:
+      components = ['\[%s\]' % (k,) for k in self.substitutions_.keys()]
+      self.exp = re.compile("(%s)" % ('|'.join(components),))
+      self.dirty_ = False
+    return self.exp
+
+  def Substitute(self, text):
+    '''Substitute the variable values in the given text.
+
+    Text of the form [message_name] will be replaced by the message's value.
+
+    Args:
+      text: A string of text.
+
+    Returns:
+      A string of text with substitutions done.
+    '''
+    return ''.join([self._SubFragment(f) for f in self.GetExp().split(text)])
+
+  def _SubFragment(self, fragment):
+    '''Utility function for Substitute.
+
+    Performs a simple substitution if the fragment is exactly of the form
+    [message_name].
+
+    Args:
+      fragment: A simple string.
+
+    Returns:
+      A string with the substitution done.
+    '''
+    if len(fragment) > 2 and fragment[0] == '[' and fragment[-1] == ']':
+      sub = self.substitutions_.get(fragment[1:-1], None)
+      if sub is not None:
+        return sub
+    return fragment
+
+  def SubstituteMessage(self, msg):
+    '''Apply substitutions to a tclib.Message object.
+
+    Text of the form [message_name] will be replaced by a new placeholder,
+    whose presentation will take the form the message_name_{UsageCount}, and
+    whose example will be the message's value. Existing placeholders are
+    not affected.
+
+    Args:
+      msg: A tclib.Message object.
+
+    Returns:
+      A tclib.Message object, with substitutions done.
+    '''
+    from grit import tclib  # avoid circular import
+    counts = {}
+    text = msg.GetPresentableContent()
+    placeholders = []
+    newtext = ''
+    for f in self.GetExp().split(text):
+      sub = self._SubFragment(f)
+      if f != sub:
+        f = str(f)
+        count = counts.get(f, 0) + 1
+        counts[f] = count
+        name = "%s_%d" % (f[1:-1], count)
+        placeholders.append(tclib.Placeholder(name, f, sub))
+        newtext += name
+      else:
+        newtext += f
+    if placeholders:
+      return tclib.Message(newtext, msg.GetPlaceholders() + placeholders,
+                           msg.GetDescription(), msg.GetMeaning())
+    else:
+      return msg
+
+
+class TempDir(object):
+  '''Creates files with the specified contents in a temporary directory,
+  for unit testing.
+  '''
+  def __init__(self, file_data):
+    self._tmp_dir_name = tempfile.mkdtemp()
+    assert not os.listdir(self.GetPath())
+    for name, contents in file_data.items():
+      file_path = self.GetPath(name)
+      dir_path = os.path.split(file_path)[0]
+      if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+      with open(file_path, 'w') as f:
+        f.write(file_data[name])
+
+  def __enter__(self):
+    return self
+
+  def __exit__(self, *exc_info):
+    self.CleanUp()
+
+  def CleanUp(self):
+    shutil.rmtree(self.GetPath())
+
+  def GetPath(self, name=''):
+    name = os.path.join(self._tmp_dir_name, name)
+    assert name.startswith(self._tmp_dir_name)
+    return name
+
+  def AsCurrentDir(self):
+    return self._AsCurrentDirClass(self.GetPath())
+
+  class _AsCurrentDirClass(object):
+    def __init__(self, path):
+      self.path = path
+    def __enter__(self):
+      self.oldpath = os.getcwd()
+      os.chdir(self.path)
+    def __exit__(self, *exc_info):
+      os.chdir(self.oldpath)

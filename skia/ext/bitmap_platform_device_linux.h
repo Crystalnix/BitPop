@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef SKIA_EXT_BITMAP_PLATFORM_DEVICE_LINUX_H_
 #define SKIA_EXT_BITMAP_PLATFORM_DEVICE_LINUX_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -57,7 +56,7 @@ namespace skia {
 // shared memory between the renderer and the main process at least. In this
 // case we'll probably create the buffer from a precreated region of memory.
 // -----------------------------------------------------------------------------
-class BitmapPlatformDevice : public PlatformDevice, public SkDevice {
+class BitmapPlatformDevice : public SkDevice, public PlatformDevice {
   // A reference counted cairo surface
   class BitmapPlatformDeviceData;
 
@@ -71,9 +70,19 @@ class BitmapPlatformDevice : public PlatformDevice, public SkDevice {
   BitmapPlatformDevice(const SkBitmap& other, BitmapPlatformDeviceData* data);
   virtual ~BitmapPlatformDevice();
 
+  // Constructs a device with size |width| * |height| with contents initialized
+  // to zero. |is_opaque| should be set if the caller knows the bitmap will be
+  // completely opaque and allows some optimizations.
   static BitmapPlatformDevice* Create(int width, int height, bool is_opaque);
 
-  // This doesn't take ownership of |data|
+  // Performs the same construction as Create.
+  // Other ports require a separate construction routine because Create does not
+  // initialize the bitmap to 0.
+  static BitmapPlatformDevice* CreateAndClear(int width, int height,
+                                              bool is_opaque);
+
+  // This doesn't take ownership of |data|. If |data| is NULL, the contents
+  // of the device are initialized to 0.
   static BitmapPlatformDevice* Create(int width, int height, bool is_opaque,
                                       uint8_t* data);
 

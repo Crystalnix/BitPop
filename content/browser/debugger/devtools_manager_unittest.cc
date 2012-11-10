@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,14 +6,14 @@
 #include "base/time.h"
 #include "content/browser/debugger/devtools_manager_impl.h"
 #include "content/browser/debugger/render_view_devtools_agent_host.h"
-#include "content/browser/mock_content_browser_client.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/browser/tab_contents/test_tab_contents.h"
+#include "content/browser/web_contents/test_web_contents.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/devtools_agent_host_registry.h"
 #include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/test/test_content_browser_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::TimeDelta;
@@ -22,6 +22,7 @@ using content::DevToolsAgentHostRegistry;
 using content::DevToolsClientHost;
 using content::DevToolsManager;
 using content::DevToolsManagerImpl;
+using content::RenderViewHostImplTestHarness;
 using content::WebContents;
 
 namespace {
@@ -43,18 +44,15 @@ class TestDevToolsClientHost : public DevToolsClientHost {
     manager->ClientHostClosing(this);
     closed_ = true;
   }
-  virtual void InspectedTabClosing() {
+  virtual void InspectedContentsClosing() {
     FAIL();
-  }
-
-  virtual void SetInspectedTabUrl(const std::string& url) {
   }
 
   virtual void DispatchOnInspectorFrontend(const std::string& message) {
     last_sent_message = &message;
   }
 
-  virtual void TabReplaced(WebContents* new_tab) {
+  virtual void ContentsReplaced(WebContents* new_contents) {
   }
 
   static void ResetCounters() {
@@ -80,7 +78,7 @@ class TestWebContentsDelegate : public content::WebContentsDelegate {
  public:
   TestWebContentsDelegate() : renderer_unresponsive_received_(false) {}
 
-  // Notification that the tab is hung.
+  // Notification that the contents is hung.
   virtual void RendererUnresponsive(WebContents* source) {
     renderer_unresponsive_received_ = true;
   }
@@ -94,7 +92,7 @@ class TestWebContentsDelegate : public content::WebContentsDelegate {
 };
 
 class DevToolsManagerTestBrowserClient
-    : public content::MockContentBrowserClient {
+    : public content::TestContentBrowserClient {
  public:
   DevToolsManagerTestBrowserClient() {
   }
@@ -111,23 +109,24 @@ class DevToolsManagerTestBrowserClient
 
 }  // namespace
 
-class DevToolsManagerTest : public RenderViewHostTestHarness {
+class DevToolsManagerTest : public RenderViewHostImplTestHarness {
  public:
-  DevToolsManagerTest() : RenderViewHostTestHarness() {
+  DevToolsManagerTest() {
   }
 
  protected:
   virtual void SetUp() OVERRIDE {
     original_browser_client_ = content::GetContentClient()->browser();
-    content::GetContentClient()->set_browser(&browser_client_);
+    content::GetContentClient()->set_browser_for_testing(&browser_client_);
 
-    RenderViewHostTestHarness::SetUp();
+    RenderViewHostImplTestHarness::SetUp();
     TestDevToolsClientHost::ResetCounters();
   }
 
   virtual void TearDown() OVERRIDE {
-    RenderViewHostTestHarness::TearDown();
-    content::GetContentClient()->set_browser(original_browser_client_);
+    RenderViewHostImplTestHarness::TearDown();
+    content::GetContentClient()->set_browser_for_testing(
+        original_browser_client_);
   }
 
  private:
@@ -179,8 +178,8 @@ TEST_F(DevToolsManagerTest, ForwardMessageToClient) {
   EXPECT_EQ(1, TestDevToolsClientHost::close_counter);
 }
 
-TEST_F(DevToolsManagerTest, NoUnresponsiveDialogInInspectedTab) {
-  TestRenderViewHost* inspected_rvh = rvh();
+TEST_F(DevToolsManagerTest, NoUnresponsiveDialogInInspectedContents) {
+  content::TestRenderViewHost* inspected_rvh = test_rvh();
   inspected_rvh->set_render_view_created(true);
   EXPECT_FALSE(contents()->GetDelegate());
   TestWebContentsDelegate delegate;
@@ -195,8 +194,8 @@ TEST_F(DevToolsManagerTest, NoUnresponsiveDialogInInspectedTab) {
   // Start with a short timeout.
   inspected_rvh->StartHangMonitorTimeout(TimeDelta::FromMilliseconds(10));
   // Wait long enough for first timeout and see if it fired.
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-                                          MessageLoop::QuitClosure(), 10);
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE, MessageLoop::QuitClosure(), TimeDelta::FromMilliseconds(10));
   MessageLoop::current()->Run();
   EXPECT_FALSE(delegate.renderer_unresponsive_received());
 
@@ -205,8 +204,8 @@ TEST_F(DevToolsManagerTest, NoUnresponsiveDialogInInspectedTab) {
   // Start with a short timeout.
   inspected_rvh->StartHangMonitorTimeout(TimeDelta::FromMilliseconds(10));
   // Wait long enough for first timeout and see if it fired.
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-                                          MessageLoop::QuitClosure(), 10);
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE, MessageLoop::QuitClosure(), TimeDelta::FromMilliseconds(10));
   MessageLoop::current()->Run();
   EXPECT_TRUE(delegate.renderer_unresponsive_received());
 

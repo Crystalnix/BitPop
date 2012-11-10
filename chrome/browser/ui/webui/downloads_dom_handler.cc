@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,7 +17,8 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/download/chrome_download_manager_delegate.h"
+#include "chrome/browser/download/download_crx_util.h"
+#include "chrome/browser/download/download_danger_prompt.h"
 #include "chrome/browser/download/download_history.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_service.h"
@@ -25,9 +26,9 @@
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/fileicon_source.h"
-#include "chrome/browser/ui/webui/fileicon_source_chromeos.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/user_metrics.h"
@@ -41,12 +42,11 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/extensions/file_manager_util.h"
+#include "chrome/browser/chromeos/extensions/file_manager_util.h"
 #endif
 
+using content::BrowserContext;
 using content::BrowserThread;
-using content::DownloadItem;
-using content::DownloadManager;
 using content::UserMetricsAction;
 
 namespace {
@@ -56,11 +56,12 @@ namespace {
 static const int kMaxDownloads = 150;
 
 // Sort DownloadItems into descending order by their start time.
-class DownloadItemSorter : public std::binary_function<DownloadItem*,
-                                                       DownloadItem*,
+class DownloadItemSorter : public std::binary_function<content::DownloadItem*,
+                                                       content::DownloadItem*,
                                                        bool> {
  public:
-  bool operator()(const DownloadItem* lhs, const DownloadItem* rhs) {
+  bool operator()(const content::DownloadItem* lhs,
+                  const content::DownloadItem* rhs) {
     return lhs->GetStartTime() > rhs->GetStartTime();
   }
 };
@@ -88,74 +89,47 @@ void CountDownloadsDOMEvents(DownloadsDOMEvent event) {
 
 }  // namespace
 
-class DownloadsDOMHandler::OriginalDownloadManagerObserver
-    : public content::DownloadManager::Observer {
- public:
-  explicit OriginalDownloadManagerObserver(
-      DownloadManager::Observer* observer,
-      Profile* original_profile)
-      : observer_(observer) {
-    original_profile_download_manager_ =
-        DownloadServiceFactory::GetForProfile(
-            original_profile)->GetDownloadManager();
-    original_profile_download_manager_->AddObserver(this);
-  }
-
-  virtual ~OriginalDownloadManagerObserver() {
-    if (original_profile_download_manager_)
-      original_profile_download_manager_->RemoveObserver(this);
-  }
-
-  // Observer interface.
-  virtual void ModelChanged() {
-    observer_->ModelChanged();
-  }
-
-  virtual void ManagerGoingDown() {
-    original_profile_download_manager_ = NULL;
-  }
-
- private:
-  // The DownloadsDOMHandler for the off-the-record profile.
-  DownloadManager::Observer* observer_;
-
-  // The original profile's download manager.
-  DownloadManager* original_profile_download_manager_;
-};
-
-DownloadsDOMHandler::DownloadsDOMHandler(DownloadManager* dlm)
+DownloadsDOMHandler::DownloadsDOMHandler(content::DownloadManager* dlm)
     : search_text_(),
-      download_manager_(dlm) {
+      download_manager_(dlm),
+      original_profile_download_manager_(NULL),
+      initialized_(false),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
   // Create our fileicon data source.
-  Profile::FromBrowserContext(dlm->GetBrowserContext())->
-      GetChromeURLDataManager()->AddDataSource(
-#if defined(OS_CHROMEOS)
-      new FileIconSourceCros());
-#else
-      new FileIconSource());
-#endif  // OS_CHROMEOS
+  Profile* profile = Profile::FromBrowserContext(dlm->GetBrowserContext());
+  ChromeURLDataManager::AddDataSource(profile, new FileIconSource());
+
+  // Figure out our parent DownloadManager, if any.
+  Profile* original_profile = profile->GetOriginalProfile();
+  if (original_profile != profile) {
+    original_profile_download_manager_ =
+        BrowserContext::GetDownloadManager(original_profile);
+  }
 }
 
 DownloadsDOMHandler::~DownloadsDOMHandler() {
   ClearDownloadItems();
   download_manager_->RemoveObserver(this);
+  if (original_profile_download_manager_)
+    original_profile_download_manager_->RemoveObserver(this);
 }
 
 // DownloadsDOMHandler, public: -----------------------------------------------
 
-void DownloadsDOMHandler::Init() {
-  download_manager_->AddObserver(this);
+void DownloadsDOMHandler::OnPageLoaded(const base::ListValue* args) {
+  if (initialized_)
+    return;
+  initialized_ = true;
 
-  Profile* profile =
-      Profile::FromBrowserContext(download_manager_->GetBrowserContext());
-  Profile* original_profile = profile->GetOriginalProfile();
-  if (original_profile != profile) {
-    original_download_manager_observer_.reset(
-        new OriginalDownloadManagerObserver(this, original_profile));
-  }
+  download_manager_->AddObserver(this);
+  if (original_profile_download_manager_)
+    original_profile_download_manager_->AddObserver(this);
 }
 
 void DownloadsDOMHandler::RegisterMessages() {
+  web_ui()->RegisterMessageCallback("onPageLoaded",
+      base::Bind(&DownloadsDOMHandler::OnPageLoaded,
+                 base::Unretained(this)));
   web_ui()->RegisterMessageCallback("getDownloads",
       base::Bind(&DownloadsDOMHandler::HandleGetDownloads,
                  base::Unretained(this)));
@@ -199,13 +173,13 @@ void DownloadsDOMHandler::OnDownloadUpdated(content::DownloadItem* download) {
   // and the id is the index into that list. We should be careful of sync
   // errors between the UI and the download_items_ list (we may wish to use
   // something other than 'id').
-  OrderedDownloads::iterator it = find(download_items_.begin(),
-                                       download_items_.end(),
-                                       download);
+  OrderedDownloads::iterator it = std::find(download_items_.begin(),
+                                            download_items_.end(),
+                                            download);
   if (it == download_items_.end())
     return;
 
-  if (download->GetState() == DownloadItem::REMOVING) {
+  if (download->GetState() == content::DownloadItem::REMOVING) {
     (*it)->RemoveObserver(this);
     *it = NULL;
     // A later ModelChanged() notification will change the WebUI's
@@ -222,24 +196,25 @@ void DownloadsDOMHandler::OnDownloadUpdated(content::DownloadItem* download) {
 
 // A download has started or been deleted. Query our DownloadManager for the
 // current set of downloads.
-void DownloadsDOMHandler::ModelChanged() {
+void DownloadsDOMHandler::ModelChanged(content::DownloadManager* manager) {
+  DCHECK(manager == download_manager_ ||
+         manager == original_profile_download_manager_);
+
   ClearDownloadItems();
   download_manager_->SearchDownloads(WideToUTF16(search_text_),
                                      &download_items_);
-  // If we have a parent profile, let it add its downloads to the results.
-  Profile* profile =
-      Profile::FromBrowserContext(download_manager_->GetBrowserContext());
-  if (profile->GetOriginalProfile() != profile) {
-    DownloadServiceFactory::GetForProfile(
-        profile->GetOriginalProfile())->GetDownloadManager()->SearchDownloads(
-            WideToUTF16(search_text_), &download_items_);
+  // If we have a parent DownloadManager, let it add its downloads to the
+  // results.
+  if (original_profile_download_manager_) {
+    original_profile_download_manager_->SearchDownloads(
+        WideToUTF16(search_text_), &download_items_);
   }
 
   sort(download_items_.begin(), download_items_.end(), DownloadItemSorter());
 
   // Remove any extension downloads.
   for (size_t i = 0; i < download_items_.size();) {
-    if (ChromeDownloadManagerDelegate::IsExtensionDownload(download_items_[i]))
+    if (download_crx_util::IsExtensionDownload(*download_items_[i]))
       download_items_.erase(download_items_.begin() + i);
     else
       i++;
@@ -251,11 +226,9 @@ void DownloadsDOMHandler::ModelChanged() {
     if (static_cast<int>(it - download_items_.begin()) > kMaxDownloads)
       break;
 
-    // TODO(rdsmith): Convert to DCHECK()s when http://crbug.com/85408 is
-    // fixed.
     // We should never see anything that isn't already in the history.
-    CHECK(*it);
-    CHECK_NE(DownloadItem::kUninitializedHandle, (*it)->GetDbHandle());
+    DCHECK(*it);
+    DCHECK((*it)->IsPersisted());
 
     (*it)->AddObserver(this);
   }
@@ -263,12 +236,22 @@ void DownloadsDOMHandler::ModelChanged() {
   SendCurrentDownloads();
 }
 
+void DownloadsDOMHandler::ManagerGoingDown(content::DownloadManager* manager) {
+  // This should never happen.  The lifetime of the DownloadsDOMHandler
+  // is tied to the tab in which downloads.html is displayed, which cannot
+  // outlive the Browser that contains it, which cannot outlive the Profile
+  // it is associated with.  If that profile is an incognito profile,
+  // it cannot outlive its original profile.  Thus this class should be
+  // destroyed before a ManagerGoingDown() notification occurs.
+  NOTREACHED();
+}
+
 void DownloadsDOMHandler::HandleGetDownloads(const ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_GET_DOWNLOADS);
   std::wstring new_search = UTF16ToWideHack(ExtractStringValue(args));
   if (search_text_.compare(new_search) != 0) {
     search_text_ = new_search;
-    ModelChanged();
+    ModelChanged(download_manager_);
   } else {
     SendCurrentDownloads();
   }
@@ -278,14 +261,14 @@ void DownloadsDOMHandler::HandleGetDownloads(const ListValue* args) {
 
 void DownloadsDOMHandler::HandleOpenFile(const ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_OPEN_FILE);
-  DownloadItem* file = GetDownloadByValue(args);
+  content::DownloadItem* file = GetDownloadByValue(args);
   if (file)
     file->OpenDownload();
 }
 
 void DownloadsDOMHandler::HandleDrag(const ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_DRAG);
-  DownloadItem* file = GetDownloadByValue(args);
+  content::DownloadItem* file = GetDownloadByValue(args);
   if (file) {
     IconManager* im = g_browser_process->icon_manager();
     gfx::Image* icon = im->LookupIcon(file->GetUserVerifiedFilePath(),
@@ -293,7 +276,7 @@ void DownloadsDOMHandler::HandleDrag(const ListValue* args) {
     gfx::NativeView view = web_ui()->GetWebContents()->GetNativeView();
     {
       // Enable nested tasks during DnD, while |DragDownload()| blocks.
-      MessageLoop::ScopedNestableTaskAllower allower(MessageLoop::current());
+      MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
       download_util::DragDownload(file, icon, view);
     }
   }
@@ -301,45 +284,46 @@ void DownloadsDOMHandler::HandleDrag(const ListValue* args) {
 
 void DownloadsDOMHandler::HandleSaveDangerous(const ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_SAVE_DANGEROUS);
-  DownloadItem* file = GetDownloadByValue(args);
+  content::DownloadItem* file = GetDownloadByValue(args);
   if (file)
-    file->DangerousDownloadValidated();
+    ShowDangerPrompt(file);
+  // TODO(benjhayden): else ModelChanged()? Downloads might be able to disappear
+  // out from under us, so update our idea of the downloads as soon as possible.
 }
 
 void DownloadsDOMHandler::HandleDiscardDangerous(const ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_DISCARD_DANGEROUS);
-  DownloadItem* file = GetDownloadByValue(args);
+  content::DownloadItem* file = GetDownloadByValue(args);
   if (file)
-    file->Delete(DownloadItem::DELETE_DUE_TO_USER_DISCARD);
+    file->Delete(content::DownloadItem::DELETE_DUE_TO_USER_DISCARD);
 }
 
 void DownloadsDOMHandler::HandleShow(const ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_SHOW);
-  DownloadItem* file = GetDownloadByValue(args);
+  content::DownloadItem* file = GetDownloadByValue(args);
   if (file)
     file->ShowDownloadInShell();
 }
 
 void DownloadsDOMHandler::HandlePause(const ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_PAUSE);
-  DownloadItem* file = GetDownloadByValue(args);
+  content::DownloadItem* file = GetDownloadByValue(args);
   if (file)
     file->TogglePause();
 }
 
 void DownloadsDOMHandler::HandleRemove(const ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_REMOVE);
-  DownloadItem* file = GetDownloadByValue(args);
+  content::DownloadItem* file = GetDownloadByValue(args);
   if (file) {
-    // TODO(rdsmith): Change to DCHECK when http://crbug.com/85408 is fixed.
-    CHECK_NE(DownloadItem::kUninitializedHandle, file->GetDbHandle());
+    DCHECK(file->IsPersisted());
     file->Remove();
   }
 }
 
 void DownloadsDOMHandler::HandleCancel(const ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_CANCEL);
-  DownloadItem* file = GetDownloadByValue(args);
+  content::DownloadItem* file = GetDownloadByValue(args);
   if (file)
     file->Cancel(true);
 }
@@ -348,20 +332,16 @@ void DownloadsDOMHandler::HandleClearAll(const ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_CLEAR_ALL);
   download_manager_->RemoveAllDownloads();
 
-  Profile* profile =
-      Profile::FromBrowserContext(download_manager_->GetBrowserContext());
   // If this is an incognito downloader, clear All should clear main download
   // manager as well.
-  if (profile->GetOriginalProfile() != profile)
-    DownloadServiceFactory::GetForProfile(
-        profile->GetOriginalProfile())->
-            GetDownloadManager()->RemoveAllDownloads();
+  if (original_profile_download_manager_)
+    original_profile_download_manager_->RemoveAllDownloads();
 }
 
 void DownloadsDOMHandler::HandleOpenDownloadsFolder(const ListValue* args) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_OPEN_FOLDER);
   platform_util::OpenItem(
-      DownloadPrefs::FromDownloadManager(download_manager_)->download_path());
+      DownloadPrefs::FromDownloadManager(download_manager_)->DownloadPath());
 }
 
 // DownloadsDOMHandler, private: ----------------------------------------------
@@ -370,15 +350,35 @@ void DownloadsDOMHandler::SendCurrentDownloads() {
   ListValue results_value;
   for (OrderedDownloads::iterator it = download_items_.begin();
       it != download_items_.end(); ++it) {
-    int index = static_cast<int>(it - download_items_.begin());
-    if (index > kMaxDownloads)
-      break;
     if (!*it)
       continue;
-    results_value.Append(download_util::CreateDownloadItemValue(*it, index));
+    int index = static_cast<int>(it - download_items_.begin());
+    if (index <= kMaxDownloads)
+      results_value.Append(download_util::CreateDownloadItemValue(*it, index));
   }
 
   web_ui()->CallJavascriptFunction("downloadsList", results_value);
+}
+
+void DownloadsDOMHandler::ShowDangerPrompt(
+    content::DownloadItem* dangerous_item) {
+  DownloadDangerPrompt* danger_prompt = DownloadDangerPrompt::Create(
+      dangerous_item,
+      TabContents::FromWebContents(web_ui()->GetWebContents()),
+      base::Bind(&DownloadsDOMHandler::DangerPromptAccepted,
+                 weak_ptr_factory_.GetWeakPtr(), dangerous_item->GetId()),
+      base::Closure());
+  // danger_prompt will delete itself.
+  DCHECK(danger_prompt);
+}
+
+void DownloadsDOMHandler::DangerPromptAccepted(int download_id) {
+  content::DownloadItem* item = download_manager_->GetActiveDownloadItem(
+      download_id);
+  if (!item)
+    return;
+  CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_SAVE_DANGEROUS);
+  item->DangerousDownloadValidated();
 }
 
 void DownloadsDOMHandler::ClearDownloadItems() {
@@ -392,7 +392,7 @@ void DownloadsDOMHandler::ClearDownloadItems() {
   download_items_.clear();
 }
 
-DownloadItem* DownloadsDOMHandler::GetDownloadById(int id) {
+content::DownloadItem* DownloadsDOMHandler::GetDownloadById(int id) {
   for (OrderedDownloads::iterator it = download_items_.begin();
       it != download_items_.end(); ++it) {
     if (static_cast<int>(it - download_items_.begin() == id)) {
@@ -403,7 +403,8 @@ DownloadItem* DownloadsDOMHandler::GetDownloadById(int id) {
   return NULL;
 }
 
-DownloadItem* DownloadsDOMHandler::GetDownloadByValue(const ListValue* args) {
+content::DownloadItem* DownloadsDOMHandler::GetDownloadByValue(
+    const ListValue* args) {
   int id;
   if (ExtractIntegerValue(args, &id)) {
     return GetDownloadById(id);

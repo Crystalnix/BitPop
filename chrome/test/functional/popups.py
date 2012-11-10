@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -68,7 +68,7 @@ class PopupsTest(pyauto.PyUITest):
         self.DataDir(), 'popup_blocker', 'popup-window-open.html'))
     self.NavigateToURL(file_url, 1, 0)
     self.assertEquals('Popup created using window.open',
-                      self.GetActiveTabTitle(window_index=1))
+                      self.GetActiveTabTitle(1))
     # Wait until the popup is blocked
     self.assertTrue(self.WaitUntil(lambda:
         len(self.GetBlockedPopupsInfo(tab_index=0, windex=1)) is 1),
@@ -104,8 +104,8 @@ class PopupsTest(pyauto.PyUITest):
 
   def _SetPopupsException(self):
     """Set an exception to allow popups from www.popuptest.com."""
-    value = {'[*.]www.popuptest.com': {'popups': 1}}
-    return self.SetPrefs(pyauto.kContentSettingsPatterns, value)
+    value = {'[*.]www.popuptest.com,*': {'popups': 1}}
+    return self.SetPrefs(pyauto.kContentSettingsPatternPairs, value)
 
   def testAllowPopupsFromExternalSite(self):
     """Verify that popups are allowed from an external website."""

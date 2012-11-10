@@ -1,4 +1,4 @@
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -14,6 +14,7 @@
           'common/chrome_constants.h',
           'common/chrome_paths.cc',
           'common/chrome_paths.h',
+          'common/chrome_paths_android.cc',
           'common/chrome_paths_internal.h',
           'common/chrome_paths_linux.cc',
           'common/chrome_paths_mac.mm',
@@ -24,6 +25,8 @@
           'common/env_vars.h',
           'common/net/gaia/gaia_constants.cc',
           'common/net/gaia/gaia_constants.h',
+          'common/net/test_server_locations.cc',
+          'common/net/test_server_locations.h',
           'common/pref_names.cc',
           'common/pref_names.h',
         ],
@@ -83,6 +86,7 @@
           ],
           'defines': [
             '<@(nacl_win64_defines)',
+            'COMPILE_CONTENT_STATICALLY',
           ],
           'configurations': {
             'Common_Base': {

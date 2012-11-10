@@ -4,18 +4,18 @@
 
 #ifndef UI_GFX_PANGO_UTIL_H_
 #define UI_GFX_PANGO_UTIL_H_
-#pragma once
 
 #include <cairo/cairo.h>
 #include <pango/pango.h>
 #include <string>
 
 #include "base/i18n/rtl.h"
+#include "base/logging.h"
 #include "base/string16.h"
-#include "ui/base/ui_export.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/base/ui_export.h"
 
-// TODO(xji): move other pango related functions from gtk_util to here.
+typedef struct _PangoContext PangoContext;
 
 namespace gfx {
 
@@ -23,13 +23,40 @@ class Font;
 class PlatformFontPango;
 class Rect;
 
+// Creates and returns a PangoContext. The caller owns the context.
+PangoContext* GetPangoContext();
+
+// Returns the resolution (DPI) used by pango. A negative values means the
+// resolution hasn't been set.
+double GetPangoResolution();
+
+// Utility class to ensure that PangoFontDescription is freed.
+class ScopedPangoFontDescription {
+ public:
+  explicit ScopedPangoFontDescription(PangoFontDescription* description)
+      : description_(description) {
+    DCHECK(description);
+  }
+
+  ~ScopedPangoFontDescription() {
+    pango_font_description_free(description_);
+  }
+
+  PangoFontDescription* get() { return description_; }
+
+ private:
+  PangoFontDescription* description_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedPangoFontDescription);
+};
+
 // Uses Pango to draw text onto |cr|. This is the public method for d
 void UI_EXPORT DrawTextOntoCairoSurface(cairo_t* cr,
                                         const string16& text,
                                         const gfx::Font& font,
                                         const gfx::Rect& bounds,
                                         const gfx::Rect& clip,
-                                        const SkColor& text_color,
+                                        SkColor text_color,
                                         int flags);
 
 // ----------------------------------------------------------------------------
@@ -37,10 +64,9 @@ void UI_EXPORT DrawTextOntoCairoSurface(cairo_t* cr,
 // They are shared with internal skia interfaces.
 // ----------------------------------------------------------------------------
 
-// Setup pango layout |layout|, including set layout text as |text|, font
-// description based on |font|, width as |width| in PANGO_SCALE for RTL lcoale,
-// and set up whether auto-detect directionality, alignment, ellipsis, word
-// wrapping, resolution etc.
+// Setup pango |layout|; set the |text|, the font description based on |font|,
+// the |width| in PANGO_SCALE for RTL locale, the base |text_direction|,
+// alignment, ellipsis, word wrapping, resolution, etc.
 void SetupPangoLayout(PangoLayout* layout,
                       const string16& text,
                       const gfx::Font& font,
@@ -72,7 +98,7 @@ void DrawPangoLayout(cairo_t* cr,
                      const Font& font,
                      const gfx::Rect& bounds,
                      const gfx::Rect& text_rect,
-                     const SkColor& text_color,
+                     SkColor text_color,
                      base::i18n::TextDirection text_direction,
                      int flags);
 
@@ -86,6 +112,11 @@ void DrawPangoTextUnderline(cairo_t* cr,
 
 // Returns the size in pixels for the specified |pango_font|.
 size_t GetPangoFontSizeInPixels(PangoFontDescription* pango_font);
+
+// Retrieves the Pango metrics for a Pango font description. Caches the metrics
+// and never frees them. The metrics objects are relatively small and very
+// expensive to look up.
+PangoFontMetrics* GetPangoFontMetrics(PangoFontDescription* desc);
 
 }  // namespace gfx
 

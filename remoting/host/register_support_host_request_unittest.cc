@@ -74,7 +74,6 @@ class RegisterSupportHostRequestTest : public testing::Test {
   MockCallback callback_;
 };
 
-
 TEST_F(RegisterSupportHostRequestTest, Send) {
   // |iq_request| is freed by RegisterSupportHostRequest.
   int64 start_time = static_cast<int64>(base::Time::Now().ToDoubleT());
@@ -87,7 +86,7 @@ TEST_F(RegisterSupportHostRequestTest, Send) {
   XmlElement* sent_iq = NULL;
   EXPECT_CALL(signal_strategy_, GetNextId())
       .WillOnce(Return(kStanzaId));
-  EXPECT_CALL(signal_strategy_, SendStanza(NotNull()))
+  EXPECT_CALL(signal_strategy_, SendStanzaPtr(NotNull()))
       .WillOnce(DoAll(SaveArg<0>(&sent_iq), Return(true)));
 
   request->OnSignalStrategyStateChange(SignalStrategy::CONNECTED);
@@ -128,6 +127,7 @@ TEST_F(RegisterSupportHostRequestTest, Send) {
                                     base::TimeDelta::FromSeconds(300)));
 
   scoped_ptr<XmlElement> response(new XmlElement(buzz::QN_IQ));
+  response->AddAttr(QName("", "from"), kChromotingBotJid);
   response->AddAttr(QName("", "type"), "result");
   response->AddAttr(QName("", "id"), kStanzaId);
 

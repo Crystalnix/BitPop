@@ -29,7 +29,8 @@ class TextureManagerTest : public testing::Test {
 
   TextureManagerTest()
       : feature_info_(new FeatureInfo()),
-        manager_(feature_info_.get(), kMaxTextureSize, kMaxCubeMapTextureSize) {
+        manager_(
+          NULL, feature_info_.get(), kMaxTextureSize, kMaxCubeMapTextureSize) {
   }
 
   ~TextureManagerTest() {
@@ -86,6 +87,10 @@ TEST_F(TextureManagerTest, Basic) {
   EXPECT_TRUE(manager_.GetTextureInfo(kClient2Id) == NULL);
   // Check trying to a remove non-existent textures does not crash.
   manager_.RemoveTextureInfo(kClient2Id);
+  // Check that it gets deleted when the last reference is released.
+  EXPECT_CALL(*gl_, DeleteTextures(1, ::testing::Pointee(kService1Id)))
+      .Times(1)
+      .RetiresOnSaturation();
   // Check we can't get the texture after we remove it.
   manager_.RemoveTextureInfo(kClient1Id);
   EXPECT_TRUE(manager_.GetTextureInfo(kClient1Id) == NULL);
@@ -123,7 +128,7 @@ TEST_F(TextureManagerTest, TextureUsageExt) {
   TestHelper::SetupTextureManagerInitExpectations(gl_.get(),
                                                   "GL_ANGLE_texture_usage");
   TextureManager manager(
-      feature_info_.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
+      NULL, feature_info_.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.Initialize();
   const GLuint kClient1Id = 1;
   const GLuint kService1Id = 11;
@@ -144,7 +149,7 @@ TEST_F(TextureManagerTest, Destroy) {
   const GLuint kService1Id = 11;
   TestHelper::SetupTextureManagerInitExpectations(gl_.get(), "");
   TextureManager manager(
-      feature_info_.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
+      NULL, feature_info_.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.Initialize();
   // Check we can create texture.
   manager.CreateTextureInfo(kClient1Id, kService1Id);
@@ -154,9 +159,7 @@ TEST_F(TextureManagerTest, Destroy) {
   EXPECT_CALL(*gl_, DeleteTextures(1, ::testing::Pointee(kService1Id)))
       .Times(1)
       .RetiresOnSaturation();
-  EXPECT_CALL(*gl_, DeleteTextures(8, _))
-      .Times(1)
-      .RetiresOnSaturation();
+  TestHelper::SetupTextureManagerDestructionExpectations(gl_.get(), "");
   manager.Destroy(true);
   // Check that resources got freed.
   info1 = manager.GetTextureInfo(kClient1Id);
@@ -168,7 +171,7 @@ TEST_F(TextureManagerTest, DestroyUnowned) {
   const GLuint kService1Id = 11;
   TestHelper::SetupTextureManagerInitExpectations(gl_.get(), "");
   TextureManager manager(
-      feature_info_.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
+      NULL, feature_info_.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.Initialize();
   // Check we can create texture.
   TextureManager::TextureInfo* created_info =
@@ -178,11 +181,9 @@ TEST_F(TextureManagerTest, DestroyUnowned) {
   // Check texture got created.
   TextureManager::TextureInfo* info1 = manager.GetTextureInfo(kClient1Id);
   ASSERT_TRUE(info1 != NULL);
-  EXPECT_CALL(*gl_, DeleteTextures(8, _))
-      .Times(1)
-      .RetiresOnSaturation();
 
   // Check that it is not freed if it is not owned.
+  TestHelper::SetupTextureManagerDestructionExpectations(gl_.get(), "");
   manager.Destroy(true);
   info1 = manager.GetTextureInfo(kClient1Id);
   ASSERT_TRUE(info1 == NULL);
@@ -278,7 +279,7 @@ TEST_F(TextureManagerTest, ValidForTargetNPOT) {
   FeatureInfo::Ref feature_info(new FeatureInfo());
   feature_info->Initialize(NULL);
   TextureManager manager(
-     feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
+     NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   // Check NPOT width on level 0
   EXPECT_TRUE(manager.ValidForTarget(GL_TEXTURE_2D, 0, 5, 2, 1));
   // Check NPOT height on level 0
@@ -301,7 +302,8 @@ class TextureInfoTest : public testing::Test {
 
   TextureInfoTest()
       : feature_info_(new FeatureInfo()),
-        manager_(feature_info_.get(), kMaxTextureSize, kMaxCubeMapTextureSize) {
+        manager_(
+          NULL, feature_info_.get(), kMaxTextureSize, kMaxCubeMapTextureSize) {
   }
   ~TextureInfoTest() {
     info_ = NULL;
@@ -318,7 +320,19 @@ class TextureInfoTest : public testing::Test {
   }
 
   virtual void TearDown() {
-    info_ = NULL;
+    if (info_.get()) {
+      GLuint client_id = 0;
+      // If it's not in the manager then setting info_ to NULL will
+      // delete the texture.
+      if (!manager_.GetClientId(info_->service_id(), &client_id)) {
+        // Check that it gets deleted when the last reference is released.
+        EXPECT_CALL(*gl_,
+            DeleteTextures(1, ::testing::Pointee(info_->service_id())))
+            .Times(1)
+            .RetiresOnSaturation();
+      }
+      info_ = NULL;
+    }
     ::gfx::GLInterface::SetGLInterface(NULL);
     gl_.reset();
   }
@@ -466,7 +480,7 @@ TEST_F(TextureInfoTest, NPOT2DNPOTOK) {
   FeatureInfo::Ref feature_info(new FeatureInfo());
   feature_info->Initialize(NULL);
   TextureManager manager(
-      feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
+      NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.CreateTextureInfo(kClient1Id, kService1Id);
   TextureManager::TextureInfo* info = manager.GetTextureInfo(kClient1Id);
   ASSERT_TRUE(info_ != NULL);
@@ -661,7 +675,7 @@ TEST_F(TextureInfoTest, FloatNotLinear) {
   FeatureInfo::Ref feature_info(new FeatureInfo());
   feature_info->Initialize(NULL);
   TextureManager manager(
-      feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
+      NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.CreateTextureInfo(kClient1Id, kService1Id);
   TextureManager::TextureInfo* info = manager.GetTextureInfo(kClient1Id);
   ASSERT_TRUE(info != NULL);
@@ -683,7 +697,7 @@ TEST_F(TextureInfoTest, FloatLinear) {
   FeatureInfo::Ref feature_info(new FeatureInfo());
   feature_info->Initialize(NULL);
   TextureManager manager(
-      feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
+      NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.CreateTextureInfo(kClient1Id, kService1Id);
   TextureManager::TextureInfo* info = manager.GetTextureInfo(kClient1Id);
   ASSERT_TRUE(info != NULL);
@@ -701,7 +715,7 @@ TEST_F(TextureInfoTest, HalfFloatNotLinear) {
   FeatureInfo::Ref feature_info(new FeatureInfo());
   feature_info->Initialize(NULL);
   TextureManager manager(
-      feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
+      NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.CreateTextureInfo(kClient1Id, kService1Id);
   TextureManager::TextureInfo* info = manager.GetTextureInfo(kClient1Id);
   ASSERT_TRUE(info != NULL);
@@ -723,7 +737,7 @@ TEST_F(TextureInfoTest, HalfFloatLinear) {
   FeatureInfo::Ref feature_info(new FeatureInfo());
   feature_info->Initialize(NULL);
   TextureManager manager(
-      feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
+      NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.CreateTextureInfo(kClient1Id, kService1Id);
   TextureManager::TextureInfo* info = manager.GetTextureInfo(kClient1Id);
   ASSERT_TRUE(info != NULL);
@@ -741,12 +755,30 @@ TEST_F(TextureInfoTest, EGLImageExternal) {
   FeatureInfo::Ref feature_info(new FeatureInfo());
   feature_info->Initialize(NULL);
   TextureManager manager(
-      feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
+      NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
   manager.CreateTextureInfo(kClient1Id, kService1Id);
   TextureManager::TextureInfo* info = manager.GetTextureInfo(kClient1Id);
   ASSERT_TRUE(info != NULL);
   manager.SetInfoTarget(info, GL_TEXTURE_EXTERNAL_OES);
   EXPECT_EQ(static_cast<GLenum>(GL_TEXTURE_EXTERNAL_OES), info->target());
+  EXPECT_FALSE(manager.CanGenerateMipmaps(info));
+  manager.Destroy(false);
+}
+
+TEST_F(TextureInfoTest, DepthTexture) {
+  TestHelper::SetupFeatureInfoInitExpectations(
+      gl_.get(), "GL_ANGLE_depth_texture");
+  FeatureInfo::Ref feature_info(new FeatureInfo());
+  feature_info->Initialize(NULL);
+  TextureManager manager(
+      NULL, feature_info.get(), kMaxTextureSize, kMaxCubeMapTextureSize);
+  manager.CreateTextureInfo(kClient1Id, kService1Id);
+  TextureManager::TextureInfo* info = manager.GetTextureInfo(kClient1Id);
+  ASSERT_TRUE(info != NULL);
+  manager.SetInfoTarget(info, GL_TEXTURE_2D);
+  manager.SetLevelInfo(
+      info, GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, 4, 4, 1, 0,
+      GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, false);
   EXPECT_FALSE(manager.CanGenerateMipmaps(info));
   manager.Destroy(false);
 }
@@ -861,9 +893,15 @@ TEST_F(TextureInfoTest, SafeUnsafe) {
   manager_.RemoveTextureInfo(kClient2Id);
   EXPECT_TRUE(manager_.HaveUnsafeTextures());
   EXPECT_TRUE(manager_.HaveUnclearedMips());
+  EXPECT_CALL(*gl_, DeleteTextures(1, ::testing::Pointee(kService2Id)))
+      .Times(1)
+      .RetiresOnSaturation();
   info2 = NULL;
   EXPECT_TRUE(manager_.HaveUnsafeTextures());
   EXPECT_TRUE(manager_.HaveUnclearedMips());
+  EXPECT_CALL(*gl_, DeleteTextures(1, ::testing::Pointee(kService3Id)))
+      .Times(1)
+      .RetiresOnSaturation();
   info3 = NULL;
   EXPECT_FALSE(manager_.HaveUnsafeTextures());
   EXPECT_FALSE(manager_.HaveUnclearedMips());
@@ -930,6 +968,9 @@ TEST_F(TextureInfoTest, UseDeletedTexture) {
       GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, false);
   EXPECT_TRUE(manager_.CanRender(info));
   EXPECT_FALSE(manager_.HaveUnrenderableTextures());
+  EXPECT_CALL(*gl_, DeleteTextures(1, ::testing::Pointee(kService2Id)))
+      .Times(1)
+      .RetiresOnSaturation();
   info = NULL;
 }
 

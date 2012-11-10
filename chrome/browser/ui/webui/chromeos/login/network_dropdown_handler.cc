@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,6 +36,8 @@ void NetworkDropdownHandler::GetLocalizedStrings(
     base::DictionaryValue* localized_strings) {
   localized_strings->SetString("selectNetwork",
       l10n_util::GetStringUTF16(IDS_NETWORK_SELECTION_SELECT));
+  localized_strings->SetString("selectAnotherNetwork",
+      l10n_util::GetStringUTF16(IDS_ANOTHER_NETWORK_SELECTION_SELECT));
 }
 
 void NetworkDropdownHandler::Initialize() {
@@ -59,27 +61,42 @@ void NetworkDropdownHandler::RegisterMessages() {
 void NetworkDropdownHandler::HandleNetworkItemChosen(
     const base::ListValue* args) {
   DCHECK(args->GetSize() == 1);
+
   double id;
-  if (!args->GetDouble(0, &id))
+  if (!args->GetDouble(0, &id)) {
     NOTREACHED();
-  DCHECK(dropdown_.get());
-  dropdown_->OnItemChosen(static_cast<int>(id));
+    return;
+  }
+
+  if (dropdown_.get()) {
+    dropdown_->OnItemChosen(static_cast<int>(id));
+  } else {
+    // It could happen with very low probability but still keep NOTREACHED to
+    // detect if it starts happening all the time.
+    NOTREACHED();
+  }
 }
 
 void NetworkDropdownHandler::HandleNetworkDropdownShow(
     const base::ListValue* args) {
   DCHECK(args->GetSize() == 3);
   std::string element_id;
-  if (!args->GetString(0, &element_id))
+  if (!args->GetString(0, &element_id)) {
     NOTREACHED();
-  bool oobe;
-  if (!args->GetBoolean(1, &oobe))
-    NOTREACHED();
+    return;
+  }
 
+  bool oobe;
+  if (!args->GetBoolean(1, &oobe)) {
+    NOTREACHED();
+    return;
+  }
 
   double last_network_type = -1;  // Javascript passes integer as double.
-  if (!args->GetDouble(2, &last_network_type))
+  if (!args->GetDouble(2, &last_network_type)) {
     NOTREACHED();
+    return;
+  }
 
   dropdown_.reset(new NetworkDropdown(web_ui(), oobe));
 

@@ -4,7 +4,6 @@
 
 #ifndef CONTENT_WORKER_WEBWORKERCLIENT_PROXY_H_
 #define CONTENT_WORKER_WEBWORKERCLIENT_PROXY_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
@@ -77,6 +76,7 @@ class WebSharedWorkerClientProxy : public WebKit::WebSharedWorkerClient {
                               long long size,
                               bool create,
                               WebKit::WebFileSystemCallbacks* callbacks);
+  virtual bool allowIndexedDB(const WebKit::WebString&);
   virtual void dispatchDevToolsMessage(const WebKit::WebString&);
   virtual void saveDevToolsAgentState(const WebKit::WebString&);
 

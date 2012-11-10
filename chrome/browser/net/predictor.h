@@ -18,7 +18,6 @@
 
 #ifndef CHROME_BROWSER_NET_PREDICTOR_H_
 #define CHROME_BROWSER_NET_PREDICTOR_H_
-#pragma once
 
 #include <map>
 #include <queue>
@@ -368,10 +367,10 @@ class Predictor {
   }
 
   // Only for testing. Return how long was the resolution
-  // or UrlInfo::kNullDuration if it hasn't been resolved yet.
+  // or UrlInfo::NullDuration() if it hasn't been resolved yet.
   base::TimeDelta GetResolutionDuration(const GURL& url) {
     if (results_.find(url) == results_.end())
-      return UrlInfo::kNullDuration;
+      return UrlInfo::NullDuration();
     return results_[url].resolve_duration();
   }
 

@@ -11,10 +11,10 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/sync/sync_setup_flow.h"
-#include "chrome/browser/tabs/tab_strip_model.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/sync_promo/sync_promo_trial.h"
 #include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -33,7 +33,7 @@ using content::Referrer;
 
 namespace {
 
-// User actions on the sync promo (aka "Sign in to Chrome").
+// User actions on the sync promo, i.e., "Sign in to Chrome".
 enum SyncPromoUserFlowActionEnums {
   SYNC_PROMO_VIEWED,
   SYNC_PROMO_LEARN_MORE_CLICKED,
@@ -55,8 +55,8 @@ enum SyncPromoUserFlowActionEnums {
 };
 
 // This was added because of the need to change the existing UMA enum for the
-// sync promo mid-flight. Ideally these values would be contiguous, but the
-// real world is not always ideal.
+// sync promo mid-flight. Ideally these values would be contiguous, but the real
+// world is not always ideal.
 static bool IsValidUserFlowAction(int action) {
   return (action >= SYNC_PROMO_FIRST_VALID_JS_ACTION &&
           action <= SYNC_PROMO_LAST_VALID_JS_ACTION) ||
@@ -65,12 +65,10 @@ static bool IsValidUserFlowAction(int action) {
 
 }  // namespace
 
-SyncPromoHandler::SyncPromoHandler(const std::string& source,
-                                   ProfileManager* profile_manager)
+SyncPromoHandler::SyncPromoHandler(ProfileManager* profile_manager)
     : SyncSetupHandler(profile_manager),
+      prefs_(NULL),
       window_already_closed_(false) {
-  if (!source.empty())
-    histogram_name_ = "SyncPromo." + source + ".UserFlow";
 }
 
 SyncPromoHandler::~SyncPromoHandler() {
@@ -90,11 +88,11 @@ void SyncPromoHandler::RegisterMessages() {
   // time we need to interact with preferences.
   prefs_ = Profile::FromWebUI(web_ui())->GetPrefs();
   DCHECK(prefs_);
-  // Ignore events from view-source:chrome://syncpromo.
+  // Ignore events from view-source:chrome://signin.
   if (!web_ui()->GetWebContents()->GetController().GetActiveEntry()->
           IsViewSourceMode()) {
     // Listen to see if the tab we're in gets closed.
-    registrar_.Add(this, content::NOTIFICATION_TAB_CLOSING,
+    registrar_.Add(this, chrome::NOTIFICATION_TAB_CLOSING,
         content::Source<NavigationController>(
             &web_ui()->GetWebContents()->GetController()));
     // Listen to see if the window we're in gets closed.
@@ -102,56 +100,55 @@ void SyncPromoHandler::RegisterMessages() {
         content::NotificationService::AllSources());
   }
 
-  web_ui()->RegisterMessageCallback("SyncPromo:Close",
+  web_ui()->RegisterMessageCallback(
+      "SyncPromo:Close",
       base::Bind(&SyncPromoHandler::HandleCloseSyncPromo,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("SyncPromo:Initialize",
+  web_ui()->RegisterMessageCallback(
+      "SyncPromo:Initialize",
       base::Bind(&SyncPromoHandler::HandleInitializeSyncPromo,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("SyncPromo:RecordSignInAttempts",
+  web_ui()->RegisterMessageCallback(
+      "SyncPromo:RecordSignInAttempts",
       base::Bind(&SyncPromoHandler::HandleRecordSignInAttempts,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("SyncPromo:RecordThrobberTime",
+  web_ui()->RegisterMessageCallback(
+      "SyncPromo:RecordThrobberTime",
       base::Bind(&SyncPromoHandler::HandleRecordThrobberTime,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("SyncPromo:ShowAdvancedSettings",
+  web_ui()->RegisterMessageCallback(
+      "SyncPromo:ShowAdvancedSettings",
       base::Bind(&SyncPromoHandler::HandleShowAdvancedSettings,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("SyncPromo:UserFlowAction",
+  web_ui()->RegisterMessageCallback(
+      "SyncPromo:UserFlowAction",
       base::Bind(&SyncPromoHandler::HandleUserFlowAction,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("SyncPromo:UserSkipped",
+  web_ui()->RegisterMessageCallback(
+      "SyncPromo:UserSkipped",
       base::Bind(&SyncPromoHandler::HandleUserSkipped,
                  base::Unretained(this)));
   SyncSetupHandler::RegisterMessages();
 }
 
-void SyncPromoHandler::ShowGaiaSuccessAndClose() {
+void SyncPromoHandler::RecordSignin() {
   sync_promo_trial::RecordUserSignedIn(web_ui());
-  SyncSetupHandler::ShowGaiaSuccessAndClose();
 }
 
-void SyncPromoHandler::ShowGaiaSuccessAndSettingUp() {
-  sync_promo_trial::RecordUserSignedIn(web_ui());
-  SyncSetupHandler::ShowGaiaSuccessAndSettingUp();
-}
-
-void SyncPromoHandler::ShowConfigure(const base::DictionaryValue& args) {
-  bool usePassphrase = false;
-  args.GetBoolean("usePassphrase", &usePassphrase);
-
-  if (usePassphrase) {
+void SyncPromoHandler::DisplayConfigureSync(bool show_advanced,
+                                            bool passphrase_failed) {
+  ProfileSyncService* service = GetSyncService();
+  DCHECK(service);
+  if (service->IsPassphraseRequired()) {
     // If a passphrase is required then we must show the configure pane.
-    SyncSetupHandler::ShowConfigure(args);
+    SyncSetupHandler::DisplayConfigureSync(true, passphrase_failed);
   } else {
     // If no passphrase is required then skip the configure pane and sync
-    // everything by default. This makes the first run experience simpler.
-    // Note, there's an advanced link in the sync promo that takes users
-    // to Settings where the configure pane is not skipped.
-    SyncConfiguration configuration;
-    configuration.sync_everything = true;
-    DCHECK(flow());
-    flow()->OnUserConfigured(configuration);
+    // everything by default. This makes the first run experience simpler. Note,
+    // there's an advanced link in the sync promo that takes users to Settings
+    // where the configure pane is not skipped.
+    service->OnUserChoseDatatypes(true, syncer::ModelTypeSet());
+    ConfigureSyncDone();
   }
 }
 
@@ -159,7 +156,7 @@ void SyncPromoHandler::Observe(int type,
                                const content::NotificationSource& source,
                                const content::NotificationDetails& details) {
   switch (type) {
-    case content::NOTIFICATION_TAB_CLOSING: {
+    case chrome::NOTIFICATION_TAB_CLOSING: {
       if (!window_already_closed_)
         RecordUserFlowAction(SYNC_PROMO_CLOSED_TAB);
       break;
@@ -167,7 +164,7 @@ void SyncPromoHandler::Observe(int type,
     case chrome::NOTIFICATION_BROWSER_CLOSING: {
       // Make sure we're in the tab strip of the closing window.
       Browser* browser = content::Source<Browser>(source).ptr();
-      if (browser->tabstrip_model()->GetWrapperIndex(
+      if (browser->tab_strip_model()->GetIndexOfWebContents(
               web_ui()->GetWebContents()) != TabStripModel::kNoTab) {
         RecordUserFlowAction(SYNC_PROMO_CLOSED_WINDOW);
         window_already_closed_ = true;
@@ -180,18 +177,7 @@ void SyncPromoHandler::Observe(int type,
   }
 }
 
-void SyncPromoHandler::StepWizardForShowSetupUI() {
-}
-
 void SyncPromoHandler::ShowSetupUI() {
-  // SyncSetupWizard::Step should be called in StepWizardForShowSetupUI above,
-  // but it causes the sync promo page to not set focus properly to the login
-  // email address. This happens because focus is lost between the call to
-  // StepWizardForShowSetupUI and ShowSetupUI.
-  // TODO(binji): Move this function back and fix the focus the right way.
-  ProfileSyncService* service =
-      Profile::FromWebUI(web_ui())->GetProfileSyncService();
-  service->get_wizard().Step(SyncSetupWizard::GetLoginState());
 }
 
 void SyncPromoHandler::HandleCloseSyncPromo(const base::ListValue* args) {
@@ -207,41 +193,28 @@ void SyncPromoHandler::HandleCloseSyncPromo(const base::ListValue* args) {
   // another URL. This prevents the browser window from flashing during
   // close.
   Browser* browser =
-      BrowserList::FindBrowserWithWebContents(web_ui()->GetWebContents());
+      browser::FindBrowserWithWebContents(web_ui()->GetWebContents());
   if (!browser || !browser->IsAttemptingToCloseBrowser()) {
-    GURL url = SyncPromoUI::GetNextPageURLForSyncPromoURL(
-        web_ui()->GetWebContents()->GetURL());
-    OpenURLParams params(
-        url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_LINK, false);
-    web_ui()->GetWebContents()->OpenURL(params);
-  }
-}
-
-int SyncPromoHandler::GetPromoVersion() {
-  switch (SyncPromoUI::GetSyncPromoVersion()) {
-    case SyncPromoUI::VERSION_DEFAULT:
-      return 0;
-    case SyncPromoUI::VERSION_DEVICES:
-      return 1;
-    case SyncPromoUI::VERSION_VERBOSE:
-      return 2;
-    case SyncPromoUI::VERSION_SIMPLE:
-      return 3;
-    case SyncPromoUI::VERSION_DIALOG:
-      // Use the simple sync promo layout for the dialog version.
-      return 3;
-    default:
-      NOTREACHED();
-      return 0;
+    // Close the window if it was opened in auto-close mode.
+    const GURL& sync_url = web_ui()->GetWebContents()->GetURL();
+    if (SyncPromoUI::GetAutoCloseForSyncPromoURL(sync_url)) {
+      web_ui()->GetWebContents()->Close();
+    } else {
+      GURL url = SyncPromoUI::GetNextPageURLForSyncPromoURL(sync_url);
+      OpenURLParams params(
+          url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_LINK, false);
+      web_ui()->GetWebContents()->OpenURL(params);
+    }
   }
 }
 
 void SyncPromoHandler::HandleInitializeSyncPromo(const base::ListValue* args) {
-  base::FundamentalValue version(GetPromoVersion());
-  web_ui()->CallJavascriptFunction("SyncSetupOverlay.showPromoVersion",
-                                   version);
+  // If this is a page reload, then we have to inform the login service
+  // the old UI closed. If this is an initial load, this call will do nothing.
+  GetLoginUIService()->LoginUIClosed(this);
 
-  OpenSyncSetup();
+  // Open the sync wizard to the login screen.
+  OpenSyncSetup(true);
   // We don't need to compute anything for this, just do this every time.
   RecordUserFlowAction(SYNC_PROMO_VIEWED);
   // Increment view count first and show natural numbers in stats rather than 0
@@ -311,14 +284,10 @@ void SyncPromoHandler::RecordUserFlowAction(int action) {
   // Send an enumeration to our single user flow histogram.
   UMA_HISTOGRAM_ENUMERATION("SyncPromo.UserFlow", action,
                             SYNC_PROMO_BUCKET_BOUNDARY);
+}
 
-  // The following call does not use the standard UMA macro because the
-  // histogram name is only known at runtime.  The standard macros declare
-  // static variables that won't work if the name changes on differnt calls.
-  if (!histogram_name_.empty()) {
-    base::Histogram* histogram = base::LinearHistogram::FactoryGet(
-        histogram_name_, 1, SYNC_PROMO_BUCKET_BOUNDARY,
-        SYNC_PROMO_BUCKET_BOUNDARY + 1, base::Histogram::kNoFlags);
-    histogram->Add(action);
-  }
+void SyncPromoHandler::CloseUI() {
+  // Callers should not ever try to close the promo UI (should only call
+  // CloseUI() if the user is already logged in).
+  NOTREACHED() << "Cannot close the promo UI";
 }

@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -22,9 +22,7 @@ character Qof.  It looks sort of like a latin character "p" but it is outside
 the latin-1 character set which will stress character encoding bugs.
 '''
 
-import re
-import types
-
+from grit import lazy_re
 from grit import tclib
 
 
@@ -56,7 +54,7 @@ _VOWELS = {
 }
 
 # Matches vowels and P
-_PSUB_RE = re.compile("(%s)" % '|'.join(_VOWELS.keys() + ['P']))
+_PSUB_RE = lazy_re.compile("(%s)" % '|'.join(_VOWELS.keys() + ['P']))
 
 
 # Pseudotranslations previously created.  This is important for performance

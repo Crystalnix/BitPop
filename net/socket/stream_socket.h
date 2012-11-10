@@ -1,19 +1,20 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef NET_SOCKET_STREAM_SOCKET_H_
 #define NET_SOCKET_STREAM_SOCKET_H_
-#pragma once
 
 #include "base/time.h"
 #include "net/base/net_log.h"
+#include "net/socket/next_proto.h"
 #include "net/socket/socket.h"
 
 namespace net {
 
 class AddressList;
 class IPEndPoint;
+class SSLInfo;
 
 class NET_EXPORT_PRIVATE StreamSocket : public Socket {
  public:
@@ -56,10 +57,10 @@ class NET_EXPORT_PRIVATE StreamSocket : public Socket {
   // Copies the peer address to |address| and returns a network error code.
   // ERR_SOCKET_NOT_CONNECTED will be returned if the socket is not connected.
   // TODO(sergeyu): Use IPEndPoint instead of AddressList.
-  virtual int GetPeerAddress(AddressList* address) const = 0;
+  virtual int GetPeerAddress(IPEndPoint* address) const = 0;
 
   // Copies the local address to |address| and returns a network error code.
-  // ERR_SOCKET_NOT_CONNECTED will be returned if the socket is not connected.
+  // ERR_SOCKET_NOT_CONNECTED will be returned if the socket is not bound.
   virtual int GetLocalAddress(IPEndPoint* address) const = 0;
 
   // Gets the NetLog for this socket.
@@ -85,6 +86,17 @@ class NET_EXPORT_PRIVATE StreamSocket : public Socket {
 
   // Returns the connection setup time of this socket.
   virtual base::TimeDelta GetConnectTimeMicros() const = 0;
+
+  // Returns true if NPN was negotiated during the connection of this socket.
+  virtual bool WasNpnNegotiated() const = 0;
+
+  // Returns the protocol negotiated via NPN for this socket, or
+  // kProtoUnknown will be returned if NPN is not applicable.
+  virtual NextProto GetNegotiatedProtocol() const = 0;
+
+  // Gets the SSL connection information of the socket.  Returns false if
+  // SSL was not used by this socket.
+  virtual bool GetSSLInfo(SSLInfo* ssl_info) = 0;
 
  protected:
   // The following class is only used to gather statistics about the history of

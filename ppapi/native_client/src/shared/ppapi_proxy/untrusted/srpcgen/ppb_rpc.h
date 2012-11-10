@@ -19,25 +19,6 @@
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/pp_resource.h"
 
-class NaClFileRpcClient {
- public:
-  static NaClSrpcError StreamAsFile(
-      NaClSrpcChannel* channel,
-      PP_Instance instance,
-      const char* url,
-      int32_t callback_id);
-  static NaClSrpcError GetFileDesc(
-      NaClSrpcChannel* channel,
-      PP_Instance instance,
-      const char* url,
-      NaClSrpcImcDescType* file_desc);
-
- private:
-  NaClFileRpcClient();
-  NaClFileRpcClient(const NaClFileRpcClient&);
-  void operator=(const NaClFileRpcClient);
-};  // class NaClFileRpcClient
-
 class PpbRpcClient {
  public:
   static NaClSrpcError PPB_GetInterface(
@@ -93,8 +74,14 @@ class PpbAudioConfigRpcClient {
       NaClSrpcChannel* channel,
       PP_Resource resource,
       int32_t* out_bool);
+  static NaClSrpcError PPB_AudioConfig_RecommendSampleFrameCount_1_0(
+      NaClSrpcChannel* channel,
+      int32_t request_sample_rate,
+      int32_t request_sample_frame_count,
+      int32_t* out_sample_frame_count);
   static NaClSrpcError PPB_AudioConfig_RecommendSampleFrameCount(
       NaClSrpcChannel* channel,
+      PP_Instance instance,
       int32_t request_sample_rate,
       int32_t request_sample_frame_count,
       int32_t* out_sample_frame_count);
@@ -106,6 +93,10 @@ class PpbAudioConfigRpcClient {
       NaClSrpcChannel* channel,
       PP_Resource resource,
       int32_t* sample_frame_count);
+  static NaClSrpcError PPB_AudioConfig_RecommendSampleRate(
+      NaClSrpcChannel* channel,
+      PP_Instance instance,
+      int32_t* sample_rate);
 
  private:
   PpbAudioConfigRpcClient();
@@ -142,38 +133,6 @@ class PpbCoreRpcClient {
   PpbCoreRpcClient(const PpbCoreRpcClient&);
   void operator=(const PpbCoreRpcClient);
 };  // class PpbCoreRpcClient
-
-class PpbCursorControlRpcClient {
- public:
-  static NaClSrpcError PPB_CursorControl_SetCursor(
-      NaClSrpcChannel* channel,
-      PP_Instance instance,
-      int32_t type,
-      PP_Resource custom_image,
-      nacl_abi_size_t hot_spot_bytes, char* hot_spot,
-      int32_t* success);
-  static NaClSrpcError PPB_CursorControl_LockCursor(
-      NaClSrpcChannel* channel,
-      PP_Instance instance,
-      int32_t* success);
-  static NaClSrpcError PPB_CursorControl_UnlockCursor(
-      NaClSrpcChannel* channel,
-      PP_Instance instance,
-      int32_t* success);
-  static NaClSrpcError PPB_CursorControl_HasCursorLock(
-      NaClSrpcChannel* channel,
-      PP_Instance instance,
-      int32_t* success);
-  static NaClSrpcError PPB_CursorControl_CanLockCursor(
-      NaClSrpcChannel* channel,
-      PP_Instance instance,
-      int32_t* success);
-
- private:
-  PpbCursorControlRpcClient();
-  PpbCursorControlRpcClient(const PpbCursorControlRpcClient&);
-  void operator=(const PpbCursorControlRpcClient);
-};  // class PpbCursorControlRpcClient
 
 class PpbFileIORpcClient {
  public:
@@ -429,7 +388,7 @@ class PpbFullscreenRpcClient {
 
 class PpbGamepadRpcClient {
  public:
-  static NaClSrpcError PPB_Gamepad_SampleGamepads(
+  static NaClSrpcError PPB_Gamepad_Sample(
       NaClSrpcChannel* channel,
       PP_Instance instance,
       nacl_abi_size_t* data_bytes, char* data);
@@ -575,6 +534,45 @@ class PpbGraphics3DRpcClient {
   void operator=(const PpbGraphics3DRpcClient);
 };  // class PpbGraphics3DRpcClient
 
+class PpbHostResolverPrivateRpcClient {
+ public:
+  static NaClSrpcError PPB_HostResolver_Private_Create(
+      NaClSrpcChannel* channel,
+      PP_Instance instance,
+      PP_Resource* resource);
+  static NaClSrpcError PPB_HostResolver_Private_IsHostResolver(
+      NaClSrpcChannel* channel,
+      PP_Resource resource,
+      int32_t* is_host_resolver);
+  static NaClSrpcError PPB_HostResolver_Private_Resolve(
+      NaClSrpcChannel* channel,
+      PP_Resource host_resolver,
+      const char* host,
+      int32_t port,
+      nacl_abi_size_t hint_bytes, char* hint,
+      int32_t callback_id,
+      int32_t* pp_error);
+  static NaClSrpcError PPB_HostResolver_Private_GetCanonicalName(
+      NaClSrpcChannel* channel,
+      PP_Resource host_resolver,
+      nacl_abi_size_t* canonical_name_bytes, char* canonical_name);
+  static NaClSrpcError PPB_HostResolver_Private_GetSize(
+      NaClSrpcChannel* channel,
+      PP_Resource host_resolver,
+      int32_t* size);
+  static NaClSrpcError PPB_HostResolver_Private_GetNetAddress(
+      NaClSrpcChannel* channel,
+      PP_Resource host_resolver,
+      int32_t index,
+      nacl_abi_size_t* addr_bytes, char* addr,
+      int32_t* success);
+
+ private:
+  PpbHostResolverPrivateRpcClient();
+  PpbHostResolverPrivateRpcClient(const PpbHostResolverPrivateRpcClient&);
+  void operator=(const PpbHostResolverPrivateRpcClient);
+};  // class PpbHostResolverPrivateRpcClient
+
 class PpbImageDataRpcClient {
  public:
   static NaClSrpcError PPB_ImageData_GetNativeImageDataFormat(
@@ -692,6 +690,22 @@ class PpbMessagingRpcClient {
   void operator=(const PpbMessagingRpcClient);
 };  // class PpbMessagingRpcClient
 
+class PpbMouseCursorRpcClient {
+ public:
+  static NaClSrpcError PPB_MouseCursor_SetCursor(
+      NaClSrpcChannel* channel,
+      PP_Instance instance,
+      int32_t type,
+      PP_Resource custom_image,
+      nacl_abi_size_t hot_spot_bytes, char* hot_spot,
+      int32_t* success);
+
+ private:
+  PpbMouseCursorRpcClient();
+  PpbMouseCursorRpcClient(const PpbMouseCursorRpcClient&);
+  void operator=(const PpbMouseCursorRpcClient);
+};  // class PpbMouseCursorRpcClient
+
 class PpbMouseLockRpcClient {
  public:
   static NaClSrpcError PPB_MouseLock_LockMouse(
@@ -736,6 +750,34 @@ class PpbNetAddressPrivateRpcClient {
   static NaClSrpcError PPB_NetAddress_Private_GetAnyAddress(
       NaClSrpcChannel* channel,
       int32_t is_ipv6,
+      nacl_abi_size_t* addr_bytes, char* addr);
+  static NaClSrpcError PPB_NetAddress_Private_GetFamily(
+      NaClSrpcChannel* channel,
+      nacl_abi_size_t addr_bytes, char* addr,
+      int32_t* addr_family);
+  static NaClSrpcError PPB_NetAddress_Private_GetPort(
+      NaClSrpcChannel* channel,
+      nacl_abi_size_t addr_bytes, char* addr,
+      int32_t* port);
+  static NaClSrpcError PPB_NetAddress_Private_GetAddress(
+      NaClSrpcChannel* channel,
+      nacl_abi_size_t addr_bytes, char* addr,
+      nacl_abi_size_t* address_bytes, char* address,
+      int32_t* success);
+  static NaClSrpcError PPB_NetAddress_Private_GetScopeID(
+      NaClSrpcChannel* channel,
+      nacl_abi_size_t addr_bytes, char* addr,
+      int32_t* scope_id);
+  static NaClSrpcError PPB_NetAddress_Private_CreateFromIPv4Address(
+      NaClSrpcChannel* channel,
+      nacl_abi_size_t ip_bytes, char* ip,
+      int32_t port,
+      nacl_abi_size_t* addr_bytes, char* addr);
+  static NaClSrpcError PPB_NetAddress_Private_CreateFromIPv6Address(
+      NaClSrpcChannel* channel,
+      nacl_abi_size_t ip_bytes, char* ip,
+      int32_t scope_id,
+      int32_t port,
       nacl_abi_size_t* addr_bytes, char* addr);
 
  private:
@@ -854,6 +896,39 @@ class PpbScrollbarRpcClient {
   void operator=(const PpbScrollbarRpcClient);
 };  // class PpbScrollbarRpcClient
 
+class PpbTCPServerSocketPrivateRpcClient {
+ public:
+  static NaClSrpcError PPB_TCPServerSocket_Private_Create(
+      NaClSrpcChannel* channel,
+      PP_Instance instance,
+      PP_Resource* resource);
+  static NaClSrpcError PPB_TCPServerSocket_Private_IsTCPServerSocket(
+      NaClSrpcChannel* channel,
+      PP_Resource resource,
+      int32_t* is_tcp_server_socket);
+  static NaClSrpcError PPB_TCPServerSocket_Private_Listen(
+      NaClSrpcChannel* channel,
+      PP_Resource tcp_server_socket,
+      nacl_abi_size_t addr_bytes, char* addr,
+      int32_t backlog,
+      int32_t callback_id,
+      int32_t* pp_error);
+  static NaClSrpcError PPB_TCPServerSocket_Private_Accept(
+      NaClSrpcChannel* channel,
+      PP_Resource tcp_server_socket,
+      int32_t callback_id,
+      PP_Resource* tcp_socket,
+      int32_t* pp_error);
+  static NaClSrpcError PPB_TCPServerSocket_Private_StopListening(
+      NaClSrpcChannel* channel,
+      PP_Resource tcp_server_socket);
+
+ private:
+  PpbTCPServerSocketPrivateRpcClient();
+  PpbTCPServerSocketPrivateRpcClient(const PpbTCPServerSocketPrivateRpcClient&);
+  void operator=(const PpbTCPServerSocketPrivateRpcClient);
+};  // class PpbTCPServerSocketPrivateRpcClient
+
 class PpbTCPSocketPrivateRpcClient {
  public:
   static NaClSrpcError PPB_TCPSocket_Private_Create(
@@ -968,6 +1043,11 @@ class PpbUDPSocketPrivateRpcClient {
       nacl_abi_size_t addr_bytes, char* addr,
       int32_t callback_id,
       int32_t* pp_error);
+  static NaClSrpcError PPB_UDPSocket_Private_GetBoundAddress(
+      NaClSrpcChannel* channel,
+      PP_Resource udp_socket,
+      nacl_abi_size_t* addr_bytes, char* addr,
+      int32_t* success);
   static NaClSrpcError PPB_UDPSocket_Private_RecvFrom(
       NaClSrpcChannel* channel,
       PP_Resource udp_socket,
@@ -1144,7 +1224,8 @@ class PpbWebSocketRpcClient {
       NaClSrpcChannel* channel,
       PP_Resource ws,
       int32_t callback_id,
-      int32_t* pp_error);
+      int32_t* pp_error,
+      nacl_abi_size_t* sync_read_buffer_bytes, char* sync_read_buffer);
   static NaClSrpcError PPB_WebSocket_SendMessage(
       NaClSrpcChannel* channel,
       PP_Resource ws,

@@ -8,6 +8,7 @@
 #include "base/sys_info.h"
 #include "content/gpu/gpu_info_collector.h"
 #include "content/public/common/gpu_info.h"
+#include "content/test/gpu/gpu_test_expectations_parser.h"
 
 namespace {
 
@@ -44,6 +45,8 @@ GPUTestConfig::OS GetCurrentOS() {
         return GPUTestConfig::kOsMacLion;
     }
   }
+#elif defined(OS_ANDROID)
+  return GPUTestConfig::kOsAndroid;
 #endif
   return GPUTestConfig::kOsUnknown;
 }
@@ -60,7 +63,7 @@ GPUTestConfig::~GPUTestConfig() {
 }
 
 void GPUTestConfig::set_os(int32 os) {
-  DCHECK_EQ(0, os & ~(kOsWin | kOsMac | kOsLinux | kOsChromeOS));
+  DCHECK_EQ(0, os & ~(kOsAndroid | kOsWin | kOsMac | kOsLinux | kOsChromeOS));
   os_ = os;
 }
 
@@ -128,11 +131,11 @@ void GPUTestBotConfig::AddGPUVendor(uint32 gpu_vendor) {
 }
 
 bool GPUTestBotConfig::SetGPUInfo(const content::GPUInfo& gpu_info) {
-  if (gpu_info.device_id == 0 || gpu_info.vendor_id == 0)
+  if (gpu_info.gpu.device_id == 0 || gpu_info.gpu.vendor_id == 0)
     return false;
   ClearGPUVendor();
-  AddGPUVendor(gpu_info.vendor_id);
-  set_gpu_device_id(gpu_info.device_id);
+  AddGPUVendor(gpu_info.gpu.vendor_id);
+  set_gpu_device_id(gpu_info.gpu.device_id);
   return true;
 }
 
@@ -146,6 +149,7 @@ bool GPUTestBotConfig::IsValid() const {
     case kOsMacLion:
     case kOsLinux:
     case kOsChromeOS:
+    case kOsAndroid:
       break;
     default:
       return false;
@@ -189,6 +193,15 @@ bool GPUTestBotConfig::Matches(const GPUTestConfig& config) const {
   return true;
 }
 
+bool GPUTestBotConfig::Matches(const std::string& config_data) const {
+  GPUTestExpectationsParser parser;
+  GPUTestConfig config;
+
+  if (!parser.ParseConfig(config_data, &config))
+    return false;
+  return Matches(config);
+}
+
 bool GPUTestBotConfig::LoadCurrentConfig(const content::GPUInfo* gpu_info) {
   bool rt;
   if (gpu_info == NULL) {
@@ -207,5 +220,26 @@ bool GPUTestBotConfig::LoadCurrentConfig(const content::GPUInfo* gpu_info) {
   set_build_type(kBuildTypeDebug);
 #endif
   return rt;
+}
+
+// static
+bool GPUTestBotConfig::CurrentConfigMatches(const std::string& config_data) {
+  GPUTestBotConfig my_config;
+  if (!my_config.LoadCurrentConfig(NULL))
+    return false;
+  return my_config.Matches(config_data);
+}
+
+// static
+bool GPUTestBotConfig::CurrentConfigMatches(
+    const std::vector<std::string>& configs) {
+  GPUTestBotConfig my_config;
+  if (!my_config.LoadCurrentConfig(NULL))
+    return false;
+  for (size_t i = 0 ; i < configs.size(); ++i) {
+    if (my_config.Matches(configs[i]))
+      return true;
+  }
+  return false;
 }
 

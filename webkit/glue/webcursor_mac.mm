@@ -11,30 +11,29 @@
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_nsobject.h"
+#include "grit/webkit_chromium_resources.h"
+#include "skia/ext/skia_utils_mac.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebImage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
-#include "ui/gfx/mac/nsimage_cache.h"
+#include "ui/base/resource/resource_bundle.h"
 
-#if WEBKIT_USING_SKIA
-#include "skia/ext/skia_utils_mac.h"
-#endif
+
+#if defined(MAC_OS_X_VERSION_10_7) && \
+    MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
+// The 10.7 SDK no longer has QuickDraw headers.
+// http://developer.apple.com/legacy/mac/library/documentation/Carbon/reference/QuickDraw_Ref/QuickDraw_Ref.pdf
+typedef short Bits16[16];
+struct Cursor {
+  Bits16 data;
+  Bits16 mask;
+  Point hotSpot;
+};
+#endif  // 10.7+ SDK
 
 using WebKit::WebCursorInfo;
 using WebKit::WebImage;
 using WebKit::WebSize;
-
-// Declare symbols that are part of the 10.6 SDK.
-#if !defined(MAC_OS_X_VERSION_10_6) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_6
-
-@interface NSCursor (SnowLeopardSDKDeclarations)
-+ (NSCursor*)contextualMenuCursor;
-+ (NSCursor*)dragCopyCursor;
-+ (NSCursor*)operationNotAllowedCursor;
-@end
-
-#endif  // MAC_OS_X_VERSION_10_6
 
 // Declare symbols that are part of the 10.7 SDK.
 #if !defined(MAC_OS_X_VERSION_10_7) || \
@@ -46,17 +45,111 @@ using WebKit::WebSize;
 
 #endif  // MAC_OS_X_VERSION_10_7
 
+// Private interface to CoreCursor, as of Mac OS X 10.7. This is essentially the
+// implementation of WKCursor in WebKitSystemInterface.
+
+enum {
+  kArrowCursor = 0,
+  kIBeamCursor = 1,
+  kMakeAliasCursor = 2,
+  kOperationNotAllowedCursor = 3,
+  kBusyButClickableCursor = 4,
+  kCopyCursor = 5,
+  kClosedHandCursor = 11,
+  kOpenHandCursor = 12,
+  kPointingHandCursor = 13,
+  kCountingUpHandCursor = 14,
+  kCountingDownHandCursor = 15,
+  kCountingUpAndDownHandCursor = 16,
+  kResizeLeftCursor = 17,
+  kResizeRightCursor = 18,
+  kResizeLeftRightCursor = 19,
+  kCrosshairCursor = 20,
+  kResizeUpCursor = 21,
+  kResizeDownCursor = 22,
+  kResizeUpDownCursor = 23,
+  kContextualMenuCursor = 24,
+  kDisappearingItemCursor = 25,
+  kVerticalIBeamCursor = 26,
+  kResizeEastCursor = 27,
+  kResizeEastWestCursor = 28,
+  kResizeNortheastCursor = 29,
+  kResizeNortheastSouthwestCursor = 30,
+  kResizeNorthCursor = 31,
+  kResizeNorthSouthCursor = 32,
+  kResizeNorthwestCursor = 33,
+  kResizeNorthwestSoutheastCursor = 34,
+  kResizeSoutheastCursor = 35,
+  kResizeSouthCursor = 36,
+  kResizeSouthwestCursor = 37,
+  kResizeWestCursor = 38,
+  kMoveCursor = 39,
+  kHelpCursor = 40,  // Present on >= 10.7.3.
+  kCellCursor = 41,  // Present on >= 10.7.3.
+  kZoomInCursor = 42,  // Present on >= 10.7.3.
+  kZoomOutCursor = 43  // Present on >= 10.7.3.
+};
+typedef long long CrCoreCursorType;
+
+@interface CrCoreCursor : NSCursor {
+ @private
+  CrCoreCursorType type_;
+}
+
++ (id)cursorWithType:(CrCoreCursorType)type;
+- (id)initWithType:(CrCoreCursorType)type;
+- (CrCoreCursorType)_coreCursorType;
+
+@end
+
+@implementation CrCoreCursor
+
++ (id)cursorWithType:(CrCoreCursorType)type {
+  NSCursor* cursor = [[CrCoreCursor alloc] initWithType:type];
+  if ([cursor image])
+    return [cursor autorelease];
+
+  [cursor release];
+  return nil;
+}
+
+- (id)initWithType:(CrCoreCursorType)type {
+  if ((self = [super init])) {
+    type_ = type;
+  }
+  return self;
+}
+
+- (CrCoreCursorType)_coreCursorType {
+  return type_;
+}
+
+@end
+
 namespace {
 
-// TODO: This image fetch can (and probably should) be serviced by the resource
-// resource bundle instead of going through the image cache.
-NSCursor* LoadCursor(const char* name, int x, int y) {
-  NSString* file_name = [NSString stringWithUTF8String:name];
-  DCHECK(file_name);
-  NSImage* cursor_image = gfx::GetCachedImageWithName(file_name);
+NSCursor* LoadCursor(int resource_id, int hotspot_x, int hotspot_y) {
+  NSImage* cursor_image =
+      ResourceBundle::GetSharedInstance().GetNativeImageNamed(resource_id);
   DCHECK(cursor_image);
   return [[[NSCursor alloc] initWithImage:cursor_image
-                                  hotSpot:NSMakePoint(x, y)] autorelease];
+                                  hotSpot:NSMakePoint(hotspot_x,
+                                                      hotspot_y)] autorelease];
+}
+
+// Gets a specified cursor from CoreCursor, falling back to loading it from the
+// image cache if CoreCursor cannot provide it.
+NSCursor* GetCoreCursorWithFallback(CrCoreCursorType type,
+                                    int resource_id,
+                                    int hotspot_x,
+                                    int hotspot_y) {
+  if (base::mac::IsOSLionOrLater()) {
+    NSCursor* cursor = [CrCoreCursor cursorWithType:type];
+    if (cursor)
+      return cursor;
+  }
+
+  return LoadCursor(resource_id, hotspot_x, hotspot_y);
 }
 
 // TODO(avi): When Skia becomes default, fold this function into the remaining
@@ -96,7 +189,6 @@ CGImageRef CreateCGImageFromCustomData(const std::vector<char>& custom_data,
 NSCursor* CreateCustomCursor(const std::vector<char>& custom_data,
                              const gfx::Size& custom_size,
                              const gfx::Point& hotspot) {
-#if WEBKIT_USING_SKIA
   // If the data is missing, leave the backing transparent.
   void* data = NULL;
   size_t data_size = 0;
@@ -122,16 +214,6 @@ NSCursor* CreateCustomCursor(const std::vector<char>& custom_data,
   else
     bitmap.eraseARGB(0, 0, 0, 0);
   NSImage* cursor_image = gfx::SkBitmapToNSImage(bitmap);
-#else
-  base::mac::ScopedCFTypeRef<CGImageRef> cg_image(
-      CreateCGImageFromCustomData(custom_data, custom_size));
-
-  scoped_nsobject<NSBitmapImageRep> ns_bitmap(
-      [[NSBitmapImageRep alloc] initWithCGImage:cg_image.get()]);
-  scoped_nsobject<NSImage> cursor_image([[NSImage alloc] init]);
-  DCHECK(cursor_image);
-  [cursor_image addRepresentation:ns_bitmap];
-#endif  // WEBKIT_USING_SKIA
 
   NSCursor* cursor = [[NSCursor alloc] initWithImage:cursor_image
                                              hotSpot:NSMakePoint(hotspot.x(),
@@ -142,13 +224,7 @@ NSCursor* CreateCustomCursor(const std::vector<char>& custom_data,
 
 }  // namespace
 
-// We're (mostly) matching Safari's cursor choices; see
-// platform/mac/CursorMac.mm . Note that Safari uses some magic in wkCursor to
-// access private system cursors. A sample implementation using the same
-// technique can be found attached to http://crbug.com/92892 . However, it's not
-// clear that accessing system cursors this way is enough of a gain to risk
-// using SPIs. Until the benefits more clearly outweigh the risks, API is all
-// that will be used.
+// Match Safari's cursor choices; see platform/mac/CursorMac.mm .
 gfx::NativeCursor WebCursor::GetNativeCursor() {
   switch (type_) {
     case WebCursorInfo::TypePointer:
@@ -161,88 +237,109 @@ gfx::NativeCursor WebCursor::GetNativeCursor() {
       if (base::mac::IsOSLionOrLater())
         return [NSCursor pointingHandCursor];
       else
-        return LoadCursor("linkCursor", 6, 1);
+        return LoadCursor(IDR_LINK_CURSOR, 6, 1);
     case WebCursorInfo::TypeIBeam:
       return [NSCursor IBeamCursor];
     case WebCursorInfo::TypeWait:
-      return LoadCursor("waitCursor", 7, 7);
+      return GetCoreCursorWithFallback(kBusyButClickableCursor,
+                                       IDR_WAIT_CURSOR, 7, 7);
     case WebCursorInfo::TypeHelp:
-      return LoadCursor("helpCursor", 8, 8);
+      return GetCoreCursorWithFallback(kHelpCursor,
+                                       IDR_HELP_CURSOR, 8, 8);
     case WebCursorInfo::TypeEastResize:
     case WebCursorInfo::TypeEastPanning:
-      return LoadCursor("eastResizeCursor", 14, 7);
+      return GetCoreCursorWithFallback(kResizeEastCursor,
+                                       IDR_EAST_RESIZE_CURSOR, 14, 7);
     case WebCursorInfo::TypeNorthResize:
     case WebCursorInfo::TypeNorthPanning:
-      return LoadCursor("northResizeCursor", 7, 1);
+      return GetCoreCursorWithFallback(kResizeNorthCursor,
+                                       IDR_NORTH_RESIZE_CURSOR, 7, 1);
     case WebCursorInfo::TypeNorthEastResize:
     case WebCursorInfo::TypeNorthEastPanning:
-      return LoadCursor("northEastResizeCursor", 14, 1);
+      return GetCoreCursorWithFallback(kResizeNortheastCursor,
+                                       IDR_NORTHEAST_RESIZE_CURSOR, 14, 1);
     case WebCursorInfo::TypeNorthWestResize:
     case WebCursorInfo::TypeNorthWestPanning:
-      return LoadCursor("northWestResizeCursor", 0, 0);
+      return GetCoreCursorWithFallback(kResizeNorthwestCursor,
+                                       IDR_NORTHWEST_RESIZE_CURSOR, 0, 0);
     case WebCursorInfo::TypeSouthResize:
     case WebCursorInfo::TypeSouthPanning:
-      return LoadCursor("southResizeCursor", 7, 14);
+      return GetCoreCursorWithFallback(kResizeSouthCursor,
+                                       IDR_SOUTH_RESIZE_CURSOR, 7, 14);
     case WebCursorInfo::TypeSouthEastResize:
     case WebCursorInfo::TypeSouthEastPanning:
-      return LoadCursor("southEastResizeCursor", 14, 14);
+      return GetCoreCursorWithFallback(kResizeSoutheastCursor,
+                                       IDR_SOUTHEAST_RESIZE_CURSOR, 14, 14);
     case WebCursorInfo::TypeSouthWestResize:
     case WebCursorInfo::TypeSouthWestPanning:
-      return LoadCursor("southWestResizeCursor", 1, 14);
+      return GetCoreCursorWithFallback(kResizeSouthwestCursor,
+                                       IDR_SOUTHWEST_RESIZE_CURSOR, 1, 14);
     case WebCursorInfo::TypeWestResize:
     case WebCursorInfo::TypeWestPanning:
-      return LoadCursor("westResizeCursor", 1, 7);
+      return GetCoreCursorWithFallback(kResizeWestCursor,
+                                       IDR_WEST_RESIZE_CURSOR, 1, 7);
     case WebCursorInfo::TypeNorthSouthResize:
-      return LoadCursor("northSouthResizeCursor", 7, 7);
+      return GetCoreCursorWithFallback(kResizeNorthSouthCursor,
+                                       IDR_NORTHSOUTH_RESIZE_CURSOR, 7, 7);
     case WebCursorInfo::TypeEastWestResize:
-      return LoadCursor("eastWestResizeCursor", 7, 7);
+      return GetCoreCursorWithFallback(kResizeEastWestCursor,
+                                       IDR_EASTWEST_RESIZE_CURSOR, 7, 7);
     case WebCursorInfo::TypeNorthEastSouthWestResize:
-      return LoadCursor("northEastSouthWestResizeCursor", 7, 7);
+      return GetCoreCursorWithFallback(kResizeNortheastSouthwestCursor,
+                                       IDR_NORTHEASTSOUTHWEST_RESIZE_CURSOR,
+                                       7, 7);
     case WebCursorInfo::TypeNorthWestSouthEastResize:
-      return LoadCursor("northWestSouthEastResizeCursor", 7, 7);
+      return GetCoreCursorWithFallback(kResizeNorthwestSoutheastCursor,
+                                       IDR_NORTHWESTSOUTHEAST_RESIZE_CURSOR,
+                                       7, 7);
     case WebCursorInfo::TypeColumnResize:
       return [NSCursor resizeLeftRightCursor];
     case WebCursorInfo::TypeRowResize:
       return [NSCursor resizeUpDownCursor];
     case WebCursorInfo::TypeMiddlePanning:
     case WebCursorInfo::TypeMove:
-      return LoadCursor("moveCursor", 7, 7);
+      return GetCoreCursorWithFallback(kMoveCursor,
+                                       IDR_MOVE_CURSOR, 7, 7);
     case WebCursorInfo::TypeVerticalText:
       // IBeamCursorForVerticalLayout is >= 10.7.
       if ([NSCursor respondsToSelector:@selector(IBeamCursorForVerticalLayout)])
         return [NSCursor IBeamCursorForVerticalLayout];
       else
-        return LoadCursor("verticalTextCursor", 7, 7);
+        return LoadCursor(IDR_VERTICALTEXT_CURSOR, 7, 7);
     case WebCursorInfo::TypeCell:
-      return LoadCursor("cellCursor", 7, 7);
+      return GetCoreCursorWithFallback(kCellCursor,
+                                       IDR_CELL_CURSOR, 7, 7);
     case WebCursorInfo::TypeContextMenu:
       // contextualMenuCursor is >= 10.6.
       if ([NSCursor respondsToSelector:@selector(contextualMenuCursor)])
         return [NSCursor contextualMenuCursor];
       else
-        return LoadCursor("contextMenuCursor", 3, 2);
+        return LoadCursor(IDR_CONTEXTMENU_CURSOR, 3, 2);
     case WebCursorInfo::TypeAlias:
-      return LoadCursor("aliasCursor", 11, 3);
+      return GetCoreCursorWithFallback(kMakeAliasCursor,
+                                       IDR_ALIAS_CURSOR, 11, 3);
     case WebCursorInfo::TypeProgress:
-      return LoadCursor("progressCursor", 3, 2);
+      return GetCoreCursorWithFallback(kBusyButClickableCursor,
+                                       IDR_PROGRESS_CURSOR, 3, 2);
     case WebCursorInfo::TypeNoDrop:
-      return LoadCursor("noDropCursor", 3, 1);
+    case WebCursorInfo::TypeNotAllowed:
+      // Docs say that operationNotAllowedCursor is >= 10.6, and it's not in the
+      // 10.5 SDK, but later SDKs note that it really is available on 10.5.
+      return [NSCursor operationNotAllowedCursor];
     case WebCursorInfo::TypeCopy:
       // dragCopyCursor is >= 10.6.
       if ([NSCursor respondsToSelector:@selector(dragCopyCursor)])
         return [NSCursor dragCopyCursor];
       else
-        return LoadCursor("copyCursor", 3, 2);
+        return LoadCursor(IDR_COPY_CURSOR, 3, 2);
     case WebCursorInfo::TypeNone:
-      return LoadCursor("noneCursor", 7, 7);
-    case WebCursorInfo::TypeNotAllowed:
-      // Docs say that operationNotAllowedCursor is >= 10.6, and it's not in the
-      // 10.5 SDK, but later SDKs note that it really is available on 10.5.
-     return [NSCursor operationNotAllowedCursor];
+      return LoadCursor(IDR_NONE_CURSOR, 7, 7);
     case WebCursorInfo::TypeZoomIn:
-      return LoadCursor("zoomInCursor", 7, 7);
+      return GetCoreCursorWithFallback(kZoomInCursor,
+                                       IDR_ZOOMIN_CURSOR, 7, 7);
     case WebCursorInfo::TypeZoomOut:
-      return LoadCursor("zoomOutCursor", 7, 7);
+      return GetCoreCursorWithFallback(kZoomOutCursor,
+                                       IDR_ZOOMOUT_CURSOR, 7, 7);
     case WebCursorInfo::TypeGrab:
       return [NSCursor openHandCursor];
     case WebCursorInfo::TypeGrabbing:
@@ -363,13 +460,9 @@ void WebCursor::InitFromCursor(const Cursor* cursor) {
   WebKit::WebCursorInfo cursor_info;
   cursor_info.type = WebCursorInfo::TypeCustom;
   cursor_info.hotSpot = WebKit::WebPoint(cursor->hotSpot.h, cursor->hotSpot.v);
-#if WEBKIT_USING_SKIA
   // TODO(avi): build the cursor image in Skia directly rather than going via
   // this roundabout path.
   cursor_info.customImage = gfx::CGImageToSkBitmap(cg_image.get());
-#else
-  cursor_info.customImage = cg_image.get();
-#endif
 
   InitFromCursorInfo(cursor_info);
 }
@@ -429,11 +522,7 @@ void WebCursor::InitFromNSCursor(NSCursor* cursor) {
       cursor_info.type = WebCursorInfo::TypeCustom;
       NSPoint hot_spot = [cursor hotSpot];
       cursor_info.hotSpot = WebKit::WebPoint(hot_spot.x, hot_spot.y);
-#if WEBKIT_USING_SKIA
       cursor_info.customImage = gfx::CGImageToSkBitmap(cg_image);
-#else
-      cursor_info.customImage = cg_image;
-#endif
     } else {
       cursor_info.type = WebCursorInfo::TypePointer;
     }
@@ -441,49 +530,6 @@ void WebCursor::InitFromNSCursor(NSCursor* cursor) {
 
   InitFromCursorInfo(cursor_info);
 }
-
-#if !WEBKIT_USING_SKIA
-void WebCursor::SetCustomData(const WebImage& image) {
-  if (image.isNull())
-    return;
-
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> cg_color(
-      CGColorSpaceCreateDeviceRGB());
-
-  const WebSize& image_dimensions = image.size();
-  int image_width = image_dimensions.width;
-  int image_height = image_dimensions.height;
-
-  size_t size = image_height * image_width * 4;
-  custom_data_.resize(size);
-  custom_size_.set_width(image_width);
-  custom_size_.set_height(image_height);
-
-  // These settings match up with the code in CreateCustomCursor() above; keep
-  // them in sync.
-  // TODO(avi): test to ensure that the flags here are correct for RGBA
-  base::mac::ScopedCFTypeRef<CGContextRef> context(
-      CGBitmapContextCreate(&custom_data_[0],
-                            image_width,
-                            image_height,
-                            8,
-                            image_width * 4,
-                            cg_color.get(),
-                            kCGImageAlphaPremultipliedLast |
-                            kCGBitmapByteOrder32Big));
-  CGRect rect = CGRectMake(0, 0, image_width, image_height);
-  CGContextDrawImage(context.get(), rect, image.getCGImageRef());
-}
-
-void WebCursor::ImageFromCustomData(WebImage* image) const {
-  if (custom_data_.empty())
-    return;
-
-  base::mac::ScopedCFTypeRef<CGImageRef> cg_image(
-      CreateCGImageFromCustomData(custom_data_, custom_size_));
-  *image = cg_image.get();
-}
-#endif  // !WEBKIT_USING_SKIA
 
 void WebCursor::InitPlatformData() {
   return;
@@ -493,7 +539,7 @@ bool WebCursor::SerializePlatformData(Pickle* pickle) const {
   return true;
 }
 
-bool WebCursor::DeserializePlatformData(const Pickle* pickle, void** iter) {
+bool WebCursor::DeserializePlatformData(PickleIterator* iter) {
   return true;
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,14 +12,18 @@
 namespace pp {
 
 class CompletionCallback;
-class Instance;
+class InstanceHandle;
 
 class UDPSocketPrivate : public Resource {
  public:
-  explicit UDPSocketPrivate(Instance* instance);
+  explicit UDPSocketPrivate(const InstanceHandle& instance);
+
+  // Returns true if the required interface is available.
+  static bool IsAvailable();
 
   int32_t Bind(const PP_NetAddress_Private* addr,
                const CompletionCallback& callback);
+  bool GetBoundAddress(PP_NetAddress_Private* addr);
   int32_t RecvFrom(char* buffer,
                    int32_t num_bytes,
                    const CompletionCallback& callback);
@@ -34,4 +38,3 @@ class UDPSocketPrivate : public Resource {
 }  // namespace pp
 
 #endif  // PPAPI_CPP_PRIVATE_UDP_SOCKET_PRIVATE_H_
-

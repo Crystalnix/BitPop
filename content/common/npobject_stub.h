@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -7,7 +7,6 @@
 
 #ifndef CONTENT_COMMON_NPOBJECT_STUB_H_
 #define CONTENT_COMMON_NPOBJECT_STUB_H_
-#pragma once
 
 #include <vector>
 
@@ -15,7 +14,8 @@
 #include "base/memory/weak_ptr.h"
 #include "content/common/npobject_base.h"
 #include "googleurl/src/gurl.h"
-#include "ipc/ipc_channel.h"
+#include "ipc/ipc_listener.h"
+#include "ipc/ipc_sender.h"
 #include "ui/gfx/native_widget_types.h"
 
 class NPChannelBase;
@@ -26,8 +26,8 @@ struct NPVariant_Param;
 // This wraps an NPObject and converts IPC messages from NPObjectProxy to calls
 // to the object.  The results are marshalled back.  See npobject_proxy.h for
 // more information.
-class NPObjectStub : public IPC::Channel::Listener,
-                     public IPC::Message::Sender,
+class NPObjectStub : public IPC::Listener,
+                     public IPC::Sender,
                      public base::SupportsWeakPtr<NPObjectStub>,
                      public NPObjectBase {
  public:
@@ -41,18 +41,19 @@ class NPObjectStub : public IPC::Channel::Listener,
   // Schedules tear-down of this stub.  The underlying NPObject reference is
   // released, and further invokations form the IPC channel will fail once this
   // call has returned.  Deletion of the stub is deferred to the main loop, in
-  // case it is touched as the stack unwinds.
+  // case it is touched as the stack unwinds.  DeleteSoon() is safe to call
+  // more than once, until control returns to the main loop.
   void DeleteSoon();
 
-  // IPC::Message::Sender implementation:
+  // IPC::Sender implementation:
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
   // NPObjectBase implementation.
   virtual NPObject* GetUnderlyingNPObject() OVERRIDE;
-  virtual IPC::Channel::Listener* GetChannelListener() OVERRIDE;
+  virtual IPC::Listener* GetChannelListener() OVERRIDE;
 
  private:
-  // IPC::Channel::Listener implementation:
+  // IPC::Listener implementation:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void OnChannelError() OVERRIDE;
 

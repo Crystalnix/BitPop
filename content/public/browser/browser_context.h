@@ -4,9 +4,14 @@
 
 #ifndef CONTENT_PUBLIC_BROWSER_BROWSER_CONTEXT_H_
 #define CONTENT_PUBLIC_BROWSER_BROWSER_CONTEXT_H_
-#pragma once
 
 #include "base/hash_tables.h"
+#include "base/supports_user_data.h"
+#include "content/common/content_export.h"
+
+namespace appcache {
+class AppCacheService;
+}
 
 namespace fileapi {
 class FileSystemContext;
@@ -18,46 +23,66 @@ class URLRequestContextGetter;
 
 namespace quota {
 class QuotaManager;
+class SpecialStoragePolicy;
 }
 
 namespace webkit_database {
 class DatabaseTracker;
 }
 
-class ChromeAppCacheService;
-class ChromeBlobStorageContext;
 class FilePath;
-class SpeechInputPreferences;
-class SSLHostState;
-class WebKitContext;
 
 namespace content {
 
+class DOMStorageContext;
 class DownloadManager;
+class DownloadManagerDelegate;
 class GeolocationPermissionContext;
-class HostZoomMap;
+class IndexedDBContext;
 class ResourceContext;
+class SpeechRecognitionPreferences;
 
 // This class holds the context needed for a browsing session.
-// It lives on the UI thread.
-class BrowserContext {
+// It lives on the UI thread. All these methods must only be called on the UI
+// thread.
+class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
  public:
-  virtual ~BrowserContext() {}
+  static DownloadManager* GetDownloadManager(BrowserContext* browser_context);
+  static quota::QuotaManager* GetQuotaManager(BrowserContext* browser_context);
+  static DOMStorageContext* GetDefaultDOMStorageContext(
+      BrowserContext* browser_context);
+  static DOMStorageContext* GetDOMStorageContext(
+      BrowserContext* browser_context, int renderer_child_id);
+  static IndexedDBContext* GetIndexedDBContext(BrowserContext* browser_context);
+  static webkit_database::DatabaseTracker* GetDatabaseTracker(
+      BrowserContext* browser_context);
+  static appcache::AppCacheService* GetAppCacheService(
+      BrowserContext* browser_context);
+  static fileapi::FileSystemContext* GetFileSystemContext(
+      BrowserContext* browser_context);
+
+  // Ensures that the corresponding ResourceContext is initialized. Normally the
+  // BrowserContext initializs the corresponding getters when its objects are
+  // created, but if the embedder wants to pass the ResourceContext to another
+  // thread before they use BrowserContext, they should call this to make sure
+  // that the ResourceContext is ready.
+  static void EnsureResourceContextInitialized(BrowserContext* browser_context);
+
+  // Tells the HTML5 objects on this context to persist their session state
+  // across the next restart.
+  static void SaveSessionState(BrowserContext* browser_context);
+
+  // Tells the HTML5 objects on this context to purge any uneeded memory.
+  static void PurgeMemory(BrowserContext* browser_context);
+
+  virtual ~BrowserContext();
 
   // Returns the path of the directory where this context's data is stored.
   virtual FilePath GetPath() = 0;
 
   // Return whether this context is incognito. Default is false.
   // This doesn't belong here; http://crbug.com/89628
-  virtual bool IsOffTheRecord() = 0;
-
-  // Retrieves a pointer to the SSLHostState associated with this context.
-  // The SSLHostState is lazily created the first time that this method is
-  // called.
-  virtual SSLHostState* GetSSLHostState() = 0;
-
-  // Returns the DownloadManager associated with this context.
-  virtual content::DownloadManager* GetDownloadManager() = 0;
+  virtual bool IsOffTheRecord() const = 0;
 
   // Returns the request context information associated with this context.  Call
   // this only on the UI thread, since it can send notifications that should
@@ -73,35 +98,33 @@ class BrowserContext {
   virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
       int renderer_child_id) = 0;
 
-  // Returns the request context for media resources asociated with this
+  // Returns the request context for media resources associated with this
   // context.
   virtual net::URLRequestContextGetter* GetRequestContextForMedia() = 0;
 
   // Returns the resource context.
-  virtual const ResourceContext& GetResourceContext() = 0;
+  virtual ResourceContext* GetResourceContext() = 0;
 
-  // Returns the Hostname <-> Zoom Level map for this context.
-  virtual HostZoomMap* GetHostZoomMap() = 0;
+  // Returns the DownloadManagerDelegate for this context. This will be called
+  // once per context. The embedder owns the delegate and is responsible for
+  // ensuring that it outlives DownloadManager. It's valid to return NULL.
+  virtual DownloadManagerDelegate* GetDownloadManagerDelegate() = 0;
 
-  // Returns the geolocation permission context for this context.
+  // Returns the geolocation permission context for this context. It's valid to
+  // return NULL, in which case geolocation requests will always be allowed.
   virtual GeolocationPermissionContext* GetGeolocationPermissionContext() = 0;
 
-  // Returns the speech input preferences. SpeechInputPreferences is a
-  // ref counted class, so callers should take a reference if needed.
-  virtual SpeechInputPreferences* GetSpeechInputPreferences() = 0;
+  // Returns the speech input preferences. SpeechRecognitionPreferences is a
+  // ref counted class, so callers should take a reference if needed. It's valid
+  // to return NULL.
+  virtual SpeechRecognitionPreferences* GetSpeechRecognitionPreferences() = 0;
 
   // Returns true if the last time this context was open it was exited cleanly.
   // This doesn't belong here; http://crbug.com/90737
   virtual bool DidLastSessionExitCleanly() = 0;
 
-  // The following getters return references to various storage related
-  // contexts associated with this browser context.
-  virtual quota::QuotaManager* GetQuotaManager() = 0;
-  virtual WebKitContext* GetWebKitContext() = 0;
-  virtual webkit_database::DatabaseTracker* GetDatabaseTracker() = 0;
-  virtual ChromeBlobStorageContext* GetBlobStorageContext() = 0;
-  virtual ChromeAppCacheService* GetAppCacheService() = 0;
-  virtual fileapi::FileSystemContext* GetFileSystemContext() = 0;
+  // Returns a special storage policy implementation, or NULL.
+  virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() = 0;
 };
 
 }  // namespace content

@@ -1,10 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  const OptionsPage = options.OptionsPage;
-  const ArrayDataModel = cr.ui.ArrayDataModel;
+  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
 
   /**
    * Encapsulated handling of search engine management page.
@@ -13,7 +13,7 @@ cr.define('options', function() {
   function SearchEngineManager() {
     this.activeNavTab = null;
     OptionsPage.call(this, 'searchEngines',
-                     templateData.searchEngineManagerPageTabTitle,
+                     loadTimeData.getString('searchEngineManagerPageTabTitle'),
                      'search-engine-manager-page');
   }
 
@@ -51,6 +51,10 @@ cr.define('options', function() {
 
       this.extensionList_ = $('extension-keyword-list');
       this.setUpList_(this.extensionList_);
+
+      $('search-engine-manager-confirm').onclick = function() {
+        OptionsPage.closeOverlay();
+      };
     },
 
     /**
@@ -75,9 +79,9 @@ cr.define('options', function() {
 
       otherEngines = otherEngines.map(function(x) {
         return [x, x['name'].toLocaleLowerCase()];
-      }).sort(function(a,b){
+      }).sort(function(a, b) {
         return a[1].localeCompare(b[1]);
-      }).map(function(x){
+      }).map(function(x) {
         return x[0];
       });
 

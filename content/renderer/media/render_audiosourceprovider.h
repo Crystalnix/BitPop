@@ -6,12 +6,12 @@
 //     WebKit::WebAudioSourceProvider <---> media::AudioRendererSink
 //
 // RenderAudioSourceProvider is a "sink" of audio, and uses a default
-// AudioDevice if a client has not explicitly been set.
+// AudioOutputDevice if a client has not explicitly been set.
 //
 // WebKit optionally sets a client, and then periodically calls provideInput()
 // to render a certain number of audio sample-frames.  provideInput()
 // uses the renderer to get this data, and then massages it into the form
-// required by provideInput().  In this case, the default AudioDevice
+// required by provideInput().  In this case, the default AudioOutputDevice
 // is no longer used.
 //
 // THREAD SAFETY:
@@ -24,7 +24,7 @@
 
 #include <vector>
 
-#include "content/renderer/media/audio_device.h"
+#include "base/synchronization/lock.h"
 #include "media/base/audio_renderer_sink.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAudioSourceProvider.h"
@@ -38,7 +38,6 @@ class RenderAudioSourceProvider
       public media::AudioRendererSink {
  public:
   RenderAudioSourceProvider();
-  virtual ~RenderAudioSourceProvider();
 
   // WebKit::WebAudioSourceProvider implementation.
 
@@ -58,21 +57,19 @@ class RenderAudioSourceProvider
   virtual void Play() OVERRIDE;
   virtual void Pause(bool flush) OVERRIDE;
   virtual bool SetVolume(double volume) OVERRIDE;
-  virtual void GetVolume(double* volume) OVERRIDE;
-  virtual void Initialize(size_t buffer_size,
-                          int channels,
-                          double sample_rate,
-                          AudioParameters::Format latency_format,
+  virtual void Initialize(const media::AudioParameters& params,
                           RenderCallback* renderer) OVERRIDE;
+
+ protected:
+  virtual ~RenderAudioSourceProvider();
 
  private:
   // Set to true when Initialize() is called.
   bool is_initialized_;
   int channels_;
-  double sample_rate_;
+  int sample_rate_;
 
   bool is_running_;
-  double volume_;
   media::AudioRendererSink::RenderCallback* renderer_;
   WebKit::WebAudioSourceProviderClient* client_;
 

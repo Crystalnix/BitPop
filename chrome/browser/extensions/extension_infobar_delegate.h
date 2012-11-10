@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_EXTENSIONS_EXTENSION_INFOBAR_DELEGATE_H_
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_INFOBAR_DELEGATE_H_
-#pragma once
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
@@ -12,9 +11,12 @@
 #include "content/public/browser/notification_registrar.h"
 
 class Browser;
+class GURL;
+
+namespace extensions {
 class Extension;
 class ExtensionHost;
-class GURL;
+}
 
 // The InfobarDelegate for creating and managing state for the ExtensionInfobar
 // plus monitor when the extension goes away.
@@ -32,12 +34,12 @@ class ExtensionInfoBarDelegate : public InfoBarDelegate,
 
   ExtensionInfoBarDelegate(Browser* browser,
                            InfoBarTabHelper* infobar_helper,
-                           const Extension* extension,
+                           const extensions::Extension* extension,
                            const GURL& url,
                            int height);
 
-  const Extension* extension() { return extension_; }
-  ExtensionHost* extension_host() { return extension_host_.get(); }
+  const extensions::Extension* extension() { return extension_; }
+  extensions::ExtensionHost* extension_host() { return extension_host_.get(); }
   int height() { return height_; }
 
   void set_observer(DelegateObserver* observer) { observer_ = observer; }
@@ -65,12 +67,12 @@ class ExtensionInfoBarDelegate : public InfoBarDelegate,
   // own this since the InfoBar gets deleted and recreated when you switch tabs
   // and come back (and we don't want the user's interaction with the InfoBar to
   // get lost at that point).
-  scoped_ptr<ExtensionHost> extension_host_;
+  scoped_ptr<extensions::ExtensionHost> extension_host_;
 
   // The observer monitoring when the delegate dies.
   DelegateObserver* observer_;
 
-  const Extension* extension_;
+  const extensions::Extension* extension_;
   content::NotificationRegistrar registrar_;
 
   // The requested height of the infobar (in pixels).

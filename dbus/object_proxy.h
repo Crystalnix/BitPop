@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef DBUS_OBJECT_PROXY_H_
 #define DBUS_OBJECT_PROXY_H_
-#pragma once
 
 #include <dbus/dbus.h>
 
@@ -14,11 +13,14 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "base/string_piece.h"
 #include "base/time.h"
+#include "dbus/object_path.h"
 
 namespace dbus {
 
 class Bus;
+class ErrorResponse;
 class MethodCall;
 class Response;
 class Signal;
@@ -27,14 +29,25 @@ class Signal;
 // calling methods of these objects.
 //
 // ObjectProxy is a ref counted object, to ensure that |this| of the
-// object is is alive when callbacks referencing |this| are called.
+// object is is alive when callbacks referencing |this| are called; the
+// bus always holds at least one of those references so object proxies
+// always last as long as the bus that created them.
 class ObjectProxy : public base::RefCountedThreadSafe<ObjectProxy> {
  public:
-  // Client code should use Bus::GetObjectProxy() instead of this
-  // constructor.
+  // Client code should use Bus::GetObjectProxy() or
+  // Bus::GetObjectProxyWithOptions() instead of this constructor.
   ObjectProxy(Bus* bus,
               const std::string& service_name,
-              const std::string& object_path);
+              const ObjectPath& object_path,
+              int options);
+
+  // Options to be OR-ed together when calling Bus::GetObjectProxyWithOptions().
+  // Set the IGNORE_SERVICE_UNKNOWN_ERRORS option to silence logging of
+  // org.freedesktop.DBus.Error.ServiceUnknown errors.
+  enum Options {
+    DEFAULT_OPTIONS = 0,
+    IGNORE_SERVICE_UNKNOWN_ERRORS = 1 << 0
+  };
 
   // Special timeout constants.
   //
@@ -45,6 +58,10 @@ class ObjectProxy : public base::RefCountedThreadSafe<ObjectProxy> {
     TIMEOUT_USE_DEFAULT = -1,
     TIMEOUT_INFINITE = 0x7fffffff,
   };
+
+  // Called when an error response is returned or no response is returned.
+  // Used for CallMethodWithErrorCallback().
+  typedef base::Callback<void(ErrorResponse*)> ErrorCallback;
 
   // Called when the response is returned. Used for CallMethod().
   typedef base::Callback<void(Response*)> ResponseCallback;
@@ -62,6 +79,7 @@ class ObjectProxy : public base::RefCountedThreadSafe<ObjectProxy> {
 
   // Calls the method of the remote object and blocks until the response
   // is returned. Returns NULL on error.
+  // The caller is responsible to delete the returned object.
   //
   // BLOCKING CALL.
   virtual Response* CallMethodAndBlock(MethodCall* method_call,
@@ -85,7 +103,28 @@ class ObjectProxy : public base::RefCountedThreadSafe<ObjectProxy> {
                           int timeout_ms,
                           ResponseCallback callback);
 
-  // Requests to connect to the signal from the remote object.
+  // Requests to call the method of the remote object.
+  //
+  // |callback| and |error_callback| will be called in the origin thread, once
+  // the method call is complete. As it's called in the origin thread,
+  // |callback| can safely reference objects in the origin thread (i.e.
+  // UI thread in most cases). If the caller is not interested in the response
+  // from the method (i.e. calling a method that does not return a value),
+  // EmptyResponseCallback() can be passed to the |callback| parameter.
+  //
+  // If the method call is successful, a pointer to Response object will
+  // be passed to the callback. If unsuccessful, the error callback will be
+  // called and a pointer to ErrorResponse object will be passed to the error
+  // callback if available, otherwise NULL will be passed.
+  //
+  // Must be called in the origin thread.
+  virtual void CallMethodWithErrorCallback(MethodCall* method_call,
+                                           int timeout_ms,
+                                           ResponseCallback callback,
+                                           ErrorCallback error_callback);
+
+  // Requests to connect to the signal from the remote object, replacing
+  // any previous |signal_callback| connected to that signal.
   //
   // |signal_callback| will be called in the origin thread, when the
   // signal is received from the remote object. As it's called in the
@@ -123,11 +162,13 @@ class ObjectProxy : public base::RefCountedThreadSafe<ObjectProxy> {
   struct OnPendingCallIsCompleteData {
     OnPendingCallIsCompleteData(ObjectProxy* in_object_proxy,
                                 ResponseCallback in_response_callback,
+                                ErrorCallback error_callback,
                                 base::TimeTicks start_time);
     ~OnPendingCallIsCompleteData();
 
     ObjectProxy* object_proxy;
     ResponseCallback response_callback;
+    ErrorCallback error_callback;
     base::TimeTicks start_time;
   };
 
@@ -136,15 +177,18 @@ class ObjectProxy : public base::RefCountedThreadSafe<ObjectProxy> {
   void StartAsyncMethodCall(int timeout_ms,
                             DBusMessage* request_message,
                             ResponseCallback response_callback,
+                            ErrorCallback error_callback,
                             base::TimeTicks start_time);
 
   // Called when the pending call is complete.
   void OnPendingCallIsComplete(DBusPendingCall* pending_call,
                                ResponseCallback response_callback,
+                               ErrorCallback error_callback,
                                base::TimeTicks start_time);
 
   // Runs the response callback with the given response object.
   void RunResponseCallback(ResponseCallback response_callback,
+                           ErrorCallback error_callback,
                            base::TimeTicks start_time,
                            DBusMessage* response_message);
 
@@ -180,9 +224,21 @@ class ObjectProxy : public base::RefCountedThreadSafe<ObjectProxy> {
                                               DBusMessage* raw_message,
                                               void* user_data);
 
+  // Helper method for logging response errors appropriately.
+  void LogMethodCallFailure(const base::StringPiece& interface_name,
+                            const base::StringPiece& method_name,
+                            const base::StringPiece& error_name,
+                            const base::StringPiece& error_message) const;
+
+  // Used as ErrorCallback by CallMethod().
+  void OnCallMethodError(const std::string& interface_name,
+                         const std::string& method_name,
+                         ResponseCallback response_callback,
+                         ErrorResponse* error_response);
+
   scoped_refptr<Bus> bus_;
   std::string service_name_;
-  std::string object_path_;
+  ObjectPath object_path_;
 
   // True if the message filter was added.
   bool filter_added_;
@@ -193,6 +249,8 @@ class ObjectProxy : public base::RefCountedThreadSafe<ObjectProxy> {
   MethodTable method_table_;
 
   std::set<std::string> match_rules_;
+
+  const bool ignore_service_unknown_errors_;
 
   DISALLOW_COPY_AND_ASSIGN(ObjectProxy);
 };

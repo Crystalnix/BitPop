@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -111,7 +111,7 @@ def Parse(xtb_file, callback_function, defs={}, debug=False):
   (if is_placeholder is True).
 
   Args:
-    xtb_file:           file('fr.xtb')
+    xtb_file:           open('fr.xtb')
     callback_function:  def Callback(msg_id, parts): pass
 
   Return:

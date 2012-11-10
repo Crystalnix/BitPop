@@ -10,6 +10,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "../../gpu_export.h"
 #include "../common/logging.h"
 #include "../common/constants.h"
 #include "../common/cmd_buffer_common.h"
@@ -32,7 +33,7 @@ namespace gpu {
 //
 // helper.WaitForToken(token);  // this doesn't return until the first two
 //                              // commands have been executed.
-class CommandBufferHelper {
+class GPU_EXPORT CommandBufferHelper {
  public:
   explicit CommandBufferHelper(CommandBuffer* command_buffer);
   virtual ~CommandBufferHelper();
@@ -128,7 +129,7 @@ class CommandBufferHelper {
   // Common Commands
   void Noop(uint32 skip_count) {
     cmd::Noop* cmd = GetImmediateCmdSpace<cmd::Noop>(
-        skip_count * sizeof(CommandBufferEntry));
+        (skip_count - 1) * sizeof(CommandBufferEntry));
     if (cmd) {
       cmd->Init(skip_count);
     }
@@ -208,14 +209,20 @@ class CommandBufferHelper {
     }
   }
 
-  void GetBucketSize(uint32 bucket_id,
-                     uint32 shared_memory_id,
-                     uint32 shared_memory_offset) {
-    cmd::GetBucketSize* cmd = GetCmdSpace<cmd::GetBucketSize>();
+  void GetBucketStart(uint32 bucket_id,
+                      uint32 result_memory_id,
+                      uint32 result_memory_offset,
+                      uint32 data_memory_size,
+                      uint32 data_memory_id,
+                      uint32 data_memory_offset) {
+    cmd::GetBucketStart* cmd = GetCmdSpace<cmd::GetBucketStart>();
     if (cmd) {
       cmd->Init(bucket_id,
-                shared_memory_id,
-                shared_memory_offset);
+                result_memory_id,
+                result_memory_offset,
+                data_memory_size,
+                data_memory_id,
+                data_memory_offset);
     }
   }
 

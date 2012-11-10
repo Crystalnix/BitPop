@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,8 +15,8 @@ namespace views {
 
 FrameBackground::FrameBackground()
   : frame_color_(0),
-    theme_bitmap_(NULL),
-    theme_overlay_bitmap_(NULL),
+    theme_image_(NULL),
+    theme_overlay_image_(NULL),
     top_area_height_(0),
     left_edge_(NULL),
     top_edge_(NULL),
@@ -35,32 +35,24 @@ FrameBackground::FrameBackground()
 FrameBackground::~FrameBackground() {
 }
 
-void FrameBackground::SetSideImages(SkBitmap* left,
-                                    SkBitmap* top,
-                                    SkBitmap* right,
-                                    SkBitmap* bottom) {
+void FrameBackground::SetSideImages(const gfx::ImageSkia* left,
+                                    const gfx::ImageSkia* top,
+                                    const gfx::ImageSkia* right,
+                                    const gfx::ImageSkia* bottom) {
   left_edge_ = left;
   top_edge_ = top;
   right_edge_ = right;
   bottom_edge_ = bottom;
 }
 
-void FrameBackground::SetCornerImages(SkBitmap* top_left,
-                                      SkBitmap* top_right,
-                                      SkBitmap* bottom_left,
-                                      SkBitmap* bottom_right) {
+void FrameBackground::SetCornerImages(const gfx::ImageSkia* top_left,
+                                      const gfx::ImageSkia* top_right,
+                                      const gfx::ImageSkia* bottom_left,
+                                      const gfx::ImageSkia* bottom_right) {
   top_left_corner_ = top_left;
   top_right_corner_ = top_right;
   bottom_left_corner_ = bottom_left;
   bottom_right_corner_ = bottom_right;
-}
-
-void FrameBackground::SetMaximizedCorners(SkBitmap* top_left,
-                                          SkBitmap* top_right,
-                                          int top_offset) {
-  maximized_top_left_ = top_left;
-  maximized_top_right_ = top_right;
-  maximized_top_offset_ = top_offset;
 }
 
 void FrameBackground::PaintRestored(gfx::Canvas* canvas, View* view) const {
@@ -69,22 +61,22 @@ void FrameBackground::PaintRestored(gfx::Canvas* canvas, View* view) const {
   PaintFrameColor(canvas, view);
 
   // Draw the theme frame.
-  canvas->TileImageInt(*theme_bitmap_,
-                       0, 0, view->width(), theme_bitmap_->height());
+  canvas->TileImageInt(*theme_image_,
+                       0, 0, view->width(), theme_image_->height());
 
   // Draw the theme frame overlay, if available.
-  if (theme_overlay_bitmap_)
-    canvas->DrawBitmapInt(*theme_overlay_bitmap_, 0, 0);
+  if (theme_overlay_image_)
+    canvas->DrawImageInt(*theme_overlay_image_, 0, 0);
 
   // Draw the top corners and edge, scaling the corner images down if they
   // are too big and relative to the vertical space available.
   int top_left_height =
       std::min(top_left_corner_->height(),
                view->height() - bottom_left_corner_->height());
-  canvas->DrawBitmapInt(*top_left_corner_,
-                        0, 0, top_left_corner_->width(), top_left_height,
-                        0, 0, top_left_corner_->width(), top_left_height,
-                        false);
+  canvas->DrawImageInt(*top_left_corner_,
+                       0, 0, top_left_corner_->width(), top_left_height,
+                       0, 0, top_left_corner_->width(), top_left_height,
+                       false);
   canvas->TileImageInt(*top_edge_,
       top_left_corner_->width(),
       0,
@@ -93,12 +85,12 @@ void FrameBackground::PaintRestored(gfx::Canvas* canvas, View* view) const {
   int top_right_height =
       std::min(top_right_corner_->height(),
                view->height() - bottom_right_corner_->height());
-  canvas->DrawBitmapInt(*top_right_corner_,
-                        0, 0,
-                        top_right_corner_->width(), top_right_height,
-                        view->width() - top_right_corner_->width(), 0,
-                        top_right_corner_->width(), top_right_height,
-                        false);
+  canvas->DrawImageInt(*top_right_corner_,
+                       0, 0,
+                       top_right_corner_->width(), top_right_height,
+                       view->width() - top_right_corner_->width(), 0,
+                       top_right_corner_->width(), top_right_height,
+                       false);
 
   // Right edge.
   int right_edge_height =
@@ -110,9 +102,9 @@ void FrameBackground::PaintRestored(gfx::Canvas* canvas, View* view) const {
                        right_edge_height);
 
   // Bottom corners and edge.
-  canvas->DrawBitmapInt(*bottom_right_corner_,
-                        view->width() - bottom_right_corner_->width(),
-                        view->height() - bottom_right_corner_->height());
+  canvas->DrawImageInt(*bottom_right_corner_,
+                       view->width() - bottom_right_corner_->width(),
+                       view->height() - bottom_right_corner_->height());
   canvas->TileImageInt(
       *bottom_edge_,
       bottom_left_corner_->width(),
@@ -120,8 +112,8 @@ void FrameBackground::PaintRestored(gfx::Canvas* canvas, View* view) const {
       view->width() - bottom_left_corner_->width()
           - bottom_right_corner_->width(),
       bottom_edge_->height());
-  canvas->DrawBitmapInt(*bottom_left_corner_, 0,
-                        view->height() - bottom_left_corner_->height());
+  canvas->DrawImageInt(*bottom_left_corner_, 0,
+                       view->height() - bottom_left_corner_->height());
 
   // Left edge.
   int left_edge_height =
@@ -137,10 +129,10 @@ void FrameBackground::PaintMaximized(gfx::Canvas* canvas, View* view) const {
   // to fill in the area beneath the image.
   // TODO(jamescook): I'm not sure this is correct, as it doesn't seem to fully
   // account for the top_offset, but this is how it worked before.
-  int theme_frame_bottom = maximized_top_offset_ + theme_bitmap_->height();
+  int theme_frame_bottom = maximized_top_offset_ + theme_image_->height();
   if (top_area_height_ > theme_frame_bottom) {
-    canvas->FillRect(frame_color_,
-                     gfx::Rect(0, 0, view->width(), top_area_height_));
+    canvas->FillRect(gfx::Rect(0, 0, view->width(), top_area_height_),
+                     frame_color_);
   }
 
   int left_offset = 0;
@@ -153,26 +145,26 @@ void FrameBackground::PaintMaximized(gfx::Canvas* canvas, View* view) const {
     DCHECK(maximized_top_left_ && maximized_top_right_);
     left_offset = maximized_top_left_->width();
     right_offset = maximized_top_right_->width();
-    canvas->DrawBitmapInt(*maximized_top_left_, 0, 0);
-    canvas->DrawBitmapInt(*maximized_top_right_,
-                          view->width() - right_offset, 0);
+    canvas->DrawImageInt(*maximized_top_left_, 0, 0);
+    canvas->DrawImageInt(*maximized_top_right_,
+                         view->width() - right_offset, 0);
   }
 
   // Draw the theme frame.
-  canvas->TileImageInt(*theme_bitmap_,
+  canvas->TileImageInt(*theme_image_,
                        left_offset,
                        maximized_top_offset_,
                        view->width() - (left_offset + right_offset),
-                       theme_bitmap_->height());
+                       theme_image_->height());
   // Draw the theme frame overlay, if available.
-  if (theme_overlay_bitmap_)
-    canvas->DrawBitmapInt(*theme_overlay_bitmap_, 0, theme_background_y_);
+  if (theme_overlay_image_)
+    canvas->DrawImageInt(*theme_overlay_image_, 0, theme_background_y_);
 }
 
 void FrameBackground::PaintFrameColor(gfx::Canvas* canvas, View* view) const {
   // Fill the top area.
-  canvas->FillRect(frame_color_,
-                   gfx::Rect(0, 0, view->width(), top_area_height_));
+  canvas->FillRect(gfx::Rect(0, 0, view->width(), top_area_height_),
+                   frame_color_);
 
   // If the window is very short, we're done.
   int remaining_height = view->height() - top_area_height_;
@@ -180,14 +172,11 @@ void FrameBackground::PaintFrameColor(gfx::Canvas* canvas, View* view) const {
     return;
 
   // Fill down the sides.
-  canvas->FillRect(frame_color_,
-                   gfx::Rect(0, top_area_height_,
-                             left_edge_->width(), remaining_height));
-  canvas->FillRect(frame_color_,
-                   gfx::Rect(view->width() - right_edge_->width(),
-                             top_area_height_,
-                             right_edge_->width(),
-                             remaining_height));
+  canvas->FillRect(gfx::Rect(0, top_area_height_, left_edge_->width(),
+                             remaining_height), frame_color_);
+  canvas->FillRect(gfx::Rect(view->width() - right_edge_->width(),
+                             top_area_height_, right_edge_->width(),
+                             remaining_height), frame_color_);
 
   // If the window is very narrow, we're done.
   int center_width =
@@ -196,11 +185,10 @@ void FrameBackground::PaintFrameColor(gfx::Canvas* canvas, View* view) const {
     return;
 
   // Fill the bottom area.
-  canvas->FillRect(frame_color_,
-                   gfx::Rect(left_edge_->width(),
+  canvas->FillRect(gfx::Rect(left_edge_->width(),
                              view->height() - bottom_edge_->height(),
-                             center_width,
-                             bottom_edge_->height()));
+                             center_width, bottom_edge_->height()),
+                             frame_color_);
 }
 
 }  // namespace views

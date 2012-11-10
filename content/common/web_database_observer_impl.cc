@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/metrics/histogram.h"
 #include "base/string16.h"
 #include "content/common/database_messages.h"
+#include "third_party/sqlite/sqlite3.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabase.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 
@@ -60,9 +61,10 @@ int DetermineHistogramResult(int websql_error, int sqlite_error) {
 }  // namespace
 
 WebDatabaseObserverImpl::WebDatabaseObserverImpl(
-    IPC::Message::Sender* sender)
+    IPC::SyncMessageFilter* sender)
     : sender_(sender),
       open_connections_(new webkit_database::DatabaseConnectionsWrapper) {
+  DCHECK(sender);
 }
 
 WebDatabaseObserverImpl::~WebDatabaseObserverImpl() {
@@ -98,6 +100,7 @@ void WebDatabaseObserverImpl::reportOpenDatabaseResult(
     int sqlite_error) {
   HISTOGRAM_WEBSQL_RESULT("OpenResult", database, callsite,
                           websql_error, sqlite_error);
+  HandleSqliteError(database, sqlite_error);
 }
 
 void WebDatabaseObserverImpl::reportChangeVersionResult(
@@ -105,6 +108,7 @@ void WebDatabaseObserverImpl::reportChangeVersionResult(
     int sqlite_error) {
   HISTOGRAM_WEBSQL_RESULT("ChangeVersionResult", database, callsite,
                           websql_error, sqlite_error);
+  HandleSqliteError(database, sqlite_error);
 }
 
 void WebDatabaseObserverImpl::reportStartTransactionResult(
@@ -112,6 +116,7 @@ void WebDatabaseObserverImpl::reportStartTransactionResult(
     int sqlite_error) {
   HISTOGRAM_WEBSQL_RESULT("BeginResult", database, callsite,
                           websql_error, sqlite_error);
+  HandleSqliteError(database, sqlite_error);
 }
 
 void WebDatabaseObserverImpl::reportCommitTransactionResult(
@@ -119,6 +124,7 @@ void WebDatabaseObserverImpl::reportCommitTransactionResult(
     int sqlite_error) {
   HISTOGRAM_WEBSQL_RESULT("CommitResult", database, callsite,
                           websql_error, sqlite_error);
+  HandleSqliteError(database, sqlite_error);
 }
 
 void WebDatabaseObserverImpl::reportExecuteStatementResult(
@@ -126,6 +132,7 @@ void WebDatabaseObserverImpl::reportExecuteStatementResult(
     int sqlite_error) {
   HISTOGRAM_WEBSQL_RESULT("StatementResult", database, callsite,
                           websql_error, sqlite_error);
+  HandleSqliteError(database, sqlite_error);
 }
 
 void WebDatabaseObserverImpl::reportVacuumDatabaseResult(
@@ -138,8 +145,22 @@ void WebDatabaseObserverImpl::reportVacuumDatabaseResult(
     UMA_HISTOGRAM_ENUMERATION("websql.Async.VacuumResult",
                               result, kResultHistogramSize);
   }
+  HandleSqliteError(database, sqlite_error);
 }
 
 void WebDatabaseObserverImpl::WaitForAllDatabasesToClose() {
   open_connections_->WaitForAllDatabasesToClose();
+}
+
+void WebDatabaseObserverImpl::HandleSqliteError(
+    const WebDatabase& database, int error) {
+  // We filter out errors which the backend doesn't act on to avoid
+  // a unnecessary ipc traffic, this method can get called at a fairly
+  // high frequency (per-sqlstatement).
+  if (error == SQLITE_CORRUPT || error == SQLITE_NOTADB) {
+    sender_->Send(new DatabaseHostMsg_HandleSqliteError(
+        database.securityOrigin().databaseIdentifier(),
+        database.name(),
+        error));
+  }
 }

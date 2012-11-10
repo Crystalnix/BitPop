@@ -4,21 +4,25 @@
 
 #ifndef CHROME_BROWSER_TAB_CONTENTS_TAB_CONTENTS_SSL_HELPER_H_
 #define CHROME_BROWSER_TAB_CONTENTS_TAB_CONTENTS_SSL_HELPER_H_
-#pragma once
 
 #include <map>
 
+#include "base/callback_forward.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
-#include "content/public/browser/render_view_host_delegate.h"
 
 class SSLAddCertHandler;
-class SSLClientAuthHandler;
-class TabContentsWrapper;
+class TabContents;
+
+namespace net {
+class HttpNetworkSession;
+class SSLCertRequestInfo;
+class X509Certificate;
+}
 
 class TabContentsSSLHelper {
  public:
-  explicit TabContentsSSLHelper(TabContentsWrapper* tab_contents);
+  explicit TabContentsSSLHelper(TabContents* tab_contents);
   virtual ~TabContentsSSLHelper();
 
   // Called when |handler| encounters an error in verifying a received client
@@ -50,10 +54,12 @@ class TabContentsSSLHelper {
   // Displays a dialog for selecting a client certificate and returns it to
   // the |handler|.
   void ShowClientCertificateRequestDialog(
-      scoped_refptr<SSLClientAuthHandler> handler);
+      const net::HttpNetworkSession* network_session,
+      net::SSLCertRequestInfo* cert_request_info,
+      const base::Callback<void(net::X509Certificate*)>& callback);
 
  private:
-  TabContentsWrapper* tab_contents_;
+  TabContents* tab_contents_;
 
   class SSLAddCertData;
   std::map<int, linked_ptr<SSLAddCertData> > request_id_to_add_cert_data_;

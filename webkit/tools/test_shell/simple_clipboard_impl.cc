@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,11 @@
 #include "base/string16.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#if defined(USE_SYSTEM_ZLIB)
+#include <zlib.h>
+#else
 #include "third_party/zlib/zlib.h"
+#endif
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/size.h"
@@ -44,6 +48,10 @@ bool SimpleClipboardClient::IsFormatAvailable(
   return GetClipboard()->IsFormatAvailable(format, buffer);
 }
 
+void SimpleClipboardClient::Clear(ui::Clipboard::Buffer buffer) {
+  GetClipboard()->Clear(buffer);
+}
+
 void SimpleClipboardClient::ReadAvailableTypes(ui::Clipboard::Buffer buffer,
                                                std::vector<string16>* types,
                                                bool* contains_filenames) {
@@ -70,6 +78,11 @@ void SimpleClipboardClient::ReadHTML(ui::Clipboard::Buffer buffer,
                            fragment_start, fragment_end);
   if (url)
     *url = GURL(url_str);
+}
+
+void SimpleClipboardClient::ReadRTF(ui::Clipboard::Buffer buffer,
+                                    std::string* result) {
+  GetClipboard()->ReadRTF(buffer, result);
 }
 
 void SimpleClipboardClient::ReadImage(ui::Clipboard::Buffer buffer,

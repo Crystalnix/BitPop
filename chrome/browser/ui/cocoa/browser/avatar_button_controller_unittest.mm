@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,6 @@ class AvatarButtonControllerTest : public CocoaProfileTest {
   virtual void SetUp() {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(browser());
-    browser()->InitBrowserWindow();
 
     controller_.reset(
         [[AvatarButtonController alloc] initWithBrowser:browser()]);
@@ -36,8 +35,7 @@ class AvatarButtonControllerTest : public CocoaProfileTest {
   scoped_nsobject<AvatarButtonController> controller_;
 };
 
-// Only fails on 10.5 for some reason <http://crbug.com/99469>.
-TEST_F(AvatarButtonControllerTest, FLAKY_AddRemoveProfiles) {
+TEST_F(AvatarButtonControllerTest, AddRemoveProfiles) {
   EXPECT_TRUE([button() isHidden]);
 
   testing_profile_manager()->CreateTestingProfile("one");
@@ -54,8 +52,7 @@ TEST_F(AvatarButtonControllerTest, FLAKY_AddRemoveProfiles) {
   EXPECT_TRUE([button() isHidden]);
 }
 
-// Only fails on 10.5 for some reason <http://crbug.com/99469>.
-TEST_F(AvatarButtonControllerTest, FLAKY_DoubleOpen) {
+TEST_F(AvatarButtonControllerTest, DoubleOpen) {
   EXPECT_FALSE([controller() menuController]);
 
   [button() performClick:button()];

@@ -13,6 +13,7 @@
 #include "base/file_util.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/mac/authorization_util.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_logging.h"
 #include "base/mac/mac_util.h"
@@ -21,7 +22,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/sys_string_conversions.h"
 #include "base/threading/worker_pool.h"
-#include "chrome/browser/mac/authorization_util.h"
 #import "chrome/browser/mac/keystone_registration.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_version_info.h"
@@ -778,8 +778,8 @@ NSString* const kVersionKey = @"KSVersion";
   NSString* prompt = l10n_util::GetNSStringFWithFixup(
       IDS_PROMOTE_AUTHENTICATION_PROMPT,
       l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
-  ScopedAuthorizationRef authorization(
-      authorization_util::AuthorizationCreateToRunAsRoot(
+  base::mac::ScopedAuthorizationRef authorization(
+      base::mac::AuthorizationCreateToRunAsRoot(
           base::mac::NSToCFCast(prompt)));
   if (!authorization.get()) {
     return;
@@ -790,7 +790,7 @@ NSString* const kVersionKey = @"KSVersion";
 
 - (void)promoteTicketWithAuthorization:(AuthorizationRef)authorization_arg
                            synchronous:(BOOL)synchronous {
-  ScopedAuthorizationRef authorization(authorization_arg);
+  base::mac::ScopedAuthorizationRef authorization(authorization_arg);
   authorization_arg = NULL;
 
   if ([self asyncOperationPending]) {
@@ -846,7 +846,7 @@ NSString* const kVersionKey = @"KSVersion";
   const char* arguments[] = {userBrandFile, systemBrandFile, NULL};
 
   int exit_status;
-  OSStatus status = authorization_util::ExecuteWithPrivilegesAndWait(
+  OSStatus status = base::mac::ExecuteWithPrivilegesAndWait(
       authorization,
       preflightPathC,
       kAuthorizationFlagDefaults,
@@ -892,6 +892,12 @@ NSString* const kVersionKey = @"KSVersion";
 
   // Upon completion, ksr::KSRegistrationPromotionDidCompleteNotification will
   // be posted, and -promotionComplete: will be called.
+
+  // If synchronous, see to it that this happens immediately. Give it a
+  // 10-second deadline.
+  if (synchronous) {
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 10, false);
+  }
 }
 
 - (void)promotionComplete:(NSNotification*)notification {
@@ -909,6 +915,13 @@ NSString* const kVersionKey = @"KSVersion";
   } else {
     authorization_.reset();
     [self updateStatus:kAutoupdatePromoteFailed version:nil];
+  }
+
+  if (synchronousPromotion_) {
+    // The run loop doesn't need to wait for this any longer.
+    CFRunLoopRef runLoop = CFRunLoopGetCurrent();
+    CFRunLoopStop(runLoop);
+    CFRunLoopWakeUp(runLoop);
   }
 }
 
@@ -934,7 +947,7 @@ NSString* const kVersionKey = @"KSVersion";
   const char* arguments[] = {appPathC, NULL};
 
   int exit_status;
-  OSStatus status = authorization_util::ExecuteWithPrivilegesAndWait(
+  OSStatus status = base::mac::ExecuteWithPrivilegesAndWait(
       authorization_,
       toolPathC,
       kAuthorizationFlagDefaults,

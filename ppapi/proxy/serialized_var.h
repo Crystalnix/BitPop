@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,12 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
+#include "ppapi/proxy/var_serialization_rules.h"
+
+class PickleIterator;
 
 namespace IPC {
 class Message;
@@ -71,7 +75,7 @@ class PPAPI_PROXY_EXPORT SerializedVar {
   void WriteToMessage(IPC::Message* m) const {
     inner_->WriteToMessage(m);
   }
-  bool ReadFromMessage(const IPC::Message* m, void** iter) {
+  bool ReadFromMessage(const IPC::Message* m, PickleIterator* iter) {
     return inner_->ReadFromMessage(m, iter);
   }
 
@@ -87,7 +91,6 @@ class PPAPI_PROXY_EXPORT SerializedVar {
    public:
     Inner();
     Inner(VarSerializationRules* serialization_rules);
-    Inner(VarSerializationRules* serialization_rules, const PP_Var& var);
     ~Inner();
 
     VarSerializationRules* serialization_rules() {
@@ -98,24 +101,18 @@ class PPAPI_PROXY_EXPORT SerializedVar {
     }
 
     // See outer class's declarations above.
-    PP_Var GetVar() const;
-    PP_Var GetIncompleteVar() const;
+    PP_Var GetVar();
     void SetVar(PP_Var var);
-    const std::string& GetString() const;
-    std::string* GetStringPtr();
 
     // For the SerializedVarTestConstructor, this writes the Var value as if
     // it was just received off the wire, without any serialization rules.
     void ForceSetVarValueForTest(PP_Var value);
-    void ForceSetStringValueForTest(const std::string& str);
 
     void WriteToMessage(IPC::Message* m) const;
-    bool ReadFromMessage(const IPC::Message* m, void** iter);
+    bool ReadFromMessage(const IPC::Message* m, PickleIterator* iter);
 
-    // Sets the cleanup mode. See the CleanupMode enum below. These functions
-    // are not just a simple setter in order to require that the appropriate
-    // data is set along with the corresponding mode.
-    void SetCleanupModeToEndSendPassRef(Dispatcher* dispatcher);
+    // Sets the cleanup mode. See the CleanupMode enum below.
+    void SetCleanupModeToEndSendPassRef();
     void SetCleanupModeToEndReceiveCallerOwned();
 
    private:
@@ -131,13 +128,28 @@ class PPAPI_PROXY_EXPORT SerializedVar {
       END_RECEIVE_CALLER_OWNED
     };
 
+    // ReadFromMessage() may be called on the I/O thread, e.g., when reading the
+    // reply to a sync message. We cannot use the var tracker on the I/O thread,
+    // which means we cannot create PP_Var for PP_VARTYPE_STRING and
+    // PP_VARTYPE_ARRAY_BUFFER in ReadFromMessage(). So we save the raw var data
+    // and create PP_Var later when GetVar() is called, which should happen on
+    // the main thread.
+    struct RawVarData {
+      PP_VarType type;
+      std::string data;
+    };
+
+    // Converts |raw_var_data_| to |var_|. It is a no-op if |raw_var_data_| is
+    // NULL.
+    void ConvertRawVarData();
+
     // Rules for serializing and deserializing vars for this process type.
     // This may be NULL, but must be set before trying to serialize to IPC when
     // sending, or before converting back to a PP_Var when receiving.
-    VarSerializationRules* serialization_rules_;
+    scoped_refptr<VarSerializationRules> serialization_rules_;
 
     // If this is set to VARTYPE_STRING and the 'value.id' is 0, then the
-    // string_value_ contains the string. This means that the caller hasn't
+    // string_from_ipc_ holds the string. This means that the caller hasn't
     // called Deserialize with a valid Dispatcher yet, which is how we can
     // convert the serialized string value to a PP_Var string ID.
     //
@@ -146,15 +158,7 @@ class PPAPI_PROXY_EXPORT SerializedVar {
     // a string ID. Before this, the as_id will be 0 for VARTYPE_STRING.
     PP_Var var_;
 
-    // Holds the literal string value to/from IPC. This will be valid if the
-    // var_ is VARTYPE_STRING.
-    std::string string_value_;
-
     CleanupMode cleanup_mode_;
-
-    // The dispatcher saved for the call to EndSendPassRef for the cleanup.
-    // This is only valid when cleanup_mode == END_SEND_PASS_REF.
-    Dispatcher* dispatcher_for_end_send_pass_ref_;
 
 #ifndef NDEBUG
     // When being sent or received over IPC, we should only be serialized or
@@ -163,11 +167,15 @@ class PPAPI_PROXY_EXPORT SerializedVar {
     mutable bool has_been_deserialized_;
 #endif
 
+    // It will be non-NULL if there is PP_VARTYPE_STRING or
+    // PP_VARTYPE_ARRAY_BUFFER data from ReadFromMessage() that hasn't been
+    // converted to PP_Var.
+    scoped_ptr<RawVarData> raw_var_data_;
+
     DISALLOW_COPY_AND_ASSIGN(Inner);
   };
 
   SerializedVar(VarSerializationRules* serialization_rules);
-  SerializedVar(VarSerializationRules* serialization, const PP_Var& var);
 
   mutable scoped_refptr<Inner> inner_;
 };
@@ -213,6 +221,10 @@ class PPAPI_PROXY_EXPORT SerializedVarSendInput : public SerializedVar {
 //     Send(new MyFunctionMsg(&result));
 //     return result.Return(dispatcher());
 //   }
+//
+// TODO(yzshen): Move the dispatcher parameter to the constructor and store a
+// VarSerializationRules reference instead, in case the dispatcher is destroyed
+// while waiting for reply to the sync message.
 class PPAPI_PROXY_EXPORT ReceiveSerializedVarReturnValue
     : public SerializedVar {
  public:
@@ -253,8 +265,6 @@ class PPAPI_PROXY_EXPORT ReceiveSerializedException : public SerializedVar {
   bool IsThrown() const;
 
  private:
-  Dispatcher* dispatcher_;
-
   // The input/output exception we're wrapping. May be NULL.
   PP_Var* exception_;
 
@@ -317,12 +327,6 @@ class PPAPI_PROXY_EXPORT SerializedVarReceiveInput {
 
  private:
   const SerializedVar& serialized_;
-
-  // Since the SerializedVar is const, we can't set its dispatcher (which is
-  // OK since we don't need to). But since we need it for our own uses, we
-  // track it here. Will be NULL before Get() is called.
-  Dispatcher* dispatcher_;
-  PP_Var var_;
 };
 
 // For receiving an input vector of vars from the remote side.
@@ -451,13 +455,10 @@ class PPAPI_PROXY_EXPORT SerializedVarTestReader : public SerializedVar {
   // The "incomplete" var is the one sent over the wire. Strings and object
   // IDs have not yet been converted, so this is the thing that tests will
   // actually want to check.
-  PP_Var GetIncompleteVar() const { return inner_->GetIncompleteVar(); }
-
-  const std::string& GetString() const { return inner_->GetString(); }
+  PP_Var GetVar() const { return inner_->GetVar(); }
 };
 
 }  // namespace proxy
 }  // namespace ppapi
 
 #endif  // PPAPI_PROXY_SERIALIZED_VAR_H_
-

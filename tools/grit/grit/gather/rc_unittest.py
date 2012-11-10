@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 import os
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../..'))
 
 import unittest
 import StringIO
@@ -42,12 +42,14 @@ END
 
     f = StringIO.StringIO(buf)
 
-    out = rc.Section.FromFile(f, 'IDC_KLONKACC')
+    out = rc.Section(f, 'IDC_KLONKACC')
+    out.ReadSection()
     self.failUnless(out.GetText() == self.part_we_want)
 
-    out = rc.Section.FromFile(util.PathFromRoot(r'grit/testdata/klonk.rc'),
-                              'IDC_KLONKACC',
-                              encoding='utf-16')
+    out = rc.Section(util.PathFromRoot(r'grit/testdata/klonk.rc'),
+                     'IDC_KLONKACC',
+                     encoding='utf-16')
+    out.ReadSection()
     out_text = out.GetText().replace('\t', '')
     out_text = out_text.replace(' ', '')
     self.part_we_want = self.part_we_want.replace(' ', '')
@@ -55,7 +57,7 @@ END
 
 
   def testDialog(self):
-    dlg = rc.Dialog('''IDD_ABOUTBOX DIALOGEX 22, 17, 230, 75
+    dlg = rc.Dialog(StringIO.StringIO('''IDD_ABOUTBOX DIALOGEX 22, 17, 230, 75
 STYLE DS_SETFONT | DS_MODALFRAME | WS_CAPTION | WS_SYSMENU
 CAPTION "About"
 FONT 8, "System", 0, 0, 0x0
@@ -71,7 +73,7 @@ BEGIN
     LTEXT           "blablablabla blablabla blablablablablablablabla blablabla",
                     ID_SMURF, whatever...
 END
-''')
+'''), 'IDD_ABOUTBOX')
     dlg.Parse()
     self.failUnless(len(dlg.GetTextualIds()) == 7)
     self.failUnless(len(dlg.GetCliques()) == 6)
@@ -82,7 +84,7 @@ END
     self.failUnless(transl.strip() == dlg.GetText().strip())
 
   def testAlternateSkeleton(self):
-    dlg = rc.Dialog('''IDD_ABOUTBOX DIALOGEX 22, 17, 230, 75
+    dlg = rc.Dialog(StringIO.StringIO('''IDD_ABOUTBOX DIALOGEX 22, 17, 230, 75
 STYLE DS_SETFONT | DS_MODALFRAME | WS_CAPTION | WS_SYSMENU
 CAPTION "About"
 FONT 8, "System", 0, 0, 0x0
@@ -90,10 +92,10 @@ BEGIN
     LTEXT           "Yipee skippy",IDC_STATIC,49,10,119,8,
                     SS_NOPREFIX
 END
-''')
+'''), 'IDD_ABOUTBOX')
     dlg.Parse()
 
-    alt_dlg = rc.Dialog('''IDD_ABOUTBOX DIALOGEX 040704, 17, 230, 75
+    alt_dlg = rc.Dialog(StringIO.StringIO('''IDD_ABOUTBOX DIALOGEX 040704, 17, 230, 75
 STYLE DS_SETFONT | DS_MODALFRAME | WS_CAPTION | WS_SYSMENU
 CAPTION "XXXXXXXXX"
 FONT 8, "System", 0, 0, 0x0
@@ -101,7 +103,7 @@ BEGIN
     LTEXT           "XXXXXXXXXXXXXXXXX",IDC_STATIC,110978,10,119,8,
                     SS_NOPREFIX
 END
-''')
+'''), 'IDD_ABOUTBOX')
     alt_dlg.Parse()
 
     transl = dlg.Translate('en', skeleton_gatherer=alt_dlg)
@@ -110,7 +112,7 @@ END
     self.failUnless(transl.count('Yipee skippy'))
 
   def testMenu(self):
-    menu = rc.Menu('''IDC_KLONK MENU
+    menu = rc.Menu(StringIO.StringIO('''IDC_KLONK MENU
 BEGIN
     POPUP "&File """
     BEGIN
@@ -127,7 +129,7 @@ BEGIN
     BEGIN
         MENUITEM "&About ...",                  IDM_ABOUT
     END
-END''')
+END'''), 'IDC_KLONK')
 
     menu.Parse()
     self.failUnless(len(menu.GetTextualIds()) == 6)
@@ -139,7 +141,7 @@ END''')
     self.failUnless(transl.strip() == menu.GetText().strip())
 
   def testVersion(self):
-    version = rc.Version('''
+    version = rc.Version(StringIO.StringIO('''
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION 1,0,0,1
  PRODUCTVERSION 1,0,0,1
@@ -172,7 +174,7 @@ BEGIN
         VALUE "Translation", 0x409, 1252
     END
 END
-'''.strip())
+'''.strip()), 'VS_VERSION_INFO')
     version.Parse()
     self.failUnless(len(version.GetTextualIds()) == 1)
     self.failUnless(len(version.GetCliques()) == 4)
@@ -182,7 +184,7 @@ END
 
 
   def testRegressionDialogBox(self):
-    dialog = rc.Dialog('''
+    dialog = rc.Dialog(StringIO.StringIO('''
 IDD_SIDEBAR_WEATHER_PANEL_PROPPAGE DIALOGEX 0, 0, 205, 157
 STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
@@ -200,13 +202,13 @@ BEGIN
                     BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,3,144,51,10
     CONTROL         "Celsius",IDC_SIDEBAR_WEATHER_CELSIUS,"Button",
                     BS_AUTORADIOBUTTON,57,144,38,10
-END'''.strip())
+END'''.strip()), 'IDD_SIDEBAR_WEATHER_PANEL_PROPPAGE')
     dialog.Parse()
     self.failUnless(len(dialog.GetTextualIds()) == 10)
 
 
   def testRegressionDialogBox2(self):
-    dialog = rc.Dialog('''
+    dialog = rc.Dialog(StringIO.StringIO('''
 IDD_SIDEBAR_EMAIL_PANEL_PROPPAGE DIALOG DISCARDABLE 0, 0, 264, 220
 STYLE WS_CHILD
 FONT 8, "MS Shell Dlg"
@@ -220,46 +222,46 @@ BEGIN
                     LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
     LTEXT           "You can prevent certain emails from showing up in the sidebar with a filter.",
                     IDC_STATIC,16,18,234,18
-END'''.strip())
+END'''.strip()), 'IDD_SIDEBAR_EMAIL_PANEL_PROPPAGE')
     dialog.Parse()
     self.failUnless('IDC_SIDEBAR_EMAIL_HIDDEN' in dialog.GetTextualIds())
 
 
   def testRegressionMenuId(self):
-    menu = rc.Menu('''
+    menu = rc.Menu(StringIO.StringIO('''
 IDR_HYPERMENU_FOLDER MENU
 BEGIN
     POPUP "HyperFolder"
     BEGIN
         MENUITEM "Open Containing Folder",      IDM_OPENFOLDER
     END
-END'''.strip())
+END'''.strip()), 'IDR_HYPERMENU_FOLDER')
     menu.Parse()
     self.failUnless(len(menu.GetTextualIds()) == 2)
 
   def testRegressionNewlines(self):
-    menu = rc.Menu('''
+    menu = rc.Menu(StringIO.StringIO('''
 IDR_HYPERMENU_FOLDER MENU
 BEGIN
     POPUP "Hyper\\nFolder"
     BEGIN
         MENUITEM "Open Containing Folder",      IDM_OPENFOLDER
     END
-END'''.strip())
+END'''.strip()), 'IDR_HYPERMENU_FOLDER')
     menu.Parse()
     transl = menu.Translate('en')
     # Shouldn't find \\n (the \n shouldn't be changed to \\n)
     self.failUnless(transl.find('\\\\n') == -1)
 
   def testRegressionTabs(self):
-    menu = rc.Menu('''
+    menu = rc.Menu(StringIO.StringIO('''
 IDR_HYPERMENU_FOLDER MENU
 BEGIN
     POPUP "Hyper\\tFolder"
     BEGIN
         MENUITEM "Open Containing Folder",      IDM_OPENFOLDER
     END
-END'''.strip())
+END'''.strip()), 'IDR_HYPERMENU_FOLDER')
     menu.Parse()
     transl = menu.Translate('en')
     # Shouldn't find \\t (the \t shouldn't be changed to \\t)
@@ -278,7 +280,7 @@ END'''.strip())
     self.failUnless(unescaped == '..\\..\\trs\\res\\nav_first.gif')
 
   def testRegressionDialogItemsTextOnly(self):
-    dialog = rc.Dialog('''IDD_OPTIONS_SEARCH DIALOGEX 0, 0, 280, 292
+    dialog = rc.Dialog(StringIO.StringIO('''IDD_OPTIONS_SEARCH DIALOGEX 0, 0, 280, 292
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP |
     WS_DISABLED | WS_CAPTION | WS_SYSMENU
 CAPTION "Search"
@@ -291,7 +293,7 @@ BEGIN
     COMBOBOX        IDC_GOOGLE_HOME,87,245,177,256,CBS_DROPDOWNLIST |
                     WS_VSCROLL | WS_TABSTOP
     PUSHBUTTON      "Restore Defaults...",IDC_RESET,187,272,86,14
-END''')
+END'''), 'IDD_OPTIONS_SEARCH')
     dialog.Parse()
     translateables = [c.GetMessage().GetRealContent()
                       for c in dialog.GetCliques()]
@@ -299,14 +301,14 @@ END''')
     self.failUnless('Use Google site:' in translateables)
 
   def testAccelerators(self):
-    acc = rc.Accelerators('''\
+    acc = rc.Accelerators(StringIO.StringIO('''\
 IDR_ACCELERATOR1 ACCELERATORS
 BEGIN
     "^C",           ID_ACCELERATOR32770,    ASCII,  NOINVERT
     "^V",           ID_ACCELERATOR32771,    ASCII,  NOINVERT
     VK_INSERT,      ID_ACCELERATOR32772,    VIRTKEY, CONTROL, NOINVERT
 END
-''')
+'''), 'IDR_ACCELERATOR1')
     acc.Parse()
     self.failUnless(len(acc.GetTextualIds()) == 4)
     self.failUnless(len(acc.GetCliques()) == 0)
@@ -316,7 +318,7 @@ END
 
 
   def testRegressionEmptyString(self):
-    dlg = rc.Dialog('''\
+    dlg = rc.Dialog(StringIO.StringIO('''\
 IDD_CONFIRM_QUIT_GD_DLG DIALOGEX 0, 0, 267, 108
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP |
     WS_CAPTION
@@ -331,7 +333,7 @@ BEGIN
     CONTROL         "",
                     IDC_ENABLE_GD_AUTOSTART,"Button",BS_AUTOCHECKBOX |
                     WS_TABSTOP,33,70,231,10
-END''')
+END'''), 'IDD_CONFIRM_QUIT_GD_DLG')
     dlg.Parse()
 
     def Check():

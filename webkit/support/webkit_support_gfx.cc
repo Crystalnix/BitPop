@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,12 +14,21 @@ extern "C" {
 #else
 #include "third_party/libpng/png.h"
 #endif
+
+#if defined(USE_SYSTEM_ZLIB)
+#include <zlib.h>
+#else
+#include "third_party/zlib/zlib.h"
+#endif
 }
 
 namespace webkit_support {
 
 // Define macro here to make webkit_support_gfx independent of target base.
-#define NOTREACHED(msg) exit(1)
+// Note that the NOTREACHED() macro will result in a crash. This is preferable
+// to calling exit() / abort(), since the latter may not surfce the problem as
+// crash reports, making it hard to tell where the problem is.
+#define NOTREACHED(msg) *((volatile int*)0) = 3
 #define DCHECK(condition) \
   if (!(condition)) fprintf(stderr, "DCHECK failed: " #condition ".")
 
@@ -663,6 +672,20 @@ bool EncodeBGRAPNGWithChecksum(const unsigned char* input,
   std::vector<Comment> comments;
   comments.push_back(Comment("checksum", checksum));
   return Encode(input, FORMAT_BGRA,
+      width, height, row_byte_width, discard_transparency,
+      comments, output);
+}
+
+bool EncodeRGBAPNGWithChecksum(const unsigned char* input,
+                               int width,
+                               int height,
+                               int row_byte_width,
+                               bool discard_transparency,
+                               const std::string& checksum,
+                               std::vector<unsigned char>* output) {
+  std::vector<Comment> comments;
+  comments.push_back(Comment("checksum", checksum));
+  return Encode(input, FORMAT_RGBA,
       width, height, row_byte_width, discard_transparency,
       comments, output);
 }

@@ -8,6 +8,7 @@
 #include <string>
 
 #include "ppapi/c/dev/ppp_zoom_dev.h"
+#include "ppapi/cpp/instance_handle.h"
 
 namespace pp {
 
@@ -38,7 +39,7 @@ class Instance;
 //   };
 class Zoom_Dev {
  public:
-  Zoom_Dev(Instance* instance);
+  explicit Zoom_Dev(Instance* instance);
   virtual ~Zoom_Dev();
 
   // PPP_Zoom_Dev functions exposed as virtual functions for you to
@@ -50,7 +51,7 @@ class Zoom_Dev {
   void ZoomLimitsChanged(double minimum_factor, double maximium_factor);
 
  private:
-  Instance* associated_instance_;
+  InstanceHandle associated_instance_;
 };
 
 }  // namespace pp

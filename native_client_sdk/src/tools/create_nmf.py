@@ -29,9 +29,18 @@ FORMAT_ARCH_MAP = {
     # Names returned by x86_64-nacl-objdump:
     'elf64-nacl': 'x86-64',
     'elf32-nacl': 'x86-32',
-    # TODO(mball): Add support for 'arm-32' and 'portable' architectures
-    # 'elf32-little': 'arm-32',
-    }
+}
+
+ARCH_LOCATION = {
+    'x86-32': 'lib32',
+    'x86-64': 'lib64',
+}
+
+NAME_ARCH_MAP = {
+    '32.nexe': 'x86-32',
+    '64.nexe': 'x86-64',
+    'arm.nexe': 'arm'
+}
 
 # These constants are used within nmf files.
 RUNNABLE_LD = 'runnable-ld.so'  # Name of the dynamic loader
@@ -47,13 +56,28 @@ LD_NACL_MAP = {
     'x86-64': 'ld-nacl-x86-64.so.1',
 }
 
-_debug_mode = False  # Set to True to enable extra debug prints
-
 
 def DebugPrint(message):
-  if _debug_mode:
+  if DebugPrint.debug_mode:
     sys.stderr.write('%s\n' % message)
-    sys.stderr.flush()
+
+
+DebugPrint.debug_mode = False  # Set to True to enable extra debug prints
+
+
+def MakeDir(dirname):
+  """Just like os.makedirs but doesn't generate errors when dirname
+  already exists.
+  """
+  if os.path.isdir(dirname):
+    return
+
+  Trace("mkdir: %s" % dirname)
+  try:
+    os.makedirs(dirname)
+  except OSError as exception_info:
+    if exception_info.errno != errno.EEXIST:
+      raise
 
 
 class Error(Exception):
@@ -76,6 +100,9 @@ class ArchFile(object):
     self.path = path
     self.url = url or '/'.join([arch, name])
 
+  def __repr__(self):
+    return "<ArchFile %s>" % self.path
+
   def __str__(self):
     '''Return the file path when invoked with the str() function'''
     return self.path
@@ -90,8 +117,9 @@ class NmfUtils(object):
   '''
 
   def __init__(self, main_files=None, objdump='x86_64-nacl-objdump',
-               lib_path=None, extra_files=None, lib_prefix=None):
-    ''' Constructor
+               lib_path=None, extra_files=None, lib_prefix=None,
+               toolchain=None, remap={}):
+    '''Constructor
 
     Args:
       main_files: List of main entry program files.  These will be named
@@ -101,7 +129,11 @@ class NmfUtils(object):
       extra_files: List of extra files to include in the nmf
       lib_prefix: A list of path components to prepend to the library paths,
           both for staging the libraries and for inclusion into the nmf file.
-          Examples:  ['..'], ['lib_dir'] '''
+          Examples:  ['..'], ['lib_dir']
+      toolchain: Specify which toolchain newlib|glibc|pnacl which can require
+          different forms of the NMF.
+      remap: Remaps the library name in the manifest.
+      '''
     self.objdump = objdump
     self.main_files = main_files or []
     self.extra_files = extra_files or []
@@ -109,15 +141,19 @@ class NmfUtils(object):
     self.manifest = None
     self.needed = None
     self.lib_prefix = lib_prefix or []
+    self.toolchain = toolchain
+    self.remap = remap
+
 
   def GleanFromObjdump(self, files):
     '''Get architecture and dependency information for given files
 
     Args:
       files: A dict with key=filename and value=list or set of archs.  E.g.:
-          { '/path/to/my.nexe': ['x86-32', 'x86-64'],
-            '/path/to/libmy.so': ['x86-32'],
-            '/path/to/my2.nexe': None }  # Indicates all architectures
+          { '/path/to/my.nexe': ['x86-32']
+            '/path/to/lib64/libmy.so': ['x86-64'],
+            '/path/to/mydata.so': ['x86-32', 'x86-64'],
+            '/path/to/my.data': None }  # Indicates all architectures
 
     Returns: A tuple with the following members:
       input_info: A dict with key=filename and value=ArchFile of input files.
@@ -147,7 +183,7 @@ class NmfUtils(object):
               arch=arch,
               name=name,
               path=filename,
-              url='/'.join(self.lib_prefix + [arch, name]))
+              url='/'.join(self.lib_prefix + [ARCH_LOCATION[arch], name]))
       matched = NeededMatcher.match(line)
       if matched is not None:
         if files[filename] is None or arch in files[filename]:
@@ -183,13 +219,17 @@ class NmfUtils(object):
           Includes the input files as well, with arch filled in if absent.
           Example: { '/path/to/my.nexe': ArchFile(my.nexe),
                      '/path/to/libfoo.so': ArchFile(libfoo.so) }'''
-    if not self.needed:
-      DebugPrint('GetNeeded(%s)' % self.main_files)
+    if self.needed:
+      return self.needed
+
+    runnable = (self.toolchain != 'newlib' and self.toolchain != 'pnacl')
+    DebugPrint('GetNeeded(%s)' % self.main_files)
+    if runnable:
       examined = set()
       all_files, unexamined = self.GleanFromObjdump(
           dict([(file, None) for file in self.main_files]))
       for name, arch_file in all_files.items():
-        arch_file.url = os.path.basename(name)
+        arch_file.url = name
         if unexamined:
           unexamined.add('/'.join([arch_file.arch, RUNNABLE_LD]))
       while unexamined:
@@ -209,6 +249,16 @@ class NmfUtils(object):
         if arch_map.name in ldso:
           del all_files[name]
       self.needed = all_files
+    else:
+      need = {}
+      for filename in self.main_files:
+        arch = filename.split('_')[-1]
+        arch = NAME_ARCH_MAP[arch]
+        url = os.path.split(filename)[1]
+        need[filename] = ArchFile(arch=arch, name=os.path.basename(filename),
+                                  path=filename, url=url)
+      self.needed = need
+
     return self.needed
 
   def StageDependencies(self, destination_dir):
@@ -221,52 +271,61 @@ class NmfUtils(object):
     '''
     needed = self.GetNeeded()
     for source, arch_file in needed.items():
-      destination = os.path.join(destination_dir,
-                                 urllib.url2pathname(arch_file.url))
-      try:
-        os.makedirs(os.path.dirname(destination))
-      except OSError as exception_info:
-        if exception_info.errno != errno.EEXIST:
-          raise
+      urldest = urllib.url2pathname(arch_file.url)
+      if source.endswith('.nexe') and source in self.main_files:
+        urldest = os.path.basename(urldest)
+
+      destination = os.path.join(destination_dir, urldest)
+
       if (os.path.normcase(os.path.abspath(source)) !=
           os.path.normcase(os.path.abspath(destination))):
+        # make sure target dir exists
+        MakeDir(os.path.dirname(destination))
+
+        Trace("copy: %s -> %s" % (source, destination))
         shutil.copy2(source, destination)
 
   def _GenerateManifest(self):
-    programs = {}
-    files = {}
+    '''Create a JSON formatted dict containing the files
 
-    def add_files(needed):
-      for filename, arch_file in needed.items():
-        files.setdefault(arch_file.arch, set()).add(arch_file.name)
+    NaCl will map url requests based on architecture.  The startup NEXE
+    can always be found under the top key PROGRAM.  Additional files are under
+    the FILES key further mapped by file name.  In the case of 'runnable' the
+    PROGRAM key is populated with urls pointing the runnable-ld.so which acts
+    as the startup nexe.  The application itself, is then placed under the
+    FILES key mapped as 'main.exe' instead of it's original name so that the
+    loader can find it.'''
+    manifest = { FILES_KEY: {}, PROGRAM_KEY: {} }
+    runnable = (self.toolchain != 'newlib' and self.toolchain != 'pnacl')
 
     needed = self.GetNeeded()
-    add_files(needed)
+    for need, archinfo in needed.items():
+      urlinfo = { URL_KEY: archinfo.url }
+      name = archinfo.name
 
-    for filename in self.main_files:
-      arch_file = needed[filename]
-      programs[arch_file.arch] = arch_file.name
+      # If starting with runnable-ld.so, make that the main executable.
+      if runnable:
+        if need.endswith(RUNNABLE_LD):
+          manifest[PROGRAM_KEY][archinfo.arch] = urlinfo
+          continue
 
-    filemap = {}
-    for arch in files:
-      for file in files[arch]:
-        if file not in programs.values() and file != RUNNABLE_LD:
-          filemap.setdefault(file, set()).add(arch)
+      # For the main nexes:
+      if need.endswith('.nexe') and need in self.main_files:
+        # Ensure that the nexe name is relative, not absolute.
+        # We assume that the nexe and the corresponding nmf file are
+        # installed in the same directory.
+        urlinfo[URL_KEY] = os.path.basename(urlinfo[URL_KEY])
+        # Place it under program if we aren't using the runnable-ld.so.
+        if not runnable:
+          manifest[PROGRAM_KEY][archinfo.arch] = urlinfo
+          continue
+        # Otherwise, treat it like another another file named main.nexe.
+        name = MAIN_NEXE
 
-    def arch_name(arch, file):
-      # nmf files expect unix-style path separators
-      return {URL_KEY: '/'.join(self.lib_prefix + [arch, file])}
-
-    # TODO(mcgrathr): perhaps notice a program with no deps
-    # (i.e. statically linked) and generate program=nexe instead?
-    manifest = {PROGRAM_KEY: {}, FILES_KEY: {MAIN_NEXE: {}}}
-    for arch in programs:
-      manifest[PROGRAM_KEY][arch] = arch_name(arch, RUNNABLE_LD)
-      manifest[FILES_KEY][MAIN_NEXE][arch] = {URL_KEY: programs[arch]}
-
-    for file in filemap:
-      manifest[FILES_KEY][file] = dict([(arch, arch_name(arch, file))
-                                      for arch in filemap[file]])
+      name = self.remap.get(name, name)
+      fileinfo = manifest[FILES_KEY].get(name, {})
+      fileinfo[archinfo.arch] = urlinfo
+      manifest[FILES_KEY][name] = fileinfo
     self.manifest = manifest
 
   def GetManifest(self):
@@ -285,6 +344,26 @@ class NmfUtils(object):
     return '\n'.join([line.rstrip() for line in pretty_lines]) + '\n'
 
 
+def DetermineToolchain(objdump):
+  objdump = objdump.replace('\\', '/')
+  paths = objdump.split('/')
+  count = len(paths)
+  for index in range(count - 2, 0, -1):
+    if paths[index] == 'toolchain':
+      if paths[index + 1].endswith('newlib'):
+        return 'newlib'
+      if paths[index + 1].endswith('glibc'):
+        return 'glibc'
+  raise Error('Could not deternime which toolchain to use.')
+
+
+def Trace(msg):
+  if Trace.verbose:
+    sys.stderr.write(str(msg) + '\n')
+
+Trace.verbose = False
+
+
 def Main(argv):
   parser = optparse.OptionParser(
       usage='Usage: %prog [options] nexe [extra_libs...]')
@@ -301,18 +380,48 @@ def Main(argv):
   parser.add_option('-s', '--stage-dependencies', dest='stage_dependencies',
                     help='Destination directory for staging libraries',
                     metavar='DIRECTORY')
+  parser.add_option('-r', '--remove', dest='remove',
+                    help='Remove the prefix from the files.',
+                    metavar='PATH')
+  parser.add_option('-t', '--toolchain', dest='toolchain',
+                    help='Add DIRECTORY to library search path',
+                    default=None, metavar='TOOLCHAIN')
+  parser.add_option('-n', '--name', dest='name',
+                    help='Rename FOO as BAR',
+                    action='append', default=[], metavar='FOO,BAR')
+  parser.add_option('-v', '--verbose',
+                    help='Verbose output', action='store_true')
+  parser.add_option('-d', '--debug-mode',
+                    help='Debug mode', action='store_true')
   (options, args) = parser.parse_args(argv)
+  if options.verbose:
+    Trace.verbose = True
+  if options.debug_mode:
+    DebugPrint.debug_mode = True
 
   if len(args) < 1:
-    parser.print_usage()
-    sys.exit(1)
+    raise Error("No nexe files specified.  See --help for more info")
+
+  if not options.toolchain:
+    options.toolchain = DetermineToolchain(os.path.abspath(options.objdump))
+
+  if options.toolchain not in ['newlib', 'glibc', 'pnacl']:
+    raise Error('Unknown toolchain: ' + str(options.toolchain))
+
+  remap = {}
+  for ren in options.name:
+    parts = ren.split(',')
+    if len(parts) != 2:
+      raise Error('Expecting --name=<orig_arch.so>,<new_name.so>')
+    remap[parts[0]] = parts[1]
 
   nmf = NmfUtils(objdump=options.objdump,
                  main_files=args,
-                 lib_path=options.lib_path)
+                 lib_path=options.lib_path,
+                 toolchain=options.toolchain,
+                 remap=remap)
 
   manifest = nmf.GetManifest()
-
   if options.output is None:
     sys.stdout.write(nmf.GetJson())
   else:
@@ -320,9 +429,17 @@ def Main(argv):
       output.write(nmf.GetJson())
 
   if options.stage_dependencies:
+    Trace("Staging dependencies...")
     nmf.StageDependencies(options.stage_dependencies)
+
+  return 0
 
 
 # Invoke this file directly for simple testing.
 if __name__ == '__main__':
-  sys.exit(Main(sys.argv[1:]))
+  try:
+    rtn = Main(sys.argv[1:])
+  except Error, e:
+    print "%s: %s" % (os.path.basename(__file__), e)
+    rtn = 1
+  sys.exit(rtn)

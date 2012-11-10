@@ -1,15 +1,15 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_IMPORTER_PROFILE_WRITER_H_
 #define CHROME_BROWSER_IMPORTER_PROFILE_WRITER_H_
-#pragma once
 
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_vector.h"
 #include "base/string16.h"
 #include "base/time.h"
 #include "build/build_config.h"
@@ -61,7 +61,7 @@ class ProfileWriter : public base::RefCountedThreadSafe<ProfileWriter> {
   virtual void AddIE7PasswordInfo(const IE7PasswordInfo& info);
 #endif
 
-  virtual void AddHistoryPage(const std::vector<history::URLRow>& page,
+  virtual void AddHistoryPage(const history::URLRows& page,
                               history::VisitSource visit_source);
 
   virtual void AddHomepage(const GURL& homepage);
@@ -90,18 +90,15 @@ class ProfileWriter : public base::RefCountedThreadSafe<ProfileWriter> {
   virtual void AddFavicons(
       const std::vector<history::ImportedFaviconUsage>& favicons);
 
-  // Add the TemplateURLs in |template_urls| to the local store and make the
-  // TemplateURL at |default_keyword_index| the default keyword (does not set
-  // a default keyword if it is -1).  The local store becomes the owner of the
-  // TemplateURLs.  Some TemplateURLs in |template_urls| may conflict (same
-  // keyword or same host name in the URL) with existing TemplateURLs in the
-  // local store, in which case the existing ones takes precedence and the
-  // duplicate in |template_urls| are deleted.
-  // If unique_on_host_and_path a TemplateURL is only added if there is not an
-  // existing TemplateURL that has a replaceable search url with the same
-  // host+path combination.
-  virtual void AddKeywords(const std::vector<TemplateURL*>& template_urls,
-                           int default_keyword_index,
+  // Adds the TemplateURLs in |template_urls| to the local store.  The local
+  // store becomes the owner of the TemplateURLs.  Some TemplateURLs in
+  // |template_urls| may conflict (same keyword or same host name in the URL)
+  // with existing TemplateURLs in the local store, in which case the existing
+  // ones take precedence and the duplicates in |template_urls| are deleted.
+  // If |unique_on_host_and_path| is true, a TemplateURL is only added if there
+  // is not an existing TemplateURL that has a replaceable search url with the
+  // same host+path combination.
+  virtual void AddKeywords(ScopedVector<TemplateURL> template_urls,
                            bool unique_on_host_and_path);
 
  protected:

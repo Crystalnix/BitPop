@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -67,7 +67,7 @@ function compareTrees(left, right, verbose) {
     return true;
   }
   if (left == null || right == null)
-    return left + " !+ " + right;
+    return left + " != " + right;
   if (left.length != right.length)
     return "count mismatch: " + left.length + " != " + right.length;
   for (var i = 0; i < left.length; i++) {
@@ -168,6 +168,25 @@ chrome.test.runTests([
     }));
   },
 
+  function createNoParentId() {
+    var node = {title:"google", url:"http://www.google.com/"};
+    chrome.test.listenOnce(chrome.bookmarks.onCreated, function(id, created) {
+      node.id = created.id;
+      node.index = 0;
+      chrome.test.assertEq(id, node.id);
+      // Make sure the parentId defaults to the Other Bookmarks folder.
+      chrome.test.assertEq(expected[0].children[1].id, created.parentId);
+      chrome.test.assertTrue(compareNode(node, created));
+      expected[0].children[1].children.push(node);
+    });
+    chrome.bookmarks.create(node, pass(function(results) {
+      node.id = results.id;  // since we couldn't know this going in
+      node.index = 0;
+      chrome.test.assertTrue(compareNode(node, results),
+                             "created node != source");
+    }));
+  },
+
   function createInRoot() {
     const error = "Can't modify the root bookmark folders.";
     var node = {parentId:"0", title:"g404", url:"http://www.google.com/404"};
@@ -258,12 +277,11 @@ chrome.test.runTests([
                           pass(function(results) {
       chrome.test.assertEq(results.parentId, other.id);
       folder.parentId = results.parentId;
+      folder.index = results.index;
 
       var folder2 = expected[0].children[0].children.pop();
-      folder2.parentId = other.parentId;
-      folder2.index = 0;
+      chrome.test.assertEq(folder2.id, folder.id);
       expected[0].children[1].children.push(folder2);
-
       verifyTreeIsExpected(pass());
     }));
   },
@@ -343,9 +361,9 @@ chrome.test.runTests([
       // Update expected to match.
       // We removed node1, which means that the index of the other two nodes
       // changes as well.
-      expected[0].children[1].children[0].children.shift();
-      expected[0].children[1].children[0].children[0].index = 0;
-      expected[0].children[1].children[0].children[1].index = 1;
+      expected[0].children[1].children[1].children.shift();
+      expected[0].children[1].children[1].children[0].index = 0;
+      expected[0].children[1].children[1].children[1].index = 1;
 
       verifyTreeIsExpected(pass());
     }));
@@ -353,7 +371,7 @@ chrome.test.runTests([
 
   function removeTree() {
     var parentId = node2.parentId;
-    var folder = expected[0].children[1].children[0];
+    var folder = expected[0].children[1].children[1];
     chrome.test.listenOnce(chrome.bookmarks.onRemoved,
                            function(id, removeInfo) {
       chrome.test.assertEq(id, folder.id);
@@ -362,8 +380,7 @@ chrome.test.runTests([
     });
     chrome.bookmarks.removeTree(parentId, pass(function(){
       // Update expected to match.
-      expected[0].children[1].children.shift();
-
+      expected[0].children[1].children.pop();
       verifyTreeIsExpected(pass());
     }));
   },
@@ -418,9 +435,8 @@ chrome.test.runTests([
       chrome.bookmarks.getChildren(id, pass(function(children) {
         children.forEach(function(child, i) {
           chrome.bookmarks.removeTree(child.id, pass(function() {}));
-
           // When we have removed the last child we can continue.
-          if (i == children.length - 1)
+          if (id == "2" && i == children.length - 1)
             afterRemove();
         });
       }));

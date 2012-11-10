@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,15 +10,15 @@
 #include <vector>
 
 #include "base/file_util.h"
-#include "base/json/json_value_serializer.h"
+#include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/stringprintf.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_message_bundle.h"
+#include "chrome/common/extensions/message_bundle.h"
 #include "chrome/common/url_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "unicode/uloc.h"
@@ -48,7 +48,7 @@ std::string GetDefaultLocaleFromManifest(const DictionaryValue& manifest,
 
 }
 
-bool ShouldRelocalizeManifest(const ExtensionInfo& info) {
+bool ShouldRelocalizeManifest(const extensions::ExtensionInfo& info) {
   DictionaryValue* manifest = info.extension_manifest.get();
   if (!manifest)
     return false;
@@ -63,7 +63,7 @@ bool ShouldRelocalizeManifest(const ExtensionInfo& info) {
 
 // Localizes manifest value for a given key.
 static bool LocalizeManifestValue(const std::string& key,
-                                  const ExtensionMessageBundle& messages,
+                                  const extensions::MessageBundle& messages,
                                   DictionaryValue* manifest,
                                   std::string* error) {
   std::string result;
@@ -77,7 +77,7 @@ static bool LocalizeManifestValue(const std::string& key,
   return true;
 }
 
-bool LocalizeManifest(const ExtensionMessageBundle& messages,
+bool LocalizeManifest(const extensions::MessageBundle& messages,
                       DictionaryValue* manifest,
                       std::string* error) {
   // Initialize name.
@@ -126,6 +126,41 @@ bool LocalizeManifest(const ExtensionMessageBundle& messages,
         return false;
     }
   }
+
+  // Initialize all intents.
+  DictionaryValue* intents = NULL;
+  if (manifest->GetDictionary(keys::kIntents, &intents)) {
+    DictionaryValue::key_iterator it = intents->begin_keys();
+    for ( ; it != intents->end_keys(); ++it) {
+      ListValue* actions = NULL;
+      DictionaryValue* action = NULL;
+
+      // Actions have either a dict or a list of dicts - handle both cases.
+      if (intents->GetListWithoutPathExpansion(*it, &actions)) {
+        for (size_t i = 0; i < actions->GetSize(); ++i) {
+          action = NULL;
+          if (actions->GetDictionary(i, &action)) {
+            if (!LocalizeManifestValue(keys::kIntentTitle, messages,
+                                       action, error))
+              return false;
+          }
+        }
+      } else if (intents->GetDictionaryWithoutPathExpansion(*it, &action)) {
+        if (!LocalizeManifestValue(keys::kIntentTitle, messages,
+                                   action, error))
+          return false;
+      }
+    }
+  }
+
+  // Initialize app.launch.local_path.
+  if (!LocalizeManifestValue(keys::kLaunchLocalPath, messages, manifest, error))
+    return false;
+
+  // Initialize app.launch.web_url.
+  if (!LocalizeManifestValue(keys::kLaunchWebURL, messages, manifest, error))
+    return false;
+
   // Add current locale key to the manifest, so we can overwrite prefs
   // with new manifest when chrome locale changes.
   manifest->SetString(keys::kCurrentLocale, CurrentLocaleOrDefault());
@@ -139,8 +174,8 @@ bool LocalizeExtension(const FilePath& extension_path,
 
   std::string default_locale = GetDefaultLocaleFromManifest(*manifest, error);
 
-  scoped_ptr<ExtensionMessageBundle> message_bundle(
-      extension_file_util::LoadExtensionMessageBundle(
+  scoped_ptr<extensions::MessageBundle> message_bundle(
+      extension_file_util::LoadMessageBundle(
           extension_path, default_locale, error));
 
   if (!message_bundle.get() && !error->empty())
@@ -171,7 +206,7 @@ bool AddLocale(const std::set<std::string>& chrome_locales,
   }
   // Check if messages file is actually present (but don't check content).
   if (file_util::PathExists(
-      locale_folder.Append(Extension::kMessagesFilename))) {
+      locale_folder.Append(extensions::Extension::kMessagesFilename))) {
     valid_locales->insert(locale_name);
   } else {
     *error = base::StringPrintf("Catalog file is missing for locale %s.",
@@ -200,6 +235,15 @@ void GetAllLocales(std::set<std::string>* all_locales) {
     l10n_util::GetParentLocales(available_locales[i], &result);
     all_locales->insert(result.begin(), result.end());
   }
+}
+
+void GetAllFallbackLocales(const std::string& application_locale,
+                           const std::string& default_locale,
+                           std::vector<std::string>* all_fallback_locales) {
+  DCHECK(all_fallback_locales);
+  if (!application_locale.empty() && application_locale != default_locale)
+    l10n_util::GetParentLocales(application_locale, all_fallback_locales);
+  all_fallback_locales->push_back(default_locale);
 }
 
 bool GetValidLocales(const FilePath& locale_path,
@@ -244,7 +288,7 @@ static DictionaryValue* LoadMessageFile(const FilePath& locale_path,
                                         std::string* error) {
   std::string extension_locale = locale;
   FilePath file = locale_path.AppendASCII(extension_locale)
-      .Append(Extension::kMessagesFilename);
+      .Append(extensions::Extension::kMessagesFilename);
   JSONFileValueSerializer messages_serializer(file);
   Value *dictionary = messages_serializer.Deserialize(NULL, error);
   if (!dictionary && error->empty()) {
@@ -257,17 +301,15 @@ static DictionaryValue* LoadMessageFile(const FilePath& locale_path,
   return static_cast<DictionaryValue*>(dictionary);
 }
 
-ExtensionMessageBundle* LoadMessageCatalogs(
+extensions::MessageBundle* LoadMessageCatalogs(
     const FilePath& locale_path,
     const std::string& default_locale,
     const std::string& application_locale,
     const std::set<std::string>& valid_locales,
     std::string* error) {
-  // Order locales to load as current_locale, first_parent, ..., default_locale.
   std::vector<std::string> all_fallback_locales;
-  if (!application_locale.empty() && application_locale != default_locale)
-    l10n_util::GetParentLocales(application_locale, &all_fallback_locales);
-  all_fallback_locales.push_back(default_locale);
+  GetAllFallbackLocales(application_locale, default_locale,
+      &all_fallback_locales);
 
   std::vector<linked_ptr<DictionaryValue> > catalogs;
   for (size_t i = 0; i < all_fallback_locales.size(); ++i) {
@@ -285,7 +327,7 @@ ExtensionMessageBundle* LoadMessageCatalogs(
     }
   }
 
-  return ExtensionMessageBundle::Create(catalogs, error);
+  return extensions::MessageBundle::Create(catalogs, error);
 }
 
 bool ShouldSkipValidation(const FilePath& locales_path,
@@ -310,6 +352,18 @@ bool ShouldSkipValidation(const FilePath& locales_path,
     return true;
 
   return false;
+}
+
+ScopedLocaleForTest::ScopedLocaleForTest()
+    : locale_(extension_l10n_util::CurrentLocaleOrDefault()) {}
+
+ScopedLocaleForTest::ScopedLocaleForTest(const std::string& locale)
+    : locale_(extension_l10n_util::CurrentLocaleOrDefault()) {
+  extension_l10n_util::SetProcessLocale(locale);
+}
+
+ScopedLocaleForTest::~ScopedLocaleForTest() {
+  extension_l10n_util::SetProcessLocale(locale_);
 }
 
 }  // namespace extension_l10n_util

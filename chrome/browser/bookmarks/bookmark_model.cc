@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,7 @@
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/history/history_notifications.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -27,7 +28,7 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_collator.h"
-#include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/image/image_util.h"
 
 using base::Time;
 
@@ -74,7 +75,7 @@ void BookmarkNode::Initialize(int64 id) {
 }
 
 void BookmarkNode::InvalidateFavicon() {
-  favicon_ = SkBitmap();
+  favicon_ = gfx::Image();
   is_favicon_loaded_ = false;
 }
 
@@ -133,7 +134,8 @@ BookmarkModel::BookmarkModel(Profile* profile)
       mobile_node_(NULL),
       next_node_id_(1),
       observers_(ObserverList<BookmarkModelObserver>::NOTIFY_EXISTING_ONLY),
-      loaded_signal_(true, false) {
+      loaded_signal_(true, false),
+      extensive_changes_(0) {
   if (!profile_) {
     // Profile is null during testing.
     DoneLoading(CreateLoadDetails());
@@ -151,21 +153,12 @@ BookmarkModel::~BookmarkModel() {
   }
 }
 
-// static
-void BookmarkModel::RegisterUserPrefs(PrefService* prefs) {
-  // Don't sync this, as otherwise, due to a limitation in sync, it
-  // will cause a deadlock (see http://crbug.com/97955).  If we truly
-  // want to sync the expanded state of folders, it should be part of
-  // bookmark sync itself (i.e., a property of the sync folder nodes).
-  prefs->RegisterListPref(prefs::kBookmarkEditorExpandedNodes, new ListValue,
-                          PrefService::UNSYNCABLE_PREF);
-}
-
-void BookmarkModel::Cleanup() {
+void BookmarkModel::Shutdown() {
   if (loaded_)
     return;
 
-  // See comment in Profile shutdown code where this is invoked for details.
+  // See comment in HistoryService::ShutdownOnUIThread where this is invoked for
+  // details. It is also called when the BookmarkModel is deleted.
   loaded_signal_.Signal();
 }
 
@@ -178,7 +171,7 @@ void BookmarkModel::Load() {
   }
 
   expanded_state_tracker_.reset(new BookmarkExpandedStateTracker(
-      profile_, prefs::kBookmarkEditorExpandedNodes));
+      profile_, prefs::kBookmarkEditorExpandedNodes, this));
 
   // Listen for changes to favicons so that we can update the favicon of the
   // node appropriately.
@@ -209,14 +202,20 @@ void BookmarkModel::RemoveObserver(BookmarkModelObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void BookmarkModel::BeginImportMode() {
-  FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
-                    BookmarkImportBeginning(this));
+void BookmarkModel::BeginExtensiveChanges() {
+  if (++extensive_changes_ == 1) {
+    FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
+                      ExtensiveBookmarkChangesBeginning(this));
+  }
 }
 
-void BookmarkModel::EndImportMode() {
-  FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
-                    BookmarkImportEnding(this));
+void BookmarkModel::EndExtensiveChanges() {
+  --extensive_changes_;
+  DCHECK_GE(extensive_changes_, 0);
+  if (extensive_changes_ == 0) {
+    FOR_EACH_OBSERVER(BookmarkModelObserver, observers_,
+                      ExtensiveBookmarkChangesEnded(this));
+  }
 }
 
 void BookmarkModel::Remove(const BookmarkNode* parent, int index) {
@@ -292,7 +291,7 @@ void BookmarkModel::Copy(const BookmarkNode* node,
     store_->ScheduleSave();
 }
 
-const SkBitmap& BookmarkModel::GetFavicon(const BookmarkNode* node) {
+const gfx::Image& BookmarkModel::GetFavicon(const BookmarkNode* node) {
   DCHECK(node);
   if (!node->is_favicon_loaded()) {
     BookmarkNode* mutable_node = AsMutable(node);
@@ -401,15 +400,20 @@ bool BookmarkModel::IsBookmarked(const GURL& url) {
   return IsBookmarkedNoLock(url);
 }
 
-void BookmarkModel::GetBookmarks(std::vector<GURL>* urls) {
+void BookmarkModel::GetBookmarks(
+    std::vector<BookmarkService::URLAndTitle>* bookmarks) {
   base::AutoLock url_lock(url_lock_);
   const GURL* last_url = NULL;
   for (NodesOrderedByURLSet::iterator i = nodes_ordered_by_url_set_.begin();
        i != nodes_ordered_by_url_set_.end(); ++i) {
     const GURL* url = &((*i)->url());
     // Only add unique URLs.
-    if (!last_url || *url != *last_url)
-      urls->push_back(*url);
+    if (!last_url || *url != *last_url) {
+      BookmarkService::URLAndTitle bookmark;
+      bookmark.url = *url;
+      bookmark.title = (*i)->GetTitle();
+      bookmarks->push_back(bookmark);
+    }
     last_url = url;
   }
 }
@@ -681,7 +685,8 @@ void BookmarkModel::RemoveAndDeleteNode(BookmarkNode* delete_me) {
 
   if (profile_) {
     HistoryService* history =
-        profile_->GetHistoryService(Profile::EXPLICIT_ACCESS);
+        HistoryServiceFactory::GetForProfile(profile_,
+                                             Profile::EXPLICIT_ACCESS);
     if (history)
       history->URLsNoLongerBookmarked(details.changed_urls);
   }
@@ -772,17 +777,19 @@ BookmarkPermanentNode* BookmarkModel::CreatePermanentNode(
 void BookmarkModel::OnFaviconDataAvailable(
     FaviconService::Handle handle,
     history::FaviconData favicon) {
-  SkBitmap favicon_bitmap;
   BookmarkNode* node =
       load_consumer_.GetClientData(
           profile_->GetFaviconService(Profile::EXPLICIT_ACCESS), handle);
   DCHECK(node);
   node->set_favicon_load_handle(0);
-  if (favicon.is_valid() && gfx::PNGCodec::Decode(favicon.image_data->front(),
-                                                  favicon.image_data->size(),
-                                                  &favicon_bitmap)) {
-    node->set_favicon(favicon_bitmap);
-    FaviconLoaded(node);
+  if (favicon.is_valid()) {
+    scoped_ptr<gfx::Image> favicon_image(
+        gfx::ImageFromPNGEncodedData(favicon.image_data->front(),
+                                     favicon.image_data->size()));
+    if (favicon_image.get()) {
+      node->set_favicon(*favicon_image.get());
+      FaviconLoaded(node);
+    }
   }
 }
 

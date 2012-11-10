@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,12 +9,14 @@
 #include "grit/ui_strings.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
+#include "ui/base/events.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/button/button.h"
-#include "ui/views/controls/menu/view_menu_delegate.h"
+#include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/events/event.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
@@ -28,15 +30,13 @@ namespace views {
 // pressed event to show the menu.
 static const int64 kMinimumTimeBetweenButtonClicks = 100;
 
-// How much padding to put on the left and right of the menu marker.
-static const int kMenuMarkerPaddingLeft = 3;
-static const int kMenuMarkerPaddingRight = -1;
-
 // Default menu offset.
 static const int kDefaultMenuOffsetX = -2;
 static const int kDefaultMenuOffsetY = -4;
 
 // static
+const int MenuButton::kMenuMarkerPaddingLeft = 3;
+const int MenuButton::kMenuMarkerPaddingRight = -1;
 const char MenuButton::kViewClassName[] = "views/MenuButton";
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -47,15 +47,15 @@ const char MenuButton::kViewClassName[] = "views/MenuButton";
 
 MenuButton::MenuButton(ButtonListener* listener,
                        const string16& text,
-                       ViewMenuDelegate* menu_delegate,
+                       MenuButtonListener* menu_button_listener,
                        bool show_menu_marker)
     : TextButton(listener, text),
       menu_visible_(false),
       menu_offset_(kDefaultMenuOffsetX, kDefaultMenuOffsetY),
-      menu_delegate_(menu_delegate),
+      listener_(menu_button_listener),
       show_menu_marker_(show_menu_marker),
-      menu_marker_(ResourceBundle::GetSharedInstance().GetBitmapNamed(
-          IDR_MENU_DROPARROW)),
+      menu_marker_(ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+          IDR_MENU_DROPARROW).ToImageSkia()),
       destroyed_flag_(NULL) {
   set_alignment(TextButton::ALIGN_LEFT);
 }
@@ -73,7 +73,7 @@ MenuButton::~MenuButton() {
 
 bool MenuButton::Activate() {
   SetState(BS_PUSHED);
-  if (menu_delegate_) {
+  if (listener_) {
     gfx::Rect lb = GetLocalBounds();
 
     // The position of the menu depends on whether or not the locale is
@@ -107,7 +107,7 @@ bool MenuButton::Activate() {
     bool destroyed = false;
     destroyed_flag_ = &destroyed;
 
-    menu_delegate_->RunMenu(this, menu_position);
+    listener_->OnMenuButtonClicked(this, menu_position);
 
     if (destroyed) {
       // The menu was deleted while showing. Don't attempt any processing.
@@ -152,7 +152,7 @@ void MenuButton::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
                            menu_marker_->width(),
                            menu_marker_->height());
     arrow_bounds.set_x(GetMirroredXForRect(arrow_bounds));
-    canvas->DrawBitmapInt(*menu_marker_, arrow_bounds.x(), arrow_bounds.y());
+    canvas->DrawImageInt(*menu_marker_, arrow_bounds.x(), arrow_bounds.y());
   }
 }
 
@@ -216,6 +216,15 @@ void MenuButton::OnMouseExited(const MouseEvent& event) {
   if ((state_ != BS_DISABLED) && (!menu_visible_) && (!InDrag())) {
     SetState(BS_NORMAL);
   }
+}
+
+ui::GestureStatus MenuButton::OnGestureEvent(const GestureEvent& event) {
+  if (state() != BS_DISABLED && event.type() == ui::ET_GESTURE_TAP) {
+    if (Activate())
+      return ui::GESTURE_STATUS_CONSUMED;
+    return ui::GESTURE_STATUS_UNKNOWN;
+  }
+  return TextButton::OnGestureEvent(event);
 }
 
 bool MenuButton::OnKeyPressed(const KeyEvent& event) {

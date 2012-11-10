@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/common/url_constants.h"
@@ -13,25 +14,19 @@
 namespace {
 
 // This list should be kept in sync with chrome/common/url_constants.h.
+// Only include useful sub-pages, confirmation alerts are not useful.
 const char* kChromeSettingsSubPages[] = {
-  chrome::kAdvancedOptionsSubPage,
   chrome::kAutofillSubPage,
-  chrome::kBrowserOptionsSubPage,
   chrome::kClearBrowserDataSubPage,
   chrome::kContentSettingsSubPage,
   chrome::kContentSettingsExceptionsSubPage,
-  chrome::kExtensionsSubPage,
   chrome::kImportDataSubPage,
-  chrome::kInstantConfirmPage,
   chrome::kLanguageOptionsSubPage,
-  chrome::kPersonalOptionsSubPage,
   chrome::kPasswordManagerSubPage,
   chrome::kSearchEnginesSubPage,
   chrome::kSyncSetupSubPage,
 #if defined(OS_CHROMEOS)
-  chrome::kAboutOptionsSubPage,
   chrome::kInternetOptionsSubPage,
-  chrome::kSystemOptionsSubPage,
 #endif
 };
 
@@ -39,7 +34,7 @@ const char* kChromeSettingsSubPages[] = {
 
 const int BuiltinProvider::kRelevance = 575;
 
-BuiltinProvider::BuiltinProvider(ACProviderListener* listener,
+BuiltinProvider::BuiltinProvider(AutocompleteProviderListener* listener,
                                  Profile* profile)
     : AutocompleteProvider(listener, profile, "Builtin") {
   std::vector<std::string> builtins(ChromePaths());
@@ -52,8 +47,6 @@ BuiltinProvider::BuiltinProvider(ACProviderListener* listener,
     builtins_.push_back(settings + ASCIIToUTF16(kChromeSettingsSubPages[i]));
 }
 
-BuiltinProvider::~BuiltinProvider() {}
-
 void BuiltinProvider::Start(const AutocompleteInput& input,
                             bool minimal_changes) {
   matches_.clear();
@@ -64,9 +57,9 @@ void BuiltinProvider::Start(const AutocompleteInput& input,
     return;
 
   const string16 kAbout = ASCIIToUTF16(chrome::kAboutScheme) +
-      ASCIIToUTF16(chrome::kStandardSchemeSeparator);
+      ASCIIToUTF16(content::kStandardSchemeSeparator);
   const string16 kChrome = ASCIIToUTF16(chrome::kChromeUIScheme) +
-      ASCIIToUTF16(chrome::kStandardSchemeSeparator);
+      ASCIIToUTF16(content::kStandardSchemeSeparator);
 
   const int kUrl = ACMatchClassification::URL;
   const int kMatch = kUrl | ACMatchClassification::MATCH;
@@ -113,6 +106,8 @@ void BuiltinProvider::Start(const AutocompleteInput& input,
   for (size_t i = 0; i < matches_.size(); ++i)
     matches_[i].relevance = kRelevance + matches_.size() - (i + 1);
 }
+
+BuiltinProvider::~BuiltinProvider() {}
 
 void BuiltinProvider::AddMatch(const string16& match_string,
                                const ACMatchClassifications& styles) {

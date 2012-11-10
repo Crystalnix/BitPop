@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_LOGIN_STATUS_CONSUMER_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_LOGIN_STATUS_CONSUMER_H_
-#pragma once
 
 #include <string>
 
@@ -22,11 +21,17 @@ class LoginFailure {
     COULD_NOT_MOUNT_CRYPTOHOME,
     COULD_NOT_MOUNT_TMPFS,
     COULD_NOT_UNMOUNT_CRYPTOHOME,
-    DATA_REMOVAL_FAILED,  // Could not destroy your old data
+    DATA_REMOVAL_FAILED,    // Could not destroy your old data
     LOGIN_TIMED_OUT,
     UNLOCK_FAILED,
-    NETWORK_AUTH_FAILED,  // Could not authenticate against Google
-    NUM_FAILURE_REASONS,  // This has to be the last item.
+    NETWORK_AUTH_FAILED,    // Could not authenticate against Google
+    OWNER_REQUIRED,         // Only the device owner can log-in.
+    WHITELIST_CHECK_FAILED, // Login attempt blocked by whitelist. This value is
+                            // synthesized by the ExistingUserController and
+                            // passed to the login_status_consumer_ in tests
+                            // only. It is never generated or seen by any of the
+                            // other authenticator classes.
+    NUM_FAILURE_REASONS,    // This has to be the last item.
   };
 
   explicit LoginFailure(FailureReason reason)
@@ -73,6 +78,10 @@ class LoginFailure {
           return net::ErrorToString(error_.network_error());
         }
         return "Google authentication failed.";
+      case OWNER_REQUIRED:
+        return "Login is restricted to the owner's account only.";
+      case WHITELIST_CHECK_FAILED:
+        return "Login attempt blocked by whitelist.";
       default:
         NOTREACHED();
         return std::string();
@@ -100,21 +109,23 @@ class LoginStatusConsumer {
   virtual ~LoginStatusConsumer() {}
   // The current login attempt has ended in failure, with error |error|.
   virtual void OnLoginFailure(const LoginFailure& error) = 0;
+
+  // The current demo user login attempt has succeeded.
+  // Unless overridden for special processing, this should always call
+  // OnLoginSuccess with the Demo User canary username.
+  virtual void OnDemoUserLoginSuccess();
   // The current login attempt has succeeded for
-  // |username|/|password|, returning |credentials|.  If
-  // |pending_requests| is false, we're totally done.  If it's true,
-  // we will still have some more results to report later.
+  // |username|/|password|.  If |pending_requests| is false, we're totally done.
+  // If it's true, we will still have some more results to report later.
   virtual void OnLoginSuccess(
       const std::string& username,
       const std::string& password,
-      const GaiaAuthConsumer::ClientLoginResult& credentials,
       bool pending_requests,
       bool using_oauth) = 0;
   // The current guest login attempt has succeeded.
   virtual void OnOffTheRecordLoginSuccess() {}
   // The same password didn't work both online and offline.
-  virtual void OnPasswordChangeDetected(
-      const GaiaAuthConsumer::ClientLoginResult& credentials);
+  virtual void OnPasswordChangeDetected();
 };
 
 }  // namespace chromeos

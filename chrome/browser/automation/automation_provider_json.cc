@@ -14,6 +14,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/automation_id.h"
 #include "chrome/common/automation_messages.h"
+#include "chrome/common/extensions/extension.h"
 #include "content/public/browser/web_contents.h"
 
 using automation::Error;
@@ -34,7 +35,7 @@ void AutomationJSONReply::SendSuccess(const Value* value) {
   DCHECK(message_) << "Resending reply for JSON automation request";
   std::string json_string = "{}";
   if (value)
-    base::JSONWriter::Write(value, false, &json_string);
+    base::JSONWriter::Write(value, &json_string);
   AutomationMsg_SendJSONRequest::WriteReplyParams(
       message_, json_string, true);
   provider_->Send(message_);
@@ -56,7 +57,7 @@ void AutomationJSONReply::SendError(const Error& error) {
   dict.SetString("error", error.message());
   dict.SetInteger("code", error.code());
   std::string json;
-  base::JSONWriter::Write(&dict, false /* pretty_print */, &json);
+  base::JSONWriter::Write(&dict, &json);
 
   AutomationMsg_SendJSONRequest::WriteReplyParams(message_, json, false);
   provider_->Send(message_);
@@ -153,7 +154,7 @@ bool GetAutomationIdFromJSONArgs(
 bool GetRenderViewFromJSONArgs(
     DictionaryValue* args,
     Profile* profile,
-    RenderViewHost** rvh,
+    content::RenderViewHost** rvh,
     std::string* error) {
   Value* id_value;
   if (args->Get("auto_id", &id_value)) {
@@ -181,7 +182,7 @@ bool GetExtensionFromJSONArgsHelper(
     const std::string& key,
     Profile* profile,
     bool include_disabled,
-    const Extension** extension,
+    const extensions::Extension** extension,
     std::string* error) {
   std::string id;
   if (!args->GetString(key, &id)) {
@@ -200,7 +201,7 @@ bool GetExtensionFromJSONArgsHelper(
                                 id.c_str());
     return false;
   }
-  const Extension* installed_extension =
+  const extensions::Extension* installed_extension =
       service->GetExtensionById(id, include_disabled);
   if (!installed_extension) {
     *error = "Extension is disabled or has crashed.";
@@ -216,7 +217,7 @@ bool GetExtensionFromJSONArgs(
     base::DictionaryValue* args,
     const std::string& key,
     Profile* profile,
-    const Extension** extension,
+    const extensions::Extension** extension,
     std::string* error) {
   return GetExtensionFromJSONArgsHelper(
       args, key, profile, true /* include_disabled */, extension, error);
@@ -226,7 +227,7 @@ bool GetEnabledExtensionFromJSONArgs(
     base::DictionaryValue* args,
     const std::string& key,
     Profile* profile,
-    const Extension** extension,
+    const extensions::Extension** extension,
     std::string* error) {
   return GetExtensionFromJSONArgsHelper(
       args, key, profile, false /* include_disabled */, extension, error);

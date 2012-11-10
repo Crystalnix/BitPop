@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,10 +13,9 @@
 #include "base/hash_tables.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
-#include "ppapi/shared_impl/function_group_base.h"
 #include "ppapi/shared_impl/resource_tracker.h"
 #include "ppapi/shared_impl/var_tracker.h"
 #include "webkit/plugins/webkit_plugins_export.h"
@@ -57,16 +56,20 @@ class HostVarTracker : public ::ppapi::VarTracker {
   WEBKIT_PLUGINS_EXPORT int GetLiveNPObjectVarsForInstance(
       PP_Instance instance) const;
 
-  // Forcibly deletes all np object vars for the given instance. Used for
-  // instance cleanup.
-  void ForceFreeNPObjectsForInstance(PP_Instance instance);
+  // VarTracker public implementation.
+  virtual void DidDeleteInstance(PP_Instance instance) OVERRIDE;
 
  private:
-  // VarTracker implementation.
+  // VarTracker private implementation.
   virtual ::ppapi::ArrayBufferVar* CreateArrayBuffer(
       uint32 size_in_bytes) OVERRIDE;
 
-  typedef std::map<NPObject*, ::ppapi::NPObjectVar*> NPObjectToNPObjectVarMap;
+  // Clear the reference count of the given object and remove it from
+  // live_vars_.
+  void ForceReleaseNPObject(const base::WeakPtr< ::ppapi::NPObjectVar>& object);
+
+  typedef std::map<NPObject*, base::WeakPtr< ::ppapi::NPObjectVar> >
+      NPObjectToNPObjectVarMap;
 
   // Lists all known NPObjects, first indexed by the corresponding instance,
   // then by the NPObject*. This allows us to look up an NPObjectVar given

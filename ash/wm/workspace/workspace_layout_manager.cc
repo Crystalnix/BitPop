@@ -4,14 +4,15 @@
 
 #include "ash/wm/workspace/workspace_layout_manager.h"
 
-#include "ash/wm/property_util.h"
+#include "ash/screen_ash.h"
 #include "ash/wm/window_util.h"
+#include "ash/wm/window_properties.h"
 #include "ash/wm/workspace/workspace.h"
 #include "ash/wm/workspace/workspace_manager.h"
+#include "ash/wm/workspace/workspace_window_resizer.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/event.h"
 #include "ui/aura/root_window.h"
-#include "ui/aura/screen_aura.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/ui_base_types.h"
@@ -21,86 +22,51 @@
 namespace ash {
 namespace internal {
 
-////////////////////////////////////////////////////////////////////////////////
-// WorkspaceLayoutManager, public:
-
 WorkspaceLayoutManager::WorkspaceLayoutManager(
+    aura::RootWindow* root_window,
     WorkspaceManager* workspace_manager)
-    : workspace_manager_(workspace_manager) {
+    : BaseLayoutManager(root_window),
+      workspace_manager_(workspace_manager) {
 }
 
-WorkspaceLayoutManager::~WorkspaceLayoutManager() {}
-
-void WorkspaceLayoutManager::PrepareForMoveOrResize(
-    aura::Window* drag,
-    aura::MouseEvent* event) {
+WorkspaceLayoutManager::~WorkspaceLayoutManager() {
 }
-
-void WorkspaceLayoutManager::CancelMoveOrResize(
-    aura::Window* drag,
-    aura::MouseEvent* event) {
-}
-
-void WorkspaceLayoutManager::ProcessMove(
-    aura::Window* drag,
-    aura::MouseEvent* event) {
-  // TODO: needs implementation for TYPE_SPLIT. For TYPE_SPLIT I want to
-  // disallow eventfilter from moving and instead deal with it here.
-}
-
-void WorkspaceLayoutManager::EndMove(
-    aura::Window* drag,
-    aura::MouseEvent* evnet) {
-  // TODO: see comment in ProcessMove.
-}
-
-void WorkspaceLayoutManager::EndResize(
-    aura::Window* drag,
-    aura::MouseEvent* evnet) {
-  // TODO: see comment in ProcessMove.
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// WorkspaceLayoutManager, aura::LayoutManager implementation:
 
 void WorkspaceLayoutManager::OnWindowResized() {
-  // Workspace is updated via RootWindowObserver::OnRootWindowResized.
+  // Workspace is updated via OnRootWindowResized.
 }
 
 void WorkspaceLayoutManager::OnWindowAddedToLayout(aura::Window* child) {
-  if (!workspace_manager_->IsManagedWindow(child))
+  BaseLayoutManager::OnWindowAddedToLayout(child);
+  if (!workspace_manager_->ShouldManageWindow(child)) {
+    if (child->IsVisible())
+      workspace_manager_->UpdateShelfVisibility();
     return;
-
-  if (child->IsVisible()) {
-    workspace_manager_->AddWindow(child);
-  } else if (window_util::IsWindowMaximized(child) ||
-             workspace_manager_->ShouldMaximize(child)) {
-    if (!GetRestoreBounds(child))
-      SetRestoreBounds(child, child->GetTargetBounds());
-    if (!window_util::IsWindowMaximized(child))
-      window_util::MaximizeWindow(child);
-    SetChildBoundsDirect(child,
-                         gfx::Screen::GetMonitorWorkAreaNearestWindow(child));
-  } else if (window_util::IsWindowFullscreen(child)) {
-    SetChildBoundsDirect(child,
-                         gfx::Screen::GetMonitorAreaNearestWindow(child));
-  } else {
-    SetChildBoundsDirect(
-        child, workspace_manager_->AlignBoundsToGrid(child->GetTargetBounds()));
   }
+
+  if (child->IsVisible())
+    workspace_manager_->AddWindow(child);
 }
 
-void WorkspaceLayoutManager::OnWillRemoveWindowFromLayout(
-    aura::Window* child) {
-  ClearRestoreBounds(child);
+void WorkspaceLayoutManager::OnWillRemoveWindowFromLayout(aura::Window* child) {
   workspace_manager_->RemoveWindow(child);
+  BaseLayoutManager::OnWillRemoveWindowFromLayout(child);
+}
+
+void WorkspaceLayoutManager::OnWindowRemovedFromLayout(aura::Window* child) {
+  workspace_manager_->UpdateShelfVisibility();
+  BaseLayoutManager::OnWindowRemovedFromLayout(child);
 }
 
 void WorkspaceLayoutManager::OnChildWindowVisibilityChanged(
     aura::Window* child,
     bool visible) {
-  if (!workspace_manager_->IsManagedWindow(child))
+  BaseLayoutManager::OnChildWindowVisibilityChanged(child, visible);
+  if (!workspace_manager_->ShouldManageWindow(child)) {
+    workspace_manager_->UpdateShelfVisibility();
     return;
+  }
+
   if (visible)
     workspace_manager_->AddWindow(child);
   else
@@ -110,17 +76,41 @@ void WorkspaceLayoutManager::OnChildWindowVisibilityChanged(
 void WorkspaceLayoutManager::SetChildBounds(
     aura::Window* child,
     const gfx::Rect& requested_bounds) {
-  if (child == workspace_manager_->ignored_window() ||
-      !workspace_manager_->IsManagedWindow(child)) {
-    // Allow requests for |ignored_window_| or unmanaged windows.
+  if (GetTrackedByWorkspace(child))
+    BaseLayoutManager::SetChildBounds(child, requested_bounds);
+  else
     SetChildBoundsDirect(child, requested_bounds);
-  } else if (!window_util::IsWindowMaximized(child) &&
-             !window_util::IsWindowFullscreen(child)) {
-    // Align normal windows to the grid.
-    SetChildBoundsDirect(
-        child, workspace_manager_->AlignBoundsToGrid(requested_bounds));
+  workspace_manager_->UpdateShelfVisibility();
+}
+
+void WorkspaceLayoutManager::OnWindowPropertyChanged(aura::Window* window,
+                                                     const void* key,
+                                                     intptr_t old) {
+  BaseLayoutManager::OnWindowPropertyChanged(window, key, old);
+  if (key == ash::internal::kWindowTrackedByWorkspaceKey &&
+      ash::GetTrackedByWorkspace(window)) {
+    // We currently don't need to support transitioning from true to false, so
+    // we ignore it.
+    workspace_manager_->AddWindow(window);
   }
-  // All other requests we ignore.
+}
+
+void WorkspaceLayoutManager::ShowStateChanged(
+    aura::Window* window,
+    ui::WindowShowState last_show_state) {
+  if (workspace_manager_->ShouldManageWindow(window)) {
+    if (wm::IsWindowMinimized(window)) {
+      workspace_manager_->RemoveWindow(window);
+    } else if ((window->TargetVisibility() ||
+                last_show_state == ui::SHOW_STATE_MINIMIZED) &&
+               !workspace_manager_->Contains(window)) {
+      workspace_manager_->AddWindow(window);
+    }
+  } else {
+    workspace_manager_->UpdateShelfVisibility();
+  }
+  BaseLayoutManager::ShowStateChanged(window, last_show_state);
+  workspace_manager_->ShowStateChanged(window);
 }
 
 }  // namespace internal

@@ -14,7 +14,7 @@
 
 namespace media {
 
-enum MEDIA_EXPORT VideoCodec {
+enum VideoCodec {
   // These values are histogrammed over time; do not change their ordinal
   // values.  When deleting a codec replace it with a dummy value; when adding a
   // codec, do so at the bottom (and update kVideoCodecMax).
@@ -34,25 +34,29 @@ enum MEDIA_EXPORT VideoCodec {
 };
 
 // Video stream profile.  This *must* match PP_VideoDecoder_Profile.
-enum MEDIA_EXPORT VideoCodecProfile {
+// (enforced in webkit/plugins/ppapi/ppb_video_decoder_impl.cc)
+enum VideoCodecProfile {
   // Keep the values in this enum unique, as they imply format (h.264 vs. VP8,
   // for example), and keep the values for a particular format grouped
   // together for clarity.
   VIDEO_CODEC_PROFILE_UNKNOWN = -1,
   H264PROFILE_MIN = 0,
   H264PROFILE_BASELINE = H264PROFILE_MIN,
-  H264PROFILE_MAIN,
-  H264PROFILE_EXTENDED,
-  H264PROFILE_HIGH,
-  H264PROFILE_HIGH10PROFILE,
-  H264PROFILE_HIGH422PROFILE,
-  H264PROFILE_HIGH444PREDICTIVEPROFILE,
-  H264PROFILE_SCALABLEBASELINE,
-  H264PROFILE_SCALABLEHIGH,
-  H264PROFILE_STEREOHIGH,
-  H264PROFILE_MULTIVIEWHIGH,
+  H264PROFILE_MAIN = 1,
+  H264PROFILE_EXTENDED = 2,
+  H264PROFILE_HIGH = 3,
+  H264PROFILE_HIGH10PROFILE = 4,
+  H264PROFILE_HIGH422PROFILE = 5,
+  H264PROFILE_HIGH444PREDICTIVEPROFILE = 6,
+  H264PROFILE_SCALABLEBASELINE = 7,
+  H264PROFILE_SCALABLEHIGH = 8,
+  H264PROFILE_STEREOHIGH = 9,
+  H264PROFILE_MULTIVIEWHIGH = 10,
   H264PROFILE_MAX = H264PROFILE_MULTIVIEWHIGH,
-  VIDEO_CODEC_PROFILE_MAX = H264PROFILE_MAX,
+  VP8PROFILE_MIN = 11,
+  VP8PROFILE_MAIN = VP8PROFILE_MIN,
+  VP8PROFILE_MAX = VP8PROFILE_MAIN,
+  VIDEO_CODEC_PROFILE_MAX = VP8PROFILE_MAX,
 };
 
 class MEDIA_EXPORT VideoDecoderConfig {
@@ -68,8 +72,7 @@ class MEDIA_EXPORT VideoDecoderConfig {
                      VideoFrame::Format format,
                      const gfx::Size& coded_size,
                      const gfx::Rect& visible_rect,
-                     int frame_rate_numerator, int frame_rate_denominator,
-                     int aspect_ratio_numerator, int aspect_ratio_denominator,
+                     const gfx::Size& natural_size,
                      const uint8* extra_data, size_t extra_data_size);
 
   ~VideoDecoderConfig();
@@ -80,8 +83,7 @@ class MEDIA_EXPORT VideoDecoderConfig {
                   VideoFrame::Format format,
                   const gfx::Size& coded_size,
                   const gfx::Rect& visible_rect,
-                  int frame_rate_numerator, int frame_rate_denominator,
-                  int aspect_ratio_numerator, int aspect_ratio_denominator,
+                  const gfx::Size& natural_size,
                   const uint8* extra_data, size_t extra_data_size,
                   bool record_stats);
 
@@ -91,6 +93,10 @@ class MEDIA_EXPORT VideoDecoderConfig {
   // Returns true if this object has appropriate configuration values, false
   // otherwise.
   bool IsValidConfig() const;
+
+  // Returns true if all fields in |config| match this config.
+  // Note: The contents of |extra_data_| are compared not the raw pointers.
+  bool Matches(const VideoDecoderConfig& config) const;
 
   // Returns a human-readable string describing |*this|.  For debugging & test
   // output only.
@@ -113,21 +119,6 @@ class MEDIA_EXPORT VideoDecoderConfig {
   // into account.
   gfx::Size natural_size() const;
 
-  // Frame rate in seconds expressed as a fraction.
-  //
-  // This information is required to properly timestamp video frames for
-  // codecs that contain repeated frames, such as found in H.264's
-  // supplemental enhancement information.
-  int frame_rate_numerator() const;
-  int frame_rate_denominator() const;
-
-  // Aspect ratio of the decoded video frame expressed as a fraction.
-  //
-  // TODO(scherkus): think of a better way to avoid having video decoders
-  // handle tricky aspect ratio dimension calculations.
-  int aspect_ratio_numerator() const;
-  int aspect_ratio_denominator() const;
-
   // Optional byte data required to initialize video decoders, such as H.264
   // AAVC data.
   uint8* extra_data() const;
@@ -142,12 +133,6 @@ class MEDIA_EXPORT VideoDecoderConfig {
   gfx::Size coded_size_;
   gfx::Rect visible_rect_;
   gfx::Size natural_size_;
-
-  int frame_rate_numerator_;
-  int frame_rate_denominator_;
-
-  int aspect_ratio_numerator_;
-  int aspect_ratio_denominator_;
 
   scoped_array<uint8> extra_data_;
   size_t extra_data_size_;

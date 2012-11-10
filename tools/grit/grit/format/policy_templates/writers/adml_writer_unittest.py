@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,12 +11,11 @@ import os
 import sys
 import unittest
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../../../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../../../..'))
 
 
 from grit.format.policy_templates.writers import adml_writer
 from grit.format.policy_templates.writers import xml_writer_base_unittest
-from xml.dom import minidom
 
 
 class AdmlWriterTest(xml_writer_base_unittest.XmlWriterBaseTest):
@@ -320,6 +319,38 @@ class AdmlWriterTest(xml_writer_base_unittest.XmlWriterBaseTest):
         '  <listBox refId="ListPolicyStubDesc">\n'
         '    List policy label\n'
         '  </listBox>\n'
+        '</presentation>')
+    self.AssertXMLEquals(output, expected_output)
+
+  def testDictionaryPolicy(self):
+    dict_policy = {
+      'name': 'DictionaryPolicyStub',
+      'type': 'dict',
+      'caption': 'Dictionary policy caption',
+      'label': 'Dictionary policy label',
+      'desc': 'This is a test description.',
+    }
+    self. _InitWriterForAddingPolicies(self.writer, dict_policy)
+    self.writer.WritePolicy(dict_policy)
+    # Assert generated string elements.
+    output = self.GetXMLOfChildren(self.writer._string_table_elem)
+    expected_output = (
+        '<string id="DictionaryPolicyStub">\n'
+        '  Dictionary policy caption\n'
+        '</string>\n'
+        '<string id="DictionaryPolicyStub_Explain">\n'
+        '  This is a test description.\n'
+        '</string>')
+    self.AssertXMLEquals(output, expected_output)
+    # Assert generated presentation elements.
+    output = self.GetXMLOfChildren(self.writer._presentation_table_elem)
+    expected_output = (
+        '<presentation id="DictionaryPolicyStub">\n'
+        '  <textBox refId="DictionaryPolicyStub">\n'
+        '    <label>\n'
+        '      Dictionary policy label\n'
+        '    </label>\n'
+        '  </textBox>\n'
         '</presentation>')
     self.AssertXMLEquals(output, expected_output)
 

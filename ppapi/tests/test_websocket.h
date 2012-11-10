@@ -22,15 +22,17 @@ class TestWebSocket : public TestCase {
   virtual bool Init();
   virtual void RunTests(const std::string& filter);
 
-  PP_Var CreateVarString(const char* string);
-  PP_Var CreateVarBinary(const uint8_t* data, uint32_t size);
+  std::string GetFullURL(const char* url);
+  PP_Var CreateVarString(const std::string& string);
+  PP_Var CreateVarBinary(const std::vector<uint8_t>& binary);
   void ReleaseVar(const PP_Var& var);
-  bool AreEqualWithString(const PP_Var& var, const char* string);
+  bool AreEqualWithString(const PP_Var& var, const std::string& string);
   bool AreEqualWithBinary(const PP_Var& var,
-                          const uint8_t* data,
-                          uint32_t size);
+                          const std::vector<uint8_t>& binary);
 
-  PP_Resource Connect(const char* url, int32_t* result, const char* protocol);
+  PP_Resource Connect(const std::string& url,
+                      int32_t* result,
+                      const std::string& protocol);
 
   std::string TestIsWebSocket();
   std::string TestUninitializedPropertiesAccess();
@@ -43,11 +45,25 @@ class TestWebSocket : public TestCase {
   std::string TestGetProtocol();
   std::string TestTextSendReceive();
   std::string TestBinarySendReceive();
+  std::string TestStressedSendReceive();
   std::string TestBufferedAmount();
+  std::string TestAbortCalls();
 
   std::string TestCcInterfaces();
 
-  // Used by the tests that access the C API directly.
+  std::string TestUtilityInvalidConnect();
+  std::string TestUtilityProtocols();
+  std::string TestUtilityGetURL();
+  std::string TestUtilityValidConnect();
+  std::string TestUtilityInvalidClose();
+  std::string TestUtilityValidClose();
+  std::string TestUtilityGetProtocol();
+  std::string TestUtilityTextSendReceive();
+  std::string TestUtilityBinarySendReceive();
+  std::string TestUtilityBufferedAmount();
+
+  // Keeps Pepper API interfaces. These are used by the tests that access the C
+  // API directly.
   const PPB_WebSocket* websocket_interface_;
   const PPB_Var* var_interface_;
   const PPB_VarArrayBuffer* arraybuffer_interface_;

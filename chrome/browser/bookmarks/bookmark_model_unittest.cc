@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,9 +18,11 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/history/history_notifications.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
@@ -30,7 +32,7 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/models/tree_node_iterator.h"
 #include "ui/base/models/tree_node_model.h"
@@ -169,9 +171,19 @@ class BookmarkModelTest : public testing::Test,
     // gets invoked.
   }
 
+  virtual void ExtensiveBookmarkChangesBeginning(
+      BookmarkModel* model) OVERRIDE {
+    ++extensive_changes_beginning_count_;
+  }
+
+  virtual void ExtensiveBookmarkChangesEnded(BookmarkModel* model) OVERRIDE {
+    ++extensive_changes_ended_count_;
+  }
+
   void ClearCounts() {
     added_count_ = moved_count_ = removed_count_ = changed_count_ =
-        reordered_count_ = 0;
+        reordered_count_ = extensive_changes_beginning_count_ =
+        extensive_changes_ended_count_ = 0;
   }
 
   void AssertObserverCount(int added_count,
@@ -186,6 +198,14 @@ class BookmarkModelTest : public testing::Test,
     EXPECT_EQ(reordered_count_, reordered_count);
   }
 
+  void AssertExtensiveChangesObserverCount(
+      int extensive_changes_beginning_count,
+      int extensive_changes_ended_count) {
+    EXPECT_EQ(extensive_changes_beginning_count_,
+              extensive_changes_beginning_count);
+    EXPECT_EQ(extensive_changes_ended_count_, extensive_changes_ended_count);
+  }
+
  protected:
   BookmarkModel model_;
   ObserverDetails observer_details_;
@@ -196,6 +216,8 @@ class BookmarkModelTest : public testing::Test,
   int removed_count_;
   int changed_count_;
   int reordered_count_;
+  int extensive_changes_beginning_count_;
+  int extensive_changes_ended_count_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkModelTest);
 };
@@ -592,13 +614,21 @@ TEST_F(BookmarkModelTest, GetMostRecentlyAddedNodeForURL) {
 // Makes sure GetBookmarks removes duplicates.
 TEST_F(BookmarkModelTest, GetBookmarksWithDups) {
   const GURL url("http://foo.com/0");
-  model_.AddURL(model_.bookmark_bar_node(), 0, ASCIIToUTF16("blah"), url);
-  model_.AddURL(model_.bookmark_bar_node(), 1, ASCIIToUTF16("blah"), url);
+  const string16 title(ASCIIToUTF16("blah"));
+  model_.AddURL(model_.bookmark_bar_node(), 0, title, url);
+  model_.AddURL(model_.bookmark_bar_node(), 1, title, url);
 
-  std::vector<GURL> urls;
-  model_.GetBookmarks(&urls);
-  EXPECT_EQ(1U, urls.size());
-  ASSERT_TRUE(urls[0] == url);
+  std::vector<BookmarkService::URLAndTitle> bookmarks;
+  model_.GetBookmarks(&bookmarks);
+  ASSERT_EQ(1U, bookmarks.size());
+  EXPECT_EQ(url, bookmarks[0].url);
+  EXPECT_EQ(title, bookmarks[0].title);
+
+  model_.AddURL(model_.bookmark_bar_node(), 2, ASCIIToUTF16("Title2"), url);
+  // Only one returned, even titles are different.
+  bookmarks.clear();
+  model_.GetBookmarks(&bookmarks);
+  EXPECT_EQ(1U, bookmarks.size());
 }
 
 TEST_F(BookmarkModelTest, HasBookmarks) {
@@ -803,7 +833,7 @@ class BookmarkModelTestWithProfile : public testing::Test {
   }
 
   void BlockTillBookmarkModelLoaded() {
-    bb_model_ = profile_->GetBookmarkModel();
+    bb_model_ = BookmarkModelFactory::GetForProfile(profile_.get());
     profile_->BlockUntilBookmarkModelLoaded();
   }
 
@@ -1041,13 +1071,15 @@ TEST_F(BookmarkModelTestWithProfile2, RemoveNotification) {
   GURL url("http://www.google.com");
   bookmark_utils::AddIfNotBookmarked(bb_model_, url, string16());
 
-  profile_->GetHistoryService(Profile::EXPLICIT_ACCESS)->AddPage(
-      url, NULL, 1, GURL(), content::PAGE_TRANSITION_TYPED,
-      history::RedirectList(), history::SOURCE_BROWSED, false);
+  HistoryServiceFactory::GetForProfile(
+      profile_.get(), Profile::EXPLICIT_ACCESS)->AddPage(
+          url, NULL, 1, GURL(), content::PAGE_TRANSITION_TYPED,
+          history::RedirectList(), history::SOURCE_BROWSED, false);
 
   // This won't actually delete the URL, rather it'll empty out the visits.
   // This triggers blocking on the BookmarkModel.
-  profile_->GetHistoryService(Profile::EXPLICIT_ACCESS)->DeleteURL(url);
+  HistoryServiceFactory::GetForProfile(
+      profile_.get(), Profile::EXPLICIT_ACCESS)->DeleteURL(url);
 }
 
 TEST_F(BookmarkModelTest, Sort) {
@@ -1113,6 +1145,34 @@ TEST_F(BookmarkModelTest, MobileNodeVisibileWithChildren) {
 
   model_.AddURL(root, 0, title, url);
   EXPECT_TRUE(model_.mobile_node()->IsVisible());
+}
+
+TEST_F(BookmarkModelTest, ExtensiveChangesObserver) {
+  AssertExtensiveChangesObserverCount(0, 0);
+  EXPECT_FALSE(model_.IsDoingExtensiveChanges());
+  model_.BeginExtensiveChanges();
+  EXPECT_TRUE(model_.IsDoingExtensiveChanges());
+  AssertExtensiveChangesObserverCount(1, 0);
+  model_.EndExtensiveChanges();
+  EXPECT_FALSE(model_.IsDoingExtensiveChanges());
+  AssertExtensiveChangesObserverCount(1, 1);
+}
+
+TEST_F(BookmarkModelTest, MultipleExtensiveChangesObserver) {
+  AssertExtensiveChangesObserverCount(0, 0);
+  EXPECT_FALSE(model_.IsDoingExtensiveChanges());
+  model_.BeginExtensiveChanges();
+  EXPECT_TRUE(model_.IsDoingExtensiveChanges());
+  AssertExtensiveChangesObserverCount(1, 0);
+  model_.BeginExtensiveChanges();
+  EXPECT_TRUE(model_.IsDoingExtensiveChanges());
+  AssertExtensiveChangesObserverCount(1, 0);
+  model_.EndExtensiveChanges();
+  EXPECT_TRUE(model_.IsDoingExtensiveChanges());
+  AssertExtensiveChangesObserverCount(1, 0);
+  model_.EndExtensiveChanges();
+  EXPECT_FALSE(model_.IsDoingExtensiveChanges());
+  AssertExtensiveChangesObserverCount(1, 1);
 }
 
 }  // namespace

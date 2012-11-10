@@ -1,67 +1,113 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-'''Command processor for GRIT.  This is the script you invoke to run the various
+"""Command processor for GRIT.  This is the script you invoke to run the various
 GRIT tools.
-'''
+"""
 
 import os
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '..'))
 
 import getopt
 
 from grit import util
 
-import grit.exception
-
-import grit.tool.build
-import grit.tool.count
-import grit.tool.diff_structures
-import grit.tool.menu_from_parts
-import grit.tool.newgrd
-import grit.tool.resize
-import grit.tool.rc2grd
-import grit.tool.test
-import grit.tool.transl2tc
-import grit.tool.unit
-
+import grit.extern.FP
 
 # Copyright notice
-_COPYRIGHT = '''\
+_COPYRIGHT = """\
 GRIT - the Google Resource and Internationalization Tool
 Copyright (c) Google Inc. %d
-''' % util.GetCurrentYear()
+""" % util.GetCurrentYear()
+
+# Tool info factories; these import only within each factory to avoid
+# importing most of the GRIT code until required.
+def ToolFactoryBuild():
+  import grit.tool.build
+  return grit.tool.build.RcBuilder()
+
+def ToolFactoryBuildInfo():
+  import grit.tool.buildinfo
+  return grit.tool.buildinfo.DetermineBuildInfo()
+
+def ToolFactoryCount():
+  import grit.tool.count
+  return grit.tool.count.CountMessage()
+
+def ToolFactoryDiffStructures():
+  import grit.tool.diff_structures
+  return grit.tool.diff_structures.DiffStructures()
+
+def ToolFactoryMenuTranslationsFromParts():
+  import grit.tool.menu_from_parts
+  return grit.tool.menu_from_parts.MenuTranslationsFromParts()
+
+def ToolFactoryNewGrd():
+  import grit.tool.newgrd
+  return grit.tool.newgrd.NewGrd()
+
+def ToolFactoryResizeDialog():
+  import grit.tool.resize
+  return grit.tool.resize.ResizeDialog()
+
+def ToolFactoryRc2Grd():
+  import grit.tool.rc2grd
+  return grit.tool.rc2grd.Rc2Grd()
+
+def ToolFactoryTest():
+  import grit.tool.test
+  return grit.tool.test.TestTool()
+
+def ToolFactoryTranslationToTc():
+  import grit.tool.transl2tc
+  return grit.tool.transl2tc.TranslationToTc()
+
+def ToolFactoryUnit():
+  import grit.tool.unit
+  return grit.tool.unit.UnitTestTool()
+
+def ToolFactoryXmb():
+  import grit.tool.xmb
+  return grit.tool.xmb.OutputXmb()
+
+def ToolAndroid2Grd():
+  import grit.tool.android2grd
+  return grit.tool.android2grd.Android2Grd()
 
 # Keys for the following map
-_CLASS = 1
+_FACTORY = 1
 _REQUIRES_INPUT = 2
 _HIDDEN = 3  # optional key - presence indicates tool is hidden
-
 
 # Maps tool names to the tool's module.  Done as a list of (key, value) tuples
 # instead of a map to preserve ordering.
 _TOOLS = [
-  ['build', { _CLASS : grit.tool.build.RcBuilder, _REQUIRES_INPUT : True }],
-  ['newgrd', { _CLASS  : grit.tool.newgrd.NewGrd, _REQUIRES_INPUT : False }],
-  ['rc2grd', { _CLASS : grit.tool.rc2grd.Rc2Grd, _REQUIRES_INPUT : False }],
-  ['transl2tc', { _CLASS : grit.tool.transl2tc.TranslationToTc,
-                 _REQUIRES_INPUT : False }],
-  ['sdiff', { _CLASS : grit.tool.diff_structures.DiffStructures,
-                       _REQUIRES_INPUT : False }],
-  ['resize', {
-      _CLASS : grit.tool.resize.ResizeDialog, _REQUIRES_INPUT : True }],
-  ['unit', { _CLASS : grit.tool.unit.UnitTestTool, _REQUIRES_INPUT : False }],
-  ['count', { _CLASS : grit.tool.count.CountMessage, _REQUIRES_INPUT : True }],
-  ['test', {
-      _CLASS: grit.tool.test.TestTool, _REQUIRES_INPUT : True,
-      _HIDDEN : True }],
+  ['build', { _FACTORY : ToolFactoryBuild, _REQUIRES_INPUT : True }],
+  ['buildinfo', { _FACTORY : ToolFactoryBuildInfo, _REQUIRES_INPUT : True }],
+  ['count', { _FACTORY : ToolFactoryCount, _REQUIRES_INPUT : True }],
   ['menufromparts', {
-      _CLASS: grit.tool.menu_from_parts.MenuTranslationsFromParts,
+      _FACTORY: ToolFactoryMenuTranslationsFromParts,
       _REQUIRES_INPUT : True, _HIDDEN : True }],
+  ['newgrd', { _FACTORY  : ToolFactoryNewGrd, _REQUIRES_INPUT : False }],
+  ['rc2grd', { _FACTORY : ToolFactoryRc2Grd, _REQUIRES_INPUT : False }],
+  ['resize', {
+      _FACTORY : ToolFactoryResizeDialog, _REQUIRES_INPUT : True }],
+  ['sdiff', { _FACTORY : ToolFactoryDiffStructures,
+              _REQUIRES_INPUT : False }],
+  ['test', {
+      _FACTORY: ToolFactoryTest, _REQUIRES_INPUT : True,
+      _HIDDEN : True }],
+  ['transl2tc', { _FACTORY : ToolFactoryTranslationToTc,
+                  _REQUIRES_INPUT : False }],
+  ['unit', { _FACTORY : ToolFactoryUnit, _REQUIRES_INPUT : False }],
+  ['xmb', { _FACTORY : ToolFactoryXmb, _REQUIRES_INPUT : True }],
+  ['android2grd', {
+      _FACTORY: ToolAndroid2Grd,
+      _REQUIRES_INPUT : False }],
 ]
 
 
@@ -71,7 +117,7 @@ def PrintUsage():
   tool_list = ''
   for (tool, info) in _TOOLS:
     if not _HIDDEN in info.keys():
-      tool_list += '    %-12s %s\n' % (tool, info[_CLASS]().ShortDescription())
+      tool_list += '    %-12s %s\n' % (tool, info[_FACTORY]().ShortDescription())
 
   # TODO(joi) Put these back into the usage when appropriate:
   #
@@ -79,7 +125,7 @@ def PrintUsage():
   #        e.g. Perforce.
   #
   #  -c    Use the specified Perforce CLIENT when talking to Perforce.
-  print '''Usage: grit [GLOBALOPTIONS] TOOL [args to tool]
+  print """Usage: grit [GLOBALOPTIONS] TOOL [args to tool]
 
 Global options:
 
@@ -87,6 +133,10 @@ Global options:
             specified, GRIT will look for the environment variable GRIT_INPUT.
             If it is not present either, GRIT will try to find an input file
             named 'resource.grd' in the current working directory.
+
+  -h MODULE Causes GRIT to use MODULE.UnsignedFingerPrint instead of
+            grit.extern.FP.UnsignedFingerprint.  MODULE must be
+            available somewhere in the PYTHONPATH search path.
 
   -v        Print more verbose runtime information.
 
@@ -101,27 +151,30 @@ Tools:
 %s
   For more information on how to use a particular tool, and the specific
   arguments you can send to that tool, execute 'grit help TOOL'
-''' % (tool_list)
+""" % (tool_list)
 
 
 class Options(object):
-  '''Option storage and parsing.'''
+  """Option storage and parsing."""
 
   def __init__(self):
     self.disconnected = False
     self.client = ''
+    self.hash = None
     self.input = None
     self.verbose = False
     self.extra_verbose = False
     self.output_stream = sys.stdout
     self.profile_dest = None
+    self.psyco = False
 
   def ReadOptions(self, args):
-    '''Reads options from the start of args and returns the remainder.'''
-    (opts, args) = getopt.getopt(args, 'g:dvxc:i:p:')
+    """Reads options from the start of args and returns the remainder."""
+    (opts, args) = getopt.getopt(args, 'g:qdvxc:i:p:h:', ('psyco',))
     for (key, val) in opts:
       if key == '-d': self.disconnected = True
       elif key == '-c': self.client = val
+      elif key == '-h': self.hash = val
       elif key == '-i': self.input = val
       elif key == '-v':
         self.verbose = True
@@ -132,6 +185,7 @@ class Options(object):
         self.extra_verbose = True
         util.extra_verbose = True
       elif key == '-p': self.profile_dest = val
+      elif key == '--psyco': self.psyco = True
 
     if not self.input:
       if 'GRIT_INPUT' in os.environ:
@@ -143,24 +197,27 @@ class Options(object):
 
   def __repr__(self):
     return '(disconnected: %d, verbose: %d, client: %s, input: %s)' % (
-      self.disconnected, self.verbose, self.client, self.input)
+        self.disconnected, self.verbose, self.client, self.input)
 
 
 def _GetToolInfo(tool):
-  '''Returns the info map for the tool named 'tool' or None if there is no
-  such tool.'''
-  matches = filter(lambda t: t[0] == tool, _TOOLS)
-  if not len(matches):
+  """Returns the info map for the tool named 'tool' or None if there is no
+  such tool."""
+  matches = [t for t in _TOOLS if t[0] == tool]
+  if not matches:
     return None
   else:
     return matches[0][1]
 
 
 def Main(args):
-  '''Parses arguments and does the appropriate thing.'''
+  """Parses arguments and does the appropriate thing."""
   util.ChangeStdoutEncoding()
 
-  if not len(args) or len(args) == 1 and args[0] == 'help':
+  if sys.version_info < (2, 6):
+    print "GRIT requires Python 2.6 or later."
+    return 2
+  elif not args or (len(args) == 1 and args[0] == 'help'):
     PrintUsage()
     return 0
   elif len(args) == 2 and args[0] == 'help':
@@ -171,7 +228,7 @@ def Main(args):
 
     print ("Help for 'grit %s' (for general help, run 'grit help'):\n"
            % (tool))
-    print _GetToolInfo(tool)[_CLASS].__doc__
+    print _GetToolInfo(tool)[_FACTORY]().__doc__
     return 0
   else:
     options = Options()
@@ -198,7 +255,17 @@ def Main(args):
              '     from the current directory.' % options.input)
       return 2
 
-    toolobject = _GetToolInfo(tool)[_CLASS]()
+    if options.psyco:
+      # Psyco is a specializing JIT for Python.  Early tests indicate that it
+      # could speed up GRIT (at the expense of more memory) for large GRIT
+      # compilations.  See http://psyco.sourceforge.net/
+      import psyco
+      psyco.profile()
+
+    if options.hash:
+      grit.extern.FP.UseUnsignedFingerPrintFromModule(options.hash)
+
+    toolobject = _GetToolInfo(tool)[_FACTORY]()
     if options.profile_dest:
       import hotshot
       prof = hotshot.Profile(options.profile_dest)
@@ -209,4 +276,3 @@ def Main(args):
 
 if __name__ == '__main__':
   sys.exit(Main(sys.argv[1:]))
-

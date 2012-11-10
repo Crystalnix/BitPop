@@ -1,11 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
 #include "base/file_util.h"
+#include "base/json/json_file_value_serializer.h"
 #include "base/json/json_reader.h"
-#include "base/json/json_value_serializer.h"
+#include "base/json/json_string_value_serializer.h"
 #include "base/json/json_writer.h"
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
@@ -109,7 +110,7 @@ TEST(JSONValueSerializerTest, StringEscape) {
   std::string output_js;
   DictionaryValue valueRoot;
   valueRoot.SetString("all_chars", all_chars);
-  base::JSONWriter::Write(&valueRoot, false, &output_js);
+  base::JSONWriter::Write(&valueRoot, &output_js);
   ASSERT_EQ(expected_output, output_js);
 
   // Test JSONValueSerializer interface (uses JSONWriter).
@@ -194,7 +195,7 @@ TEST(JSONValueSerializerTest, AllowTrailingComma) {
 namespace {
 
 void ValidateJsonList(const std::string& json) {
-  scoped_ptr<Value> root(base::JSONReader::Read(json, false));
+  scoped_ptr<Value> root(base::JSONReader::Read(json));
   ASSERT_TRUE(root.get() && root->IsType(Value::TYPE_LIST));
   ListValue* list = static_cast<ListValue*>(root.get());
   ASSERT_EQ(1U, list->GetSize());
@@ -218,7 +219,7 @@ TEST(JSONValueSerializerTest, JSONReaderComments) {
   scoped_ptr<Value> root;
 
   // It's ok to have a comment in a string.
-  root.reset(base::JSONReader::Read("[\"// ok\\n /* foo */ \"]", false));
+  root.reset(base::JSONReader::Read("[\"// ok\\n /* foo */ \"]"));
   ASSERT_TRUE(root.get() && root->IsType(Value::TYPE_LIST));
   ListValue* list = static_cast<ListValue*>(root.get());
   ASSERT_EQ(1U, list->GetSize());
@@ -229,11 +230,11 @@ TEST(JSONValueSerializerTest, JSONReaderComments) {
   ASSERT_EQ("// ok\n /* foo */ ", value);
 
   // You can't nest comments.
-  root.reset(base::JSONReader::Read("/* /* inner */ outer */ [ 1 ]", false));
+  root.reset(base::JSONReader::Read("/* /* inner */ outer */ [ 1 ]"));
   ASSERT_FALSE(root.get());
 
   // Not a open comment token.
-  root.reset(base::JSONReader::Read("/ * * / [1]", false));
+  root.reset(base::JSONReader::Read("/ * * / [1]"));
   ASSERT_FALSE(root.get());
 }
 

@@ -4,7 +4,6 @@
 
 #ifndef CHROME_COMMON_STRING_ORDINAL_H_
 #define CHROME_COMMON_STRING_ORDINAL_H_
-#pragma once
 
 #include <string>
 
@@ -50,6 +49,10 @@ class StringOrdinal {
   // Returns true iff |*this| == |other| (i.e. |*this| < |other| and
   // |other| < |*this| are both false).
   bool Equal(const StringOrdinal& other) const;
+
+  // Returns true iff |*this| == |other| or |*this| and |other|
+  // are both invalid.
+  bool EqualOrBothInvalid(const StringOrdinal& other) const;
 
   // Given |*this| != |other|, returns a StringOrdinal x such that
   // min(|*this|, |other|) < x < max(|*this|, |other|). It is an error

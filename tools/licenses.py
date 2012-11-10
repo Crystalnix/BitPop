@@ -27,7 +27,7 @@ PRUNE_PATHS = set([
     # Assume for now that breakpad has their licensing in order.
     os.path.join('breakpad'),
 
-    # This is just a tiny vsprops file, presumably written by the googleurl
+    # This is just a tiny vsprops file, presumably written by the google-url
     # authors.  Not third-party code.
     os.path.join('googleurl','third_party','icu'),
 
@@ -47,9 +47,6 @@ PRUNE_PATHS = set([
     # Not in the public Chromium tree.
     os.path.join('third_party','adobe'),
 
-    # Written as part of Chromium.
-    os.path.join('third_party','fuzzymatch'),
-
     # Same license as Chromium.
     os.path.join('third_party','lss'),
 
@@ -61,8 +58,10 @@ PRUNE_PATHS = set([
     os.path.join('v8','src','third_party','valgrind'),
 
     # Used for development and test, not in the shipping product.
+    os.path.join('third_party','android_testrunner'),
     os.path.join('third_party','bidichecker'),
     os.path.join('third_party','cygwin'),
+    os.path.join('third_party','gold'),
     os.path.join('third_party','lighttpd'),
     os.path.join('third_party','mingw-w64'),
     os.path.join('third_party','pefile'),
@@ -91,6 +90,9 @@ PRUNE_DIRS = ('.svn', '.git',             # VCS metadata
               'layout_tests')             # lots of subdirs
 
 ADDITIONAL_PATHS = (
+    os.path.join('googleurl'),
+    os.path.join('native_client_sdk'),
+    os.path.join('ppapi'),
     # The directory with the word list for Chinese and Japanese segmentation
     # with different license terms than ICU.
     os.path.join('third_party','icu','source','data','brkitr'),
@@ -103,9 +105,29 @@ ADDITIONAL_PATHS = (
 # can't provide a README.chromium.  Please prefer a README.chromium
 # wherever possible.
 SPECIAL_CASES = {
+    'googleurl': {
+        "Name": "google-url",
+        "URL": "http://code.google.com/p/google-url/",
+        "License": "BSD and MPL 1.1/GPL 2.0/LGPL 2.1",
+        "License File": "LICENSE.txt",
+    },
     os.path.join('third_party', 'angle'): {
         "Name": "Almost Native Graphics Layer Engine",
         "URL": "http://code.google.com/p/angleproject/",
+        "License": "BSD",
+    },
+    os.path.join('third_party', 'cros_system_api'): {
+        "Name": "Chromium OS system API",
+        "URL": "http://www.chromium.org/chromium-os",
+        "License": "BSD",
+        # Absolute path here is resolved as relative to the source root.
+        "License File": "/LICENSE.chromium_os",
+    },
+    os.path.join('third_party', 'GTM'): {
+        "Name": "Google Toolbox for Mac",
+        "URL": "http://code.google.com/p/google-toolbox-for-mac/",
+        "License": "Apache 2.0",
+        "License File": "COPYING",
     },
     os.path.join('third_party', 'lss'): {
         "Name": "linux-syscall-support",
@@ -114,34 +136,50 @@ SPECIAL_CASES = {
     os.path.join('third_party', 'ots'): {
         "Name": "OTS (OpenType Sanitizer)",
         "URL": "http://code.google.com/p/ots/",
+        "License": "BSD",
+    },
+    os.path.join('third_party', 'pdfsqueeze'): {
+        "Name": "pdfsqueeze",
+        "URL": "http://code.google.com/p/pdfsqueeze/",
+        "License": "Apache 2.0",
+        "License File": "COPYING",
     },
     os.path.join('third_party', 'ppapi'): {
         "Name": "ppapi",
         "URL": "http://code.google.com/p/ppapi/",
     },
-    os.path.join('third_party', 'pywebsocket'): {
-        "Name": "pywebsocket",
-        "URL": "http://code.google.com/p/pywebsocket/",
+    os.path.join('third_party', 'scons-2.0.1'): {
+        "Name": "scons-2.0.1",
+        "URL": "http://www.scons.org",
+        "License": "MIT",
+    },
+    os.path.join('third_party', 'trace-viewer'): {
+        "Name": "trace-viewer",
+        "URL": "http://code.google.com/p/trace-viewer",
+        "License": "BSD",
+    },
+    os.path.join('third_party', 'v8-i18n'): {
+        "Name": "Internationalization Library for v8",
+        "URL": "http://code.google.com/p/v8-i18n/",
+        "License": "Apache 2.0, BSD and others",
     },
     os.path.join('third_party', 'WebKit'): {
         "Name": "WebKit",
         "URL": "http://webkit.org/",
+        "License": "BSD and GPL v2",
         # Absolute path here is resolved as relative to the source root.
         "License File": "/webkit/LICENSE",
     },
-    os.path.join('third_party', 'GTM'): {
-        "Name": "Google Toolbox for Mac",
-        "URL": "http://code.google.com/p/google-toolbox-for-mac/",
-        "License File": "COPYING",
-    },
-    os.path.join('third_party', 'pdfsqueeze'): {
-        "Name": "pdfsqueeze",
-        "URL": "http://code.google.com/p/pdfsqueeze/",
-        "License File": "COPYING",
+    os.path.join('third_party', 'webpagereplay'): {
+        "Name": "webpagereplay",
+        "URL": "http://code.google.com/p/web-page-replay",
+        "License": "Apache 2.0",
     },
     os.path.join('v8', 'strongtalk'): {
         "Name": "Strongtalk",
         "URL": "http://www.strongtalk.org/",
+        "License": "BSD",
+        # Absolute path here is resolved as relative to the source root.
         "License File": "/v8/LICENSE.strongtalk",
     },
 }
@@ -173,6 +211,7 @@ def ParseDir(path):
         "License File": "LICENSE",  # Relative path to license text.
         "Name": None,               # Short name (for header on about:credits).
         "URL": None,                # Project home page.
+        "License": None,            # Software license.
         }
 
     # Relative path to a file containing some html we're required to place in
@@ -185,7 +224,8 @@ def ParseDir(path):
         # Try to find README.chromium.
         readme_path = os.path.join(path, 'README.chromium')
         if not os.path.exists(readme_path):
-            raise LicenseError("missing README.chromium")
+            raise LicenseError("missing README.chromium or licenses.py "
+                               "SPECIAL_CASES entry")
 
         for line in open(readme_path):
             line = line.strip()
@@ -227,6 +267,15 @@ def ParseDir(path):
     return metadata
 
 
+def ContainsFiles(path):
+    """Determines whether any files exist in a directory or in any of its
+    subdirectories."""
+    for _, _, files in os.walk(path):
+        if files:
+            return True
+    return False
+
+
 def FindThirdPartyDirs():
     """Find all third_party directories underneath the current directory."""
     third_party_dirs = []
@@ -255,10 +304,17 @@ def FindThirdPartyDirs():
             dirs[:] = []
             continue
 
+        # Don't recurse into paths in ADDITIONAL_PATHS, like we do with regular
+        # third_party/foo paths.
+        if path in ADDITIONAL_PATHS:
+            dirs[:] = []
+
     for dir in ADDITIONAL_PATHS:
         third_party_dirs.append(dir)
 
-    return third_party_dirs
+    # If a directory contains no files, assume it's a DEPS directory for a
+    # project not used by our current configuration and skip it.
+    return [x for x in third_party_dirs if ContainsFiles(x)]
 
 
 def ScanThirdPartyDirs():

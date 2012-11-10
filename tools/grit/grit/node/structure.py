@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,43 +8,38 @@
 
 import os
 
+from grit import exception
+from grit import util
 from grit.node import base
 from grit.node import variant
 
-from grit import constants
-from grit import exception
-from grit import util
-
-import grit.gather.rc
-import grit.gather.tr_html
 import grit.gather.admin_template
-import grit.gather.txt
+import grit.gather.chrome_html
+import grit.gather.chrome_scaled_image
+import grit.gather.igoogle_strings
 import grit.gather.muppet_strings
 import grit.gather.policy_json
+import grit.gather.rc
+import grit.gather.tr_html
+import grit.gather.txt
 
 import grit.format.rc
 import grit.format.rc_header
 
-# RTL languages
-# TODO(jennyz): remove this fixed set of RTL language array
-# when generic expand_variable code is added by grit team.
-_RTL_LANGS = [
-  'ar',
-  'iw',
-  'ur',
-]
-
 # Type of the gatherer to use for each type attribute
 _GATHERERS = {
-  'accelerators' : grit.gather.rc.Accelerators,
-  'admin_template' : grit.gather.admin_template.AdmGatherer,
-  'dialog'  : grit.gather.rc.Dialog,
-  'menu'    : grit.gather.rc.Menu,
-  'muppet'  : grit.gather.muppet_strings.MuppetStrings,
-  'rcdata'  : grit.gather.rc.RCData,
-  'tr_html' : grit.gather.tr_html.TrHtml,
-  'txt'     : grit.gather.txt.TxtFile,
-  'version' : grit.gather.rc.Version,
+  'accelerators'        : grit.gather.rc.Accelerators,
+  'admin_template'      : grit.gather.admin_template.AdmGatherer,
+  'chrome_html'         : grit.gather.chrome_html.ChromeHtml,
+  'chrome_scaled_image' : grit.gather.chrome_scaled_image.ChromeScaledImage,
+  'dialog'              : grit.gather.rc.Dialog,
+  'igoogle'             : grit.gather.igoogle_strings.IgoogleStrings,
+  'menu'                : grit.gather.rc.Menu,
+  'muppet'              : grit.gather.muppet_strings.MuppetStrings,
+  'rcdata'              : grit.gather.rc.RCData,
+  'tr_html'             : grit.gather.tr_html.TrHtml,
+  'txt'                 : grit.gather.txt.TxtFile,
+  'version'             : grit.gather.rc.Version,
   'policy_template_metafile' : grit.gather.policy_json.PolicyJson,
 }
 
@@ -52,15 +47,19 @@ _GATHERERS = {
 # Formatter instance to use for each type attribute
 # when formatting .rc files.
 _RC_FORMATTERS = {
-  'accelerators' : grit.format.rc.RcSection(),
-  'admin_template' : grit.format.rc.RcInclude('ADM'),
-  'dialog'  : grit.format.rc.RcSection(),
-  'menu'    : grit.format.rc.RcSection(),
-  'muppet'  : grit.format.rc.RcInclude('XML'),
-  'rcdata'  : grit.format.rc.RcSection(),
-  'tr_html' : grit.format.rc.RcInclude('HTML'),
-  'txt'     : grit.format.rc.RcInclude('TXT'),
-  'version' : grit.format.rc.RcSection(),
+  'accelerators'        : grit.format.rc.RcSection(),
+  'admin_template'      : grit.format.rc.RcInclude('ADM'),
+  'chrome_html'         : grit.format.rc.RcInclude('BINDATA',
+                                                   process_html=True),
+  'chrome_scaled_image' : grit.format.rc.RcInclude('BINDATA'),
+  'dialog'              : grit.format.rc.RcSection(),
+  'igoogle'             : grit.format.rc.RcInclude('XML'),
+  'menu'                : grit.format.rc.RcSection(),
+  'muppet'              : grit.format.rc.RcInclude('XML'),
+  'rcdata'              : grit.format.rc.RcSection(),
+  'tr_html'             : grit.format.rc.RcInclude('HTML'),
+  'txt'                 : grit.format.rc.RcInclude('TXT'),
+  'version'             : grit.format.rc.RcSection(),
   'policy_template_metafile': None,
 }
 
@@ -73,12 +72,40 @@ class StructureNode(base.Node):
   '''A <structure> element.'''
 
   def __init__(self):
-    base.Node.__init__(self)
-    self.gatherer = None
-    self.skeletons = {}  # expressions to skeleton gatherers
+    super(StructureNode, self).__init__()
+
+    # Keep track of the last filename we flattened to, so we can
+    # avoid doing it more than once.
+    self._last_flat_filename = None
 
   def _IsValidChild(self, child):
     return isinstance(child, variant.SkeletonNode)
+
+  def EndParsing(self):
+    super(StructureNode, self).EndParsing()
+
+    # Now that we have attributes and children, instantiate the gatherers.
+    gathertype = _GATHERERS[self.attrs['type']]
+
+    self.gatherer = gathertype(self.attrs['file'],
+                               self.attrs['name'],
+                               self.attrs['encoding'])
+    self.gatherer.SetGrdNode(self)
+    self.gatherer.SetUberClique(self.UberClique())
+    if hasattr(self.GetRoot(), 'defines'):
+      self.gatherer.SetDefines(self.GetRoot().defines)
+    self.gatherer.SetAttributes(self.attrs)
+
+    self.skeletons = {}  # Maps expressions to skeleton gatherers
+    for child in self.children:
+      assert isinstance(child, variant.SkeletonNode)
+      skel = gathertype(child.attrs['file'],
+                        self.attrs['name'],
+                        child.GetEncodingToUse(),
+                        is_skeleton=True)
+      skel.SetGrdNode(self)  # TODO(benrg): Or child? Only used for ToRealPath
+      skel.SetUberClique(self.UberClique())
+      self.skeletons[child.attrs['expr']] = skel
 
   def MandatoryAttributes(self):
     return ['type', 'name', 'file']
@@ -91,6 +118,11 @@ class StructureNode(base.Node):
              'generateid': 'true',
              'expand_variables' : 'false',
              'output_filename' : '',
+             'fold_whitespace': 'false',
+             'run_command' : '',
+             'allowexternalscript': 'false',
+             'flattenhtml': 'false',
+             'fallback_to_low_resolution': 'default',
              # TODO(joi) this is a hack - should output all generated files
              # as SCons dependencies; however, for now there is a bug I can't
              # find where GRIT doesn't build the matching fileset, therefore
@@ -101,6 +133,24 @@ class StructureNode(base.Node):
 
   def IsExcludedFromRc(self):
     return self.attrs['exclude_from_rc'] == 'true'
+
+  def Process(self, output_dir):
+    """Writes the processed data to output_dir.  In the case of a chrome_html
+    structure this will add references to other scale factors.  If flattening
+    this will also write file references to be base64 encoded data URLs.  The
+    name of the new file is returned."""
+    filename = self.ToRealPath(self.GetInputPath())
+    flat_filename = os.path.join(output_dir,
+        self.attrs['name'] + '_' + os.path.basename(filename))
+
+    if self._last_flat_filename == flat_filename:
+      return
+
+    with open(flat_filename, 'wb') as outfile:
+      outfile.write(self.gatherer.GetData('', 'utf-8'))
+
+    self._last_flat_filename = flat_filename
+    return os.path.basename(flat_filename)
 
   def GetLineEnd(self):
     '''Returns the end-of-line character or characters for files output because
@@ -114,19 +164,36 @@ class StructureNode(base.Node):
       return '\r'
     else:
       raise exception.UnexpectedAttribute(
-        "Attribute 'line_end' must be one of 'linux' (default), 'windows' or 'mac'")
+        "Attribute 'line_end' must be one of 'unix' (default), 'windows' or 'mac'")
 
   def GetCliques(self):
-    if self.gatherer:
-      return self.gatherer.GetCliques()
-    else:
-      return []
+    return self.gatherer.GetCliques()
+
+  def GetDataPackPair(self, lang, encoding):
+    """Returns a (id, string|None) pair that represents the resource id and raw
+    bytes of the data (or None if no resource is generated).  This is used to
+    generate the data pack data file.
+    """
+    from grit.format import rc_header
+    id_map = rc_header.Item.tids_
+    id = id_map[self.GetTextualIds()[0]]
+    data = self.gatherer.GetData(lang, encoding)
+    return id, data
+
+  def GetHtmlResourceFilenames(self):
+    """Returns a set of all filenames inlined by this node."""
+    return self.gatherer.GetHtmlResourceFilenames()
+
+  def GetInputPath(self):
+    return self.gatherer.GetInputPath()
 
   def GetTextualIds(self):
-    if self.gatherer and self.attrs['type'] not in ['tr_html', 'admin_template', 'txt']:
-      return self.gatherer.GetTextualIds()
-    else:
+    if not hasattr(self, 'gatherer'):
+      # This case is needed because this method is called by
+      # GritNode.ValidateUniqueIds before RunGatherers has been called.
+      # TODO(benrg): Fix this?
       return [self.attrs['name']]
+    return self.gatherer.GetTextualIds()
 
   def ItemFormatter(self, t):
     if t == 'rc_header':
@@ -134,33 +201,24 @@ class StructureNode(base.Node):
     elif (t in ['rc_all', 'rc_translateable', 'rc_nontranslateable'] and
           self.SatisfiesOutputCondition()):
       return _RC_FORMATTERS[self.attrs['type']]
+    elif t == 'resource_map_source':
+      from grit.format import resource_map
+      return resource_map.SourceInclude()
+    elif t == 'resource_file_map_source':
+      from grit.format import resource_map
+      return resource_map.SourceFileInclude()
     else:
-      return super(type(self), self).ItemFormatter(t)
+      return super(StructureNode, self).ItemFormatter(t)
 
   def RunGatherers(self, recursive=False, debug=False):
-    if self.gatherer:
-      return  # idempotent
-
-    gathertype = _GATHERERS[self.attrs['type']]
-
     if debug:
-      print 'Running gatherer %s for file %s' % (str(gathertype), self.FilenameToOpen())
+      print 'Running gatherer %s for file %s' % (
+          str(type(self.gatherer)), self.GetInputPath())
 
-    self.gatherer = gathertype.FromFile(self.FilenameToOpen(),
-                                        self.attrs['name'],
-                                        self.attrs['encoding'])
-    self.gatherer.SetUberClique(self.UberClique())
+    # Note: Parse() is idempotent, therefore this method is also.
     self.gatherer.Parse()
-
-    for child in self.children:
-      assert isinstance(child, variant.SkeletonNode)
-      skel = gathertype.FromFile(child.FilenameToOpen(),
-                                 self.attrs['name'],
-                                 child.GetEncodingToUse())
-      skel.SetUberClique(self.UberClique())
-      skel.SetSkeleton(True)
+    for skel in self.skeletons.values():
       skel.Parse()
-      self.skeletons[child.attrs['expr']] = skel
 
   def GetSkeletonGatherer(self):
     '''Returns the gatherer for the alternate skeleton that should be used,
@@ -172,11 +230,25 @@ class StructureNode(base.Node):
         return self.skeletons[expr]
     return None
 
-  def GetFilePath(self):
-    return self.ToRealPath(self.attrs['file'])
-
   def HasFileForLanguage(self):
-    return self.attrs['type'] in ['tr_html', 'admin_template', 'txt', 'muppet']
+    return self.attrs['type'] in ['tr_html', 'admin_template', 'txt',
+                                  'muppet', 'igoogle', 'chrome_scaled_image',
+                                  'chrome_html']
+
+  def ExpandVariables(self):
+    '''Variable expansion on structures is controlled by an XML attribute.
+
+    However, old files assume that expansion is always on for Rc files.
+
+    Returns:
+      A boolean.
+    '''
+    attrs = self.GetRoot().attrs
+    if 'grit_version' in attrs and attrs['grit_version'] > 1:
+      return self.attrs['expand_variables'] == 'true'
+    else:
+      return (self.attrs['expand_variables'] == 'true' or
+              self.attrs['file'].lower().endswith('.rc'))
 
   def FileForLanguage(self, lang, output_dir, create_file=True,
                       return_if_not_generated=True):
@@ -189,64 +261,54 @@ class StructureNode(base.Node):
       create_file: True
     '''
     assert self.HasFileForLanguage()
-    if (lang == self.GetRoot().GetSourceLanguage() and
-        self.attrs['expand_variables'] != 'true'):
+    # If the source language is requested, and no extra changes are requested,
+    # use the existing file.
+    if ((not lang or lang == self.GetRoot().GetSourceLanguage()) and
+        self.attrs['expand_variables'] != 'true' and
+        not self.attrs['run_command']):
       if return_if_not_generated:
-        return self.GetFilePath()
+        return self.ToRealPath(self.GetInputPath())
       else:
         return None
-    else:
-      if self.attrs['output_filename'] != '':
-        filename = self.attrs['output_filename']
-      else:
-        filename = os.path.basename(self.attrs['file'])
-      assert len(filename)
-      filename = '%s_%s' % (lang, filename)
-      filename = os.path.join(output_dir, filename)
 
-      if create_file:
-        text = self.gatherer.Translate(
+    if self.attrs['output_filename'] != '':
+      filename = self.attrs['output_filename']
+    else:
+      filename = os.path.basename(self.attrs['file'])
+    assert len(filename)
+    filename = '%s_%s' % (lang, filename)
+    filename = os.path.join(output_dir, filename)
+
+    # Only create the output if it was requested by the call.
+    if create_file:
+      text = self.gatherer.Translate(
           lang,
           pseudo_if_not_available=self.PseudoIsAllowed(),
           fallback_to_english=self.ShouldFallbackToEnglish(),
           skeleton_gatherer=self.GetSkeletonGatherer())
 
-        file_object = util.WrapOutputStream(file(filename, 'wb'),
-                                            self._GetOutputEncoding())
-        file_contents = util.FixLineEnd(text, self.GetLineEnd())
-        if self.attrs['expand_variables'] == 'true':
-          file_contents = file_contents.replace('[GRITLANGCODE]', lang)
-          # TODO(jennyz): remove this hard coded logic for expanding
-          # [GRITDIR] variable for RTL languages when the generic
-          # expand_variable code is added by grit team.
-          if lang in _RTL_LANGS :
-            file_contents = file_contents.replace('[GRITDIR]', 'dir="RTL"')
-          else :
-            file_contents = file_contents.replace('[GRITDIR]', 'dir="LTR"')
-        if self._ShouldAddBom():
-          file_object.write(constants.BOM)
-        file_object.write(file_contents)
-        file_object.close()
+      file_contents = util.FixLineEnd(text, self.GetLineEnd())
+      if self.ExpandVariables():
+        # Note that we reapply substitution a second time here.
+        # This is because a) we need to look inside placeholders
+        # b) the substitution values are language-dependent
+        file_contents = self.GetRoot().GetSubstituter().Substitute(file_contents)
 
-      return filename
+      with open(filename, 'wb') as file_object:
+        output_stream = util.WrapOutputStream(file_object,
+                                              self.attrs['output_encoding'])
+        output_stream.write(file_contents)
 
-  def _GetOutputEncoding(self):
-    '''Python doesn't natively support UTF encodings with a BOM signature,
-    so we add support by allowing you to append '-sig' to the encoding name.
-    This function returns the specified output encoding minus that part.
-    '''
-    enc = self.attrs['output_encoding']
-    if enc.endswith('-sig'):
-      return enc[0:len(enc) - len('-sig')]
-    else:
-      return enc
+      if self.attrs['run_command']:
+        # Run arbitrary commands after translation is complete so that it
+        # doesn't interfere with what's in translation console.
+        command = self.attrs['run_command'] % {'filename': filename}
+        result = os.system(command)
+        assert result == 0, '"%s" failed.' % command
 
-  def _ShouldAddBom(self):
-    '''Returns true if output files should have the Unicode BOM prepended.
-    '''
-    return self.attrs['output_encoding'].endswith('-sig')
+    return filename
 
-  # static method
+  @staticmethod
   def Construct(parent, name, type, file, encoding='cp1252'):
     '''Creates a new node which is a child of 'parent', with attributes set
     by parameters of the same name.
@@ -259,5 +321,14 @@ class StructureNode(base.Node):
     node.HandleAttribute('encoding', encoding)
     node.EndParsing()
     return node
-  Construct = staticmethod(Construct)
+
+  def SubstituteMessages(self, substituter):
+    '''Propagates substitution to gatherer.
+
+    Args:
+      substituter: a grit.util.Substituter object.
+    '''
+    assert hasattr(self, 'gatherer')
+    if self.ExpandVariables():
+      self.gatherer.SubstituteMessages(substituter)
 

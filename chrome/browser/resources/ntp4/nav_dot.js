@@ -8,7 +8,7 @@
  * of the NTP.
  */
 
-cr.define('ntp4', function() {
+cr.define('ntp', function() {
   'use strict';
 
   /**
@@ -73,8 +73,7 @@ cr.define('ntp4', function() {
     },
 
     /**
-     * Gets the associated TilePage.
-     * @return {TilePage}
+     * @return {TilePage} The associated TilePage.
      */
     get page() {
       return this.page_;
@@ -107,7 +106,7 @@ cr.define('ntp4', function() {
      * Navigates the card slider to the page for this dot.
      */
     switchToPage: function() {
-      ntp4.getCardSlider().selectCardByValue(this.page_, true);
+      ntp.getCardSlider().selectCardByValue(this.page_, true);
     },
 
     /**
@@ -183,7 +182,7 @@ cr.define('ntp4', function() {
     onInputBlur_: function(e) {
       window.getSelection().removeAllRanges();
       this.displayTitle = this.input_.value;
-      ntp4.saveAppPageName(this.page_, this.displayTitle);
+      ntp.saveAppPageName(this.page_, this.displayTitle);
       this.input_.disabled = true;
     },
 
@@ -219,7 +218,7 @@ cr.define('ntp4', function() {
       e.preventDefault();
 
       if (!this.dragWrapper_.isCurrentDragTarget)
-        ntp4.setCurrentDropEffect(e.dataTransfer, 'none');
+        ntp.setCurrentDropEffect(e.dataTransfer, 'none');
       else
         this.page_.setDropEffect(e.dataTransfer);
     },
@@ -232,7 +231,7 @@ cr.define('ntp4', function() {
      */
     doDrop: function(e) {
       e.stopPropagation();
-      var tile = ntp4.getCurrentlyDraggingTile();
+      var tile = ntp.getCurrentlyDraggingTile();
       if (tile && tile.tilePage != this.page_)
         this.page_.appendDraggingTile();
       // TODO(estade): handle non-tile drags.

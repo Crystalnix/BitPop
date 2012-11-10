@@ -39,14 +39,26 @@ cr.define('cr.ui.dialogs', function() {
     this.container_.className = 'cr-dialog-container';
     this.container_.addEventListener('keydown',
                                      this.onContainerKeyDown_.bind(this));
+    this.shield_ = doc.createElement('div');
+    this.shield_.className = 'cr-dialog-shield';
+    this.container_.appendChild(this.shield_);
+    this.container_.addEventListener('mousedown',
+                                     this.onContainerMouseDown_.bind(this));
 
     this.frame_ = doc.createElement('div');
     this.frame_.className = 'cr-dialog-frame';
+    this.frame_.tabIndex = 0;
     this.container_.appendChild(this.frame_);
 
     this.title_ = doc.createElement('div');
     this.title_.className = 'cr-dialog-title';
     this.frame_.appendChild(this.title_);
+
+    this.closeButton_ = doc.createElement('div');
+    this.closeButton_.className = 'cr-dialog-close';
+    this.closeButton_.addEventListener('click',
+                                        this.onCancelClick_.bind(this));
+    this.frame_.appendChild(this.closeButton_);
 
     this.text_ = doc.createElement('div');
     this.text_.className = 'cr-dialog-text';
@@ -83,6 +95,16 @@ cr.define('cr.ui.dialogs', function() {
     }
   };
 
+  BaseDialog.prototype.onContainerMouseDown_ = function(event) {
+    if (event.target == this.container_) {
+      var classList = this.frame_.classList;
+      // Start 'pulse' animation.
+      classList.remove('pulse');
+      setTimeout(classList.add.bind(classList, 'pulse'), 0);
+      event.preventDefault();
+    }
+  };
+
   BaseDialog.prototype.onOkClick_ = function(event) {
     this.hide();
     if (this.onOk_)
@@ -109,10 +131,44 @@ cr.define('cr.ui.dialogs', function() {
 
   BaseDialog.prototype.show = function(message, onOk, onCancel, onShow) {
     this.showWithTitle(null, message, onOk, onCancel, onShow);
-  }
+  };
+
+  BaseDialog.prototype.showHtml = function(title, message,
+      onOk, onCancel, onShow) {
+    this.text_.innerHTML = message;
+    this.show_(title, onOk, onCancel, onShow);
+  };
+
+  BaseDialog.prototype.findFocusableElements_ = function(doc) {
+    var elements = Array.prototype.filter.call(
+        doc.querySelectorAll('*'),
+        function(n) { return n.tabIndex >= 0; });
+
+    var iframes = doc.querySelectorAll('iframe');
+    for (var i = 0; i < iframes.length; i++) {
+      // Some iframes have an undefined contentDocument for security reasons,
+      // such as chrome://terms (which is used in the chromeos OOBE screens).
+      var contentDoc = iframes[i].contentDocument;
+      if (contentDoc)
+        elements = elements.concat(this.findFocusableElements_(contentDoc));
+    }
+    return elements;
+  };
 
   BaseDialog.prototype.showWithTitle = function(title, message,
       onOk, onCancel, onShow) {
+    this.text_.textContent = message;
+    this.show_(title, onOk, onCancel, onShow);
+  };
+
+  BaseDialog.prototype.show_ = function(title, onOk, onCancel, onShow) {
+    // Make all outside nodes unfocusable while the dialog is active.
+    this.deactivatedNodes_ = this.findFocusableElements_(this.document_);
+    this.tabIndexes_ = this.deactivatedNodes_.map(
+        function(n) { return n.getAttribute('tabindex'); });
+    this.deactivatedNodes_.forEach(
+        function(n) { n.tabIndex = -1; });
+
     this.previousActiveElement_ = this.document_.activeElement;
     this.parentNode_.appendChild(this.container_);
 
@@ -123,30 +179,15 @@ cr.define('cr.ui.dialogs', function() {
       this.title_.textContent = title;
       this.title_.hidden = false;
     } else {
-      this.title_.textContent = "";
+      this.title_.textContent = '';
       this.title_.hidden = true;
     }
-    this.text_.textContent = message;
-
-    var top = (this.document_.body.clientHeight -
-               this.frame_.clientHeight) / 2;
-    var left = (this.document_.body.clientWidth -
-                this.frame_.clientWidth) / 2;
-
-    // Disable transitions so that we can set the initial position of the
-    // dialog right away.
-    this.frame_.style.webkitTransitionProperty = '';
-    this.frame_.style.top = (top - 50) + 'px';
-    this.frame_.style.left = (left + 10) + 'px';
 
     var self = this;
-    setTimeout(function () {
+    setTimeout(function() {
       // Note that we control the opacity of the *container*, but the top/left
       // of the *frame*.
-      self.container_.style.opacity = '1';
-      self.frame_.style.top = top + 'px';
-      self.frame_.style.left = left + 'px';
-      self.frame_.style.webkitTransitionProperty = 'left, top';
+      self.container_.classList.add('shown');
       self.initialFocusElement_.focus();
       setTimeout(function() {
         if (onShow)
@@ -156,17 +197,27 @@ cr.define('cr.ui.dialogs', function() {
   };
 
   BaseDialog.prototype.hide = function(onHide) {
+    // Restore focusability.
+    for (var i = 0; i < this.deactivatedNodes_.length; i++) {
+      var node = this.deactivatedNodes_[i];
+      if (this.tabIndexes_[i] === null)
+        node.removeAttribute('tabindex');
+      else
+        node.setAttribute('tabindex', this.tabIndexes_[i]);
+    }
+    this.deactivatedNodes_ = null;
+    this.tabIndexes_ = null;
+
     // Note that we control the opacity of the *container*, but the top/left
     // of the *frame*.
-    this.container_.style.opacity = '0';
-    this.frame_.style.top = (parseInt(this.frame_.style.top) + 50) + 'px';
-    this.frame_.style.left = (parseInt(this.frame_.style.left) - 10) + 'px';
+    this.container_.classList.remove('shown');
 
     if (this.previousActiveElement_) {
       this.previousActiveElement_.focus();
     } else {
       this.document_.body.focus();
     }
+    this.frame_.classList.remove('pulse');
 
     var self = this;
     setTimeout(function() {

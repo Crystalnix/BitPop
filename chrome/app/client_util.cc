@@ -9,16 +9,20 @@
 #include "base/debug/trace_event.h"
 #include "base/environment.h"
 #include "base/file_util.h"
+#include "base/file_version_info.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/rand_util.h"  // For PreRead experiment.
 #include "base/sha1.h"  // For PreRead experiment.
+#include "base/string16.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "base/version.h"
 #include "base/win/registry.h"
 #include "chrome/app/breakpad_win.h"
 #include "chrome/app/client_util.h"
+#include "chrome/app/image_pre_reader_win.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
@@ -37,10 +41,10 @@ typedef void (*RelaunchChromeBrowserWithNewCommandLineIfNeededFunc)();
 
 // Gets chrome version according to the load path. |exe_path| must be the
 // backslash terminated directory of the current chrome.exe.
-bool GetVersion(const wchar_t* exe_path, const wchar_t* key_path,
-                std::wstring* version) {
-  HKEY reg_root = InstallUtil::IsPerUserInstall(exe_path) ? HKEY_CURRENT_USER :
-                                                            HKEY_LOCAL_MACHINE;
+bool GetChromeVersion(const wchar_t* exe_dir, const wchar_t* key_path,
+                      string16* version) {
+  HKEY reg_root = InstallUtil::IsPerUserInstall(exe_dir) ? HKEY_CURRENT_USER :
+                                                           HKEY_LOCAL_MACHINE;
   bool success = false;
 
   base::win::RegKey key(reg_root, key_path, KEY_QUERY_VALUE);
@@ -49,7 +53,7 @@ bool GetVersion(const wchar_t* exe_path, const wchar_t* key_path,
     // running. We need to consult the opv value so we can load the old dll.
     // TODO(cpu) : This is solving the same problem as the environment variable
     // so one of them will eventually be deprecated.
-    std::wstring new_chrome_exe(exe_path);
+    string16 new_chrome_exe(exe_dir);
     new_chrome_exe.append(installer::kChromeNewExe);
     if (::PathFileExistsW(new_chrome_exe.c_str()) &&
         key.ReadValue(google_update::kRegOldVersionField,
@@ -64,18 +68,8 @@ bool GetVersion(const wchar_t* exe_path, const wchar_t* key_path,
   return success;
 }
 
-// Gets the path of the current exe with a trailing backslash.
-std::wstring GetExecutablePath() {
-  wchar_t path[MAX_PATH];
-  ::GetModuleFileNameW(NULL, path, MAX_PATH);
-  if (!::PathRemoveFileSpecW(path))
-    return std::wstring();
-  std::wstring exe_path(path);
-  return exe_path.append(L"\\");
-}
-
 // Not generic, we only handle strings up to 128 chars.
-bool EnvQueryStr(const wchar_t* key_name, std::wstring* value) {
+bool EnvQueryStr(const wchar_t* key_name, string16* value) {
   wchar_t out[128];
   DWORD count = sizeof(out)/sizeof(out[0]);
   DWORD rv = ::GetEnvironmentVariableW(key_name, out, count);
@@ -93,7 +87,27 @@ const int kPreReadExpiryYear = 2012;
 const int kPreReadExpiryMonth = 7;
 const int kPreReadExpiryDay = 1;
 
-bool PreReadShouldRun() {
+// These are control values.
+const DWORD kPreReadExperimentFull = 100;
+const DWORD kPreReadExperimentNone = 0;
+
+// Modulate these for different experiments. These values should be a multiple
+// of 5 between 0 and 100, exclusive.
+const DWORD kPreReadExperimentA = 25;
+const DWORD kPreReadExperimentB = 40;
+
+void StaticAssertions() {
+  COMPILE_ASSERT(
+      kPreReadExperimentA <= 100, kPreReadExperimentA_exceeds_100);
+  COMPILE_ASSERT(
+      kPreReadExperimentA % 5 == 0, kPreReadExperimentA_is_not_a_multiple_of_5);
+  COMPILE_ASSERT(
+      kPreReadExperimentB <= 100, kPreReadExperimentB_exceeds_100);
+  COMPILE_ASSERT(
+      kPreReadExperimentB % 5 == 0, kPreReadExperimentB_is_not_a_multiple_of_5);
+}
+
+bool PreReadExperimentShouldRun() {
   base::Time::Exploded exploded = { 0 };
   exploded.year = kPreReadExpiryYear;
   exploded.month = kPreReadExpiryMonth;
@@ -110,33 +124,51 @@ bool PreReadShouldRun() {
   DCHECK(result);
 
   // If the experiment is expired, don't run it.
-  if (build_time > expiration_time)
-    return false;
-
-  // The experiment should only run on canary and dev.
-  const string16 kChannel(GoogleUpdateSettings::GetChromeChannel(
-      GoogleUpdateSettings::IsSystemInstall()));
-  return kChannel == installer::kChromeChannelCanary ||
-      kChannel == installer::kChromeChannelDev;
+  return (build_time <= expiration_time);
 }
 
-// Checks to see if the experiment is running. If so, either tosses a coin
-// and persists it, or gets the already persistent coin-toss value. Returns
-// the coin-toss via |pre_read|. Returns true if the experiment is running and
-// pre_read has been written, false otherwise. |pre_read| is only written to
-// when this function returns true. |key| must be open with read-write access,
-// and be valid.
-bool GetPreReadExperimentGroup(DWORD* pre_read) {
-  DCHECK(pre_read != NULL);
+// For channels with small populations we just divide the population evenly
+// across the 4 buckets.
+DWORD GetSmallPopulationPreReadBucket(double rand_unit) {
+  DCHECK_GE(rand_unit, 0.0);
+  DCHECK_LT(rand_unit, 1.0);
+  if (rand_unit < 0.25 || rand_unit > 1.0)
+    return kPreReadExperimentFull;  // The default pre-read amount.
+  if (rand_unit < 0.50)
+    return kPreReadExperimentA;
+  if (rand_unit < 0.75)
+    return kPreReadExperimentB;
+  return kPreReadExperimentNone;
+}
 
-  // Experiment expired, or running on wrong channel?
-  if (!PreReadShouldRun())
+// For channels with large populations, we allocate a small percentage of the
+// population to each of the experimental buckets, and the rest to the current
+// default pre-read behaviour
+DWORD GetLargePopulationPreReadBucket(double rand_unit) {
+  DCHECK_GE(rand_unit, 0.0);
+  DCHECK_LT(rand_unit, 1.0);
+  if (rand_unit < 0.97 || rand_unit > 1.0)
+    return kPreReadExperimentFull;  // The default pre-read amount.
+  if (rand_unit < 0.98)
+    return kPreReadExperimentA;
+  if (rand_unit < 0.99)
+    return kPreReadExperimentB;
+  return kPreReadExperimentNone;
+}
+
+// Returns true and the |pre_read_percentage| IFF the experiment should run.
+// Otherwise, returns false and |pre_read_percentage| is not modified.
+bool GetPreReadExperimentGroup(DWORD* pre_read_percentage) {
+  DCHECK(pre_read_percentage != NULL);
+
+  // Check if the experiment has expired.
+  if (!PreReadExperimentShouldRun())
     return false;
 
   // Get the MetricsId of the installation. This is only set if the user has
   // opted in to reporting. Doing things this way ensures that we only enable
   // the experiment if its results are actually going to be reported.
-  std::wstring metrics_id;
+  string16 metrics_id;
   if (!GoogleUpdateSettings::GetMetricsId(&metrics_id) || metrics_id.empty())
     return false;
 
@@ -149,9 +181,16 @@ bool GetPreReadExperimentGroup(DWORD* pre_read) {
   COMPILE_ASSERT(sizeof(uint64) < sizeof(sha1_hash), need_more_data);
   uint64* bits = reinterpret_cast<uint64*>(&sha1_hash[0]);
   double rand_unit = base::BitsToOpenEndedUnitInterval(*bits);
-  DWORD coin_toss = rand_unit > 0.5 ? 1 : 0;
 
-  *pre_read = coin_toss;
+  // We carve up the bucket sizes based on the population of the channel.
+  const string16 channel(
+      GoogleUpdateSettings::GetChromeChannel(
+          GoogleUpdateSettings::IsSystemInstall()));
+
+  // For our purposes, Stable has a large population, everything else is small.
+  *pre_read_percentage = (channel == installer::kChromeChannelStable ?
+                              GetLargePopulationPreReadBucket(rand_unit) :
+                              GetSmallPopulationPreReadBucket(rand_unit));
 
   return true;
 }
@@ -161,7 +200,7 @@ bool GetPreReadExperimentGroup(DWORD* pre_read) {
 // Expects that |dir| has a trailing backslash. |dir| is modified so it
 // contains the full path that was tried. Caller must check for the return
 // value not being null to determine if this path contains a valid dll.
-HMODULE LoadChromeWithDirectory(std::wstring* dir) {
+HMODULE LoadChromeWithDirectory(string16* dir) {
   ::SetCurrentDirectoryW(dir->c_str());
   const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
   dir->append(installer::kChromeDll);
@@ -183,19 +222,42 @@ HMODULE LoadChromeWithDirectory(std::wstring* dir) {
     // TODO(ananta): Investigate this and tune.
     const size_t kStepSize = 4 * 1024;
 
-    DWORD pre_read_size = 0;
+    // We hypothesize that pre-reading only the bytes actually touched during
+    // startup should improve startup time. The Syzygy toolchain attempts to
+    // optimize the binary layout of chrome.dll, rearranging the code and data
+    // blocks such that temporally related blocks (i.e., code and data used in
+    // startup, browser, renderer, etc) are grouped together, and that blocks
+    // used early in the process lifecycle occur earlier in their sections.
+    DWORD pre_read_percentage = 100;
     DWORD pre_read_step_size = kStepSize;
-    DWORD pre_read = 1;
+    bool is_eligible_for_experiment = true;
 
     // TODO(chrisha): This path should not be ChromeFrame specific, and it
     //     should not be hard-coded with 'Google' in the path. Rather, it should
     //     use the product name.
-    base::win::RegKey key(HKEY_CURRENT_USER, L"Software\\Google\\ChromeFrame",
+    base::win::RegKey key(HKEY_CURRENT_USER,
+                          L"Software\\Google\\ChromeFrame",
                           KEY_QUERY_VALUE);
+
+    // Check if there are any pre-read settings in the registry. If so, then
+    // the pre-read settings have been forcibly set and this instance is not
+    // eligible for the pre-read experiment.
     if (key.Valid()) {
-      key.ReadValueDW(L"PreReadSize", &pre_read_size);
-      key.ReadValueDW(L"PreReadStepSize", &pre_read_step_size);
-      key.ReadValueDW(L"PreRead", &pre_read);
+      DWORD value = 0;
+      if (key.ReadValueDW(L"PreRead", &value) == ERROR_SUCCESS) {
+        is_eligible_for_experiment = false;
+        pre_read_percentage = (value != 0) ? 100 : 0;
+      }
+
+      if (key.ReadValueDW(L"PreReadPercentage", &value) == ERROR_SUCCESS) {
+        is_eligible_for_experiment = false;
+        pre_read_percentage = value;
+      }
+
+      if (key.ReadValueDW(L"PreReadStepSize", &value) == ERROR_SUCCESS) {
+        is_eligible_for_experiment = false;
+        pre_read_step_size = value;
+      }
       key.Close();
     }
 
@@ -204,29 +266,41 @@ HMODULE LoadChromeWithDirectory(std::wstring* dir) {
     // The PreRead experiment is unable to use the standard FieldTrial
     // mechanism as pre-reading happens in chrome.exe prior to loading
     // chrome.dll. As such, we use a custom approach. If the experiment is
-    // running (not expired, and we're running a version of chrome from an
-    // appropriate channel) then we look to the registry for the BreakPad/UMA
-    // metricsid. We use this to seed a coin-toss, which is then communicated
-    // to chrome.dll via an environment variable, which indicates to chrome.dll
-    // that the experiment is running, causing it to report sub-histogram
-    // results.
-
+    // running (not expired) then we look to the registry for the BreakPad/UMA
+    // metricsid. We use this to seed a random unit, and select a bucket
+    // (percentage to pre-read) for the experiment. The selected bucket is
+    // communicated to chrome.dll via an environment variable, which alerts
+    // chrome.dll that the experiment is running, causing it to report
+    // sub-histogram results.
+    //
+    // If we've read pre-read settings from the registry, then someone has
+    // specifically forced their pre-read options and is not participating in
+    // the experiment.
+    //
     // If the experiment is running, indicate it to chrome.dll via an
-    // environment variable.
-    if (GetPreReadExperimentGroup(&pre_read)) {
-      DCHECK(pre_read == 0 || pre_read == 1);
+    // environment variable that contains the percentage of chrome that
+    // was pre-read. Allowable values are all multiples of 5 between
+    // 0 and 100, inclusive.
+    if (is_eligible_for_experiment &&
+        GetPreReadExperimentGroup(&pre_read_percentage)) {
+      DCHECK_LE(pre_read_percentage, 100U);
+      DCHECK_EQ(pre_read_percentage % 5, 0U);
       scoped_ptr<base::Environment> env(base::Environment::Create());
       env->SetVar(chrome::kPreReadEnvironmentVariable,
-                  pre_read ? "1" : "0");
+                  base::StringPrintf("%d", pre_read_percentage));
     }
 #endif  // if defined(GOOGLE_CHROME_BUILD)
 #endif  // if defined(OS_WIN)
 
-    if (pre_read) {
-      TRACE_EVENT_BEGIN_ETW("PreReadImage", 0, "");
-      file_util::PreReadImage(dir->c_str(), pre_read_size, pre_read_step_size);
-      TRACE_EVENT_END_ETW("PreReadImage", 0, "");
-    }
+    // Clamp the DWORD percentage to fit into a uint8 that's <= 100.
+    pre_read_percentage = std::min(pre_read_percentage, 100UL);
+
+    // Perform the full or partial pre-read.
+    TRACE_EVENT_BEGIN_ETW("PreReadImage", 0, "");
+    ImagePreReader::PartialPreReadImage(dir->c_str(),
+                                        static_cast<uint8>(pre_read_percentage),
+                                        pre_read_step_size);
+    TRACE_EVENT_END_ETW("PreReadImage", 0, "");
   }
 #endif  // NDEBUG
 #endif  // WIN_DISABLE_PREREAD
@@ -235,17 +309,27 @@ HMODULE LoadChromeWithDirectory(std::wstring* dir) {
                           LOAD_WITH_ALTERED_SEARCH_PATH);
 }
 
-void RecordDidRun(const std::wstring& dll_path) {
+void RecordDidRun(const string16& dll_path) {
   bool system_level = !InstallUtil::IsPerUserInstall(dll_path.c_str());
   GoogleUpdateSettings::UpdateDidRunState(true, system_level);
 }
 
-void ClearDidRun(const std::wstring& dll_path) {
+void ClearDidRun(const string16& dll_path) {
   bool system_level = !InstallUtil::IsPerUserInstall(dll_path.c_str());
   GoogleUpdateSettings::UpdateDidRunState(false, system_level);
 }
 
 }  // namespace
+
+string16 GetExecutablePath() {
+  wchar_t path[MAX_PATH];
+  ::GetModuleFileNameW(NULL, path, MAX_PATH);
+  if (!::PathRemoveFileSpecW(path))
+    return string16();
+  string16 exe_path(path);
+  return exe_path.append(1, L'\\');
+}
+
 //=============================================================================
 
 MainDllLoader::MainDllLoader() : dll_(NULL) {
@@ -264,57 +348,71 @@ MainDllLoader::~MainDllLoader() {
 // If that fails then finally we look at the registry which should point us
 // to the latest version. This is the expected path for the first chrome.exe
 // browser instance in an installed build.
-HMODULE MainDllLoader::Load(std::wstring* out_version, std::wstring* out_file) {
-  std::wstring dir(GetExecutablePath());
+HMODULE MainDllLoader::Load(string16* out_version, string16* out_file) {
+  const string16 dir(GetExecutablePath());
   *out_file = dir;
   HMODULE dll = LoadChromeWithDirectory(out_file);
   if (dll)
     return dll;
 
-  std::wstring version_string;
-  scoped_ptr<Version> version;
+  string16 version_string;
+  Version version;
   const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
   if (cmd_line.HasSwitch(switches::kChromeVersion)) {
     version_string = cmd_line.GetSwitchValueNative(switches::kChromeVersion);
-    version.reset(Version::GetVersionFromString(WideToASCII(version_string)));
+    version = Version(WideToASCII(version_string));
 
-    if (!version.get()) {
+    if (!version.IsValid()) {
       // If a bogus command line flag was given, then abort.
-      LOG(ERROR) << "Invalid version string received on command line: "
-                 << version_string;
+      LOG(ERROR) << "Invalid command line version: " << version_string;
       return NULL;
     }
   }
 
-  if (!version.get()) {
+  // If no version on the command line, then look at the version resource in
+  // the current module and try loading that.
+  if (!version.IsValid()) {
+    scoped_ptr<FileVersionInfo> file_version_info(
+        FileVersionInfo::CreateFileVersionInfoForCurrentModule());
+    if (file_version_info.get()) {
+      version_string = file_version_info->file_version();
+      version = Version(WideToASCII(version_string));
+    }
+  }
+
+  // TODO(robertshield): in theory, these next two checks (env and registry)
+  // should never be needed. Remove them when I become 100% certain this is
+  // also true in practice.
+
+  // If no version in the current module, then look in the environment.
+  if (!version.IsValid()) {
     if (EnvQueryStr(ASCIIToWide(chrome::kChromeVersionEnvVar).c_str(),
                     &version_string)) {
-      version.reset(Version::GetVersionFromString(WideToASCII(version_string)));
+      version = Version(WideToASCII(version_string));
+      LOG_IF(ERROR, !version.IsValid()) << "Invalid environment version: "
+                                        << version_string;
     }
   }
 
-  if (!version.get()) {
-    std::wstring reg_path(GetRegistryPath());
-    // Look into the registry to find the latest version. We don't validate
-    // this by building a Version object to avoid harming normal case startup
-    // time.
-    version_string.clear();
-    GetVersion(dir.c_str(), reg_path.c_str(), &version_string);
+  // If no version in the environment, then look in the registry.
+  if (!version.IsValid()) {
+    version_string = GetVersion();
+    if (version_string.empty()) {
+      LOG(ERROR) << "Could not get Chrome DLL version.";
+      return NULL;
+    }
   }
 
-  if (version.get() || !version_string.empty()) {
-    *out_file = dir;
-    *out_version = version_string;
-    out_file->append(*out_version).append(L"\\");
-    dll = LoadChromeWithDirectory(out_file);
-    if (!dll) {
-      LOG(ERROR) << "Failed to load Chrome DLL from " << out_file;
-    }
-    return dll;
-  } else {
-    LOG(ERROR) << "Could not get Chrome DLL version.";
+  *out_file = dir;
+  *out_version = version_string;
+  out_file->append(*out_version).append(1, L'\\');
+  dll = LoadChromeWithDirectory(out_file);
+  if (!dll) {
+    LOG(ERROR) << "Failed to load Chrome DLL from " << *out_file;
     return NULL;
   }
+
+  return dll;
 }
 
 // Launching is a matter of loading the right dll, setting the CHROME_VERSION
@@ -322,8 +420,8 @@ HMODULE MainDllLoader::Load(std::wstring* out_version, std::wstring* out_file) {
 // add custom code in the OnBeforeLaunch callback.
 int MainDllLoader::Launch(HINSTANCE instance,
                           sandbox::SandboxInterfaceInfo* sbox_info) {
-  std::wstring version;
-  std::wstring file;
+  string16 version;
+  string16 file;
   dll_ = Load(&version, &file);
   if (!dll_)
     return chrome::RESULT_CODE_MISSING_DATA;
@@ -331,7 +429,7 @@ int MainDllLoader::Launch(HINSTANCE instance,
   scoped_ptr<base::Environment> env(base::Environment::Create());
   env->SetVar(chrome::kChromeVersionEnvVar, WideToUTF8(version));
 
-  InitCrashReporterWithDllPath(file);
+  InitCrashReporter();
   OnBeforeLaunch(file);
 
   DLL_MAIN entry_point =
@@ -341,6 +439,15 @@ int MainDllLoader::Launch(HINSTANCE instance,
 
   int rc = entry_point(instance, sbox_info);
   return OnBeforeExit(rc, file);
+}
+
+string16 MainDllLoader::GetVersion() {
+  string16 reg_path(GetRegistryPath());
+  string16 version_string;
+  string16 dir(GetExecutablePath());
+  if (!GetChromeVersion(dir.c_str(), reg_path.c_str(), &version_string))
+    return string16();
+  return version_string;
 }
 
 void MainDllLoader::RelaunchChromeBrowserWithNewCommandLineIfNeeded() {
@@ -360,18 +467,18 @@ void MainDllLoader::RelaunchChromeBrowserWithNewCommandLineIfNeeded() {
 
 class ChromeDllLoader : public MainDllLoader {
  public:
-  virtual std::wstring GetRegistryPath() {
-    std::wstring key(google_update::kRegPathClients);
+  virtual string16 GetRegistryPath() {
+    string16 key(google_update::kRegPathClients);
     BrowserDistribution* dist = BrowserDistribution::GetDistribution();
     key.append(L"\\").append(dist->GetAppGuid());
     return key;
   }
 
-  virtual void OnBeforeLaunch(const std::wstring& dll_path) {
+  virtual void OnBeforeLaunch(const string16& dll_path) {
     RecordDidRun(dll_path);
   }
 
-  virtual int OnBeforeExit(int return_code, const std::wstring& dll_path) {
+  virtual int OnBeforeExit(int return_code, const string16& dll_path) {
     // NORMAL_EXIT_CANCEL is used for experiments when the user cancels
     // so we need to reset the did_run signal so omaha does not count
     // this run as active usage.
@@ -386,7 +493,7 @@ class ChromeDllLoader : public MainDllLoader {
 
 class ChromiumDllLoader : public MainDllLoader {
  public:
-  virtual std::wstring GetRegistryPath() {
+  virtual string16 GetRegistryPath() {
     BrowserDistribution* dist = BrowserDistribution::GetDistribution();
     return dist->GetVersionKey();
   }

@@ -2,10 +2,12 @@
   'variables': {
     'version_py': '../../chrome/tools/build/version.py',
     'version_path': '../../chrome/VERSION',
-    'lastchange_path': '<(SHARED_INTERMEDIATE_DIR)/build/LASTCHANGE',
+    'lastchange_path': '<(DEPTH)/build/util/LASTCHANGE',
     # 'branding_dir' is set in the 'conditions' section at the bottom.
     'msvs_use_common_release': 0,
     'msvs_use_common_linker_extras': 0,
+    'mini_installer_internal_deps%': 0,
+    'mini_installer_official_deps%': 0,
   },
   'includes': [
     '../../build/win_precompile.gypi',
@@ -14,6 +16,7 @@
     ['OS=="win"', {
       'target_defaults': {
         'dependencies': [
+          '../chrome.gyp:app_host',
           '../chrome.gyp:chrome',
           '../chrome.gyp:chrome_nacl_win64',
           '../chrome.gyp:chrome_dll',
@@ -193,8 +196,46 @@
                 'create_installer_archive_py_path':
                   '../tools/build/win/create_installer_archive.py',
               },
+              'conditions': [
+                ['enable_hidpi == 1', {
+                  'variables': {
+                    'enable_hidpi_flag': '--enable_hidpi=1',
+                  },
+                }, {
+                  'variables': {
+                    'enable_hidpi_flag': '',
+                  },
+                }],
+                ['enable_touch_ui == 1', {
+                  'variables': {
+                    'enable_touch_ui_flag': '--enable_touch_ui=1',
+                  },
+                }, {
+                  'variables': {
+                    'enable_touch_ui_flag': '',
+                  },
+                }],
+                ['component == "shared_library"', {
+                  'variables': {
+                    'component_build_flag': '--component_build=1',
+                  },
+                }, {
+                  'variables': {
+                    'component_build_flag': '',
+                  },
+                }],
+                ['disable_nacl==1', {
+                  'inputs!': [
+                    '<(PRODUCT_DIR)/nacl64.exe',
+                    '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.dll',
+                    '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
+                    '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
+                  ],
+                }],
+              ],
               'inputs': [
                 '<(create_installer_archive_py_path)',
+                '<(PRODUCT_DIR)/app_host.exe',
                 '<(PRODUCT_DIR)/chrome.exe',
                 '<(PRODUCT_DIR)/chrome.dll',
                 '<(PRODUCT_DIR)/nacl64.exe',
@@ -205,7 +246,7 @@
                 '<(PRODUCT_DIR)/icudt.dll',
               ],
               'outputs': [
-                'xxx.out',
+                'xxx2.out',
                 '<(PRODUCT_DIR)/<(RULE_INPUT_NAME).7z',
                 '<(PRODUCT_DIR)/<(RULE_INPUT_NAME).packed.7z',
                 '<(PRODUCT_DIR)/setup.ex_',
@@ -218,6 +259,9 @@
                 '--staging_dir', '<(INTERMEDIATE_DIR)',
                 '--input_file', '<(RULE_INPUT_PATH)',
                 '--resource_file_path', '<(INTERMEDIATE_DIR)/packed_files.rc',
+                '<(enable_hidpi_flag)',
+                '<(enable_touch_ui_flag)',
+                '<(component_build_flag)',
                 # TODO(sgk):  may just use environment variables
                 #'--distribution=$(CHROMIUM_BUILD)',
                 '--distribution=_google_chrome',
@@ -231,6 +275,13 @@
           ],
         },
       ],
+    }],
+    [ 'mini_installer_internal_deps == 1 or mini_installer_official_deps == 1', {
+      'target_defaults': {
+        'dependencies': [
+          'mini_installer/support/mini_installer_support.gyp:*',
+        ],
+      },
     }],
     [ 'branding == "Chrome"', {
       'variables': {

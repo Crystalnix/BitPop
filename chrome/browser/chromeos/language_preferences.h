@@ -1,19 +1,26 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_CHROMEOS_LANGUAGE_PREFERENCES_H_
 #define CHROME_BROWSER_CHROMEOS_LANGUAGE_PREFERENCES_H_
-#pragma once
 
 #include <stddef.h>  // For size_t
 
 #include "chrome/browser/prefs/pref_service.h"
 
+// TODO(yusukes): Rename this file to input_method_preference.cc. Since
+// "language" usually means UI language, the current file name is confusing.
+// The namespace should also be changed to "namespace input_method {".
+
 // This file defines types and declare variables used in "Languages and
 // Input" settings in Chromium OS.
 namespace chromeos {
 namespace language_prefs {
+
+// TODO(yusukes): Remove the "Language" prefix from all structs and variables.
+// They're redundant (we already have the language_prefs namespace) and even
+// confusing.
 
 // The struct is used for preferences consisting of multiple choices, like
 // punctuation types used in Japanese input method.
@@ -58,12 +65,7 @@ struct LanguageIntegerRangePreference {
 // For ibus-daemon
 // ---------------------------------------------------------------------------
 extern const char kGeneralSectionName[];
-extern const char kHotKeySectionName[];
 extern const char kPreloadEnginesConfigName[];
-extern const char kNextEngineInMenuConfigName[];
-extern const char kPreviousEngineConfigName[];
-extern const char kHotkeyNextEngineInMenu[];
-extern const char kHotkeyPreviousEngine[];
 
 // ---------------------------------------------------------------------------
 // For Traditional Chinese input method (ibus-mozc-chewing)
@@ -107,7 +109,7 @@ extern const HangulKeyboardNameIDPair kHangulKeyboardNameIDPairs[];
 const size_t kNumHangulKeyboardNameIDPairs = 5;
 
 // ---------------------------------------------------------------------------
-// For Simplified Chinese input method (ibus-pinyin)
+// For Simplified Chinese input method (ibus-mozc-pinyin)
 // ---------------------------------------------------------------------------
 extern const char kPinyinSectionName[];
 
@@ -157,6 +159,9 @@ extern const int kXkbAutoRepeatIntervalInMs;
 // A string Chrome preference (Local State) of the preferred keyboard layout in
 // the login screen.
 extern const char kPreferredKeyboardLayout[];
+
+// Registers non-user prefs for the default keyboard layout on the login screen.
+void RegisterPrefs(PrefService* local_state);
 
 }  // language_prefs
 }  // chromeos

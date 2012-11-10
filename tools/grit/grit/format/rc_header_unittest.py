@@ -1,14 +1,17 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 '''Unit tests for the rc_header formatter'''
 
+# GRD samples exceed the 80 character limit.
+# pylint: disable-msg=C6310
+
 import os
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../..'))
 
 import StringIO
 import unittest
@@ -60,6 +63,47 @@ class RcHeaderFormatterUnittest(unittest.TestCase):
     output = self.FormatAll(grd)
     self.failUnless(output.count('IDS_GREETING10000'))
     self.failUnless(output.count('ID_LOGO300'))
+
+  def testOnlyDefineResourcesThatSatisfyOutputCondition(self):
+    grd = grd_reader.Parse(StringIO.StringIO('''<?xml version="1.0" encoding="UTF-8"?>
+      <grit latest_public_release="2" source_lang_id="en" current_release="3"
+            base_dir="." output_all_resource_defines="false">
+        <release seq="3">
+          <includes first_id="300" comment="bingo">
+            <include type="gif" name="ID_LOGO" file="images/logo.gif" />
+          </includes>
+          <messages first_id="10000">
+            <message name="IDS_FIRSTPRESENTSTRING" desc="Present in .rc file.">
+              I will appear in the .rc file.
+            </message>
+            <if expr="False"> <!--Do not include in the .rc files until used.-->
+              <message name="IDS_MISSINGSTRING" desc="Not present in .rc file.">
+                I will not appear in the .rc file.
+              </message>
+            </if>
+            <if expr="lang != 'es'">
+              <message name="IDS_LANGUAGESPECIFICSTRING" desc="Present in .rc file.">
+                Hello.
+              </message>
+            </if>
+            <if expr="lang == 'es'">
+              <message name="IDS_LANGUAGESPECIFICSTRING" desc="Present in .rc file.">
+                Hola.
+              </message>
+            </if>
+            <message name="IDS_THIRDPRESENTSTRING" desc="Present in .rc file.">
+              I will also appear in the .rc file.
+            </message>
+         </messages>
+        </release>
+      </grit>'''), '.')
+    output = self.FormatAll(grd)
+    self.failUnless(output.count('IDS_FIRSTPRESENTSTRING10000'))
+    self.failIf(output.count('IDS_MISSINGSTRING'))
+    self.failIf(output.count('10001'))
+    self.failUnless(output.count('IDS_LANGUAGESPECIFICSTRING10002'))
+    self.failIf(output.count('10003'))  # The "else" case causes an increment.
+    self.failUnless(output.count('IDS_THIRDPRESENTSTRING10004'))
 
   def testExplicitFirstIdOverlaps(self):
     # second first_id will overlap preexisting range

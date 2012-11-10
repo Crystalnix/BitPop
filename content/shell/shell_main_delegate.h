@@ -4,7 +4,6 @@
 
 #ifndef CONTENT_SHELL_SHELL_MAIN_DELEGATE_H_
 #define CONTENT_SHELL_SHELL_MAIN_DELEGATE_H_
-#pragma once
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
@@ -14,44 +13,39 @@
 namespace content {
 class ShellContentBrowserClient;
 class ShellContentRendererClient;
-class ShellContentPluginClient;
-class ShellContentUtilityClient;
-}  // namespace content
 
-class ShellMainDelegate : public content::ContentMainDelegate {
+#if defined(OS_ANDROID)
+class BrowserMainRunner;
+#endif
+
+class ShellMainDelegate : public ContentMainDelegate {
  public:
   ShellMainDelegate();
   virtual ~ShellMainDelegate();
 
+  // ContentMainDelegate implementation:
   virtual bool BasicStartupComplete(int* exit_code) OVERRIDE;
   virtual void PreSandboxStartup() OVERRIDE;
-  virtual void SandboxInitialized(const std::string& process_type) OVERRIDE;
   virtual int RunProcess(
       const std::string& process_type,
-      const content::MainFunctionParams& main_function_params) OVERRIDE;
-  virtual void ProcessExiting(const std::string& process_type) OVERRIDE;
-#if defined(OS_MACOSX)
-  virtual bool ProcessRegistersWithSystemProcess(
-      const std::string& process_type) OVERRIDE;
-  virtual bool ShouldSendMachPort(const std::string& process_type) OVERRIDE;
-  virtual bool DelaySandboxInitialization(
-      const std::string& process_type) OVERRIDE;
-#elif defined(OS_POSIX)
-  virtual content::ZygoteForkDelegate* ZygoteStarting() OVERRIDE;
-  virtual void ZygoteForked() OVERRIDE;
-#endif  // OS_MACOSX
+      const MainFunctionParams& main_function_params) OVERRIDE;
+  virtual ContentBrowserClient* CreateContentBrowserClient() OVERRIDE;
+  virtual ContentRendererClient* CreateContentRendererClient() OVERRIDE;
+
+  static void InitializeResourceBundle();
 
  private:
-  void InitializeShellContentClient(const std::string& process_type);
-  void InitializeResourceBundle();
+  scoped_ptr<ShellContentBrowserClient> browser_client_;
+  scoped_ptr<ShellContentRendererClient> renderer_client_;
+  ShellContentClient content_client_;
 
-  scoped_ptr<content::ShellContentBrowserClient> browser_client_;
-  scoped_ptr<content::ShellContentRendererClient> renderer_client_;
-  scoped_ptr<content::ShellContentPluginClient> plugin_client_;
-  scoped_ptr<content::ShellContentUtilityClient> utility_client_;
-  content::ShellContentClient content_client_;
+#if defined(OS_ANDROID)
+  scoped_ptr<BrowserMainRunner> browser_runner_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(ShellMainDelegate);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_SHELL_SHELL_MAIN_DELEGATE_H_

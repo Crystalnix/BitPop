@@ -8,62 +8,114 @@
 
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
+#include "ash/test/test_launcher_delegate.h"
+#include "content/public/test/test_browser_context.h"
 #include "grit/ui_resources.h"
 #include "ui/aura/window.h"
 
 namespace ash {
 namespace test {
 
-TestShellDelegate::TestShellDelegate() {
+TestShellDelegate::TestShellDelegate()
+    : locked_(false),
+      spoken_feedback_enabled_(false) {
 }
 
 TestShellDelegate::~TestShellDelegate() {
 }
 
-views::Widget* TestShellDelegate::CreateStatusArea() {
-  return NULL;
+bool TestShellDelegate::IsUserLoggedIn() {
+  return true;
 }
 
-#if defined(OS_CHROMEOS)
-void TestShellDelegate::LockScreen() {
+bool TestShellDelegate::IsSessionStarted() {
+  return true;
 }
-#endif
+
+void TestShellDelegate::LockScreen() {
+  locked_ = true;
+}
+
+void TestShellDelegate::UnlockScreen() {
+  locked_ = false;
+}
+
+bool TestShellDelegate::IsScreenLocked() const {
+  return locked_;
+}
+
+void TestShellDelegate::Shutdown() {
+}
 
 void TestShellDelegate::Exit() {
 }
 
-void TestShellDelegate::BuildAppListModel(AppListModel* model) {
+void TestShellDelegate::NewTab() {
 }
 
-AppListViewDelegate* TestShellDelegate::CreateAppListViewDelegate() {
+void TestShellDelegate::NewWindow(bool incognito) {
+}
+
+void TestShellDelegate::OpenFileManager(bool as_dialog) {
+}
+
+void TestShellDelegate::OpenCrosh() {
+}
+
+void TestShellDelegate::OpenMobileSetup(const std::string& service_path) {
+}
+
+void TestShellDelegate::RestoreTab() {
+}
+
+bool TestShellDelegate::RotatePaneFocus(Shell::Direction direction) {
+  return true;
+}
+
+void TestShellDelegate::ShowKeyboardOverlay() {
+}
+
+void TestShellDelegate::ShowTaskManager() {
+}
+
+content::BrowserContext* TestShellDelegate::GetCurrentBrowserContext() {
+  return new content::TestBrowserContext();
+}
+
+void TestShellDelegate::ToggleSpokenFeedback() {
+  spoken_feedback_enabled_ = !spoken_feedback_enabled_;
+}
+
+bool TestShellDelegate::IsSpokenFeedbackEnabled() const {
+  return spoken_feedback_enabled_;
+}
+
+app_list::AppListViewDelegate* TestShellDelegate::CreateAppListViewDelegate() {
   return NULL;
 }
 
-std::vector<aura::Window*> TestShellDelegate::GetCycleWindowList(
-    CycleSource source,
-    CycleOrder order) const {
-  // We just use the Shell's default container of windows, so tests can be
-  // written with the usual CreateTestWindowWithId() calls. But window cycling
-  // expects the topmost window at the front of the list, so reverse the order.
-  aura::Window* default_container = Shell::GetInstance()->GetContainer(
-      internal::kShellWindowId_DefaultContainer);
-  std::vector<aura::Window*> windows = default_container->children();
-  std::reverse(windows.begin(), windows.end());
-  return windows;
+LauncherDelegate* TestShellDelegate::CreateLauncherDelegate(
+    ash::LauncherModel* model) {
+  return new TestLauncherDelegate(model);
 }
 
-void TestShellDelegate::CreateNewWindow() {
+SystemTrayDelegate* TestShellDelegate::CreateSystemTrayDelegate(
+    SystemTray* tray) {
+  return NULL;
 }
 
-void TestShellDelegate::LauncherItemClicked(const LauncherItem& item) {
+UserWallpaperDelegate* TestShellDelegate::CreateUserWallpaperDelegate() {
+  return NULL;
 }
 
-int TestShellDelegate::GetBrowserShortcutResourceId() {
-  return IDR_AURA_LAUNCHER_BROWSER_SHORTCUT;
+aura::client::UserActionClient* TestShellDelegate::CreateUserActionClient() {
+  return NULL;
 }
 
-string16 TestShellDelegate::GetLauncherItemTitle(const LauncherItem& item) {
-  return string16();
+void TestShellDelegate::OpenFeedbackPage() {
+}
+
+void TestShellDelegate::RecordUserMetricsAction(UserMetricsAction action) {
 }
 
 }  // namespace test

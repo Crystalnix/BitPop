@@ -15,6 +15,65 @@
 
 namespace skia {
 
+// Disable optimizations during crash analysis.
+#pragma optimize("", off)
+
+// Crash On Failure. |address| should be a number less than 4000.
+#define COF(address, condition) if (!(condition)) *((int*) address) = 0
+
+// This is called when a bitmap allocation fails, and this function tries to
+// determine why it might have failed, and crash on different
+// lines. This allows us to see in crash dumps the most likely reason for the
+// failure. It takes the size of the bitmap we were trying to allocate as its
+// arguments so we can check that as well.
+//
+// Note that in a sandboxed renderer this function crashes when trying to
+// call GetProcessMemoryInfo() because it tries to load psapi.dll, which
+// is fine but gives you a very hard to read crash dump.
+void CrashForBitmapAllocationFailure(int w, int h, unsigned int error) {
+  // Store the extended error info in a place easy to find at debug time.
+  unsigned int diag_error = 0;
+  // If the bitmap is ginormous, then we probably can't allocate it.
+  // We use 32M pixels = 128MB @ 4 bytes per pixel.
+  const LONG_PTR kGinormousBitmapPxl = 32000000;
+  COF(1, LONG_PTR(w) * LONG_PTR(h) < kGinormousBitmapPxl);
+
+  // The maximum number of GDI objects per process is 10K. If we're very close
+  // to that, it's probably the problem.
+  const unsigned int kLotsOfGDIObjects = 9990;
+  unsigned int num_gdi_objects = GetGuiResources(GetCurrentProcess(),
+                                                 GR_GDIOBJECTS);
+  if (num_gdi_objects == 0) {
+    diag_error = GetLastError();
+    COF(2, false);
+  }
+  COF(3, num_gdi_objects < kLotsOfGDIObjects);
+
+  // If we're using a crazy amount of virtual address space, then maybe there
+  // isn't enough for our bitmap.
+  const SIZE_T kLotsOfMem = 1500000000;  // 1.5GB.
+  PROCESS_MEMORY_COUNTERS_EX pmc;
+  pmc.cb = sizeof(pmc);
+  if (!GetProcessMemoryInfo(GetCurrentProcess(),
+                            reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc),
+                            sizeof(pmc))) {
+    diag_error = GetLastError();
+    COF(4, false);
+  }
+  COF(5, pmc.PagefileUsage < kLotsOfMem);
+  COF(6, pmc.PrivateUsage < kLotsOfMem);
+  // Ok but we are somehow out of memory?
+  COF(7, error != ERROR_NOT_ENOUGH_MEMORY);
+}
+
+// Crashes the process. This is called when a bitmap allocation fails but
+// unlike its cousin CrashForBitmapAllocationFailure() it tries to detect if
+// the issue was a non-valid shared bitmap handle.
+void CrashIfInvalidSection(HANDLE shared_section) {
+  DWORD handle_info = 0;
+  COF(8, ::GetHandleInformation(shared_section, &handle_info) == TRUE);
+}
+
 BitmapPlatformDevice::BitmapPlatformDeviceData::BitmapPlatformDeviceData(
     HBITMAP hbitmap)
     : bitmap_context_(hbitmap),
@@ -87,8 +146,7 @@ void BitmapPlatformDevice::BitmapPlatformDeviceData::LoadConfig() {
 // that we can create the pixel data before calling the constructor. This is
 // required so that we can call the base class' constructor with the pixel
 // data.
-BitmapPlatformDevice* BitmapPlatformDevice::create(
-    HDC screen_dc,
+BitmapPlatformDevice* BitmapPlatformDevice::Create(
     int width,
     int height,
     bool is_opaque,
@@ -116,11 +174,16 @@ BitmapPlatformDevice* BitmapPlatformDevice::create(
   hdr.biClrImportant = 0;
 
   void* data = NULL;
-  HBITMAP hbitmap = CreateDIBSection(screen_dc,
+  HBITMAP hbitmap = CreateDIBSection(NULL,
                                      reinterpret_cast<BITMAPINFO*>(&hdr), 0,
                                      &data,
                                      shared_section, 0);
   if (!hbitmap) {
+    // Investigate we failed. If we know the reason, crash in a specific place.
+    unsigned int error = GetLastError();
+    if (shared_section)
+      CrashIfInvalidSection(shared_section);
+    CrashForBitmapAllocationFailure(width, height, error);
     return NULL;
   }
 
@@ -128,18 +191,13 @@ BitmapPlatformDevice* BitmapPlatformDevice::create(
   bitmap.setPixels(data);
   bitmap.setIsOpaque(is_opaque);
 
-  // If we were given data, then don't clobber it!
-  if (!shared_section) {
-    if (is_opaque) {
 #ifndef NDEBUG
-      // To aid in finding bugs, we set the background color to something
-      // obviously wrong so it will be noticable when it is not cleared
-      bitmap.eraseARGB(255, 0, 255, 128);  // bright bluish green
+  // If we were given data, then don't clobber it!
+  if (!shared_section && is_opaque)
+    // To aid in finding bugs, we set the background color to something
+    // obviously wrong so it will be noticable when it is not cleared
+    bitmap.eraseARGB(255, 0, 255, 128);  // bright bluish green
 #endif
-    } else {
-      bitmap.eraseARGB(0, 0, 0, 0);
-    }
-  }
 
   // The device object will take ownership of the HBITMAP. The initial refcount
   // of the data object will be 1, which is what the constructor expects.
@@ -148,14 +206,19 @@ BitmapPlatformDevice* BitmapPlatformDevice::create(
 }
 
 // static
-BitmapPlatformDevice* BitmapPlatformDevice::create(int width,
-                                                   int height,
-                                                   bool is_opaque,
-                                                   HANDLE shared_section) {
-  HDC screen_dc = GetDC(NULL);
-  BitmapPlatformDevice* device = BitmapPlatformDevice::create(
-      screen_dc, width, height, is_opaque, shared_section);
-  ReleaseDC(NULL, screen_dc);
+BitmapPlatformDevice* BitmapPlatformDevice::Create(int width, int height,
+                                                   bool is_opaque) {
+  return Create(width, height, is_opaque, NULL);
+}
+
+// static
+BitmapPlatformDevice* BitmapPlatformDevice::CreateAndClear(int width,
+                                                           int height,
+                                                           bool is_opaque) {
+  BitmapPlatformDevice* device = BitmapPlatformDevice::Create(width, height,
+                                                              is_opaque);
+  if (!is_opaque)
+    device->accessBitmap(true).eraseARGB(0, 0, 0, 0);
   return device;
 }
 
@@ -247,18 +310,21 @@ void BitmapPlatformDevice::DrawToNativeContext(HDC dc, int x, int y,
     data_->ReleaseBitmapDC();
 }
 
-void BitmapPlatformDevice::onAccessBitmap(SkBitmap* bitmap) {
+const SkBitmap& BitmapPlatformDevice::onAccessBitmap(SkBitmap* bitmap) {
   // FIXME(brettw) OPTIMIZATION: We should only flush if we know a GDI
   // operation has occurred on our DC.
   if (data_->IsBitmapDCCreated())
     GdiFlush();
+  return *bitmap;
 }
 
 SkDevice* BitmapPlatformDevice::onCreateCompatibleDevice(
     SkBitmap::Config config, int width, int height, bool isOpaque,
     Usage /*usage*/) {
   SkASSERT(config == SkBitmap::kARGB_8888_Config);
-  return BitmapPlatformDevice::create(width, height, isOpaque, NULL);
+  SkDevice* bitmap_device = BitmapPlatformDevice::CreateAndClear(width, height,
+                                                                 isOpaque);
+  return bitmap_device;
 }
 
 }  // namespace skia

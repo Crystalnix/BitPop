@@ -10,7 +10,10 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/threading/non_thread_safe.h"
+#include "base/process_util.h"
+#include "base/rand_util.h"
+#include "base/string_number_conversions.h"
+#include "base/threading/thread_checker.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/scoped_handle.h"
 #include "ipc/ipc_logging.h"
@@ -30,13 +33,16 @@ Channel::ChannelImpl::State::~State() {
 
 Channel::ChannelImpl::ChannelImpl(const IPC::ChannelHandle &channel_handle,
                                   Mode mode, Listener* listener)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(input_state_(this)),
+    : ChannelReader(listener),
+      ALLOW_THIS_IN_INITIALIZER_LIST(input_state_(this)),
       ALLOW_THIS_IN_INITIALIZER_LIST(output_state_(this)),
       pipe_(INVALID_HANDLE_VALUE),
-      listener_(listener),
+      peer_pid_(base::kNullProcessId),
       waiting_connect_(mode & MODE_SERVER_FLAG),
       processing_incoming_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      client_secret_(0),
+      validate_client_(false) {
   CreatePipe(channel_handle, mode);
 }
 
@@ -97,17 +103,90 @@ bool Channel::ChannelImpl::Send(Message* message) {
 // static
 bool Channel::ChannelImpl::IsNamedServerInitialized(
     const std::string& channel_id) {
-  if (WaitNamedPipe(PipeName(channel_id).c_str(), 1))
+  if (WaitNamedPipe(PipeName(channel_id, NULL).c_str(), 1))
     return true;
   // If ERROR_SEM_TIMEOUT occurred, the pipe exists but is handling another
   // connection.
   return GetLastError() == ERROR_SEM_TIMEOUT;
 }
 
+Channel::ChannelImpl::ReadState Channel::ChannelImpl::ReadData(
+    char* buffer,
+    int buffer_len,
+    int* /* bytes_read */) {
+  if (INVALID_HANDLE_VALUE == pipe_)
+    return READ_FAILED;
+
+  DWORD bytes_read = 0;
+  BOOL ok = ReadFile(pipe_, buffer, buffer_len,
+                     &bytes_read, &input_state_.context.overlapped);
+  if (!ok) {
+    DWORD err = GetLastError();
+    if (err == ERROR_IO_PENDING) {
+      input_state_.is_pending = true;
+      return READ_PENDING;
+    }
+    LOG(ERROR) << "pipe error: " << err;
+    return READ_FAILED;
+  }
+
+  // We could return READ_SUCCEEDED here. But the way that this code is
+  // structured we instead go back to the message loop. Our completion port
+  // will be signalled even in the "synchronously completed" state.
+  //
+  // This allows us to potentially process some outgoing messages and
+  // interleave other work on this thread when we're getting hammered with
+  // input messages. Potentially, this could be tuned to be more efficient
+  // with some testing.
+  input_state_.is_pending = true;
+  return READ_PENDING;
+}
+
+bool Channel::ChannelImpl::WillDispatchInputMessage(Message* msg) {
+  // Make sure we get a hello when client validation is required.
+  if (validate_client_)
+    return IsHelloMessage(*msg);
+  return true;
+}
+
+void Channel::ChannelImpl::HandleHelloMessage(const Message& msg) {
+  // The hello message contains one parameter containing the PID.
+  MessageIterator it = MessageIterator(msg);
+  int32 claimed_pid =  it.NextInt();
+  if (validate_client_ && (it.NextInt() != client_secret_)) {
+    NOTREACHED();
+    // Something went wrong. Abort connection.
+    Close();
+    listener()->OnChannelError();
+    return;
+  }
+  peer_pid_ = claimed_pid;
+  // validation completed.
+  validate_client_ = false;
+  listener()->OnChannelConnected(claimed_pid);
+}
+
+bool Channel::ChannelImpl::DidEmptyInputBuffers() {
+  // We don't need to do anything here.
+  return true;
+}
+
 // static
-const std::wstring Channel::ChannelImpl::PipeName(
-    const std::string& channel_id) {
+const string16 Channel::ChannelImpl::PipeName(
+    const std::string& channel_id, int32* secret) {
   std::string name("\\\\.\\pipe\\chrome.");
+
+  // Prevent the shared secret from ending up in the pipe name.
+  size_t index = channel_id.find_first_of('\\');
+  if (index != std::string::npos) {
+    if (secret)  // Retrieve the secret if asked for.
+      base::StringToInt(channel_id.substr(index + 1), secret);
+    return ASCIIToWide(name.append(channel_id.substr(0, index - 1)));
+  }
+
+  // This case is here to support predictable named pipes in tests.
+  if (secret)
+    *secret = 0;
   return ASCIIToWide(name.append(channel_id));
 }
 
@@ -144,7 +223,8 @@ bool Channel::ChannelImpl::CreatePipe(const IPC::ChannelHandle &channel_handle,
     DCHECK(!channel_handle.pipe.handle);
     const DWORD open_mode = PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED |
                             FILE_FLAG_FIRST_PIPE_INSTANCE;
-    pipe_name = PipeName(channel_handle.name);
+    pipe_name = PipeName(channel_handle.name, &client_secret_);
+    validate_client_ = !!client_secret_;
     pipe_ = CreateNamedPipeW(pipe_name.c_str(),
                              open_mode,
                              PIPE_TYPE_BYTE | PIPE_READMODE_BYTE,
@@ -155,7 +235,7 @@ bool Channel::ChannelImpl::CreatePipe(const IPC::ChannelHandle &channel_handle,
                              NULL);
   } else if (mode & MODE_CLIENT_FLAG) {
     DCHECK(!channel_handle.pipe.handle);
-    pipe_name = PipeName(channel_handle.name);
+    pipe_name = PipeName(channel_handle.name, &client_secret_);
     pipe_ = CreateFileW(pipe_name.c_str(),
                         GENERIC_READ | GENERIC_WRITE,
                         0,
@@ -171,7 +251,7 @@ bool Channel::ChannelImpl::CreatePipe(const IPC::ChannelHandle &channel_handle,
   if (pipe_ == INVALID_HANDLE_VALUE) {
     // If this process is being closed, the pipe may be gone already.
     LOG(WARNING) << "Unable to create pipe \"" << pipe_name <<
-                    "\" in " << (mode == 0 ? "server" : "client")
+                    "\" in " << (mode & MODE_SERVER_FLAG ? "server" : "client")
                     << " mode. Error :" << GetLastError();
     return false;
   }
@@ -180,7 +260,12 @@ bool Channel::ChannelImpl::CreatePipe(const IPC::ChannelHandle &channel_handle,
   scoped_ptr<Message> m(new Message(MSG_ROUTING_NONE,
                                     HELLO_MESSAGE_TYPE,
                                     IPC::Message::PRIORITY_NORMAL));
-  if (!m->WriteInt(GetCurrentProcessId())) {
+
+  // Don't send the secret to the untrusted process, and don't send a secret
+  // if the value is zero (for IPC backwards compatability).
+  int32 secret = validate_client_ ? 0 : client_secret_;
+  if (!m->WriteInt(GetCurrentProcessId()) ||
+      (secret && !m->WriteUInt32(secret))) {
     CloseHandle(pipe_);
     pipe_ = INVALID_HANDLE_VALUE;
     return false;
@@ -194,7 +279,7 @@ bool Channel::ChannelImpl::Connect() {
   DLOG_IF(WARNING, thread_check_.get()) << "Connect called more than once";
 
   if (!thread_check_.get())
-    thread_check_.reset(new base::NonThreadSafe());
+    thread_check_.reset(new base::ThreadChecker());
 
   if (pipe_ == INVALID_HANDLE_VALUE)
     return false;
@@ -252,91 +337,6 @@ bool Channel::ChannelImpl::ProcessConnection() {
   default:
     NOTREACHED();
     return false;
-  }
-
-  return true;
-}
-
-bool Channel::ChannelImpl::ProcessIncomingMessages(
-    MessageLoopForIO::IOContext* context,
-    DWORD bytes_read) {
-  DCHECK(thread_check_->CalledOnValidThread());
-  if (input_state_.is_pending) {
-    input_state_.is_pending = false;
-    DCHECK(context);
-
-    if (!context || !bytes_read)
-      return false;
-  } else {
-    // This happens at channel initialization.
-    DCHECK(!bytes_read && context == &input_state_.context);
-  }
-
-  for (;;) {
-    if (bytes_read == 0) {
-      if (INVALID_HANDLE_VALUE == pipe_)
-        return false;
-
-      // Read from pipe...
-      BOOL ok = ReadFile(pipe_,
-                         input_buf_,
-                         Channel::kReadBufferSize,
-                         &bytes_read,
-                         &input_state_.context.overlapped);
-      if (!ok) {
-        DWORD err = GetLastError();
-        if (err == ERROR_IO_PENDING) {
-          input_state_.is_pending = true;
-          return true;
-        }
-        LOG(ERROR) << "pipe error: " << err;
-        return false;
-      }
-      input_state_.is_pending = true;
-      return true;
-    }
-    DCHECK(bytes_read);
-
-    // Process messages from input buffer.
-
-    const char* p, *end;
-    if (input_overflow_buf_.empty()) {
-      p = input_buf_;
-      end = p + bytes_read;
-    } else {
-      if (input_overflow_buf_.size() > (kMaximumMessageSize - bytes_read)) {
-        input_overflow_buf_.clear();
-        LOG(ERROR) << "IPC message is too big";
-        return false;
-      }
-      input_overflow_buf_.append(input_buf_, bytes_read);
-      p = input_overflow_buf_.data();
-      end = p + input_overflow_buf_.size();
-    }
-
-    while (p < end) {
-      const char* message_tail = Message::FindNext(p, end);
-      if (message_tail) {
-        int len = static_cast<int>(message_tail - p);
-        const Message m(p, len);
-        DVLOG(2) << "received message on channel @" << this
-                 << " with type " << m.type();
-        if (m.routing_id() == MSG_ROUTING_NONE &&
-            m.type() == HELLO_MESSAGE_TYPE) {
-          // The Hello message contains only the process id.
-          listener_->OnChannelConnected(MessageIterator(m).NextInt());
-        } else {
-          listener_->OnMessageReceived(m);
-        }
-        p = message_tail;
-      } else {
-        // Last message is partial.
-        break;
-      }
-    }
-    input_overflow_buf_.assign(p, end - p);
-
-    bytes_read = 0;  // Get more data.
   }
 
   return true;
@@ -400,8 +400,9 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages(
 }
 
 void Channel::ChannelImpl::OnIOCompleted(MessageLoopForIO::IOContext* context,
-                            DWORD bytes_transfered, DWORD error) {
-  bool ok;
+                                         DWORD bytes_transfered,
+                                         DWORD error) {
+  bool ok = true;
   DCHECK(thread_check_->CalledOnValidThread());
   if (context == &input_state_.context) {
     if (waiting_connect_) {
@@ -414,10 +415,26 @@ void Channel::ChannelImpl::OnIOCompleted(MessageLoopForIO::IOContext* context,
         return;
       // else, fall-through and look for incoming messages...
     }
-    // we don't support recursion through OnMessageReceived yet!
+
+    // We don't support recursion through OnMessageReceived yet!
     DCHECK(!processing_incoming_);
     AutoReset<bool> auto_reset_processing_incoming(&processing_incoming_, true);
-    ok = ProcessIncomingMessages(context, bytes_transfered);
+
+    // Process the new data.
+    if (input_state_.is_pending) {
+      // This is the normal case for everything except the initialization step.
+      input_state_.is_pending = false;
+      if (!bytes_transfered)
+        ok = false;
+      else
+        ok = AsyncReadComplete(bytes_transfered);
+    } else {
+      DCHECK(!bytes_transfered);
+    }
+
+    // Request more data.
+    if (ok)
+      ok = ProcessIncomingMessages();
   } else {
     DCHECK(context == &output_state_.context);
     ok = ProcessOutgoingMessages(context, bytes_transfered);
@@ -425,7 +442,7 @@ void Channel::ChannelImpl::OnIOCompleted(MessageLoopForIO::IOContext* context,
   if (!ok && INVALID_HANDLE_VALUE != pipe_) {
     // We don't want to re-enter Close().
     Close();
-    listener_->OnChannelError();
+    listener()->OnChannelError();
   }
 }
 
@@ -445,11 +462,16 @@ bool Channel::Connect() {
 }
 
 void Channel::Close() {
-  channel_impl_->Close();
+  if (channel_impl_)
+    channel_impl_->Close();
 }
 
 void Channel::set_listener(Listener* listener) {
   channel_impl_->set_listener(listener);
+}
+
+base::ProcessId Channel::peer_pid() const {
+  return channel_impl_->peer_pid();
 }
 
 bool Channel::Send(Message* message) {
@@ -459,6 +481,26 @@ bool Channel::Send(Message* message) {
 // static
 bool Channel::IsNamedServerInitialized(const std::string& channel_id) {
   return ChannelImpl::IsNamedServerInitialized(channel_id);
+}
+
+// static
+std::string Channel::GenerateVerifiedChannelID(const std::string& prefix) {
+  // Windows pipes can be enumerated by low-privileged processes. So, we
+  // append a strong random value after the \ character. This value is not
+  // included in the pipe name, but sent as part of the client hello, to
+  // hijacking the pipe name to spoof the client.
+
+  std::string id = prefix;
+  if (!id.empty())
+    id.append(".");
+
+  int secret;
+  do {  // Guarantee we get a non-zero value.
+    secret = base::RandInt(0, std::numeric_limits<int>::max());
+  } while (secret == 0);
+
+  id.append(GenerateUniqueRandomChannelID());
+  return id.append(base::StringPrintf("\\%d", secret));
 }
 
 }  // namespace IPC

@@ -26,30 +26,30 @@
 #include "chrome/service/net/service_url_request_context.h"
 #include "chrome/service/service_ipc_server.h"
 #include "chrome/service/service_process_prefs.h"
-#include "content/public/common/url_fetcher.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/network_change_notifier.h"
+#include "net/url_request/url_fetcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches.h"
 
-#if defined(TOOLKIT_USES_GTK)
-#include "ui/gfx/gtk_util.h"
+#if defined(TOOLKIT_GTK)
 #include <gtk/gtk.h>
+#include "ui/gfx/gtk_util.h"
 #endif
 
 ServiceProcess* g_service_process = NULL;
 
 namespace {
 
-// Delay in millseconds after the last service is disabled before we attempt
+// Delay in seconds after the last service is disabled before we attempt
 // a shutdown.
-const int64 kShutdownDelay = 60000;
+const int kShutdownDelaySeconds = 60;
 
-// Delay in milliseconds between launching a browser process to check the
-// policy for us. 8 hours * 60 * 60 * 1000
-const int64 kPolicyCheckDelay = 28800000;
+// Delay in hours between launching a browser process to check the
+// policy for us.
+const int64 kPolicyCheckDelayHours = 8;
 
 const char kDefaultServiceProcessLocale[] = "en-US";
 
@@ -71,7 +71,7 @@ ServiceIOThread::~ServiceIOThread() {
 }
 
 void ServiceIOThread::CleanUp() {
-  content::URLFetcher::CancelAll();
+  net::URLFetcher::CancelAll();
 }
 
 // Prepares the localized strings that are going to be displayed to
@@ -124,7 +124,7 @@ ServiceProcess::ServiceProcess()
 bool ServiceProcess::Initialize(MessageLoopForUI* message_loop,
                                 const CommandLine& command_line,
                                 ServiceProcessState* state) {
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
   // TODO(jamiewalch): Calling GtkInitFromCommandLine here causes the process
   // to abort if run headless. The correct fix for this is to refactor the
   // service process to be more modular, a task that is currently underway.
@@ -180,7 +180,7 @@ bool ServiceProcess::Initialize(MessageLoopForUI* message_loop,
     if (locale.empty())
       locale = kDefaultServiceProcessLocale;
   }
-  ResourceBundle::InitSharedInstanceWithLocale(locale);
+  ResourceBundle::InitSharedInstanceWithLocale(locale, NULL);
 
   PrepareRestartOnCrashEnviroment(command_line);
 
@@ -356,7 +356,7 @@ void ServiceProcess::ScheduleShutdownCheck() {
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&ServiceProcess::ShutdownIfNeeded, base::Unretained(this)),
-      kShutdownDelay);
+      base::TimeDelta::FromSeconds(kShutdownDelaySeconds));
 }
 
 void ServiceProcess::ShutdownIfNeeded() {
@@ -378,7 +378,7 @@ void ServiceProcess::ScheduleCloudPrintPolicyCheck() {
       FROM_HERE,
       base::Bind(&ServiceProcess::CloudPrintPolicyCheckIfNeeded,
                  base::Unretained(this)),
-      kPolicyCheckDelay);
+      base::TimeDelta::FromHours(kPolicyCheckDelayHours));
 }
 
 void ServiceProcess::CloudPrintPolicyCheckIfNeeded() {

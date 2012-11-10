@@ -159,7 +159,7 @@ var DivView = (function() {
 /**
  * Implementation of View that sizes its child to fit the entire window.
  *
- * @param {!View} childView
+ * @param {!View} childView The child view.
  */
 var WindowView = (function() {
   'use strict';
@@ -205,12 +205,12 @@ var WindowView = (function() {
  * fixed-height, and the bottom view will fill the remainder of the space.
  *
  *  +-----------------------------------+
- *  |            top_view               |
+ *  |            topView                |
  *  +-----------------------------------+
  *  |                                   |
  *  |                                   |
  *  |                                   |
- *  |          bottom_view              |
+ *  |          bottomView               |
  *  |                                   |
  *  |                                   |
  *  |                                   |
@@ -224,8 +224,8 @@ var VerticalSplitView = (function() {
   var superClass = View;
 
   /**
-   * @param {!View} topView
-   * @param {!View} bottomView
+   * @param {!View} topView The top view.
+   * @param {!View} bottomView The bottom view.
    * @constructor
    */
   function VerticalSplitView(topView, bottomView) {
@@ -259,4 +259,66 @@ var VerticalSplitView = (function() {
   };
 
   return VerticalSplitView;
+})();
+
+/**
+ * View that positions two views horizontally. The left view should be
+ * fixed-width, and the right view will fill the remainder of the space.
+ *
+ *  +----------+--------------------------+
+ *  |          |                          |
+ *  |          |                          |
+ *  |          |                          |
+ *  | leftView |       rightView          |
+ *  |          |                          |
+ *  |          |                          |
+ *  |          |                          |
+ *  |          |                          |
+ *  |          |                          |
+ *  |          |                          |
+ *  |          |                          |
+ *  +----------+--------------------------+
+ */
+var HorizontalSplitView = (function() {
+  'use strict';
+
+  // We inherit from View.
+  var superClass = View;
+
+  /**
+   * @param {!View} leftView The left view.
+   * @param {!View} rightView The right view.
+   * @constructor
+   */
+  function HorizontalSplitView(leftView, rightView) {
+    // Call superclass's constructor.
+    superClass.call(this);
+
+    this.leftView_ = leftView;
+    this.rightView_ = rightView;
+  }
+
+  HorizontalSplitView.prototype = {
+    // Inherit the superclass's methods.
+    __proto__: superClass.prototype,
+
+    setGeometry: function(left, top, width, height) {
+      superClass.prototype.setGeometry.call(this, left, top, width, height);
+
+      var fixedWidth = this.leftView_.getWidth();
+      this.leftView_.setGeometry(left, top, fixedWidth, height);
+
+      this.rightView_.setGeometry(
+          left + fixedWidth, top, width - fixedWidth, height);
+    },
+
+    show: function(isVisible) {
+      superClass.prototype.show.call(this, isVisible);
+
+      this.leftView_.show(isVisible);
+      this.rightView_.show(isVisible);
+    }
+  };
+
+  return HorizontalSplitView;
 })();

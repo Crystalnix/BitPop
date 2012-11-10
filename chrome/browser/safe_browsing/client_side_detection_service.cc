@@ -16,7 +16,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/net/http_return.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/safe_browsing/client_model.pb.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
@@ -25,11 +24,12 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/common/url_fetcher.h"
 #include "crypto/sha2.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
+#include "net/http/http_status_code.h"
+#include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
 
@@ -108,7 +108,7 @@ void ClientSideDetectionService::SetEnabledAndRefreshState(bool enabled) {
     // Cancel pending requests.
     model_fetcher_.reset();
     // Invoke pending callbacks with a false verdict.
-    for (std::map<const content::URLFetcher*, ClientReportInfo*>::iterator it =
+    for (std::map<const net::URLFetcher*, ClientReportInfo*>::iterator it =
              client_phishing_reports_.begin();
          it != client_phishing_reports_.end(); ++it) {
       ClientReportInfo* info = it->second;
@@ -181,7 +181,7 @@ bool ClientSideDetectionService::IsBadIpAddress(
 }
 
 void ClientSideDetectionService::OnURLFetchComplete(
-    const content::URLFetcher* source) {
+    const net::URLFetcher* source) {
   std::string data;
   source->GetResponseAsString(&data);
   if (source == model_fetcher_.get()) {
@@ -249,9 +249,9 @@ void ClientSideDetectionService::StartFetchModel() {
   if (enabled_) {
     // Start fetching the model either from the cache or possibly from the
     // network if the model isn't in the cache.
-    model_fetcher_.reset(content::URLFetcher::Create(
+    model_fetcher_.reset(net::URLFetcher::Create(
         0 /* ID used for testing */, GURL(kClientModelUrl),
-        content::URLFetcher::GET, this));
+        net::URLFetcher::GET, this));
     model_fetcher_->SetRequestContext(request_context_getter_.get());
     model_fetcher_->Start();
   }
@@ -302,9 +302,9 @@ void ClientSideDetectionService::StartClientReportPhishingRequest(
     return;
   }
 
-  content::URLFetcher* fetcher = content::URLFetcher::Create(
+  net::URLFetcher* fetcher = net::URLFetcher::Create(
       0 /* ID used for testing */, GURL(kClientReportPhishingUrl),
-      content::URLFetcher::POST, this);
+      net::URLFetcher::POST, this);
 
   // Remember which callback and URL correspond to the current fetcher object.
   ClientReportInfo* info = new ClientReportInfo;
@@ -322,21 +322,21 @@ void ClientSideDetectionService::StartClientReportPhishingRequest(
 }
 
 void ClientSideDetectionService::HandleModelResponse(
-    const content::URLFetcher* source,
+    const net::URLFetcher* source,
     const GURL& url,
     const net::URLRequestStatus& status,
     int response_code,
     const net::ResponseCookies& cookies,
     const std::string& data) {
   base::TimeDelta max_age;
-  if (status.is_success() && RC_REQUEST_OK == response_code &&
+  if (status.is_success() && net::HTTP_OK == response_code &&
       source->GetResponseHeaders() &&
       source->GetResponseHeaders()->GetMaxAgeValue(&max_age)) {
     model_max_age_.reset(new base::TimeDelta(max_age));
   }
   scoped_ptr<ClientSideModel> model(new ClientSideModel());
   ClientModelStatus model_status;
-  if (!status.is_success() || RC_REQUEST_OK != response_code) {
+  if (!status.is_success() || net::HTTP_OK != response_code) {
     model_status = MODEL_FETCH_FAILED;
   } else if (data.empty()) {
     model_status = MODEL_EMPTY;
@@ -363,7 +363,7 @@ void ClientSideDetectionService::HandleModelResponse(
 }
 
 void ClientSideDetectionService::HandlePhishingVerdict(
-    const content::URLFetcher* source,
+    const net::URLFetcher* source,
     const GURL& url,
     const net::URLRequestStatus& status,
     int response_code,
@@ -372,7 +372,7 @@ void ClientSideDetectionService::HandlePhishingVerdict(
   ClientPhishingResponse response;
   scoped_ptr<ClientReportInfo> info(client_phishing_reports_[source]);
   bool is_phishing = false;
-  if (status.is_success() && RC_REQUEST_OK == response_code &&
+  if (status.is_success() && net::HTTP_OK == response_code &&
       response.ParseFromString(data)) {
     // Cache response, possibly flushing an old one.
     cache_[info->phishing_url] =

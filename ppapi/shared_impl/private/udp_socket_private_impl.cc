@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,13 +22,13 @@ const int32_t UDPSocketPrivateImpl::kMaxWriteSize = 1024 * 1024;
 
 UDPSocketPrivateImpl::UDPSocketPrivateImpl(const HostResource& resource,
                                            uint32 socket_id)
-    : Resource(resource) {
+    : Resource(OBJECT_IS_PROXY, resource) {
   Init(socket_id);
 }
 
 UDPSocketPrivateImpl::UDPSocketPrivateImpl(PP_Instance instance,
                                            uint32 socket_id)
-    : Resource(instance) {
+    : Resource(OBJECT_IS_IMPL, instance) {
   Init(socket_id);
 }
 
@@ -41,27 +41,34 @@ UDPSocketPrivateImpl::AsPPB_UDPSocket_Private_API() {
 }
 
 int32_t UDPSocketPrivateImpl::Bind(const PP_NetAddress_Private* addr,
-                                   PP_CompletionCallback callback) {
-  if (!addr || !callback.func)
+                                   scoped_refptr<TrackedCallback> callback) {
+  if (!addr)
     return PP_ERROR_BADARGUMENT;
   if (bound_ || closed_)
     return PP_ERROR_FAILED;
   if (TrackedCallback::IsPending(bind_callback_))
     return PP_ERROR_INPROGRESS;
-  // TODO(dmichael): use some other strategy for determining if an
-  // operation is in progress
 
-  bind_callback_ = new TrackedCallback(this, callback);
+  bind_callback_ = callback;
 
   // Send the request, the browser will call us back via BindACK.
   SendBind(*addr);
   return PP_OK_COMPLETIONPENDING;
 }
 
-int32_t UDPSocketPrivateImpl::RecvFrom(char* buffer,
-                                       int32_t num_bytes,
-                                       PP_CompletionCallback callback) {
-  if (!buffer || num_bytes <= 0 || !callback.func)
+PP_Bool UDPSocketPrivateImpl::GetBoundAddress(PP_NetAddress_Private* addr) {
+  if (!addr || !bound_ || closed_)
+    return PP_FALSE;
+
+  *addr = bound_addr_;
+  return PP_TRUE;
+}
+
+int32_t UDPSocketPrivateImpl::RecvFrom(
+    char* buffer,
+    int32_t num_bytes,
+    scoped_refptr<TrackedCallback> callback) {
+  if (!buffer || num_bytes <= 0)
     return PP_ERROR_BADARGUMENT;
   if (!bound_)
     return PP_ERROR_FAILED;
@@ -70,7 +77,7 @@ int32_t UDPSocketPrivateImpl::RecvFrom(char* buffer,
 
   read_buffer_ = buffer;
   bytes_to_read_ = std::min(num_bytes, kMaxReadSize);
-  recvfrom_callback_ = new TrackedCallback(this, callback);
+  recvfrom_callback_ = callback;
 
   // Send the request, the browser will call us back via RecvFromACK.
   SendRecvFrom(bytes_to_read_);
@@ -88,8 +95,8 @@ PP_Bool UDPSocketPrivateImpl::GetRecvFromAddress(PP_NetAddress_Private* addr) {
 int32_t UDPSocketPrivateImpl::SendTo(const char* buffer,
                                      int32_t num_bytes,
                                      const PP_NetAddress_Private* addr,
-                                     PP_CompletionCallback callback) {
-  if (!buffer || num_bytes <= 0 || !addr || !callback.func)
+                                     scoped_refptr<TrackedCallback> callback) {
+  if (!buffer || num_bytes <= 0 || !addr)
     return PP_ERROR_BADARGUMENT;
   if (!bound_)
     return PP_ERROR_FAILED;
@@ -99,7 +106,7 @@ int32_t UDPSocketPrivateImpl::SendTo(const char* buffer,
   if (num_bytes > kMaxWriteSize)
     num_bytes = kMaxWriteSize;
 
-  sendto_callback_ = new TrackedCallback(this, callback);
+  sendto_callback_ = callback;
 
   // Send the request, the browser will call us back via SendToACK.
   SendSendTo(std::string(buffer, num_bytes), *addr);
@@ -122,7 +129,9 @@ void UDPSocketPrivateImpl::Close() {
   PostAbortIfNecessary(&sendto_callback_);
 }
 
-void UDPSocketPrivateImpl::OnBindCompleted(bool succeeded) {
+void UDPSocketPrivateImpl::OnBindCompleted(
+    bool succeeded,
+    const PP_NetAddress_Private& addr) {
   if (!TrackedCallback::IsPending(bind_callback_)) {
     NOTREACHED();
     return;
@@ -131,8 +140,10 @@ void UDPSocketPrivateImpl::OnBindCompleted(bool succeeded) {
   if (succeeded)
     bound_ = true;
 
+  bound_addr_ = addr;
+
   TrackedCallback::ClearAndRun(&bind_callback_,
-                               succeeded ? PP_OK : PP_ERROR_FAILED);
+      succeeded ? PP_OK : PP_ERROR_FAILED);
 }
 
 void UDPSocketPrivateImpl::OnRecvFromCompleted(
@@ -180,6 +191,9 @@ void UDPSocketPrivateImpl::Init(uint32 socket_id) {
   recvfrom_addr_.size = 0;
   memset(recvfrom_addr_.data, 0,
          arraysize(recvfrom_addr_.data) * sizeof(*recvfrom_addr_.data));
+  bound_addr_.size = 0;
+  memset(bound_addr_.data, 0,
+         arraysize(bound_addr_.data) * sizeof(*bound_addr_.data));
 }
 
 void UDPSocketPrivateImpl::PostAbortIfNecessary(

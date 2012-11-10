@@ -5,18 +5,23 @@
 #include "chrome/test/base/testing_browser_process.h"
 
 #include "base/string_util.h"
-#include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
+#include "chrome/browser/policy/policy_service.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prerender/prerender_tracker.h"
 #include "chrome/browser/printing/background_printing_manager.h"
 #include "chrome/browser/printing/print_preview_tab_controller.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "content/public/browser/notification_service.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if !defined(ENABLE_CONFIGURATION_POLICY)
+#include "chrome/browser/policy/policy_service_stub.h"
+#endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
 TestingBrowserProcess::TestingBrowserProcess()
     : notification_service_(content::NotificationService::Create()),
@@ -60,6 +65,11 @@ PrefService* TestingBrowserProcess::local_state() {
   return local_state_;
 }
 
+chrome_variations::VariationsService*
+    TestingBrowserProcess::variations_service() {
+  return NULL;
+}
+
 policy::BrowserPolicyConnector*
     TestingBrowserProcess::browser_policy_connector() {
 #if defined(ENABLE_CONFIGURATION_POLICY)
@@ -69,15 +79,23 @@ policy::BrowserPolicyConnector*
   return browser_policy_connector_.get();
 }
 
+policy::PolicyService* TestingBrowserProcess::policy_service() {
+  if (!policy_service_.get()) {
+#if defined(ENABLE_CONFIGURATION_POLICY)
+    policy_service_.reset(
+        browser_policy_connector()->CreatePolicyService(NULL));
+#else
+    policy_service_.reset(new policy::PolicyServiceStub());
+#endif
+  }
+  return policy_service_.get();
+}
+
 IconManager* TestingBrowserProcess::icon_manager() {
   return NULL;
 }
 
 ThumbnailGenerator* TestingBrowserProcess::GetThumbnailGenerator() {
-  return NULL;
-}
-
-TabCloseableStateWatcher* TestingBrowserProcess::tab_closeable_state_watcher() {
   return NULL;
 }
 
@@ -90,7 +108,7 @@ StatusTray* TestingBrowserProcess::status_tray() {
 }
 
 SafeBrowsingService* TestingBrowserProcess::safe_browsing_service() {
-  return NULL;
+  return sb_service_.get();
 }
 
 safe_browsing::ClientSideDetectionService*
@@ -103,7 +121,7 @@ net::URLRequestContextGetter* TestingBrowserProcess::system_request_context() {
 }
 
 #if defined(OS_CHROMEOS)
-browser::OomPriorityManager* TestingBrowserProcess::oom_priority_manager() {
+chromeos::OomPriorityManager* TestingBrowserProcess::oom_priority_manager() {
   return NULL;
 }
 #endif  // defined(OS_CHROMEOS)
@@ -116,20 +134,21 @@ ui::Clipboard* TestingBrowserProcess::clipboard() {
   return clipboard_.get();
 }
 
-ExtensionEventRouterForwarder*
+extensions::EventRouterForwarder*
 TestingBrowserProcess::extension_event_router_forwarder() {
   return NULL;
 }
 
 NotificationUIManager* TestingBrowserProcess::notification_ui_manager() {
+#if defined(ENABLE_NOTIFICATIONS)
   if (!notification_ui_manager_.get())
     notification_ui_manager_.reset(
         NotificationUIManager::Create(local_state()));
   return notification_ui_manager_.get();
-}
-
-GoogleURLTracker* TestingBrowserProcess::google_url_tracker() {
-  return google_url_tracker_.get();
+#else
+  NOTIMPLEMENTED();
+  return NULL;
+#endif
 }
 
 IntranetRedirectDetector* TestingBrowserProcess::intranet_redirect_detector() {
@@ -166,18 +185,28 @@ printing::PrintJobManager* TestingBrowserProcess::print_job_manager() {
 
 printing::PrintPreviewTabController*
 TestingBrowserProcess::print_preview_tab_controller() {
+#if defined(ENABLE_PRINTING)
   if (!print_preview_tab_controller_.get())
     print_preview_tab_controller_ = new printing::PrintPreviewTabController();
   return print_preview_tab_controller_.get();
+#else
+  NOTIMPLEMENTED();
+  return NULL;
+#endif
 }
 
 printing::BackgroundPrintingManager*
 TestingBrowserProcess::background_printing_manager() {
+#if defined(ENABLE_PRINTING)
   if (!background_printing_manager_.get()) {
     background_printing_manager_.reset(
         new printing::BackgroundPrintingManager());
   }
   return background_printing_manager_.get();
+#else
+  NOTIMPLEMENTED();
+  return NULL;
+#endif
 }
 
 const std::string& TestingBrowserProcess::GetApplicationLocale() {
@@ -211,19 +240,11 @@ prerender::PrerenderTracker* TestingBrowserProcess::prerender_tracker() {
   return prerender_tracker_.get();
 }
 
-MHTMLGenerationManager* TestingBrowserProcess::mhtml_generation_manager() {
-  return NULL;
-}
-
 ComponentUpdateService* TestingBrowserProcess::component_updater() {
   return NULL;
 }
 
 CRLSetFetcher* TestingBrowserProcess::crl_set_fetcher() {
-  return NULL;
-}
-
-AudioManager* TestingBrowserProcess::audio_manager() {
   return NULL;
 }
 
@@ -233,11 +254,6 @@ void TestingBrowserProcess::SetLocalState(PrefService* local_state) {
   local_state_ = local_state;
 }
 
-void TestingBrowserProcess::SetGoogleURLTracker(
-    GoogleURLTracker* google_url_tracker) {
-  google_url_tracker_.reset(google_url_tracker);
-}
-
 void TestingBrowserProcess::SetIOThread(IOThread* io_thread) {
   io_thread_ = io_thread;
 }
@@ -245,4 +261,9 @@ void TestingBrowserProcess::SetIOThread(IOThread* io_thread) {
 void TestingBrowserProcess::SetBrowserPolicyConnector(
     policy::BrowserPolicyConnector* connector) {
   browser_policy_connector_.reset(connector);
+}
+
+void TestingBrowserProcess::SetSafeBrowsingService(
+    SafeBrowsingService* sb_service) {
+  sb_service_ = sb_service;
 }

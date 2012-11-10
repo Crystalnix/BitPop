@@ -8,18 +8,29 @@
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_types.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
+#include "chrome/browser/sessions/tab_restore_service_factory.h"
+#include "chrome/browser/ui/browser_window.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/chrome_render_view_test.h"
+#include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/browser/tab_contents/test_tab_contents.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/test/render_view_test.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/test/render_view_test.h"
+#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_utils.h"
+#include "content/public/test/web_contents_tester.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 
 typedef TabRestoreService::Tab Tab;
+typedef TabRestoreService::Window Window;
+using content::WebContentsTester;
 
 using content::NavigationEntry;
 
@@ -41,7 +52,8 @@ class TabRestoreTimeFactory : public TabRestoreService::TimeFactory {
 
 class TabRestoreServiceTest : public ChromeRenderViewHostTestHarness {
  public:
-  TabRestoreServiceTest() {
+  TabRestoreServiceTest()
+      : ui_thread_(content::BrowserThread::UI, &message_loop_) {
     url1_ = GURL("http://1");
     url2_ = GURL("http://2");
     url3_ = GURL("http://3");
@@ -53,7 +65,7 @@ class TabRestoreServiceTest : public ChromeRenderViewHostTestHarness {
  protected:
   // testing::Test overrides
   virtual void SetUp() {
-    WebKit::initialize(&webkit_platform_support_);
+    WebKit::initialize(webkit_platform_support_.Get());
     ChromeRenderViewHostTestHarness::SetUp();
     time_factory_ = new TabRestoreTimeFactory();
     service_.reset(new TabRestoreService(profile(), time_factory_));
@@ -78,7 +90,7 @@ class TabRestoreServiceTest : public ChromeRenderViewHostTestHarness {
     // Navigate back. We have to do this song and dance as NavigationController
     // isn't happy if you navigate immediately while going back.
     controller().GoToIndex(index);
-    contents()->CommitPendingNavigation();
+    WebContentsTester::For(contents())->CommitPendingNavigation();
   }
 
   void RecreateService() {
@@ -97,13 +109,14 @@ class TabRestoreServiceTest : public ChromeRenderViewHostTestHarness {
         SessionServiceFactory::GetForProfile(profile());
     SessionID tab_id;
     SessionID window_id;
-    session_service->SetWindowType(window_id, Browser::TYPE_TABBED);
+    session_service->SetWindowType(
+        window_id, Browser::TYPE_TABBED, SessionService::TYPE_NORMAL);
     session_service->SetTabWindow(window_id, tab_id);
     session_service->SetTabIndexInWindow(window_id, tab_id, 0);
     session_service->SetSelectedTabInWindow(window_id, 0);
     if (pinned)
       session_service->SetPinnedState(window_id, tab_id, true);
-    scoped_ptr<NavigationEntry> entry(NavigationEntry::Create());;
+    scoped_ptr<NavigationEntry> entry(NavigationEntry::Create());
     entry->SetURL(url1_);
     session_service->UpdateTabNavigation(window_id, tab_id, 0, *entry.get());
   }
@@ -130,13 +143,14 @@ class TabRestoreServiceTest : public ChromeRenderViewHostTestHarness {
   TabRestoreTimeFactory* time_factory_;
   content::RenderViewTest::RendererWebKitPlatformSupportImplNoSandbox
       webkit_platform_support_;
+  content::TestBrowserThread ui_thread_;
 };
 
 TEST_F(TabRestoreServiceTest, Basic) {
   AddThreeNavigations();
 
   // Have the service record the tab.
-  service_->CreateHistoricalTab(&controller(), -1);
+  service_->CreateHistoricalTab(contents(), -1);
 
   // Make sure an entry was created.
   ASSERT_EQ(1U, service_->entries().size());
@@ -158,7 +172,7 @@ TEST_F(TabRestoreServiceTest, Basic) {
   NavigateToIndex(1);
 
   // And check again.
-  service_->CreateHistoricalTab(&controller(), -1);
+  service_->CreateHistoricalTab(contents(), -1);
 
   // There should be two entries now.
   ASSERT_EQ(2U, service_->entries().size());
@@ -180,7 +194,7 @@ TEST_F(TabRestoreServiceTest, Basic) {
 // Make sure TabRestoreService doesn't create an entry for a tab with no
 // navigations.
 TEST_F(TabRestoreServiceTest, DontCreateEmptyTab) {
-  service_->CreateHistoricalTab(&controller(), -1);
+  service_->CreateHistoricalTab(contents(), -1);
   EXPECT_TRUE(service_->entries().empty());
 }
 
@@ -189,7 +203,7 @@ TEST_F(TabRestoreServiceTest, Restore) {
   AddThreeNavigations();
 
   // Have the service record the tab.
-  service_->CreateHistoricalTab(&controller(), -1);
+  service_->CreateHistoricalTab(contents(), -1);
 
   // Recreate the service and have it load the tabs.
   RecreateService();
@@ -216,7 +230,7 @@ TEST_F(TabRestoreServiceTest, RestorePinnedAndApp) {
   AddThreeNavigations();
 
   // Have the service record the tab.
-  service_->CreateHistoricalTab(&controller(), -1);
+  service_->CreateHistoricalTab(contents(), -1);
 
   // One entry should be created.
   ASSERT_EQ(1U, service_->entries().size());
@@ -249,6 +263,35 @@ TEST_F(TabRestoreServiceTest, RestorePinnedAndApp) {
   EXPECT_TRUE(extension_app_id == tab->extension_app_id);
 }
 
+// We only restore apps on chromeos.
+#if defined(USE_AURA)
+
+typedef InProcessBrowserTest TabRestoreServiceBrowserTest;
+
+IN_PROC_BROWSER_TEST_F(TabRestoreServiceBrowserTest, RestoreApp) {
+  Profile* profile = browser()->profile();
+  TabRestoreService* trs = TabRestoreServiceFactory::GetForProfile(profile);
+  const char* app_name = "TestApp";
+
+  Browser* app_browser = CreateBrowserForApp(app_name, profile);
+  app_browser->window()->Close();
+  content::WindowedNotificationObserver observer(
+      chrome::NOTIFICATION_BROWSER_CLOSED,
+      content::Source<Browser>(app_browser));
+  observer.Wait();
+
+  // One entry should be created.
+  ASSERT_EQ(1U, trs->entries().size());
+  const TabRestoreService::Entry* restored_entry = trs->entries().front();
+
+  // It should be a window with an app.
+  ASSERT_EQ(TabRestoreService::WINDOW, restored_entry->type);
+  const Window* restored_window =
+      static_cast<const Window*>(restored_entry);
+  EXPECT_EQ(app_name, restored_window->app_name);
+}
+#endif  // defined(USE_AURA)
+
 // Make sure we persist entries to disk that have post data.
 TEST_F(TabRestoreServiceTest, DontPersistPostData) {
   AddThreeNavigations();
@@ -257,7 +300,7 @@ TEST_F(TabRestoreServiceTest, DontPersistPostData) {
   controller().GetEntryAtIndex(2)->SetHasPostData(true);
 
   // Have the service record the tab.
-  service_->CreateHistoricalTab(&controller(), -1);
+  service_->CreateHistoricalTab(contents(), -1);
   ASSERT_EQ(1U, service_->entries().size());
 
   // Recreate the service and have it load the tabs.
@@ -284,7 +327,7 @@ TEST_F(TabRestoreServiceTest, DontLoadTwice) {
   AddThreeNavigations();
 
   // Have the service record the tab.
-  service_->CreateHistoricalTab(&controller(), -1);
+  service_->CreateHistoricalTab(contents(), -1);
   ASSERT_EQ(1U, service_->entries().size());
 
   // Recreate the service and have it load the tabs.
@@ -357,7 +400,7 @@ TEST_F(TabRestoreServiceTest, LoadPreviousSessionAndTabs) {
 
   AddThreeNavigations();
 
-  service_->CreateHistoricalTab(&controller(), -1);
+  service_->CreateHistoricalTab(contents(), -1);
 
   RecreateService();
 
@@ -400,7 +443,7 @@ TEST_F(TabRestoreServiceTest, LoadPreviousSessionAndTabsPinned) {
 
   AddThreeNavigations();
 
-  service_->CreateHistoricalTab(&controller(), -1);
+  service_->CreateHistoricalTab(contents(), -1);
 
   RecreateService();
 
@@ -444,7 +487,7 @@ TEST_F(TabRestoreServiceTest, ManyWindowsInSessionService) {
 
   AddThreeNavigations();
 
-  service_->CreateHistoricalTab(&controller(), -1);
+  service_->CreateHistoricalTab(contents(), -1);
 
   RecreateService();
 
@@ -473,7 +516,7 @@ TEST_F(TabRestoreServiceTest, TimestampSurvivesRestore) {
   AddThreeNavigations();
 
   // Have the service record the tab.
-  service_->CreateHistoricalTab(&controller(), -1);
+  service_->CreateHistoricalTab(contents(), -1);
 
   // Make sure an entry was created.
   ASSERT_EQ(1U, service_->entries().size());
@@ -529,7 +572,8 @@ TEST_F(TabRestoreServiceTest, PruneEntries) {
 
   // Prune older first.
   TabNavigation navigation;
-  navigation.set_virtual_url(GURL("http://recent"));
+  const char kRecentUrl[] = "http://recent";
+  navigation.set_virtual_url(GURL(kRecentUrl));
   navigation.set_title(ASCIIToUTF16("Most recent"));
   Tab* tab = new Tab();
   tab->navigations.push_back(navigation);
@@ -538,7 +582,7 @@ TEST_F(TabRestoreServiceTest, PruneEntries) {
   EXPECT_EQ(max_entries + 1, service_->entries_.size());
   service_->PruneEntries();
   EXPECT_EQ(max_entries, service_->entries_.size());
-  EXPECT_EQ(GURL("http://recent"),
+  EXPECT_EQ(GURL(kRecentUrl),
       static_cast<Tab*>(service_->entries_.front())->
           navigations[0].virtual_url());
 
@@ -554,7 +598,7 @@ TEST_F(TabRestoreServiceTest, PruneEntries) {
   EXPECT_EQ(max_entries + 1, service_->entries_.size());
   service_->PruneEntries();
   EXPECT_EQ(max_entries, service_->entries_.size());
-  EXPECT_EQ(GURL("http://recent"),
+  EXPECT_EQ(GURL(kRecentUrl),
       static_cast<Tab*>(service_->entries_.front())->
           navigations[0].virtual_url());
 
@@ -573,6 +617,7 @@ TEST_F(TabRestoreServiceTest, PruneEntries) {
 
   // Don't prune NTPs that have multiple navigations.
   // (Erase the last NTP first.)
+  delete service_->entries_.front();
   service_->entries_.erase(service_->entries_.begin());
   tab = new Tab();
   tab->current_navigation_index = 1;
@@ -599,7 +644,7 @@ TEST_F(TabRestoreServiceTest, PruneIsCalled) {
   const size_t max_entries = TabRestoreService::kMaxEntries;
   for (size_t i = 0; i < max_entries + 5; i++) {
     NavigateAndCommit(GURL(StringPrintf("http://%d", static_cast<int>(i))));
-    service_->CreateHistoricalTab(&controller(), -1);
+    service_->CreateHistoricalTab(contents(), -1);
   }
 
   EXPECT_EQ(max_entries, service_->entries_.size());

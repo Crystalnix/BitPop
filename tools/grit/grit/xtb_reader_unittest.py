@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,16 +9,14 @@
 import os
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '..'))
 
 import StringIO
 import unittest
 
-from grit import xtb_reader
-from grit import clique
 from grit import grd_reader
-from grit import tclib
 from grit import util
+from grit import xtb_reader
 
 
 class XtbReaderUnittest(unittest.TestCase):
@@ -74,9 +72,8 @@ and another after a blank line.</translation>
   def testParseLargeFile(self):
     def Callback(id, structure):
       pass
-    xtb = file(util.PathFromRoot('grit/testdata/generated_resources_fr.xtb'))
-    xtb_reader.Parse(xtb, Callback)
-    xtb.close()
+    with open(util.PathFromRoot('grit/testdata/generated_resources_fr.xtb')) as xtb:
+      xtb_reader.Parse(xtb, Callback)
 
 
 if __name__ == '__main__':

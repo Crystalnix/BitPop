@@ -1,3 +1,7 @@
+/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
 .language-options {
   display: -webkit-box;
   margin: 10px 0;
@@ -12,41 +16,43 @@
   -webkit-margin-start: 12px;
   font-size: 100%;
   font-weight: bold;
+  margin-bottom: 12px;
   margin-top: 12px;
 }
 
 .language-options-contents  {
-  -webkit-padding-start: 12px;
-  -webkit-padding-end: 12px;
-  padding-bottom: 10px;
+  padding: 0 12px 4px;
 }
 
-.language-options-header, .language-options-footer {
+.language-options-contents span:not(.input-method-label) {
+  display: inline-block;
+  margin: 1px;
+  padding: 0.42em 10px;
+}
+
+.language-options-header,
+.language-options-footer {
   margin: 10px 0;
 }
 
-.language-options-left, .language-options-right {
-  border: 1px solid #cccccc;
-  vertical-align: top;
-  padding: 0;
+.language-options-left,
+.language-options-right {
+  border: 1px solid #ccc;
   height: 400px;
+  padding: 0;
+  vertical-align: top;
 }
 
 .language-options-left {
   -webkit-box-orient: vertical;
+<if expr="not is_macosx">
+  background-color: rgb(235, 239, 249);
+</if>
+<if expr="is_macosx">
+  background-color: white;
+</if>
   display: -webkit-box;
-  background-color: #ebeff9;
   width: 300px;
-}
-
-/* On OS X we use the native OS spellchecker, so don't display the dictionary */
-/* pane. */
-html[os=mac] .language-options-left {
- background-color: white;
-}
-
-html[os=mac] .language-options-right {
- visibility: hidden;
 }
 
 .language-options-lower-left {
@@ -61,31 +67,20 @@ html[os=mac] .language-options-right {
   width: 360px;
 }
 
+.language-options-right h3:not(:first-of-type) {
+  margin-top: 24px;
+}
+
 .language-options-notification {
-  display: none;
-  background-color: #fff29e;
-  border-top: 1px solid #ccc;
+  background-color: rgb(255, 242, 158);
   border-bottom: 1px solid #ccc;
-  padding: 12px 30px 12px 12px;
+  border-top: 1px solid #ccc;
+  padding: 8px 30px 8px 12px;
 }
 
 #language-options-input-method-list button {
-  display: block;
   -webkit-margin-start: 20px;
-}
-
-#language-options-ui-language-button {
-  width: 95%;
-  -webkit-margin-start: 10px;
-}
-
-#language-options-spell-check-language-button {
-  width: 95%;
-  -webkit-margin-start: 10px;
-}
-
-#language-options-input-method-list label {
-  margin: 4px 0;
+  display: block;
 }
 
 #language-options-list {
@@ -104,17 +99,17 @@ html[os=mac] .language-options-right {
 
 #language-options-list li {
   -webkit-padding-start: 12px;
-  padding-top: 2px;
   padding-bottom: 2px;
+  padding-top: 2px;
 }
 
 #language-options-list-dropmarker {
-  background-color: hsl(214, 91%, 65%);
   background-clip: padding-box;
+  background-color: hsl(214, 91%, 65%);
   border: 3px solid hsl(214, 91%, 65%);
   border-bottom-color: transparent;
-  border-top-color: transparent;
   border-radius: 0;
+  border-top-color: transparent;
   box-sizing: border-box;
   display: none;
   height: 8px;
@@ -125,61 +120,53 @@ html[os=mac] .language-options-right {
 }
 
 #language-options-ui-restart-button {
-  margin-top: 12px;
+  margin-top: 4px;
 }
 
-/*
- * In ChromeOS we present the language choices as a big page of links.
- */
-
-html[os=chromeos] #add-language-overlay-language-list {
+/* In ChromeOS we present the language choices as a big page of links. */
+<if expr="pp_ifdef('chromeos')">
+#add-language-overlay-language-list {
   -webkit-column-count: 2;
   -webkit-column-gap: 20px;
 }
 
-html[os=chromeos] #add-language-overlay-cancel-button {
-  /* Place the button in the center. */
-  display: block;
-  margin: auto;
-  margin-top: 15px;
-}
-
-html[os=chromeos] #add-language-overlay-page {
+#add-language-overlay-page {
   width: 800px;
-  padding: 20px;
 }
 
-html[os=chromeos] #add-language-overlay-page button.link-button {
-  padding: 0;
+#add-language-overlay-page button.link-button {
+  padding-left: 0;
+  padding-right: 0;
   text-align: left;
 }
 
-html[os=chromeos] #add-language-overlay-page ul {
-  padding: 0;
+#add-language-overlay-page ul {
   margin: 0;
+  padding: 0;
 }
+</if>
 
 /* TODO(kochi): This is temporary copy from new_tab.css */
 /* Notification */
 
 #notification {
-  position: relative;
+  -webkit-transition: opacity 150ms;
   background-color: hsl(52, 100%, 80%);
   border: 1px solid rgb(211, 211, 211);
   border-radius: 6px;
-  padding: 7px 15px;
-  white-space: nowrap;
+  color: black;
   display: table;
+  font-weight: bold;
   /* Set the height and margin so that the element does not use any vertical
-    space */
+    space. */
   height: 16px;
   margin: -44px auto 12px auto;
-  font-weight: bold;
   opacity: 0;
+  padding: 7px 15px;
   pointer-events: none;
-  -webkit-transition: opacity 150ms;
+  position: relative;
+  white-space: nowrap;
   z-index: 1;
-  color: black;
 }
 
 #notification > * {
@@ -190,19 +177,19 @@ html[os=chromeos] #add-language-overlay-page ul {
 }
 
 #notification.show {
+  -webkit-transition: opacity 1s;
   opacity: 1;
   pointer-events: all;
-  -webkit-transition: opacity 1s;
 }
 
 #notification .link {
+  -webkit-appearance: none;
+  -webkit-padding-start: 20px;
+  background: none;
+  border: 0;
+  color: rgba(0, 102, 204, 0.3);
   cursor: pointer;
   text-decoration: underline;
-  -webkit-appearance: none;
-  border: 0;
-  background: none;
-  color: rgba(0, 102, 204, 0.3);
-  -webkit-padding-start: 20px;
 }
 
 #notification .link-color {
@@ -210,30 +197,10 @@ html[os=chromeos] #add-language-overlay-page ul {
 }
 
 #chewing-max-chi-symbol-len {
-  width: 100px;
   height: 30%;
+  width: 100px;
 }
 
 #add-language-overlay-page .content-area {
   padding-bottom: 10px;
-}
-
-.text-button,
-.text-button:active,
-.text-button:focus,
-.text-button:hover {
-  -webkit-box-shadow: none;
-  background: transparent none;
-  border-color: transparent;
-  color: #000;
-}
-
-button[disabled].text-button,
-button[disabled].text-button:active,
-button[disabled].text-button:focus,
-button[disabled].text-button:hover {
-  -webkit-box-shadow: none;
-  background: transparent none;
-  border-color: transparent;
-  color: #AAA;
 }

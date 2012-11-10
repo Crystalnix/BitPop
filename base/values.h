@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,6 @@
 
 #ifndef BASE_VALUES_H_
 #define BASE_VALUES_H_
-#pragma once
 
 #include <iterator>
 #include <map>
@@ -264,7 +263,8 @@ class BASE_EXPORT DictionaryValue : public Value {
   // through the |out_value| parameter, and the function will return true.
   // Otherwise, it will return false and |out_value| will be untouched.
   // Note that the dictionary always owns the value that's returned.
-  bool Get(const std::string& path, Value** out_value) const;
+  bool Get(const std::string& path, const Value** out_value) const;
+  bool Get(const std::string& path, Value** out_value);
 
   // These are convenience forms of Get().  The value will be retrieved
   // and the return value will be true if the path is valid and the value at
@@ -275,27 +275,36 @@ class BASE_EXPORT DictionaryValue : public Value {
   bool GetString(const std::string& path, std::string* out_value) const;
   bool GetString(const std::string& path, string16* out_value) const;
   bool GetStringASCII(const std::string& path, std::string* out_value) const;
-  bool GetBinary(const std::string& path, BinaryValue** out_value) const;
+  bool GetBinary(const std::string& path, const BinaryValue** out_value) const;
+  bool GetBinary(const std::string& path, BinaryValue** out_value);
   bool GetDictionary(const std::string& path,
-                     DictionaryValue** out_value) const;
-  bool GetList(const std::string& path, ListValue** out_value) const;
+                     const DictionaryValue** out_value) const;
+  bool GetDictionary(const std::string& path, DictionaryValue** out_value);
+  bool GetList(const std::string& path, const ListValue** out_value) const;
+  bool GetList(const std::string& path, ListValue** out_value);
 
   // Like Get(), but without special treatment of '.'.  This allows e.g. URLs to
   // be used as paths.
   bool GetWithoutPathExpansion(const std::string& key,
-                               Value** out_value) const;
+                               const Value** out_value) const;
+  bool GetWithoutPathExpansion(const std::string& key, Value** out_value);
   bool GetIntegerWithoutPathExpansion(const std::string& key,
                                       int* out_value) const;
   bool GetDoubleWithoutPathExpansion(const std::string& key,
-                                   double* out_value) const;
+                                     double* out_value) const;
   bool GetStringWithoutPathExpansion(const std::string& key,
                                      std::string* out_value) const;
   bool GetStringWithoutPathExpansion(const std::string& key,
                                      string16* out_value) const;
+  bool GetDictionaryWithoutPathExpansion(
+      const std::string& key,
+      const DictionaryValue** out_value) const;
   bool GetDictionaryWithoutPathExpansion(const std::string& key,
-                                         DictionaryValue** out_value) const;
+                                         DictionaryValue** out_value);
   bool GetListWithoutPathExpansion(const std::string& key,
-                                   ListValue** out_value) const;
+                                   const ListValue** out_value) const;
+  bool GetListWithoutPathExpansion(const std::string& key,
+                                   ListValue** out_value);
 
   // Removes the Value with the specified path from this dictionary (or one
   // of its child dictionaries, if the path is more than just a local key).
@@ -303,26 +312,26 @@ class BASE_EXPORT DictionaryValue : public Value {
   // passed out via out_value.  If |out_value| is NULL, the removed value will
   // be deleted.  This method returns true if |path| is a valid path; otherwise
   // it will return false and the DictionaryValue object will be unchanged.
-  bool Remove(const std::string& path, Value** out_value);
+  virtual bool Remove(const std::string& path, Value** out_value);
 
   // Like Remove(), but without special treatment of '.'.  This allows e.g. URLs
   // to be used as paths.
-  bool RemoveWithoutPathExpansion(const std::string& key, Value** out_value);
+  virtual bool RemoveWithoutPathExpansion(const std::string& key,
+                                          Value** out_value);
 
   // Makes a copy of |this| but doesn't include empty dictionaries and lists in
   // the copy.  This never returns NULL, even if |this| itself is empty.
   DictionaryValue* DeepCopyWithoutEmptyChildren();
 
-  // Merge a given dictionary into this dictionary. This is done recursively,
-  // i.e. any subdictionaries will be merged as well. In case of key collisions,
-  // the passed in dictionary takes precedence and data already present will be
-  // replaced.
+  // Merge |dictionary| into this dictionary. This is done recursively, i.e. any
+  // sub-dictionaries will be merged as well. In case of key collisions, the
+  // passed in dictionary takes precedence and data already present will be
+  // replaced. Values within |dictionary| are deep-copied, so |dictionary| may
+  // be freed any time after this call.
   void MergeDictionary(const DictionaryValue* dictionary);
 
   // Swaps contents with the |other| dictionary.
-  void Swap(DictionaryValue* other) {
-    dictionary_.swap(other->dictionary_);
-  }
+  virtual void Swap(DictionaryValue* other);
 
   // This class provides an iterator for the keys in the dictionary.
   // It can't be used to modify the dictionary.
@@ -405,7 +414,8 @@ class BASE_EXPORT ListValue : public Value {
   // Gets the Value at the given index.  Modifies |out_value| (and returns true)
   // only if the index falls within the current list range.
   // Note that the list always owns the Value passed out via |out_value|.
-  bool Get(size_t index, Value** out_value) const;
+  bool Get(size_t index, const Value** out_value) const;
+  bool Get(size_t index, Value** out_value);
 
   // Convenience forms of Get().  Modifies |out_value| (and returns true)
   // only if the index is valid and the Value at that index can be returned
@@ -415,21 +425,28 @@ class BASE_EXPORT ListValue : public Value {
   bool GetDouble(size_t index, double* out_value) const;
   bool GetString(size_t index, std::string* out_value) const;
   bool GetString(size_t index, string16* out_value) const;
-  bool GetBinary(size_t index, BinaryValue** out_value) const;
-  bool GetDictionary(size_t index, DictionaryValue** out_value) const;
-  bool GetList(size_t index, ListValue** out_value) const;
+  bool GetBinary(size_t index, const BinaryValue** out_value) const;
+  bool GetBinary(size_t index, BinaryValue** out_value);
+  bool GetDictionary(size_t index, const DictionaryValue** out_value) const;
+  bool GetDictionary(size_t index, DictionaryValue** out_value);
+  bool GetList(size_t index, const ListValue** out_value) const;
+  bool GetList(size_t index, ListValue** out_value);
 
   // Removes the Value with the specified index from this list.
   // If |out_value| is non-NULL, the removed Value AND ITS OWNERSHIP will be
   // passed out via |out_value|.  If |out_value| is NULL, the removed value will
   // be deleted.  This method returns true if |index| is valid; otherwise
   // it will return false and the ListValue object will be unchanged.
-  bool Remove(size_t index, Value** out_value);
+  virtual bool Remove(size_t index, Value** out_value);
 
   // Removes the first instance of |value| found in the list, if any, and
   // deletes it. |index| is the location where |value| was found. Returns false
   // if not found.
   bool Remove(const Value& value, size_t* index);
+
+  // Removes the element at |iter|. If |out_value| is NULL, the value will be
+  // deleted, otherwise ownership of the value is passed back to the caller.
+  void Erase(iterator iter, Value** out_value);
 
   // Appends a Value to the end of the list.
   void Append(Value* in_value);
@@ -449,9 +466,7 @@ class BASE_EXPORT ListValue : public Value {
   const_iterator Find(const Value& value) const;
 
   // Swaps contents with the |other| list.
-  void Swap(ListValue* other) {
-    list_.swap(other->list_);
-  }
+  virtual void Swap(ListValue* other);
 
   // Iteration.
   iterator begin() { return list_.begin(); }

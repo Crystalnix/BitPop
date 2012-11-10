@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef NET_HTTP_HTTP_TRANSACTION_UNITTEST_H_
 #define NET_HTTP_HTTP_TRANSACTION_UNITTEST_H_
-#pragma once
 
 #include "net/http/http_transaction.h"
 
@@ -211,7 +210,8 @@ class MockNetworkLayer : public net::HttpTransactionFactory,
 
   // net::HttpTransactionFactory:
   virtual int CreateTransaction(
-      scoped_ptr<net::HttpTransaction>* trans) OVERRIDE;
+      scoped_ptr<net::HttpTransaction>* trans,
+      net::HttpTransactionDelegate* delegate) OVERRIDE;
   virtual net::HttpCache* GetCache() OVERRIDE;
   virtual net::HttpNetworkSession* GetSession() OVERRIDE;
 

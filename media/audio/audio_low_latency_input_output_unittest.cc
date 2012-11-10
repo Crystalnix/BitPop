@@ -22,10 +22,16 @@
 #include "media/audio/mac/audio_manager_mac.h"
 #elif defined(OS_WIN)
 #include "media/audio/win/audio_manager_win.h"
+#elif defined(OS_ANDROID)
+#include "media/audio/android/audio_manager_android.h"
 #endif
 #include "media/base/seekable_buffer.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using base::win::ScopedCOMInitializer;
+
+namespace media {
 
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
 typedef AudioManagerLinux AudioManagerAnyPlatform;
@@ -33,11 +39,10 @@ typedef AudioManagerLinux AudioManagerAnyPlatform;
 typedef AudioManagerMac AudioManagerAnyPlatform;
 #elif defined(OS_WIN)
 typedef AudioManagerWin AudioManagerAnyPlatform;
+#elif defined(OS_ANDROID)
+typedef AudioManagerAndroid AudioManagerAnyPlatform;
 #endif
 
-using base::win::ScopedCOMInitializer;
-
-namespace {
 // Limits the number of delay measurements we can store in an array and
 // then write to file at end of the WASAPIAudioInputOutputFullDuplex test.
 static const size_t kMaxDelayMeasurements = 1000;
@@ -94,19 +99,12 @@ class MockAudioManager : public AudioManagerAnyPlatform {
 // Test fixture class.
 class AudioLowLatencyInputOutputTest : public testing::Test {
  protected:
-  AudioLowLatencyInputOutputTest()
-      : mock_audio_manager_(new MockAudioManager()) {
-  }
+  AudioLowLatencyInputOutputTest() {}
 
-  virtual ~AudioLowLatencyInputOutputTest() { }
+  virtual ~AudioLowLatencyInputOutputTest() {}
 
-  AudioManager* audio_manager() {
-    return mock_audio_manager_.get();
-  }
-
-  MessageLoopForUI* message_loop() {
-    return &message_loop_;
-  }
+  AudioManager* audio_manager() { return &mock_audio_manager_; }
+  MessageLoopForUI* message_loop() { return &message_loop_; }
 
   // Convenience method which ensures that we are not running on the build
   // bots and that at least one valid input and output device can be found.
@@ -120,12 +118,10 @@ class AudioLowLatencyInputOutputTest : public testing::Test {
 
  private:
   MessageLoopForUI message_loop_;
-  scoped_refptr<MockAudioManager> mock_audio_manager_;
+  MockAudioManager mock_audio_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioLowLatencyInputOutputTest);
 };
-
-}  // namespace
 
 // This audio source/sink implementation should be used for manual tests
 // only since delay measurements are stored on an output text file.
@@ -190,7 +186,8 @@ class FullDuplexAudioSinkSource
   // AudioInputStream::AudioInputCallback.
   virtual void OnData(AudioInputStream* stream,
                       const uint8* src, uint32 size,
-                      uint32 hardware_delay_bytes) OVERRIDE {
+                      uint32 hardware_delay_bytes,
+                      double volume) OVERRIDE {
     base::AutoLock lock(lock_);
 
     // Update three components in the AudioDelayState for this recorded
@@ -221,8 +218,8 @@ class FullDuplexAudioSinkSource
   virtual void OnError(AudioInputStream* stream, int code) OVERRIDE {}
 
   // AudioOutputStream::AudioSourceCallback.
-  virtual uint32 OnMoreData(AudioOutputStream* stream,
-                            uint8* dest, uint32 max_size,
+  virtual uint32 OnMoreData(uint8* dest,
+                            uint32 max_size,
                             AudioBuffersState buffers_state) OVERRIDE {
     base::AutoLock lock(lock_);
 
@@ -277,7 +274,8 @@ class AudioInputStreamTraits {
   typedef AudioInputStream StreamType;
 
   static int HardwareSampleRate() {
-    return static_cast<int>(media::GetAudioInputHardwareSampleRate());
+    return static_cast<int>(media::GetAudioInputHardwareSampleRate(
+        AudioManagerBase::kDefaultDeviceId));
   }
 
   static StreamType* CreateStream(AudioManager* audio_manager,
@@ -312,7 +310,11 @@ class StreamWrapper {
       : com_init_(ScopedCOMInitializer::kMTA),
         audio_manager_(audio_manager),
         format_(AudioParameters::AUDIO_PCM_LOW_LATENCY),
+#if defined(OS_ANDROID)
+        channel_layout_(CHANNEL_LAYOUT_MONO),
+#else
         channel_layout_(CHANNEL_LAYOUT_STEREO),
+#endif
         bits_per_sample_(16) {
     // Use native/mixing sample rate and N*10ms frame size as default,
     // where N is platform dependent.
@@ -340,6 +342,8 @@ class StreamWrapper {
       // ensure glitch-free output audio.
       samples_per_packet_ = 3 * (sample_rate_ / 100);
     }
+#elif defined(OS_ANDROID)
+      samples_per_packet_ = (sample_rate_ / 100);
 #endif
   }
 
@@ -351,14 +355,6 @@ class StreamWrapper {
     return CreateStream();
   }
 
-  // Creates Audio[Input|Output]Stream object using non-default
-  // parameters where the frame size is modified.
-  StreamType* Create(int samples_per_packet) {
-    samples_per_packet_ = samples_per_packet;
-    return CreateStream();
-  }
-
-  AudioParameters::Format format() const { return format_; }
   int channels() const {
     return ChannelLayoutToChannelCount(channel_layout_);
   }
@@ -445,7 +441,7 @@ TEST_F(AudioLowLatencyInputOutputTest, DISABLED_FullDuplexDelayMeasurement) {
   // in loop back during this time. At the same time, delay recordings are
   // performed and stored in the output text file.
   message_loop()->PostDelayedTask(FROM_HERE,
-      MessageLoop::QuitClosure(), TestTimeouts::action_timeout_ms());
+      MessageLoop::QuitClosure(), TestTimeouts::action_timeout());
   message_loop()->Run();
 
   aos->Stop();
@@ -458,3 +454,5 @@ TEST_F(AudioLowLatencyInputOutputTest, DISABLED_FullDuplexDelayMeasurement) {
   aos->Close();
   ais->Close();
 }
+
+}  // namespace media

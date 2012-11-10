@@ -4,12 +4,12 @@
 
 #ifndef CONTENT_PUBLIC_COMMON_GPU_INFO_H_
 #define CONTENT_PUBLIC_COMMON_GPU_INFO_H_
-#pragma once
 
 // Provides access to the GPU information for the system
 // on which chrome is currently running.
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/time.h"
@@ -21,6 +21,24 @@
 namespace content {
 
 struct CONTENT_EXPORT GPUInfo {
+  struct CONTENT_EXPORT GPUDevice {
+    GPUDevice();
+    ~GPUDevice();
+
+    // The DWORD (uint32) representing the graphics card vendor id.
+    uint32 vendor_id;
+
+    // The DWORD (uint32) representing the graphics card device id.
+    // Device ids are unique to vendor, not to one another.
+    uint32 device_id;
+
+    // The strings that describe the GPU.
+    // In Linux these strings are obtained through libpci.
+    // In Win/MacOSX, these two strings are not filled at the moment.
+    std::string vendor_string;
+    std::string device_string;
+  };
+
   GPUInfo();
   ~GPUInfo();
 
@@ -37,12 +55,11 @@ struct CONTENT_EXPORT GPUInfo {
   // Computer has AMD Dynamic Switchable Graphics
   bool amd_switchable;
 
-  // The DWORD (uint32) representing the graphics card vendor id.
-  uint32 vendor_id;
+  // Primary GPU, for exmaple, the discrete GPU in a dual GPU machine.
+  GPUDevice gpu;
 
-  // The DWORD (uint32) representing the graphics card device id.  Device ids
-  // are unique to vendor, not to one another.
-  uint32 device_id;
+  // Secondary GPUs, for example, the integrated GPU in a dual GPU machine.
+  std::vector<GPUDevice> secondary_gpus;
 
   // The vendor of the graphics driver currently installed.
   std::string driver_vendor;
@@ -79,8 +96,13 @@ struct CONTENT_EXPORT GPUInfo {
   // semantics are available.
   bool can_lose_context;
 
+  // Whether gpu or driver is accessible.
+  bool gpu_accessible;
+
   // By default all values are 0.
   GpuPerformanceStats performance_stats;
+
+  bool software_rendering;
 
 #if defined(OS_WIN)
   // The information returned by the DirectX Diagnostics Tool.

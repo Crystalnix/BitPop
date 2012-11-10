@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -25,40 +25,45 @@ from grit.tool import postprocess_interface
 from grit.tool import preprocess_interface
 
 from grit import grd_reader
+from grit import lazy_re
 from grit import tclib
 from grit import util
 
 
 # Matches files referenced from an .rc file
-_FILE_REF = re.compile('''
+_FILE_REF = lazy_re.compile('''
   ^(?P<id>[A-Z_0-9.]+)[ \t]+
   (?P<type>[A-Z_0-9]+)[ \t]+
   "(?P<file>.*?([^"]|""))"[ \t]*$''', re.VERBOSE | re.MULTILINE)
 
 
 # Matches a dialog section
-_DIALOG = re.compile('^(?P<id>[A-Z0-9_]+)\s+DIALOG(EX)?\s.+?^BEGIN\s*$.+?^END\s*$',
-                     re.MULTILINE | re.DOTALL)
+_DIALOG = lazy_re.compile(
+    '^(?P<id>[A-Z0-9_]+)\s+DIALOG(EX)?\s.+?^BEGIN\s*$.+?^END\s*$',
+    re.MULTILINE | re.DOTALL)
 
 
 # Matches a menu section
-_MENU = re.compile('^(?P<id>[A-Z0-9_]+)\s+MENU.+?^BEGIN\s*$.+?^END\s*$',
-                   re.MULTILINE | re.DOTALL)
+_MENU = lazy_re.compile('^(?P<id>[A-Z0-9_]+)\s+MENU.+?^BEGIN\s*$.+?^END\s*$',
+                        re.MULTILINE | re.DOTALL)
 
 
 # Matches a versioninfo section
-_VERSIONINFO = re.compile('^(?P<id>[A-Z0-9_]+)\s+VERSIONINFO\s.+?^BEGIN\s*$.+?^END\s*$',
-                          re.MULTILINE | re.DOTALL)
+_VERSIONINFO = lazy_re.compile(
+    '^(?P<id>[A-Z0-9_]+)\s+VERSIONINFO\s.+?^BEGIN\s*$.+?^END\s*$',
+    re.MULTILINE | re.DOTALL)
 
 
 # Matches a stringtable
-_STRING_TABLE = re.compile('^STRINGTABLE(\s+(PRELOAD|DISCARDABLE|CHARACTERISTICS.+|LANGUAGE.+|VERSION.+))*\s*\nBEGIN\s*$(?P<body>.+?)^END\s*$',
-                           re.MULTILINE | re.DOTALL)
+_STRING_TABLE = lazy_re.compile(
+    ('^STRINGTABLE(\s+(PRELOAD|DISCARDABLE|CHARACTERISTICS.+|LANGUAGE.+|'
+     'VERSION.+))*\s*\nBEGIN\s*$(?P<body>.+?)^END\s*$'),
+    re.MULTILINE | re.DOTALL)
 
 
 # Matches each message inside a stringtable, breaking it up into comments,
 # the ID of the message, and the (RC-escaped) message text.
-_MESSAGE = re.compile('''
+_MESSAGE = lazy_re.compile('''
   (?P<comment>(^\s+//.+?)*)  # 0 or more lines of comments preceding the message
   ^\s*
   (?P<id>[A-Za-z0-9_]+)  # id
@@ -68,11 +73,11 @@ _MESSAGE = re.compile('''
 
 
 # Matches each line of comment text in a multi-line comment.
-_COMMENT_TEXT = re.compile('^\s*//\s*(?P<text>.+?)$', re.MULTILINE)
+_COMMENT_TEXT = lazy_re.compile('^\s*//\s*(?P<text>.+?)$', re.MULTILINE)
 
 
 # Matches a string that is empty or all whitespace
-_WHITESPACE_ONLY = re.compile('\A\s*\Z', re.MULTILINE)
+_WHITESPACE_ONLY = lazy_re.compile('\A\s*\Z', re.MULTILINE)
 
 
 # Finds printf and FormatMessage style format specifiers
@@ -80,7 +85,7 @@ _WHITESPACE_ONLY = re.compile('\A\s*\Z', re.MULTILINE)
 # re.split() should include both the normal text and what we intend to
 # replace with placeholders.
 # TODO(joi) Check documentation for printf (and Windows variants) and FormatMessage
-_FORMAT_SPECIFIER = re.compile(
+_FORMAT_SPECIFIER = lazy_re.compile(
   '(%[-# +]?(?:[0-9]*|\*)(?:\.(?:[0-9]+|\*))?(?:h|l|L)?' # printf up to last char
   '(?:d|i|o|u|x|X|e|E|f|F|g|G|c|r|s|ls|ws)'              # printf last char
   '|\$[1-9][0-9]*)')                                     # FormatMessage
@@ -186,16 +191,10 @@ C preprocessor on the .rc file or manually edit it before using this tool.
     out_path = os.path.join(util.dirname(path),
                 os.path.splitext(os.path.basename(path))[0] + '.grd')
 
-    rcfile = util.WrapInputStream(file(path, 'r'), self.input_encoding)
-    rctext = rcfile.read()
-
+    rctext = util.ReadFile(path, self.input_encoding)
     grd_text = unicode(self.Process(rctext, path))
-
-    rcfile.close()
-
-    outfile = util.WrapOutputStream(file(out_path, 'w'), 'utf-8')
-    outfile.write(grd_text)
-    outfile.close()
+    with util.WrapOutputStream(file(out_path, 'w'), 'utf-8') as outfile:
+      outfile.write(grd_text)
 
     print 'Wrote output file %s.\nPlease check for TODO items in the file.' % out_path
 
@@ -260,17 +259,24 @@ C preprocessor on the .rc file or manually edit it before using this tool.
     return root
 
 
+  def IsHtml(self, res_type, fname):
+    '''Check whether both the type and file extension indicate HTML'''
+    fext = fname.split('.')[-1].lower()
+    return res_type == 'HTML' and fext in ('htm', 'html')
+
+
   def AddIncludes(self, rctext, node):
     '''Scans 'rctext' for included resources (e.g. BITMAP, ICON) and
     adds each included resource as an <include> child node of 'node'.'''
     for m in _FILE_REF.finditer(rctext):
       id = m.group('id')
-      type = m.group('type').upper()
+      res_type = m.group('type').upper()
       fname = rc.Section.UnEscape(m.group('file'))
       assert fname.find('\n') == -1
-      if type != 'HTML':
-        self.VerboseOut('Processing %s with ID %s (filename: %s)\n' % (type, id, fname))
-        node.AddChild(include.IncludeNode.Construct(node, id, type, fname))
+      if not self.IsHtml(res_type, fname):
+        self.VerboseOut('Processing %s with ID %s (filename: %s)\n' %
+                        (res_type, id, fname))
+        node.AddChild(include.IncludeNode.Construct(node, id, res_type, fname))
 
 
   def AddStructures(self, rctext, node, rc_filename):
@@ -280,16 +286,16 @@ C preprocessor on the .rc file or manually edit it before using this tool.
     # First add HTML includes
     for m in _FILE_REF.finditer(rctext):
       id = m.group('id')
-      type = m.group('type').upper()
+      res_type = m.group('type').upper()
       fname = rc.Section.UnEscape(m.group('file'))
-      if type == 'HTML':
+      if self.IsHtml(type, fname):
         node.AddChild(structure.StructureNode.Construct(
           node, id, self.html_type, fname, self.html_encoding))
 
     # Then add all RC includes
-    def AddStructure(type, id):
-      self.VerboseOut('Processing %s with ID %s\n' % (type, id))
-      node.AddChild(structure.StructureNode.Construct(node, id, type,
+    def AddStructure(res_type, id):
+      self.VerboseOut('Processing %s with ID %s\n' % (res_type, id))
+      node.AddChild(structure.StructureNode.Construct(node, id, res_type,
                                                       rc_filename,
                                                       encoding=self.input_encoding))
     for m in _MENU.finditer(rctext):

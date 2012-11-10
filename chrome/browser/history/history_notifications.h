@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #ifndef CHROME_BROWSER_HISTORY_HISTORY_NOTIFICATIONS_H__
 #define CHROME_BROWSER_HISTORY_HISTORY_NOTIFICATIONS_H__
-#pragma once
 
 #include <set>
 #include <vector>
@@ -25,7 +24,7 @@ struct HistoryDetails {
   virtual ~HistoryDetails() {}
 };
 
-// Details for HISTORY_URL_VISITED.
+// Details for NOTIFICATION_HISTORY_URL_VISITED.
 struct URLVisitedDetails : public HistoryDetails {
   URLVisitedDetails();
   virtual ~URLVisitedDetails();
@@ -40,16 +39,16 @@ struct URLVisitedDetails : public HistoryDetails {
   history::RedirectList redirects;
 };
 
-// Details for NOTIFY_HISTORY_TYPED_URLS_MODIFIED.
+// Details for NOTIFICATION_HISTORY_TYPED_URLS_MODIFIED.
 struct URLsModifiedDetails : public HistoryDetails {
   URLsModifiedDetails();
   virtual ~URLsModifiedDetails();
 
   // Lists the information for each of the URLs affected.
-  std::vector<URLRow> changed_urls;
+  URLRows changed_urls;
 };
 
-// Details for NOTIFY_HISTORY_URLS_DELETED.
+// Details for NOTIFICATION_HISTORY_URLS_DELETED.
 struct URLsDeletedDetails : public HistoryDetails {
   URLsDeletedDetails();
   virtual ~URLsDeletedDetails();
@@ -57,10 +56,13 @@ struct URLsDeletedDetails : public HistoryDetails {
   // Set when all history was deleted. False means just a subset was deleted.
   bool all_history;
 
-  // The list of unique URLs affected. This is valid only when a subset of
-  // history is deleted. When all of it is deleted, this will be empty, since
-  // we do not bother to list all URLs.
-  std::set<GURL> urls;
+  // True if the data was archived. False if the data was deleted in response to
+  // an explicit user action through the History UI.
+  bool archived;
+
+  // The URLRows of URLs deleted. This is valid only when all_history is false
+  // indicating that a subset of history has been deleted.
+  URLRows rows;
 };
 
 // Details for NOTIFY_URLS_STARRED.

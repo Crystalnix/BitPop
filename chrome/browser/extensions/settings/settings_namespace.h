@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_EXTENSIONS_SETTINGS_SETTINGS_NAMESPACE_H_
 #define CHROME_BROWSER_EXTENSIONS_SETTINGS_SETTINGS_NAMESPACE_H_
-#pragma once
 
 #include <string>
 
@@ -14,8 +13,9 @@ namespace settings_namespace {
 
 // The namespaces of the storage areas.
 enum Namespace {
-  LOCAL,  // "local" i.e. chrome.experimental.storage.local
-  SYNC,   // "sync"  i.e. chrome.experimental.storage.sync
+  LOCAL,    // "local"    i.e. chrome.storage.local
+  SYNC,     // "sync"     i.e. chrome.storage.sync
+  MANAGED,  // "managed"  i.e. chrome.storage.managed
   INVALID
 };
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,13 @@
 
 #include "base/compiler_specific.h"
 #include "base/metrics/histogram.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/login/default_user_images.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/screen_observer.h"
+#include "chrome/browser/chromeos/login/user_image.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/wizard_accessibility_helper.h"
+#include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
@@ -18,6 +20,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image/image_skia.h"
 
 namespace chromeos {
 
@@ -65,20 +68,23 @@ void UserImageScreen::Show() {
     return;
 
   actor_->Show();
-  actor_->SelectImage(UserManager::Get()->logged_in_user().image_index());
+  actor_->SelectImage(UserManager::Get()->GetLoggedInUser().image_index());
 
   // Start fetching the profile image.
   UserManager::Get()->DownloadProfileImage(kProfileDownloadReason);
 
-  WizardAccessibilityHelper::GetInstance()->MaybeSpeak(
-      l10n_util::GetStringUTF8(IDS_OPTIONS_CHANGE_PICTURE_DIALOG_TEXT).c_str(),
-      false, false);
+  accessibility::MaybeSpeak(
+      l10n_util::GetStringUTF8(IDS_OPTIONS_CHANGE_PICTURE_DIALOG_TEXT));
 }
 
 void UserImageScreen::Hide() {
   camera_controller_.Stop();
   if (actor_)
     actor_->Hide();
+}
+
+std::string UserImageScreen::GetName() const {
+  return WizardController::kUserImageScreenName;
 }
 
 void UserImageScreen::OnCaptureSuccess() {
@@ -108,9 +114,12 @@ void UserImageScreen::StopCamera() {
   camera_controller_.Stop();
 }
 
-void UserImageScreen::OnPhotoTaken(const SkBitmap& image) {
+void UserImageScreen::OnPhotoTaken(const gfx::ImageSkia& image) {
   UserManager* user_manager = UserManager::Get();
-  user_manager->SaveUserImage(user_manager->logged_in_user().email(), image);
+  // TODO(ivankr): once old camera UI is gone, there's raw data in image
+  // decoder, pass UserImage and user it instead.
+  user_manager->SaveUserImage(user_manager->GetLoggedInUser().email(),
+                              UserImage::CreateAndEncode(image));
 
   get_screen_observer()->OnExit(ScreenObserver::USER_IMAGE_SELECTED);
 
@@ -122,7 +131,7 @@ void UserImageScreen::OnPhotoTaken(const SkBitmap& image) {
 void UserImageScreen::OnProfileImageSelected() {
   UserManager* user_manager = UserManager::Get();
   user_manager->SaveUserImageFromProfileImage(
-      user_manager->logged_in_user().email());
+      user_manager->GetLoggedInUser().email());
 
   get_screen_observer()->OnExit(ScreenObserver::USER_IMAGE_SELECTED);
 
@@ -134,12 +143,12 @@ void UserImageScreen::OnProfileImageSelected() {
 void UserImageScreen::OnDefaultImageSelected(int index) {
   UserManager* user_manager = UserManager::Get();
   user_manager->SaveUserDefaultImageIndex(
-      user_manager->logged_in_user().email(), index);
+      user_manager->GetLoggedInUser().email(), index);
 
   get_screen_observer()->OnExit(ScreenObserver::USER_IMAGE_SELECTED);
 
   UMA_HISTOGRAM_ENUMERATION("UserImage.FirstTimeChoice",
-                            index,
+                            GetDefaultImageHistogramValue(index),
                             kHistogramImagesCount);
 }
 
@@ -162,9 +171,10 @@ void UserImageScreen::Observe(int type,
     }
     case chrome::NOTIFICATION_PROFILE_IMAGE_UPDATED: {
       // We've got a new profile image.
-      if (actor_)
+      if (actor_) {
         actor_->AddProfileImage(
-            *content::Details<const SkBitmap>(details).ptr());
+            *content::Details<const gfx::ImageSkia>(details).ptr());
+      }
       break;
     }
     case chrome::NOTIFICATION_PROFILE_IMAGE_UPDATE_FAILED: {

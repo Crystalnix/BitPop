@@ -4,7 +4,6 @@
 
 #ifndef CONTENT_PUBLIC_BROWSER_DOWNLOAD_DANGER_TYPE_H_
 #define CONTENT_PUBLIC_BROWSER_DOWNLOAD_DANGER_TYPE_H_
-#pragma once
 
 namespace content {
 
@@ -28,6 +27,10 @@ enum DownloadDangerType {
   // The content of this download may be malicious (e.g., extension is exe but
   // SafeBrowsing has not finished checking the content).
   DOWNLOAD_DANGER_TYPE_MAYBE_DANGEROUS_CONTENT,
+
+  // SafeBrowsing download service checked the contents of the download, but
+  // didn't have enough data to determine whether it was malicious.
+  DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT,
 
   // Memory space for histograms is determined by the max.
   // ALWAYS ADD NEW VALUES BEFORE THIS ONE.

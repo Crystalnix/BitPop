@@ -1,14 +1,15 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_PLUGIN_PLUGIN_INTERPOSE_UTIL_MAC_H_
 #define CONTENT_PLUGIN_PLUGIN_INTERPOSE_UTIL_MAC_H_
-#pragma once
 
 #include <Carbon/Carbon.h>
 
 #import "base/basictypes.h"
+
+typedef struct Cursor Cursor;
 
 // This is really a WebPluginDelegateImpl, but that class is private to the
 // framework, and these functions are called from a dylib.

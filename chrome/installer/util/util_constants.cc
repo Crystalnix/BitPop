@@ -15,6 +15,9 @@ const char kAutoLaunchChrome[] = "auto-launch-chrome";
 // Currently this is only required when used in combination with kMultiInstall.
 const char kChrome[] = "chrome";
 
+// Install Chrome App Host.
+const char kChromeAppHost[] = "app-host";
+
 // Install Chrome Frame.
 const char kChromeFrame[] = "chrome-frame";
 
@@ -39,7 +42,14 @@ const char kChromeFrameReadyModeEndTempOptOut[] = "ready-mode-end-temp-opt-out";
 // Run the installer for Chrome SxS.
 const char kChromeSxS[] = "chrome-sxs";
 
-// Create Desktop and QuickLaunch shortcuts
+// Create shortcuts for this user to point to a system-level install (which
+// must already be installed on the machine). The shortcuts created will
+// match the preferences of the already present system-level install as such
+// this option is not compatible with any other installer options.
+const char kConfigureUserSettings[] = "configure-user-settings";
+
+// Create Desktop and QuickLaunch shortcuts (also forces all other shortcuts
+// to be recreated if they were deleted).
 const char kCreateAllShortcuts[] = "create-all-shortcuts";
 
 // The version number of an update containing critical fixes, for which an
@@ -52,9 +62,6 @@ const char kDeleteProfile[] = "delete-profile";
 
 // Disable logging
 const char kDisableLogging[] = "disable-logging";
-
-// Prevent installer from creating desktop shortcuts.
-const char kDoNotCreateShortcuts[] = "do-not-create-shortcuts";
 
 // Prevent installer from launching Chrome after a successful first install.
 const char kDoNotLaunchChrome[] = "do-not-launch-chrome";
@@ -107,8 +114,10 @@ const char kNewSetupExe[] = "new-setup-exe";
 // options kInstallArchive and kUninstall are ignored.
 const char kRegisterChromeBrowser[] = "register-chrome-browser";
 
-const char kRegisterChromeBrowserSuffix[] =
-    "register-chrome-browser-suffix";
+// Used by the installer to forward the registration suffix of the
+// (un)installation in progress when launching an elevated setup.exe to finish
+// registration work.
+const char kRegisterChromeBrowserSuffix[] = "register-chrome-browser-suffix";
 
 // Switch to allow an extra URL protocol to be registered. This option is used
 // in conjunction with kRegisterChromeBrowser to specify an extra protocol
@@ -161,6 +170,7 @@ const char kToastResultsKey[] = "toast-results-key";
 
 }  // namespace switches
 
+const wchar_t kChromeAppHostExe[] = L"app_host.exe";
 const wchar_t kChromeDll[] = L"chrome.dll";
 const wchar_t kChromeExe[] = L"chrome.exe";
 const wchar_t kChromeFrameDll[] = L"npchrome_frame.dll";
@@ -170,7 +180,11 @@ const wchar_t kChromeFrameReadyModeField[] = L"ChromeFrameReadyMode";
 const wchar_t kChromeLauncherExe[] = L"chrome_launcher.exe";
 const wchar_t kChromeNewExe[] = L"new_chrome.exe";
 const wchar_t kChromeOldExe[] = L"old_chrome.exe";
+const wchar_t kCmdInstallApp[] = L"install-application";
+const wchar_t kCmdQuickEnableApplicationHost[] =
+    L"quick-enable-application-host";
 const wchar_t kCmdQuickEnableCf[] = L"quick-enable-cf";
+const wchar_t kDelegateExecuteExe[] = L"delegate_execute.exe";
 const wchar_t kGoogleChromeInstallSubDir1[] = L"Google";
 const wchar_t kGoogleChromeInstallSubDir2[] = L"Chrome";
 const wchar_t kInstallBinaryDir[] = L"Application";
@@ -178,6 +192,9 @@ const wchar_t kInstallerDir[] = L"Installer";
 const wchar_t kInstallTempDir[] = L"Temp";
 const wchar_t kInstallUserDataDir[] = L"User Data";
 const wchar_t kNaClExe[] = L"nacl64.exe";
+// The CLSID of the proxy stub OLE Automation universal marshaler, the default
+// marshaler for all interfaces.
+const wchar_t kPSOAInterfaceUuid[] = L"{00020424-0000-0000-C000-000000000046}";
 const wchar_t kSetupExe[] = L"setup.exe";
 const wchar_t kSxSSuffix[] = L" SxS";
 const wchar_t kUninstallStringField[] = L"UninstallString";
@@ -201,10 +218,12 @@ const wchar_t kOptionMultiInstall[] = L"multi-install";
 const wchar_t kOptionReadyMode[] = L"ready-mode";
 
 // Chrome channel display names.
-extern const wchar_t kChromeChannelUnknown[] = L"unknown";
-extern const wchar_t kChromeChannelCanary[] = L"canary";
-extern const wchar_t kChromeChannelDev[] = L"dev";
-extern const wchar_t kChromeChannelBeta[] = L"beta";
-extern const wchar_t kChromeChannelStable[] = L"";
+const wchar_t kChromeChannelUnknown[] = L"unknown";
+const wchar_t kChromeChannelCanary[] = L"canary";
+const wchar_t kChromeChannelDev[] = L"dev";
+const wchar_t kChromeChannelBeta[] = L"beta";
+const wchar_t kChromeChannelStable[] = L"";
+
+const size_t kMaxAppModelIdLength = 64U;
 
 }  // namespace installer

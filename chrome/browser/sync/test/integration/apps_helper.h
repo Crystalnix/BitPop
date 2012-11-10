@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_SYNC_TEST_INTEGRATION_APPS_HELPER_H_
 #define CHROME_BROWSER_SYNC_TEST_INTEGRATION_APPS_HELPER_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -22,8 +21,13 @@ bool HasSameAppsAsVerifier(int index) WARN_UNUSED_RESULT;
 // Returns true iff all existing profiles have the same apps as the verifier.
 bool AllProfilesHaveSameAppsAsVerifier() WARN_UNUSED_RESULT;
 
-// Installs the app for the given index to |profile|.
-void InstallApp(Profile* profile, int index);
+// Installs the app for the given index to |profile|, and returns the extension
+// ID of the new app.
+std::string InstallApp(Profile* profile, int index);
+
+// Installs the app for the given index to all profiles (including the
+// verifier), and returns the extension ID of the new app.
+std::string InstallAppForAllProfiles(int index);
 
 // Uninstalls the app for the given index from |profile|. Assumes that it was
 // previously installed.

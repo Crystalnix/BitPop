@@ -4,17 +4,12 @@
 
 #ifndef UI_AURA_CLIENT_WINDOW_MOVE_CLIENT_H_
 #define UI_AURA_CLIENT_WINDOW_MOVE_CLIENT_H_
-#pragma once
 
 #include "ui/aura/aura_export.h"
 
 namespace aura {
 class Window;
 namespace client {
-
-// A property key to store a client that handles window moves. The type of
-// the value is |aura::client::WindowMoveClient*|.
-AURA_EXPORT extern const char kWindowMoveClientKey[];
 
 // An interface implemented by an object that manages programatically keyed
 // window moving.

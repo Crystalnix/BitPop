@@ -7,13 +7,14 @@
 
 #include <deque>
 
-#include "base/memory/scoped_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/platform_thread.h"
-#include "media/base/filters.h"
 #include "media/base/pipeline_status.h"
+#include "media/base/video_decoder.h"
 #include "media/base/video_frame.h"
+#include "media/base/video_renderer.h"
 
 namespace media {
 
@@ -37,24 +38,31 @@ class MEDIA_EXPORT VideoRendererBase
   // instead post a task to a common/worker thread to handle rendering.  Slowing
   // down the video thread may result in losing synchronization with audio.
   //
+  // Setting |drop_frames_| to true causes the renderer to drop expired frames.
+  //
   // TODO(scherkus): pass the VideoFrame* to this callback and remove
   // Get/PutCurrentFrame() http://crbug.com/108435
   VideoRendererBase(const base::Closure& paint_cb,
-                    const SetOpaqueCB& set_opaque_cb);
-  virtual ~VideoRendererBase();
+                    const SetOpaqueCB& set_opaque_cb,
+                    bool drop_frames);
 
-  // Filter implementation.
+  // VideoRenderer implementation.
+  virtual void Initialize(const scoped_refptr<VideoDecoder>& decoder,
+                          const PipelineStatusCB& init_cb,
+                          const StatisticsCB& statistics_cb,
+                          const TimeCB& time_cb,
+                          const NaturalSizeChangedCB& size_changed_cb,
+                          const base::Closure& ended_cb,
+                          const PipelineStatusCB& error_cb,
+                          const TimeDeltaCB& get_time_cb,
+                          const TimeDeltaCB& get_duration_cb) OVERRIDE;
   virtual void Play(const base::Closure& callback) OVERRIDE;
   virtual void Pause(const base::Closure& callback) OVERRIDE;
   virtual void Flush(const base::Closure& callback) OVERRIDE;
+  virtual void Preroll(base::TimeDelta time,
+                       const PipelineStatusCB& cb) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void SetPlaybackRate(float playback_rate) OVERRIDE;
-  virtual void Seek(base::TimeDelta time, const FilterStatusCB& cb) OVERRIDE;
-
-  // VideoRenderer implementation.
-  virtual void Initialize(VideoDecoder* decoder,
-                          const base::Closure& callback,
-                          const StatisticsCallback& stats_callback) OVERRIDE;
   virtual bool HasEnded() OVERRIDE;
 
   // PlatformThread::Delegate implementation.
@@ -65,17 +73,28 @@ class MEDIA_EXPORT VideoRendererBase
   // by use PutCurrentFrame(). Current frame is not guaranteed to be non-NULL.
   // It expects clients to use color-fill the background if current frame
   // is NULL. This could happen before pipeline is pre-rolled or during
-  // pause/flush/seek.
+  // pause/flush/preroll.
   void GetCurrentFrame(scoped_refptr<VideoFrame>* frame_out);
   void PutCurrentFrame(scoped_refptr<VideoFrame> frame);
 
+ protected:
+  virtual ~VideoRendererBase();
+
  private:
-  // Callback from the video decoder delivering decoded video frames.
-  void FrameReady(scoped_refptr<VideoFrame> frame);
+  // Callback from the video decoder delivering decoded video frames and
+  // reporting video decoder status.
+  void FrameReady(VideoDecoder::DecoderStatus status,
+                  const scoped_refptr<VideoFrame>& frame);
+
+  // Helper method for adding a frame to |ready_frames_|
+  void AddReadyFrame(const scoped_refptr<VideoFrame>& frame);
 
   // Helper method that schedules an asynchronous read from the decoder as long
   // as there isn't a pending read and we have capacity.
   void AttemptRead_Locked();
+
+  // Called when the VideoDecoder Flush() completes.
+  void OnDecoderFlushDone();
 
   // Attempts to complete flushing and transition into the flushed state.
   void AttemptFlush_Locked();
@@ -88,14 +107,15 @@ class MEDIA_EXPORT VideoRendererBase
       const scoped_refptr<VideoFrame>& next_frame,
       float playback_rate);
 
-  // Safely handles entering to an error state.
-  void EnterErrorState_Locked(PipelineStatus status);
-
   // Helper function that flushes the buffers when a Stop() or error occurs.
   void DoStopOrError_Locked();
 
   // Return the number of frames currently held by this class.
   int NumFrames_Locked() const;
+
+  // Updates |current_frame_| to the next frame on |ready_frames_| and calls
+  // |size_changed_cb_| if the natural size changes.
+  void SetCurrentFrameToNextReadyFrame();
 
   // Used for accessing data members.
   base::Lock lock_;
@@ -129,11 +149,11 @@ class MEDIA_EXPORT VideoRendererBase
   //              |
   //              | Initialize()
   //              V        All frames returned
-  //   +------[kFlushed]<----------------------[kFlushing]
-  //   |          | Seek() or upon                  ^
-  //   |          V got first frame                 |
-  //   |      [kSeeking]                            | Flush()
-  //   |          |                                 |
+  //   +------[kFlushed]<-----[kFlushing]<--- OnDecoderFlushDone()
+  //   |          | Preroll() or upon                  ^
+  //   |          V got first frame           [kFlushingDecoder]
+  //   |      [kPrerolling]                            ^
+  //   |          |                                 | Flush()
   //   |          V Got enough frames               |
   //   |      [kPrerolled]---------------------->[kPaused]
   //   |          |                Pause()          ^
@@ -152,9 +172,10 @@ class MEDIA_EXPORT VideoRendererBase
     kUninitialized,
     kPrerolled,
     kPaused,
+    kFlushingDecoder,
     kFlushing,
     kFlushed,
-    kSeeking,
+    kPrerolling,
     kPlaying,
     kEnded,
     kStopped,
@@ -178,16 +199,28 @@ class MEDIA_EXPORT VideoRendererBase
   bool pending_paint_;
   bool pending_paint_with_last_available_;
 
+  bool drop_frames_;
+
   float playback_rate_;
 
-  // Filter callbacks.
-  base::Closure flush_callback_;
-  FilterStatusCB seek_cb_;
-  StatisticsCallback statistics_callback_;
+  // Playback operation callbacks.
+  base::Closure flush_cb_;
+  PipelineStatusCB preroll_cb_;
 
-  base::TimeDelta seek_timestamp_;
+  // Event callbacks.
+  StatisticsCB statistics_cb_;
+  TimeCB time_cb_;
+  NaturalSizeChangedCB size_changed_cb_;
+  base::Closure ended_cb_;
+  PipelineStatusCB error_cb_;
+  TimeDeltaCB get_time_cb_;
+  TimeDeltaCB get_duration_cb_;
 
-  VideoDecoder::ReadCB read_cb_;
+  base::TimeDelta preroll_timestamp_;
+
+  // Delayed frame used during kPrerolling to determine whether
+  // |preroll_timestamp_| is between this frame and the next one.
+  scoped_refptr<VideoFrame> prerolling_delayed_frame_;
 
   // Embedder callback for notifying a new frame is available for painting.
   base::Closure paint_cb_;
@@ -195,6 +228,9 @@ class MEDIA_EXPORT VideoRendererBase
   // Callback to execute to inform the player if the video decoder's output is
   // opaque.
   SetOpaqueCB set_opaque_cb_;
+
+  // The last natural size |size_changed_cb_| was called with.
+  gfx::Size last_natural_size_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoRendererBase);
 };

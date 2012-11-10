@@ -1,16 +1,16 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_INTENTS_WEB_INTENTS_MODEL_H_
 #define CHROME_BROWSER_UI_INTENTS_WEB_INTENTS_MODEL_H_
-#pragma once
 
 #include "base/values.h"
 #include "chrome/browser/intents/web_intents_registry.h"
 #include "ui/base/models/tree_node_model.h"
 
 class WebIntentsRegistry;
+struct DefaultWebIntentService;
 
 // The tree structure is a TYPE_ROOT node with title="",
 // children are TYPE_ORIGIN nodes with title=origin, whose
@@ -76,8 +76,7 @@ class ServiceTreeNode : public WebIntentsTreeNode {
 };
 
 // UI-backing tree model of the data in the WebIntentsRegistry.
-class WebIntentsModel : public ui::TreeNodeModel<WebIntentsTreeNode>,
-                        public WebIntentsRegistry::Consumer {
+class WebIntentsModel : public ui::TreeNodeModel<WebIntentsTreeNode> {
  public:
   // Because nodes are fetched in a background thread, they are not
   // present at the time the Model is created. The Model then notifies its
@@ -101,9 +100,8 @@ class WebIntentsModel : public ui::TreeNodeModel<WebIntentsTreeNode>,
   void GetWebIntentsTreeNodeDictionary(const WebIntentsTreeNode& node,
                                        base::DictionaryValue* dict);
 
-  virtual void OnIntentsQueryDone(
-      WebIntentsRegistry::QueryID query_id,
-      const std::vector<webkit_glue::WebIntentServiceData>& services) OVERRIDE;
+  void OnIntentsQueryDone(
+      const std::vector<webkit_glue::WebIntentServiceData>& services);
 
  private:
   // Loads the data model from the WebIntentsRegistry.

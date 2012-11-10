@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,9 +11,12 @@
 #include "base/i18n/file_util_icu.h"
 #include "base/i18n/time_formatting.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "base/win/metro.h"
+#include "printing/backend/win_helper.h"
 #include "printing/print_job_constants.h"
 #include "printing/print_settings_initializer_win.h"
 #include "printing/printed_document.h"
@@ -218,6 +221,25 @@ void PrintingContextWin::AskUserForSettings(
     const PrintSettingsCallback& callback) {
 #if !defined(USE_AURA)
   DCHECK(!in_print_job_);
+
+  if (base::win::IsMetroProcess()) {
+    // The system dialog can not be opened while running in Metro.
+    // But we can programatically launch the Metro print device charm though.
+    HMODULE metro_module = base::win::GetMetroModule();
+    if (metro_module != NULL) {
+      typedef void (*MetroShowPrintUI)();
+      MetroShowPrintUI metro_show_print_ui =
+          reinterpret_cast<MetroShowPrintUI>(
+              ::GetProcAddress(metro_module, "MetroShowPrintUI"));
+      if (metro_show_print_ui) {
+        // TODO(mad): Remove this once we can send user metrics from the metro
+        // driver. crbug.com/142330
+        UMA_HISTOGRAM_ENUMERATION("Metro.Print", 1, 2);
+        metro_show_print_ui();
+      }
+    }
+    return callback.Run(CANCEL);
+  }
   dialog_box_dismissed_ = false;
 
   HWND window;
@@ -381,9 +403,9 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
     return OK;
   }
 
-  HANDLE printer;
+  ScopedPrinterHandle printer;
   LPWSTR device_name_wide = const_cast<wchar_t*>(device_name.c_str());
-  if (!OpenPrinter(device_name_wide, &printer, NULL))
+  if (!OpenPrinter(device_name_wide, printer.Receive(), NULL))
     return OnError();
 
   // Make printer changes local to Chrome.
@@ -403,7 +425,6 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
   }
   if (dev_mode == NULL) {
     buffer.reset();
-    ClosePrinter(printer);
     return OnError();
   }
 
@@ -433,19 +454,16 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
   // Update data using DocumentProperties.
   if (DocumentProperties(NULL, printer, device_name_wide, dev_mode, dev_mode,
                          DM_IN_BUFFER | DM_OUT_BUFFER) != IDOK) {
-    ClosePrinter(printer);
     return OnError();
   }
 
   // Set printer then refresh printer settings.
   if (!AllocateContext(device_name, dev_mode, &context_)) {
-    ClosePrinter(printer);
     return OnError();
   }
   PrintSettingsInitializerWin::InitPrintSettings(context_, *dev_mode,
                                                  ranges, device_name,
                                                  false, &settings_);
-  ClosePrinter(printer);
   return OK;
 }
 
@@ -456,19 +474,15 @@ PrintingContext::Result PrintingContextWin::InitWithSettings(
   settings_ = settings;
 
   // TODO(maruel): settings_.ToDEVMODE()
-  HANDLE printer;
+  ScopedPrinterHandle printer;
   if (!OpenPrinter(const_cast<wchar_t*>(settings_.device_name().c_str()),
-                   &printer,
-                   NULL))
+                   printer.Receive(), NULL))
     return FAILED;
 
   Result status = OK;
 
   if (!GetPrinterSettings(printer, settings_.device_name()))
     status = FAILED;
-
-  // Close the printer after retrieving the context.
-  ClosePrinter(printer);
 
   if (status != OK)
     ResetSettings();

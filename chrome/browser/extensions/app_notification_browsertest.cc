@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -16,6 +17,8 @@
 using content::BrowserThread;
 
 class AppNotificationTest : public ExtensionBrowserTest {};
+
+namespace extensions {
 
 namespace {
 
@@ -27,13 +30,14 @@ class Interceptor : public AppNotifyChannelSetup::InterceptorForTests {
   Interceptor() : was_called_(false) {}
   virtual ~Interceptor() {}
 
-  virtual void DoIntercept(const AppNotifyChannelSetup* setup,
-                           std::string* result_channel_id,
-                           std::string* result_error) OVERRIDE {
+  virtual void DoIntercept(
+      const AppNotifyChannelSetup* setup,
+      std::string* result_channel_id,
+      AppNotifyChannelSetup::SetupError* result_error) OVERRIDE {
     EXPECT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::UI));
     EXPECT_TRUE(setup->client_id() == std::string(kExpectedClientId));
     *result_channel_id = std::string("1234");
-    *result_error = std::string();
+    *result_error = AppNotifyChannelSetup::NONE;
     was_called_ = true;
     MessageLoop::current()->Quit();
   }
@@ -57,17 +61,17 @@ IN_PROC_BROWSER_TEST_F(AppNotificationTest, SaveClientId) {
       LoadExtension(test_data_dir_.AppendASCII("app_notifications"));
   ASSERT_TRUE(app != NULL);
 
-  Browser::OpenApplication(browser()->profile(),
-                           app,
-                           extension_misc::LAUNCH_TAB,
-                           GURL(),
-                           NEW_FOREGROUND_TAB);
+  application_launch::OpenApplication(application_launch::LaunchParams(
+          browser()->profile(), app, extension_misc::LAUNCH_TAB,
+          NEW_FOREGROUND_TAB));
   if (!interceptor.was_called())
-    ui_test_utils::RunMessageLoop();
+    content::RunMessageLoop();
   EXPECT_TRUE(interceptor.was_called());
 
   ExtensionService* service = browser()->profile()->GetExtensionService();
   ExtensionPrefs* prefs = service->extension_prefs();
   std::string saved_id = prefs->GetAppNotificationClientId(app->id());
-  EXPECT_TRUE(std::string(kExpectedClientId) == saved_id);
+  EXPECT_EQ(kExpectedClientId, saved_id);
 }
+
+}  // namespace extensions

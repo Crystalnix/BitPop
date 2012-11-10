@@ -16,10 +16,11 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "dbus/message.h"
 #include "dbus/mock_bus.h"
 #include "dbus/mock_object_proxy.h"
+#include "dbus/object_path.h"
 #include "dbus/object_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -131,7 +132,54 @@ class NativeBackendKWalletStub : public NativeBackendKWallet {
   using NativeBackendKWallet::DeserializeValue;
 };
 
-class NativeBackendKWalletTest : public testing::Test {
+// Provide some test forms to avoid having to set them up in each test.
+class NativeBackendKWalletTestBase : public testing::Test {
+ protected:
+  NativeBackendKWalletTestBase() {
+    form_google_.origin = GURL("http://www.google.com/");
+    form_google_.action = GURL("http://www.google.com/login");
+    form_google_.username_element = UTF8ToUTF16("user");
+    form_google_.username_value = UTF8ToUTF16("joeschmoe");
+    form_google_.password_element = UTF8ToUTF16("pass");
+    form_google_.password_value = UTF8ToUTF16("seekrit");
+    form_google_.submit_element = UTF8ToUTF16("submit");
+    form_google_.signon_realm = "Google";
+
+    form_isc_.origin = GURL("http://www.isc.org/");
+    form_isc_.action = GURL("http://www.isc.org/auth");
+    form_isc_.username_element = UTF8ToUTF16("id");
+    form_isc_.username_value = UTF8ToUTF16("janedoe");
+    form_isc_.password_element = UTF8ToUTF16("passwd");
+    form_isc_.password_value = UTF8ToUTF16("ihazabukkit");
+    form_isc_.submit_element = UTF8ToUTF16("login");
+    form_isc_.signon_realm = "ISC";
+  }
+
+  void CheckPasswordForm(const PasswordForm& expected,
+                         const PasswordForm& actual);
+
+  PasswordForm form_google_;
+  PasswordForm form_isc_;
+};
+
+void NativeBackendKWalletTestBase::CheckPasswordForm(
+    const PasswordForm& expected, const PasswordForm& actual) {
+  EXPECT_EQ(expected.origin, actual.origin);
+  EXPECT_EQ(expected.password_value, actual.password_value);
+  EXPECT_EQ(expected.action, actual.action);
+  EXPECT_EQ(expected.username_element, actual.username_element);
+  EXPECT_EQ(expected.username_value, actual.username_value);
+  EXPECT_EQ(expected.password_element, actual.password_element);
+  EXPECT_EQ(expected.submit_element, actual.submit_element);
+  EXPECT_EQ(expected.signon_realm, actual.signon_realm);
+  EXPECT_EQ(expected.ssl_valid, actual.ssl_valid);
+  EXPECT_EQ(expected.preferred, actual.preferred);
+  // We don't check the date created. It varies.
+  EXPECT_EQ(expected.blacklisted_by_user, actual.blacklisted_by_user);
+  EXPECT_EQ(expected.scheme, actual.scheme);
+}
+
+class NativeBackendKWalletTest : public NativeBackendKWalletTestBase {
  protected:
   NativeBackendKWalletTest()
       : ui_thread_(BrowserThread::UI, &message_loop_),
@@ -157,12 +205,10 @@ class NativeBackendKWalletTest : public testing::Test {
     event->Signal();
   }
 
-  // Utilities to help verify expectations.
+  // Utilities to help verify sets of expectations.
   typedef std::vector<
               std::pair<std::string,
                         std::vector<const PasswordForm*> > > ExpectationArray;
-  void CheckPasswordForm(const PasswordForm& expected,
-                         const PasswordForm& actual);
   void CheckPasswordForms(const std::string& folder,
                           const ExpectationArray& sorted_expected);
 
@@ -185,10 +231,6 @@ class NativeBackendKWalletTest : public testing::Test {
 
   TestKWallet wallet_;
 
-  // Provide some test forms to avoid having to set them up in each test.
-  PasswordForm form_google_;
-  PasswordForm form_isc_;
-
  private:
   dbus::Response* KLauncherMethodCall(
       dbus::MethodCall* method_call, testing::Unused);
@@ -200,24 +242,6 @@ class NativeBackendKWalletTest : public testing::Test {
 void NativeBackendKWalletTest::SetUp() {
   ASSERT_TRUE(db_thread_.Start());
 
-  form_google_.origin = GURL("http://www.google.com/");
-  form_google_.action = GURL("http://www.google.com/login");
-  form_google_.username_element = UTF8ToUTF16("user");
-  form_google_.username_value = UTF8ToUTF16("joeschmoe");
-  form_google_.password_element = UTF8ToUTF16("pass");
-  form_google_.password_value = UTF8ToUTF16("seekrit");
-  form_google_.submit_element = UTF8ToUTF16("submit");
-  form_google_.signon_realm = "Google";
-
-  form_isc_.origin = GURL("http://www.isc.org/");
-  form_isc_.action = GURL("http://www.isc.org/auth");
-  form_isc_.username_element = UTF8ToUTF16("id");
-  form_isc_.username_value = UTF8ToUTF16("janedoe");
-  form_isc_.password_element = UTF8ToUTF16("passwd");
-  form_isc_.password_value = UTF8ToUTF16("ihazabukkit");
-  form_isc_.submit_element = UTF8ToUTF16("login");
-  form_isc_.signon_realm = "ISC";
-
   dbus::Bus::Options options;
   options.bus_type = dbus::Bus::SESSION;
   mock_session_bus_ = new dbus::MockBus(options);
@@ -225,7 +249,7 @@ void NativeBackendKWalletTest::SetUp() {
   mock_klauncher_proxy_ =
       new dbus::MockObjectProxy(mock_session_bus_.get(),
                                 "org.kde.klauncher",
-                                "/KLauncher");
+                                dbus::ObjectPath("/KLauncher"));
   EXPECT_CALL(*mock_klauncher_proxy_,
               CallMethodAndBlock(_, _))
       .WillRepeatedly(Invoke(this,
@@ -234,7 +258,7 @@ void NativeBackendKWalletTest::SetUp() {
   mock_kwallet_proxy_ =
       new dbus::MockObjectProxy(mock_session_bus_.get(),
                                 "org.kde.kwalletd",
-                                "/modules/kwalletd");
+                                dbus::ObjectPath("/modules/kwalletd"));
   EXPECT_CALL(*mock_kwallet_proxy_,
               CallMethodAndBlock(_, _))
       .WillRepeatedly(Invoke(this,
@@ -242,11 +266,11 @@ void NativeBackendKWalletTest::SetUp() {
 
   EXPECT_CALL(*mock_session_bus_, GetObjectProxy(
       "org.kde.klauncher",
-      "/KLauncher"))
+      dbus::ObjectPath("/KLauncher")))
       .WillRepeatedly(Return(mock_klauncher_proxy_.get()));
   EXPECT_CALL(*mock_session_bus_, GetObjectProxy(
       "org.kde.kwalletd",
-      "/modules/kwalletd"))
+      dbus::ObjectPath("/modules/kwalletd")))
       .WillRepeatedly(Return(mock_kwallet_proxy_.get()));
 
   EXPECT_CALL(*mock_session_bus_,
@@ -413,23 +437,6 @@ dbus::Response* NativeBackendKWalletTest::KWalletMethodCall(
 
   EXPECT_FALSE(response == NULL);
   return response;
-}
-
-void NativeBackendKWalletTest::CheckPasswordForm(const PasswordForm& expected,
-                                                 const PasswordForm& actual) {
-  EXPECT_EQ(expected.origin, actual.origin);
-  EXPECT_EQ(expected.password_value, actual.password_value);
-  EXPECT_EQ(expected.action, actual.action);
-  EXPECT_EQ(expected.username_element, actual.username_element);
-  EXPECT_EQ(expected.username_value, actual.username_value);
-  EXPECT_EQ(expected.password_element, actual.password_element);
-  EXPECT_EQ(expected.submit_element, actual.submit_element);
-  EXPECT_EQ(expected.signon_realm, actual.signon_realm);
-  EXPECT_EQ(expected.ssl_valid, actual.ssl_valid);
-  EXPECT_EQ(expected.preferred, actual.preferred);
-  // We don't check the date created. It varies.
-  EXPECT_EQ(expected.blacklisted_by_user, actual.blacklisted_by_user);
-  EXPECT_EQ(expected.scheme, actual.scheme);
 }
 
 void NativeBackendKWalletTest::CheckPasswordForms(
@@ -1009,4 +1016,73 @@ TEST_F(NativeBackendKWalletTest, DISABLED_DeleteMigratedPasswordIsIsolated) {
     expected.clear();
     CheckPasswordForms("Chrome Form Data (24)", expected);
   }
+}
+
+class NativeBackendKWalletPickleTest : public NativeBackendKWalletTestBase {
+ protected:
+  void CreateVersion0Pickle(bool size_32,
+                            const PasswordForm& form,
+                            Pickle* pickle);
+  void CheckVersion0Pickle(bool size_32, PasswordForm::Scheme scheme);
+};
+
+void NativeBackendKWalletPickleTest::CreateVersion0Pickle(
+    bool size_32, const PasswordForm& form, Pickle* pickle) {
+  const int kPickleVersion0 = 0;
+  pickle->WriteInt(kPickleVersion0);
+  if (size_32)
+    pickle->WriteUInt32(1);  // Size of form list. 32 bits.
+  else
+    pickle->WriteUInt64(1);  // Size of form list. 64 bits.
+  pickle->WriteInt(form.scheme);
+  pickle->WriteString(form.origin.spec());
+  pickle->WriteString(form.action.spec());
+  pickle->WriteString16(form.username_element);
+  pickle->WriteString16(form.username_value);
+  pickle->WriteString16(form.password_element);
+  pickle->WriteString16(form.password_value);
+  pickle->WriteString16(form.submit_element);
+  pickle->WriteBool(form.ssl_valid);
+  pickle->WriteBool(form.preferred);
+  pickle->WriteBool(form.blacklisted_by_user);
+  pickle->WriteInt64(form.date_created.ToTimeT());
+}
+
+void NativeBackendKWalletPickleTest::CheckVersion0Pickle(
+    bool size_32, PasswordForm::Scheme scheme) {
+  Pickle pickle;
+  PasswordForm form = form_google_;
+  form.scheme = scheme;
+  CreateVersion0Pickle(size_32, form, &pickle);
+  std::vector<PasswordForm*> form_list;
+  NativeBackendKWalletStub::DeserializeValue(form.signon_realm,
+                                             pickle, &form_list);
+  EXPECT_EQ(1u, form_list.size());
+  if (form_list.size() > 0)
+    CheckPasswordForm(form, *form_list[0]);
+  STLDeleteElements(&form_list);
+}
+
+// We try both SCHEME_HTML and SCHEME_BASIC since the scheme is stored right
+// after the size in the pickle, so it's what gets read as part of the count
+// when reading 32-bit pickles on 64-bit systems. SCHEME_HTML is 0 (so we'll
+// detect errors later) while SCHEME_BASIC is 1 (so we'll detect it then). We
+// try both 32-bit and 64-bit pickles since only one will be the "other" size
+// for whatever architecture we're running on, but we want to make sure we can
+// read all combinations in any event.
+
+TEST_F(NativeBackendKWalletPickleTest, ReadsOld32BitHTMLPickles) {
+  CheckVersion0Pickle(true, PasswordForm::SCHEME_HTML);
+}
+
+TEST_F(NativeBackendKWalletPickleTest, ReadsOld32BitHTTPPickles) {
+  CheckVersion0Pickle(true, PasswordForm::SCHEME_BASIC);
+}
+
+TEST_F(NativeBackendKWalletPickleTest, ReadsOld64BitHTMLPickles) {
+  CheckVersion0Pickle(false, PasswordForm::SCHEME_HTML);
+}
+
+TEST_F(NativeBackendKWalletPickleTest, ReadsOld64BitHTTPPickles) {
+  CheckVersion0Pickle(false, PasswordForm::SCHEME_BASIC);
 }

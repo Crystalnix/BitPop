@@ -1,42 +1,43 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/test/base/in_process_browser_test.h"
-#include "chrome/test/base/ui_test_utils.h"
-#include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/test/browser_test_utils.h"
+#include "content/public/test/test_browser_thread.h"
+#include "content/shell/shell.h"
+#include "content/test/content_browser_test.h"
+#include "content/test/content_browser_test_utils.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_util.h"
 #include "net/test/test_server.h"
 
-using content::WebContents;
+namespace content {
 
-class RenderViewHostTest : public InProcessBrowserTest {
+class RenderViewHostTest : public ContentBrowserTest {
  public:
   RenderViewHostTest() {}
 };
 
-
 IN_PROC_BROWSER_TEST_F(RenderViewHostTest,
                        ExecuteJavascriptAndGetValue) {
   ASSERT_TRUE(test_server()->Start());
-  GURL empty_url(test_server()->GetURL("files/empty.html"));
-  ui_test_utils::NavigateToURL(browser(), empty_url);
+  GURL empty_url(test_server()->GetURL("files/simple_page.html"));
+  NavigateToURL(shell(), empty_url);
 
-  RenderViewHost* rvh =
-      browser()->GetSelectedWebContents()->GetRenderViewHost();
+  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
+      shell()->web_contents()->GetRenderViewHost());
 
   {
-    Value* value = rvh->ExecuteJavascriptAndGetValue(string16(),
-                                                     ASCIIToUTF16("!false;"));
+    scoped_ptr<Value> value(
+        rvh->ExecuteJavascriptAndGetValue(string16(), ASCIIToUTF16("!false;")));
     EXPECT_EQ(Value::TYPE_BOOLEAN, value->GetType());
     bool bool_value;
     EXPECT_TRUE(value->GetAsBoolean(&bool_value));
@@ -45,8 +46,8 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostTest,
 
   // Execute the script 'true' and make sure we get back true.
   {
-    Value* value = rvh->ExecuteJavascriptAndGetValue(string16(),
-                                                     ASCIIToUTF16("true;"));
+    scoped_ptr<Value> value(
+        rvh->ExecuteJavascriptAndGetValue(string16(), ASCIIToUTF16("true;")));
     EXPECT_EQ(Value::TYPE_BOOLEAN, value->GetType());
     bool bool_value;
     EXPECT_TRUE(value->GetAsBoolean(&bool_value));
@@ -55,8 +56,8 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostTest,
 
   // Execute the script 'false' and make sure we get back false.
   {
-    Value* value = rvh->ExecuteJavascriptAndGetValue(string16(),
-                                                     ASCIIToUTF16("false;"));
+    scoped_ptr<Value> value(
+        rvh->ExecuteJavascriptAndGetValue(string16(), ASCIIToUTF16("false;")));
     EXPECT_EQ(Value::TYPE_BOOLEAN, value->GetType());
     bool bool_value;
     EXPECT_TRUE(value->GetAsBoolean(&bool_value));
@@ -65,8 +66,8 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostTest,
 
   // And now, for something completely different, try a number.
   {
-    Value* value = rvh->ExecuteJavascriptAndGetValue(string16(),
-                                                     ASCIIToUTF16("42;"));
+    scoped_ptr<Value> value(
+        rvh->ExecuteJavascriptAndGetValue(string16(), ASCIIToUTF16("42;")));
     EXPECT_EQ(Value::TYPE_INTEGER, value->GetType());
     int int_value;
     EXPECT_TRUE(value->GetAsInteger(&int_value));
@@ -75,8 +76,8 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostTest,
 
   // Try a floating point number.
   {
-    Value* value = rvh->ExecuteJavascriptAndGetValue(string16(),
-                                                     ASCIIToUTF16("42.2;"));
+    scoped_ptr<Value> value(
+        rvh->ExecuteJavascriptAndGetValue(string16(), ASCIIToUTF16("42.2;")));
     EXPECT_EQ(Value::TYPE_DOUBLE, value->GetType());
     double double_value;
     EXPECT_TRUE(value->GetAsDouble(&double_value));
@@ -85,8 +86,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostTest,
 
   // Let's check out string.
   {
-    Value* value = rvh->ExecuteJavascriptAndGetValue(string16(),
-        ASCIIToUTF16("\"something completely different\";"));
+    scoped_ptr<Value> value(
+        rvh->ExecuteJavascriptAndGetValue(string16(),
+            ASCIIToUTF16("\"something completely different\";")));
     EXPECT_EQ(Value::TYPE_STRING, value->GetType());
     std::string string_value;
     EXPECT_TRUE(value->GetAsString(&string_value));
@@ -95,8 +97,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostTest,
 
   // Regular expressions might be fun.
   {
-    Value* value = rvh->ExecuteJavascriptAndGetValue(string16(),
-        ASCIIToUTF16("/finder.*foo/g;"));
+    scoped_ptr<Value> value(
+        rvh->ExecuteJavascriptAndGetValue(string16(),
+            ASCIIToUTF16("/finder.*foo/g;")));
     EXPECT_EQ(Value::TYPE_STRING, value->GetType());
     std::string string_value;
     EXPECT_TRUE(value->GetAsString(&string_value));
@@ -106,8 +109,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostTest,
   // Let's test some date conversions.  First up, epoch.  Can't use 0 because
   // that means uninitialized, so use the next best thing.
   {
-    Value* value = rvh->ExecuteJavascriptAndGetValue(string16(),
-        ASCIIToUTF16("new Date(1);"));
+    scoped_ptr<Value> value(
+        rvh->ExecuteJavascriptAndGetValue(string16(),
+            ASCIIToUTF16("new Date(1);")));
     EXPECT_EQ(Value::TYPE_DOUBLE, value->GetType());
     double date_seconds;
     EXPECT_TRUE(value->GetAsDouble(&date_seconds));
@@ -126,8 +130,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostTest,
 
   // Test date with a real date input.
   {
-    Value* value = rvh->ExecuteJavascriptAndGetValue(string16(),
-        ASCIIToUTF16("new Date(Date.UTC(2006, 7, 16, 12, 0, 15));"));
+    scoped_ptr<Value> value(
+        rvh->ExecuteJavascriptAndGetValue(string16(),
+            ASCIIToUTF16("new Date(Date.UTC(2006, 7, 16, 12, 0, 15));")));
     EXPECT_EQ(Value::TYPE_DOUBLE, value->GetType());
     double date_seconds;
     EXPECT_TRUE(value->GetAsDouble(&date_seconds));
@@ -147,8 +152,9 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostTest,
 
   // And something more complicated - get an array back as a list.
   {
-    Value* value = rvh->ExecuteJavascriptAndGetValue(string16(),
-        ASCIIToUTF16("new Array(\"one\", 2, false);"));
+    scoped_ptr<Value> value(
+        rvh->ExecuteJavascriptAndGetValue(string16(),
+            ASCIIToUTF16("new Array(\"one\", 2, false);")));
     EXPECT_EQ(Value::TYPE_LIST, value->GetType());
     ListValue* list_value;
     EXPECT_TRUE(value->GetAsList(&list_value));
@@ -199,11 +205,10 @@ class RenderViewHostTestWebContentsObserver
 
 IN_PROC_BROWSER_TEST_F(RenderViewHostTest, FrameNavigateSocketAddress) {
   ASSERT_TRUE(test_server()->Start());
-  RenderViewHostTestWebContentsObserver observer(
-      browser()->GetSelectedWebContents());
+  RenderViewHostTestWebContentsObserver observer(shell()->web_contents());
 
-  GURL test_url = test_server()->GetURL("files/simple.html");
-  ui_test_utils::NavigateToURL(browser(), test_url);
+  GURL test_url = test_server()->GetURL("files/simple_page.html");
+  NavigateToURL(shell(), test_url);
 
   EXPECT_EQ(test_server()->host_port_pair().ToString(),
             observer.observed_socket_address().ToString());
@@ -212,18 +217,19 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostTest, FrameNavigateSocketAddress) {
 
 IN_PROC_BROWSER_TEST_F(RenderViewHostTest, BaseURLParam) {
   ASSERT_TRUE(test_server()->Start());
-  RenderViewHostTestWebContentsObserver observer(
-      browser()->GetSelectedWebContents());
+  RenderViewHostTestWebContentsObserver observer(shell()->web_contents());
 
   // Base URL is not set if it is the same as the URL.
-  GURL test_url = test_server()->GetURL("files/simple.html");
-  ui_test_utils::NavigateToURL(browser(), test_url);
+  GURL test_url = test_server()->GetURL("files/simple_page.tml");
+  NavigateToURL(shell(), test_url);
   EXPECT_TRUE(observer.base_url().is_empty());
   EXPECT_EQ(1, observer.navigation_count());
 
   // But should be set to the original page when reading MHTML.
   test_url = net::FilePathToFileURL(test_server()->document_root().Append(
       FILE_PATH_LITERAL("google.mht")));
-  ui_test_utils::NavigateToURL(browser(), test_url);
+  NavigateToURL(shell(), test_url);
   EXPECT_EQ("http://www.google.com/", observer.base_url().spec());
 }
+
+}  // namespace content

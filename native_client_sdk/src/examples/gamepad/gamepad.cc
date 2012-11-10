@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <string>
+#include "ppapi/c/ppb_gamepad.h"
 #include "ppapi/cpp/completion_callback.h"
 #include "ppapi/cpp/var.h"
 
@@ -34,8 +35,8 @@ Gamepad::Gamepad(PP_Instance instance)
       quit_(false) {
   pp::Module* module = pp::Module::Get();
   assert(module);
-  gamepad_ = static_cast<const PPB_Gamepad_Dev*>(
-      module->GetBrowserInterface(PPB_GAMEPAD_DEV_INTERFACE));
+  gamepad_ = static_cast<const PPB_Gamepad*>(
+      module->GetBrowserInterface(PPB_GAMEPAD_INTERFACE));
   assert(gamepad_);
 }
 
@@ -45,8 +46,8 @@ Gamepad::~Gamepad() {
   delete pixel_buffer_;
 }
 
-void Gamepad::DidChangeView(const pp::Rect& position,
-                                const pp::Rect& clip) {
+void Gamepad::DidChangeView(const pp::View& view) {
+  pp::Rect position = view.GetRect();
   if (position.size().width() == width() &&
       position.size().height() == height())
     return;  // Size didn't change, no need to update anything.
@@ -83,15 +84,15 @@ void Gamepad::Paint() {
   FillRect(pixel_buffer_, 0, 0, width(), height(), 0xfff0f0f0);
 
   // Get current gamepad data.
-  PP_GamepadsData_Dev gamepad_data;
-  gamepad_->SampleGamepads(pp_instance(), &gamepad_data);
+  PP_GamepadsSampleData gamepad_data;
+  gamepad_->Sample(pp_instance(), &gamepad_data);
 
   // Draw the current state for each connected gamepad.
   for (size_t p = 0; p < gamepad_data.length; ++p) {
     int width2 = width() / gamepad_data.length / 2;
     int height2 = height() / 2;
     int offset = width2 * 2 * p;
-    PP_GamepadData_Dev& pad = gamepad_data.items[p];
+    PP_GamepadSampleData& pad = gamepad_data.items[p];
 
     if (!pad.connected)
       continue;

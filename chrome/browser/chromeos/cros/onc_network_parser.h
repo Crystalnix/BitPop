@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_CHROMEOS_CROS_ONC_NETWORK_PARSER_H_
 #define CHROME_BROWSER_CHROMEOS_CROS_ONC_NETWORK_PARSER_H_
-#pragma once
 
 #include <string>
 
@@ -28,6 +27,8 @@ typedef std::vector<scoped_refptr<X509Certificate> > CertificateList;
 }
 
 namespace chromeos {
+
+class IssuerSubjectPattern;
 
 // This is a simple representation of the signature of an ONC typed
 // field, used in validation and translation.  It could be extended
@@ -68,7 +69,9 @@ class OncNetworkParser : public NetworkParser {
 
   // Call to create the network by parsing network config in the nth position.
   // (0-based). CHECKs if |n| is out of range and returns NULL on parse errors.
-  Network* ParseNetwork(int n);
+  // |removed| is set to true if the network should be removed.  |removed| may
+  // be NULL.
+  Network* ParseNetwork(int n, bool* marked_for_removal);
 
   // Returns the number of certificates in the "Certificates" list.
   int GetCertificatesSize() const;
@@ -143,6 +146,14 @@ class OncNetworkParser : public NetworkParser {
                                    const base::Value& value,
                                    Network* network);
 
+  static ClientCertType ParseClientCertType(const std::string& type);
+
+  // Parse ClientCertPattern dictionary that specifies certificate pattern for
+  // VPN and WiFi EAP certificates.
+  static bool ParseClientCertPattern(OncNetworkParser* parser,
+                                     PropertyIndex index,
+                                     const base::Value& value,
+                                     Network* network);
  private:
   FRIEND_TEST_ALL_PREFIXES(OncNetworkParserTest, TestAddClientCertificate);
   FRIEND_TEST_ALL_PREFIXES(OncNetworkParserTest, TestUpdateClientCertificate);
@@ -193,6 +204,21 @@ class OncNetworkParser : public NetworkParser {
   // Parse ProxyLocation dictionary that specifies the manual proxy server.
   static net::ProxyServer ParseProxyLocationValue(int property_index,
                                                   const base::Value& value);
+
+  // Parse IssuerSubjectPattern dictionary for certificate pattern fields.
+  static bool ParseIssuerPattern(OncNetworkParser* parser,
+                                 PropertyIndex index,
+                                 const base::Value& value,
+                                 Network* network);
+  static bool ParseSubjectPattern(OncNetworkParser* parser,
+                                  PropertyIndex index,
+                                  const base::Value& value,
+                                  Network* network);
+  static bool ParseIssuerSubjectPattern(IssuerSubjectPattern* pattern,
+                                        OncNetworkParser* parser,
+                                        PropertyIndex index,
+                                        const base::Value& value,
+                                        Network* network);
 
   // Error message from the JSON parser, if applicable.
   std::string parse_error_;

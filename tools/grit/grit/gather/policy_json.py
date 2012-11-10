@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,13 +7,13 @@
 generator as a source for generating ADM,ADMX,etc files.'''
 
 import types
-import pprint
-import re
+import sys
 
 from grit.gather import skeleton_gatherer
 from grit import util
 from grit import tclib
 from xml.dom import minidom
+from xml.parsers.expat import ExpatError
 
 
 class PolicyJson(skeleton_gatherer.SkeletonGatherer):
@@ -24,12 +24,6 @@ class PolicyJson(skeleton_gatherer.SkeletonGatherer):
      Translatable strings may have untranslateable placeholders with the same
      format that is used in .grd files.
   '''
-
-  def __init__(self, text):
-    if util.IsExtraVerbose():
-      print text
-    skeleton_gatherer.SkeletonGatherer.__init__(self)
-    self.text_ = text
 
   def _ParsePlaceholder(self, placeholder, msg):
     '''Extracts a placeholder from a DOM node and adds it to a tclib Message.
@@ -69,7 +63,12 @@ class PolicyJson(skeleton_gatherer.SkeletonGatherer):
     '''
     msg = tclib.Message(description=desc)
     xml = '<msg>' + string + '</msg>'
-    node = minidom.parseString(xml).childNodes[0]
+    try:
+      node = minidom.parseString(xml).childNodes[0]
+    except ExpatError:
+      reason = '''Input isn't valid XML (has < & > been escaped?): ''' + string
+      raise Exception, reason, sys.exc_info()[2]
+
     for child in node.childNodes:
       if child.nodeType == minidom.Node.TEXT_NODE:
         msg.AppendText(child.data)
@@ -228,9 +227,13 @@ class PolicyJson(skeleton_gatherer.SkeletonGatherer):
   # _RegExpParse method of that class to implement Parse().  Instead, we
   # parse using a DOM parser.
   def Parse(self):
-    if (self.have_parsed_):
+    if self.have_parsed_:
       return
     self.have_parsed_ = True
+
+    self.text_ = self._LoadInputFile()
+    if util.IsExtraVerbose():
+      print self.text_
 
     self.data = eval(self.text_)
 
@@ -246,13 +249,3 @@ class PolicyJson(skeleton_gatherer.SkeletonGatherer):
     # ' -> \'
     # " -> \"
     return text.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
-
-  def FromFile(filename_or_stream, extkey=None, encoding='cp1252'):
-    if isinstance(filename_or_stream, types.StringTypes):
-      if util.IsVerbose():
-        print "PolicyJson reading file %s, encoding %s" % (
-          filename_or_stream, encoding)
-      filename_or_stream = \
-          util.WrapInputStream(file(filename_or_stream, 'r'), encoding)
-    return PolicyJson(filename_or_stream.read())
-  FromFile = staticmethod(FromFile)

@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_DEBUGGER_DEVTOOLS_MANAGER_IMPL_H_
 #define CONTENT_BROWSER_DEBUGGER_DEVTOOLS_MANAGER_IMPL_H_
-#pragma once
 
 #include <map>
 #include <string>
@@ -17,8 +16,6 @@
 #include "content/public/browser/devtools_manager.h"
 
 class GURL;
-class RenderViewHost;
-class TabContents;
 
 namespace IPC {
 class Message;
@@ -27,6 +24,7 @@ class Message;
 namespace content {
 
 class DevToolsAgentHost;
+class RenderViewHost;
 
 // This class is a singleton that manages DevToolsClientHost instances and
 // routes messages between developer tools clients and agents.
@@ -45,8 +43,6 @@ class CONTENT_EXPORT DevToolsManagerImpl
   DevToolsManagerImpl();
   virtual ~DevToolsManagerImpl();
 
-  virtual bool DispatchOnInspectorBackend(DevToolsClientHost* from,
-                                          const std::string& message) OVERRIDE;
   void DispatchOnInspectorFrontend(DevToolsAgentHost* agent_host,
                                    const std::string& message);
 
@@ -61,13 +57,12 @@ class CONTENT_EXPORT DevToolsManagerImpl
   void OnCancelPendingNavigation(RenderViewHost* pending,
                                  RenderViewHost* current);
 
-  // Invoked when a tab is replaced by another tab. This is triggered by
-  // TabStripModel::ReplaceTabContentsAt.
-  virtual void TabReplaced(WebContents* old_tab, WebContents* new_tab) OVERRIDE;
-
-  // Closes all open developer tools windows.
+  // DevToolsManager implementation
+  virtual bool DispatchOnInspectorBackend(DevToolsClientHost* from,
+                                          const std::string& message) OVERRIDE;
+  virtual void ContentsReplaced(WebContents* old_contents,
+                                WebContents* new_contents) OVERRIDE;
   virtual void CloseAllClientHosts() OVERRIDE;
-
   virtual void AttachClientHost(int client_host_cookie,
                                 DevToolsAgentHost* to_agent) OVERRIDE;
   virtual DevToolsClientHost* GetDevToolsClientHostFor(
@@ -80,15 +75,12 @@ class CONTENT_EXPORT DevToolsManagerImpl
   virtual void UnregisterDevToolsClientHostFor(
       DevToolsAgentHost* agent_host) OVERRIDE;
   virtual int DetachClientHost(DevToolsAgentHost* from_agent) OVERRIDE;
-
-  // This method will remove all references from the manager to the
-  // DevToolsClientHost and unregister all listeners related to the
-  // DevToolsClientHost.
   virtual void ClientHostClosing(DevToolsClientHost* host) OVERRIDE;
-
-  // Starts inspecting element at position (x, y) in the specified page.
   virtual void InspectElement(DevToolsAgentHost* agent_host,
                               int x, int y) OVERRIDE;
+  virtual void AddMessageToConsole(DevToolsAgentHost* agent_host,
+                                   ConsoleMessageLevel level,
+                                   const std::string& message) OVERRIDE;
 
  private:
   friend struct DefaultSingletonTraits<DevToolsManagerImpl>;
@@ -109,9 +101,9 @@ class CONTENT_EXPORT DevToolsManagerImpl
   void AttachClientHost(int client_host_cookie,
                         RenderViewHost* to_rvh);
 
-  // These two maps are for tracking dependencies between inspected tabs and
+  // These two maps are for tracking dependencies between inspected contents and
   // their DevToolsClientHosts. They are useful for routing devtools messages
-  // and allow us to have at most one devtools client host per tab.
+  // and allow us to have at most one devtools client host per contents.
   //
   // DevToolsManagerImpl starts listening to DevToolsClientHosts when they are
   // put into these maps and removes them when they are closing.

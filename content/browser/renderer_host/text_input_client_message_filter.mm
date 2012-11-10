@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,11 @@
 
 #include "base/memory/scoped_nsobject.h"
 #include "base/string16.h"
-#include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/renderer_host/render_widget_host_view.h"
+#include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/text_input_client_mac.h"
 #include "content/common/text_input_client_messages.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "ipc/ipc_message_macros.h"
 #include "ui/base/range/range.h"
 #include "ui/gfx/rect.h"
@@ -20,9 +20,6 @@ using content::BrowserMessageFilter;
 TextInputClientMessageFilter::TextInputClientMessageFilter(int child_id)
     : BrowserMessageFilter(),
       child_process_id_(child_id) {
-}
-
-TextInputClientMessageFilter::~TextInputClientMessageFilter() {
 }
 
 bool TextInputClientMessageFilter::OnMessageReceived(
@@ -41,6 +38,8 @@ bool TextInputClientMessageFilter::OnMessageReceived(
   IPC_END_MESSAGE_MAP_EX()
   return handled;
 }
+
+TextInputClientMessageFilter::~TextInputClientMessageFilter() {}
 
 void TextInputClientMessageFilter::OnGotCharacterIndexForPoint(size_t index) {
   TextInputClientMac* service = TextInputClientMac::GetInstance();

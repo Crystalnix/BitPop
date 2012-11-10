@@ -51,14 +51,6 @@ bool BrowserProxy::BringToFront() {
   return succeeded;
 }
 
-bool BrowserProxy::IsMenuCommandEnabled(int id, bool* enabled) {
-  if (!is_valid())
-    return false;
-
-  return sender_->Send(new AutomationMsg_IsMenuCommandEnabled(handle_, id,
-                                                              enabled));
-}
-
 bool BrowserProxy::AppendTab(const GURL& tab_url) {
   if (!is_valid())
     return false;
@@ -67,17 +59,6 @@ bool BrowserProxy::AppendTab(const GURL& tab_url) {
 
   sender_->Send(new AutomationMsg_AppendTab(handle_, tab_url,
                                             &append_tab_response));
-  return append_tab_response >= 0;
-}
-
-bool BrowserProxy::AppendBackgroundTab(const GURL& tab_url) {
-  if (!is_valid())
-    return false;
-
-  int append_tab_response = -1;
-
-  sender_->Send(new AutomationMsg_AppendBackgroundTab(handle_, tab_url,
-                                                      &append_tab_response));
   return append_tab_response >= 0;
 }
 
@@ -175,21 +156,6 @@ bool BrowserProxy::GetType(Browser::Type* type) const {
   return true;
 }
 
-bool BrowserProxy::IsApplication(bool* is_application) {
-  DCHECK(is_application);
-
-  if (!is_valid())
-    return false;
-
-  bool success = false;
-  if (!sender_->Send(new AutomationMsg_IsBrowserInApplicationMode(
-          handle_, is_application, &success))) {
-    return false;
-  }
-
-  return success;
-}
-
 bool BrowserProxy::ApplyAccelerator(int id) {
   return RunCommandAsync(id);
 }
@@ -226,10 +192,9 @@ bool BrowserProxy::WaitForTabCountToBecome(int count) {
 }
 
 bool BrowserProxy::WaitForTabToBecomeActive(int tab,
-                                            int wait_timeout) {
+                                            base::TimeDelta wait_timeout) {
   const TimeTicks start = TimeTicks::Now();
-  const TimeDelta timeout = TimeDelta::FromMilliseconds(wait_timeout);
-  while (TimeTicks::Now() - start < timeout) {
+  while (TimeTicks::Now() - start < wait_timeout) {
     base::PlatformThread::Sleep(
         base::TimeDelta::FromMilliseconds(automation::kSleepTime));
     int active_tab;
@@ -238,21 +203,6 @@ bool BrowserProxy::WaitForTabToBecomeActive(int tab,
   }
   // If we get here, the active tab hasn't changed.
   return false;
-}
-
-bool BrowserProxy::OpenFindInPage() {
-  if (!is_valid())
-    return false;
-
-  return sender_->Send(new AutomationMsg_OpenFindInPage(handle_));
-  // This message expects no response.
-}
-
-bool BrowserProxy::GetFindWindowLocation(int* x, int* y) {
-  if (!is_valid() || !x || !y)
-    return false;
-
-  return sender_->Send(new AutomationMsg_FindWindowLocation(handle_, x, y));
 }
 
 bool BrowserProxy::IsFindWindowFullyVisible(bool* is_visible) {
@@ -397,93 +347,6 @@ bool BrowserProxy::RemoveBookmark(int64 id) {
   return result;
 }
 
-bool BrowserProxy::IsShelfVisible(bool* is_visible) {
-  if (!is_valid())
-    return false;
-
-  if (!is_visible) {
-    NOTREACHED();
-    return false;
-  }
-
-  return sender_->Send(new AutomationMsg_ShelfVisibility(handle_,
-                                                         is_visible));
-}
-
-bool BrowserProxy::SetShelfVisible(bool is_visible) {
-  if (!is_valid())
-    return false;
-
-  return sender_->Send(new AutomationMsg_SetShelfVisibility(handle_,
-                                                            is_visible));
-}
-
-bool BrowserProxy::SetIntPreference(const std::string& name, int value) {
-  if (!is_valid())
-    return false;
-
-  bool result = false;
-
-  sender_->Send(new AutomationMsg_SetIntPreference(handle_, name, value,
-                                                   &result));
-  return result;
-}
-
-bool BrowserProxy::SetStringPreference(const std::string& name,
-                                       const std::string& value) {
-  if (!is_valid())
-    return false;
-
-  bool result = false;
-
-  sender_->Send(new AutomationMsg_SetStringPreference(handle_, name, value,
-                                                      &result));
-  return result;
-}
-
-bool BrowserProxy::GetBooleanPreference(const std::string& name,
-                                        bool* value) {
-  if (!is_valid())
-    return false;
-
-  bool result = false;
-
-  sender_->Send(new AutomationMsg_GetBooleanPreference(handle_, name, value,
-                                                       &result));
-  return result;
-}
-
-bool BrowserProxy::SetBooleanPreference(const std::string& name,
-                                        bool value) {
-  if (!is_valid())
-    return false;
-
-  bool result = false;
-
-  sender_->Send(new AutomationMsg_SetBooleanPreference(handle_, name,
-                                                       value, &result));
-  return result;
-}
-
-bool BrowserProxy::SetDefaultContentSetting(ContentSettingsType content_type,
-                                            ContentSetting setting) {
-  return SetContentSetting(std::string(), content_type, setting);
-}
-
-bool BrowserProxy::SetContentSetting(const std::string& host,
-                                     ContentSettingsType content_type,
-                                     ContentSetting setting) {
-  if (!is_valid())
-    return false;
-
-  bool result = false;
-
-  sender_->Send(new AutomationMsg_SetContentSetting(handle_, host,
-                                                    content_type, setting,
-                                                    &result));
-  return result;
-}
-
 bool BrowserProxy::TerminateSession() {
   if (!is_valid())
     return false;
@@ -520,60 +383,6 @@ scoped_refptr<WindowProxy> BrowserProxy::GetWindow() const {
   return result;
 }
 
-bool BrowserProxy::IsFullscreen(bool* is_fullscreen) {
-  DCHECK(is_fullscreen);
-
-  if (!is_valid())
-    return false;
-
-  return sender_->Send(new AutomationMsg_IsFullscreen(handle_, is_fullscreen));
-}
-
-bool BrowserProxy::IsFullscreenBubbleVisible(bool* is_visible) {
-  DCHECK(is_visible);
-
-  if (!is_valid())
-    return false;
-
-  return sender_->Send(new AutomationMsg_IsFullscreenBubbleVisible(handle_,
-                                                                   is_visible));
-}
-
-bool BrowserProxy::ShutdownSessionService() {
-  bool did_shutdown = false;
-  bool succeeded = sender_->Send(
-      new AutomationMsg_ShutdownSessionService(handle_, &did_shutdown));
-
-  if (!succeeded) {
-    DLOG(ERROR) <<
-        "ShutdownSessionService did not complete in a timely fashion";
-    return false;
-  }
-
-  return did_shutdown;
-}
-
-bool BrowserProxy::StartTrackingPopupMenus() {
-  if (!is_valid())
-    return false;
-
-  bool result = false;
-  if (!sender_->Send(new AutomationMsg_StartTrackingPopupMenus(
-          handle_, &result)))
-    return false;
-  return result;
-}
-
-bool BrowserProxy::WaitForPopupMenuToOpen() {
-  if (!is_valid())
-    return false;
-
-  bool result = false;
-  if (!sender_->Send(new AutomationMsg_WaitForPopupMenuToOpen(&result)))
-    return false;
-  return result;
-}
-
 bool BrowserProxy::SendJSONRequest(const std::string& request,
                                    int timeout_ms,
                                    std::string* response) {
@@ -581,16 +390,17 @@ bool BrowserProxy::SendJSONRequest(const std::string& request,
     return false;
 
   bool result = false;
-  if (!sender_->Send(new AutomationMsg_SendJSONRequest(handle_,
-                                                       request,
-                                                       response,
-                                                       &result),
-                                                       timeout_ms))
+  if (!sender_->Send(
+      new AutomationMsg_SendJSONRequestWithBrowserHandle(handle_,
+                                                         request,
+                                                         response,
+                                                         &result),
+                                                         timeout_ms))
     return false;
   return result;
 }
 
-bool BrowserProxy::GetInitialLoadTimes(int timeout_ms,
+bool BrowserProxy::GetInitialLoadTimes(base::TimeDelta timeout,
                                        float* min_start_time,
                                        float* max_stop_time,
                                        std::vector<float>* stop_times) {
@@ -599,15 +409,15 @@ bool BrowserProxy::GetInitialLoadTimes(int timeout_ms,
 
   *max_stop_time = 0;
   *min_start_time = -1;
-  if (!SendJSONRequest(kJSONCommand, timeout_ms, &json_response)) {
+  if (!SendJSONRequest(
+          kJSONCommand, timeout.InMilliseconds(), &json_response)) {
     // Older browser versions do not support GetInitialLoadTimes.
     // Fail gracefully and do not record them in this case.
     return false;
   }
   std::string error;
-  base::JSONReader reader;
-  scoped_ptr<Value> values(reader.ReadAndReturnError(json_response, true,
-                                                     NULL, &error));
+  scoped_ptr<Value> values(base::JSONReader::ReadAndReturnError(
+      json_response, base::JSON_ALLOW_TRAILING_COMMAS, NULL, &error));
   if (!error.empty() || values->GetType() != Value::TYPE_DICTIONARY)
     return false;
 

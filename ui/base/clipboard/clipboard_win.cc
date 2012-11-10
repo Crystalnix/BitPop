@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,7 +26,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/clipboard/clipboard_util_win.h"
 #include "ui/base/clipboard/custom_data_helper.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/size.h"
 
 namespace ui {
@@ -188,12 +188,13 @@ Clipboard::FormatType Clipboard::FormatType::Deserialize(
 Clipboard::Clipboard() : create_window_(false) {
   if (MessageLoop::current()->type() == MessageLoop::TYPE_UI) {
     // Make a dummy HWND to be the clipboard's owner.
-    WNDCLASSEX wcex = {0};
-    wcex.cbSize = sizeof(WNDCLASSEX);
-    wcex.lpfnWndProc = base::win::WrappedWindowProc<ClipboardOwnerWndProc>;
-    wcex.hInstance = GetModuleHandle(NULL);
-    wcex.lpszClassName = L"ClipboardOwnerWindowClass";
-    ::RegisterClassEx(&wcex);
+    WNDCLASSEX window_class;
+    base::win::InitializeWindowClass(
+        L"ClipboardOwnerWindowClass",
+        &base::win::WrappedWindowProc<ClipboardOwnerWndProc>,
+        0, 0, 0, NULL, NULL, NULL, NULL, NULL,
+        &window_class);
+    ::RegisterClassEx(&window_class);
     create_window_ = true;
   }
 
@@ -206,7 +207,9 @@ Clipboard::~Clipboard() {
   clipboard_owner_ = NULL;
 }
 
-void Clipboard::WriteObjects(const ObjectMap& objects) {
+void Clipboard::WriteObjects(Buffer buffer, const ObjectMap& objects) {
+  DCHECK_EQ(buffer, BUFFER_STANDARD);
+
   ScopedClipboard clipboard;
   if (!clipboard.Acquire(GetClipboardWindow()))
     return;
@@ -241,6 +244,10 @@ void Clipboard::WriteHTML(const char* markup_data,
   HGLOBAL glob = CreateGlobalData(html_fragment);
 
   WriteToClipboard(ClipboardUtil::GetHtmlFormat()->cfFormat, glob);
+}
+
+void Clipboard::WriteRTF(const char* rtf_data, size_t data_len) {
+  WriteData(GetRtfFormatType(), rtf_data, data_len);
 }
 
 void Clipboard::WriteBookmark(const char* title_data,
@@ -372,6 +379,15 @@ bool Clipboard::IsFormatAvailable(const Clipboard::FormatType& format,
   return ::IsClipboardFormatAvailable(format.ToUINT()) != FALSE;
 }
 
+void Clipboard::Clear(Buffer buffer) {
+  DCHECK_EQ(buffer, BUFFER_STANDARD);
+  ScopedClipboard clipboard;
+  if (!clipboard.Acquire(GetClipboardWindow()))
+    return;
+
+  ::EmptyClipboard();
+}
+
 void Clipboard::ReadAvailableTypes(Clipboard::Buffer buffer,
                                    std::vector<string16>* types,
                                    bool* contains_filenames) const {
@@ -380,13 +396,16 @@ void Clipboard::ReadAvailableTypes(Clipboard::Buffer buffer,
     return;
   }
 
-  const FORMATETC* textFormat = ClipboardUtil::GetPlainTextFormat();
-  const FORMATETC* htmlFormat = ClipboardUtil::GetHtmlFormat();
+  const FORMATETC* text_format = ClipboardUtil::GetPlainTextFormat();
+  const FORMATETC* html_format = ClipboardUtil::GetHtmlFormat();
+  const FORMATETC* rtf_format = ClipboardUtil::GetRtfFormat();
   types->clear();
-  if (::IsClipboardFormatAvailable(textFormat->cfFormat))
+  if (::IsClipboardFormatAvailable(text_format->cfFormat))
     types->push_back(UTF8ToUTF16(kMimeTypeText));
-  if (::IsClipboardFormatAvailable(htmlFormat->cfFormat))
+  if (::IsClipboardFormatAvailable(html_format->cfFormat))
     types->push_back(UTF8ToUTF16(kMimeTypeHTML));
+  if (::IsClipboardFormatAvailable(rtf_format->cfFormat))
+      types->push_back(UTF8ToUTF16(kMimeTypeRTF));
   if (::IsClipboardFormatAvailable(CF_DIB))
     types->push_back(UTF8ToUTF16(kMimeTypePNG));
   *contains_filenames = false;
@@ -502,6 +521,12 @@ void Clipboard::ReadHTML(Clipboard::Buffer buffer, string16* markup,
   *fragment_end = static_cast<uint32>(offsets[1]);
 }
 
+void Clipboard::ReadRTF(Buffer buffer, std::string* result) const {
+  DCHECK_EQ(buffer, BUFFER_STANDARD);
+
+  ReadData(GetRtfFormatType(), result);
+}
+
 SkBitmap Clipboard::ReadImage(Buffer buffer) const {
   DCHECK_EQ(buffer, BUFFER_STANDARD);
 
@@ -538,9 +563,10 @@ SkBitmap Clipboard::ReadImage(Buffer buffer) const {
   const void* bitmap_bits = reinterpret_cast<const char*>(bitmap)
       + bitmap->bmiHeader.biSize + color_table_length * sizeof(RGBQUAD);
 
-  gfx::CanvasSkia canvas(gfx::Size(bitmap->bmiHeader.biWidth,
-                                   bitmap->bmiHeader.biHeight),
-                         false);
+  gfx::Canvas canvas(gfx::Size(bitmap->bmiHeader.biWidth,
+                               bitmap->bmiHeader.biHeight),
+                     ui::SCALE_FACTOR_100P,
+                     false);
   {
     skia::ScopedPlatformPaint scoped_platform_paint(canvas.sk_canvas());
     HDC dc = scoped_platform_paint.GetPlatformSurface();
@@ -568,7 +594,7 @@ SkBitmap Clipboard::ReadImage(Buffer buffer) const {
     }
   }
 
-  return canvas.ExtractBitmap();
+  return canvas.ExtractImageRep().sk_bitmap();
 }
 
 void Clipboard::ReadCustomData(Buffer buffer,
@@ -610,53 +636,6 @@ void Clipboard::ReadBookmark(string16* title, std::string* url) const {
   ::GlobalUnlock(data);
 
   ParseBookmarkClipboardFormat(bookmark, title, url);
-}
-
-// Read a file in HDROP format from the clipboard.
-void Clipboard::ReadFile(FilePath* file) const {
-  if (!file) {
-    NOTREACHED();
-    return;
-  }
-
-  *file = FilePath();
-  std::vector<FilePath> files;
-  ReadFiles(&files);
-
-  // Take the first file, if available.
-  if (!files.empty())
-    *file = files[0];
-}
-
-// Read a set of files in HDROP format from the clipboard.
-void Clipboard::ReadFiles(std::vector<FilePath>* files) const {
-  if (!files) {
-    NOTREACHED();
-    return;
-  }
-
-  files->clear();
-
-  ScopedClipboard clipboard;
-  if (!clipboard.Acquire(GetClipboardWindow()))
-    return;
-
-  HDROP drop = static_cast<HDROP>(::GetClipboardData(CF_HDROP));
-  if (!drop)
-    return;
-
-  // Count of files in the HDROP.
-  int count = ::DragQueryFile(drop, 0xffffffff, NULL, 0);
-
-  if (count) {
-    for (int i = 0; i < count; ++i) {
-      UINT size = ::DragQueryFile(drop, i, NULL, 0) + 1;
-      DCHECK_GT(size, 1u);
-      std::wstring file;
-      ::DragQueryFile(drop, i, WriteInto(&file, size), size);
-      files->push_back(FilePath(file));
-    }
-  }
 }
 
 void Clipboard::ReadData(const FormatType& format, std::string* result) const {
@@ -773,6 +752,16 @@ const Clipboard::FormatType& Clipboard::GetHtmlFormatType() {
       FormatType,
       type,
       (ClipboardUtil::GetHtmlFormat()->cfFormat));
+  return type;
+}
+
+// MS RTF Format
+// static
+const Clipboard::FormatType& Clipboard::GetRtfFormatType() {
+  CR_DEFINE_STATIC_LOCAL(
+      FormatType,
+      type,
+      (ClipboardUtil::GetRtfFormat()->cfFormat));
   return type;
 }
 

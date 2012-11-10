@@ -11,11 +11,11 @@
 
 #include "geturl_handler.h"
 
-namespace {
-bool IsError(int32_t result) {
-  return ((PP_OK != result) && (PP_OK_COMPLETIONPENDING != result));
-}
-}  // namespace
+#ifdef WIN32
+#undef min
+#undef max
+#undef PostMessage
+#endif
 
 GetURLHandler* GetURLHandler::Create(pp::Instance* instance,
                                      const std::string& url) {
@@ -42,7 +42,7 @@ GetURLHandler::~GetURLHandler() {
 
 void GetURLHandler::Start() {
   pp::CompletionCallback cc =
-      cc_factory_.NewRequiredCallback(&GetURLHandler::OnOpen);
+      cc_factory_.NewCallback(&GetURLHandler::OnOpen);
   url_loader_.Open(url_request_, cc);
 }
 

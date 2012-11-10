@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -25,15 +25,14 @@
 #endif
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "base/time.h"
 #include "base/values.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/host_port_pair.h"
 #include "net/url_request/url_request_status.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebReferrerPolicy.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebReferrerPolicy.h"
 #include "webkit/glue/resource_type.h"
 #include "webkit/glue/webkit_glue_export.h"
 
@@ -109,7 +108,6 @@ struct ResourceDevToolsInfo : base::RefCounted<ResourceDevToolsInfo> {
       HeadersVector;
 
   WEBKIT_GLUE_EXPORT ResourceDevToolsInfo();
-  WEBKIT_GLUE_EXPORT ~ResourceDevToolsInfo();
 
   int32 http_status_code;
   std::string http_status_text;
@@ -117,6 +115,10 @@ struct ResourceDevToolsInfo : base::RefCounted<ResourceDevToolsInfo> {
   HeadersVector response_headers;
   std::string request_headers_text;
   std::string response_headers_text;
+
+ private:
+  friend class base::RefCounted<ResourceDevToolsInfo>;
+  WEBKIT_GLUE_EXPORT ~ResourceDevToolsInfo();
 };
 
 struct ResourceResponseInfo {
@@ -194,6 +196,9 @@ struct ResourceResponseInfo {
   // transparent proxy). The proxy could be any type of proxy, HTTP or SOCKS.
   // Note: we cannot tell if a transparent proxy may have been involved.
   bool was_fetched_via_proxy;
+
+  // NPN protocol negotiated with the server.
+  std::string npn_negotiated_protocol;
 
   // Remote address of the socket which fetched this resource.
   net::HostPortPair socket_address;
@@ -289,8 +294,6 @@ class ResourceLoaderBridge {
   // for more information.
   class Peer {
    public:
-    virtual ~Peer() {}
-
     // Called as upload progress is made.
     // note: only for requests with LOAD_ENABLE_UPLOAD_PROGRESS set
     virtual void OnUploadProgress(uint64 position, uint64 size) = 0;
@@ -336,6 +339,9 @@ class ResourceLoaderBridge {
         const net::URLRequestStatus& status,
         const std::string& security_info,
         const base::TimeTicks& completion_time) = 0;
+
+   protected:
+    virtual ~Peer() {}
   };
 
   // use WebKitPlatformSupportImpl::CreateResourceLoader() for construction, but
@@ -391,10 +397,6 @@ class ResourceLoaderBridge {
   // interrupt this method.  Errors are reported via the status field of the
   // response parameter.
   virtual void SyncLoad(SyncLoadResponse* response) = 0;
-
-  // When loader is transferred from one page to another, the IPC routing id
-  // can change (they are associated with pages).
-  virtual void UpdateRoutingId(int new_routing_id) = 0;
 
  protected:
   // Construction must go through

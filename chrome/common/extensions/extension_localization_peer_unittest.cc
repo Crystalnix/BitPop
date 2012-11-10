@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,9 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/common/extensions/extension_message_bundle.h"
 #include "chrome/common/extensions/extension_localization_peer.h"
-#include "ipc/ipc_message.h"
+#include "chrome/common/extensions/message_bundle.h"
+#include "ipc/ipc_sender.h"
 #include "ipc/ipc_sync_message.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request_status.h"
@@ -36,7 +36,7 @@ void MessageDeleter(IPC::Message* message) {
   delete message;
 }
 
-class MockIpcMessageSender : public IPC::Message::Sender {
+class MockIpcMessageSender : public IPC::Sender {
  public:
   MockIpcMessageSender() {
     ON_CALL(*this, Send(_))
@@ -200,10 +200,10 @@ TEST_F(ExtensionLocalizationPeerTest, OnCompletedRequestWithCatalogs) {
   ExtensionLocalizationPeer* filter_peer =
       CreateExtensionLocalizationPeer("text/css", GURL(kExtensionUrl_2));
 
-  L10nMessagesMap messages;
+  extensions::L10nMessagesMap messages;
   messages.insert(std::make_pair("text", "new text"));
-  ExtensionToL10nMessagesMap& l10n_messages_map =
-      *GetExtensionToL10nMessagesMap();
+  extensions::ExtensionToL10nMessagesMap& l10n_messages_map =
+      *extensions::GetExtensionToL10nMessagesMap();
   l10n_messages_map["some_id2"] = messages;
 
   SetData(filter_peer, "some __MSG_text__");
@@ -231,10 +231,10 @@ TEST_F(ExtensionLocalizationPeerTest, OnCompletedRequestReplaceMessagesFails) {
   ExtensionLocalizationPeer* filter_peer =
       CreateExtensionLocalizationPeer("text/css", GURL(kExtensionUrl_3));
 
-  L10nMessagesMap messages;
+  extensions::L10nMessagesMap messages;
   messages.insert(std::make_pair("text", "new text"));
-  ExtensionToL10nMessagesMap& l10n_messages_map =
-      *GetExtensionToL10nMessagesMap();
+  extensions::ExtensionToL10nMessagesMap& l10n_messages_map =
+      *extensions::GetExtensionToL10nMessagesMap();
   l10n_messages_map["some_id3"] = messages;
 
   std::string message("some __MSG_missing_message__");

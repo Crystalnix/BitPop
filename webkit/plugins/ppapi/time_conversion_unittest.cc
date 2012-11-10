@@ -1,12 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <math.h>
 #include <stdlib.h>
 
-#include "testing/gtest/include/gtest/gtest.h"
 #include "ppapi/shared_impl/time_conversion.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace ppapi {
 
@@ -20,13 +20,7 @@ static const double kTimeSecondsSlop =
     static_cast<double>(kTimeInternalValueSlop) /
     base::Time::kMicrosecondsPerSecond;
 
-// Fails on linux. http://crbug.com/88971
-#if defined(OS_LINUX)
-#define MAYBE_Time FAILS_Time
-#else
-#define MAYBE_Time Time
-#endif
-TEST(TimeConversion, MAYBE_Time) {
+TEST(TimeConversion, Time) {
   // Should be able to round-trip.
   base::Time now = base::Time::Now();
   base::Time converted = ppapi::PPTimeToTime(TimeToPPTime(now));
@@ -35,8 +29,9 @@ TEST(TimeConversion, MAYBE_Time) {
 
   // Units should be in seconds.
   base::Time one_second_from_now = now + base::TimeDelta::FromSeconds(1);
-  EXPECT_EQ(1.0, ppapi::TimeToPPTime(one_second_from_now) -
-                 ppapi::TimeToPPTime(now));
+  double converted_one_second_from_now =
+      ppapi::TimeToPPTime(one_second_from_now) - ppapi::TimeToPPTime(now);
+  EXPECT_GE(kTimeSecondsSlop, fabs(converted_one_second_from_now - 1));
 }
 
 TEST(TimeConversion, EventTime) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,11 +11,7 @@
 #include "content/common/child_process_messages.h"
 
 
-ChildTraceMessageFilter::ChildTraceMessageFilter() : channel_(NULL) {
-}
-
-ChildTraceMessageFilter::~ChildTraceMessageFilter() {
-}
+ChildTraceMessageFilter::ChildTraceMessageFilter() : channel_(NULL) {}
 
 void ChildTraceMessageFilter::OnFilterAdded(IPC::Channel* channel) {
   channel_ = channel;
@@ -45,6 +41,8 @@ bool ChildTraceMessageFilter::OnMessageReceived(const IPC::Message& message) {
   return handled;
 }
 
+ChildTraceMessageFilter::~ChildTraceMessageFilter() {}
+
 void ChildTraceMessageFilter::OnBeginTracing(
     const std::vector<std::string>& included_categories,
     const std::vector<std::string>& excluded_categories) {
@@ -72,8 +70,7 @@ void ChildTraceMessageFilter::OnGetTraceBufferPercentFull() {
 }
 
 void ChildTraceMessageFilter::OnTraceDataCollected(
-    const scoped_refptr<base::debug::TraceLog::RefCountedString>&
-        events_str_ptr) {
+    const scoped_refptr<base::RefCountedString>& events_str_ptr) {
   if (MessageLoop::current() != ChildProcess::current()->io_message_loop()) {
     ChildProcess::current()->io_message_loop()->PostTask(FROM_HERE,
         base::Bind(&ChildTraceMessageFilter::OnTraceDataCollected, this,
@@ -82,7 +79,7 @@ void ChildTraceMessageFilter::OnTraceDataCollected(
   }
 
   channel_->Send(new ChildProcessHostMsg_TraceDataCollected(
-    events_str_ptr->data));
+    events_str_ptr->data()));
 }
 
 void ChildTraceMessageFilter::OnTraceBufferFull() {

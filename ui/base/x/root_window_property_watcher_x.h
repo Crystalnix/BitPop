@@ -1,17 +1,17 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_BASE_X_ROOT_WINDOW_PROPERTY_WATCHER_X_H_
 #define UI_BASE_X_ROOT_WINDOW_PROPERTY_WATCHER_X_H_
-#pragma once
 
 #include <gdk/gdk.h>
 
 #include "base/basictypes.h"
-#include "base/memory/singleton.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/ui_export.h"
+
+template <typename T> struct DefaultSingletonTraits;
 
 namespace ui {
 

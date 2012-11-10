@@ -8,6 +8,9 @@
 #include <map>
 #include <string>
 
+#include "base/memory/scoped_ptr.h"
+#include "remoting/protocol/transport.h"
+
 namespace buzz {
 class XmlElement;
 }  // namespace buzz
@@ -22,9 +25,17 @@ class ServerLogEntry {
     ME2ME
   };
 
+  // Constructs a log stanza. The caller should add one or more log entry
+  // stanzas as children of this stanza, before sending the log stanza to
+  // the remoting bot.
+  static scoped_ptr<buzz::XmlElement> MakeStanza();
+
   // Constructs a log entry for a session state change.
   // Currently this is either connection or disconnection.
-  static ServerLogEntry* MakeSessionStateChange(bool connection);
+  static scoped_ptr<ServerLogEntry> MakeForSessionStateChange(bool connection);
+
+  // Constructs a log entry for a heartbeat.
+  static scoped_ptr<ServerLogEntry> MakeForHeartbeat();
 
   ~ServerLogEntry();
 
@@ -34,15 +45,17 @@ class ServerLogEntry {
   // Adds a field describing the mode of a connection to this log entry.
   void AddModeField(Mode mode);
 
+  // Adds a field describing connection type (direct/stun/relay).
+  void AddConnectionTypeField(protocol::TransportRoute::RouteType type);
+
   // Converts this object to an XML stanza.
-  // The caller takes ownership of the stanza.
-  buzz::XmlElement* ToStanza() const;
+  scoped_ptr<buzz::XmlElement> ToStanza() const;
 
  private:
   typedef std::map<std::string, std::string> ValuesMap;
 
   ServerLogEntry();
-  void Set(const char* key, const char* value);
+  void Set(const std::string& key, const std::string& value);
 
   static const char* GetValueSessionState(bool connected);
   static const char* GetValueMode(Mode mode);

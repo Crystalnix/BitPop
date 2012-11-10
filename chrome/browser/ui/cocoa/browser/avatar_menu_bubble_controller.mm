@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,11 +9,11 @@
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/avatar_menu_model.h"
-#include "chrome/browser/profiles/avatar_menu_model_observer.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#import "chrome/browser/ui/cocoa/event_utils.h"
 #import "chrome/browser/ui/cocoa/hover_image_button.h"
 #import "chrome/browser/ui/cocoa/hyperlink_button_cell.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
@@ -36,26 +36,6 @@
 - (void)highlightItem:(AvatarMenuItemController*)newItem;
 @end
 
-namespace AvatarMenuInternal {
-
-class Bridge : public AvatarMenuModelObserver {
- public:
-  Bridge(AvatarMenuBubbleController* controller) : controller_(controller) {}
-
-  // AvatarMenuModelObserver:
-  void OnAvatarMenuModelChanged(AvatarMenuModel* model) {
-    // Do nothing. Rebuilding while the bubble is open will cause it to be
-    // positioned incorrectly. Since the bubble will be dismissed on losing key
-    // status, it's impossible for the user to edit the information in a
-    // meaningful way such that it would need to be redrawn.
-  }
-
- private:
-  AvatarMenuBubbleController* controller_;
-};
-
-}  // namespace AvatarMenuInternal
-
 namespace {
 
 // Constants taken from the Windows/Views implementation at:
@@ -75,14 +55,16 @@ const CGFloat kLabelInset = 49.0;
 - (id)initWithBrowser:(Browser*)parentBrowser
            anchoredAt:(NSPoint)point {
 
-  AvatarMenuInternal::Bridge* bridge = new AvatarMenuInternal::Bridge(self);
+  // Pass in a NULL observer. Rebuilding while the bubble is open will cause it
+  // to be positioned incorrectly. Since the bubble will be dismissed on losing
+  // key status, it's impossible for the user to edit the information in a
+  // meaningful way such that it would need to be redrawn.
   AvatarMenuModel* model = new AvatarMenuModel(
-        &g_browser_process->profile_manager()->GetProfileInfoCache(),
-        bridge, parentBrowser);
+      &g_browser_process->profile_manager()->GetProfileInfoCache(),
+      NULL, parentBrowser);
 
   if ((self = [self initWithModel:model
-                           bridge:bridge
-                     parentWindow:parentBrowser->window()->GetNativeHandle()
+                     parentWindow:parentBrowser->window()->GetNativeWindow()
                        anchoredAt:point])) {
   }
   return self;
@@ -93,7 +75,10 @@ const CGFloat kLabelInset = 49.0;
 }
 
 - (IBAction)switchToProfile:(id)sender {
-  model_->SwitchToProfile([sender modelIndex]);
+  // Check the event flags to see if a new window should be crated.
+  bool always_create = event_utils::WindowOpenDispositionFromNSEvent(
+      [NSApp currentEvent]) == NEW_WINDOW;
+  model_->SwitchToProfile([sender modelIndex], always_create);
 }
 
 - (IBAction)editProfile:(id)sender {
@@ -103,7 +88,6 @@ const CGFloat kLabelInset = 49.0;
 // Private /////////////////////////////////////////////////////////////////////
 
 - (id)initWithModel:(AvatarMenuModel*)model
-             bridge:(AvatarMenuModelObserver*)bridge
        parentWindow:(NSWindow*)parent
          anchoredAt:(NSPoint)point {
   // Use an arbitrary height because it will reflect the size of the content.
@@ -117,7 +101,6 @@ const CGFloat kLabelInset = 49.0;
   if ((self = [super initWithWindow:window
                        parentWindow:parent
                          anchoredAt:point])) {
-    bridge_.reset(bridge);
     model_.reset(model);
 
     [window accessibilitySetOverrideValue:
@@ -455,7 +438,7 @@ const CGFloat kLabelInset = 49.0;
       [[CrTrackingArea alloc] initWithRect:[self bounds]
                                    options:NSTrackingMouseEnteredAndExited |
                                            NSTrackingActiveInKeyWindow
-                              proxiedOwner:self
+                                     owner:self
                                   userInfo:nil]);
   [self addTrackingArea:trackingArea_.get()];
 
@@ -484,11 +467,11 @@ const CGFloat kLabelInset = 49.0;
                                                  blue:246.0/255
                                                 alpha:1.0];
   } else {
-    backgroundColor = [NSColor whiteColor];
+    backgroundColor = [NSColor clearColor];
   }
 
   [backgroundColor set];
-  NSRectFill([self bounds]);
+  [NSBezierPath fillRect:[self bounds]];
 }
 
 // Make sure the element is focusable for accessibility.

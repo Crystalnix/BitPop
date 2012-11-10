@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/bind.h"
+#include "base/debug/leak_annotations.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
@@ -30,7 +31,7 @@ class MessageLoopProxyTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     // Use SetUp() instead of the constructor to avoid posting a task to a
     // partialy constructed object.
     task_thread_.Start();
@@ -41,7 +42,7 @@ class MessageLoopProxyTest : public testing::Test {
         Bind(&MessageLoopProxyTest::BlockTaskThreadHelper, Unretained(this)));
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     // Make sure the |task_thread_| is not blocked, and stop the thread
     // fully before destuction because its tasks may still depend on the
     // |thread_sync_| event.
@@ -94,7 +95,7 @@ class MessageLoopProxyTest : public testing::Test {
     thread_sync_.Wait();
   }
 
-  static AtomicSequenceNumber g_order;
+  static StaticAtomicSequenceNumber g_order;
 
   scoped_ptr<MessageLoop> current_loop_;
   Thread task_thread_;
@@ -103,7 +104,7 @@ class MessageLoopProxyTest : public testing::Test {
   base::WaitableEvent thread_sync_;
 };
 
-AtomicSequenceNumber MessageLoopProxyTest::g_order(LINKER_INITIALIZED);
+StaticAtomicSequenceNumber MessageLoopProxyTest::g_order;
 
 TEST_F(MessageLoopProxyTest, PostTaskAndReply_Basic) {
   MessageLoop* task_run_on = NULL;
@@ -209,6 +210,8 @@ TEST_F(MessageLoopProxyTest, PostTaskAndReply_SameLoop) {
 }
 
 TEST_F(MessageLoopProxyTest, PostTaskAndReply_DeadReplyLoopDoesNotDelete) {
+  // Annotate the scope as having memory leaks to suppress heapchecker reports.
+  ANNOTATE_SCOPED_MEMORY_LEAK;
   MessageLoop* task_run_on = NULL;
   MessageLoop* task_deleted_on = NULL;
   int task_delete_order = -1;

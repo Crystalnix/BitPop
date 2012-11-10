@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 import os
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../..'))
 
 import StringIO
 import unittest
@@ -84,12 +84,13 @@ how are you?
           </structures>
         </release>
       </grit>'''), path)
+    current_grd.SetOutputLanguage('en')
     current_grd.RunGatherers(recursive=True)
 
     source_rc_path = util.PathFromRoot('grit/testdata/source.rc')
-    source_rc = file(source_rc_path).read()
+    source_rc = util.ReadFile(source_rc_path, util.RAW_TEXT)
     transl_rc_path = util.PathFromRoot('grit/testdata/transl.rc')
-    transl_rc = file(transl_rc_path).read()
+    transl_rc = util.ReadFile(transl_rc_path, util.RAW_TEXT)
 
     tool = transl2tc.TranslationToTc()
     output_buf = StringIO.StringIO()
@@ -115,7 +116,7 @@ how are you?
     self.failUnless(('Howdie' in values or 'Hallo sagt man' in values) and not
       ('Howdie' in values and 'Hallo sagt man' in values))
 
-    self.failUnless('XX01XX&SkraXX02XX&HaettaXX03XXThetta er "Klonk" sem eg fylaXX04XXgonkurinnXX05XXKlonk && er "gott"XX06XX&HjalpXX07XX&Um...XX08XX' in values)
+    self.failUnless('XX01XX&SkraXX02XX&HaettaXX03XXThetta er "Klonk" sem eg fylaXX04XXgonkurinnXX05XXKlonk && er [good]XX06XX&HjalpXX07XX&Um...XX08XX' in values)
 
     self.failUnless('I lagi' in values)
 

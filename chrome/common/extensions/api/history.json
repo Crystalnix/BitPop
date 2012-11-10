@@ -1,3 +1,7 @@
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 [
   {
     "namespace": "history",
@@ -89,6 +93,12 @@
             "properties": {
               "url": {"type": "string", "description": "The URL to add."}
             }
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": true,
+            "parameters": []
           }
         ]
       },
@@ -103,6 +113,12 @@
             "properties": {
               "url": {"type": "string", "description": "The URL to remove."}
             }
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": true,
+            "parameters": []
           }
         ]
       },

@@ -4,7 +4,6 @@
 
 #ifndef UI_GFX_RENDER_TEXT_LINUX_H_
 #define UI_GFX_RENDER_TEXT_LINUX_H_
-#pragma once
 
 #include <pango/pango.h>
 #include <vector>
@@ -20,11 +19,10 @@ class RenderTextLinux : public RenderText {
   virtual ~RenderTextLinux();
 
   // Overridden from RenderText:
-  virtual base::i18n::TextDirection GetTextDirection() OVERRIDE;
-  virtual int GetStringWidth() OVERRIDE;
+  virtual Size GetStringSize() OVERRIDE;
+  virtual int GetBaseline() OVERRIDE;
   virtual SelectionModel FindCursorPosition(const Point& point) OVERRIDE;
-  virtual Rect GetCursorBounds(const SelectionModel& position,
-                               bool insert_mode) OVERRIDE;
+  virtual std::vector<FontSpan> GetFontSpansForTesting() OVERRIDE;
 
  protected:
   // Overridden from RenderText:
@@ -34,37 +32,26 @@ class RenderTextLinux : public RenderText {
   virtual SelectionModel AdjacentWordSelectionModel(
       const SelectionModel& selection,
       VisualCursorDirection direction) OVERRIDE;
-  virtual SelectionModel EdgeSelectionModel(
-      VisualCursorDirection direction) OVERRIDE;
-  virtual std::vector<Rect> GetSubstringBounds(size_t from, size_t to) OVERRIDE;
   virtual void SetSelectionModel(const SelectionModel& model) OVERRIDE;
+  virtual void GetGlyphBounds(size_t index,
+                              ui::Range* xspan,
+                              int* height) OVERRIDE;
+  virtual std::vector<Rect> GetSubstringBounds(ui::Range range) OVERRIDE;
   virtual bool IsCursorablePosition(size_t position) OVERRIDE;
-  virtual void UpdateLayout() OVERRIDE;
+  virtual void ResetLayout() OVERRIDE;
   virtual void EnsureLayout() OVERRIDE;
   virtual void DrawVisualText(Canvas* canvas) OVERRIDE;
 
  private:
-  virtual size_t IndexOfAdjacentGrapheme(
-      size_t index,
-      LogicalCursorDirection direction) OVERRIDE;
-
-  // Returns the run that contains |position|. Return NULL if not found.
-  GSList* GetRunContainingPosition(size_t position) const;
-
-  // Given |utf8_index_of_current_grapheme|, returns the UTF-8 index of the
-  // |next| or previous grapheme in logical order. Returns 0 if there is no
-  // previous grapheme, or the |text_| length if there is no next grapheme.
-  size_t Utf8IndexOfAdjacentGrapheme(size_t utf8_index_of_current_grapheme,
-                                     LogicalCursorDirection direction) const;
+  // Returns the run that contains the character attached to the caret in the
+  // given selection model. Return NULL if not found.
+  GSList* GetRunContainingCaret(const SelectionModel& caret) const;
 
   // Given a |run|, returns the SelectionModel that contains the logical first
   // or last caret position inside (not at a boundary of) the run.
   // The returned value represents a cursor/caret position without a selection.
-  SelectionModel FirstSelectionModelInsideRun(const PangoItem* run) const;
-  SelectionModel LastSelectionModelInsideRun(const PangoItem* run) const;
-
-  // Unref |layout_| and |pango_line_|. Set them to NULL.
-  void ResetLayout();
+  SelectionModel FirstSelectionModelInsideRun(const PangoItem* run);
+  SelectionModel LastSelectionModelInsideRun(const PangoItem* run);
 
   // Setup pango attribute: foreground, background, font, strike.
   void SetupPangoAttributes(PangoLayout* layout);
@@ -75,12 +62,13 @@ class RenderTextLinux : public RenderText {
                             PangoAttribute* pango_attr,
                             PangoAttrList* attrs);
 
-  size_t Utf16IndexToUtf8Index(size_t index) const;
-  size_t Utf8IndexToUtf16Index(size_t index) const;
+  // Convert between indices into text() and indices into |layout_text_|.
+  size_t TextIndexToLayoutIndex(size_t index) const;
+  size_t LayoutIndexToTextIndex(size_t index) const;
 
-  // Calculate the visual bounds containing the logical substring within |from|
-  // to |to|.
-  std::vector<Rect> CalculateSubstringBounds(size_t from, size_t to);
+  // Calculate the visual bounds containing the logical substring within the
+  // given range.
+  std::vector<Rect> CalculateSubstringBounds(ui::Range range);
 
   // Get the visual bounds of the logical selection.
   std::vector<Rect> GetSelectionBounds();

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,16 +12,18 @@ namespace printing {
 
 PRINTING_EXPORT extern const char kIsFirstRequest[];
 PRINTING_EXPORT extern const char kPreviewRequestID[];
-PRINTING_EXPORT extern const char kPreviewUIAddr[];
+PRINTING_EXPORT extern const char kPreviewUIID[];
 PRINTING_EXPORT extern const char kSettingCloudPrintId[];
 PRINTING_EXPORT extern const char kSettingCloudPrintDialog[];
 PRINTING_EXPORT extern const char kSettingCollate[];
 PRINTING_EXPORT extern const char kSettingColor[];
+PRINTING_EXPORT extern const char kSettingSetColorAsDefault[];
 PRINTING_EXPORT extern const char kSettingContentHeight[];
 PRINTING_EXPORT extern const char kSettingContentWidth[];
 PRINTING_EXPORT extern const char kSettingCopies[];
 PRINTING_EXPORT extern const char kSettingDeviceName[];
 PRINTING_EXPORT extern const char kSettingDuplexMode[];
+PRINTING_EXPORT extern const char kSettingFitToPageEnabled[];
 PRINTING_EXPORT extern const char kSettingGenerateDraftData[];
 PRINTING_EXPORT extern const char kSettingHeaderFooterEnabled[];
 PRINTING_EXPORT extern const int kSettingHeaderFooterCharacterSpacing;
@@ -44,6 +46,10 @@ PRINTING_EXPORT extern const char kSettingPageRange[];
 PRINTING_EXPORT extern const char kSettingPageRangeFrom[];
 PRINTING_EXPORT extern const char kSettingPageRangeTo[];
 PRINTING_EXPORT extern const char kSettingPreviewModifiable[];
+PRINTING_EXPORT extern const char kSettingPrintableAreaX[];
+PRINTING_EXPORT extern const char kSettingPrintableAreaY[];
+PRINTING_EXPORT extern const char kSettingPrintableAreaWidth[];
+PRINTING_EXPORT extern const char kSettingPrintableAreaHeight[];
 PRINTING_EXPORT extern const char kSettingPrinterName[];
 PRINTING_EXPORT extern const char kSettingPrintToPDF[];
 
@@ -110,8 +116,8 @@ enum ColorModels {
   RGBA,
   COLORMODE_COLOR,  // Used in samsung printer ppds.
   COLORMODE_MONOCHROME,  // Used in samsung printer ppds.
-  HP_COLOR_COLOR, // Used in HP color printer ppds.
-  HP_COLOR_BLACK, // Used in HP color printer ppds.
+  HP_COLOR_COLOR,  // Used in HP color printer ppds.
+  HP_COLOR_BLACK,  // Used in HP color printer ppds.
   PRINTOUTMODE_NORMAL,  // Used in foomatic ppds.
   PRINTOUTMODE_NORMAL_GRAY,  // Used in foomatic ppds.
   PROCESSCOLORMODEL_CMYK,  // Used in canon printer ppds.

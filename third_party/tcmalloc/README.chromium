@@ -1,9 +1,10 @@
 Name: tcmalloc
-Short Name: google-perftools
-URL: http://google-perftools.googlecode.com/
+Short Name: gperftools
+URL: http://gperftools.googlecode.com/
 Version: unknown
-Revision: 109
+Revision: 144
 Security Critical: yes
+License: BSD
 
 Description:
 This contains Chromium's locally patched copy of tcmalloc.
@@ -23,12 +24,12 @@ Contents:
 
     Vanilla sources from upstream:
 
-      http://google-perftools.googlecode.com/svn/trunk
+      http://gperftools.googlecode.com/svn/trunk
 
     The current revision is:
 
-      Last Changed Rev: 111
-      Last Changed Date: 2011-07-16 05:07:10 +0400 (Sat, 16 Jul 2011)
+      Last Changed Rev: 144
+      Last Changed Date: 2012-02-04 00:10:11 +0000 (Sat, 04 Feb 2012)
 
 
 
@@ -39,7 +40,7 @@ HOWTOs:
     1)  Grab the revision:
 
         $ svn export [-r {tcmalloc-rev}] \
-          http://google-perftools.googlecode.com/svn/trunk \
+          http://gperftools.googlecode.com/svn/trunk \
           vendor-{tcmalloc-rev}
 
     2)  Check for added or deleted files:
@@ -52,10 +53,14 @@ HOWTOs:
 
         C:\> xcopy /e/y/i vendor-{tcmalloc-rev}\* vendor
 
-    4)  "svn add" or "svn rm" added or removed files (based on your
+    4)  Make all vendor files non-executable.
+
+        $ find . -executable -type f -exec chmod a-x {} \;
+
+    5)  "svn add" or "svn rm" added or removed files (based on your
         "diff -q -r" output from above)
 
-    5)  Create the CL, upload, check it in:
+    6)  Create the CL, upload, check it in:
 
         $ gcl change CL
         $ gcl upload CL
@@ -77,3 +82,7 @@ HOWTOs:
         $ gcl change CL
         $ gcl upload CL
         $ gcl commit CL
+
+
+Modifications:
+- Converted to utf-8 with: vim +"argdo write ++enc=utf-8" *.h *.c

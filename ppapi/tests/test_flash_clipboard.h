@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,13 +16,25 @@ class TestFlashClipboard : public TestCase {
   explicit TestFlashClipboard(TestingInstance* instance);
 
   // TestCase implementation.
-  virtual bool Init();
   virtual void RunTests(const std::string& filter);
 
  private:
-  std::string TestReadWrite();
+  // Helpers.
+  bool ReadStringVar(PP_Flash_Clipboard_Format format, std::string* result);
+  bool WriteStringVar(PP_Flash_Clipboard_Format format,
+                      const std::string& text);
+  bool IsFormatAvailableMatches(PP_Flash_Clipboard_Format format,
+                                bool expected);
+  bool ReadPlainTextMatches(const std::string& expected);
+  bool ReadHTMLMatches(const std::string& expected);
 
-  const PPB_Flash_Clipboard* clipboard_interface_;
+  // Tests.
+  std::string TestReadWritePlainText();
+  std::string TestReadWriteHTML();
+  std::string TestReadWriteRTF();
+  std::string TestReadWriteMultipleFormats();
+  std::string TestClear();
+  std::string TestInvalidFormat();
 };
 
 #endif  // PAPPI_TESTS_TEST_FLASH_FULLSCREEN_H_

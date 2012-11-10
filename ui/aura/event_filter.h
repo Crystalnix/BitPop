@@ -4,7 +4,6 @@
 
 #ifndef UI_AURA_EVENT_FILTER_H_
 #define UI_AURA_EVENT_FILTER_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "ui/aura/aura_export.h"
@@ -32,8 +31,7 @@ class Window;
 // chance to prevent further processing of the event and/or take other actions.
 class AURA_EXPORT EventFilter {
  public:
-  explicit EventFilter(Window* owner);
-  virtual ~EventFilter();
+  virtual ~EventFilter() {}
 
   // Parameters: a |target| Window and the |event|. The target window is the
   // window the event was targeted at. If |event| is a LocatedEvent, its
@@ -58,14 +56,6 @@ class AURA_EXPORT EventFilter {
   // consumed.
   virtual ui::GestureStatus PreHandleGestureEvent(Window* target,
                                                   GestureEvent* event) = 0;
-
- protected:
-  Window* owner() { return owner_; }
-
- private:
-  Window* owner_;
-
-  DISALLOW_COPY_AND_ASSIGN(EventFilter);
 };
 
 }  // namespace aura

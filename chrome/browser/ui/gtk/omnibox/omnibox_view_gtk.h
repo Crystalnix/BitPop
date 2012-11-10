@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_UI_GTK_OMNIBOX_OMNIBOX_VIEW_GTK_H_
 #define CHROME_BROWSER_UI_GTK_OMNIBOX_OMNIBOX_VIEW_GTK_H_
-#pragma once
 
 #include <gtk/gtk.h>
 
@@ -14,7 +13,6 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "content/public/browser/notification_observer.h"
@@ -26,9 +24,10 @@
 #include "ui/gfx/rect.h"
 #include "webkit/glue/window_open_disposition.h"
 
-class AutocompleteEditController;
-class AutocompleteEditModel;
-class AutocompletePopupView;
+class Browser;
+class OmniboxEditController;
+class OmniboxEditModel;
+class OmniboxPopupView;
 class Profile;
 
 namespace gfx {
@@ -39,13 +38,7 @@ namespace ui {
 class MultiAnimation;
 }
 
-namespace views {
-class View;
-}
-
-#if !defined(TOOLKIT_VIEWS)
 class GtkThemeService;
-#endif
 
 class OmniboxViewGtk : public OmniboxView,
                        public content::NotificationObserver,
@@ -67,17 +60,12 @@ class OmniboxViewGtk : public OmniboxView,
     int cp_max;  // For a selection: Represents the end (insert position).
   };
 
-  OmniboxViewGtk(AutocompleteEditController* controller,
+  OmniboxViewGtk(OmniboxEditController* controller,
                  ToolbarModel* toolbar_model,
-                 Profile* profile,
+                 Browser* browser,
                  CommandUpdater* command_updater,
                  bool popup_window_mode,
-#if defined(TOOLKIT_VIEWS)
-                 views::View* location_bar
-#else
-                 GtkWidget* location_bar
-#endif
-                          );
+                 GtkWidget* location_bar);
   virtual ~OmniboxViewGtk();
 
   // Initialize, create the underlying widgets, etc.
@@ -88,16 +76,15 @@ class OmniboxViewGtk : public OmniboxView,
   int WidthOfTextAfterCursor();
 
   // OmniboxView:
-  virtual AutocompleteEditModel* model() OVERRIDE;
-  virtual const AutocompleteEditModel* model() const OVERRIDE;
+  virtual OmniboxEditModel* model() OVERRIDE;
+  virtual const OmniboxEditModel* model() const OVERRIDE;
   virtual void SaveStateToTab(content::WebContents* tab) OVERRIDE;
   virtual void Update(
       const content::WebContents* tab_for_state_restoring) OVERRIDE;
   virtual void OpenMatch(const AutocompleteMatch& match,
                          WindowOpenDisposition disposition,
                          const GURL& alternate_nav_url,
-                         size_t index,
-                         const string16& keyword) OVERRIDE;
+                         size_t index) OVERRIDE;
   virtual string16 GetText() const OVERRIDE;
   virtual bool IsEditingOrEmpty() const OVERRIDE;
   virtual int GetIcon() const OVERRIDE;
@@ -106,9 +93,11 @@ class OmniboxViewGtk : public OmniboxView,
                            const string16& display_text,
                            bool update_popup) OVERRIDE;
   virtual void SetWindowTextAndCaretPos(const string16& text,
-                                        size_t caret_pos) OVERRIDE;
+                                        size_t caret_pos,
+                                        bool update_popup,
+                                        bool notify_text_changed) OVERRIDE;
   virtual void SetForcedQuery() OVERRIDE;
-  virtual bool IsSelectAll() OVERRIDE;
+  virtual bool IsSelectAll() const OVERRIDE;
   virtual bool DeleteAtEndPressed() OVERRIDE;
   virtual void GetSelectionBounds(string16::size_type* start,
                                   string16::size_type* end) const OVERRIDE;
@@ -133,12 +122,6 @@ class OmniboxViewGtk : public OmniboxView,
   virtual string16 GetInstantSuggestion() const OVERRIDE;
   virtual int TextWidth() const OVERRIDE;
   virtual bool IsImeComposing() const OVERRIDE;
-
-#if defined(TOOLKIT_VIEWS)
-  virtual int GetMaxEditWidth(int entry_width) const OVERRIDE;
-  virtual views::View* AddToView(views::View* parent) OVERRIDE;
-  virtual int OnPerformDrop(const views::DropTargetEvent& event) OVERRIDE;
-#endif
 
   // Overridden from content::NotificationObserver:
   virtual void Observe(int type,
@@ -346,6 +329,9 @@ class OmniboxViewGtk : public OmniboxView,
   // Stop showing the instant suggest auto-commit animation.
   void StopAnimation();
 
+  // The Browser that contains this omnibox.
+  Browser* browser_;
+
   // The widget we expose, used for vertically centering the real text edit,
   // since the height will change based on the font / font size, etc.
   ui::OwnedWidgetGtk alignment_;
@@ -378,9 +364,9 @@ class OmniboxViewGtk : public OmniboxView,
   // be used.
   GtkTextMark* instant_mark_;
 
-  scoped_ptr<AutocompleteEditModel> model_;
-  scoped_ptr<AutocompletePopupView> popup_view_;
-  AutocompleteEditController* controller_;
+  scoped_ptr<OmniboxEditModel> model_;
+  scoped_ptr<OmniboxPopupView> popup_view_;
+  OmniboxEditController* controller_;
   ToolbarModel* toolbar_model_;
 
   // The object that handles additional command functionality exposed on the
@@ -423,30 +409,10 @@ class OmniboxViewGtk : public OmniboxView,
   // -- if so, we avoid selecting all the text on mouse-up.
   bool button_1_pressed_;
 
-#if defined(OS_CHROMEOS)
-  // The following variables are used to implement select-all-on-mouse-up, which
-  // is disabled in the standard Linux build due to poor interaction with the
-  // PRIMARY X selection.
-
-  // Did the user change the selected text in the middle of the current click?
-  // If so, we don't select all of the text when the button is released -- we
-  // don't want to blow away their selection.
-  bool text_selected_during_click_;
-
-  // Was the text view already focused before the user clicked in it?  We use
-  // this to figure out whether we should select all of the text when the button
-  // is released (we only do so if the view was initially unfocused).
-  bool text_view_focused_before_button_press_;
-#endif
-
-#if defined(TOOLKIT_VIEWS)
-  views::View* location_bar_view_;
-#else
   // Supplies colors, et cetera.
   GtkThemeService* theme_service_;
 
   content::NotificationRegistrar registrar_;
-#endif
 
   // Indicates if Enter key was pressed.
   //
@@ -461,10 +427,19 @@ class OmniboxViewGtk : public OmniboxView,
   // during sync dispatch of "move-focus" signal.
   bool tab_was_pressed_;
 
+  // Indicates if Shift key was pressed.
+  // Used in conjunction with the Tab key to determine if either traversal
+  // needs to move up the results or if the keyword needs to be cleared.
+  bool shift_was_pressed_;
+
   // Indicates that user requested to paste clipboard.
   // The actual paste clipboard action might be performed later if the
   // clipboard is not empty.
   bool paste_clipboard_requested_;
+
+  // Text to "Paste and go"; set by HandlePopulatePopup() and consumed by
+  // HandlePasteAndGo().
+  string16 sanitized_text_for_paste_and_go_;
 
   // Indicates if an Enter key press is inserted as text.
   // It's used in the key press handler to determine if an Enter key event is

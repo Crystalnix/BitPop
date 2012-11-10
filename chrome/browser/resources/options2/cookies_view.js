@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,8 +15,8 @@ cr.define('options', function() {
    */
   function CookiesView(model) {
     OptionsPage.call(this, 'cookies',
-                     templateData.cookiesViewPageTabTitle,
-                     'cookiesViewPage');
+                     loadTimeData.getString('cookiesViewPageTabTitle'),
+                     'cookies-view-page');
   }
 
   cr.addSingletonGetter(CookiesView);
@@ -32,27 +32,38 @@ cr.define('options', function() {
     queryDelayTimerId_: 0,
 
     /**
-     * The most recent search query, or null if the query is empty.
-     * @type {?string}
+     * The most recent search query, empty string if the query is empty.
+     * @type {string}
      * @private
      */
-    lastQuery_ : null,
+    lastQuery_: '',
 
     initializePage: function() {
       OptionsPage.prototype.initializePage.call(this);
 
-      $('cookies-search-box').addEventListener('search',
-          this.handleSearchQueryChange_.bind(this));
+      this.pageDiv.querySelector('.cookies-search-box').addEventListener(
+          'search', this.handleSearchQueryChange_.bind(this));
 
-      $('remove-all-cookies-button').onclick = function(e) {
-        chrome.send('removeAllCookies', []);
-      };
+      this.pageDiv.querySelector('.remove-all-cookies-button').onclick =
+          function(e) {
+            chrome.send('removeAllCookies');
+          };
 
-      var cookiesList = $('cookies-list');
+      var cookiesList = this.pageDiv.querySelector('.cookies-list');
       options.CookiesList.decorate(cookiesList);
-      window.addEventListener('resize', this.handleResize_.bind(this));
 
       this.addEventListener('visibleChange', this.handleVisibleChange_);
+
+      this.pageDiv.querySelector('.cookies-view-overlay-confirm').onclick =
+          OptionsPage.closeOverlay.bind(OptionsPage);
+    },
+
+    /**
+     * Clear search filter when the dialog is displayed.
+     * @inheritDoc
+     */
+    didShowPage: function() {
+      this.pageDiv.querySelector('.cookies-search-box').value = '';
     },
 
     /**
@@ -60,7 +71,7 @@ cr.define('options', function() {
      */
     searchCookie: function() {
       this.queryDelayTimerId_ = 0;
-      var filter = $('cookies-search-box').value;
+      var filter = this.pageDiv.querySelector('.cookies-search-box').value;
       if (this.lastQuery_ != filter) {
         this.lastQuery_ = filter;
         chrome.send('updateCookieSearchResults', [filter]);
@@ -91,31 +102,24 @@ cr.define('options', function() {
       if (!this.visible)
         return;
 
-      // Resize the cookies list whenever the options page becomes visible.
-      this.handleResize_(null);
+      // Inform the CookiesViewHandler whether we are operating in regular
+      // cookies dialog or the apps one.
+      chrome.send('setViewContext', [this.isAppContext()]);
+
+      chrome.send('reloadCookies');
+
       if (!this.initialized_) {
         this.initialized_ = true;
         this.searchCookie();
       } else {
-        $('cookies-list').redraw();
+        this.pageDiv.querySelector('.cookies-list').redraw();
       }
 
-      $('cookies-search-box').focus();
+      this.pageDiv.querySelector('.cookies-search-box').focus();
     },
 
-    /**
-     * Handler for when the window changes size. Resizes the cookies list to
-     * match the window height.
-     * @param {?Event} e Window resize event, or null if called directly.
-     * @private
-     */
-    handleResize_: function(e) {
-      if (!this.visible)
-        return;
-      var cookiesList = $('cookies-list');
-      // 25 pixels from the window bottom seems like a visually pleasing amount.
-      var height = window.innerHeight - cookiesList.offsetTop - 25;
-      cookiesList.style.height = height + 'px';
+    isAppContext: function() {
+      return false;
     },
   };
 

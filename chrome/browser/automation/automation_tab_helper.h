@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_AUTOMATION_AUTOMATION_TAB_HELPER_H_
 #define CHROME_BROWSER_AUTOMATION_AUTOMATION_TAB_HELPER_H_
-#pragma once
 
 #include <set>
 #include <vector>
@@ -88,6 +87,11 @@ class AutomationTabHelper
   // Snapshots the entire page without resizing.
   void SnapshotEntirePage();
 
+#if !defined(NO_TCMALLOC) && (defined(OS_LINUX) || defined(OS_CHROMEOS))
+  // Dumps a heap profile.
+  void HeapProfilerDump(const std::string& reason);
+#endif  // !defined(NO_TCMALLOC) && (defined(OS_LINUX) || defined(OS_CHROMEOS))
+
   // Returns true if the tab is loading or the tab is scheduled to load
   // immediately. Note that scheduled loads may be canceled.
   bool has_pending_loads() const;
@@ -101,8 +105,10 @@ class AutomationTabHelper
       const std::string& error_msg);
 
   // content::WebContentsObserver implementation.
-  virtual void DidStartLoading() OVERRIDE;
-  virtual void DidStopLoading() OVERRIDE;
+  virtual void DidStartLoading(
+      content::RenderViewHost* render_view_host) OVERRIDE;
+  virtual void DidStopLoading(
+      content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
   virtual void WebContentsDestroyed(
       content::WebContents* web_contents) OVERRIDE;

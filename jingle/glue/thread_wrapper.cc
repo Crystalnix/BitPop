@@ -8,6 +8,7 @@
 #include "base/bind_helpers.h"
 #include "base/lazy_instance.h"
 #include "base/threading/thread_local.h"
+#include "third_party/libjingle/source/talk/base/nullsocketserver.h"
 
 namespace jingle_glue {
 
@@ -43,7 +44,8 @@ JingleThreadWrapper* JingleThreadWrapper::current() {
 }
 
 JingleThreadWrapper::JingleThreadWrapper(MessageLoop* message_loop)
-    : message_loop_(message_loop),
+    : talk_base::Thread(new talk_base::NullSocketServer()),
+      message_loop_(message_loop),
       send_allowed_(false),
       last_task_id_(0),
       pending_send_event_(true, false) {
@@ -58,6 +60,7 @@ JingleThreadWrapper::JingleThreadWrapper(MessageLoop* message_loop)
 }
 
 JingleThreadWrapper::~JingleThreadWrapper() {
+  Clear(NULL, talk_base::MQID_ANY, NULL);
 }
 
 void JingleThreadWrapper::WillDestroyCurrentMessageLoop() {
@@ -67,7 +70,9 @@ void JingleThreadWrapper::WillDestroyCurrentMessageLoop() {
   talk_base::ThreadManager::Instance()->SetCurrentThread(NULL);
   talk_base::MessageQueueManager::Instance()->Remove(this);
   message_loop_->RemoveDestructionObserver(this);
+  talk_base::SocketServer* ss = socketserver();
   delete this;
+  delete ss;
 }
 
 void JingleThreadWrapper::Post(
@@ -216,7 +221,7 @@ void JingleThreadWrapper::PostTaskInternal(
     message_loop_->PostDelayedTask(FROM_HERE,
                                    base::Bind(&JingleThreadWrapper::RunTask,
                                               base::Unretained(this), task_id),
-                                   delay_ms);
+                                   base::TimeDelta::FromMilliseconds(delay_ms));
   }
 }
 

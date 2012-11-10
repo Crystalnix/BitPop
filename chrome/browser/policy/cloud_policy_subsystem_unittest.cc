@@ -4,6 +4,7 @@
 
 #include <vector>
 
+#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/scoped_temp_dir.h"
@@ -19,7 +20,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_pref_service.h"
-#include "content/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread.h"
 #include "policy/policy_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -64,6 +65,8 @@ ACTION_P(CreateSuccessfulRegisterResponse, token) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   em::DeviceManagementResponse response_data;
   response_data.mutable_register_response()->set_device_management_token(token);
+  response_data.mutable_register_response()->set_enrollment_type(
+      em::DeviceRegisterResponse::ENTERPRISE);
 
   arg3->response_data = response_data.SerializeAsString();
   arg3->response_code = 200;
@@ -101,11 +104,10 @@ class CloudPolicySubsystemTestBase : public testing::Test {
  public:
   CloudPolicySubsystemTestBase()
       : ui_thread_(BrowserThread::UI, &loop_),
-        io_thread_(BrowserThread::IO, &loop_) {
-  }
+        file_thread_(BrowserThread::FILE, &loop_),
+        io_thread_(BrowserThread::IO, &loop_) {}
 
-  virtual ~CloudPolicySubsystemTestBase() {
-  }
+  virtual ~CloudPolicySubsystemTestBase() {}
 
  protected:
   void StopMessageLoop() {
@@ -247,6 +249,7 @@ class CloudPolicySubsystemTestBase : public testing::Test {
 
   MessageLoop loop_;
   content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
   content::TestBrowserThread io_thread_;
 
   scoped_ptr<EventLogger> logger_;
@@ -389,6 +392,10 @@ class CloudPolicySubsystemPolicyReregisterTest
 };
 
 TEST_P(CloudPolicySubsystemPolicyReregisterTest, Policy) {
+  // This logs a lot of WARNINGs. Temporarily increase the logging threshold.
+  int prev_level = logging::GetMinLogLevel();
+  logging::SetMinLogLevel(logging::LOG_ERROR);
+
   InSequence s;
   for (int i = 0; i < 40; i++) {
     ExpectSuccessfulRegistration();
@@ -398,6 +405,8 @@ TEST_P(CloudPolicySubsystemPolicyReregisterTest, Policy) {
   ExpectSuccessfulPolicy(1, "http://www.youtube.com");
   ExecuteTest();
   VerifyTest("http://www.youtube.com");
+
+  logging::SetMinLogLevel(prev_level);
 }
 
 INSTANTIATE_TEST_CASE_P(

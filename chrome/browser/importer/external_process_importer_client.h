@@ -4,22 +4,25 @@
 
 #ifndef CHROME_BROWSER_IMPORTER_EXTERNAL_PROCESS_IMPORTER_CLIENT_H_
 #define CHROME_BROWSER_IMPORTER_EXTERNAL_PROCESS_IMPORTER_CLIENT_H_
-#pragma once
 
 #include <string>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
 #include "base/string16.h"
 #include "chrome/browser/importer/importer_data_types.h"
 #include "chrome/browser/importer/profile_writer.h"
-#include "content/browser/utility_process_host.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/utility_process_host_client.h"
 
 class ExternalProcessImporterHost;
 class InProcessImporterBridge;
+
+namespace content {
 class UtilityProcessHost;
+}
 
 namespace history {
 class URLRow;
@@ -29,33 +32,20 @@ struct ImportedFaviconUsage;
 // This class is the client for the out of process profile importing.  It
 // collects notifications from this process host and feeds data back to the
 // importer host, who actually does the writing.
-class ExternalProcessImporterClient : public UtilityProcessHost::Client {
+class ExternalProcessImporterClient : public content::UtilityProcessHostClient {
  public:
   ExternalProcessImporterClient(ExternalProcessImporterHost* importer_host,
                                 const importer::SourceProfile& source_profile,
                                 uint16 items,
                                 InProcessImporterBridge* bridge);
-  virtual ~ExternalProcessImporterClient();
-
-  // Cancel import process on IO thread.
-  void CancelImportProcessOnIOThread();
-
-  // Report item completely downloaded on IO thread.
-  void NotifyItemFinishedOnIOThread(importer::ImportItem import_item);
-
-  // Notifies the importerhost that import has finished, and calls Release().
-  void Cleanup();
 
   // Launches the task to start the external process.
-  virtual void Start();
-
-  // Creates a new UtilityProcessHost, which launches the import process.
-  virtual void StartProcessOnIOThread(content::BrowserThread::ID thread_id);
+  void Start();
 
   // Called by the ExternalProcessImporterHost on import cancel.
-  virtual void Cancel();
+  void Cancel();
 
-  // UtilityProcessHost::Client implementation:
+  // UtilityProcessHostClient implementation:
   virtual void OnProcessCrashed(int exit_code) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
@@ -65,27 +55,41 @@ class ExternalProcessImporterClient : public UtilityProcessHost::Client {
   void OnImportItemStart(int item);
   void OnImportItemFinished(int item);
   void OnHistoryImportStart(size_t total_history_rows_count);
-  void OnHistoryImportGroup(
-      const std::vector<history::URLRow>& history_rows_group,
-      int visit_source);
+  void OnHistoryImportGroup(const history::URLRows& history_rows_group,
+                            int visit_source);
   void OnHomePageImportReady(const GURL& home_page);
   void OnBookmarksImportStart(const string16& first_folder_name,
-                                      size_t total_bookmarks_count);
+                              size_t total_bookmarks_count);
   void OnBookmarksImportGroup(
       const std::vector<ProfileWriter::BookmarkEntry>& bookmarks_group);
   void OnFaviconsImportStart(size_t total_favicons_count);
   void OnFaviconsImportGroup(
       const std::vector<history::ImportedFaviconUsage>& favicons_group);
   void OnPasswordFormImportReady(const webkit::forms::PasswordForm& form);
-  void OnKeywordsImportReady(
-      const std::vector<TemplateURL>& template_urls,
-      int default_keyword_index,
-      bool unique_on_host_and_path);
+  // WARNING: This function takes ownership of (and deletes) the pointers in
+  // |template_urls|!
+  void OnKeywordsImportReady(const std::vector<TemplateURL*>& template_urls,
+                             bool unique_on_host_and_path);
+
+ protected:
+  virtual ~ExternalProcessImporterClient();
 
  private:
+  // Notifies the importerhost that import has finished, and calls Release().
+  void Cleanup();
+
+  // Cancel import process on IO thread.
+  void CancelImportProcessOnIOThread();
+
+  // Report item completely downloaded on IO thread.
+  void NotifyItemFinishedOnIOThread(importer::ImportItem import_item);
+
+  // Creates a new UtilityProcessHost, which launches the import process.
+  void StartProcessOnIOThread(content::BrowserThread::ID thread_id);
+
   // These variables store data being collected from the importer until the
   // entire group has been collected and is ready to be written to the profile.
-  std::vector<history::URLRow> history_rows_;
+  history::URLRows history_rows_;
   std::vector<ProfileWriter::BookmarkEntry> bookmarks_;
   std::vector<history::ImportedFaviconUsage> favicons_;
 
@@ -111,16 +115,15 @@ class ExternalProcessImporterClient : public UtilityProcessHost::Client {
   // Handles sending messages to the external process.  Deletes itself when
   // the external process dies (see
   // BrowserChildProcessHost::OnChildDisconnected).
-  base::WeakPtr<UtilityProcessHost> utility_process_host_;
+  base::WeakPtr<content::UtilityProcessHost> utility_process_host_;
 
   // Data to be passed from the importer host to the external importer.
   const importer::SourceProfile& source_profile_;
   uint16 items_;
 
   // Takes import data coming over IPC and delivers it to be written by the
-  // ProfileWriter.  Released by ExternalProcessImporterClient in its
-  // destructor.
-  InProcessImporterBridge* bridge_;
+  // ProfileWriter.
+  scoped_refptr<InProcessImporterBridge> bridge_;
 
   // True if import process has been cancelled.
   bool cancelled_;

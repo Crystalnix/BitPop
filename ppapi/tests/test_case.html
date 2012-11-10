@@ -10,6 +10,11 @@ function AdjustHeight(frameWin) {
 }
 
 function DidExecuteTests() {
+  var plugin = document.getElementById("plugin");
+  plugin.parentNode.removeChild(plugin);
+  plugin = undefined;
+  CheckPostConditions();
+
   if (window == top)
     return;
 
@@ -28,10 +33,17 @@ function AppendFrame(testcase, i) {
 
   var frame = document.createElement("IFRAME");
   var mode = ExtractSearchParameter("mode");
+  var websocket_port = ExtractSearchParameter("websocket_port");
+  var ssl_server_port = ExtractSearchParameter("ssl_server_port");
+  var src = "?testcase=" + testcase;
   if (mode == "nacl")
-    frame.setAttribute("src", "?testcase=" + testcase + "&mode=nacl");
-  else
-    frame.setAttribute("src", "?testcase=" + testcase);
+    src += "&mode=nacl";
+  if (websocket_port != "")
+    src += "&websocket_port=" + websocket_port;
+  if (ssl_server_port != "")
+    src += "&ssl_server_port=" + ssl_server_port;
+  frame.setAttribute("src", src);
+
   frame.setAttribute("onload", "LoadNext(" + (i + 1) + ")");
   p.appendChild(frame);
 
@@ -79,9 +91,10 @@ function ExtractSearchParameter(name) {
 //  - LogHTML
 //  - SetCookie
 //  - EvalScript
+//  - AddPostCondition
 // The second item is the verbatim message_contents.
 function ParseTestingMessage(message_data) {
-  if (typeof(message_data)!='string')
+  if (typeof(message_data) != "string")
     return undefined;
   var testing_message_prefix = "TESTING_MESSAGE";
   var delim_str = ":";
@@ -115,6 +128,46 @@ function EvalScript(script) {
   }
 }
 
+var conditions = [];
+// Add a "PostCondition". These are bits of script that are run after the plugin
+// is destroyed. If they evaluate to false or throw an exception, it's
+// considered a failure.
+function AddPostCondition(script) {
+  conditions.push(script);
+}
+// Update the HTML to show the failure and update cookies so that ui_tests
+// doesn't count this as a pass.
+function ConditionFailed(error) {
+  error_string = "Post condition check failed: " + error;
+  var i = 0;
+  // If the plugin thinks the test passed but a post-condition failed, we want
+  // to clear the PASS cookie so that ui_tests doesn't count it is a passed
+  // test.
+  if (window.document.cookie.indexOf("PASS") != -1) {
+    while (window.document.cookie.indexOf("PPAPI_PROGRESS_" + i) != -1) {
+      window.document.cookie = "PPAPI_PROGRESS_" + i + "=; max-age=0";
+      ++i;
+    }
+    window.document.cookie = "PPAPI_PROGRESS_0=" + error_string
+  }
+  LogHTML("<p>" + error_string);
+}
+// Iterate through the post conditions defined in |conditions| and check that
+// they all pass.
+function CheckPostConditions() {
+  for (var i = 0; i < conditions.length; ++i) {
+    var script = conditions[i];
+    try {
+      if (!eval(script)) {
+        ConditionFailed("\"" + script + "\"");
+      }
+    } catch (ex) {
+      ConditionFailed("\"" + script + "\"" + " failed with exception: " +
+                      "\"" + ex.toString() + "\"");
+    }
+  }
+}
+
 function IsTestingMessage(message_data) {
   return (ParseTestingMessage(message_data) != undefined);
 }
@@ -134,6 +187,8 @@ function handleTestingMessage(message_event) {
       SetCookie(contents);
     else if (type === "EvalScript")
       EvalScript(contents);
+    else if (type == "AddPostCondition")
+      AddPostCondition(contents);
   }
 }
 
@@ -142,9 +197,14 @@ onload = function() {
   var mode = ExtractSearchParameter("mode");
   document.title = 'Test ' + testcase;
   var obj;
-  if (mode == "nacl") {
+  if (mode == "nacl_newlib") {
     obj = document.createElement("EMBED");
-    obj.setAttribute("src", "test_case.nmf");
+    obj.setAttribute("src", "ppapi_nacl_tests_newlib.nmf");
+    obj.setAttribute("type", "application/x-nacl");
+    obj.setAttribute("mode", mode);
+  } else if (mode == "nacl_glibc") {
+    obj = document.createElement("EMBED");
+    obj.setAttribute("src", "ppapi_nacl_tests_glibc.nmf");
     obj.setAttribute("type", "application/x-nacl");
     obj.setAttribute("mode", mode);
   } else {
@@ -167,12 +227,20 @@ onload = function() {
     obj.setAttribute("id", "plugin");
     obj.setAttribute("testcase", testcase);
     obj.setAttribute("protocol", window.location.protocol);
+    var websocket_port = ExtractSearchParameter("websocket_port");
+    if (websocket_port != "")
+      obj.setAttribute("websocket_port", websocket_port);
+    var ssl_server_port = ExtractSearchParameter("ssl_server_port");
+    if (ssl_server_port != "")
+      obj.setAttribute("ssl_server_port", ssl_server_port);
+
     var container = document.getElementById("container");
     container.addEventListener("message", handleTestingMessage, true);
     // Register a bad dispatchEvent to make sure it isn't used. See 'EVIL' note
     // below.
     obj.dispatchEvent = function() {
-      LogHTML("<p>Bad dispatchEvent called!");
+      LogHTML("<p>Bad dispatchEvent called! " +
+              "see <a href='http://crbug.com/109775'>crbug.com/109775</a>)");
     }
     container.appendChild(obj);
   }
@@ -184,6 +252,13 @@ onload = function() {
 // particular, we replace document.createEvent, MessageEvent.initMessageEvent,
 // and the MessageEvent constructor. Previous versions of the PostMessage
 // implementation made use of these and would fail (http://crbug.com/82604).
+// The NaCl plugin uses some of these still for progress events, hence you will
+// see:
+//   Bad dispatchEvent called!
+// in the output. See crbug.com/109775 for more information.
+// TODO(dmichael): Once the NaCl plugin progress events are fixed, we should
+//                 clear the PASS cookie so that browser_tests sees these as a
+//                 failure (see ConditionFailed for how to do this).
 document.createEvent = function() {
   LogHTML("<p>Bad document.createEvent called!");
 }

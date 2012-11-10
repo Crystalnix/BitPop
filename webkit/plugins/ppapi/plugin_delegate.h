@@ -6,6 +6,7 @@
 #define WEBKIT_PLUGINS_PPAPI_PLUGIN_DELEGATE_H_
 
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/message_loop_proxy.h"
@@ -18,19 +19,24 @@
 #include "media/video/capture/video_capture.h"
 #include "media/video/video_decode_accelerator.h"
 #include "ppapi/c/dev/pp_video_dev.h"
+#include "ppapi/c/dev/ppb_device_ref_dev.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_instance.h"
+#include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_stdint.h"
+#include "ppapi/c/private/ppb_flash.h"
+#include "ppapi/shared_impl/dir_contents.h"
 #include "ui/gfx/size.h"
 #include "webkit/fileapi/file_system_types.h"
-#include "webkit/plugins/ppapi/dir_contents.h"
+#include "webkit/glue/clipboard_client.h"
 #include "webkit/quota/quota_types.h"
 
 class GURL;
-struct PP_NetAddress_Private;
 class SkBitmap;
 class TransportDIB;
+struct PP_HostResolver_Private_Hint;
+struct PP_NetAddress_Private;
 
 namespace base {
 class MessageLoopProxy;
@@ -50,22 +56,34 @@ class CommandBuffer;
 }
 
 namespace ppapi {
+class PepperFilePath;
+class PPB_HostResolver_Shared;
+class PPB_X509Certificate_Fields;
+struct DeviceRefData;
+struct HostPortPair;
 struct Preferences;
+
+namespace thunk {
+class ResourceCreationAPI;
 }
+
+}  // namespace ppapi
 
 namespace skia {
 class PlatformCanvas;
 }
 
 namespace WebKit {
-class WebFileChooserCompletion;
 class WebGamepads;
+class WebPlugin;
+struct WebCompositionUnderline;
 struct WebCursorInfo;
-struct WebFileChooserParams;
 }
 
 namespace webkit_glue {
+class ClipboardClient;
 class P2PTransport;
+class NetworkListObserver;
 }  // namespace webkit_glue
 
 namespace webkit {
@@ -73,12 +91,10 @@ namespace ppapi {
 
 class FileIO;
 class FullscreenContainer;
-class PepperFilePath;
 class PluginInstance;
 class PluginModule;
 class PPB_Broker_Impl;
 class PPB_Flash_Menu_Impl;
-class PPB_Flash_NetConnector_Impl;
 class PPB_TCPSocket_Private_Impl;
 class PPB_UDPSocket_Private_Impl;
 
@@ -159,11 +175,15 @@ class PluginDelegate {
     virtual ~PlatformContext3D() {}
 
     // Initialize the context.
-    virtual bool Init(const int32* attrib_list) = 0;
+    virtual bool Init(const int32* attrib_list,
+                      PlatformContext3D* share_context) = 0;
 
     // If the plugin instance is backed by an OpenGL, return its ID in the
     // compositors namespace. Otherwise return 0. Returns 0 by default.
     virtual unsigned GetBackingTextureId() = 0;
+
+    // Returns true if the backing texture is always opaque.
+    virtual bool IsOpaque() = 0;
 
     // This call will return the address of the command buffer for this context
     // that is constructed in Initialize() and is valid until this context is
@@ -179,15 +199,22 @@ class PluginDelegate {
     virtual void SetContextLostCallback(
         const base::Callback<void()>& callback) = 0;
 
+    // Set an optional callback that will be invoked when the GPU process
+    // sends a console message.
+    typedef base::Callback<void(const std::string&, int)>
+        ConsoleMessageCallback;
+    virtual void SetOnConsoleMessageCallback(
+        const ConsoleMessageCallback& callback) = 0;
+
     // Run the callback once the channel has been flushed.
     virtual bool Echo(const base::Callback<void()>& callback) = 0;
   };
 
-  // The (interface for the) client used by |PlatformAudio| and
+  // The base class of clients used by |PlatformAudioOutput| and
   // |PlatformAudioInput|.
-  class PlatformAudioCommonClient {
+  class PlatformAudioClientBase {
    protected:
-    virtual ~PlatformAudioCommonClient() {}
+    virtual ~PlatformAudioClientBase() {}
 
    public:
     // Called when the stream is created.
@@ -196,7 +223,12 @@ class PluginDelegate {
                                base::SyncSocket::Handle socket) = 0;
   };
 
-  class PlatformAudio {
+  class PlatformAudioOutputClient : public PlatformAudioClientBase {
+   protected:
+    virtual ~PlatformAudioOutputClient() {}
+  };
+
+  class PlatformAudioOutput {
    public:
     // Starts the playback. Returns false on error or if called before the
     // stream is created or after the stream is closed.
@@ -211,18 +243,21 @@ class PluginDelegate {
     virtual void ShutDown() = 0;
 
    protected:
-    virtual ~PlatformAudio() {}
+    virtual ~PlatformAudioOutput() {}
+  };
+
+  class PlatformAudioInputClient : public PlatformAudioClientBase {
+   public:
+    virtual void StreamCreationFailed() = 0;
+
+   protected:
+    virtual ~PlatformAudioInputClient() {}
   };
 
   class PlatformAudioInput {
    public:
-    // Starts the playback. Returns false on error or if called before the
-    // stream is created or after the stream is closed.
-    virtual bool StartCapture() = 0;
-
-    // Stops the capture. Returns false on error or if called before the stream
-    // is created or after the stream is closed.
-    virtual bool StopCapture() = 0;
+    virtual void StartCapture() = 0;
+    virtual void StopCapture() = 0;
 
     // Closes the stream. Make sure to call this before the object is
     // destructed.
@@ -235,17 +270,34 @@ class PluginDelegate {
   // Interface for PlatformVideoDecoder is directly inherited from general media
   // VideoDecodeAccelerator interface.
   class PlatformVideoDecoder : public media::VideoDecodeAccelerator {
-   protected:
+   public:
     virtual ~PlatformVideoDecoder() {}
   };
 
-  class PlatformVideoCapture : public media::VideoCapture {
+  class PlatformVideoCaptureEventHandler
+      : public media::VideoCapture::EventHandler {
    public:
+    virtual ~PlatformVideoCaptureEventHandler() {}
+
+    virtual void OnInitialized(media::VideoCapture* capture,
+                               bool succeeded) = 0;
+  };
+
+  class PlatformVideoCapture : public media::VideoCapture,
+                               public base::RefCounted<PlatformVideoCapture> {
+   public:
+    // Detaches the event handler and stops sending notifications to it.
+    virtual void DetachEventHandler() = 0;
+
+   protected:
     virtual ~PlatformVideoCapture() {}
+
+   private:
+    friend class base::RefCounted<PlatformVideoCapture>;
   };
 
   // Provides access to the ppapi broker.
-  class PpapiBroker {
+  class Broker {
    public:
     virtual void Connect(webkit::ppapi::PPB_Broker_Impl* client) = 0;
 
@@ -256,7 +308,7 @@ class PluginDelegate {
     virtual void Disconnect(webkit::ppapi::PPB_Broker_Impl* client) = 0;
 
    protected:
-    virtual ~PpapiBroker() {}
+    virtual ~Broker() {}
   };
 
   // Notification that the given plugin is focused or unfocused.
@@ -271,6 +323,16 @@ class PluginDelegate {
   // Notification that the plugin requested to cancel the current composition.
   virtual void PluginRequestedCancelComposition(
       webkit::ppapi::PluginInstance* instance) = 0;
+  // Notification that the text selection in the given plugin is changed.
+  virtual void PluginSelectionChanged(
+      webkit::ppapi::PluginInstance* instance) = 0;
+  // Requests simulating IME events for testing purpose.
+  virtual void SimulateImeSetComposition(
+      const string16& text,
+      const std::vector<WebKit::WebCompositionUnderline>& underlines,
+      int selection_start,
+      int selection_end) = 0;
+  virtual void SimulateImeConfirmComposition(const string16& text) = 0;
 
   // Notification that the given plugin has crashed. When a plugin crashes, all
   // instances associated with that plugin will notify that they've crashed via
@@ -285,9 +347,18 @@ class PluginDelegate {
   // from this call.
   virtual void InstanceDeleted(PluginInstance* instance) = 0;
 
+  // Creates the resource creation API for the given instance.
+  virtual scoped_ptr< ::ppapi::thunk::ResourceCreationAPI>
+      CreateResourceCreationAPI(PluginInstance* instance) = 0;
+
   // Returns a pointer (ownership not transferred) to the bitmap to paint the
   // sad plugin screen with. Returns NULL on failure.
   virtual SkBitmap* GetSadPluginBitmap() = 0;
+
+  // Creates a replacement plug-in that is shown when the plug-in at |file_path|
+  // couldn't be loaded.
+  virtual WebKit::WebPlugin* CreatePluginReplacement(
+      const FilePath& file_path) = 0;
 
   // The caller will own the pointer returned from this.
   virtual PlatformImage2D* CreateImage2D(int width, int height) = 0;
@@ -295,33 +366,47 @@ class PluginDelegate {
   // The caller will own the pointer returned from this.
   virtual PlatformContext3D* CreateContext3D() = 0;
 
-  // The caller will own the pointer returned from this.
+  // If |device_id| is empty, the default video capture device will be used. The
+  // user can start using the returned object to capture video right away.
+  // Otherwise, the specified device will be used. The user needs to wait till
+  // |handler| gets an OnInitialized() notification to start using the returned
+  // object.
   virtual PlatformVideoCapture* CreateVideoCapture(
-      media::VideoCapture::EventHandler* handler) = 0;
+      const std::string& device_id,
+      PlatformVideoCaptureEventHandler* handler) = 0;
 
   // The caller will own the pointer returned from this.
   virtual PlatformVideoDecoder* CreateVideoDecoder(
       media::VideoDecodeAccelerator::Client* client,
       int32 command_buffer_route_id) = 0;
 
-  // The caller is responsible for calling Shutdown() on the returned pointer
-  // to clean up the corresponding resources allocated during this call.
-  virtual PlatformAudio* CreateAudio(uint32_t sample_rate,
-                                     uint32_t sample_count,
-                                     PlatformAudioCommonClient* client) = 0;
+  // Get audio hardware output sample rate.
+  virtual uint32_t GetAudioHardwareOutputSampleRate() = 0;
+
+  // Get audio hardware output buffer size.
+  virtual uint32_t GetAudioHardwareOutputBufferSize() = 0;
 
   // The caller is responsible for calling Shutdown() on the returned pointer
   // to clean up the corresponding resources allocated during this call.
-  virtual PlatformAudioInput* CreateAudioInput(uint32_t sample_rate,
+  virtual PlatformAudioOutput* CreateAudioOutput(
+      uint32_t sample_rate,
       uint32_t sample_count,
-      PlatformAudioCommonClient* client) = 0;
+      PlatformAudioOutputClient* client) = 0;
+
+  // If |device_id| is empty, the default audio input device will be used.
+  // The caller is responsible for calling Shutdown() on the returned pointer
+  // to clean up the corresponding resources allocated during this call.
+  virtual PlatformAudioInput* CreateAudioInput(
+      const std::string& device_id,
+      uint32_t sample_rate,
+      uint32_t sample_count,
+      PlatformAudioInputClient* client) = 0;
 
   // A pointer is returned immediately, but it is not ready to be used until
   // BrokerConnected has been called.
   // The caller is responsible for calling Release() on the returned pointer
   // to clean up the corresponding resources allocated during this call.
-  virtual PpapiBroker* ConnectToPpapiBroker(
-      webkit::ppapi::PPB_Broker_Impl* client) = 0;
+  virtual Broker* ConnectToBroker(webkit::ppapi::PPB_Broker_Impl* client) = 0;
 
   // Notifies that the number of find results has changed.
   virtual void NumberOfFindResultsChanged(int identifier,
@@ -331,24 +416,32 @@ class PluginDelegate {
   // Notifies that the index of the currently selected item has been updated.
   virtual void SelectedFindResultChanged(int identifier, int index) = 0;
 
-  // Runs a file chooser.
-  virtual bool RunFileChooser(
-      const WebKit::WebFileChooserParams& params,
-      WebKit::WebFileChooserCompletion* chooser_completion) = 0;
-
-  // Sends an async IPC to open a file.
+  // Sends an async IPC to open a local file.
   typedef base::Callback<void (base::PlatformFileError, base::PassPlatformFile)>
       AsyncOpenFileCallback;
   virtual bool AsyncOpenFile(const FilePath& path,
                              int flags,
                              const AsyncOpenFileCallback& callback) = 0;
+
+  // Sends an async IPC to open a file through filesystem API.
+  // When a file is successfully opened, |callback| is invoked with
+  // PLATFORM_FILE_OK, the opened file handle, and a callback function for
+  // notifying that the file is closed. When the users of this function
+  // finished using the file, they must close the file handle and then must call
+  // the supplied callback function.
+  typedef base::Callback<void (base::PlatformFileError)>
+      NotifyCloseFileCallback;
+  typedef base::Callback<
+      void (base::PlatformFileError,
+            base::PassPlatformFile,
+            const NotifyCloseFileCallback&)> AsyncOpenFileSystemURLCallback;
   virtual bool AsyncOpenFileSystemURL(
       const GURL& path,
       int flags,
-      const AsyncOpenFileCallback& callback) = 0;
+      const AsyncOpenFileSystemURLCallback& callback) = 0;
 
   virtual bool OpenFileSystem(
-      const GURL& url,
+      const GURL& origin_url,
       fileapi::FileSystemType type,
       long long size,
       fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
@@ -379,18 +472,26 @@ class PluginDelegate {
   virtual void WillUpdateFile(const GURL& file_path) = 0;
   virtual void DidUpdateFile(const GURL& file_path, int64_t delta) = 0;
 
-  virtual base::PlatformFileError OpenFile(const PepperFilePath& path,
-                                           int flags,
-                                           base::PlatformFile* file) = 0;
-  virtual base::PlatformFileError RenameFile(const PepperFilePath& from_path,
-                                             const PepperFilePath& to_path) = 0;
-  virtual base::PlatformFileError DeleteFileOrDir(const PepperFilePath& path,
-                                                  bool recursive) = 0;
-  virtual base::PlatformFileError CreateDir(const PepperFilePath& path) = 0;
-  virtual base::PlatformFileError QueryFile(const PepperFilePath& path,
-                                            base::PlatformFileInfo* info) = 0;
-  virtual base::PlatformFileError GetDirContents(const PepperFilePath& path,
-                                                 DirContents* contents) = 0;
+  virtual base::PlatformFileError OpenFile(
+      const ::ppapi::PepperFilePath& path,
+      int flags,
+      base::PlatformFile* file) = 0;
+  virtual base::PlatformFileError RenameFile(
+      const ::ppapi::PepperFilePath& from_path,
+      const ::ppapi::PepperFilePath& to_path) = 0;
+  virtual base::PlatformFileError DeleteFileOrDir(
+      const ::ppapi::PepperFilePath& path,
+      bool recursive) = 0;
+  virtual base::PlatformFileError CreateDir(
+      const ::ppapi::PepperFilePath& path) = 0;
+  virtual base::PlatformFileError QueryFile(
+      const ::ppapi::PepperFilePath& path,
+      base::PlatformFileInfo* info) = 0;
+  virtual base::PlatformFileError GetDirContents(
+      const ::ppapi::PepperFilePath& path,
+      ::ppapi::DirContents* contents) = 0;
+  virtual base::PlatformFileError CreateTemporaryFile(
+      base::PlatformFile* file) = 0;
 
   // Synchronously returns the platform file path for a filesystem URL.
   virtual void SyncGetFileSystemPlatformPath(const GURL& url,
@@ -400,14 +501,6 @@ class PluginDelegate {
   // of the file thread in this renderer.
   virtual scoped_refptr<base::MessageLoopProxy>
       GetFileThreadMessageLoopProxy() = 0;
-
-  virtual int32_t ConnectTcp(
-      webkit::ppapi::PPB_Flash_NetConnector_Impl* connector,
-      const char* host,
-      uint16_t port) = 0;
-  virtual int32_t ConnectTcpAddress(
-      webkit::ppapi::PPB_Flash_NetConnector_Impl* connector,
-      const PP_NetAddress_Private* addr) = 0;
 
   // For PPB_TCPSocket_Private.
   virtual uint32 TCPSocketCreate() = 0;
@@ -419,12 +512,17 @@ class PluginDelegate {
       PPB_TCPSocket_Private_Impl* socket,
       uint32 socket_id,
       const PP_NetAddress_Private& addr) = 0;
-  virtual void TCPSocketSSLHandshake(uint32 socket_id,
-                                     const std::string& server_name,
-                                     uint16_t server_port) = 0;
+  virtual void TCPSocketSSLHandshake(
+      uint32 socket_id,
+      const std::string& server_name,
+      uint16_t server_port,
+      const std::vector<std::vector<char> >& trusted_certs,
+      const std::vector<std::vector<char> >& untrusted_certs) = 0;
   virtual void TCPSocketRead(uint32 socket_id, int32_t bytes_to_read) = 0;
   virtual void TCPSocketWrite(uint32 socket_id, const std::string& buffer) = 0;
   virtual void TCPSocketDisconnect(uint32 socket_id) = 0;
+  virtual void RegisterTCPSocket(PPB_TCPSocket_Private_Impl* socket,
+                                 uint32 socket_id) = 0;
 
   // For PPB_UDPSocket_Private.
   virtual uint32 UDPSocketCreate() = 0;
@@ -436,6 +534,36 @@ class PluginDelegate {
                                const std::string& buffer,
                                const PP_NetAddress_Private& addr) = 0;
   virtual void UDPSocketClose(uint32 socket_id) = 0;
+
+  // For PPB_TCPServerSocket_Private.
+  virtual void TCPServerSocketListen(PP_Resource socket_resource,
+                                     const PP_NetAddress_Private& addr,
+                                     int32_t backlog) = 0;
+  virtual void TCPServerSocketAccept(uint32 server_socket_id) = 0;
+  virtual void TCPServerSocketStopListening(
+      PP_Resource socket_resource,
+      uint32 socket_id) = 0;
+
+  // For PPB_HostResolver_Private.
+  virtual void RegisterHostResolver(
+      ::ppapi::PPB_HostResolver_Shared* host_resolver,
+      uint32 host_resolver_id) = 0;
+  virtual void HostResolverResolve(
+      uint32 host_resolver_id,
+      const ::ppapi::HostPortPair& host_port,
+      const PP_HostResolver_Private_Hint* hint) = 0;
+  virtual void UnregisterHostResolver(uint32 host_resolver_id) = 0;
+
+  // Add/remove a network list observer.
+  virtual bool AddNetworkListObserver(
+      webkit_glue::NetworkListObserver* observer) = 0;
+  virtual void RemoveNetworkListObserver(
+      webkit_glue::NetworkListObserver* observer) = 0;
+
+  // For PPB_X509Certificate_Private.
+  virtual bool X509CertificateParseDER(
+      const std::vector<char>& der,
+      ::ppapi::PPB_X509Certificate_Fields* fields) = 0;
 
   // Show the given context menu at the given position (in the plugin's
   // coordinates).
@@ -479,10 +607,6 @@ class PluginDelegate {
 
   virtual double GetLocalTimeZoneOffset(base::Time t) = 0;
 
-  // TODO(viettrungluu): Generalize this for use with other plugins if it proves
-  // necessary.
-  virtual std::string GetFlashCommandLineArgs() = 0;
-
   // Create an anonymous shared memory segment of size |size| bytes, and return
   // a pointer to it, or NULL on error.  Caller owns the returned pointer.
   virtual base::SharedMemory* CreateAnonymousSharedMemory(uint32_t size) = 0;
@@ -524,6 +648,28 @@ class PluginDelegate {
 
   // Returns true if the containing page is visible.
   virtual bool IsPageVisible() const = 0;
+
+  typedef base::Callback<
+      void (int /* request_id */,
+            bool /* succeeded */,
+            const std::vector< ::ppapi::DeviceRefData>& /* devices */)>
+      EnumerateDevicesCallback;
+
+  // Enumerates devices of the specified type. The request ID passed into the
+  // callback will be the same as the return value.
+  virtual int EnumerateDevices(PP_DeviceType_Dev type,
+                               const EnumerateDevicesCallback& callback) = 0;
+  // Create a ClipboardClient for writing to the clipboard. The caller will own
+  // the pointer to this.
+  virtual webkit_glue::ClipboardClient* CreateClipboardClient() const = 0;
+
+  // Returns a Device ID
+  virtual std::string GetDeviceID() = 0;
+
+  // Returns restrictions on local data handled by the plug-in.
+  virtual PP_FlashLSORestrictions GetLocalDataRestrictions(
+      const GURL& document_url,
+      const GURL& plugin_url) = 0;
 };
 
 }  // namespace ppapi

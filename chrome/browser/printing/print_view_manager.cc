@@ -9,25 +9,33 @@
 #include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/histogram.h"
+#include "base/timer.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/printing/print_error_dialog.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/printing/print_preview_tab_controller.h"
-#include "chrome/browser/printing/printer_query.h"
 #include "chrome/browser/printing/print_view_manager_observer.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/printing/printer_query.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/print_messages.h"
-#include "content/browser/renderer_host/render_view_host.h"
-#include "content/public/browser/notification_service.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
 #include "printing/metafile.h"
 #include "printing/metafile_impl.h"
+#include "printing/print_destination_interface.h"
 #include "printing/printed_document.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -35,23 +43,6 @@ using base::TimeDelta;
 using content::BrowserThread;
 
 namespace {
-
-// Release the PrinterQuery identified by |cookie|.
-void ReleasePrinterQuery(int cookie) {
-  printing::PrintJobManager* print_job_manager =
-      g_browser_process->print_job_manager();
-  // May be NULL in tests.
-  if (!print_job_manager)
-    return;
-
-  scoped_refptr<printing::PrinterQuery> printer_query;
-  print_job_manager->PopPrinterQuery(cookie, &printer_query);
-  if (printer_query.get()) {
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&printing::PrinterQuery::StopWorker, printer_query.get()));
-  }
-}
 
 // Keeps track of pending scripted print preview closures.
 // No locking, only access on the UI thread.
@@ -64,7 +55,7 @@ static base::LazyInstance<ScriptedPrintPreviewClosureMap>
 
 namespace printing {
 
-PrintViewManager::PrintViewManager(TabContentsWrapper* tab)
+PrintViewManager::PrintViewManager(TabContents* tab)
     : content::WebContentsObserver(tab->web_contents()),
       tab_(tab),
       number_pages_(0),
@@ -73,15 +64,21 @@ PrintViewManager::PrintViewManager(TabContentsWrapper* tab)
       observer_(NULL),
       cookie_(0),
       print_preview_state_(NOT_PREVIEWING),
-      scripted_print_preview_rph_(NULL) {
+      scripted_print_preview_rph_(NULL),
+      tab_content_blocked_(false) {
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   expecting_first_page_ = true;
 #endif
+  registrar_.Add(this, chrome::NOTIFICATION_CONTENT_BLOCKED_STATE_CHANGED,
+                 content::Source<TabContents>(tab));
+  printing_enabled_.Init(prefs::kPrintingEnabled,
+                         tab->profile()->GetPrefs(),
+                         this);
 }
 
 PrintViewManager::~PrintViewManager() {
   DCHECK_EQ(NOT_PREVIEWING, print_preview_state_);
-  ReleasePrinterQuery(cookie_);
+  ReleasePrinterQuery();
   DisconnectFromCurrentPrintJob();
 }
 
@@ -98,8 +95,7 @@ bool PrintViewManager::AdvancedPrintNow() {
       PrintPreviewTabController::GetInstance();
   if (!tab_controller)
     return false;
-  TabContentsWrapper* print_preview_tab =
-      tab_controller->GetPrintPreviewForTab(tab_);
+  TabContents* print_preview_tab = tab_controller->GetPrintPreviewForTab(tab_);
   if (print_preview_tab) {
     // Preview tab exist for current tab or current tab is preview tab.
     if (!print_preview_tab->web_contents()->GetWebUI())
@@ -113,13 +109,26 @@ bool PrintViewManager::AdvancedPrintNow() {
   }
 }
 
+bool PrintViewManager::PrintToDestination() {
+  // TODO(mad): Remove this once we can send user metrics from the metro driver.
+  // crbug.com/142330
+  UMA_HISTOGRAM_ENUMERATION("Metro.Print", 0, 2);
+  // TODO(mad): Use a passed in destination interface instead.
+  g_browser_process->print_job_manager()->SetPrintDestination(
+      printing::CreatePrintDestination());
+  return PrintNowInternal(new PrintMsg_PrintPages(routing_id()));
+}
+
 bool PrintViewManager::PrintPreviewNow() {
   if (print_preview_state_ != NOT_PREVIEWING) {
     NOTREACHED();
     return false;
   }
+  if (!PrintNowInternal(new PrintMsg_InitiatePrintPreview(routing_id())))
+    return false;
+
   print_preview_state_ = USER_INITIATED_PREVIEW;
-  return PrintNowInternal(new PrintMsg_InitiatePrintPreview(routing_id()));
+  return true;
 }
 
 void PrintViewManager::PrintPreviewForWebNode() {
@@ -144,11 +153,10 @@ void PrintViewManager::PrintPreviewDone() {
   print_preview_state_ = NOT_PREVIEWING;
 }
 
-void PrintViewManager::PreviewPrintingRequestCancelled() {
-  if (!web_contents())
-    return;
-  RenderViewHost* rvh = web_contents()->GetRenderViewHost();
-  rvh->Send(new PrintMsg_PreviewPrintingRequestCancelled(rvh->routing_id()));
+void PrintViewManager::UpdateScriptedPrintingBlocked() {
+  Send(new PrintMsg_SetScriptedPrintingBlocked(
+       routing_id(),
+       !printing_enabled_.GetValue() || tab_content_blocked_));
 }
 
 void PrintViewManager::set_observer(PrintViewManagerObserver* observer) {
@@ -162,6 +170,9 @@ void PrintViewManager::StopNavigation() {
 }
 
 void PrintViewManager::RenderViewGone(base::TerminationStatus status) {
+  print_preview_state_ = NOT_PREVIEWING;
+  ReleasePrinterQuery();
+
   if (!print_job_.get())
     return;
 
@@ -257,11 +268,19 @@ void PrintViewManager::OnDidPrintPage(
 }
 
 void PrintViewManager::OnPrintingFailed(int cookie) {
-  ReleasePrinterQuery(cookie);
+  if (cookie != cookie_) {
+    NOTREACHED();
+    return;
+  }
+
+  chrome::ShowPrintErrorDialog(
+      tab_->web_contents()->GetView()->GetTopLevelNativeWindow());
+
+  ReleasePrinterQuery();
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PRINT_JOB_RELEASED,
-      content::Source<TabContentsWrapper>(tab_),
+      content::Source<TabContents>(tab_),
       content::NotificationService::NoDetails());
 }
 
@@ -312,6 +331,11 @@ void PrintViewManager::OnScriptedPrintPreviewReply(IPC::Message* reply_msg) {
   Send(reply_msg);
 }
 
+void PrintViewManager::DidStartLoading(
+    content::RenderViewHost* render_view_host) {
+  UpdateScriptedPrintingBlocked();
+}
+
 bool PrintViewManager::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PrintViewManager, message)
@@ -337,6 +361,15 @@ void PrintViewManager::Observe(int type,
       OnNotifyPrintJobEvent(*content::Details<JobEventDetails>(details).ptr());
       break;
     }
+    case chrome::NOTIFICATION_PREF_CHANGED: {
+      UpdateScriptedPrintingBlocked();
+      break;
+    }
+    case chrome::NOTIFICATION_CONTENT_BLOCKED_STATE_CHANGED: {
+      tab_content_blocked_ = *content::Details<const bool>(details).ptr();
+      UpdateScriptedPrintingBlocked();
+      break;
+    }
     default: {
       NOTREACHED();
       break;
@@ -352,7 +385,7 @@ void PrintViewManager::OnNotifyPrintJobEvent(
 
       content::NotificationService::current()->Notify(
           chrome::NOTIFICATION_PRINT_JOB_RELEASED,
-          content::Source<TabContentsWrapper>(tab_),
+          content::Source<TabContents>(tab_),
           content::NotificationService::NoDetails());
       break;
     }
@@ -382,7 +415,7 @@ void PrintViewManager::OnNotifyPrintJobEvent(
 
       content::NotificationService::current()->Notify(
           chrome::NOTIFICATION_PRINT_JOB_RELEASED,
-          content::Source<TabContentsWrapper>(tab_),
+          content::Source<TabContents>(tab_),
           content::NotificationService::NoDetails());
       break;
     }
@@ -410,7 +443,7 @@ bool PrintViewManager::RenderAllMissingPagesNow() {
     return true;
   }
 
-  // TabContents is either dying or a second consecutive request to print
+  // WebContents is either dying or a second consecutive request to print
   // happened before the first had time to finish. We need to render all the
   // pages in an hurry if a print_job_ is still pending. No need to wait for it
   // to actually spool the pages, only to have the renderer generate them. Run
@@ -491,10 +524,9 @@ void PrintViewManager::DisconnectFromCurrentPrintJob() {
 }
 
 void PrintViewManager::PrintingDone(bool success) {
-  if (!print_job_.get() || !web_contents())
+  if (!print_job_.get())
     return;
-  RenderViewHost* rvh = web_contents()->GetRenderViewHost();
-  rvh->Send(new PrintMsg_PrintingDone(rvh->routing_id(), success));
+  Send(new PrintMsg_PrintingDone(routing_id(), success));
 }
 
 void PrintViewManager::TerminatePrintJob(bool cancel) {
@@ -509,7 +541,7 @@ void PrintViewManager::TerminatePrintJob(bool cancel) {
     DCHECK(!inside_inner_message_loop_);
     DCHECK(!print_job_->document() || print_job_->document()->IsComplete());
 
-    // TabContents is either dying or navigating elsewhere. We need to render
+    // WebContents is either dying or navigating elsewhere. We need to render
     // all the pages in an hurry if a print job is still pending. This does the
     // trick since it runs a blocking message loop:
     print_job_->Stop();
@@ -551,11 +583,10 @@ bool PrintViewManager::RunInnerMessageLoop() {
   inside_inner_message_loop_ = true;
 
   // Need to enable recursive task.
-  bool old_state = MessageLoop::current()->NestableTasksAllowed();
-  MessageLoop::current()->SetNestableTasksAllowed(true);
-  MessageLoop::current()->Run();
-  // Restore task state.
-  MessageLoop::current()->SetNestableTasksAllowed(old_state);
+  {
+    MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
+    MessageLoop::current()->Run();
+  }
 
   bool success = true;
   if (inside_inner_message_loop_) {
@@ -599,9 +630,35 @@ bool PrintViewManager::OpportunisticallyCreatePrintJob(int cookie) {
 
 bool PrintViewManager::PrintNowInternal(IPC::Message* message) {
   // Don't print / print preview interstitials.
-  if (web_contents()->ShowingInterstitialPage())
+  if (web_contents()->ShowingInterstitialPage()) {
+    delete message;
     return false;
+  }
   return Send(message);
+}
+
+void PrintViewManager::ReleasePrinterQuery() {
+  if (!cookie_)
+    return;
+
+  int cookie = cookie_;
+  cookie_ = 0;
+  g_browser_process->print_job_manager()->SetPrintDestination(NULL);
+
+
+  printing::PrintJobManager* print_job_manager =
+      g_browser_process->print_job_manager();
+  // May be NULL in tests.
+  if (!print_job_manager)
+    return;
+
+  scoped_refptr<printing::PrinterQuery> printer_query;
+  print_job_manager->PopPrinterQuery(cookie, &printer_query);
+  if (!printer_query.get())
+    return;
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&PrinterQuery::StopWorker, printer_query.get()));
 }
 
 }  // namespace printing

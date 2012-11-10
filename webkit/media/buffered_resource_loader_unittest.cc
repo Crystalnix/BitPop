@@ -7,8 +7,10 @@
 
 #include "base/bind.h"
 #include "base/format_macros.h"
+#include "base/message_loop.h"
 #include "base/stringprintf.h"
 #include "media/base/media_log.h"
+#include "media/base/seekable_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_util.h"
@@ -22,6 +24,7 @@
 #include "webkit/mocks/mock_webframeclient.h"
 #include "webkit/mocks/mock_weburlloader.h"
 
+using ::testing::_;
 using ::testing::InSequence;
 using ::testing::Return;
 using ::testing::Truly;
@@ -41,7 +44,6 @@ static const char* kHttpUrl = "http://test";
 static const char kHttpRedirectToSameDomainUrl1[] = "http://test/ing";
 static const char kHttpRedirectToSameDomainUrl2[] = "http://test/ing2";
 static const char kHttpRedirectToDifferentDomainUrl1[] = "http://test2";
-static const char kHttpRedirectToDifferentDomainUrl2[] = "http://test2/ing";
 
 static const int kDataSize = 1024;
 static const int kHttpOK = 200;
@@ -81,36 +83,45 @@ class BufferedResourceLoaderTest : public testing::Test {
     first_position_ = first_position;
     last_position_ = last_position;
 
-    url_loader_ = new NiceMock<MockWebURLLoader>();
     loader_.reset(new BufferedResourceLoader(
-        gurl_, first_position_, last_position_,
-        BufferedResourceLoader::kThresholdDefer, 0, 0,
+        gurl_, BufferedResourceLoader::kUnspecified,
+        first_position_, last_position_,
+        BufferedResourceLoader::kCapacityDefer, 0, 0,
         new media::MediaLog()));
-    loader_->SetURLLoaderForTest(scoped_ptr<WebKit::WebURLLoader>(url_loader_));
+
+    // |test_loader_| will be used when Start() is called.
+    url_loader_ = new NiceMock<MockWebURLLoader>();
+    loader_->test_loader_ = scoped_ptr<WebKit::WebURLLoader>(url_loader_);
   }
 
-  void SetLoaderBuffer(size_t forward_capacity, size_t backward_capacity) {
-    loader_->buffer_.reset(
-        new media::SeekableBuffer(backward_capacity, forward_capacity));
+  void SetLoaderBuffer(int forward_capacity, int backward_capacity) {
+    loader_->buffer_.set_forward_capacity(forward_capacity);
+    loader_->buffer_.set_backward_capacity(backward_capacity);
+    loader_->buffer_.Clear();
   }
 
   void Start() {
     InSequence s;
     EXPECT_CALL(*url_loader_, loadAsynchronously(Truly(CorrectAcceptEncoding),
                                                  loader_.get()));
+
+    EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoading));
     loader_->Start(
         base::Bind(&BufferedResourceLoaderTest::StartCallback,
                    base::Unretained(this)),
-        base::Bind(&BufferedResourceLoaderTest::NetworkCallback,
+        base::Bind(&BufferedResourceLoaderTest::LoadingCallback,
+                   base::Unretained(this)),
+        base::Bind(&BufferedResourceLoaderTest::ProgressCallback,
                    base::Unretained(this)),
         view_->mainFrame());
   }
 
   void FullResponse(int64 instance_size) {
-    FullResponse(instance_size, net::OK);
+    FullResponse(instance_size, BufferedResourceLoader::kOk);
   }
 
-  void FullResponse(int64 instance_size, int status) {
+  void FullResponse(int64 instance_size,
+                    BufferedResourceLoader::Status status) {
     EXPECT_CALL(*this, StartCallback(status));
 
     WebURLResponse response(gurl_);
@@ -121,7 +132,7 @@ class BufferedResourceLoaderTest : public testing::Test {
     response.setHTTPStatusCode(kHttpOK);
     loader_->didReceiveResponse(url_loader_, response);
 
-    if (status == net::OK) {
+    if (status == BufferedResourceLoader::kOk) {
       EXPECT_EQ(instance_size, loader_->content_length());
       EXPECT_EQ(instance_size, loader_->instance_size());
     }
@@ -136,7 +147,7 @@ class BufferedResourceLoaderTest : public testing::Test {
 
   void PartialResponse(int64 first_position, int64 last_position,
                        int64 instance_size, bool chunked, bool accept_ranges) {
-    EXPECT_CALL(*this, StartCallback(net::OK));
+    EXPECT_CALL(*this, StartCallback(BufferedResourceLoader::kOk));
 
     WebURLResponse response(gurl_);
     response.setHTTPHeaderField(WebString::fromUTF8("Content-Range"),
@@ -196,8 +207,7 @@ class BufferedResourceLoaderTest : public testing::Test {
 
   // Helper method to write to |loader_| from |data_|.
   void WriteLoader(int position, int size) {
-    EXPECT_CALL(*this, NetworkCallback())
-        .RetiresOnSaturation();
+    EXPECT_CALL(*this, ProgressCallback(position + size - 1));
     loader_->didReceiveData(url_loader_,
                             reinterpret_cast<char*>(data_ + position),
                             size,
@@ -205,21 +215,20 @@ class BufferedResourceLoaderTest : public testing::Test {
   }
 
   void WriteData(int size) {
-    EXPECT_CALL(*this, NetworkCallback())
-        .RetiresOnSaturation();
+    EXPECT_CALL(*this, ProgressCallback(_));
 
     scoped_array<char> data(new char[size]);
     loader_->didReceiveData(url_loader_, data.get(), size, size);
   }
 
   void WriteUntilThreshold() {
-    size_t buffered = loader_->buffer_->forward_bytes();
-    size_t capacity = loader_->buffer_->forward_capacity();
+    int buffered = loader_->buffer_.forward_bytes();
+    int capacity = loader_->buffer_.forward_capacity();
     CHECK_LT(buffered, capacity);
 
-    EXPECT_CALL(*this, NetworkCallback());
+    EXPECT_CALL(*this, LoadingCallback(
+        BufferedResourceLoader::kLoadingDeferred));
     WriteData(capacity - buffered);
-    ConfirmLoaderDeferredState(true);
   }
 
   // Helper method to read from |loader_|.
@@ -242,49 +251,42 @@ class BufferedResourceLoaderTest : public testing::Test {
     EXPECT_EQ(loader_->last_offset_, expected_last_offset);
   }
 
-  void ConfirmBufferState(size_t backward_bytes,
-                          size_t backward_capacity,
-                          size_t forward_bytes,
-                          size_t forward_capacity) {
-    EXPECT_EQ(backward_bytes, loader_->buffer_->backward_bytes());
-    EXPECT_EQ(backward_capacity, loader_->buffer_->backward_capacity());
-    EXPECT_EQ(forward_bytes, loader_->buffer_->forward_bytes());
-    EXPECT_EQ(forward_capacity, loader_->buffer_->forward_capacity());
+  void ConfirmBufferState(int backward_bytes,
+                          int backward_capacity,
+                          int forward_bytes,
+                          int forward_capacity) {
+    EXPECT_EQ(backward_bytes, loader_->buffer_.backward_bytes());
+    EXPECT_EQ(backward_capacity, loader_->buffer_.backward_capacity());
+    EXPECT_EQ(forward_bytes, loader_->buffer_.forward_bytes());
+    EXPECT_EQ(forward_capacity, loader_->buffer_.forward_capacity());
   }
 
-  void ConfirmLoaderBufferBackwardCapacity(size_t expected_backward_capacity) {
-    EXPECT_EQ(loader_->buffer_->backward_capacity(),
+  void ConfirmLoaderBufferBackwardCapacity(int expected_backward_capacity) {
+    EXPECT_EQ(loader_->buffer_.backward_capacity(),
               expected_backward_capacity);
   }
 
-  void ConfirmLoaderBufferForwardCapacity(size_t expected_forward_capacity) {
-    EXPECT_EQ(loader_->buffer_->forward_capacity(), expected_forward_capacity);
-  }
-
-  void ConfirmLoaderDeferredState(bool expectedVal) {
-    EXPECT_EQ(loader_->active_loader_->deferred(), expectedVal);
+  void ConfirmLoaderBufferForwardCapacity(int expected_forward_capacity) {
+    EXPECT_EQ(loader_->buffer_.forward_capacity(), expected_forward_capacity);
   }
 
   // Makes sure the |loader_| buffer window is in a reasonable range.
   void CheckBufferWindowBounds() {
     // Corresponds to value defined in buffered_resource_loader.cc.
-    static const size_t kMinBufferCapacity = 2 * 1024 * 1024;
-    EXPECT_GE(loader_->buffer_->forward_capacity(), kMinBufferCapacity);
-    EXPECT_GE(loader_->buffer_->backward_capacity(), kMinBufferCapacity);
+    static const int kMinBufferCapacity = 2 * 1024 * 1024;
+    EXPECT_GE(loader_->buffer_.forward_capacity(), kMinBufferCapacity);
+    EXPECT_GE(loader_->buffer_.backward_capacity(), kMinBufferCapacity);
 
     // Corresponds to value defined in buffered_resource_loader.cc.
-    static const size_t kMaxBufferCapacity = 20 * 1024 * 1024;
-    EXPECT_LE(loader_->buffer_->forward_capacity(), kMaxBufferCapacity);
-    EXPECT_LE(loader_->buffer_->backward_capacity(), kMaxBufferCapacity);
+    static const int kMaxBufferCapacity = 20 * 1024 * 1024;
+    EXPECT_LE(loader_->buffer_.forward_capacity(), kMaxBufferCapacity);
+    EXPECT_LE(loader_->buffer_.backward_capacity(), kMaxBufferCapacity);
   }
 
-  MOCK_METHOD1(StartCallback, void(int error));
-  MOCK_METHOD1(ReadCallback, void(int error));
-  MOCK_METHOD0(NetworkCallback, void());
-
-  // Accessors for private variables on |loader_|.
-  size_t forward_bytes() { return loader_->buffer_->forward_bytes(); }
-  size_t forward_capacity() { return loader_->buffer_->forward_capacity(); }
+  MOCK_METHOD1(StartCallback, void(BufferedResourceLoader::Status));
+  MOCK_METHOD2(ReadCallback, void(BufferedResourceLoader::Status, int));
+  MOCK_METHOD1(LoadingCallback, void(BufferedResourceLoader::LoadingState));
+  MOCK_METHOD1(ProgressCallback, void(int64));
 
  protected:
   GURL gurl_;
@@ -296,6 +298,8 @@ class BufferedResourceLoaderTest : public testing::Test {
 
   MockWebFrameClient client_;
   WebView* view_;
+
+  MessageLoop message_loop_;
 
   uint8 data_[kDataSize];
 
@@ -314,7 +318,7 @@ TEST_F(BufferedResourceLoaderTest, BadHttpResponse) {
   Initialize(kHttpUrl, -1, -1);
   Start();
 
-  EXPECT_CALL(*this, StartCallback(net::ERR_FAILED));
+  EXPECT_CALL(*this, StartCallback(BufferedResourceLoader::kFailed));
 
   WebURLResponse response(gurl_);
   response.setHTTPStatusCode(404);
@@ -327,7 +331,7 @@ TEST_F(BufferedResourceLoaderTest, BadHttpResponse) {
 TEST_F(BufferedResourceLoaderTest, NotPartialResponse) {
   Initialize(kHttpUrl, 100, -1);
   Start();
-  FullResponse(1024, net::ERR_INVALID_RESPONSE);
+  FullResponse(1024, BufferedResourceLoader::kFailed);
   StopWhenLoad();
 }
 
@@ -373,7 +377,7 @@ TEST_F(BufferedResourceLoaderTest, InvalidPartialResponse) {
   Initialize(kHttpUrl, 0, 10);
   Start();
 
-  EXPECT_CALL(*this, StartCallback(net::ERR_INVALID_RESPONSE));
+  EXPECT_CALL(*this, StartCallback(BufferedResourceLoader::kFailed));
 
   WebURLResponse response(gurl_);
   response.setHTTPHeaderField(WebString::fromUTF8("Content-Range"),
@@ -388,7 +392,7 @@ TEST_F(BufferedResourceLoaderTest, InvalidPartialResponse) {
 // Tests the logic of sliding window for data buffering and reading.
 TEST_F(BufferedResourceLoaderTest, BufferAndRead) {
   Initialize(kHttpUrl, 10, 29);
-  loader_->UpdateDeferStrategy(BufferedResourceLoader::kThresholdDefer);
+  loader_->UpdateDeferStrategy(BufferedResourceLoader::kCapacityDefer);
   Start();
   PartialResponse(10, 29, 30);
 
@@ -397,43 +401,43 @@ TEST_F(BufferedResourceLoaderTest, BufferAndRead) {
 
   // Writes 10 bytes and read them back.
   WriteLoader(10, 10);
-  EXPECT_CALL(*this, ReadCallback(10));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 10));
   ReadLoader(10, 10, buffer);
   VerifyBuffer(buffer, 10, 10);
 
   // Writes 10 bytes and read 2 times.
   WriteLoader(20, 10);
-  EXPECT_CALL(*this, ReadCallback(5));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 5));
   ReadLoader(20, 5, buffer);
   VerifyBuffer(buffer, 20, 5);
-  EXPECT_CALL(*this, ReadCallback(5));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 5));
   ReadLoader(25, 5, buffer);
   VerifyBuffer(buffer, 25, 5);
 
   // Read backward within buffer.
-  EXPECT_CALL(*this, ReadCallback(10));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 10));
   ReadLoader(10, 10, buffer);
   VerifyBuffer(buffer, 10, 10);
 
   // Read backward outside buffer.
-  EXPECT_CALL(*this, ReadCallback(net::ERR_CACHE_MISS));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kCacheMiss, 0));
   ReadLoader(9, 10, buffer);
 
   // Response has completed.
-  EXPECT_CALL(*this, NetworkCallback());
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoadingFinished));
   loader_->didFinishLoading(url_loader_, 0);
 
   // Try to read 10 from position 25 will just return with 5 bytes.
-  EXPECT_CALL(*this, ReadCallback(5));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 5));
   ReadLoader(25, 10, buffer);
   VerifyBuffer(buffer, 25, 5);
 
   // Try to read outside buffered range after request has completed.
-  EXPECT_CALL(*this, ReadCallback(net::ERR_CACHE_MISS));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kCacheMiss, 0));
   ReadLoader(5, 10, buffer);
 
   // Try to read beyond the instance size.
-  EXPECT_CALL(*this, ReadCallback(0));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 0));
   ReadLoader(30, 10, buffer);
 }
 
@@ -442,19 +446,18 @@ TEST_F(BufferedResourceLoaderTest, ReadExtendBuffer) {
   Initialize(kHttpUrl, 10, 0x014FFFFFF);
   SetLoaderBuffer(10, 20);
   Start();
-  PartialResponse(10, 0x014FFFFFF, 0x01500000);
-
-  // Don't test for network callbacks (covered by *Strategy tests).
-  EXPECT_CALL(*this, NetworkCallback())
-      .WillRepeatedly(Return());
+  PartialResponse(10, 0x014FFFFFF, 0x015000000);
 
   uint8 buffer[20];
   InSequence s;
 
   // Write more than forward capacity and read it back. Ensure forward capacity
-  // gets reset.
+  // gets reset after reading.
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoadingDeferred));
   WriteLoader(10, 20);
-  EXPECT_CALL(*this, ReadCallback(20));
+
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 20));
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoading));
   ReadLoader(10, 20, buffer);
 
   VerifyBuffer(buffer, 10, 20);
@@ -463,11 +466,10 @@ TEST_F(BufferedResourceLoaderTest, ReadExtendBuffer) {
   // Make and outstanding read request larger than forward capacity. Ensure
   // forward capacity gets extended.
   ReadLoader(30, 20, buffer);
-
   ConfirmLoaderBufferForwardCapacity(20);
 
   // Fulfill outstanding request. Ensure forward capacity gets reset.
-  EXPECT_CALL(*this, ReadCallback(20));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 20));
   WriteLoader(30, 20);
 
   VerifyBuffer(buffer, 30, 20);
@@ -475,14 +477,14 @@ TEST_F(BufferedResourceLoaderTest, ReadExtendBuffer) {
 
   // Try to read further ahead than kForwardWaitThreshold allows. Ensure
   // forward capacity is not changed.
-  EXPECT_CALL(*this, ReadCallback(net::ERR_CACHE_MISS));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kCacheMiss, 0));
   ReadLoader(0x00300000, 1, buffer);
 
   ConfirmLoaderBufferForwardCapacity(10);
 
   // Try to read more than maximum forward capacity. Ensure forward capacity is
   // not changed.
-  EXPECT_CALL(*this, ReadCallback(net::ERR_FAILED));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kFailed, 0));
   ReadLoader(30, 0x01400001, buffer);
 
   ConfirmLoaderBufferForwardCapacity(10);
@@ -499,7 +501,7 @@ TEST_F(BufferedResourceLoaderTest, ReadOutsideBuffer) {
   InSequence s;
 
   // Read very far ahead will get a cache miss.
-  EXPECT_CALL(*this, ReadCallback(net::ERR_CACHE_MISS));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kCacheMiss, 0));
   ReadLoader(0x00FFFFFF, 1, buffer);
 
   // The following call will not call ReadCallback() because it is waiting for
@@ -507,15 +509,15 @@ TEST_F(BufferedResourceLoaderTest, ReadOutsideBuffer) {
   ReadLoader(10, 10, buffer);
 
   // Writing to loader will fulfill the read request.
-  EXPECT_CALL(*this, ReadCallback(10));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 10));
   WriteLoader(10, 20);
   VerifyBuffer(buffer, 10, 10);
 
   // The following call cannot be fulfilled now.
   ReadLoader(25, 10, buffer);
 
-  EXPECT_CALL(*this, NetworkCallback());
-  EXPECT_CALL(*this, ReadCallback(5));
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoadingFinished));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 5));
   loader_->didFinishLoading(url_loader_, 0);
 }
 
@@ -527,14 +529,38 @@ TEST_F(BufferedResourceLoaderTest, RequestFailedWhenRead) {
   uint8 buffer[10];
   InSequence s;
 
-  // We should convert any error we receive to net::ERR_FAILED.
+  // We should convert any error we receive to BufferedResourceLoader::kFailed.
   ReadLoader(10, 10, buffer);
-  EXPECT_CALL(*this, NetworkCallback());
-  EXPECT_CALL(*this, ReadCallback(net::ERR_FAILED));
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoadingFailed));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kFailed, 0));
   WebURLError error;
   error.reason = net::ERR_TIMED_OUT;
   error.isCancellation = false;
   loader_->didFail(url_loader_, error);
+}
+
+TEST_F(BufferedResourceLoaderTest, RequestFailedWithNoPendingReads) {
+  Initialize(kHttpUrl, 10, 29);
+  Start();
+  PartialResponse(10, 29, 30);
+
+  uint8 buffer[10];
+  InSequence s;
+
+  // Write enough data so that a read would technically complete had the request
+  // not failed.
+  WriteLoader(10, 20);
+
+  // Fail without a pending read.
+  WebURLError error;
+  error.reason = net::ERR_TIMED_OUT;
+  error.isCancellation = false;
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoadingFailed));
+  loader_->didFail(url_loader_, error);
+
+  // Now we should immediately fail any read even if we have data buffered.
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kFailed, 0));
+  ReadLoader(10, 10, buffer);
 }
 
 TEST_F(BufferedResourceLoaderTest, RequestCancelledWhenRead) {
@@ -545,10 +571,10 @@ TEST_F(BufferedResourceLoaderTest, RequestCancelledWhenRead) {
   uint8 buffer[10];
   InSequence s;
 
-  // We should convert any error we receive to net::ERR_FAILED.
+  // We should convert any error we receive to BufferedResourceLoader::kFailed.
   ReadLoader(10, 10, buffer);
-  EXPECT_CALL(*this, NetworkCallback());
-  EXPECT_CALL(*this, ReadCallback(net::ERR_FAILED));
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoadingFailed));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kFailed, 0));
   WebURLError error;
   error.reason = 0;
   error.isCancellation = true;
@@ -568,10 +594,9 @@ TEST_F(BufferedResourceLoaderTest, NeverDeferStrategy) {
   // Read past the buffer size; should not defer regardless.
   WriteLoader(10, 10);
   WriteLoader(20, 50);
-  ConfirmLoaderDeferredState(false);
 
   // Should move past window.
-  EXPECT_CALL(*this, ReadCallback(net::ERR_CACHE_MISS));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kCacheMiss, 0));
   ReadLoader(10, 10, buffer);
 
   StopWhenLoad();
@@ -592,50 +617,42 @@ TEST_F(BufferedResourceLoaderTest, ReadThenDeferStrategy) {
 
   // Receive almost enough data to cover, shouldn't defer.
   WriteLoader(10, 9);
-  ConfirmLoaderDeferredState(false);
 
   // As soon as we have received enough data to fulfill the read, defer.
-  EXPECT_CALL(*this, NetworkCallback());
-  EXPECT_CALL(*this, ReadCallback(10));
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoadingDeferred));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 10));
   WriteLoader(19, 1);
 
-  ConfirmLoaderDeferredState(true);
   VerifyBuffer(buffer, 10, 10);
 
   // Read again which should disable deferring since there should be nothing
   // left in our internal buffer.
-  EXPECT_CALL(*this, NetworkCallback());
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoading));
   ReadLoader(20, 10, buffer);
 
-  ConfirmLoaderDeferredState(false);
-
   // Over-fulfill requested bytes, then deferring should be enabled again.
-  EXPECT_CALL(*this, NetworkCallback());
-  EXPECT_CALL(*this, ReadCallback(10));
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoadingDeferred));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 10));
   WriteLoader(20, 40);
 
-  ConfirmLoaderDeferredState(true);
   VerifyBuffer(buffer, 20, 10);
 
   // Read far ahead, which should disable deferring. In this case we still have
   // bytes in our internal buffer.
-  EXPECT_CALL(*this, NetworkCallback());
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoading));
   ReadLoader(80, 10, buffer);
 
-  ConfirmLoaderDeferredState(false);
-
   // Fulfill requested bytes, then deferring should be enabled again.
-  EXPECT_CALL(*this, NetworkCallback());
-  EXPECT_CALL(*this, ReadCallback(10));
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoadingDeferred));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 10));
   WriteLoader(60, 40);
 
-  ConfirmLoaderDeferredState(true);
   VerifyBuffer(buffer, 80, 10);
 
   StopWhenLoad();
 }
 
-// Tests the data buffering logic of ThresholdDefer strategy.
+// Tests the data buffering logic of kCapacityDefer strategy.
 TEST_F(BufferedResourceLoaderTest, ThresholdDeferStrategy) {
   Initialize(kHttpUrl, 10, 99);
   SetLoaderBuffer(10, 20);
@@ -645,38 +662,21 @@ TEST_F(BufferedResourceLoaderTest, ThresholdDeferStrategy) {
   uint8 buffer[10];
   InSequence s;
 
-  // Initial expectation: we're not deferring.
-  ConfirmLoaderDeferredState(false);
-
-  // Write half of threshold: keep not deferring.
+  // Write half of capacity: keep not deferring.
   WriteData(5);
-  ConfirmLoaderDeferredState(false);
 
-  // Write rest of space until threshold: start deferring.
-  EXPECT_CALL(*this, NetworkCallback());
+  // Write rest of space until capacity: start deferring.
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoadingDeferred));
   WriteData(5);
-  ConfirmLoaderDeferredState(true);
 
-  // Read a little from the buffer: keep deferring.
-  EXPECT_CALL(*this, ReadCallback(2));
-  ReadLoader(10, 2, buffer);
-  ConfirmLoaderDeferredState(true);
+  // Read a byte from the buffer: stop deferring.
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 1));
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoading));
+  ReadLoader(10, 1, buffer);
 
-  // Read a little more and go under threshold: stop deferring.
-  EXPECT_CALL(*this, ReadCallback(4));
-  EXPECT_CALL(*this, NetworkCallback());
-  ReadLoader(12, 4, buffer);
-  ConfirmLoaderDeferredState(false);
-
-  // Write rest of space until threshold: start deferring.
-  EXPECT_CALL(*this, NetworkCallback());
+  // Write a byte to hit capacity: start deferring.
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoadingDeferred));
   WriteData(6);
-  ConfirmLoaderDeferredState(true);
-
-  // Read a little from the buffer: keep deferring.
-  EXPECT_CALL(*this, ReadCallback(4));
-  ReadLoader(16, 4, buffer);
-  ConfirmLoaderDeferredState(true);
 
   StopWhenLoad();
 }
@@ -692,11 +692,11 @@ TEST_F(BufferedResourceLoaderTest, Tricky_ReadForwardsPastBuffered) {
 
   // PRECONDITION
   WriteUntilThreshold();
-  EXPECT_CALL(*this, ReadCallback(4));
-  ReadLoader(10, 4, buffer);
-  ConfirmBufferState(4, 10, 6, 10);
-  ConfirmLoaderOffsets(14, 0, 0);
-  ConfirmLoaderDeferredState(true);
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 1));
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoading));
+  ReadLoader(10, 1, buffer);
+  ConfirmBufferState(1, 10, 9, 10);
+  ConfirmLoaderOffsets(11, 0, 0);
 
   // *** TRICKY BUSINESS, PT. I ***
   // Read past buffered: stop deferring.
@@ -705,28 +705,23 @@ TEST_F(BufferedResourceLoaderTest, Tricky_ReadForwardsPastBuffered) {
   //   1) Stop deferring to receive more data.
   //
   // BEFORE
-  //   offset=14 [xxxxxx____]
-  //                    ^^^^ requested 4 bytes @ offset 20
+  //   offset=11 [xxxxxxxxx_]
+  //                       ^ ^^^ requested 4 bytes @ offset 20
   // AFTER
   //   offset=24 [__________]
   //
-  EXPECT_CALL(*this, NetworkCallback());
   ReadLoader(20, 4, buffer);
-  ConfirmLoaderDeferredState(false);
 
   // Write a little, make sure we didn't start deferring.
   WriteData(2);
-  ConfirmLoaderDeferredState(false);
 
   // Write the rest, read should complete.
-  EXPECT_CALL(*this, ReadCallback(4));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 4));
   WriteData(2);
-  ConfirmLoaderDeferredState(false);
 
   // POSTCONDITION
   ConfirmBufferState(4, 10, 0, 10);
   ConfirmLoaderOffsets(24, 0, 0);
-  ConfirmLoaderDeferredState(false);
 
   StopWhenLoad();
 }
@@ -744,7 +739,6 @@ TEST_F(BufferedResourceLoaderTest, Tricky_ReadBackwardsPastBuffered) {
   WriteUntilThreshold();
   ConfirmBufferState(0, 10, 10, 10);
   ConfirmLoaderOffsets(10, 0, 0);
-  ConfirmLoaderDeferredState(true);
 
   // *** TRICKY BUSINESS, PT. II ***
   // Read backwards a little too much: cache miss.
@@ -755,13 +749,12 @@ TEST_F(BufferedResourceLoaderTest, Tricky_ReadBackwardsPastBuffered) {
   // AFTER
   //   offset=10 [__________|xxxxxxxxxx]  !!! cache miss !!!
   //
-  EXPECT_CALL(*this, ReadCallback(net::ERR_CACHE_MISS));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kCacheMiss, 0));
   ReadLoader(9, 4, buffer);
 
   // POSTCONDITION
   ConfirmBufferState(0, 10, 10, 10);
   ConfirmLoaderOffsets(10, 0, 0);
-  ConfirmLoaderDeferredState(true);
 
   StopWhenLoad();
 }
@@ -779,10 +772,9 @@ TEST_F(BufferedResourceLoaderTest, Tricky_SmallReadWithinThreshold) {
   WriteUntilThreshold();
   ConfirmBufferState(0, 10, 10, 10);
   ConfirmLoaderOffsets(10, 0, 0);
-  ConfirmLoaderDeferredState(true);
 
   // *** TRICKY BUSINESS, PT. III ***
-  // Read past forward capacity but within threshold: stop deferring.
+  // Read past forward capacity but within capacity: stop deferring.
   //
   // In order for the read to complete we must:
   //   1) Adjust offset forward to create capacity.
@@ -797,24 +789,20 @@ TEST_F(BufferedResourceLoaderTest, Tricky_SmallReadWithinThreshold) {
   // AFTER
   //   offset=28 [__________]
   //
-  EXPECT_CALL(*this, NetworkCallback());
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoading));
   ReadLoader(24, 4, buffer);
   ConfirmLoaderOffsets(20, 4, 8);
-  ConfirmLoaderDeferredState(false);
 
   // Write a little, make sure we didn't start deferring.
   WriteData(4);
-  ConfirmLoaderDeferredState(false);
 
   // Write the rest, read should complete.
-  EXPECT_CALL(*this, ReadCallback(4));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 4));
   WriteData(4);
-  ConfirmLoaderDeferredState(false);
 
   // POSTCONDITION
   ConfirmBufferState(8, 10, 0, 10);
   ConfirmLoaderOffsets(28, 0, 0);
-  ConfirmLoaderDeferredState(false);
 
   StopWhenLoad();
 }
@@ -832,11 +820,10 @@ TEST_F(BufferedResourceLoaderTest, Tricky_LargeReadWithinThreshold) {
   WriteUntilThreshold();
   ConfirmBufferState(0, 10, 10, 10);
   ConfirmLoaderOffsets(10, 0, 0);
-  ConfirmLoaderDeferredState(true);
 
   // *** TRICKY BUSINESS, PT. IV ***
   // Read a large amount past forward capacity but within
-  // threshold: stop deferring.
+  // capacity: stop deferring.
   //
   // In order for the read to complete we must:
   //   1) Adjust offset forward to create capacity.
@@ -855,26 +842,22 @@ TEST_F(BufferedResourceLoaderTest, Tricky_LargeReadWithinThreshold) {
   // AFTER
   //   offset=36 [__________]
   //
-  EXPECT_CALL(*this, NetworkCallback());
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoading));
   ReadLoader(24, 12, buffer);
   ConfirmLoaderOffsets(20, 4, 16);
   ConfirmBufferState(10, 10, 0, 16);
-  ConfirmLoaderDeferredState(false);
 
   // Write a little, make sure we didn't start deferring.
   WriteData(10);
-  ConfirmLoaderDeferredState(false);
 
   // Write the rest, read should complete and capacity should go back to normal.
-  EXPECT_CALL(*this, ReadCallback(12));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 12));
   WriteData(6);
   ConfirmLoaderBufferForwardCapacity(10);
-  ConfirmLoaderDeferredState(false);
 
   // POSTCONDITION
   ConfirmBufferState(6, 10, 0, 10);
   ConfirmLoaderOffsets(36, 0, 0);
-  ConfirmLoaderDeferredState(false);
 
   StopWhenLoad();
 }
@@ -890,13 +873,12 @@ TEST_F(BufferedResourceLoaderTest, Tricky_LargeReadBackwards) {
 
   // PRECONDITION
   WriteUntilThreshold();
-  EXPECT_CALL(*this, ReadCallback(10));
-  EXPECT_CALL(*this, NetworkCallback());
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 10));
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoading));
   ReadLoader(10, 10, buffer);
   WriteUntilThreshold();
   ConfirmBufferState(10, 10, 10, 10);
   ConfirmLoaderOffsets(20, 0, 0);
-  ConfirmLoaderDeferredState(true);
 
   // *** TRICKY BUSINESS, PT. V ***
   // Read a large amount that involves backwards data: stop deferring.
@@ -918,33 +900,29 @@ TEST_F(BufferedResourceLoaderTest, Tricky_LargeReadBackwards) {
   // AFTER
   //   offset=34 [xxxxxxxxxx|__________]
   //
-  EXPECT_CALL(*this, NetworkCallback());
+  EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoading));
   ReadLoader(16, 18, buffer);
   ConfirmLoaderOffsets(16, 0, 18);
   ConfirmBufferState(6, 10, 14, 18);
-  ConfirmLoaderDeferredState(false);
 
   // Write a little, make sure we didn't start deferring.
   WriteData(2);
-  ConfirmLoaderDeferredState(false);
 
   // Write the rest, read should complete and capacity should go back to normal.
-  EXPECT_CALL(*this, ReadCallback(18));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 18));
   WriteData(2);
   ConfirmLoaderBufferForwardCapacity(10);
-  ConfirmLoaderDeferredState(false);
 
   // POSTCONDITION
   ConfirmBufferState(4, 10, 0, 10);
   ConfirmLoaderOffsets(34, 0, 0);
-  ConfirmLoaderDeferredState(false);
 
   StopWhenLoad();
 }
 
 TEST_F(BufferedResourceLoaderTest, Tricky_ReadPastThreshold) {
-  const size_t kSize = 5 * 1024 * 1024;
-  const size_t kThreshold = 2 * 1024 * 1024;
+  const int kSize = 5 * 1024 * 1024;
+  const int kThreshold = 2 * 1024 * 1024;
 
   Initialize(kHttpUrl, 10, kSize);
   SetLoaderBuffer(10, 10);
@@ -958,7 +936,6 @@ TEST_F(BufferedResourceLoaderTest, Tricky_ReadPastThreshold) {
   WriteUntilThreshold();
   ConfirmBufferState(0, 10, 10, 10);
   ConfirmLoaderOffsets(10, 0, 0);
-  ConfirmLoaderDeferredState(true);
 
   // *** TRICKY BUSINESS, PT. VI ***
   // Read past the forward wait threshold: cache miss.
@@ -969,20 +946,16 @@ TEST_F(BufferedResourceLoaderTest, Tricky_ReadPastThreshold) {
   // AFTER
   //   offset=10 [xxxxxxxxxx]  !!! cache miss !!!
   //
-  EXPECT_CALL(*this, ReadCallback(net::ERR_CACHE_MISS));
+  EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kCacheMiss, 0));
   ReadLoader(kThreshold + 20, 10, buffer);
 
   // POSTCONDITION
   ConfirmBufferState(0, 10, 10, 10);
   ConfirmLoaderOffsets(10, 0, 0);
-  ConfirmLoaderDeferredState(true);
 
   StopWhenLoad();
 }
 
-// NOTE: This test will need to be reworked a little once
-// http://code.google.com/p/chromium/issues/detail?id=72578
-// is fixed.
 TEST_F(BufferedResourceLoaderTest, HasSingleOrigin) {
   // Make sure no redirect case works as expected.
   Initialize(kHttpUrl, -1, -1);
@@ -1012,6 +985,7 @@ TEST_F(BufferedResourceLoaderTest, HasSingleOrigin) {
   Initialize(kHttpUrl, -1, -1);
   Start();
   Redirect(kHttpRedirectToDifferentDomainUrl1);
+  FullResponse(1024);
   EXPECT_FALSE(loader_->HasSingleOrigin());
   StopWhenLoad();
 
@@ -1020,6 +994,7 @@ TEST_F(BufferedResourceLoaderTest, HasSingleOrigin) {
   Start();
   Redirect(kHttpRedirectToSameDomainUrl1);
   Redirect(kHttpRedirectToDifferentDomainUrl1);
+  FullResponse(1024);
   EXPECT_FALSE(loader_->HasSingleOrigin());
   StopWhenLoad();
 }
@@ -1110,6 +1085,47 @@ TEST_F(BufferedResourceLoaderTest, BufferWindow_PlaybackRate_AboveUpperBound) {
   loader_->SetPlaybackRate(100);
   CheckBufferWindowBounds();
   StopWhenLoad();
+}
+
+static void ExpectContentRange(
+    const std::string& str, bool expect_success,
+    int64 expected_first, int64 expected_last, int64 expected_size) {
+  int64 first, last, size;
+  ASSERT_EQ(expect_success, BufferedResourceLoader::ParseContentRange(
+      str, &first, &last, &size)) << str;
+  if (!expect_success)
+    return;
+  EXPECT_EQ(first, expected_first);
+  EXPECT_EQ(last, expected_last);
+  EXPECT_EQ(size, expected_size);
+}
+
+static void ExpectContentRangeFailure(const std::string& str) {
+  ExpectContentRange(str, false, 0, 0, 0);
+}
+
+static void ExpectContentRangeSuccess(
+    const std::string& str,
+    int64 expected_first, int64 expected_last, int64 expected_size) {
+  ExpectContentRange(str, true, expected_first, expected_last, expected_size);
+}
+
+TEST(BufferedResourceLoaderStandaloneTest, ParseContentRange) {
+  ExpectContentRangeFailure("cytes 0-499/500");
+  ExpectContentRangeFailure("bytes 0499/500");
+  ExpectContentRangeFailure("bytes 0-499500");
+  ExpectContentRangeFailure("bytes 0-499/500-blorg");
+  ExpectContentRangeFailure("bytes 0-499/500-1");
+  ExpectContentRangeFailure("bytes 0-499/400");
+  ExpectContentRangeFailure("bytes 0-/400");
+  ExpectContentRangeFailure("bytes -300/400");
+  ExpectContentRangeFailure("bytes 20-10/400");
+
+  ExpectContentRangeSuccess("bytes 0-499/500", 0, 499, 500);
+  ExpectContentRangeSuccess("bytes 0-0/500", 0, 0, 500);
+  ExpectContentRangeSuccess("bytes 10-11/50", 10, 11, 50);
+  ExpectContentRangeSuccess("bytes 10-11/*", 10, 11,
+                            kPositionNotSpecified);
 }
 
 }  // namespace webkit_media

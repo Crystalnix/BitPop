@@ -58,8 +58,6 @@ class UdpChannelTester : public base::RefCountedThreadSafe<UdpChannelTester> {
         broken_packets_(0) {
   }
 
-  virtual ~UdpChannelTester() { }
-
   void Start() {
     message_loop_->PostTask(
         FROM_HERE, base::Bind(&UdpChannelTester::DoStart, this));
@@ -78,6 +76,9 @@ class UdpChannelTester : public base::RefCountedThreadSafe<UdpChannelTester> {
   }
 
  protected:
+  friend class base::RefCountedThreadSafe<UdpChannelTester>;
+  virtual ~UdpChannelTester() {}
+
   void Done() {
     done_ = true;
     message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
@@ -120,7 +121,7 @@ class UdpChannelTester : public base::RefCountedThreadSafe<UdpChannelTester> {
       packets_sent_++;
       message_loop_->PostDelayedTask(
           FROM_HERE, base::Bind(&UdpChannelTester::DoWrite, this),
-          kUdpWriteDelayMs);
+          base::TimeDelta::FromMilliseconds(kUdpWriteDelayMs));
     }
   }
 
@@ -199,8 +200,6 @@ class TcpChannelTester : public base::RefCountedThreadSafe<TcpChannelTester> {
         read_errors_(0) {
   }
 
-  virtual ~TcpChannelTester() { }
-
   void Init() {
     // Initialize |send_buffer_|.
     send_buffer_ = new net::DrainableIOBuffer(new net::IOBuffer(kTcpDataSize),
@@ -233,6 +232,9 @@ class TcpChannelTester : public base::RefCountedThreadSafe<TcpChannelTester> {
   }
 
  protected:
+  friend class base::RefCountedThreadSafe<TcpChannelTester>;
+  virtual ~TcpChannelTester() {}
+
   void Done() {
     done_ = true;
     message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
@@ -262,7 +264,7 @@ class TcpChannelTester : public base::RefCountedThreadSafe<TcpChannelTester> {
       send_buffer_->DidConsume(result);
       message_loop_->PostDelayedTask(
           FROM_HERE, base::Bind(&TcpChannelTester::DoWrite, this),
-          kTcpWriteDelayMs);
+          base::TimeDelta::FromMilliseconds(kTcpWriteDelayMs));
     }
   }
 
@@ -439,7 +441,7 @@ TEST_F(P2PTransportImplTest, SendDataUdp) {
       &message_loop_, transport1_->GetChannel(), transport2_->GetChannel());
 
   message_loop_.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(),
-                                TestTimeouts::action_max_timeout_ms());
+                                TestTimeouts::action_max_timeout());
 
   channel_tester->Start();
   message_loop_.Run();
@@ -484,7 +486,7 @@ TEST_F(P2PTransportImplTest, SendDataTcp) {
       .RetiresOnSaturation();
 
   message_loop_.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(),
-                                TestTimeouts::action_max_timeout_ms());
+                                TestTimeouts::action_max_timeout());
 
   channel_tester->Init();
   message_loop_.Run();

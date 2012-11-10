@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -6,16 +6,16 @@
 
 #ifndef CONTENT_BROWSER_DOWNLOAD_DOWNLOAD_STATS_H_
 #define CONTENT_BROWSER_DOWNLOAD_DOWNLOAD_STATS_H_
-#pragma once
 
 #include <string>
 
 #include "base/basictypes.h"
 #include "content/common/content_export.h"
-#include "content/browser/download/interrupt_reasons.h"
+#include "content/public/browser/download_interrupt_reasons.h"
 
 namespace base {
 class Time;
+class TimeDelta;
 class TimeTicks;
 }
 
@@ -24,30 +24,15 @@ namespace download_stats {
 // We keep a count of how often various events occur in the
 // histogram "Download.Counts".
 enum DownloadCountTypes {
-  // The download was initiated by navigating to a URL (e.g. by user
-  // click).
-  // This is now unused, but left around so that the values don't change.
-  INITIATED_BY_NAVIGATION_COUNT = 0,
+  // Stale enum values left around so that values passed to UMA don't
+  // change.
+  DOWNLOAD_COUNT_UNUSED_0 = 0,
+  DOWNLOAD_COUNT_UNUSED_1,
+  DOWNLOAD_COUNT_UNUSED_2,
+  DOWNLOAD_COUNT_UNUSED_3,
+  DOWNLOAD_COUNT_UNUSED_4,
 
-  // The download was initiated by invoking a context menu within a page.
-  // This is now unused, but left around so that the values don't change.
-  INITIATED_BY_CONTEXT_MENU_COUNT,
-
-  // The download was initiated when the SavePackage system rejected
-  // a Save Page As ... by returning false from
-  // SavePackage::IsSaveableContents().
-  INITIATED_BY_SAVE_PACKAGE_FAILURE_COUNT,
-
-  // The download was initiated by a drag and drop from a drag-and-drop
-  // enabled web application.
-  INITIATED_BY_DRAG_N_DROP_COUNT,
-
-  // The download was initiated by explicit RPC from the renderer process
-  // (e.g. by Alt-click).
-  INITIATED_BY_RENDERER_COUNT,
-
-  // Downloads that made it to DownloadResourceHandler -- all of the
-  // above minus those blocked by DownloadThrottlingResourceHandler.
+  // Downloads that made it to DownloadResourceHandler
   UNTHROTTLED_COUNT,
 
   // Downloads that actually complete.
@@ -81,14 +66,40 @@ enum DownloadCountTypes {
   DOWNLOAD_COUNT_TYPES_LAST_ENTRY
 };
 
+enum DownloadSource {
+  // The download was initiated when the SavePackage system rejected
+  // a Save Page As ... by returning false from
+  // SavePackage::IsSaveableContents().
+  INITIATED_BY_SAVE_PACKAGE_ON_NON_HTML = 0,
+
+  // The download was initiated by a drag and drop from a drag-and-drop
+  // enabled web application.
+  INITIATED_BY_DRAG_N_DROP,
+
+  // The download was initiated by explicit RPC from the renderer process
+  // (e.g. by Alt-click) through the IPC ViewHostMsg_DownloadUrl.
+  INITIATED_BY_RENDERER,
+
+  // The download was initiated by a renderer or plugin process through
+  // the IPC ViewHostMsg_SaveURLAs; currently this is only used by the
+  // Pepper plugin API.
+  INITIATED_BY_PEPPER_SAVE,
+
+  DOWNLOAD_SOURCE_LAST_ENTRY
+};
+
+
 // Increment one of the above counts.
-CONTENT_EXPORT void RecordDownloadCount(DownloadCountTypes type);
+void RecordDownloadCount(DownloadCountTypes type);
+
+// Record initiation of a download from a specific source.
+void RecordDownloadSource(DownloadSource source);
 
 // Record COMPLETED_COUNT and how long the download took.
 void RecordDownloadCompleted(const base::TimeTicks& start, int64 download_len);
 
 // Record INTERRUPTED_COUNT, |reason|, |received| and |total| bytes.
-void RecordDownloadInterrupted(InterruptReason reason,
+void RecordDownloadInterrupted(content::DownloadInterruptReason reason,
                                int64 received,
                                int64 total);
 
@@ -125,6 +136,41 @@ void RecordClearAllSize(int size);
 
 // Record the number of completed unopened downloads when a download is opened.
 void RecordOpensOutstanding(int size);
+
+// Record how long we block the file thread at a time.
+void RecordContiguousWriteTime(base::TimeDelta time_blocked);
+
+// Record the percentage of time we had to block the network (i.e.
+// how often, for each download, something other than the network
+// was the bottleneck).
+void RecordNetworkBlockage(base::TimeDelta resource_handler_lifetime,
+                           base::TimeDelta resource_handler_blocked_time);
+
+// Record overall bandwidth stats at the file end.
+void RecordFileBandwidth(size_t length,
+                         base::TimeDelta disk_write_time,
+                         base::TimeDelta elapsed_time);
+
+enum SavePackageEvent {
+  // The user has started to save a page as a package.
+  SAVE_PACKAGE_STARTED,
+
+  // The save package operation was cancelled.
+  SAVE_PACKAGE_CANCELLED,
+
+  // The save package operation finished without being cancelled.
+  SAVE_PACKAGE_FINISHED,
+
+  // The save package tried to write to an already completed file.
+  SAVE_PACKAGE_WRITE_TO_COMPLETED,
+
+  // The save package tried to write to an already failed file.
+  SAVE_PACKAGE_WRITE_TO_FAILED,
+
+  SAVE_PACKAGE_LAST_ENTRY
+};
+
+void RecordSavePackageEvent(SavePackageEvent event);
 
 }  // namespace download_stats
 

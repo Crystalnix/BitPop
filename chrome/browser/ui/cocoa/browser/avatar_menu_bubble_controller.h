@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,14 +7,12 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/mac/cocoa_protocols.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #import "chrome/browser/ui/cocoa/base_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/tracking_area.h"
 
 class AvatarMenuModel;
-class AvatarMenuModelObserver;
 class Browser;
 @class HoverImageButton;
 
@@ -24,9 +22,6 @@ class Browser;
  @private
   // The model that contains the data from the backend.
   scoped_ptr<AvatarMenuModel> model_;
-
-  // Observer for changes to the model.
-  scoped_ptr<AvatarMenuModelObserver> bridge_;
 
   // Array of the below view controllers.
   scoped_nsobject<NSMutableArray> items_;
@@ -127,7 +122,6 @@ class Browser;
 
 @interface AvatarMenuBubbleController (ExposedForTesting)
 - (id)initWithModel:(AvatarMenuModel*)model
-             bridge:(AvatarMenuModelObserver*)bridge
        parentWindow:(NSWindow*)parent
          anchoredAt:(NSPoint)point;
 - (void)performLayout;

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 
 #ifndef NET_HTTP_HTTP_CACHE_TRANSACTION_H_
 #define NET_HTTP_HTTP_CACHE_TRANSACTION_H_
-#pragma once
 
 #include <string>
 
@@ -23,6 +22,7 @@ namespace net {
 
 class PartialData;
 struct HttpRequestInfo;
+class HttpTransactionDelegate;
 
 // This is the transaction that is returned by the HttpCache transaction
 // factory.
@@ -57,7 +57,7 @@ class HttpCache::Transaction : public HttpTransaction {
     UPDATE          = READ_META | WRITE,  // READ_WRITE & ~READ_DATA
   };
 
-  explicit Transaction(HttpCache* cache);
+  Transaction(HttpCache* cache, HttpTransactionDelegate* transaction_delegate);
   virtual ~Transaction();
 
   Mode mode() const { return mode_; }
@@ -85,8 +85,11 @@ class HttpCache::Transaction : public HttpTransaction {
 
   // This transaction is being deleted and we are not done writing to the cache.
   // We need to indicate that the response data was truncated.  Returns true on
-  // success.
+  // success. Keep in mind that this operation may have side effects, such as
+  // deleting the active entry.
   bool AddTruncatedFlag();
+
+  HttpCache::ActiveEntry* entry() { return entry_; }
 
   // Returns the LoadState of the writer transaction of a given ActiveEntry. In
   // other words, returns the LoadState of this transaction without asking the
@@ -307,6 +310,11 @@ class HttpCache::Transaction : public HttpTransaction {
   // Called when we are done writing to the cache entry.
   void DoneWritingToEntry(bool success);
 
+  // Returns an error to signal the caller that the current read failed. The
+  // current operation |result| is also logged. If |restart| is true, the
+  // transaction should be restarted.
+  int OnCacheReadError(int result, bool restart);
+
   // Deletes the current partial cache entry (sparse), and optionally removes
   // the control object (partial_).
   void DoomPartialEntry(bool delete_object);
@@ -319,6 +327,11 @@ class HttpCache::Transaction : public HttpTransaction {
   // working with range requests.
   int DoPartialCacheReadCompleted(int result);
 
+  // Restarts this transaction after deleting the cached data. It is meant to
+  // be used when the current request cannot be fulfilled due to conflicts
+  // between the byte range request and the cached entry.
+  int DoRestartPartialRequest();
+
   // Returns true if we should bother attempting to resume this request if it
   // is aborted while in progress. If |has_data| is true, the size of the stored
   // data is considered for the result.
@@ -326,6 +339,9 @@ class HttpCache::Transaction : public HttpTransaction {
 
   // Called to signal completion of asynchronous IO.
   void OnIOComplete(int result);
+
+  void ReportCacheActionStart();
+  void ReportCacheActionFinish();
 
   State next_state_;
   const HttpRequestInfo* request_;
@@ -364,6 +380,7 @@ class HttpCache::Transaction : public HttpTransaction {
   uint64 final_upload_progress_;
   base::WeakPtrFactory<Transaction> weak_factory_;
   CompletionCallback io_callback_;
+  HttpTransactionDelegate* transaction_delegate_;
 };
 
 }  // namespace net

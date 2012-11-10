@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,42 +9,19 @@
 #include "base/mac/mac_util.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/string_util.h"
+#import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
+#import "chrome/browser/ui/cocoa/tabs/tab_strip_model_observer_bridge.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 @interface BaseBubbleController (Private)
 - (void)updateOriginFromAnchor;
+- (void)activateTabWithContents:(TabContents*)newContents
+               previousContents:(TabContents*)oldContents
+                        atIndex:(NSInteger)index
+                    userGesture:(bool)wasUserGesture;
 @end
-
-namespace BaseBubbleControllerInternal {
-
-// This bridge listens for notifications so that the bubble closes when a user
-// switches tabs (including by opening a new one).
-class Bridge : public content::NotificationObserver {
- public:
-  explicit Bridge(BaseBubbleController* controller) : controller_(controller) {
-    registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_HIDDEN,
-        content::NotificationService::AllSources());
-  }
-
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) {
-    [controller_ close];
-  }
-
- private:
-  BaseBubbleController* controller_;  // Weak, owns this.
-  content::NotificationRegistrar registrar_;
-};
-
-}  // namespace BaseBubbleControllerInternal
 
 @implementation BaseBubbleController
 
@@ -119,7 +96,14 @@ class Bridge : public content::NotificationObserver {
   DCHECK(bubble_);
   DCHECK_EQ(self, [[self window] delegate]);
 
-  base_bridge_.reset(new BaseBubbleControllerInternal::Bridge(self));
+  BrowserWindowController* bwc =
+      [BrowserWindowController browserWindowControllerForWindow:parentWindow_];
+  if (bwc) {
+    TabStripController* tabStripController = [bwc tabStripController];
+    TabStripModel* tabStripModel = [tabStripController tabStripModel];
+    tabStripObserverBridge_.reset(new TabStripModelObserverBridge(tabStripModel,
+                                                                  self));
+  }
 
   [bubble_ setArrowLocation:info_bubble::kTopRight];
 }
@@ -161,13 +145,29 @@ class Bridge : public content::NotificationObserver {
 // position).  We cannot have an addChildWindow: and a subsequent
 // showWindow:. Thus, we have our own version.
 - (void)showWindow:(id)sender {
-  NSWindow* window = [self window];  // completes nib load
+  NSWindow* window = [self window];  // Completes nib load.
   [self updateOriginFromAnchor];
   [parentWindow_ addChildWindow:window ordered:NSWindowAbove];
   [window makeKeyAndOrderFront:self];
+  [self registerKeyStateEventTap];
 }
 
 - (void)close {
+  // The bubble will be closing, so remove the event taps.
+  if (eventTap_) {
+    [NSEvent removeMonitor:eventTap_];
+    eventTap_ = nil;
+  }
+  if (resignationObserver_) {
+    [[NSNotificationCenter defaultCenter]
+        removeObserver:resignationObserver_
+                  name:NSWindowDidResignKeyNotification
+                object:nil];
+    resignationObserver_ = nil;
+  }
+
+  tabStripObserverBridge_.reset();
+
   [[[self window] parentWindow] removeChildWindow:[self window]];
   [super close];
 }
@@ -183,6 +183,46 @@ class Bridge : public content::NotificationObserver {
     // has been sent as part of the closing operation, so no need to close.
     [self close];
   }
+}
+
+// Since the bubble shares first responder with its parent window, set
+// event handlers to dismiss the bubble when it would normally lose key
+// state.
+- (void)registerKeyStateEventTap {
+  // Parent key state sharing is only avaiable on 10.7+.
+  if (!base::mac::IsOSLionOrLater())
+    return;
+
+  NSWindow* window = self.window;
+  NSNotification* note =
+      [NSNotification notificationWithName:NSWindowDidResignKeyNotification
+                                    object:window];
+
+  // The eventTap_ catches clicks within the application that are outside the
+  // window.
+  eventTap_ = [NSEvent
+      addLocalMonitorForEventsMatchingMask:NSLeftMouseDownMask
+      handler:^NSEvent* (NSEvent* event) {
+          if (event.window != window) {
+            // Call via the runloop because this block is called in the
+            // middle of event dispatch.
+            [self performSelector:@selector(windowDidResignKey:)
+                       withObject:note
+                       afterDelay:0];
+          }
+          return event;
+      }];
+
+  // The resignationObserver_ watches for when a window resigns key state,
+  // meaning the key window has changed and the bubble should be dismissed.
+  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+  resignationObserver_ =
+      [center addObserverForName:NSWindowDidResignKeyNotification
+                          object:nil
+                           queue:[NSOperationQueue mainQueue]
+                      usingBlock:^(NSNotification* notif) {
+                          [self windowDidResignKey:note];
+                      }];
 }
 
 // By implementing this, ESC causes the window to go away.
@@ -226,6 +266,14 @@ class Bridge : public content::NotificationObserver {
 
   origin.y -= NSHeight([window frame]);
   [window setFrameOrigin:origin];
+}
+
+- (void)activateTabWithContents:(TabContents*)newContents
+               previousContents:(TabContents*)oldContents
+                        atIndex:(NSInteger)index
+                    userGesture:(bool)wasUserGesture {
+  // The user switched tabs; close.
+  [self close];
 }
 
 @end  // BaseBubbleController

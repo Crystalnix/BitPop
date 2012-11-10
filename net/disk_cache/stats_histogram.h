@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef NET_DISK_CACHE_STATS_HISTOGRAM_H_
 #define NET_DISK_CACHE_STATS_HISTOGRAM_H_
-#pragma once
 
 #include <string>
 
@@ -30,9 +29,11 @@ class StatsHistogram : public base::Histogram {
     }
   };
 
-  StatsHistogram(const std::string& name, Sample minimum,
-                 Sample maximum, size_t bucket_count)
-      : Histogram(name, minimum, maximum, bucket_count), init_(false) {}
+  StatsHistogram(const std::string& name,
+                 Sample minimum,
+                 Sample maximum,
+                 size_t bucket_count)
+      : Histogram(name, minimum, maximum, bucket_count, NULL), init_(false) {}
   virtual ~StatsHistogram();
 
   static StatsHistogram* FactoryGet(const std::string& name);
@@ -45,7 +46,6 @@ class StatsHistogram : public base::Histogram {
   virtual void SnapshotSample(SampleSet* sample) const OVERRIDE;
   virtual Inconsistencies FindCorruption(
       const SampleSet& snapshot) const OVERRIDE;
-  virtual uint32 CalculateRangeChecksum() const OVERRIDE;
 
  private:
   bool init_;

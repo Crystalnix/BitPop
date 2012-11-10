@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_INSTANT_INSTANT_LOADER_DELEGATE_H_
 #define CHROME_BROWSER_INSTANT_INSTANT_LOADER_DELEGATE_H_
-#pragma once
 
 #include "base/string16.h"
 #include "chrome/common/instant_types.h"
@@ -32,8 +31,9 @@ class InstantLoaderDelegate {
   // Returns the bounds of instant.
   virtual gfx::Rect GetInstantBounds() = 0;
 
-  // Returns true if instant should be committed on mouse up.
-  virtual bool ShouldCommitInstantOnMouseUp() = 0;
+  // Returns true if instant should be committed on mouse up or at the end of a
+  // touch-gesture.
+  virtual bool ShouldCommitInstantOnPointerRelease() = 0;
 
   // Invoked when the the loader should be committed.
   virtual void CommitInstantLoader(InstantLoader* loader) = 0;
@@ -45,8 +45,11 @@ class InstantLoaderDelegate {
   // Adds the specified url to the set of urls instant won't prefetch for.
   virtual void AddToBlacklist(InstantLoader* loader, const GURL& url) = 0;
 
-  // Invoked if the loader swaps to a different TabContents.
+  // Invoked if the loader swaps to a different WebContents.
   virtual void SwappedTabContents(InstantLoader* loader) = 0;
+
+  // Invoked when the webcontents created by the loader is focused.
+  virtual void InstantLoaderContentsFocused() = 0;
 
  protected:
   virtual ~InstantLoaderDelegate() {}

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/profiles/profile.h"
@@ -42,12 +43,12 @@ class FaviconChangeObserver : public BookmarkModelObserver {
   }
   void WaitForGetFavicon() {
     wait_for_load_ = true;
-    ui_test_utils::RunMessageLoop();
+    content::RunMessageLoop();
     ASSERT_TRUE(node_->is_favicon_loaded());
   }
   void WaitForSetFavicon() {
     wait_for_load_ = false;
-    ui_test_utils::RunMessageLoop();
+    content::RunMessageLoop();
   }
   virtual void Loaded(BookmarkModel* model, bool ids_reassigned) OVERRIDE {}
   virtual void BookmarkNodeMoved(BookmarkModel* model,
@@ -138,22 +139,22 @@ bool FaviconBitmapsMatch(const SkBitmap& bitmap_a, const SkBitmap& bitmap_b) {
 }
 
 // Gets the favicon associated with |node| in |model|.
-const SkBitmap& GetFavicon(BookmarkModel* model, const BookmarkNode* node) {
+gfx::Image GetFavicon(BookmarkModel* model, const BookmarkNode* node) {
   // If a favicon wasn't explicitly set for a particular URL, simply return its
   // blank favicon.
   if (!urls_with_favicons_ ||
       urls_with_favicons_->find(node->url()) == urls_with_favicons_->end()) {
-    return node->favicon();
+    return gfx::Image();
   }
   // If a favicon was explicitly set, we may need to wait for it to be loaded
-  // via BookmarkModel::GetFavIcon(), which is an asynchronous operation.
+  // via BookmarkModel::GetFavicon(), which is an asynchronous operation.
   if (!node->is_favicon_loaded()) {
     FaviconChangeObserver observer(model, node);
     model->GetFavicon(node);
     observer.WaitForGetFavicon();
   }
   EXPECT_TRUE(node->is_favicon_loaded());
-  return node->favicon();
+  return model->GetFavicon(node);
 }
 
 // Checks if the favicon in |node_a| from |model_a| matches that of |node_b|
@@ -162,9 +163,13 @@ bool FaviconsMatch(BookmarkModel* model_a,
                    BookmarkModel* model_b,
                    const BookmarkNode* node_a,
                    const BookmarkNode* node_b) {
-  const SkBitmap& bitmap_a = GetFavicon(model_a, node_a);
-  const SkBitmap& bitmap_b = GetFavicon(model_b, node_b);
-  return FaviconBitmapsMatch(bitmap_a, bitmap_b);
+  const gfx::Image& bitmap_a = GetFavicon(model_a, node_a);
+  const gfx::Image& bitmap_b = GetFavicon(model_b, node_b);
+
+  if (bitmap_a.IsEmpty() && bitmap_b.IsEmpty())
+    return true;  // Two empty images are equivalent.
+  return !bitmap_a.IsEmpty() && !bitmap_b.IsEmpty() &&
+          FaviconBitmapsMatch(*bitmap_a.ToSkBitmap(), *bitmap_b.ToSkBitmap());
 }
 
 // Does a deep comparison of BookmarkNode fields in |model_a| and |model_b|.
@@ -253,7 +258,7 @@ void FindNodeInVerifier(BookmarkModel* foreign_model,
 namespace bookmarks_helper {
 
 BookmarkModel* GetBookmarkModel(int index) {
-  return test()->GetProfile(index)->GetBookmarkModel();
+  return BookmarkModelFactory::GetForProfile(test()->GetProfile(index));
 }
 
 const BookmarkNode* GetBookmarkBarNode(int index) {
@@ -264,8 +269,12 @@ const BookmarkNode* GetOtherNode(int index) {
   return GetBookmarkModel(index)->other_node();
 }
 
+const BookmarkNode* GetSyncedBookmarksNode(int index) {
+  return GetBookmarkModel(index)->mobile_node();
+}
+
 BookmarkModel* GetVerifierBookmarkModel() {
-  return test()->verifier()->GetBookmarkModel();
+  return BookmarkModelFactory::GetForProfile(test()->verifier());
 }
 
 const BookmarkNode* AddURL(int profile,

@@ -9,14 +9,18 @@
 #include "base/logging.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/pending_extension_info.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/string_ordinal.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using extensions::Extension;
 
 SyncExtensionHelper::ExtensionState::ExtensionState()
     : enabled_state(ENABLED), incognito_enabled(false) {}
@@ -59,13 +63,16 @@ void SyncExtensionHelper::SetupIfNecessary(SyncTest* test) {
   setup_completed_ = true;
 }
 
-void SyncExtensionHelper::InstallExtension(
+std::string SyncExtensionHelper::InstallExtension(
     Profile* profile, const std::string& name, Extension::Type type) {
   scoped_refptr<Extension> extension = GetExtension(profile, name, type);
-  ASSERT_TRUE(extension.get()) << "Could not get extension " << name
-                               << " (profile = " << profile << ")";
+  if (!extension.get()) {
+    NOTREACHED() << "Could not install extension " << name;
+    return "";
+  }
   profile->GetExtensionService()->OnExtensionInstalled(
       extension, extension->UpdatesFromGallery(), StringOrdinal());
+  return extension->id();
 }
 
 void SyncExtensionHelper::UninstallExtension(
@@ -96,7 +103,8 @@ void SyncExtensionHelper::EnableExtension(Profile* profile,
 
 void SyncExtensionHelper::DisableExtension(Profile* profile,
                                            const std::string& name) {
-  profile->GetExtensionService()->DisableExtension(NameToId(name));
+  profile->GetExtensionService()->DisableExtension(
+      NameToId(name), Extension::DISABLE_USER_ACTION);
 }
 
 bool SyncExtensionHelper::IsExtensionEnabled(
@@ -122,13 +130,13 @@ bool SyncExtensionHelper::IsIncognitoEnabled(
 
 bool SyncExtensionHelper::IsExtensionPendingInstallForSync(
     Profile* profile, const std::string& id) const {
-  const PendingExtensionManager* pending_extension_manager =
+  const extensions::PendingExtensionManager* pending_extension_manager =
       profile->GetExtensionService()->pending_extension_manager();
-  PendingExtensionInfo info;
-  if (!pending_extension_manager->GetById(id, &info)) {
+  const extensions::PendingExtensionInfo* info =
+      pending_extension_manager->GetById(id);
+  if (!info)
     return false;
-  }
-  return info.is_from_sync();
+  return info->is_from_sync();
 }
 
 void SyncExtensionHelper::InstallExtensionsPendingForSync(
@@ -139,26 +147,26 @@ void SyncExtensionHelper::InstallExtensionsPendingForSync(
 
   // We make a copy here since InstallExtension() removes the
   // extension from the extensions service's copy.
-  const PendingExtensionManager* pending_extension_manager =
+  const extensions::PendingExtensionManager* pending_extension_manager =
       profile->GetExtensionService()->pending_extension_manager();
 
-  std::set<std::string> pending_crx_ids;
+  std::list<std::string> pending_crx_ids;
   pending_extension_manager->GetPendingIdsForUpdateCheck(&pending_crx_ids);
 
-  std::set<std::string>::const_iterator id;
-  PendingExtensionInfo info;
-  for (id = pending_crx_ids.begin(); id != pending_crx_ids.end(); ++id) {
-    ASSERT_TRUE(pending_extension_manager->GetById(*id, &info));
-    if (!info.is_from_sync())
+  std::list<std::string>::const_iterator iter;
+  const extensions::PendingExtensionInfo* info = NULL;
+  for (iter = pending_crx_ids.begin(); iter != pending_crx_ids.end(); ++iter) {
+    ASSERT_TRUE((info = pending_extension_manager->GetById(*iter)));
+    if (!info->is_from_sync())
       continue;
 
-    StringMap::const_iterator it2 = id_to_name_.find(*id);
-    if (it2 == id_to_name_.end()) {
-      ADD_FAILURE() << "Could not get name for id " << *id
+    StringMap::const_iterator iter2 = id_to_name_.find(*iter);
+    if (iter2 == id_to_name_.end()) {
+      ADD_FAILURE() << "Could not get name for id " << *iter
                     << " (profile = " << profile->GetDebugName() << ")";
       continue;
     }
-    InstallExtension(profile, it2->second, type);
+    InstallExtension(profile, iter2->second, type);
   }
 }
 
@@ -188,13 +196,13 @@ SyncExtensionHelper::ExtensionStateMap
                  "enabled" : "disabled");
   }
 
-  const PendingExtensionManager* pending_extension_manager =
+  const extensions::PendingExtensionManager* pending_extension_manager =
       extension_service->pending_extension_manager();
 
-  std::set<std::string> pending_crx_ids;
+  std::list<std::string> pending_crx_ids;
   pending_extension_manager->GetPendingIdsForUpdateCheck(&pending_crx_ids);
 
-  std::set<std::string>::const_iterator id;
+  std::list<std::string>::const_iterator id;
   for (id = pending_crx_ids.begin(); id != pending_crx_ids.end(); ++id) {
     extension_state_map[*id].enabled_state = ExtensionState::PENDING;
     extension_state_map[*id].incognito_enabled =
@@ -235,7 +243,7 @@ bool SyncExtensionHelper::ExtensionStatesMatch(
 }
 
 void SyncExtensionHelper::SetupProfile(Profile* profile) {
-  profile->InitExtensions(true);
+  extensions::ExtensionSystem::Get(profile)->InitForRegularProfile(true);
   profile_extensions_.insert(make_pair(profile, ExtensionNameMap()));
 }
 
@@ -288,8 +296,8 @@ scoped_refptr<Extension> CreateExtension(
   }
   std::string error;
   scoped_refptr<Extension> extension =
-      Extension::Create(extension_dir, Extension::INTERNAL,
-                        source, Extension::STRICT_ERROR_CHECKS, &error);
+      Extension::Create(extension_dir, Extension::INTERNAL, source,
+                        Extension::NO_FLAGS, &error);
   if (!error.empty()) {
     ADD_FAILURE() << error;
     return NULL;

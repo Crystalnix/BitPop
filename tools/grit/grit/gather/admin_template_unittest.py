@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,7 +8,7 @@
 import os
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '../..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../..'))
 
 import StringIO
 import tempfile
@@ -29,7 +29,7 @@ class AdmGathererUnittest(unittest.TestCase):
       '[strings] \n'
       'whatcha="bingo bongo"\n'
       'gotcha = "bingolabongola "the wise" fingulafongula" \n')
-    gatherer = admin_template.AdmGatherer.FromFile(pseudofile)
+    gatherer = admin_template.AdmGatherer(pseudofile)
     gatherer.Parse()
     self.failUnless(len(gatherer.GetCliques()) == 2)
     self.failUnless(gatherer.GetCliques()[1].GetMessage().GetRealContent() ==
@@ -44,7 +44,7 @@ class AdmGathererUnittest(unittest.TestCase):
       'ding dong\n'
       'whatcha="bingo bongo"\n'
       'gotcha = "bingolabongola "the wise" fingulafongula" \n')
-    gatherer = admin_template.AdmGatherer.FromFile(pseudofile)
+    gatherer = admin_template.AdmGatherer(pseudofile)
     self.assertRaises(admin_template.MalformedAdminTemplateException,
                       gatherer.Parse)
 
@@ -59,13 +59,13 @@ class AdmGathererUnittest(unittest.TestCase):
 
   def VerifyCliquesFromAdmFile(self, cliques):
     self.failUnless(len(cliques) > 20)
-    for ix in range(len(self._TRANSLATABLES_FROM_FILE)):
-      text = cliques[ix].GetMessage().GetRealContent()
-      self.failUnless(text == self._TRANSLATABLES_FROM_FILE[ix])
+    for clique, expected in zip(cliques, self._TRANSLATABLES_FROM_FILE):
+      text = clique.GetMessage().GetRealContent()
+      self.failUnless(text == expected)
 
   def testFromFile(self):
     fname = util.PathFromRoot('grit/testdata/GoogleDesktop.adm')
-    gatherer = admin_template.AdmGatherer.FromFile(fname)
+    gatherer = admin_template.AdmGatherer(fname)
     gatherer.Parse()
     cliques = gatherer.GetCliques()
     self.VerifyCliquesFromAdmFile(cliques)
@@ -85,6 +85,7 @@ class AdmGathererUnittest(unittest.TestCase):
           <output filename="de_res.rc" type="rc_all" lang="de" />
         </outputs>
       </grit>'''), util.PathFromRoot('grit/testdata'))
+    grd.SetOutputLanguage('en')
     grd.RunGatherers(recursive=True)
     return grd
 

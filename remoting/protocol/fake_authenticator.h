@@ -5,6 +5,7 @@
 #ifndef REMOTING_PROTOCOL_FAKE_AUTHENTICATOR_H_
 #define REMOTING_PROTOCOL_FAKE_AUTHENTICATOR_H_
 
+#include "base/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "remoting/protocol/authenticator.h"
 #include "remoting/protocol/channel_authenticator.h"
@@ -19,16 +20,25 @@ class FakeChannelAuthenticator : public ChannelAuthenticator {
 
   // ChannelAuthenticator interface.
   virtual void SecureAndAuthenticate(
-      net::StreamSocket* socket, const DoneCallback& done_callback) OVERRIDE;
+      scoped_ptr<net::StreamSocket> socket,
+      const DoneCallback& done_callback) OVERRIDE;
 
  private:
   void CallCallback(
-      const DoneCallback& done_callback,
       net::Error error,
-      net::StreamSocket* socket);
+      scoped_ptr<net::StreamSocket> socket);
 
-  bool accept_;
+  void OnAuthBytesWritten(int result);
+  void OnAuthBytesRead(int result);
+
+  net::Error result_;
   bool async_;
+
+  scoped_ptr<net::StreamSocket> socket_;
+  DoneCallback done_callback_;
+
+  bool did_read_bytes_;
+  bool did_write_bytes_;
 
   base::WeakPtrFactory<FakeChannelAuthenticator> weak_factory_;
 
@@ -79,6 +89,7 @@ class FakeHostAuthenticatorFactory : public AuthenticatorFactory {
 
   // AuthenticatorFactory interface.
   virtual scoped_ptr<Authenticator> CreateAuthenticator(
+      const std::string& local_jid,
       const std::string& remote_jid,
       const buzz::XmlElement* first_message) OVERRIDE;
 

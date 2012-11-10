@@ -25,6 +25,7 @@
   F(PPB_AudioInputTrusted_API) \
   F(PPB_AudioTrusted_API) \
   F(PPB_Broker_API) \
+  F(PPB_BrowserFont_Trusted_API) \
   F(PPB_Buffer_API) \
   F(PPB_BufferTrusted_API) \
   F(PPB_DeviceRef_API) \
@@ -34,20 +35,24 @@
   F(PPB_FileRef_API) \
   F(PPB_FileSystem_API) \
   F(PPB_Find_API) \
+  F(PPB_Flash_DeviceID_API) \
   F(PPB_Flash_Menu_API) \
-  F(PPB_Flash_NetConnector_API) \
-  F(PPB_Font_API) \
+  F(PPB_Flash_MessageLoop_API) \
   F(PPB_Graphics2D_API) \
   F(PPB_Graphics3D_API) \
+  F(PPB_HostResolver_Private_API) \
   F(PPB_ImageData_API) \
   F(PPB_InputEvent_API) \
   F(PPB_LayerCompositor_API) \
   F(PPB_MessageLoop_API) \
+  F(PPB_NetworkList_Private_API) \
+  F(PPB_NetworkMonitor_Private_API) \
   F(PPB_PDFFont_API) \
   F(PPB_ResourceArray_API) \
   F(PPB_Scrollbar_API) \
+  F(PPB_Talk_Private_API) \
+  F(PPB_TCPServerSocket_Private_API) \
   F(PPB_TCPSocket_Private_API) \
-  F(PPB_Transport_API) \
   F(PPB_UDPSocket_Private_API) \
   F(PPB_URLLoader_API) \
   F(PPB_URLRequestInfo_API) \
@@ -57,7 +62,12 @@
   F(PPB_VideoLayer_API) \
   F(PPB_View_API) \
   F(PPB_WebSocket_API) \
-  F(PPB_Widget_API)
+  F(PPB_Widget_API) \
+  F(PPB_X509Certificate_Private_API)
+
+namespace IPC {
+class Message;
+}
 
 namespace ppapi {
 
@@ -68,17 +78,44 @@ FOR_ALL_PPAPI_RESOURCE_APIS(DECLARE_RESOURCE_CLASS)
 #undef DECLARE_RESOURCE_CLASS
 }  // namespace thunk
 
+// Resources have slightly different registration behaviors when the're an
+// in-process ("impl") resource in the host (renderer) process, or when they're
+// a proxied resource in the plugin process. This enum differentiates those
+// cases.
+enum ResourceObjectType {
+  OBJECT_IS_IMPL,
+  OBJECT_IS_PROXY
+};
+
 class PPAPI_SHARED_EXPORT Resource : public base::RefCounted<Resource> {
  public:
-  // For constructing non-proxied objects. This just takes the associated
-  // instance, and generates a new resource ID. The host resource will be the
-  // same as the newly-generated resource ID.
-  explicit Resource(PP_Instance instance);
+  // Constructor for impl and non-proxied, instance-only objects.
+  //
+  // For constructing "impl" (non-proxied) objects, this just takes the
+  // associated instance, and generates a new resource ID. The host resource
+  // will be the same as the newly-generated resource ID. For all objects in
+  // the renderer (host) process, you'll use this constructor and call it with
+  // OBJECT_IS_IMPL.
+  //
+  // For proxied objects, this will create an "instance-only" object which
+  // lives only in the plugin and doesn't have a corresponding object in the
+  // host. If you have a host resource ID, use the constructor below which
+  // takes that HostResource value.
+  explicit Resource(ResourceObjectType type, PP_Instance instance);
 
-  // For constructing proxied objects. This takes the resource generated in
-  // the host side, stores it, and allocates a "local" resource ID for use in
-  // the current process.
-  explicit Resource(const HostResource& host_resource);
+  // For constructing given a host resource.
+  //
+  // For OBJECT_IS_PROXY objects, this takes the resource generated in the host
+  // side, stores it, and allocates a "local" resource ID for use in the
+  // current process.
+  //
+  // For OBJECT_IS_IMPL, the host resource ID must be 0, since there should be
+  // no host resource generated (impl objects should generate their own). The
+  // reason for supporting this constructor at all for the IMPL case is that
+  // some shared objects use a host resource for both modes to keep things the
+  // same.
+  explicit Resource(ResourceObjectType type,
+                    const HostResource& host_resource);
 
   virtual ~Resource();
 
@@ -127,6 +164,22 @@ class PPAPI_SHARED_EXPORT Resource : public base::RefCounted<Resource> {
 
   // Template-based dynamic casting. See specializations below.
   template <typename T> T* GetAs() { return NULL; }
+
+  // Called when a PpapiPluginMsg_ResourceReply reply is received for a
+  // previous CallRenderer. The sequence number is the value returned the
+  // send function for the given request. The message is the nested reply
+  // message, which may be an empty message (depending on what the host
+  // sends).
+  //
+  // The default implementation will assert (if you send a request, you should
+  // override this function).
+  //
+  // (This function would make more conceptual sense on PluginResource but we
+  // need to call this function from general code that doesn't know how to
+  // distinguish the classes.)
+  virtual void OnReplyReceived(int sequence,
+                               int32_t result,
+                               const IPC::Message& msg);
 
  protected:
   // Logs a message to the console from this resource.

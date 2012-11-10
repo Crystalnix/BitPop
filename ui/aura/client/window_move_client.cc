@@ -5,19 +5,23 @@
 #include "ui/aura/client/window_move_client.h"
 
 #include "ui/aura/window.h"
+#include "ui/aura/window_property.h"
+
+DECLARE_WINDOW_PROPERTY_TYPE(aura::client::WindowMoveClient*)
 
 namespace aura {
 namespace client {
 
-const char kWindowMoveClientKey[] = "WindowMoveClient";
+// A property key to store a client that handles window moves.
+DEFINE_LOCAL_WINDOW_PROPERTY_KEY(
+    WindowMoveClient*, kWindowMoveClientKey, NULL);
 
 void SetWindowMoveClient(Window* window, WindowMoveClient* client) {
   window->SetProperty(kWindowMoveClientKey, client);
 }
 
 WindowMoveClient* GetWindowMoveClient(Window* window) {
-  return reinterpret_cast<WindowMoveClient*>(
-      window->GetProperty(kWindowMoveClientKey));
+  return window->GetProperty(kWindowMoveClientKey);
 }
 
 }  // namespace client

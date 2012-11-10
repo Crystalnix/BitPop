@@ -7,10 +7,13 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop.h"
 #include "base/time.h"
+#include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/upload_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -22,6 +25,18 @@ namespace {
 
 const char kTestData[] = "0123456789";
 const size_t kTestDataSize = arraysize(kTestData) - 1;
+const size_t kTestBufferSize = 1 << 14;  // 16KB.
+
+// Reads data from the upload data stream, and returns the data as string.
+std::string ReadFromUploadDataStream(UploadDataStream* stream) {
+  std::string data_read;
+  scoped_refptr<IOBuffer> buf = new IOBuffer(kTestBufferSize);
+  while (!stream->IsEOF()) {
+    const int bytes_read = stream->Read(buf, kTestBufferSize);
+    data_read.append(buf->data(), bytes_read);
+  }
+  return data_read;
+}
 
 }  // namespace
 
@@ -38,26 +53,29 @@ class UploadDataStreamTest : public PlatformTest {
 
 TEST_F(UploadDataStreamTest, EmptyUploadData) {
   upload_data_->AppendBytes("", 0);
-  scoped_ptr<UploadDataStream> stream(
-      UploadDataStream::Create(upload_data_, NULL));
+  scoped_ptr<UploadDataStream> stream(new UploadDataStream(upload_data_));
+  ASSERT_EQ(OK, stream->Init());
   ASSERT_TRUE(stream.get());
   EXPECT_EQ(0U, stream->size());
   EXPECT_EQ(0U, stream->position());
-  EXPECT_TRUE(stream->eof());
+  EXPECT_TRUE(stream->IsEOF());
 }
 
 TEST_F(UploadDataStreamTest, ConsumeAll) {
   upload_data_->AppendBytes(kTestData, kTestDataSize);
-  scoped_ptr<UploadDataStream> stream(
-      UploadDataStream::Create(upload_data_, NULL));
+  scoped_ptr<UploadDataStream> stream(new UploadDataStream(upload_data_));
+  ASSERT_EQ(OK, stream->Init());
   ASSERT_TRUE(stream.get());
   EXPECT_EQ(kTestDataSize, stream->size());
   EXPECT_EQ(0U, stream->position());
-  EXPECT_FALSE(stream->eof());
-  while (!stream->eof()) {
-    stream->MarkConsumedAndFillBuffer(stream->buf_len());
+  EXPECT_FALSE(stream->IsEOF());
+  scoped_refptr<IOBuffer> buf = new IOBuffer(kTestBufferSize);
+  while (!stream->IsEOF()) {
+    int bytes_read = stream->Read(buf, kTestBufferSize);
+    ASSERT_LE(0, bytes_read);  // Not an error.
   }
   EXPECT_EQ(kTestDataSize, stream->position());
+  ASSERT_TRUE(stream->IsEOF());
 }
 
 TEST_F(UploadDataStreamTest, FileSmallerThanLength) {
@@ -73,18 +91,20 @@ TEST_F(UploadDataStreamTest, FileSmallerThanLength) {
   element.SetContentLength(kFakeSize);
   elements.push_back(element);
   upload_data_->SetElements(elements);
-  EXPECT_EQ(kFakeSize, upload_data_->GetContentLength());
+  EXPECT_EQ(kFakeSize, upload_data_->GetContentLengthSync());
 
-  scoped_ptr<UploadDataStream> stream(
-      UploadDataStream::Create(upload_data_, NULL));
+  scoped_ptr<UploadDataStream> stream(new UploadDataStream(upload_data_));
+  ASSERT_EQ(OK, stream->Init());
   ASSERT_TRUE(stream.get());
   EXPECT_EQ(kFakeSize, stream->size());
   EXPECT_EQ(0U, stream->position());
-  EXPECT_FALSE(stream->eof());
+  EXPECT_FALSE(stream->IsEOF());
   uint64 read_counter = 0;
-  while (!stream->eof()) {
-    read_counter += stream->buf_len();
-    stream->MarkConsumedAndFillBuffer(stream->buf_len());
+  scoped_refptr<IOBuffer> buf = new IOBuffer(kTestBufferSize);
+  while (!stream->IsEOF()) {
+    int bytes_read = stream->Read(buf, kTestBufferSize);
+    ASSERT_LE(0, bytes_read);  // Not an error.
+    read_counter += bytes_read;
     EXPECT_EQ(read_counter, stream->position());
   }
   // UpdateDataStream will pad out the file with 0 bytes so that the HTTP
@@ -102,15 +122,17 @@ void UploadDataStreamTest::FileChangedHelper(const FilePath& file_path,
   UploadData::Element element;
   element.SetToFilePathRange(file_path, 1, 2, time);
   elements.push_back(element);
-  upload_data_->SetElements(elements);
+  // Don't use upload_data_ here, as this function is called twice, and
+  // reusing upload_data_ is wrong.
+  scoped_refptr<UploadData> upload_data(new UploadData);
+  upload_data->SetElements(elements);
 
-  int error_code;
-  scoped_ptr<UploadDataStream> stream(
-      UploadDataStream::Create(upload_data_, &error_code));
+  scoped_ptr<UploadDataStream> stream(new UploadDataStream(upload_data));
+  int error_code = stream->Init();
   if (error_expected)
-    ASSERT_TRUE(!stream.get() && error_code == ERR_UPLOAD_FILE_CHANGED);
+    ASSERT_EQ(ERR_UPLOAD_FILE_CHANGED, error_code);
   else
-    ASSERT_TRUE(stream.get() && error_code == OK);
+    ASSERT_EQ(OK, error_code);
 }
 
 TEST_F(UploadDataStreamTest, FileChanged) {
@@ -129,6 +151,38 @@ TEST_F(UploadDataStreamTest, FileChanged) {
   FileChangedHelper(temp_file_path,
                     file_info.last_modified - base::TimeDelta::FromSeconds(1),
                     true);
+
+  file_util::Delete(temp_file_path, false);
+}
+
+TEST_F(UploadDataStreamTest, UploadDataReused) {
+  FilePath temp_file_path;
+  ASSERT_TRUE(file_util::CreateTemporaryFile(&temp_file_path));
+  ASSERT_EQ(static_cast<int>(kTestDataSize),
+            file_util::WriteFile(temp_file_path, kTestData, kTestDataSize));
+
+  // Prepare |upload_data_| that contains a file.
+  std::vector<UploadData::Element> elements;
+  UploadData::Element element;
+  element.SetToFilePath(temp_file_path);
+  elements.push_back(element);
+  upload_data_->SetElements(elements);
+  EXPECT_EQ(kTestDataSize, upload_data_->GetContentLengthSync());
+
+  // Confirm that the file is read properly.
+  {
+    UploadDataStream stream(upload_data_);
+    ASSERT_EQ(OK, stream.Init());
+    EXPECT_EQ(kTestData, ReadFromUploadDataStream(&stream));
+  }
+
+  // Reuse |upload_data_| for another UploadDataStream, and confirm that the
+  // file is read properly.
+  {
+    UploadDataStream stream(upload_data_);
+    ASSERT_EQ(OK, stream.Init());
+    EXPECT_EQ(kTestData, ReadFromUploadDataStream(&stream));
+  }
 
   file_util::Delete(temp_file_path, false);
 }

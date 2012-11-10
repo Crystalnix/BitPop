@@ -4,21 +4,20 @@
 
 #ifndef CHROME_RENDERER_CHROME_MOCK_RENDER_THREAD_H_
 #define CHROME_RENDERER_CHROME_MOCK_RENDER_THREAD_H_
-#pragma once
 
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "chrome/common/extensions/extension_set.h"
-#include "chrome/renderer/mock_printer.h"
-#include "content/test/mock_render_thread.h"
+#include "content/public/test/mock_render_thread.h"
 
 namespace base {
 class DictionaryValue;
 }
 
+class MockPrinter;
 struct PrintHostMsg_DidGetPreviewPageCount_Params;
 struct PrintHostMsg_DidPreviewPage_Params;
+struct PrintHostMsg_DidPrintPage_Params;
 struct PrintHostMsg_ScriptedPrint_Params;
 struct PrintMsg_PrintPages_Params;
 struct PrintMsg_Print_Params;
@@ -34,7 +33,7 @@ class ChromeMockRenderThread : public content::MockRenderThread {
   // The following functions are called by the test itself.
 
   // Returns the pseudo-printer instance.
-  MockPrinter* printer() const { return printer_.get(); }
+  MockPrinter* printer();
 
   // Call with |response| set to true if the user wants to print.
   // False if the user decides to cancel.
@@ -44,7 +43,7 @@ class ChromeMockRenderThread : public content::MockRenderThread {
   void set_print_preview_cancel_page_number(int page);
 
   // Get the number of pages to generate for print preview.
-  int print_preview_pages_remaining();
+  int print_preview_pages_remaining() const;
 
  private:
   // Overrides base class implementation to add custom handling for
@@ -52,15 +51,16 @@ class ChromeMockRenderThread : public content::MockRenderThread {
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
 
   // The callee expects to be returned a valid channel_id.
-  void OnMsgOpenChannelToExtension(
-      int routing_id, const std::string& extension_id,
-      const std::string& source_extension_id,
-      const std::string& target_extension_id, int* port_id);
+  void OnMsgOpenChannelToExtension(int routing_id,
+                                   const std::string& extension_id,
+                                   const std::string& source_extension_id,
+                                   const std::string& target_extension_id,
+                                   int* port_id);
 
 #if defined(OS_CHROMEOS)
   void OnAllocateTempFileForPrinting(base::FileDescriptor* renderer_fd,
                                      int* browser_fd);
-  void OnTempFileForPrintingWritten(int browser_fd);
+  void OnTempFileForPrintingWritten(int render_view_id, int browser_fd);
 #endif
 
   // PrintWebViewHelper expects default print settings.
@@ -75,7 +75,7 @@ class ChromeMockRenderThread : public content::MockRenderThread {
   void OnDidGetPreviewPageCount(
       const PrintHostMsg_DidGetPreviewPageCount_Params& params);
   void OnDidPreviewPage(const PrintHostMsg_DidPreviewPage_Params& params);
-  void OnCheckForCancel(const std::string& preview_ui_addr,
+  void OnCheckForCancel(int32 preview_ui_id,
                         int preview_request_id,
                         bool* cancel);
 

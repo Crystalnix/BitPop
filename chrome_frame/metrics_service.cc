@@ -50,6 +50,8 @@
 #include "third_party/bzip2/bzlib.h"
 #endif
 
+#include "base/metrics/statistics_recorder.h"
+#include "base/string16.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/synchronization/lock.h"
@@ -70,8 +72,6 @@ using base::Time;
 using base::TimeDelta;
 using base::win::ScopedComPtr;
 
-static const char kMetricsType[] = "application/vnd.mozilla.metrics.bz2";
-
 // The first UMA upload occurs after this interval.
 static const int kInitialUMAUploadTimeoutMilliSeconds = 30000;
 
@@ -81,11 +81,9 @@ static const int kMinMilliSecondsPerUMAUpload = 600000;
 base::LazyInstance<base::ThreadLocalPointer<MetricsService> >
     MetricsService::g_metrics_instance_ = LAZY_INSTANCE_INITIALIZER;
 
-base::Lock MetricsService::metrics_service_lock_;
+std::string MetricsService::client_id_;
 
-// Initialize histogram statistics gathering system.
-base::LazyInstance<base::StatisticsRecorder>
-    g_statistics_recorder_ = LAZY_INSTANCE_INITIALIZER;
+base::Lock MetricsService::metrics_service_lock_;
 
 // This class provides functionality to upload the ChromeFrame UMA data to the
 // server. An instance of this class is created whenever we have data to be
@@ -103,13 +101,15 @@ class ChromeFrameMetricsDataUploader : public BSCBImpl {
   }
 
   static HRESULT ChromeFrameMetricsDataUploader::UploadDataHelper(
-      const std::string& upload_data) {
+      const std::string& upload_data,
+      const std::string& server_url,
+      const std::string& mime_type) {
     CComObject<ChromeFrameMetricsDataUploader>* data_uploader = NULL;
     CComObject<ChromeFrameMetricsDataUploader>::CreateInstance(&data_uploader);
     DCHECK(data_uploader != NULL);
 
     data_uploader->AddRef();
-    HRESULT hr = data_uploader->UploadData(upload_data);
+    HRESULT hr = data_uploader->UploadData(upload_data, server_url, mime_type);
     if (FAILED(hr)) {
       DLOG(ERROR) << "Failed to initialize ChromeFrame UMA data uploader: Err"
                   << hr;
@@ -118,7 +118,9 @@ class ChromeFrameMetricsDataUploader : public BSCBImpl {
     return hr;
   }
 
-  HRESULT UploadData(const std::string& upload_data) {
+  HRESULT UploadData(const std::string& upload_data,
+                     const std::string& server_url,
+                     const std::string& mime_type) {
     if (upload_data.empty()) {
       NOTREACHED() << "Invalid upload data";
       return E_INVALIDARG;
@@ -143,10 +145,10 @@ class ChromeFrameMetricsDataUploader : public BSCBImpl {
 
     RewindStream(cache_stream_);
 
-    BrowserDistribution* dist = BrowserDistribution::GetSpecificDistribution(
-        BrowserDistribution::CHROME_FRAME);
-    server_url_ = dist->GetStatsServerURL();
+    server_url_ = ASCIIToWide(server_url);
+    mime_type_ = mime_type;
     DCHECK(!server_url_.empty());
+    DCHECK(!mime_type_.empty());
 
     hr = CreateURLMoniker(NULL, server_url_.c_str(),
                           upload_moniker_.Receive());
@@ -182,7 +184,7 @@ class ChromeFrameMetricsDataUploader : public BSCBImpl {
                      "Content-Type: %s\r\n"
                      "%s\r\n",
                      base::Int64ToString(upload_data_size_).c_str(),
-                     kMetricsType,
+                     mime_type_.c_str(),
                      http_utils::GetDefaultUserAgentHeaderWithCFTag().c_str());
 
     *additional_headers = reinterpret_cast<wchar_t*>(
@@ -227,6 +229,7 @@ class ChromeFrameMetricsDataUploader : public BSCBImpl {
 
  private:
   std::wstring server_url_;
+  std::string mime_type_;
   size_t upload_data_size_;
   ScopedComPtr<IStream> cache_stream_;
   ScopedComPtr<IMoniker> upload_moniker_;
@@ -264,8 +267,7 @@ void MetricsService::InitializeMetricsState() {
   session_id_ = CrashMetricsReporter::GetInstance()->IncrementMetric(
       CrashMetricsReporter::SESSION_ID);
 
-  // Ensure that an instance of the StatisticsRecorder object is created.
-  g_statistics_recorder_.Get();
+  base::StatisticsRecorder::Initialize();
   CrashMetricsReporter::GetInstance()->set_active(true);
 }
 
@@ -295,12 +297,7 @@ void MetricsService::SetRecording(bool enabled) {
     return;
 
   if (enabled) {
-    if (client_id_.empty()) {
-      client_id_ = GenerateClientID();
-      // Save client id somewhere.
-    }
     StartRecording();
-
   } else {
     state_ = STOPPED;
   }
@@ -308,18 +305,24 @@ void MetricsService::SetRecording(bool enabled) {
 }
 
 // static
-std::string MetricsService::GenerateClientID() {
-  const int kGUIDSize = 39;
+const std::string& MetricsService::GetClientID() {
+  // TODO(robertshield): Chrome Frame shouldn't generate a new ID on every run
+  // as this apparently breaks some assumptions during metric analysis.
+  // See http://crbug.com/117188
+  if (client_id_.empty()) {
+    const int kGUIDSize = 39;
 
-  GUID guid;
-  HRESULT guid_result = CoCreateGuid(&guid);
-  DCHECK(SUCCEEDED(guid_result));
+    GUID guid;
+    HRESULT guid_result = CoCreateGuid(&guid);
+    DCHECK(SUCCEEDED(guid_result));
 
-  std::wstring guid_string;
-  int result = StringFromGUID2(guid,
-                               WriteInto(&guid_string, kGUIDSize), kGUIDSize);
-  DCHECK(result == kGUIDSize);
-  return WideToUTF8(guid_string.substr(1, guid_string.length() - 2));
+    string16 guid_string;
+    int result = StringFromGUID2(guid,
+                                 WriteInto(&guid_string, kGUIDSize), kGUIDSize);
+    DCHECK(result == kGUIDSize);
+    client_id_ = WideToUTF8(guid_string.substr(1, guid_string.length() - 2));
+  }
+  return client_id_;
 }
 
 // static
@@ -366,8 +369,12 @@ void MetricsService::StartRecording() {
   if (log_manager_.current_log())
     return;
 
-  log_manager_.BeginLoggingWithLog(new MetricsLogBase(client_id_, session_id_,
-                                                      GetVersionString()));
+  MetricsLogManager::LogType log_type = (state_ == INITIALIZED) ?
+      MetricsLogManager::INITIAL_LOG : MetricsLogManager::ONGOING_LOG;
+  log_manager_.BeginLoggingWithLog(new MetricsLogBase(GetClientID(),
+                                                      session_id_,
+                                                      GetVersionString()),
+                                   log_type);
   if (state_ == INITIALIZED)
     state_ = ACTIVE;
 }
@@ -384,10 +391,12 @@ void MetricsService::StopRecording(bool save_log) {
     RecordCurrentHistograms();
   }
 
-  if (save_log)
-    log_manager_.StageCurrentLogForUpload();
-  else
+  if (save_log) {
+    log_manager_.FinishCurrentLog();
+    log_manager_.StageNextLogForUpload();
+  } else {
     log_manager_.DiscardCurrentLog();
+  }
 }
 
 void MetricsService::MakePendingLog() {
@@ -395,22 +404,13 @@ void MetricsService::MakePendingLog() {
   if (log_manager_.has_staged_log())
     return;
 
-  switch (state_) {
-    case INITIALIZED:  // We should be further along by now.
-      DCHECK(false);
-      return;
-
-    case ACTIVE:
-      StopRecording(true);
-      StartRecording();
-      break;
-
-    default:
-      DCHECK(false);
-      return;
+  if (state_ != ACTIVE) {
+    NOTREACHED();
+    return;
   }
 
-  DCHECK(log_manager_.has_staged_log());
+  StopRecording(true);
+  StartRecording();
 }
 
 bool MetricsService::TransmissionPermitted() const {
@@ -432,19 +432,21 @@ bool MetricsService::UploadData() {
   }
 
   MakePendingLog();
-  DCHECK(log_manager_.has_staged_log());
 
   bool ret = true;
 
-  if (log_manager_.staged_log_text().empty()) {
-    NOTREACHED() << "Failed to compress log for transmission.";
-    ret = false;
-  } else {
+  if (log_manager_.has_staged_log()) {
     HRESULT hr = ChromeFrameMetricsDataUploader::UploadDataHelper(
-        log_manager_.staged_log_text());
+        log_manager_.staged_log_text().xml, kServerUrlXml, kMimeTypeXml);
     DCHECK(SUCCEEDED(hr));
+    hr = ChromeFrameMetricsDataUploader::UploadDataHelper(
+        log_manager_.staged_log_text().proto, kServerUrlProto, kMimeTypeProto);
+    DCHECK(SUCCEEDED(hr));
+    log_manager_.DiscardStagedLog();
+  } else {
+    NOTREACHED();
+    ret = false;
   }
-  log_manager_.DiscardStagedLog();
 
   currently_uploading = 0;
   return ret;

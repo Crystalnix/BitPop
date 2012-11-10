@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_HISTORY_IN_MEMORY_URL_INDEX_TYPES_H_
 #define CHROME_BROWSER_HISTORY_IN_MEMORY_URL_INDEX_TYPES_H_
-#pragma once
 
 #include <map>
 #include <set>
@@ -15,6 +14,10 @@
 #include "chrome/browser/autocomplete/history_provider_util.h"
 
 namespace history {
+
+// The maximum number of characters to consider from an URL and page title
+// while matching user-typed terms.
+const size_t kMaxSignificantChars = 50;
 
 // Matches within URL and Title Strings ----------------------------------------
 
@@ -55,25 +58,6 @@ std::vector<size_t> OffsetsFromTermMatches(const TermMatches& matches);
 TermMatches ReplaceOffsetsInTermMatches(const TermMatches& matches,
                                         const std::vector<size_t>& offsets);
 
-// Used for intermediate history result operations -----------------------------
-
-struct ScoredHistoryMatch : public history::HistoryMatch {
-  ScoredHistoryMatch();  // Required by STL.
-  explicit ScoredHistoryMatch(const history::URLRow& url_info);
-  ~ScoredHistoryMatch();
-
-  static bool MatchScoreGreater(const ScoredHistoryMatch& m1,
-                                const ScoredHistoryMatch& m2);
-
-  // An interim score taking into consideration location and completeness
-  // of the match.
-  int raw_score;
-  TermMatches url_matches;  // Term matches within the URL.
-  TermMatches title_matches;  // Term matches within the page title.
-  bool can_inline;  // True if this is a candidate for in-line autocompletion.
-};
-typedef std::vector<ScoredHistoryMatch> ScoredHistoryMatches;
-
 // Convenience Types -----------------------------------------------------------
 
 typedef std::vector<string16> String16Vector;
@@ -81,10 +65,17 @@ typedef std::set<string16> String16Set;
 typedef std::set<char16> Char16Set;
 typedef std::vector<char16> Char16Vector;
 
+// A vector that contains the offsets at which each word starts within a string.
+typedef std::vector<size_t> WordStarts;
+
 // Utility Functions -----------------------------------------------------------
 
-// Breaks a string down into individual words.
-String16Set String16SetFromString16(const string16& uni_string);
+// Breaks the string |uni_string| down into individual words. If |word_starts|
+// is not NULL then clears and pushes the offsets within |uni_string| at which
+// each word starts onto |word_starts|. These offsets are collected only up to
+// the first kMaxSignificantChars of |uni_string|.
+String16Set String16SetFromString16(const string16& uni_string,
+                                    WordStarts* word_starts);
 
 // Breaks the |uni_string| string down into individual words and return
 // a vector with the individual words in their original order. If
@@ -93,7 +84,8 @@ String16Set String16SetFromString16(const string16& uni_string);
 // resulting list will contain strings broken at whitespace. (|break_on_space|
 // indicates that the BreakIterator::BREAK_SPACE (equivalent to BREAK_LINE)
 // approach is to be used. For a complete description of this algorithm
-// refer to the comments in base/i18n/break_iterator.h.)
+// refer to the comments in base/i18n/break_iterator.h.) If |word_starts| is
+// not NULL then clears and pushes the word starts onto |word_starts|.
 //
 // Example:
 //   Given: |uni_string|: "http://www.google.com/ harry the rabbit."
@@ -102,7 +94,8 @@ String16Set String16SetFromString16(const string16& uni_string);
 //   With |break_on_space| true the returned list will contain:
 //    "http://", "www.google.com/", "harry", "the", "rabbit."
 String16Vector String16VectorFromString16(const string16& uni_string,
-                                          bool break_on_space);
+                                          bool break_on_space,
+                                          WordStarts* word_starts);
 
 // Breaks the |uni_word| string down into its individual characters.
 // Note that this is temporarily intended to work on a single word, but
@@ -113,9 +106,6 @@ String16Vector String16VectorFromString16(const string16& uni_string,
 // by score. Also, provide the metrics for where the matches occur so that
 // the UI can highlight the matched sections.
 Char16Set Char16SetFromString16(const string16& uni_word);
-
-// Determine if |prefix| is any of the standard 'ftp' or 'http[s]' prefixes.
-bool IsInlineablePrefix(const string16& prefix);
 
 // Support for InMemoryURLIndex Private Data -----------------------------------
 
@@ -139,8 +129,36 @@ typedef std::map<HistoryID, WordIDSet> HistoryIDWordMap;
 // A map from history_id to the history's URL and title.
 typedef std::map<HistoryID, URLRow> HistoryInfoMap;
 
-// TODO(rohitrao): Probably replace this with QueryResults.
-typedef std::vector<history::URLRow> URLRowVector;
+// A map from history_id to URL and page title word start metrics.
+struct RowWordStarts {
+  RowWordStarts();
+  ~RowWordStarts();
+
+  // Clears both url_word_starts_ and title_word_starts_.
+  void Clear();
+
+  WordStarts url_word_starts_;
+  WordStarts title_word_starts_;
+};
+typedef std::map<HistoryID, RowWordStarts> WordStartsMap;
+
+// A RefCountedThreadSafe class that manages a bool used for passing around
+// success when saving the persistent data for the InMemoryURLIndex in a cache.
+class RefCountedBool : public base::RefCountedThreadSafe<RefCountedBool> {
+ public:
+  explicit RefCountedBool(bool value) : value_(value) {}
+
+  bool value() const { return value_; }
+  void set_value(bool value) { value_ = value; }
+
+ private:
+  friend class base::RefCountedThreadSafe<RefCountedBool>;
+  virtual ~RefCountedBool();
+
+  bool value_;
+
+  DISALLOW_COPY_AND_ASSIGN(RefCountedBool);
+};
 
 }  // namespace history
 

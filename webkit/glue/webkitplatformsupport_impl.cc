@@ -24,19 +24,21 @@
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/synchronization/lock.h"
+#include "base/sys_info.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "grit/webkit_chromium_resources.h"
 #include "grit/webkit_resources.h"
 #include "grit/webkit_strings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCookie.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginListBuilder.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCookie.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
+#include "ui/base/layout.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/websocketstreamhandle_impl.h"
 #include "webkit/glue/webthread_impl.h"
@@ -118,56 +120,88 @@ namespace webkit_glue {
 
 static int ToMessageID(WebLocalizedString::Name name) {
   switch (name) {
-    case WebLocalizedString::SubmitButtonDefaultLabel:
-      return IDS_FORM_SUBMIT_LABEL;
-    case WebLocalizedString::InputElementAltText:
-      return IDS_FORM_INPUT_ALT;
-    case WebLocalizedString::ResetButtonDefaultLabel:
-      return IDS_FORM_RESET_LABEL;
+    case WebLocalizedString::AXButtonActionVerb:
+      return IDS_AX_BUTTON_ACTION_VERB;
+    case WebLocalizedString::AXCheckedCheckBoxActionVerb:
+      return IDS_AX_CHECKED_CHECK_BOX_ACTION_VERB;
+    case WebLocalizedString::AXHeadingText:
+      return IDS_AX_ROLE_HEADING;
+    case WebLocalizedString::AXImageMapText:
+      return IDS_AX_ROLE_IMAGE_MAP;
+    case WebLocalizedString::AXLinkActionVerb:
+      return IDS_AX_LINK_ACTION_VERB;
+    case WebLocalizedString::AXLinkText:
+      return IDS_AX_ROLE_LINK;
+    case WebLocalizedString::AXListMarkerText:
+      return IDS_AX_ROLE_LIST_MARKER;
+    case WebLocalizedString::AXRadioButtonActionVerb:
+      return IDS_AX_RADIO_BUTTON_ACTION_VERB;
+    case WebLocalizedString::AXTextFieldActionVerb:
+      return IDS_AX_TEXT_FIELD_ACTION_VERB;
+    case WebLocalizedString::AXUncheckedCheckBoxActionVerb:
+      return IDS_AX_UNCHECKED_CHECK_BOX_ACTION_VERB;
+    case WebLocalizedString::AXWebAreaText:
+      return IDS_AX_ROLE_WEB_AREA;
+    case WebLocalizedString::CalendarClear:
+      return IDS_FORM_CALENDAR_CLEAR;
+    case WebLocalizedString::CalendarToday:
+      return IDS_FORM_CALENDAR_TODAY;
+    case WebLocalizedString::DateFormatDayInMonthLabel:
+      return IDS_FORM_DATE_FORMAT_DAY_IN_MONTH;
+    case WebLocalizedString::DateFormatMonthLabel:
+      return IDS_FORM_DATE_FORMAT_MONTH;
+    case WebLocalizedString::DateFormatYearLabel:
+      return IDS_FORM_DATE_FORMAT_YEAR;
+    case WebLocalizedString::DetailsLabel:
+      return IDS_DETAILS_WITHOUT_SUMMARY_LABEL;
     case WebLocalizedString::FileButtonChooseFileLabel:
       return IDS_FORM_FILE_BUTTON_LABEL;
     case WebLocalizedString::FileButtonChooseMultipleFilesLabel:
       return IDS_FORM_MULTIPLE_FILES_BUTTON_LABEL;
     case WebLocalizedString::FileButtonNoFileSelectedLabel:
       return IDS_FORM_FILE_NO_FILE_LABEL;
-    case WebLocalizedString::MultipleFileUploadText:
-      return IDS_FORM_FILE_MULTIPLE_UPLOAD;
-    case WebLocalizedString::DetailsLabel:
-      return IDS_DETAILS_WITHOUT_SUMMARY_LABEL;
-    case WebLocalizedString::SearchableIndexIntroduction:
-      return IDS_SEARCHABLE_INDEX_INTRO;
-    case WebLocalizedString::SearchMenuNoRecentSearchesText:
-      return IDS_RECENT_SEARCHES_NONE;
-    case WebLocalizedString::SearchMenuRecentSearchesText:
-      return IDS_RECENT_SEARCHES;
-    case WebLocalizedString::SearchMenuClearRecentSearchesText:
-      return IDS_RECENT_SEARCHES_CLEAR;
-    case WebLocalizedString::AXWebAreaText:
-      return IDS_AX_ROLE_WEB_AREA;
-    case WebLocalizedString::AXLinkText:
-      return IDS_AX_ROLE_LINK;
-    case WebLocalizedString::AXListMarkerText:
-      return IDS_AX_ROLE_LIST_MARKER;
-    case WebLocalizedString::AXImageMapText:
-      return IDS_AX_ROLE_IMAGE_MAP;
-    case WebLocalizedString::AXHeadingText:
-      return IDS_AX_ROLE_HEADING;
-    case WebLocalizedString::AXButtonActionVerb:
-      return IDS_AX_BUTTON_ACTION_VERB;
-    case WebLocalizedString::AXRadioButtonActionVerb:
-      return IDS_AX_RADIO_BUTTON_ACTION_VERB;
-    case WebLocalizedString::AXTextFieldActionVerb:
-      return IDS_AX_TEXT_FIELD_ACTION_VERB;
-    case WebLocalizedString::AXCheckedCheckBoxActionVerb:
-      return IDS_AX_CHECKED_CHECK_BOX_ACTION_VERB;
-    case WebLocalizedString::AXUncheckedCheckBoxActionVerb:
-      return IDS_AX_UNCHECKED_CHECK_BOX_ACTION_VERB;
-    case WebLocalizedString::AXLinkActionVerb:
-      return IDS_AX_LINK_ACTION_VERB;
+    case WebLocalizedString::InputElementAltText:
+      return IDS_FORM_INPUT_ALT;
     case WebLocalizedString::KeygenMenuHighGradeKeySize:
       return IDS_KEYGEN_HIGH_GRADE_KEY;
     case WebLocalizedString::KeygenMenuMediumGradeKeySize:
       return IDS_KEYGEN_MED_GRADE_KEY;
+    case WebLocalizedString::MissingPluginText:
+      return IDS_PLUGIN_INITIALIZATION_ERROR;
+    case WebLocalizedString::MultipleFileUploadText:
+      return IDS_FORM_FILE_MULTIPLE_UPLOAD;
+    case WebLocalizedString::OtherColorLabel:
+      return IDS_FORM_OTHER_COLOR_LABEL;
+    case WebLocalizedString::ResetButtonDefaultLabel:
+      return IDS_FORM_RESET_LABEL;
+    case WebLocalizedString::SearchableIndexIntroduction:
+      return IDS_SEARCHABLE_INDEX_INTRO;
+    case WebLocalizedString::SearchMenuClearRecentSearchesText:
+      return IDS_RECENT_SEARCHES_CLEAR;
+    case WebLocalizedString::SearchMenuNoRecentSearchesText:
+      return IDS_RECENT_SEARCHES_NONE;
+    case WebLocalizedString::SearchMenuRecentSearchesText:
+      return IDS_RECENT_SEARCHES;
+    case WebLocalizedString::SubmitButtonDefaultLabel:
+      return IDS_FORM_SUBMIT_LABEL;
+    case WebLocalizedString::ValidationPatternMismatch:
+      return IDS_FORM_VALIDATION_PATTERN_MISMATCH;
+    case WebLocalizedString::ValidationRangeOverflow:
+      return IDS_FORM_VALIDATION_RANGE_OVERFLOW;
+    case WebLocalizedString::ValidationRangeUnderflow:
+      return IDS_FORM_VALIDATION_RANGE_UNDERFLOW;
+    case WebLocalizedString::ValidationStepMismatch:
+      return IDS_FORM_VALIDATION_STEP_MISMATCH;
+    case WebLocalizedString::ValidationTooLong:
+      return IDS_FORM_VALIDATION_TOO_LONG;
+    case WebLocalizedString::ValidationTypeMismatch:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH;
+    case WebLocalizedString::ValidationTypeMismatchForEmail:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL;
+    case WebLocalizedString::ValidationTypeMismatchForMultipleEmail:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH_MULTIPLE_EMAIL;
+    case WebLocalizedString::ValidationTypeMismatchForURL:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH_URL;
     case WebLocalizedString::ValidationValueMissing:
       return IDS_FORM_VALIDATION_VALUE_MISSING;
     case WebLocalizedString::ValidationValueMissingForCheckbox:
@@ -180,24 +214,6 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_FORM_VALIDATION_VALUE_MISSING_RADIO;
     case WebLocalizedString::ValidationValueMissingForSelect:
       return IDS_FORM_VALIDATION_VALUE_MISSING_SELECT;
-    case WebLocalizedString::ValidationTypeMismatch:
-      return IDS_FORM_VALIDATION_TYPE_MISMATCH;
-    case WebLocalizedString::ValidationTypeMismatchForEmail:
-      return IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL;
-    case WebLocalizedString::ValidationTypeMismatchForMultipleEmail:
-      return IDS_FORM_VALIDATION_TYPE_MISMATCH_MULTIPLE_EMAIL;
-    case WebLocalizedString::ValidationTypeMismatchForURL:
-      return IDS_FORM_VALIDATION_TYPE_MISMATCH_URL;
-    case WebLocalizedString::ValidationPatternMismatch:
-      return IDS_FORM_VALIDATION_PATTERN_MISMATCH;
-    case WebLocalizedString::ValidationTooLong:
-      return IDS_FORM_VALIDATION_TOO_LONG;
-    case WebLocalizedString::ValidationRangeUnderflow:
-      return IDS_FORM_VALIDATION_RANGE_UNDERFLOW;
-    case WebLocalizedString::ValidationRangeOverflow:
-      return IDS_FORM_VALIDATION_RANGE_OVERFLOW;
-    case WebLocalizedString::ValidationStepMismatch:
-      return IDS_FORM_VALIDATION_STEP_MISMATCH;
     // This "default:" line exists to avoid compile warnings about enum
     // coverage when we add a new symbol to WebLocalizedString.h in WebKit.
     // After a planned WebKit patch is landed, we need to add a case statement
@@ -291,20 +307,6 @@ void WebKitPlatformSupportImpl::histogramEnumeration(
   counter->Add(sample);
 }
 
-bool WebKitPlatformSupportImpl::isTraceEventEnabled() const {
-  return !!*base::debug::TraceLog::GetCategoryEnabled("webkit");
-}
-
-void WebKitPlatformSupportImpl::traceEventBegin(const char* name, void* id,
-                                                const char* extra) {
-  TRACE_EVENT_BEGIN_ETW(name, id, extra);
-}
-
-void WebKitPlatformSupportImpl::traceEventEnd(const char* name, void* id,
-                                              const char* extra) {
-  TRACE_EVENT_END_ETW(name, id, extra);
-}
-
 const unsigned char* WebKitPlatformSupportImpl::getTraceCategoryEnabledFlag(
     const char* category_name) {
   return TRACE_EVENT_API_GET_CATEGORY_ENABLED(category_name);
@@ -371,7 +373,8 @@ WebData loadAudioSpatializationResource(WebKitPlatformSupportImpl* platform,
       is_resource_index_good) {
     const int kFirstAudioResourceIndex = IDR_AUDIO_SPATIALIZATION_T000_P000;
     base::StringPiece resource =
-        platform->GetDataResource(kFirstAudioResourceIndex + resource_index);
+        platform->GetDataResource(kFirstAudioResourceIndex + resource_index,
+                                  ui::SCALE_FACTOR_NONE);
     return WebData(resource.data(), resource.size());
   }
 #endif  // IDR_AUDIO_SPATIALIZATION_T000_P000
@@ -383,69 +386,109 @@ WebData loadAudioSpatializationResource(WebKitPlatformSupportImpl* platform,
 struct DataResource {
   const char* name;
   int id;
+  ui::ScaleFactor scale_factor;
 };
 
 const DataResource kDataResources[] = {
-  { "missingImage", IDR_BROKENIMAGE },
-  { "mediaPause", IDR_MEDIA_PAUSE_BUTTON },
-  { "mediaPlay", IDR_MEDIA_PLAY_BUTTON },
-  { "mediaPlayDisabled", IDR_MEDIA_PLAY_BUTTON_DISABLED },
-  { "mediaSoundDisabled", IDR_MEDIA_SOUND_DISABLED },
-  { "mediaSoundFull", IDR_MEDIA_SOUND_FULL_BUTTON },
-  { "mediaSoundNone", IDR_MEDIA_SOUND_NONE_BUTTON },
-  { "mediaSliderThumb", IDR_MEDIA_SLIDER_THUMB },
-  { "mediaVolumeSliderThumb", IDR_MEDIA_VOLUME_SLIDER_THUMB },
-  { "mediaplayerPause", IDR_MEDIAPLAYER_PAUSE_BUTTON },
-  { "mediaplayerPauseHover", IDR_MEDIAPLAYER_PAUSE_BUTTON_HOVER },
-  { "mediaplayerPauseDown", IDR_MEDIAPLAYER_PAUSE_BUTTON_DOWN },
-  { "mediaplayerPlay", IDR_MEDIAPLAYER_PLAY_BUTTON },
-  { "mediaplayerPlayHover", IDR_MEDIAPLAYER_PLAY_BUTTON_HOVER },
-  { "mediaplayerPlayDown", IDR_MEDIAPLAYER_PLAY_BUTTON_DOWN },
-  { "mediaplayerPlayDisabled", IDR_MEDIAPLAYER_PLAY_BUTTON_DISABLED },
-  { "mediaplayerSoundDisabled", IDR_MEDIAPLAYER_SOUND_DISABLED },
-  { "mediaplayerSoundFull", IDR_MEDIAPLAYER_SOUND_FULL_BUTTON },
-  { "mediaplayerSoundFullHover", IDR_MEDIAPLAYER_SOUND_FULL_BUTTON_HOVER },
-  { "mediaplayerSoundFullDown", IDR_MEDIAPLAYER_SOUND_FULL_BUTTON_DOWN },
-  { "mediaplayerSoundLevel2", IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON },
+  { "missingImage", IDR_BROKENIMAGE, ui::SCALE_FACTOR_100P },
+  { "missingImage@2x", IDR_BROKENIMAGE, ui::SCALE_FACTOR_200P },
+  { "mediaPause", IDR_MEDIA_PAUSE_BUTTON, ui::SCALE_FACTOR_100P },
+  { "mediaPlay", IDR_MEDIA_PLAY_BUTTON, ui::SCALE_FACTOR_100P },
+  { "mediaPlayDisabled",
+    IDR_MEDIA_PLAY_BUTTON_DISABLED, ui::SCALE_FACTOR_100P },
+  { "mediaSoundDisabled", IDR_MEDIA_SOUND_DISABLED, ui::SCALE_FACTOR_100P },
+  { "mediaSoundFull", IDR_MEDIA_SOUND_FULL_BUTTON, ui::SCALE_FACTOR_100P },
+  { "mediaSoundNone", IDR_MEDIA_SOUND_NONE_BUTTON, ui::SCALE_FACTOR_100P },
+  { "mediaSliderThumb", IDR_MEDIA_SLIDER_THUMB, ui::SCALE_FACTOR_100P },
+  { "mediaVolumeSliderThumb",
+    IDR_MEDIA_VOLUME_SLIDER_THUMB, ui::SCALE_FACTOR_100P },
+  { "mediaplayerPause", IDR_MEDIAPLAYER_PAUSE_BUTTON, ui::SCALE_FACTOR_100P },
+  { "mediaplayerPauseHover",
+    IDR_MEDIAPLAYER_PAUSE_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
+  { "mediaplayerPauseDown",
+    IDR_MEDIAPLAYER_PAUSE_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
+  { "mediaplayerPlay", IDR_MEDIAPLAYER_PLAY_BUTTON, ui::SCALE_FACTOR_100P },
+  { "mediaplayerPlayHover",
+    IDR_MEDIAPLAYER_PLAY_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
+  { "mediaplayerPlayDown",
+    IDR_MEDIAPLAYER_PLAY_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
+  { "mediaplayerPlayDisabled",
+    IDR_MEDIAPLAYER_PLAY_BUTTON_DISABLED, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSoundLevel3",
+    IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSoundLevel3Hover",
+    IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSoundLevel3Down",
+    IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSoundLevel2",
+    IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON, ui::SCALE_FACTOR_100P },
   { "mediaplayerSoundLevel2Hover",
-    IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON_HOVER },
-  { "mediaplayerSoundLevel2Down", IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON_DOWN },
-  { "mediaplayerSoundLevel1", IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON },
+    IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSoundLevel2Down",
+    IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSoundLevel1",
+    IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON, ui::SCALE_FACTOR_100P },
   { "mediaplayerSoundLevel1Hover",
-    IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON_HOVER },
-  { "mediaplayerSoundLevel1Down", IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON_DOWN },
-  { "mediaplayerSoundNone", IDR_MEDIAPLAYER_SOUND_NONE_BUTTON },
-  { "mediaplayerSoundNoneHover", IDR_MEDIAPLAYER_SOUND_NONE_BUTTON_HOVER },
-  { "mediaplayerSoundNoneDown", IDR_MEDIAPLAYER_SOUND_NONE_BUTTON_DOWN },
-  { "mediaplayerSliderThumb", IDR_MEDIAPLAYER_SLIDER_THUMB },
-  { "mediaplayerSliderThumbHover", IDR_MEDIAPLAYER_SLIDER_THUMB_HOVER },
-  { "mediaplayerSliderThumbDown", IDR_MEDIAPLAYER_SLIDER_THUMB_DOWN },
-  { "mediaplayerVolumeSliderThumb", IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB },
+    IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSoundLevel1Down",
+    IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSoundLevel0",
+    IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSoundLevel0Hover",
+    IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSoundLevel0Down",
+    IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSoundDisabled",
+    IDR_MEDIAPLAYER_SOUND_DISABLED, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSliderThumb",
+    IDR_MEDIAPLAYER_SLIDER_THUMB, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSliderThumbHover",
+    IDR_MEDIAPLAYER_SLIDER_THUMB_HOVER, ui::SCALE_FACTOR_100P },
+  { "mediaplayerSliderThumbDown",
+    IDR_MEDIAPLAYER_SLIDER_THUMB_DOWN, ui::SCALE_FACTOR_100P },
+  { "mediaplayerVolumeSliderThumb",
+    IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB, ui::SCALE_FACTOR_100P },
   { "mediaplayerVolumeSliderThumbHover",
-    IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_HOVER },
+    IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_HOVER, ui::SCALE_FACTOR_100P },
   { "mediaplayerVolumeSliderThumbDown",
-    IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_DOWN },
-#if defined(OS_MACOSX)
-  { "overhangPattern", IDR_OVERHANG_PATTERN },
+    IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_DOWN, ui::SCALE_FACTOR_100P },
+  { "mediaplayerVolumeSliderThumbDisabled",
+    IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_DISABLED, ui::SCALE_FACTOR_100P },
+  { "mediaplayerFullscreen",
+    IDR_MEDIAPLAYER_FULLSCREEN_BUTTON, ui::SCALE_FACTOR_100P },
+  { "mediaplayerFullscreenHover",
+    IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
+  { "mediaplayerFullscreenDown",
+    IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
+  { "mediaplayerFullscreenDisabled",
+    IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DISABLED, ui::SCALE_FACTOR_100P },
+#if defined(OS_ANDROID)
+  { "mediaplayerOverlayPlay",
+    IDR_MEDIAPLAYER_OVERLAY_PLAY_BUTTON, ui::SCALE_FACTOR_100P },
 #endif
-  { "panIcon", IDR_PAN_SCROLL_ICON },
-  { "searchCancel", IDR_SEARCH_CANCEL },
-  { "searchCancelPressed", IDR_SEARCH_CANCEL_PRESSED },
-  { "searchMagnifier", IDR_SEARCH_MAGNIFIER },
-  { "searchMagnifierResults", IDR_SEARCH_MAGNIFIER_RESULTS },
-  { "textAreaResizeCorner", IDR_TEXTAREA_RESIZER },
-  { "tickmarkDash", IDR_TICKMARK_DASH },
-  { "inputSpeech", IDR_INPUT_SPEECH },
-  { "inputSpeechRecording", IDR_INPUT_SPEECH_RECORDING },
-  { "inputSpeechWaiting", IDR_INPUT_SPEECH_WAITING },
-  { "americanExpressCC", IDR_AUTOFILL_CC_AMEX },
-  { "dinersCC", IDR_AUTOFILL_CC_DINERS },
-  { "discoverCC", IDR_AUTOFILL_CC_DISCOVER },
-  { "genericCC", IDR_AUTOFILL_CC_GENERIC },
-  { "jcbCC", IDR_AUTOFILL_CC_JCB },
-  { "masterCardCC", IDR_AUTOFILL_CC_MASTERCARD },
-  { "soloCC", IDR_AUTOFILL_CC_SOLO },
-  { "visaCC", IDR_AUTOFILL_CC_VISA },
+#if defined(OS_MACOSX)
+  { "overhangPattern", IDR_OVERHANG_PATTERN, ui::SCALE_FACTOR_100P },
+#endif
+  { "panIcon", IDR_PAN_SCROLL_ICON, ui::SCALE_FACTOR_100P },
+  { "searchCancel", IDR_SEARCH_CANCEL, ui::SCALE_FACTOR_100P },
+  { "searchCancelPressed", IDR_SEARCH_CANCEL_PRESSED, ui::SCALE_FACTOR_100P },
+  { "searchMagnifier", IDR_SEARCH_MAGNIFIER, ui::SCALE_FACTOR_100P },
+  { "searchMagnifierResults",
+    IDR_SEARCH_MAGNIFIER_RESULTS, ui::SCALE_FACTOR_100P },
+  { "textAreaResizeCorner", IDR_TEXTAREA_RESIZER, ui::SCALE_FACTOR_100P },
+  { "textAreaResizeCorner@2x", IDR_TEXTAREA_RESIZER, ui::SCALE_FACTOR_200P },
+  { "inputSpeech", IDR_INPUT_SPEECH, ui::SCALE_FACTOR_100P },
+  { "inputSpeechRecording", IDR_INPUT_SPEECH_RECORDING, ui::SCALE_FACTOR_100P },
+  { "inputSpeechWaiting", IDR_INPUT_SPEECH_WAITING, ui::SCALE_FACTOR_100P },
+  { "americanExpressCC", IDR_AUTOFILL_CC_AMEX, ui::SCALE_FACTOR_100P },
+  { "dinersCC", IDR_AUTOFILL_CC_DINERS, ui::SCALE_FACTOR_100P },
+  { "discoverCC", IDR_AUTOFILL_CC_DISCOVER, ui::SCALE_FACTOR_100P },
+  { "genericCC", IDR_AUTOFILL_CC_GENERIC, ui::SCALE_FACTOR_100P },
+  { "jcbCC", IDR_AUTOFILL_CC_JCB, ui::SCALE_FACTOR_100P },
+  { "masterCardCC", IDR_AUTOFILL_CC_MASTERCARD, ui::SCALE_FACTOR_100P },
+  { "soloCC", IDR_AUTOFILL_CC_SOLO, ui::SCALE_FACTOR_100P },
+  { "visaCC", IDR_AUTOFILL_CC_VISA, ui::SCALE_FACTOR_100P },
+  { "generatePassword", IDR_PASSWORD_GENERATION_ICON, ui::SCALE_FACTOR_100P },
 };
 
 }  // namespace
@@ -461,9 +504,13 @@ WebData WebKitPlatformSupportImpl::loadResource(const char* name) {
   if (StartsWithASCII(name, "IRC_Composite", true))
     return loadAudioSpatializationResource(this, name);
 
+  // TODO(flackr): We should use a better than linear search here, a trie would
+  // be ideal.
   for (size_t i = 0; i < arraysize(kDataResources); ++i) {
     if (!strcmp(name, kDataResources[i].name)) {
-      base::StringPiece resource = GetDataResource(kDataResources[i].id);
+      base::StringPiece resource =
+          GetDataResource(kDataResources[i].id,
+                          kDataResources[i].scale_factor);
       return WebData(resource.data(), resource.size());
     }
   }
@@ -561,6 +608,7 @@ void WebKitPlatformSupportImpl::setSharedTimerFireInterval(
   shared_timer_.Stop();
   shared_timer_.Start(FROM_HERE, base::TimeDelta::FromMicroseconds(interval),
                       this, &WebKitPlatformSupportImpl::DoTimeout);
+  OnStartSharedTimer(base::TimeDelta::FromMicroseconds(interval));
 }
 
 void WebKitPlatformSupportImpl::stopSharedTimer() {
@@ -624,8 +672,24 @@ WebKit::WebString WebKitPlatformSupportImpl::signedPublicKeyAndChallengeString(
   return WebKit::WebString("");
 }
 
-#if defined(OS_LINUX)
-static size_t memoryUsageMBLinux() {
+static base::ProcessMetrics* CurrentProcessMetrics() {
+  using base::ProcessMetrics;
+#if defined(OS_MACOSX)
+  static ProcessMetrics* process_metrics =
+      // The default port provider is sufficient to get data for the current
+      // process.
+      ProcessMetrics::CreateProcessMetrics(base::GetCurrentProcessHandle(),
+                                           NULL);
+#else
+  static ProcessMetrics* process_metrics =
+      ProcessMetrics::CreateProcessMetrics(base::GetCurrentProcessHandle());
+#endif
+  DCHECK(process_metrics);
+  return process_metrics;
+}
+
+#if defined(OS_LINUX) || defined(OS_ANDROID)
+static size_t memoryUsageMB() {
   struct mallinfo minfo = mallinfo();
   uint64_t mem_usage =
 #if defined(USE_TCMALLOC)
@@ -639,28 +703,9 @@ static size_t memoryUsageMBLinux() {
   v8::V8::GetHeapStatistics(&stat);
   return mem_usage + (static_cast<uint64_t>(stat.total_heap_size()) >> 20);
 }
-#endif
-
-#if defined(OS_MACOSX)
-static size_t memoryUsageMBMac() {
-  using base::ProcessMetrics;
-  static ProcessMetrics* process_metrics =
-      // The default port provider is sufficient to get data for the current
-      // process.
-      ProcessMetrics::CreateProcessMetrics(base::GetCurrentProcessHandle(),
-                                           NULL);
-  DCHECK(process_metrics);
-  return process_metrics->GetWorkingSetSize() >> 20;
-}
-#endif
-
-#if !defined(OS_LINUX) && !defined(OS_MACOSX)
-static size_t memoryUsageMBGeneric() {
-  using base::ProcessMetrics;
-  static ProcessMetrics* process_metrics =
-      ProcessMetrics::CreateProcessMetrics(base::GetCurrentProcessHandle());
-  DCHECK(process_metrics);
-  return process_metrics->GetPagefileUsage() >> 20;
+#else
+static size_t memoryUsageMB() {
+  return CurrentProcessMetrics()->GetPagefileUsage() >> 20;
 }
 #endif
 
@@ -671,14 +716,7 @@ static size_t getMemoryUsageMB(bool bypass_cache) {
       mem_usage_cache_singleton->IsCachedValueValid(&current_mem_usage))
     return current_mem_usage;
 
-  current_mem_usage =
-#if defined(OS_LINUX)
-      memoryUsageMBLinux();
-#elif defined(OS_MACOSX)
-      memoryUsageMBMac();
-#else
-      memoryUsageMBGeneric();
-#endif
+  current_mem_usage = memoryUsageMB();
   mem_usage_cache_singleton->SetMemoryValue(current_mem_usage);
   return current_mem_usage;
 }
@@ -691,6 +729,35 @@ size_t WebKitPlatformSupportImpl::actualMemoryUsageMB() {
   return getMemoryUsageMB(true);
 }
 
+#if defined(OS_ANDROID)
+size_t WebKitPlatformSupportImpl::lowMemoryUsageMB() {
+  // If memory usage is below this threshold, do not bother forcing GC.
+  // Allow us to use up to our memory class value before V8's GC kicks in.
+  // These values have been determined by experimentation.
+  return base::SysInfo::DalvikHeapSizeMB() / 2;
+}
+
+size_t WebKitPlatformSupportImpl::highMemoryUsageMB() {
+  // If memory usage is above this threshold, force GC more aggressively.
+  return base::SysInfo::DalvikHeapSizeMB() * 3 / 4;
+}
+
+size_t WebKitPlatformSupportImpl::highUsageDeltaMB() {
+  // If memory usage is above highMemoryUsageMB() and memory usage increased by
+  // more than highUsageDeltaMB() since the last GC, then force GC.
+  // Note that this limit should be greater than the amount of memory for V8
+  // internal data structures that are released on GC and reallocated during JS
+  // execution (about 8MB). Otherwise, it will cause too aggressive GCs.
+  return base::SysInfo::DalvikHeapSizeMB() / 8;
+}
+#endif
+
+bool WebKitPlatformSupportImpl::processMemorySizesInBytes(
+    size_t* private_bytes,
+    size_t* shared_bytes) {
+  return CurrentProcessMetrics()->GetMemoryBytes(private_bytes, shared_bytes);
+}
+
 void WebKitPlatformSupportImpl::SuspendSharedTimer() {
   ++shared_timer_suspended_;
 }
@@ -699,7 +766,7 @@ void WebKitPlatformSupportImpl::ResumeSharedTimer() {
   // The shared timer may have fired or been adjusted while we were suspended.
   if (--shared_timer_suspended_ == 0 && !shared_timer_.IsRunning()) {
     setSharedTimerFireInterval(
-        monotonicallyIncreasingTime() - shared_timer_fire_time_);
+        shared_timer_fire_time_ - monotonicallyIncreasingTime());
   }
 }
 

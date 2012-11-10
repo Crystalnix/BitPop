@@ -1,9 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_PROFILES_PROFILE_KEYED_SERVICE_H_
 #define CHROME_BROWSER_PROFILES_PROFILE_KEYED_SERVICE_H_
+
+class ProfileKeyedServiceFactory;
 
 // Base class for all ProfileKeyedServices to allow for correct destruction
 // order.
@@ -18,9 +20,11 @@ class ProfileKeyedService {
   // The first pass is to call Shutdown on a ProfileKeyedService.
   virtual void Shutdown() {}
 
+ protected:
+  friend class ProfileKeyedServiceFactory;
+
   // The second pass is the actual deletion of each object.
   virtual ~ProfileKeyedService() {}
 };
 
 #endif  // CHROME_BROWSER_PROFILES_PROFILE_KEYED_SERVICE_H_
-

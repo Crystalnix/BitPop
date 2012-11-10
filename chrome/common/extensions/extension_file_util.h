@@ -4,23 +4,25 @@
 
 #ifndef CHROME_COMMON_EXTENSIONS_EXTENSION_FILE_UTIL_H_
 #define CHROME_COMMON_EXTENSIONS_EXTENSION_FILE_UTIL_H_
-#pragma once
 
 #include <string>
 #include <map>
 
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_message_bundle.h"
+#include "chrome/common/extensions/message_bundle.h"
 
-class Extension;
-class ExtensionMessageBundle;
 class FilePath;
 class GURL;
+
 namespace base {
 class DictionaryValue;
 }
 
-// Utilties for manipulating the on-disk storage of extensions.
+namespace extensions {
+class MessageBundle;
+}
+
+// Utilities for manipulating the on-disk storage of extensions.
 namespace extension_file_util {
 
 // The name of the directory inside the profile that we store installed
@@ -28,7 +30,7 @@ namespace extension_file_util {
 extern const char kInstallDirectoryName[];
 
 // Copies |unpacked_source_dir| into the right location under |extensions_dir|.
-// The destination directiory is returned on success, or empty path is returned
+// The destination directory is returned on success, or empty path is returned
 // on failure.
 FilePath InstallExtension(const FilePath& unpacked_source_dir,
                           const std::string& id,
@@ -41,26 +43,40 @@ void UninstallExtension(const FilePath& extensions_dir,
 
 // Loads and validates an extension from the specified directory. Returns NULL
 // on failure, with a description of the error in |error|.
-scoped_refptr<Extension> LoadExtension(const FilePath& extension_root,
-                                       Extension::Location location,
-                                       int flags,
-                                       std::string* error);
+scoped_refptr<extensions::Extension> LoadExtension(
+    const FilePath& extension_root,
+    extensions::Extension::Location location,
+    int flags,
+    std::string* error);
 
 // The same as LoadExtension except use the provided |extension_id|.
-scoped_refptr<Extension> LoadExtension(const FilePath& extension_root,
-                                       std::string extension_id,
-                                       Extension::Location location,
-                                       int flags,
-                                       std::string* error);
+scoped_refptr<extensions::Extension> LoadExtension(
+    const FilePath& extension_root,
+    const std::string& extension_id,
+    extensions::Extension::Location location,
+    int flags,
+    std::string* error);
 
 // Loads an extension manifest from the specified directory. Returns NULL
 // on failure, with a description of the error in |error|.
 base::DictionaryValue* LoadManifest(const FilePath& extension_root,
                                     std::string* error);
 
+// Returns true if the given file path exists and is not zero-length.
+bool ValidateFilePath(const FilePath& path);
+
 // Returns true if the given extension object is valid and consistent.
-// Otherwise, a description of the error is returned in |error|.
-bool ValidateExtension(const Extension* extension, std::string* error);
+// May also append a series of warning messages to |warnings|, but they
+// should not prevent the extension from running.
+//
+// Otherwise, returns false, and a description of the error is
+// returned in |error|.
+bool ValidateExtension(const extensions::Extension* extension,
+                       std::string* error,
+                       extensions::Extension::InstallWarningVector* warnings);
+
+// Returns a list of files that contain private keys inside |extension_dir|.
+std::vector<FilePath> FindPrivateKeyFiles(const FilePath& extension_dir);
 
 // Cleans up the extension install directory. It can end up with garbage in it
 // if extensions can't initially be removed when they are uninstalled (eg if a
@@ -77,15 +93,14 @@ void GarbageCollectExtensions(
 
 // Loads extension message catalogs and returns message bundle.
 // Returns NULL on error, or if extension is not localized.
-ExtensionMessageBundle* LoadExtensionMessageBundle(
+extensions::MessageBundle* LoadMessageBundle(
     const FilePath& extension_path,
     const std::string& default_locale,
     std::string* error);
 
 // Loads the extension message bundle substitution map. Contains at least
 // extension_id item.
-ExtensionMessageBundle::SubstitutionMap*
-    LoadExtensionMessageBundleSubstitutionMap(
+extensions::MessageBundle::SubstitutionMap* LoadMessageBundleSubstitutionMap(
     const FilePath& extension_path,
     const std::string& extension_id,
     const std::string& default_locale);
@@ -99,6 +114,10 @@ bool CheckForIllegalFilenames(const FilePath& extension_path,
 
 // Get a relative file path from a chrome-extension:// URL.
 FilePath ExtensionURLToRelativeFilePath(const GURL& url);
+
+// Get a full file path from a chrome-extension-resource:// URL, If the URL
+// points a file outside of root, this function will return empty FilePath.
+FilePath ExtensionResourceURLToFilePath(const GURL& url, const FilePath& root);
 
 // Get a path to a temp directory for unpacking an extension.
 // This is essentially PathService::Get(chrome::DIR_USER_DATA_TEMP, ...),

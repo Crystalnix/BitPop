@@ -1,8 +1,7 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/ui/webui/chrome_web_ui.h"
 #include "chrome/browser/ui/webui/test_chrome_web_ui_controller_factory.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -20,7 +19,7 @@ using ::testing::StrictMock;
 
 namespace {
 
-// Returns a new WebUI object for the TabContents from |arg0|.
+// Returns a new WebUI object for the WebContents from |arg0|.
 ACTION(ReturnNewWebUI) {
   return new WebUIController(arg0);
 }

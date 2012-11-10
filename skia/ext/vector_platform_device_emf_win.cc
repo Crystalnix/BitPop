@@ -8,11 +8,15 @@
 
 #include "skia/ext/bitmap_platform_device.h"
 #include "skia/ext/skia_utils_win.h"
+#include "third_party/skia/include/core/SkPathEffect.h"
 #include "third_party/skia/include/core/SkTemplates.h"
 #include "third_party/skia/include/core/SkUtils.h"
 #include "third_party/skia/include/ports/SkTypeface_win.h"
 
 namespace skia {
+
+#define CHECK_FOR_NODRAW_ANNOTATION(paint) \
+    do { if (paint.isNoDrawAnnotation()) { return; } } while (0)
 
 // static
 SkDevice* VectorPlatformDeviceEmf::CreateDevice(
@@ -26,7 +30,7 @@ SkDevice* VectorPlatformDeviceEmf::CreateDevice(
     // EMF-based VectorDevice and have this device registers the drawing. When
     // playing back the device into a bitmap, do it at the printer's dpi instead
     // of the layout's dpi (which is much lower).
-    return BitmapPlatformDevice::create(width, height, is_opaque,
+    return BitmapPlatformDevice::Create(width, height, is_opaque,
                                         shared_section);
   }
 
@@ -172,6 +176,7 @@ void VectorPlatformDeviceEmf::drawPoints(const SkDraw& draw,
 void VectorPlatformDeviceEmf::drawRect(const SkDraw& draw,
                                        const SkRect& rect,
                                        const SkPaint& paint) {
+  CHECK_FOR_NODRAW_ANNOTATION(paint);
   if (paint.getPathEffect()) {
     // Draw a path instead.
     SkPath path_orginal;
@@ -209,6 +214,7 @@ void VectorPlatformDeviceEmf::drawPath(const SkDraw& draw,
                                        const SkPaint& paint,
                                        const SkMatrix* prePathMatrix,
                                        bool pathIsMutable) {
+  CHECK_FOR_NODRAW_ANNOTATION(paint);
   if (paint.getPathEffect()) {
     // Apply the path effect forehand.
     SkPath path_modified;
@@ -778,7 +784,7 @@ void VectorPlatformDeviceEmf::InternalDrawBitmap(const SkBitmap& bitmap,
   bitmap_header.bV4AlphaMask = 0xff000000;
 
   SkAutoLockPixels lock(bitmap);
-  SkASSERT(bitmap.getConfig() == SkBitmap::kARGB_8888_Config);
+  SkASSERT(bitmap.config() == SkBitmap::kARGB_8888_Config);
   const uint32_t* pixels = static_cast<const uint32_t*>(bitmap.getPixels());
   if (pixels == NULL) {
     SkASSERT(false);

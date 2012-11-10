@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,10 +26,9 @@ namespace proxy {
 Buffer::Buffer(const HostResource& resource,
                const base::SharedMemoryHandle& shm_handle,
                uint32_t size)
-    : Resource(resource),
+    : Resource(OBJECT_IS_PROXY, resource),
       shm_(shm_handle, false),
       size_(size),
-      mapped_data_(NULL),
       map_count_(0) {
 }
 
@@ -47,7 +46,7 @@ PP_Bool Buffer::Describe(uint32_t* size_in_bytes) {
 }
 
 PP_Bool Buffer::IsMapped() {
-  return PP_FromBool(!!mapped_data_);
+  return PP_FromBool(map_count_ > 0);
 }
 
 void* Buffer::Map() {

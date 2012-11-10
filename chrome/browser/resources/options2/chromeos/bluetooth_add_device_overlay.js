@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  const OptionsPage = options.OptionsPage;
+  /** @const */ var OptionsPage = options.OptionsPage;
 
   /**
    * Encapsulated handling of the Bluetooth options page.
@@ -12,7 +12,7 @@ cr.define('options', function() {
   function BluetoothOptions() {
     OptionsPage.call(this,
                      'bluetooth',
-                     templateData.bluetoothOptionsPageTabTitle,
+                     loadTimeData.getString('bluetoothOptionsPageTabTitle'),
                      'bluetooth-options');
   }
 
@@ -34,6 +34,7 @@ cr.define('options', function() {
       this.createDeviceList_();
 
       $('bluetooth-add-device-cancel-button').onclick = function(event) {
+        chrome.send('stopBluetoothDeviceDiscovery');
         OptionsPage.closeOverlay();
       };
 
@@ -41,8 +42,11 @@ cr.define('options', function() {
       $('bluetooth-add-device-apply-button').onclick = function(event) {
         var device = self.deviceList_.selectedItem;
         var address = device.address;
-        chrome.send('updateBluetoothDevice', [address, 'connect']);
+        chrome.send('stopBluetoothDeviceDiscovery');
         OptionsPage.closeOverlay();
+        device.pairing = 'bluetoothStartConnecting';
+        options.BluetoothPairing.showDialog(device);
+        chrome.send('updateBluetoothDevice', [address, 'connect']);
       };
 
       $('bluetooth-add-device-apply-button').onmousedown = function(event) {
@@ -69,6 +73,16 @@ cr.define('options', function() {
       this.deviceList_.autoExpands = true;
     }
   };
+
+  /**
+   * Automatically start the device discovery process if the
+   * "Add device" dialog is visible.
+   */
+  BluetoothOptions.updateDiscovery = function() {
+    var page = BluetoothOptions.getInstance();
+    if (page && page.visible)
+      chrome.send('findBluetoothDevices');
+  }
 
   // Export
   return {

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/chromeos/extensions/file_browser_notifications.h"
+#include "chromeos/dbus/mock_dbus_thread_manager.h"  // For SystemNotifications
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -16,8 +17,11 @@ using ::testing::_;
 using ::testing::InSequence;
 using ::testing::Return;
 using ::testing::StrEq;
+using ::testing::AnyNumber;
 
 namespace chromeos {
+
+namespace {
 
 class MockFileBrowserNotificationsOnMount : public FileBrowserNotifications {
  public:
@@ -35,6 +39,8 @@ class MockFileBrowserNotificationsOnMount : public FileBrowserNotifications {
 MATCHER_P2(String16Equals, id, label, "") {
   return arg == l10n_util::GetStringFUTF16(id, ASCIIToUTF16(label));
 }
+
+}  // namespace
 
 TEST(FileBrowserMountNotificationsTest, GoodDevice) {
   MockFileBrowserNotificationsOnMount* mocked_notifications =

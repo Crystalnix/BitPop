@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_BASE_ACCESSIBILITY_ACCESSIBILITY_TYPES_H_
 #define UI_BASE_ACCESSIBILITY_ACCESSIBILITY_TYPES_H_
-#pragma once
 
 #include "base/basictypes.h"
 
@@ -75,6 +74,7 @@ class AccessibilityTypes {
     ROLE_RADIOBUTTON,
     ROLE_SCROLLBAR,
     ROLE_SEPARATOR,
+    ROLE_SLIDER,
     ROLE_STATICTEXT,
     ROLE_TEXT,
     ROLE_TITLEBAR,

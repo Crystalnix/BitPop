@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -89,7 +89,7 @@ var HttpPipelineView = (function() {
       if (hasInfo) {
         var tablePrinter = createConnectionTablePrinter(
             httpPipelinedConnectionInfo);
-        tablePrinter.toHTML(this.httpPipelineConnectionsDiv_, 'styledTable');
+        tablePrinter.toHTML(this.httpPipelineConnectionsDiv_, 'styled-table');
       }
 
       return true;
@@ -106,7 +106,7 @@ var HttpPipelineView = (function() {
           httpPipeliningKnownHosts.length > 0) {
         var tabPrinter = createKnownHostsTablePrinter(httpPipeliningKnownHosts);
         tabPrinter.toHTML(
-            this.httpPipelineKnownHostsDiv_, 'styledTable');
+            this.httpPipelineKnownHostsDiv_, 'styled-table');
       } else {
         this.httpPipelineKnownHostsDiv_.innerHTML = 'None';
       }
@@ -121,6 +121,7 @@ var HttpPipelineView = (function() {
   function createConnectionTablePrinter(httpPipelinedConnectionInfo) {
     var tablePrinter = new TablePrinter();
     tablePrinter.addHeaderCell('Host');
+    tablePrinter.addHeaderCell('Forced');
     tablePrinter.addHeaderCell('Depth');
     tablePrinter.addHeaderCell('Capacity');
     tablePrinter.addHeaderCell('Usable');
@@ -134,6 +135,8 @@ var HttpPipelineView = (function() {
         tablePrinter.addRow();
 
         tablePrinter.addCell(connection.host);
+        tablePrinter.addCell(
+            connection.forced === undefined ? false : connection.forced);
         tablePrinter.addCell(connection.depth);
         tablePrinter.addCell(connection.capacity);
         tablePrinter.addCell(connection.usable);

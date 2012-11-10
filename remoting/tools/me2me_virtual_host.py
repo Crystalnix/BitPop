@@ -11,6 +11,7 @@
 
 import atexit
 import base64
+import errno
 import getpass
 import hashlib
 import hmac
@@ -23,18 +24,25 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib2
 import uuid
 
 # Local modules
+sys.path.insert(0, "/usr/share/chrome-remote-desktop")
 import gaia_auth
 import keygen
 
-REMOTING_COMMAND = "remoting_me2me_host"
+# By default this script will try to determine the most appropriate X session
+# command for the system.  To use a specific session instead, set this variable
+# to the executable filename, or a list containing the executable and any
+# arguments, for example:
+# XSESSION_COMMAND = "/usr/bin/gnome-session-fallback"
+# XSESSION_COMMAND = ["/usr/bin/gnome-session", "--session=ubuntu-2d"]
+XSESSION_COMMAND = None
 
-# Command-line switch for passing the config path to remoting_me2me_host.
-HOST_CONFIG_SWITCH_NAME = "host-config"
+REMOTING_COMMAND = "remoting_me2me_host"
 
 # Needs to be an absolute path, since the current working directory is changed
 # when this process self-daemonizes.
@@ -48,7 +56,8 @@ else:
 EXE_PATHS_TO_TRY = [
     ".",
     "../../out/Debug",
-    "../../out/Release"
+    "../../out/Release",
+    "/usr/lib/chrome-remote-desktop",
 ]
 
 CONFIG_DIR = os.path.expanduser("~/.config/chrome-remote-desktop")
@@ -72,10 +81,16 @@ class Authentication:
   def __init__(self, config_file):
     self.config_file = config_file
 
-  def refresh_tokens(self):
+  def generate_tokens(self):
+    """Prompt for username/password and use them to generate new authentication
+    tokens.
+
+    Raises:
+      Exception: Failed to get new authentication tokens.
+    """
     print "Email:",
     self.login = raw_input()
-    password = getpass.getpass("Password: ")
+    password = getpass.getpass("App-specific password: ")
 
     chromoting_auth = gaia_auth.GaiaAuthenticator('chromoting')
     self.chromoting_auth_token = chromoting_auth.authenticate(self.login,
@@ -130,14 +145,29 @@ class Host:
   server = 'www.googleapis.com'
   url = 'https://' + server + '/chromoting/v1/@me/hosts'
 
-  def __init__(self, config_file):
+  def __init__(self, config_file, auth):
+    """
+    Args:
+      config_file: Host configuration file path
+      auth: Authentication object with credentials for authenticating with the
+        Directory service.
+    """
     self.config_file = config_file
+    self.auth = auth
     self.host_id = str(uuid.uuid1())
     self.host_name = socket.gethostname()
     self.host_secret_hash = None
     self.private_key = None
 
-  def register(self, auth):
+  def register(self):
+    """Generates a private key for the stored |host_id|, and registers it with
+    the Directory service.
+
+    Raises:
+      urllib2.HTTPError: An error occurred talking to the Directory server
+        (for example, if the |auth| credentials were rejected).
+    """
+
     logging.info("HostId: " + self.host_id)
     logging.info("HostName: " + self.host_name)
 
@@ -154,7 +184,7 @@ class Host:
     }
     params = json.dumps(json_data)
     headers = {
-        "Authorization": "GoogleLogin auth=" + auth.chromoting_auth_token,
+        "Authorization": "GoogleLogin auth=" + self.auth.chromoting_auth_token,
         "Content-Type": "application/json",
     }
 
@@ -163,27 +193,34 @@ class Host:
     opener.add_handler(urllib2.HTTPDefaultErrorHandler())
 
     logging.info("Registering host with directory service...")
-    try:
-      res = urllib2.urlopen(request)
-      data = res.read()
-    except urllib2.HTTPError, err:
-      logging.error("Directory returned error: " + str(err))
-      logging.error(err.read())
-      sys.exit(1)
+
+    res = urllib2.urlopen(request)
+    data = res.read()
+
     logging.info("Done")
 
   def ask_pin(self):
     while 1:
-      pin = getpass.getpass("Host PIN (can be empty): ")
-      if len(pin) > 0 and len(pin) < 4:
-        print "PIN must be at least 4 characters long."
+      pin = getpass.getpass("Host PIN: ")
+      if len(pin) < 6:
+        print "PIN must be at least 6 characters long."
+        continue
+      pin2 = getpass.getpass("Confirm host PIN: ")
+      if pin2 != pin:
+        print "PINs didn't match. Please try again."
         continue
       break
+    self.set_pin(pin)
+
+  def set_pin(self, pin):
     if pin == "":
-      self.host_secret_hash = None
+      self.host_secret_hash = "plain:"
     else:
       self.host_secret_hash = "hmac:" + base64.b64encode(
           hmac.new(str(self.host_id), pin, hashlib.sha256).digest())
+
+  def is_pin_set(self):
+    return self.host_secret_hash
 
   def load_config(self):
     try:
@@ -203,6 +240,7 @@ class Host:
     data = {
         "host_id": self.host_id,
         "host_name": self.host_name,
+        "host_secret_hash": self.host_secret_hash,
         "private_key": self.private_key,
     }
     if self.host_secret_hash:
@@ -218,12 +256,11 @@ class Host:
 class Desktop:
   """Manage a single virtual desktop"""
 
-  def __init__(self, width, height):
+  def __init__(self, sizes):
     self.x_proc = None
     self.session_proc = None
     self.host_proc = None
-    self.width = width
-    self.height = height
+    self.sizes = sizes
     g_desktops.append(self)
 
   @staticmethod
@@ -236,15 +273,25 @@ class Desktop:
     return display
 
   def launch_x_server(self, extra_x_args):
+    devnull = open(os.devnull, "rw")
     display = self.get_unused_display_number()
     ret_code = subprocess.call("xauth add :%d . `mcookie`" % display,
                                shell=True)
     if ret_code != 0:
       raise Exception("xauth failed with code %d" % ret_code)
 
-    logging.info("Starting Xvfb on display :%d" % display);
-    screen_option = "%dx%dx24" % (self.width, self.height)
-    self.x_proc = subprocess.Popen(["Xvfb", ":%d" % display,
+    max_width = max([width for width, height in self.sizes])
+    max_height = max([height for width, height in self.sizes])
+
+    try:
+      xvfb = locate_executable("Xvfb-randr")
+    except Exception:
+      xvfb = "Xvfb"
+
+    logging.info("Starting %s on display :%d" % (xvfb, display));
+    screen_option = "%dx%dx24" % (max_width, max_height)
+    self.x_proc = subprocess.Popen([xvfb, ":%d" % display,
+                                    "-noreset",
                                     "-auth", X_AUTH_FILE,
                                     "-nolisten", "tcp",
                                     "-screen", "0", screen_option
@@ -254,9 +301,12 @@ class Desktop:
 
     # Create clean environment for new session, so it is cleanly separated from
     # the user's console X session.
-    self.child_env = {"DISPLAY": ":%d" % display}
+    self.child_env = {
+        "DISPLAY": ":%d" % display,
+        "REMOTING_ME2ME_SESSION": "1" }
     for key in [
         "HOME",
+        "LANG",
         "LOGNAME",
         "PATH",
         "SHELL",
@@ -267,8 +317,7 @@ class Desktop:
 
     # Wait for X to be active.
     for test in range(5):
-      proc = subprocess.Popen("xdpyinfo > /dev/null", env=self.child_env,
-                              shell=True)
+      proc = subprocess.Popen("xdpyinfo", env=self.child_env, stdout=devnull)
       pid, retcode = os.waitpid(proc.pid, 0)
       if retcode == 0:
         break
@@ -278,16 +327,53 @@ class Desktop:
     else:
       logging.info("Xvfb is active.")
 
+    # The remoting host expects the server to use "evdev" keycodes, but Xvfb
+    # starts configured to use the "base" ruleset, resulting in XKB configuring
+    # for "xfree86" keycodes, and screwing up some keys. See crbug.com/119013.
+    # Reconfigure the X server to use "evdev" keymap rules.  The X server must
+    # be started with -noreset otherwise it'll reset as soon as the command
+    # completes, since there are no other X clients running yet.
+    proc = subprocess.Popen("setxkbmap -rules evdev", env=self.child_env,
+                            shell=True)
+    pid, retcode = os.waitpid(proc.pid, 0)
+    if retcode != 0:
+      logging.error("Failed to set XKB to 'evdev'")
+
+    # Register the screen sizes if the X server's RANDR extension supports it.
+    # Errors here are non-fatal; the X server will continue to run with the
+    # dimensions from the "-screen" option.
+    for width, height in self.sizes:
+      label = "%dx%d" % (width, height)
+      args = ["xrandr", "--newmode", label, "0", str(width), "0", "0", "0",
+              str(height), "0", "0", "0"]
+      proc = subprocess.Popen(args, env=self.child_env, stdout=devnull,
+                              stderr=devnull)
+      proc.wait()
+      args = ["xrandr", "--addmode", "screen", label]
+      proc = subprocess.Popen(args, env=self.child_env, stdout=devnull,
+                              stderr=devnull)
+      proc.wait()
+
+    # Set the initial mode to the first size specified, otherwise the X server
+    # would default to (max_width, max_height), which might not even be in the
+    # list.
+    label = "%dx%d" % self.sizes[0]
+    args = ["xrandr", "-s", label]
+    proc = subprocess.Popen(args, env=self.child_env, stdout=devnull,
+                            stderr=devnull)
+    proc.wait()
+
+    devnull.close()
+
   def launch_x_session(self):
     # Start desktop session
-    # The /dev/null input redirection is necessary to prevent Xsession from
+    # The /dev/null input redirection is necessary to prevent the X session
     # reading from stdin.  If this code runs as a shell background job in a
     # terminal, any reading from stdin causes the job to be suspended.
     # Daemonization would solve this problem by separating the process from the
     # controlling terminal.
-    #
-    # This assumes that GDM is installed and configured on the system.
-    self.session_proc = subprocess.Popen("/etc/gdm/Xsession",
+    logging.info("Launching X session: %s" % XSESSION_COMMAND)
+    self.session_proc = subprocess.Popen(XSESSION_COMMAND,
                                          stdin=open(os.devnull, "r"),
                                          cwd=HOME_DIR,
                                          env=self.child_env)
@@ -297,8 +383,11 @@ class Desktop:
   def launch_host(self, host):
     # Start remoting host
     args = [locate_executable(REMOTING_COMMAND),
-            "--%s=%s" % (HOST_CONFIG_SWITCH_NAME, host.config_file)]
+            "--host-config=%s" % (host.config_file)]
+    if host.auth.config_file != host.config_file:
+      args.append("--auth-config=%s" % (host.auth.config_file))
     self.host_proc = subprocess.Popen(args, env=self.child_env)
+    logging.info(args)
     if not self.host_proc.pid:
       raise Exception("Could not start remoting host")
 
@@ -386,6 +475,51 @@ class PidFile:
       os.remove(self.filename)
 
 
+def choose_x_session():
+  """Chooses the most appropriate X session command for this system.
+
+  If XSESSION_COMMAND is already set, its value is returned directly.
+  Otherwise, a session is chosen for this system.
+
+  Returns:
+    A string containing the command to run, or a list of strings containing
+    the executable program and its arguments, which is suitable for passing as
+    the first parameter of subprocess.Popen().  If a suitable session cannot
+    be found, returns None.
+  """
+  if XSESSION_COMMAND is not None:
+    return XSESSION_COMMAND
+
+  # Use a custom startup file if present
+  startup_file = os.path.expanduser("~/.chrome-remote-desktop-session")
+  if os.path.exists(startup_file):
+    # Use the same logic that a Debian system typically uses with ~/.xsession
+    # (see /etc/X11/Xsession.d/50x11-common_determine-startup), to determine
+    # exactly how to run this file.
+    if os.access(startup_file, os.X_OK):
+      return startup_file
+    else:
+      shell = os.environ.get("SHELL", "sh")
+      return [shell, startup_file]
+
+  # Unity-2d would normally be the preferred choice on Ubuntu 12.04.  At the
+  # time of writing, this session does not work properly (missing launcher and
+  # panel), so gnome-session-fallback is used in preference.
+  # "unity-2d-panel" was chosen here simply because it appears in the TryExec
+  # line of the session's .desktop file; other choices might be just as good.
+  for test_file, command in [
+    ("/usr/bin/gnome-session-fallback",
+      ["/etc/X11/Xsession", "gnome-session-fallback"]),
+    ("/etc/gdm/Xsession", "/etc/gdm/Xsession"),
+    ("/usr/bin/unity-2d-panel",
+      ["/etc/X11/Xsession", "/usr/bin/gnome-session --session=ubuntu-2d"]),
+  ]:
+    if os.path.exists(test_file):
+      return command
+
+  return None
+
+
 def locate_executable(exe_name):
   for path in EXE_PATHS_TO_TRY:
     exe_path = os.path.join(SCRIPT_PATH, path, exe_name)
@@ -398,6 +532,14 @@ def locate_executable(exe_name):
 def daemonize(log_filename):
   """Background this process and detach from controlling terminal, redirecting
   stdout/stderr to |log_filename|."""
+
+  # TODO(lambroslambrou): Having stdout/stderr redirected to a log file is not
+  # ideal - it could create a filesystem DoS if the daemon or a child process
+  # were to write excessive amounts to stdout/stderr.  Ideally, stdout/stderr
+  # should be redirected to a pipe or socket, and a process at the other end
+  # should consume the data and write it to a logging facility which can do
+  # data-capping or log-rotation. The 'logger' command-line utility could be
+  # used for this, but it might cause too much syslog spam.
 
   # Create new (temporary) file-descriptors before forking, so any errors get
   # reported to the main process and set the correct exit-code.
@@ -427,8 +569,7 @@ def daemonize(log_filename):
     # Parent process
     os._exit(0)
 
-  logging.info("Daemon process running, PID = %d, logging to '%s'" %
-               (os.getpid(), log_filename))
+  logging.info("Daemon process running, logging to '%s'" % log_filename)
 
   os.chdir(HOME_DIR)
 
@@ -459,30 +600,55 @@ def cleanup():
       desktop.x_proc.terminate()
 
 
+def reload_config():
+  for desktop in g_desktops:
+    if desktop.host_proc:
+      # Terminating the Host will cause the main loop to spawn another
+      # instance, which will read any changes made to the Host config file.
+      desktop.host_proc.terminate()
+
+
 def signal_handler(signum, stackframe):
+  if signum == signal.SIGUSR1:
+    logging.info("SIGUSR1 caught, reloading configuration.")
+    reload_config()
+  else:
     # Exit cleanly so the atexit handler, cleanup(), gets called.
     raise SystemExit
 
 
 def main():
+  DEFAULT_SIZE = "1280x1024"
   parser = optparse.OptionParser(
       "Usage: %prog [options] [ -- [ X server options ] ]")
-  parser.add_option("-s", "--size", dest="size", default="1280x1024",
-                    help="dimensions of virtual desktop (default: %default)")
+  parser.add_option("-s", "--size", dest="size", action="append",
+                    help="dimensions of virtual desktop (default: %s). "
+                    "This can be specified multiple times to make multiple "
+                    "screen resolutions available (if the Xvfb server "
+                    "supports this)" % DEFAULT_SIZE)
   parser.add_option("-f", "--foreground", dest="foreground", default=False,
                     action="store_true",
                     help="don't run as a background daemon")
   parser.add_option("-k", "--stop", dest="stop", default=False,
                     action="store_true",
                     help="stop the daemon currently running")
+  parser.add_option("-p", "--new-pin", dest="new_pin", default=False,
+                    action="store_true",
+                    help="set new PIN before starting the host")
+  parser.add_option("", "--check-running", dest="check_running", default=False,
+                    action="store_true",
+                    help="return 0 if the daemon is running, or 1 otherwise")
+  parser.add_option("", "--silent", dest="silent", default=False,
+                    action="store_true",
+                    help="Start the host without trying to configure it.")
   (options, args) = parser.parse_args()
-
-  size_components = options.size.split("x")
-  if len(size_components) != 2:
-    parser.error("Incorrect size format, should be WIDTHxHEIGHT");
 
   host_hash = hashlib.md5(socket.gethostname()).hexdigest()
   pid_filename = os.path.join(CONFIG_DIR, "host#%s.pid" % host_hash)
+
+  if options.check_running:
+    running, pid = PidFile(pid_filename).check()
+    return 0 if (running and pid != 0) else 1
 
   if options.stop:
     running, pid = PidFile(pid_filename).check()
@@ -493,70 +659,139 @@ def main():
       os.kill(pid, signal.SIGTERM)
     return 0
 
-  try:
-    width = int(size_components[0])
-    height = int(size_components[1])
+  if not options.size:
+    options.size = [DEFAULT_SIZE]
 
-    # Enforce minimum desktop size, as a sanity-check.  The limit of 100 will
-    # detect typos of 2 instead of 3 digits.
-    if width < 100 or height < 100:
-      raise ValueError
-  except ValueError:
-    parser.error("Width and height should be 100 pixels or greater")
+  sizes = []
+  for size in options.size:
+    size_components = size.split("x")
+    if len(size_components) != 2:
+      parser.error("Incorrect size format '%s', should be WIDTHxHEIGHT" % size)
+
+    try:
+      width = int(size_components[0])
+      height = int(size_components[1])
+
+      # Enforce minimum desktop size, as a sanity-check.  The limit of 100 will
+      # detect typos of 2 instead of 3 digits.
+      if width < 100 or height < 100:
+        raise ValueError
+    except ValueError:
+      parser.error("Width and height should be 100 pixels or greater")
+
+    sizes.append((width, height))
+
+  global XSESSION_COMMAND
+  XSESSION_COMMAND = choose_x_session()
+  if XSESSION_COMMAND is None:
+    print >> sys.stderr, "Unable to choose suitable X session command."
+    return 1
+
+  if "--session=ubuntu-2d" in XSESSION_COMMAND:
+    print >> sys.stderr, (
+      "The Unity 2D desktop session will be used.\n"
+      "If you encounter problems with this choice of desktop, please install\n"
+      "the gnome-session-fallback package, and restart this script.\n")
 
   atexit.register(cleanup)
 
-  for s in [signal.SIGHUP, signal.SIGINT, signal.SIGTERM]:
+  for s in [signal.SIGHUP, signal.SIGINT, signal.SIGTERM, signal.SIGUSR1]:
     signal.signal(s, signal_handler)
 
   # Ensure full path to config directory exists.
   if not os.path.exists(CONFIG_DIR):
     os.makedirs(CONFIG_DIR, mode=0700)
 
-  auth = Authentication(os.path.join(CONFIG_DIR, "auth.json"))
-  if not auth.load_config():
-    try:
-      auth.refresh_tokens()
-    except:
-      logging.error("Authentication failed.")
+  host_config_file = os.path.join(CONFIG_DIR, "host#%s.json" % host_hash)
+
+  # --silent option is specified when we are started from WebApp UI. Don't use
+  # separate auth file in that case.
+  # TODO(sergeyu): Always use host config for auth parameters.
+  if options.silent:
+    auth_config_file = host_config_file
+  else:
+    auth_config_file = os.path.join(CONFIG_DIR, "auth.json")
+
+  auth = Authentication(auth_config_file)
+  auth_config_loaded = auth.load_config()
+
+  host = Host(host_config_file, auth)
+  host_config_loaded = host.load_config()
+
+  if options.silent:
+    if not host_config_loaded or not auth_config_loaded:
+      logging.error("Failed to load host configuration.")
       return 1
-    auth.save_config()
+  else:
+    need_auth_tokens = not auth_config_loaded
+    need_register_host = not host_config_loaded
+    # Outside the loop so user doesn't get asked twice.
+    if need_register_host:
+      host.ask_pin()
+    elif options.new_pin or not host.is_pin_set():
+      host.ask_pin()
+      host.save_config()
+      running, pid = PidFile(pid_filename).check()
+      if running and pid != 0:
+        os.kill(pid, signal.SIGUSR1)
+        print "The running instance has been updated with the new PIN."
+        return 0
 
-  host = Host(os.path.join(CONFIG_DIR, "host#%s.json" % host_hash))
+    # The loop is to deal with the case of registering a new Host with
+    # previously-saved auth tokens (from a previous run of this script), which
+    # may require re-prompting for username & password.
+    while True:
+      try:
+        if need_auth_tokens:
+          auth.generate_tokens()
+          auth.save_config()
+          need_auth_tokens = False
+      except Exception:
+        logging.error("Authentication failed")
+        return 1
 
-  if not host.load_config():
-    host.ask_pin()
-    host.register(auth)
-    host.save_config()
+      try:
+        if need_register_host:
+          host.register()
+          host.save_config()
+      except urllib2.HTTPError, err:
+        if err.getcode() == 401:
+          # Authentication failed - re-prompt for username & password.
+          need_auth_tokens = True
+          continue
+        else:
+          # Not an authentication error.
+          logging.error("Directory returned error: " + str(err))
+          logging.error(err.read())
+          return 1
+
+      # |auth| and |host| are both set up, so break out of the loop.
+      break
 
   global g_pidfile
   g_pidfile = PidFile(pid_filename)
   running, pid = g_pidfile.check()
 
   if running:
-    if pid == 0:
-      pid = 'unknown'
-
-    logging.error("An instance of this script is already running, PID is %s." %
-                  pid)
-    logging.error("If this isn't the case, delete '%s' and try again." %
-                  pid_filename)
+    print "An instance of this script is already running."
+    print "Use the -k flag to terminate the running instance."
+    print "If this isn't the case, delete '%s' and try again." % pid_filename
     return 1
 
   g_pidfile.create()
 
   # daemonize() must only be called after prompting for user/password, as the
   # process will become detached from the controlling terminal.
-  log_filename = os.path.join(CONFIG_DIR, "host#%s.log" % host_hash)
 
   if not options.foreground:
-    daemonize(log_filename)
+    log_file = tempfile.NamedTemporaryFile(prefix="me2me_host_", delete=False)
+    daemonize(log_file.name)
 
   g_pidfile.write_pid()
 
   logging.info("Using host_id: " + host.host_id)
 
-  desktop = Desktop(width, height)
+  desktop = Desktop(sizes)
 
   # Remember the time when the last session was launched, in order to enforce
   # a minimum time between launches.  This avoids spinning in case of a
@@ -596,7 +831,17 @@ def main():
       logging.info("Launching host process")
       desktop.launch_host(host)
 
-    pid, status = os.wait()
+    try:
+      pid, status = os.wait()
+    except OSError, e:
+      if e.errno == errno.EINTR:
+        # Retry on EINTR, which can happen if a signal such as SIGUSR1 is
+        # received.
+        continue
+      else:
+        # Anything else is an unexpected error.
+        raise
+
     logging.info("wait() returned (%s,%s)" % (pid, status))
 
     # When os.wait() notifies that a process has terminated, any Popen instance
@@ -614,6 +859,37 @@ def main():
       logging.info("Host process terminated")
       desktop.host_proc = None
 
+      # These exit-codes must match the ones used by the host.
+      # See remoting/host/constants.h.
+      # Delete the host or auth configuration depending on the returned error
+      # code, so the next time this script is run, a new configuration
+      # will be created and registered.
+      if os.WEXITSTATUS(status) == 2:
+        logging.info("Host configuration is invalid - exiting.")
+        try:
+          os.remove(host.config_file)
+          os.remove(auth.config_file)
+        except:
+          pass
+        return 0
+      elif os.WEXITSTATUS(status) == 3:
+        logging.info("Host ID has been deleted - exiting.")
+        try:
+          os.remove(host.config_file)
+        except:
+          pass
+        return 0
+      elif os.WEXITSTATUS(status) == 4:
+        logging.info("OAuth credentials are invalid - exiting.")
+        try:
+          os.remove(auth.config_file)
+        except:
+          pass
+        return 0
+      elif os.WEXITSTATUS(status) == 5:
+        logging.info("Host domain is blocked by policy - exiting.")
+        os.remove(host.config_file)
+        return 0
 
 if __name__ == "__main__":
   logging.basicConfig(level=logging.DEBUG)

@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/values.h"
@@ -14,11 +15,12 @@
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/webui_login_display.h"
 #include "chrome/browser/chromeos/options/take_photo_dialog.h"
-#include "chrome/browser/ui/dialog_style.h"
-#include "chrome/browser/ui/views/window.h"
 #include "chrome/browser/ui/webui/web_ui_util.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
+#include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
+#include "net/base/data_url.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/widget/widget.h"
 
@@ -35,6 +37,7 @@ UserImageScreenHandler::UserImageScreenHandler()
     : screen_(NULL),
       show_on_init_(false),
       selected_image_(User::kInvalidImageIndex),
+      accept_photo_after_decoding_(false),
       user_photo_data_url_(chrome::kAboutBlankURL),
       profile_picture_data_url_(chrome::kAboutBlankURL),
       profile_picture_absent_(false),
@@ -44,6 +47,8 @@ UserImageScreenHandler::UserImageScreenHandler()
 UserImageScreenHandler::~UserImageScreenHandler() {
   if (screen_)
     screen_->OnActorDestroyed(this);
+  if (image_decoder_.get())
+    image_decoder_->set_delegate(NULL);
 }
 
 void UserImageScreenHandler::GetLocalizedStrings(
@@ -56,20 +61,39 @@ void UserImageScreenHandler::GetLocalizedStrings(
       l10n_util::GetStringUTF16(IDS_OPTIONS_CHANGE_PICTURE_DIALOG_TEXT));
   localized_strings->SetString("takePhoto",
       l10n_util::GetStringUTF16(IDS_OPTIONS_CHANGE_PICTURE_TAKE_PHOTO));
+  localized_strings->SetString("discardPhoto",
+      l10n_util::GetStringUTF16(IDS_OPTIONS_CHANGE_PICTURE_DISCARD_PHOTO));
+  localized_strings->SetString("flipPhoto",
+      l10n_util::GetStringUTF16(IDS_OPTIONS_CHANGE_PICTURE_FLIP_PHOTO));
   localized_strings->SetString("profilePhoto",
       l10n_util::GetStringUTF16(IDS_IMAGE_SCREEN_PROFILE_PHOTO));
   localized_strings->SetString("profilePhotoLoading",
       l10n_util::GetStringUTF16(IDS_IMAGE_SCREEN_PROFILE_LOADING_PHOTO));
   localized_strings->SetString("okButtonText",
       l10n_util::GetStringUTF16(IDS_OK));
+  localized_strings->SetString("authorCredit",
+      l10n_util::GetStringUTF16(IDS_OPTIONS_SET_WALLPAPER_AUTHOR_TEXT));
+  if (!CommandLine::ForCurrentProcess()->
+          HasSwitch(switches::kDisableHtml5Camera)) {
+    localized_strings->SetString("cameraType", "webrtc");
+  } else {
+    localized_strings->SetString("cameraType", "old");
+  }
 }
 
 void UserImageScreenHandler::Initialize() {
-  ListValue image_urls;
-  for (int i = 0; i < kDefaultImagesCount; ++i) {
-    image_urls.Append(new StringValue(GetDefaultImageUrl(i)));
+  base::ListValue image_urls;
+  for (int i = kFirstDefaultImageIndex; i < kDefaultImagesCount; ++i) {
+    scoped_ptr<base::DictionaryValue> image_data(new base::DictionaryValue);
+    image_data->SetString("url", GetDefaultImageUrl(i));
+    image_data->SetString(
+        "author", l10n_util::GetStringUTF16(kDefaultImageAuthorIDs[i]));
+    image_data->SetString(
+        "website", l10n_util::GetStringUTF16(kDefaultImageWebsiteIDs[i]));
+    image_data->SetString("title", GetDefaultImageDescription(i));
+    image_urls.Append(image_data.release());
   }
-  web_ui()->CallJavascriptFunction("oobe.UserImageScreen.setUserImages",
+  web_ui()->CallJavascriptFunction("oobe.UserImageScreen.setDefaultImages",
                                    image_urls);
 
   if (selected_image_ != User::kInvalidImageIndex)
@@ -129,6 +153,11 @@ void UserImageScreenHandler::ShowCameraInitializing() {
 }
 
 void UserImageScreenHandler::CheckCameraPresence() {
+  // For WebRTC, camera presence checked is done on JS side.
+  if (!CommandLine::ForCurrentProcess()->
+          HasSwitch(switches::kDisableHtml5Camera)) {
+    return;
+  }
   CameraDetector::StartPresenceCheck(
       base::Bind(&UserImageScreenHandler::OnCameraPresenceCheckDone,
                  weak_factory_.GetWeakPtr()));
@@ -142,6 +171,9 @@ void UserImageScreenHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("takePhoto",
       base::Bind(&UserImageScreenHandler::HandleTakePhoto,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("photoTaken",
+      base::Bind(&UserImageScreenHandler::HandlePhotoTaken,
+                 base::Unretained(this)));
   web_ui()->RegisterMessageCallback("selectImage",
       base::Bind(&UserImageScreenHandler::HandleSelectImage,
                  base::Unretained(this)));
@@ -153,7 +185,7 @@ void UserImageScreenHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
-void UserImageScreenHandler::AddProfileImage(const SkBitmap& image) {
+void UserImageScreenHandler::AddProfileImage(const gfx::ImageSkia& image) {
   profile_picture_data_url_ = web_ui_util::GetImageDataUrl(image);
   SendProfileImage(profile_picture_data_url_);
 }
@@ -175,7 +207,7 @@ void UserImageScreenHandler::OnProfileImageAbsent() {
   }
 }
 
-void UserImageScreenHandler::OnPhotoAccepted(const SkBitmap& photo) {
+void UserImageScreenHandler::OnPhotoAccepted(const gfx::ImageSkia& photo) {
   user_photo_ = photo;
   user_photo_data_url_ = web_ui_util::GetImageDataUrl(user_photo_);
   selected_image_ = User::kExternalImageIndex;
@@ -184,25 +216,38 @@ void UserImageScreenHandler::OnPhotoAccepted(const SkBitmap& photo) {
                                    data_url);
 }
 
+void UserImageScreenHandler::HandlePhotoTaken(const base::ListValue* args) {
+  std::string image_url;
+  if (!args || args->GetSize() != 1 || !args->GetString(0, &image_url))
+    NOTREACHED();
+  DCHECK(!image_url.empty());
+
+  std::string mime_type, charset, raw_data;
+  if (!net::DataURL::Parse(GURL(image_url), &mime_type, &charset, &raw_data))
+    NOTREACHED();
+  DCHECK_EQ("image/png", mime_type);
+
+  user_photo_ = gfx::ImageSkia();
+  user_photo_data_url_ = image_url;
+
+  if (image_decoder_.get())
+    image_decoder_->set_delegate(NULL);
+  image_decoder_ = new ImageDecoder(this, raw_data);
+  image_decoder_->Start();
+}
+
 void UserImageScreenHandler::HandleTakePhoto(const base::ListValue* args) {
   DCHECK(args && args->empty());
-  TakePhotoDialog* take_photo_dialog = new TakePhotoDialog(this);
-  views::Widget* window = browser::CreateViewsWindow(
-      GetNativeWindow(),
-      take_photo_dialog,
-      STYLE_GENERIC);
+  views::Widget* window = views::Widget::CreateWindowWithParent(
+      new TakePhotoDialog(this), GetNativeWindow());
   window->SetAlwaysOnTop(true);
   window->Show();
 }
 
 void UserImageScreenHandler::HandleSelectImage(const base::ListValue* args) {
   std::string image_url;
-  if (!args ||
-      args->GetSize() != 1 ||
-      !args->GetString(0, &image_url)) {
+  if (!args || args->GetSize() != 1 || !args->GetString(0, &image_url))
     NOTREACHED();
-    return;
-  }
   if (image_url.empty())
     return;
 
@@ -222,7 +267,11 @@ void UserImageScreenHandler::HandleImageAccepted(const base::ListValue* args) {
     return;
   switch (selected_image_) {
     case User::kExternalImageIndex:
-      screen_->OnPhotoTaken(user_photo_);
+      // Photo decoding may not have been finished yet.
+      if (user_photo_.empty())
+        accept_photo_after_decoding_ = true;
+      else
+        screen_->OnPhotoTaken(user_photo_);
       break;
 
     case User::kProfileImageIndex:
@@ -249,6 +298,18 @@ void UserImageScreenHandler::OnCameraPresenceCheckDone() {
       CameraDetector::camera_presence() == CameraDetector::kCameraPresent);
   web_ui()->CallJavascriptFunction("oobe.UserImageScreen.setCameraPresent",
                                    present_value);
+}
+
+void UserImageScreenHandler::OnImageDecoded(const ImageDecoder* decoder,
+                                            const SkBitmap& decoded_image) {
+  DCHECK_EQ(image_decoder_.get(), decoder);
+  user_photo_ = gfx::ImageSkia(decoded_image);
+  if (screen_ && accept_photo_after_decoding_)
+    screen_->OnPhotoTaken(user_photo_);
+}
+
+void UserImageScreenHandler::OnDecodeImageFailed(const ImageDecoder* decoder) {
+  NOTREACHED() << "Failed to decode PNG image from WebUI";
 }
 
 }  // namespace chromeos

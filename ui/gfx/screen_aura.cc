@@ -1,80 +1,66 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ui/gfx/screen.h"
 
 #include "base/logging.h"
+#include "ui/gfx/display.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/screen_impl.h"
 
 namespace gfx {
 
 // gfx can't depend upon aura, otherwise we have circular dependencies. So,
-// gfx::Screen is pluggable for aura and Desktop plugs in the real
-// implementation.
-
-// static
-Screen* Screen::instance_ = NULL;
-
-// static
-void Screen::SetInstance(Screen* screen) {
-  delete instance_;
-  instance_ = screen;
+// gfx::Screen is pluggable and Desktop plugs in the real implementation.
+namespace {
+ScreenImpl* g_instance_ = NULL;
 }
 
 // static
-gfx::Point Screen::GetCursorScreenPoint() {
-  return instance_->GetCursorScreenPointImpl();
+void Screen::SetInstance(ScreenImpl* screen) {
+  delete g_instance_;
+  g_instance_ = screen;
 }
 
 // static
-gfx::Rect Screen::GetMonitorWorkAreaNearestWindow(gfx::NativeWindow window) {
-  return instance_->GetMonitorWorkAreaNearestWindowImpl(window);
+bool Screen::IsDIPEnabled() {
+  return true;
 }
 
 // static
-gfx::Rect Screen::GetMonitorAreaNearestWindow(gfx::NativeWindow window) {
-  return instance_->GetMonitorAreaNearestWindowImpl(window);
+Point Screen::GetCursorScreenPoint() {
+  return g_instance_->GetCursorScreenPoint();
 }
 
 // static
-gfx::Rect Screen::GetMonitorWorkAreaNearestPoint(const gfx::Point& point) {
-  return instance_->GetMonitorWorkAreaNearestPointImpl(point);
+NativeWindow Screen::GetWindowAtCursorScreenPoint() {
+  return g_instance_->GetWindowAtCursorScreenPoint();
 }
 
 // static
-gfx::Rect Screen::GetMonitorAreaNearestPoint(const gfx::Point& point) {
-  return instance_->GetMonitorAreaNearestPointImpl(point);
+int Screen::GetNumDisplays() {
+  return g_instance_->GetNumDisplays();
 }
 
 // static
-gfx::Rect Screen::GetPrimaryMonitorWorkArea() {
-  return instance_->GetMonitorWorkAreaNearestPoint(gfx::Point());
+Display Screen::GetDisplayNearestWindow(NativeView window) {
+  return g_instance_->GetDisplayNearestWindow(window);
 }
 
 // static
-gfx::Rect Screen::GetPrimaryMonitorBounds() {
-  return instance_->GetMonitorAreaNearestPoint(gfx::Point());
+Display Screen::GetDisplayNearestPoint(const Point& point) {
+  return g_instance_->GetDisplayNearestPoint(point);
 }
 
 // static
-gfx::Rect Screen::GetMonitorWorkAreaMatching(const gfx::Rect& match_rect) {
-  return instance_->GetMonitorWorkAreaNearestPoint(gfx::Point());
+Display Screen::GetDisplayMatching(const gfx::Rect& match_rect) {
+  return g_instance_->GetDisplayMatching(match_rect);
 }
 
 // static
-gfx::NativeWindow Screen::GetWindowAtCursorScreenPoint() {
-  return instance_->GetWindowAtCursorScreenPointImpl();
-}
-
-// static
-gfx::Size Screen::GetPrimaryMonitorSize() {
-  return instance_->GetPrimaryMonitorSizeImpl();
-}
-
-// static
-int Screen::GetNumMonitors() {
-  return instance_->GetNumMonitorsImpl();
+Display Screen::GetPrimaryDisplay() {
+  return g_instance_->GetPrimaryDisplay();
 }
 
 }  // namespace gfx

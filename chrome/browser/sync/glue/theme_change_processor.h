@@ -1,14 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_SYNC_GLUE_THEME_CHANGE_PROCESSOR_H_
 #define CHROME_BROWSER_SYNC_GLUE_THEME_CHANGE_PROCESSOR_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/sync/glue/change_processor.h"
+#include "chrome/browser/sync/glue/data_type_error_handler.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
@@ -17,29 +17,29 @@ class Profile;
 
 namespace browser_sync {
 
-class UnrecoverableErrorHandler;
+class DataTypeErrorHandler;
 
 // This class is responsible for taking changes from the
-// ThemeService and applying them to the sync_api 'syncable'
+// ThemeService and applying them to the sync API 'syncable'
 // model, and vice versa. All operations and use of this class are
 // from the UI thread.
 class ThemeChangeProcessor : public ChangeProcessor,
                              public content::NotificationObserver {
  public:
-  explicit ThemeChangeProcessor(UnrecoverableErrorHandler* error_handler);
+  explicit ThemeChangeProcessor(DataTypeErrorHandler* error_handler);
   virtual ~ThemeChangeProcessor();
 
   // content::NotificationObserver implementation.
-  // ThemeService -> sync_api model change application.
+  // ThemeService -> sync API model change application.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
   // ChangeProcessor implementation.
-  // sync_api model -> ThemeService change application.
+  // sync API model -> ThemeService change application.
   virtual void ApplyChangesFromSyncModel(
-      const sync_api::BaseTransaction* trans,
-      const sync_api::ImmutableChangeRecordList& changes) OVERRIDE;
+      const syncer::BaseTransaction* trans,
+      const syncer::ImmutableChangeRecordList& changes) OVERRIDE;
 
  protected:
   // ChangeProcessor implementation.

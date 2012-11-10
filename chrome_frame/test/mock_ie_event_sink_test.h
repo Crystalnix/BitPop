@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,7 +45,7 @@ class MockIEEventSink : public IEEventListener {
   ~MockIEEventSink() {
     Detach();
     int reference_count = event_sink_->reference_count();
-    DLOG_IF(ERROR, reference_count != 1)
+    LOG_IF(ERROR, reference_count != 1)
         << "Event sink is still referenced externally: ref count = "
         << reference_count;
     event_sink_->Release();
@@ -167,7 +167,7 @@ class MockPropertyNotifySinkListener : public PropertyNotifySinkListener {
   ~MockPropertyNotifySinkListener() {
     Detach();
     sink_->set_listener(NULL);
-    DLOG_IF(ERROR, sink_->m_dwRef != 1)
+    LOG_IF(ERROR, sink_->m_dwRef != 1)
         << "Event sink is still referenced externally: ref count = "
         << sink_->m_dwRef;
     sink_->Release();
@@ -292,7 +292,8 @@ class MockIEEventSinkTest {
   void LaunchIEAndNavigate(const std::wstring& url);
 
   // Same as above but allows the timeout to be specified.
-  void LaunchIENavigateAndLoop(const std::wstring& url, int timeout);
+  void LaunchIENavigateAndLoop(const std::wstring& url,
+                               base::TimeDelta timeout);
 
   // Returns the url for the test file given. |relative_path| should be
   // relative to the test data directory.
@@ -308,10 +309,20 @@ class MockIEEventSinkTest {
     return GetTestUrl(L"simple.html");
   }
 
+  // Returns the title of the html page at |GetSimplePageUrl()|.
+  std::wstring GetSimplePageTitle() {
+    return L"simple web page";
+  }
+
   // Returns the url for an html page just containing one link to the simple
   // page mentioned above.
   std::wstring GetLinkPageUrl() {
     return GetTestUrl(L"link.html");
+  }
+
+  // Returns the title of the html page at |GetLinkPageUrl()|.
+  std::wstring GetLinkPageTitle() {
+    return L"link";
   }
 
   // Returns the url for an html page containing several anchors pointing
@@ -324,6 +335,22 @@ class MockIEEventSinkTest {
     if (index > 0)
       base_name += std::wstring(L"#a") + base::IntToString16(index);
     return GetTestUrl(base_name);
+  }
+
+  // Returns the title of the html page at |GetAnchorPageUrl()|.
+  std::wstring GetAnchorPageTitle() {
+    return L"Chrome Frame Test";
+  }
+
+  // Returns the url for an html page that will, when clicked, open a new window
+  // to |target|.
+  std::wstring GetWindowOpenUrl(const wchar_t* target) {
+    return GetTestUrl(std::wstring(L"window_open.html?").append(target));
+  }
+
+  // Returns the title of the html page at |GetWindowOpenUrl()|.
+  std::wstring GetWindowOpenTitle() {
+    return L"window open";
   }
 
  protected:

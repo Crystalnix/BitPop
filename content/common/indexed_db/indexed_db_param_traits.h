@@ -1,17 +1,17 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_COMMON_INDEXED_DB_INDEXED_DB_PARAM_TRAITS_H_
 #define CONTENT_COMMON_INDEXED_DB_INDEXED_DB_PARAM_TRAITS_H_
-#pragma once
 
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_param_traits.h"
 
-class IndexedDBKey;
-
 namespace content {
+class IndexedDBKey;
+class IndexedDBKeyPath;
+class IndexedDBKeyRange;
 class SerializedScriptValue;
 }
 
@@ -26,15 +26,31 @@ template <>
 struct ParamTraits<content::SerializedScriptValue> {
   typedef content::SerializedScriptValue param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template <>
-struct ParamTraits<IndexedDBKey> {
-  typedef IndexedDBKey param_type;
+struct ParamTraits<content::IndexedDBKey> {
+  typedef content::IndexedDBKey param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct ParamTraits<content::IndexedDBKeyRange> {
+  typedef content::IndexedDBKeyRange param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct ParamTraits<content::IndexedDBKeyPath> {
+  typedef content::IndexedDBKeyPath param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 

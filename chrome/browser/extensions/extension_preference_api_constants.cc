@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,10 @@ namespace extension_preference_api_constants {
 const char kIncognitoKey[] = "incognito";
 
 const char kScopeKey[] = "scope";
+
+const char kIncognitoSpecific[] = "incognitoSpecific";
+const char kLevelOfControl[] = "levelOfControl";
+const char kValue[] = "value";
 
 const char kIncognitoErrorMessage[] =
     "You do not have permission to access incognito preferences.";
@@ -22,4 +26,3 @@ const char kPermissionErrorMessage[] =
     "Be sure to declare in your manifest what permissions you need.";
 
 }  // extension_preference_api_constants
-

@@ -5,256 +5,51 @@
 // This script contains privileged chrome extension related javascript APIs.
 // It is loaded by pages whose URL has the chrome-extension protocol.
 
-var chrome = chrome || {};
-(function() {
-  native function GetChromeHidden();
-  native function GetExtensionAPIDefinition();
-  native function GetNextRequestId();
-  native function StartRequest();
-  native function SetIconCommon();
+  // TODO(battre): cleanup the usage of packages everywhere, as described here
+  // http://codereview.chromium.org/10392008/diff/38/chrome/renderer/resources/extensions/schema_generated_bindings.js
 
-  var chromeHidden = GetChromeHidden();
+  require('json_schema');
+  require('event_bindings');
+  var GetExtensionAPIDefinition =
+      requireNative('apiDefinitions').GetExtensionAPIDefinition;
+  var sendRequest = require('sendRequest').sendRequest;
+  var utils = require('utils');
+  var isDevChannel = requireNative('channel').IsDevChannel;
+  var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
+  var schemaUtils = require('schemaUtils');
 
-  if (!chrome)
-    chrome = {};
-
-  function apiExists(path) {
-    var resolved = chrome;
-    path.split(".").forEach(function(next) {
-      if (resolved)
-        resolved = resolved[next];
-    });
-    return !!resolved;
-  }
-
-  function forEach(dict, f) {
-    for (key in dict) {
-      if (dict.hasOwnProperty(key))
-        f(key, dict[key]);
-    }
-  }
-
-  // Validate arguments.
-  chromeHidden.validationTypes = [];
-  chromeHidden.validate = function(args, schemas) {
-    if (args.length > schemas.length)
-      throw new Error("Too many arguments.");
-
-    for (var i = 0; i < schemas.length; i++) {
-      if (i in args && args[i] !== null && args[i] !== undefined) {
-        var validator = new chromeHidden.JSONSchemaValidator();
-        validator.addTypes(chromeHidden.validationTypes);
-        validator.validate(args[i], schemas[i]);
-        if (validator.errors.length == 0)
-          continue;
-
-        var message = "Invalid value for argument " + (i + 1) + ". ";
-        for (var i = 0, err; err = validator.errors[i]; i++) {
-          if (err.path) {
-            message += "Property '" + err.path + "': ";
-          }
-          message += err.message;
-          message = message.substring(0, message.length - 1);
-          message += ", ";
-        }
-        message = message.substring(0, message.length - 2);
-        message += ".";
-
-        throw new Error(message);
-      } else if (!schemas[i].optional) {
-        throw new Error("Parameter " + (i + 1) + " is required.");
-      }
-    }
-  };
-
-  // Callback handling.
-  var requests = [];
-  chromeHidden.handleResponse = function(requestId, name,
-                                         success, response, error) {
-    try {
-      var request = requests[requestId];
-      if (success) {
-        delete chrome.extension.lastError;
-      } else {
-        if (!error) {
-          error = "Unknown error.";
-        }
-        console.error("Error during " + name + ": " + error);
-        chrome.extension.lastError = {
-          "message": error
-        };
-      }
-
-      if (request.customCallback) {
-        request.customCallback(name, request, response);
-      }
-
-      if (request.callback) {
-        // Callbacks currently only support one callback argument.
-        var callbackArgs = response ? [chromeHidden.JSON.parse(response)] : [];
-
-        // Validate callback in debug only -- and only when the
-        // caller has provided a callback. Implementations of api
-        // calls my not return data if they observe the caller
-        // has not provided a callback.
-        if (chromeHidden.validateCallbacks && !error) {
-          try {
-            if (!request.callbackSchema.parameters) {
-              throw "No callback schemas defined";
-            }
-
-            if (request.callbackSchema.parameters.length > 1) {
-              throw "Callbacks may only define one parameter";
-            }
-
-            chromeHidden.validate(callbackArgs,
-                request.callbackSchema.parameters);
-          } catch (exception) {
-            return "Callback validation error during " + name + " -- " +
-                   exception.stack;
-          }
-        }
-
-        if (response) {
-          request.callback(callbackArgs[0]);
-        } else {
-          request.callback();
-        }
-      }
-    } finally {
-      delete requests[requestId];
-      delete chrome.extension.lastError;
-    }
-
-    return undefined;
-  };
-
-  function prepareRequest(args, argSchemas) {
-    var request = {};
-    var argCount = args.length;
-
-    // Look for callback param.
-    if (argSchemas.length > 0 &&
-        args.length == argSchemas.length &&
-        argSchemas[argSchemas.length - 1].type == "function") {
-      request.callback = args[argSchemas.length - 1];
-      request.callbackSchema = argSchemas[argSchemas.length - 1];
-      --argCount;
-    }
-
-    request.args = [];
-    for (var k = 0; k < argCount; k++) {
-      request.args[k] = args[k];
-    }
-
-    return request;
-  }
-
-  // Send an API request and optionally register a callback.
-  // |opt_args| is an object with optional parameters as follows:
-  // - noStringify: true if we should not stringify the request arguments.
-  // - customCallback: a callback that should be called instead of the standard
-  //   callback.
-  // - nativeFunction: the v8 native function to handle the request, or
-  //   StartRequest if missing.
-  // - forIOThread: true if this function should be handled on the browser IO
-  //   thread.
-  function sendRequest(functionName, args, argSchemas, opt_args) {
-    if (!opt_args)
-      opt_args = {};
-    var request = prepareRequest(args, argSchemas);
-    if (opt_args.customCallback) {
-      request.customCallback = opt_args.customCallback;
-    }
-    // JSON.stringify doesn't support a root object which is undefined.
-    if (request.args === undefined)
-      request.args = null;
-
-    var sargs = opt_args.noStringify ?
-        request.args : chromeHidden.JSON.stringify(request.args);
-    var nativeFunction = opt_args.nativeFunction || StartRequest;
-
-    var requestId = GetNextRequestId();
-    request.id = requestId;
-    requests[requestId] = request;
-    var hasCallback =
-        (request.callback || opt_args.customCallback) ? true : false;
-    return nativeFunction(functionName, sargs, requestId, hasCallback,
-                          opt_args.forIOThread);
-  }
-
-  // TODO(kalman): It's a shame to need to define this function here, since it's
-  // only used in 2 APIs (browserAction and pageAction). It would be nice to
-  // only load this if one of those APIs has been loaded.
-  // That said, both of those APIs are always injected into pages anyway (see
-  // chrome/common/extensions/extension_permission_set.cc).
-  function setIcon(details, name, parameters, actionType) {
-    var iconSize = 19;
-    if ("iconIndex" in details) {
-      sendRequest(name, [details], parameters);
-    } else if ("imageData" in details) {
-      // Verify that this at least looks like an ImageData element.
-      // Unfortunately, we cannot use instanceof because the ImageData
-      // constructor is not public.
-      //
-      // We do this manually instead of using JSONSchema to avoid having these
-      // properties show up in the doc.
-      if (!("width" in details.imageData) ||
-          !("height" in details.imageData) ||
-          !("data" in details.imageData)) {
-        throw new Error(
-            "The imageData property must contain an ImageData object.");
-      }
-
-      if (details.imageData.width > iconSize ||
-          details.imageData.height > iconSize) {
-        throw new Error(
-            "The imageData property must contain an ImageData object that " +
-            "is no larger than " + iconSize + " pixels square.");
-      }
-
-      sendRequest(name, [details], parameters,
-                  {noStringify: true, nativeFunction: SetIconCommon});
-    } else if ("path" in details) {
-      var img = new Image();
-      img.onerror = function() {
-        console.error("Could not load " + actionType + " icon '" +
-                      details.path + "'.");
-      };
-      img.onload = function() {
-        var canvas = document.createElement("canvas");
-        canvas.width = img.width > iconSize ? iconSize : img.width;
-        canvas.height = img.height > iconSize ? iconSize : img.height;
-
-        var canvas_context = canvas.getContext('2d');
-        canvas_context.clearRect(0, 0, canvas.width, canvas.height);
-        canvas_context.drawImage(img, 0, 0, canvas.width, canvas.height);
-        delete details.path;
-        details.imageData = canvas_context.getImageData(0, 0, canvas.width,
-                                                        canvas.height);
-        sendRequest(name, [details], parameters,
-                    {noStringify: true, nativeFunction: SetIconCommon});
-      };
-      img.src = details.path;
-    } else {
-      throw new Error(
-          "Either the path or imageData property must be specified.");
-    }
-  }
+  // The object to generate the bindings for "internal" APIs in, so that
+  // extensions can't directly call them (without access to chromeHidden),
+  // but are still needed for internal mechanisms of extensions (e.g. events).
+  //
+  // This is distinct to the "*Private" APIs which are controlled via
+  // having strict permissions and aren't generated *anywhere* unless needed.
+  var internalAPIs = {};
+  chromeHidden.internalAPIs = internalAPIs;
 
   // Stores the name and definition of each API function, with methods to
   // modify their behaviour (such as a custom way to handle requests to the
   // API, a custom callback, etc).
   function APIFunctions() {
     this._apiFunctions = {};
+    this._unavailableApiFunctions = {};
   }
   APIFunctions.prototype.register = function(apiName, apiFunction) {
     this._apiFunctions[apiName] = apiFunction;
   };
+  // Registers a function as existing but not available, meaning that calls to
+  // the set* methods that reference this function should be ignored rather
+  // than throwing Errors.
+  APIFunctions.prototype.registerUnavailable = function(apiName) {
+    this._unavailableApiFunctions[apiName] = apiName;
+  };
   APIFunctions.prototype._setHook =
       function(apiName, propertyName, customizedFunction) {
-    if (this._apiFunctions.hasOwnProperty(apiName))
-      this._apiFunctions[apiName][propertyName] = customizedFunction;
+    if (this._unavailableApiFunctions.hasOwnProperty(apiName))
+      return;
+    if (!this._apiFunctions.hasOwnProperty(apiName))
+      throw new Error('Tried to set hook for unknown API "' + apiName + '"');
+    this._apiFunctions[apiName][propertyName] = customizedFunction;
   };
   APIFunctions.prototype.setHandleRequest =
       function(apiName, customizedFunction) {
@@ -276,6 +71,40 @@ var chrome = chrome || {};
   };
 
   var apiFunctions = new APIFunctions();
+
+  // Wraps the calls to the set* methods of APIFunctions with the namespace of
+  // an API, and validates that all calls to set* methods aren't prefixed with
+  // a namespace.
+  //
+  // For example, if constructed with 'browserAction', a call to
+  // handleRequest('foo') will be transformed into
+  // handleRequest('browserAction.foo').
+  //
+  // Likewise, if a call to handleRequest is called with 'browserAction.foo',
+  // it will throw an error.
+  //
+  // These help with isolating custom bindings from each other.
+  function NamespacedAPIFunctions(namespace, delegate) {
+    var self = this;
+    function wrap(methodName) {
+      self[methodName] = function(apiName, customizedFunction) {
+        var prefix = namespace + '.';
+        if (apiName.indexOf(prefix) === 0) {
+          throw new Error(methodName + ' called with "' + apiName +
+                          '" which has a "' + prefix + '" prefix. ' +
+                          'This is unnecessary and must be left out.');
+        }
+        return delegate[methodName].call(delegate,
+                                         prefix + apiName, customizedFunction);
+      };
+    }
+
+    wrap('contains');
+    wrap('setHandleRequest');
+    wrap('setUpdateArgumentsPostValidate');
+    wrap('setUpdateArgumentsPreValidate');
+    wrap('setCustomCallback');
+  }
 
   //
   // The API through which the ${api_name}_custom_bindings.js files customize
@@ -317,9 +146,12 @@ var chrome = chrome || {};
     // The functions in the schema are in list form, so we move them into a
     // dictionary for easier access.
     var self = this;
-    self.parameters = {};
+    self.functionSchemas = {};
     schema.functions.forEach(function(f) {
-      self.parameters[f.name] = f.parameters;
+      self.functionSchemas[f.name] = {
+        name: f.name,
+        definition: f
+      }
     });
   };
 
@@ -327,9 +159,7 @@ var chrome = chrome || {};
   // JSON.
   var customTypes = {};
   chromeHidden.registerCustomType = function(typeName, customTypeFactory) {
-    var customType = customTypeFactory({
-      sendRequest: sendRequest,
-    });
+    var customType = customTypeFactory();
     customType.prototype = new CustomBindingsObject();
     customTypes[typeName] = customType;
   };
@@ -368,7 +198,7 @@ var chrome = chrome || {};
   }
 
   chromeHidden.onLoad.addListener(function(extensionId,
-                                           isExtensionProcess,
+                                           contextType,
                                            isIncognitoProcess,
                                            manifestVersion) {
     var apiDefinitions = GetExtensionAPIDefinition();
@@ -382,68 +212,99 @@ var chrome = chrome || {};
     var platform = getPlatform();
 
     apiDefinitions.forEach(function(apiDef) {
+      // TODO(kalman): Remove this, or refactor schema_generated_bindings.js so
+      // that it isn't necessary. For now, chrome.app is entirely handwritten.
+      if (apiDef.namespace === 'app')
+        return;
+
       if (!isSchemaNodeSupported(apiDef, platform, manifestVersion))
         return;
 
-      var module = chrome;
+      // See comment on internalAPIs at the top.
+      var mod = apiDef.internal ? internalAPIs : chrome;
+
       var namespaces = apiDef.namespace.split('.');
       for (var index = 0, name; name = namespaces[index]; index++) {
-        module[name] = module[name] || {};
-        module = module[name];
+        mod[name] = mod[name] || {};
+        mod = mod[name];
       }
 
-      // Add types to global validationTypes
+      // Add types to global schemaValidator
       if (apiDef.types) {
         apiDef.types.forEach(function(t) {
           if (!isSchemaNodeSupported(t, platform, manifestVersion))
             return;
 
-          chromeHidden.validationTypes.push(t);
+          schemaUtils.schemaValidator.addTypes(t);
           if (t.type == 'object' && customTypes[t.id]) {
             customTypes[t.id].prototype.setSchema(t);
           }
         });
       }
 
-      // Adds a getter that throws an access denied error to object |module|
-      // for property |name|.
-      //
-      // Returns true if the getter was necessary (access is disallowed), or
-      // false otherwise.
-      function addUnprivilegedAccessGetter(module, name, allowUnprivileged) {
-        if (allowUnprivileged || isExtensionProcess)
-          return false;
+      // Returns whether access to the content of a schema should be denied,
+      // based on the presence of "unprivileged" and whether this is an
+      // extension process (versus e.g. a content script).
+      function isSchemaAccessAllowed(itemSchema) {
+        return (contextType == 'BLESSED_EXTENSION') ||
+               apiDef.unprivileged ||
+               itemSchema.unprivileged;
+      }
 
-        module.__defineGetter__(name, function() {
+      // Adds a getter that throws an access denied error to object |mod|
+      // for property |name|.
+      function addUnprivilegedAccessGetter(mod, name) {
+        mod.__defineGetter__(name, function() {
           throw new Error(
               '"' + name + '" can only be used in extension processes. See ' +
               'the content scripts documentation for more details.');
         });
-        return true;
       }
 
       // Setup Functions.
       if (apiDef.functions) {
         apiDef.functions.forEach(function(functionDef) {
-          if (!isSchemaNodeSupported(functionDef, platform, manifestVersion))
-            return;
+          if (functionDef.name in mod) {
+            throw new Error('Function ' + functionDef.name +
+                            ' already defined in ' + apiDef.namespace);
+          }
 
-          if (functionDef.name in module ||
-              addUnprivilegedAccessGetter(module, functionDef.name,
-                                          functionDef.unprivileged)) {
+          var apiFunctionName = apiDef.namespace + "." + functionDef.name;
+
+          if (!isSchemaNodeSupported(functionDef, platform, manifestVersion)) {
+            apiFunctions.registerUnavailable(apiFunctionName);
+            return;
+          }
+          if (!isSchemaAccessAllowed(functionDef)) {
+            apiFunctions.registerUnavailable(apiFunctionName);
+            addUnprivilegedAccessGetter(mod, functionDef.name);
             return;
           }
 
           var apiFunction = {};
           apiFunction.definition = functionDef;
-          apiFunction.name = apiDef.namespace + "." + functionDef.name;
+          apiFunction.name = apiFunctionName;
+
+          // TODO(aa): It would be best to run this in a unit test, but in order
+          // to do that we would need to better factor this code so that it
+          // doesn't depend on so much v8::Extension machinery.
+          if (chromeHidden.validateAPI &&
+              schemaUtils.isFunctionSignatureAmbiguous(
+                  apiFunction.definition)) {
+            throw new Error(
+                apiFunction.name + ' has ambiguous optional arguments. ' +
+                'To implement custom disambiguation logic, add ' +
+                '"allowAmbiguousOptionalArguments" to the function\'s schema.');
+          }
+
           apiFunctions.register(apiFunction.name, apiFunction);
 
-          module[functionDef.name] = (function() {
-            var args = arguments;
+          mod[functionDef.name] = (function() {
+            var args = Array.prototype.slice.call(arguments);
             if (this.updateArgumentsPreValidate)
               args = this.updateArgumentsPreValidate.apply(this, args);
-            chromeHidden.validate(args, this.definition.parameters);
+
+            args = schemaUtils.normalizeArgumentsAndValidate(args, this);
             if (this.updateArgumentsPostValidate)
               args = this.updateArgumentsPostValidate.apply(this, args);
 
@@ -458,9 +319,8 @@ var chrome = chrome || {};
 
             // Validate return value if defined - only in debug.
             if (chromeHidden.validateCallbacks &&
-                chromeHidden.validate &&
                 this.definition.returns) {
-              chromeHidden.validate([retval], [this.definition.returns]);
+              schemaUtils.validate([retval], [this.definition.returns]);
             }
             return retval;
           }).bind(apiFunction);
@@ -470,87 +330,88 @@ var chrome = chrome || {};
       // Setup Events
       if (apiDef.events) {
         apiDef.events.forEach(function(eventDef) {
+          if (eventDef.name in mod) {
+            throw new Error('Event ' + eventDef.name +
+                            ' already defined in ' + apiDef.namespace);
+          }
           if (!isSchemaNodeSupported(eventDef, platform, manifestVersion))
             return;
-
-          if (eventDef.name in module ||
-              addUnprivilegedAccessGetter(module, eventDef.name,
-                                          eventDef.unprivileged)) {
+          if (!isSchemaAccessAllowed(eventDef)) {
+            addUnprivilegedAccessGetter(mod, eventDef.name);
             return;
           }
 
           var eventName = apiDef.namespace + "." + eventDef.name;
           var customEvent = customEvents[apiDef.namespace];
           if (customEvent) {
-            module[eventDef.name] = new customEvent(
-                eventName, eventDef.parameters, eventDef.extraParameters);
+            mod[eventDef.name] = new customEvent(
+                eventName, eventDef.parameters, eventDef.extraParameters,
+                eventDef.options);
+          } else if (eventDef.anonymous) {
+            mod[eventDef.name] = new chrome.Event();
           } else {
-            module[eventDef.name] = new chrome.Event(
-                eventName, eventDef.parameters);
+            mod[eventDef.name] = new chrome.Event(
+                eventName, eventDef.parameters, eventDef.options);
           }
         });
       }
 
-      function addProperties(m, def) {
-        // Parse any values defined for properties.
-        if (def.properties) {
-          forEach(def.properties, function(prop, property) {
-            if (!isSchemaNodeSupported(property, platform, manifestVersion))
-              return;
+      function addProperties(m, parentDef) {
+        var properties = parentDef.properties;
+        if (!properties)
+          return;
 
-            if (prop in m ||
-                addUnprivilegedAccessGetter(m, prop, property.unprivileged)) {
-              return;
-            }
+        utils.forEach(properties, function(propertyName, propertyDef) {
+          if (propertyName in m)
+            return;  // TODO(kalman): be strict like functions/events somehow.
+          if (!isSchemaNodeSupported(propertyDef, platform, manifestVersion))
+            return;
+          if (!isSchemaAccessAllowed(propertyDef)) {
+            addUnprivilegedAccessGetter(m, propertyName);
+            return;
+          }
 
-            var value = property.value;
-            if (value) {
-              if (property.type === 'integer') {
-                value = parseInt(value);
-              } else if (property.type === 'boolean') {
-                value = value === "true";
-              } else if (property["$ref"]) {
-                var constructor = customTypes[property["$ref"]];
-                if (!constructor)
-                  throw new Error("No custom binding for " + property["$ref"]);
-                var args = value;
-                // For an object property, |value| is an array of constructor
-                // arguments, but we want to pass the arguments directly
-                // (i.e. not as an array), so we have to fake calling |new| on
-                // the constructor.
-                value = { __proto__: constructor.prototype };
-                constructor.apply(value, args);
-                // Recursively add properties.
-                addProperties(value, property);
-              } else if (property.type === 'object') {
-                // Recursively add properties.
-                addProperties(value, property);
-              } else if (property.type !== 'string') {
-                throw "NOT IMPLEMENTED (extension_api.json error): Cannot " +
-                    "parse values for type \"" + property.type + "\"";
-              }
+          var value = propertyDef.value;
+          if (value) {
+            // Values may just have raw types as defined in the JSON, such
+            // as "WINDOW_ID_NONE": { "value": -1 }. We handle this here.
+            // TODO(kalman): enforce that things with a "value" property can't
+            // define their own types.
+            var type = propertyDef.type || typeof(value);
+            if (type === 'integer' || type === 'number') {
+              value = parseInt(value);
+            } else if (type === 'boolean') {
+              value = value === "true";
+            } else if (propertyDef["$ref"]) {
+              var constructor = customTypes[propertyDef["$ref"]];
+              if (!constructor)
+                throw new Error("No custom binding for " + propertyDef["$ref"]);
+              var args = value;
+              // For an object propertyDef, |value| is an array of constructor
+              // arguments, but we want to pass the arguments directly (i.e.
+              // not as an array), so we have to fake calling |new| on the
+              // constructor.
+              value = { __proto__: constructor.prototype };
+              constructor.apply(value, args);
+              // Recursively add properties.
+              addProperties(value, propertyDef);
+            } else if (type === 'object') {
+              // Recursively add properties.
+              addProperties(value, propertyDef);
+            } else if (type !== 'string') {
+              throw new Error("NOT IMPLEMENTED (extension_api.json error): " +
+                  "Cannot parse values for type \"" + type + "\"");
             }
-            if (value) {
-              m[prop] = value;
-            }
-          });
-        }
+            m[propertyName] = value;
+          }
+        });
       }
 
-      addProperties(module, apiDef);
+      addProperties(mod, apiDef);
     });
 
-    // TODO(aa): The rest of the crap below this really needs to be factored out
-    // with a clean API boundary. Right now it is too soupy for me to feel
-    // comfortable running in content scripts. What if people are just
-    // overwriting random APIs? That would bypass our content script access
-    // checks.
-    if (!isExtensionProcess)
-      return;
-
-    // TODO(kalman/aa): "The rest of this crap..." comment above. Only run the
-    // custom hooks in extension processes, to maintain current behaviour. We
-    // should fix this this with a smaller hammer.
+    // Run the non-declarative custom hooks after all the schemas have been
+    // generated, in case hooks depend on other APIs being available.
     apiDefinitions.forEach(function(apiDef) {
       if (!isSchemaNodeSupported(apiDef, platform, manifestVersion))
         return;
@@ -563,21 +424,20 @@ var chrome = chrome || {};
       // by custom bindings JS files. Create a new one so that bindings can't
       // interfere with each other.
       hook({
-        apiFunctions: apiFunctions,
-        sendRequest: sendRequest,
-        setIcon: setIcon,
-      }, extensionId);
+        apiFunctions: new NamespacedAPIFunctions(apiDef.namespace,
+                                                 apiFunctions),
+        apiDefinitions: apiDefinitions,
+      }, extensionId, contextType);
     });
 
-    // TOOD(mihaip): remove this alias once the webstore stops calling
+    // TODO(mihaip): remove this alias once the webstore stops calling
     // beginInstallWithManifest2.
     // See http://crbug.com/100242
-    if (apiExists("webstorePrivate")) {
+    if (chrome.webstorePrivate) {
       chrome.webstorePrivate.beginInstallWithManifest2 =
           chrome.webstorePrivate.beginInstallWithManifest3;
     }
 
-    if (apiExists("test"))
+    if (chrome.test)
       chrome.test.getApiDefinitions = GetExtensionAPIDefinition;
   });
-})();

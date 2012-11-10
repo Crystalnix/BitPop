@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,7 +11,15 @@ import re
 import types
 
 from grit import exception
+from grit import lazy_re
 import grit.extern.tclib
+
+
+# Matches whitespace sequences which can be folded into a single whitespace
+# character.  This matches single characters so that non-spaces are replaced
+# with spaces.
+_FOLD_WHITESPACE = re.compile(r'\s+')
+
 
 def Identity(i):
   return i
@@ -24,10 +32,10 @@ class BaseMessage(object):
   def __init__(self, text='', placeholders=[], description='', meaning=''):
     self.parts = []
     self.placeholders = []
-    self.description = description
     self.meaning = meaning
     self.dirty = True  # True if self.id is (or might be) wrong
     self.id = 0
+    self.SetDescription(description)
 
     if text != '':
       if not placeholders or placeholders == []:
@@ -36,8 +44,15 @@ class BaseMessage(object):
         tag_map = {}
         for placeholder in placeholders:
           tag_map[placeholder.GetPresentation()] = [placeholder, 0]
-        tag_re = '(' + '|'.join(tag_map.keys()) + ')'
-        # This creates a regexp like '(TAG1|TAG2|TAG3)'
+        # This creates a regexp like '(TAG1|TAG2|TAG3)'.
+        # The tags have to be sorted in order of decreasing length, so that
+        # longer tags are substituted before shorter tags that happen to be
+        # substrings of the longer tag.
+        # E.g. "EXAMPLE_FOO_NAME" must be matched before "EXAMPLE_FOO",
+        # otherwise "EXAMPLE_FOO" splits "EXAMPLE_FOO_NAME" too.
+        tags = tag_map.keys()
+        tags.sort(cmp=lambda x,y: len(x) - len(y) or cmp(x, y), reverse=True)
+        tag_re = '(' + '|'.join(tags) + ')'
         chunked_text = re.split(tag_re, text)
         for chunk in chunked_text:
           if chunk: # ignore empty chunk
@@ -104,7 +119,7 @@ class BaseMessage(object):
     return self.description
 
   def SetDescription(self, description):
-    self.description = description
+    self.description = _FOLD_WHITESPACE.sub(' ', description)
 
   def GetMeaning(self):
     return self.meaning
@@ -143,7 +158,7 @@ class Message(BaseMessage):
 
   def __init__(self, text='', placeholders=[], description='', meaning='',
                assigned_id=None):
-    BaseMessage.__init__(self, text, placeholders, description, meaning)
+    super(Message, self).__init__(text, placeholders, description, meaning)
     self.assigned_id = assigned_id
 
   def ToTclibMessage(self):
@@ -156,14 +171,14 @@ class Message(BaseMessage):
     if self.assigned_id:
       return self.assigned_id
 
-    return BaseMessage.GetId(self)
+    return super(Message, self).GetId()
 
 
 class Translation(BaseMessage):
   '''A translation.'''
 
   def __init__(self, text='', id='', placeholders=[], description='', meaning=''):
-    BaseMessage.__init__(self, text, placeholders, description, meaning)
+    super(Translation, self).__init__(text, placeholders, description, meaning)
     self.id = id
 
   def GetId(self):
@@ -185,7 +200,7 @@ class Placeholder(grit.extern.tclib.Placeholder):
   '''
 
   # Must match placeholder presentation names
-  _NAME_RE = re.compile('^[A-Za-z0-9_]+$')
+  _NAME_RE = lazy_re.compile('^[A-Za-z0-9_]+$')
 
   def __init__(self, presentation, original, example):
     '''Creates a new placeholder.

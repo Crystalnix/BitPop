@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,13 +30,13 @@
 
 #ifndef UI_BASE_KEYCODES_KEYBOARD_CODES_POSIX_H_
 #define UI_BASE_KEYCODES_KEYBOARD_CODES_POSIX_H_
-#pragma once
 
 namespace ui {
 
-typedef enum {
+enum KeyboardCode {
   VKEY_BACK = 0x08,
   VKEY_TAB = 0x09,
+  VKEY_BACKTAB = 0x0A,
   VKEY_CLEAR = 0x0C,
   VKEY_RETURN = 0x0D,
   VKEY_SHIFT = 0x10,
@@ -193,6 +193,8 @@ typedef enum {
   VKEY_OEM_102 = 0xE2,
   VKEY_PROCESSKEY = 0xE5,
   VKEY_PACKET = 0xE7,
+  VKEY_DBE_SBCSCHAR = 0xF3,
+  VKEY_DBE_DBCSCHAR = 0xF4,
   VKEY_ATTN = 0xF6,
   VKEY_CRSEL = 0xF7,
   VKEY_EXSEL = 0xF8,
@@ -202,8 +204,17 @@ typedef enum {
   VKEY_NONAME = 0xFC,
   VKEY_PA1 = 0xFD,
   VKEY_OEM_CLEAR = 0xFE,
-  VKEY_UNKNOWN = 0
-} KeyboardCode;
+  VKEY_UNKNOWN = 0,
+
+  // POSIX specific VKEYs. Note that as of Windows SDK 7.1, 0x97-9F, 0xD8-DA,
+  // and 0xE8 are unassigned.
+  VKEY_WLAN = 0x97,
+  VKEY_POWER = 0x98,
+  VKEY_BRIGHTNESS_DOWN = 0xD8,
+  VKEY_BRIGHTNESS_UP = 0xD9,
+  VKEY_KBD_BRIGHTNESS_DOWN = 0xDA,
+  VKEY_KBD_BRIGHTNESS_UP = 0xE8
+};
 
 }  // namespace ui
 

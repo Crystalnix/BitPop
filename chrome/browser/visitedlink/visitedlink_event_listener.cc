@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,13 +7,14 @@
 #include "base/shared_memory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/render_messages.h"
-#include "content/browser/renderer_host/render_widget_host.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_widget_host.h"
 
 using base::Time;
 using base::TimeDelta;
+using content::RenderWidgetHost;
 
 namespace {
 
@@ -204,7 +205,7 @@ void VisitedLinkEventListener::Observe(
     case content::NOTIFICATION_RENDER_WIDGET_VISIBILITY_CHANGED: {
       RenderWidgetHost* widget =
           content::Source<RenderWidgetHost>(source).ptr();
-      int child_id = widget->process()->GetID();
+      int child_id = widget->GetProcess()->GetID();
       if (updaters_.count(child_id))
         updaters_[child_id]->Update();
       break;

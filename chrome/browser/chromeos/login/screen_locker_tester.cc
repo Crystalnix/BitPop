@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,8 @@
 
 #include <string>
 
-#include "base/stringprintf.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
@@ -15,7 +15,7 @@
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/webui_screen_locker.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/browser/renderer_host/render_view_host.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "ui/views/controls/button/button.h"
@@ -23,11 +23,6 @@
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/events/event.h"
 #include "ui/views/widget/root_view.h"
-
-
-#if defined(TOOLKIT_USES_GTK)
-#include "chrome/browser/chromeos/login/lock_window_gtk.h"
-#endif
 
 using content::WebContents;
 
@@ -48,7 +43,6 @@ class LoginAttemptObserver : public chromeos::LoginStatusConsumer {
   virtual void OnLoginSuccess(
       const std::string& username,
       const std::string& password,
-      const GaiaAuthConsumer::ClientLoginResult& credentials,
       bool pending_requests,
       bool using_oauth) {
     LoginAttempted();
@@ -79,7 +73,7 @@ LoginAttemptObserver::~LoginAttemptObserver() {
 void LoginAttemptObserver::WaitForAttempt() {
   if (!login_attempted_) {
     waiting_ = true;
-    ui_test_utils::RunMessageLoop();
+    content::RunMessageLoop();
     waiting_ = false;
   }
   ASSERT_TRUE(login_attempted_);
@@ -125,8 +119,7 @@ class WebUIScreenLockerTester : public ScreenLockerTester {
 
 void WebUIScreenLockerTester::SetPassword(const std::string& password) {
   delete ExecuteJavascriptAndGetValue(StringPrintf(
-      "$('pod-row').pods[0].passwordElement.value = '%s';"
-      "$('pod-row').pods[0].passwordEmpty = false;",
+      "$('pod-row').pods[0].passwordElement.value = '%s';",
       password.c_str()));
 }
 
@@ -134,7 +127,7 @@ std::string WebUIScreenLockerTester::GetPassword() {
   std::string result;
   base::Value* v = ExecuteJavascriptAndGetValue(
       "$('pod-row').pods[0].passwordElement.value;");
-  DCHECK(v->GetAsString(&result));
+  CHECK(v->GetAsString(&result));
   delete v;
   return result;
 }
@@ -142,8 +135,19 @@ std::string WebUIScreenLockerTester::GetPassword() {
 void WebUIScreenLockerTester::EnterPassword(const std::string& password) {
   bool result;
   SetPassword(password);
-  LoginAttemptObserver login(ScreenLocker::screen_locker_);
+
+  // Verify password is set.
+  ASSERT_EQ(password, GetPassword());
+
+  // Verify that "signin" button is hidden.
   base::Value* v = ExecuteJavascriptAndGetValue(
+      "$('pod-row').pods[0].signinButtonElement.hidden;");
+  ASSERT_TRUE(v->GetAsBoolean(&result));
+  ASSERT_TRUE(result);
+
+  // Attempt to sign in.
+  LoginAttemptObserver login(ScreenLocker::screen_locker_);
+  v = ExecuteJavascriptAndGetValue(
       "$('pod-row').pods[0].activate();");
   ASSERT_TRUE(v->GetAsBoolean(&result));
   ASSERT_TRUE(result);
@@ -154,10 +158,6 @@ void WebUIScreenLockerTester::EnterPassword(const std::string& password) {
 }
 
 void WebUIScreenLockerTester::EmulateWindowManagerReady() {
-#if !defined(USE_AURA)
-  static_cast<LockWindowGtk*>(GetWidget()->native_widget())->
-      OnWindowManagerReady();
-#endif
 }
 
 views::Widget* WebUIScreenLockerTester::GetWidget() const {
@@ -170,7 +170,7 @@ views::Widget* WebUIScreenLockerTester::GetChildWidget() const {
 
 base::Value* WebUIScreenLockerTester::ExecuteJavascriptAndGetValue(
     const std::string& js_text) {
-  RenderViewHost* rvh = webui()->GetWebContents()->GetRenderViewHost();
+  content::RenderViewHost* rvh = webui()->GetWebContents()->GetRenderViewHost();
   return rvh->ExecuteJavascriptAndGetValue(string16(),
                                            ASCIIToUTF16(js_text));
 }

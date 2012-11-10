@@ -1,17 +1,17 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/location_bar/suggested_text_view.h"
 
-#include "chrome/browser/autocomplete/autocomplete_edit.h"
 #include "chrome/browser/instant/instant_controller.h"
+#include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "ui/base/animation/multi_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 
-SuggestedTextView::SuggestedTextView(AutocompleteEditModel* edit_model)
+SuggestedTextView::SuggestedTextView(OmniboxEditModel* edit_model)
     : edit_model_(edit_model),
       bg_color_(0) {
   SetHorizontalAlignment(views::Label::ALIGN_LEFT);
@@ -47,7 +47,7 @@ void SuggestedTextView::OnPaintBackground(gfx::Canvas* canvas) {
     return;
 
   // TODO(sky): these numbers need to come from the edit.
-  canvas->FillRect(bg_color_, gfx::Rect(0, 2, width(), height() - 5));
+  canvas->FillRect(gfx::Rect(0, 2, width(), height() - 5), bg_color_);
 }
 
 void SuggestedTextView::AnimationEnded(const ui::Animation* animation) {

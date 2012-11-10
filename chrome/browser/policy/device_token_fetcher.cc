@@ -18,6 +18,8 @@
 #include "chrome/browser/policy/policy_notifier.h"
 #include "chrome/browser/policy/proto/device_management_local.pb.h"
 
+namespace em = enterprise_management;
+
 namespace policy {
 
 namespace {
@@ -58,6 +60,9 @@ void SampleErrorStatus(DeviceManagementStatus status) {
     case DM_STATUS_RESPONSE_DECODING_ERROR:
       sample = kMetricTokenFetchBadResponse;
       break;
+    case DM_STATUS_MISSING_LICENSES:
+      sample = kMetricMissingLicenses;
+      break;
     case DM_STATUS_TEMPORARY_UNAVAILABLE:
     case DM_STATUS_SERVICE_ACTIVATION_PENDING:
     case DM_STATUS_SERVICE_POLICY_NOT_FOUND:
@@ -71,9 +76,21 @@ void SampleErrorStatus(DeviceManagementStatus status) {
     NOTREACHED();
 }
 
-}  // namespace
+// Translates the DeviceRegisterResponse::DeviceMode |mode| to the enum used
+// internally to represent different device modes.
+DeviceMode TranslateProtobufDeviceMode(
+    em::DeviceRegisterResponse::DeviceMode mode) {
+  switch (mode) {
+    case em::DeviceRegisterResponse::ENTERPRISE:
+      return DEVICE_MODE_ENTERPRISE;
+    case em::DeviceRegisterResponse::RETAIL:
+      return DEVICE_MODE_KIOSK;
+  }
+  LOG(ERROR) << "Unknown enrollment mode in registration response: " << mode;
+  return  DEVICE_MODE_PENDING;
+}
 
-namespace em = enterprise_management;
+}  // namespace
 
 DeviceTokenFetcher::DeviceTokenFetcher(
     DeviceManagementService* service,
@@ -121,6 +138,10 @@ void DeviceTokenFetcher::SetSerialNumberInvalidState() {
   SetState(STATE_BAD_SERIAL);
 }
 
+void DeviceTokenFetcher::SetMissingLicensesState() {
+  SetState(STATE_MISSING_LICENSES);
+}
+
 void DeviceTokenFetcher::Reset() {
   SetState(STATE_INACTIVE);
 }
@@ -163,7 +184,9 @@ void DeviceTokenFetcher::FetchTokenInternal() {
   if (!data_store_->machine_model().empty())
     request->set_machine_model(data_store_->machine_model());
   if (data_store_->known_machine_id())
-    request->set_known_machine_id(true);
+    request->set_auto_enrolled(true);
+  if (data_store_->reregister())
+    request->set_reregister(true);
   request_job_->Start(base::Bind(&DeviceTokenFetcher::OnTokenFetchCompleted,
                                  base::Unretained(this)));
   UMA_HISTOGRAM_ENUMERATION(kMetricToken, kMetricTokenFetchRequested,
@@ -178,6 +201,8 @@ void DeviceTokenFetcher::OnTokenFetchCompleted(
     status = DM_STATUS_RESPONSE_DECODING_ERROR;
   }
 
+  LOG_IF(ERROR, status != DM_STATUS_SUCCESS) << "DMServer returned error code: "
+                                             << status;
   SampleErrorStatus(status);
 
   switch (status) {
@@ -187,6 +212,21 @@ void DeviceTokenFetcher::OnTokenFetchCompleted(
       if (register_response.has_device_management_token()) {
         UMA_HISTOGRAM_ENUMERATION(kMetricToken, kMetricTokenFetchOK,
                                   kMetricTokenSize);
+
+        if (data_store_->policy_register_type() ==
+                em::DeviceRegisterRequest::DEVICE) {
+          DeviceMode mode = DEVICE_MODE_ENTERPRISE;
+          if (register_response.has_enrollment_type()) {
+            mode = TranslateProtobufDeviceMode(
+                register_response.enrollment_type());
+          }
+          if (mode == DEVICE_MODE_PENDING) {
+            LOG(ERROR) << "Enrollment mode missing or unknown!";
+            SetState(STATE_BAD_ENROLLMENT_MODE);
+            return;
+          }
+          data_store_->set_device_mode(mode);
+        }
         data_store_->SetDeviceToken(register_response.device_management_token(),
                                     false);
         SetState(STATE_TOKEN_AVAILABLE);
@@ -214,6 +254,9 @@ void DeviceTokenFetcher::OnTokenFetchCompleted(
       return;
     case DM_STATUS_SERVICE_INVALID_SERIAL_NUMBER:
       SetSerialNumberInvalidState();
+      return;
+    case DM_STATUS_MISSING_LICENSES:
+      SetMissingLicensesState();
       return;
     case DM_STATUS_REQUEST_INVALID:
     case DM_STATUS_HTTP_STATUS_ERROR:
@@ -249,6 +292,16 @@ void DeviceTokenFetcher::SetState(FetcherState state) {
     case STATE_BAD_SERIAL:
       notifier_->Inform(CloudPolicySubsystem::UNENROLLED,
                         CloudPolicySubsystem::BAD_SERIAL_NUMBER,
+                        PolicyNotifier::TOKEN_FETCHER);
+      break;
+    case STATE_BAD_ENROLLMENT_MODE:
+      notifier_->Inform(CloudPolicySubsystem::UNENROLLED,
+                        CloudPolicySubsystem::BAD_ENROLLMENT_MODE,
+                        PolicyNotifier::TOKEN_FETCHER);
+      break;
+    case STATE_MISSING_LICENSES:
+      notifier_->Inform(CloudPolicySubsystem::UNENROLLED,
+                        CloudPolicySubsystem::MISSING_LICENSES,
                         PolicyNotifier::TOKEN_FETCHER);
       break;
     case STATE_UNMANAGED:
@@ -306,6 +359,8 @@ void DeviceTokenFetcher::DoWork() {
     case STATE_INACTIVE:
     case STATE_TOKEN_AVAILABLE:
     case STATE_BAD_SERIAL:
+    case STATE_BAD_ENROLLMENT_MODE:
+    case STATE_MISSING_LICENSES:
       break;
     case STATE_UNMANAGED:
     case STATE_ERROR:

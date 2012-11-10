@@ -12,19 +12,23 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/service/gl_utils.h"
+#include "gpu/gpu_export.h"
 
 namespace gpu {
 namespace gles2 {
+
+class MemoryTracker;
+class MemoryTypeTracker;
 
 // This class keeps track of the buffers and their sizes so we can do
 // bounds checking.
 //
 // NOTE: To support shared resources an instance of this class will need to be
 // shared by multiple GLES2Decoders.
-class BufferManager {
+class GPU_EXPORT BufferManager {
  public:
   // Info about Buffers currently in the system.
-  class BufferInfo : public base::RefCounted<BufferInfo> {
+  class GPU_EXPORT BufferInfo : public base::RefCounted<BufferInfo> {
    public:
     typedef scoped_refptr<BufferInfo> Ref;
 
@@ -58,7 +62,7 @@ class BufferManager {
     const void* GetRange(GLintptr offset, GLsizeiptr size) const;
 
     bool IsDeleted() const {
-      return service_id_ == 0;
+      return deleted_;
     }
 
     bool IsValid() const {
@@ -114,7 +118,7 @@ class BufferManager {
     }
 
     void MarkAsDeleted() {
-      service_id_ = 0;
+      deleted_ = true;
     }
 
     void SetInfo(GLsizeiptr size, GLenum usage, bool shadow);
@@ -122,8 +126,14 @@ class BufferManager {
     // Clears any cache of index ranges.
     void ClearCache();
 
+    // Check if an offset, size range is valid for the current buffer.
+    bool CheckRange(GLintptr offset, GLsizeiptr size) const;
+
     // The manager that owns this BufferInfo.
     BufferManager* manager_;
+
+    // True if deleted.
+    bool deleted_;
 
     // Service side buffer id.
     GLuint service_id_;
@@ -151,7 +161,7 @@ class BufferManager {
     RangeToMaxValueMap range_set_;
   };
 
-  BufferManager();
+  BufferManager(MemoryTracker* memory_tracker);
   ~BufferManager();
 
   // Must call before destruction.
@@ -179,10 +189,17 @@ class BufferManager {
     allow_buffers_on_multiple_targets_ = allow;
   }
 
+  size_t mem_represented() const {
+    return mem_represented_;
+  }
+
  private:
   void UpdateMemRepresented();
 
+  void StartTracking(BufferInfo* info);
   void StopTracking(BufferInfo* info);
+
+  scoped_ptr<MemoryTypeTracker> buffer_memory_tracker_;
 
   // Info for each buffer in the system.
   typedef base::hash_map<GLuint, BufferInfo::Ref> BufferInfoMap;
@@ -192,7 +209,12 @@ class BufferManager {
   bool allow_buffers_on_multiple_targets_;
 
   size_t mem_represented_;
-  size_t last_reported_mem_represented_;
+
+  // Counts the number of BufferInfo allocated with 'this' as its manager.
+  // Allows to check no BufferInfo will outlive this.
+  unsigned int buffer_info_count_;
+
+  bool have_context_;
 
   DISALLOW_COPY_AND_ASSIGN(BufferManager);
 };

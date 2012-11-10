@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_CHROMEOS_BOOT_TIMES_LOADER_H_
 #define CHROME_BROWSER_CHROMEOS_BOOT_TIMES_LOADER_H_
-#pragma once
 
 #include <set>
 #include <string>
@@ -14,9 +13,9 @@
 #include "base/compiler_specific.h"
 #include "base/time.h"
 #include "chrome/browser/cancelable_request.h"
-#include "content/browser/renderer_host/render_widget_host.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/render_widget_host.h"
 
 namespace chromeos {
 
@@ -140,6 +139,11 @@ class BootTimesLoader
     base::Time time() const { return time_; }
     bool send_to_uma() const { return send_to_uma_; }
 
+    // comparitor for sorting
+    bool operator<(const TimeMarker& other) const {
+      return time_ < other.time_;
+    }
+
    private:
     friend class std::vector<TimeMarker>;
     std::string name_;
@@ -159,7 +163,9 @@ class BootTimesLoader
   static void WriteTimes(const std::string base_name,
                          const std::string uma_name,
                          const std::string uma_prefix,
-                         const std::vector<TimeMarker> login_times);
+                         std::vector<TimeMarker> login_times);
+  static void AddMarker(std::vector<TimeMarker>* vector, TimeMarker marker);
+
   void LoginDone();
 
   // Used to hold the stats at main().
@@ -173,7 +179,7 @@ class BootTimesLoader
 
   std::vector<TimeMarker> login_time_markers_;
   std::vector<TimeMarker> logout_time_markers_;
-  std::set<RenderWidgetHost*> render_widget_hosts_loading_;
+  std::set<content::RenderWidgetHost*> render_widget_hosts_loading_;
 
   DISALLOW_COPY_AND_ASSIGN(BootTimesLoader);
 };

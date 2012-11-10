@@ -13,11 +13,9 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/in_memory_database.h"
-#include "chrome/browser/history/in_memory_url_index.h"
 #include "chrome/browser/history/url_database.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 
@@ -27,23 +25,12 @@ InMemoryHistoryBackend::InMemoryHistoryBackend()
     : profile_(NULL) {
 }
 
-InMemoryHistoryBackend::~InMemoryHistoryBackend() {
-  if (index_.get())
-    index_->ShutDown();
-}
+InMemoryHistoryBackend::~InMemoryHistoryBackend() {}
 
 bool InMemoryHistoryBackend::Init(const FilePath& history_filename,
-                                  const FilePath& history_dir,
-                                  URLDatabase* db,
-                                  const std::string& languages) {
+                                  URLDatabase* db) {
   db_.reset(new InMemoryDatabase);
-  bool success = db_->InitFromDisk(history_filename);
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableHistoryQuickProvider)) {
-    index_.reset(new InMemoryURLIndex(history_dir));
-    index_->Init(db, languages);
-  }
-  return success;
+  return db_->InitFromDisk(history_filename);
 }
 
 void InMemoryHistoryBackend::AttachToHistoryService(Profile* profile) {
@@ -64,7 +51,7 @@ void InMemoryHistoryBackend::AttachToHistoryService(Profile* profile) {
   // We only want notifications for the associated profile.
   content::Source<Profile> source(profile_);
   registrar_.Add(this, chrome::NOTIFICATION_HISTORY_URL_VISITED, source);
-  registrar_.Add(this, chrome::NOTIFICATION_HISTORY_TYPED_URLS_MODIFIED,
+  registrar_.Add(this, chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
                  source);
   registrar_.Add(this, chrome::NOTIFICATION_HISTORY_URLS_DELETED, source);
   registrar_.Add(this,
@@ -95,7 +82,7 @@ void InMemoryHistoryBackend::Observe(
       OnKeywordSearchTermUpdated(
           *content::Details<history::KeywordSearchTermDetails>(details).ptr());
       break;
-    case chrome::NOTIFICATION_HISTORY_TYPED_URLS_MODIFIED:
+    case chrome::NOTIFICATION_HISTORY_URLS_MODIFIED:
       OnTypedURLsModified(
           *content::Details<history::URLsModifiedDetails>(details).ptr());
       break;
@@ -123,16 +110,16 @@ void InMemoryHistoryBackend::OnTypedURLsModified(
   // TODO(brettw) currently the rows in the in-memory database don't match the
   // IDs in the main database. This sucks. Instead of Add and Remove, we should
   // have Sync(), which would take the ID if it's given and add it.
-  std::vector<history::URLRow>::const_iterator i;
+  URLRows::const_iterator i;
   for (i = details.changed_urls.begin();
-       i != details.changed_urls.end(); i++) {
-    URLID id = db_->GetRowForURL(i->url(), NULL);
-    if (id)
-      db_->UpdateURLRow(id, *i);
-    else
-      id = db_->AddURL(*i);
-    if (index_.get())
-      index_->UpdateURL(id, *i);
+       i != details.changed_urls.end(); ++i) {
+    if (i->typed_count() > 0) {
+      URLID id = db_->GetRowForURL(i->url(), NULL);
+      if (id)
+        db_->UpdateURLRow(id, *i);
+      else
+        db_->AddURL(*i);
+    }
   }
 }
 
@@ -145,22 +132,15 @@ void InMemoryHistoryBackend::OnURLsDeleted(const URLsDeletedDetails& details) {
     db_.reset(new InMemoryDatabase);
     if (!db_->InitFromScratch())
       db_.reset();
-    if (index_.get())
-      index_->ReloadFromHistory(db_.get());
     return;
   }
 
   // Delete all matching URLs in our database.
-  for (std::set<GURL>::const_iterator i = details.urls.begin();
-       i != details.urls.end(); ++i) {
-    URLID id = db_->GetRowForURL(*i, NULL);
-    if (id) {
-      // We typically won't have most of them since we only have a subset of
-      // history, so ignore errors.
-      db_->DeleteURLRow(id);
-      if (index_.get())
-        index_->DeleteURL(id);
-    }
+  for (URLRows::const_iterator row = details.rows.begin();
+       row != details.rows.end(); ++row) {
+    // We typically won't have most of them since we only have a subset of
+    // history, so ignore errors.
+    db_->DeleteURLRow(row->id());
   }
 }
 

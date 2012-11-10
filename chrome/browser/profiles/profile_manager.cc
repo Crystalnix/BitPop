@@ -16,27 +16,32 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/default_apps_trial.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/managed_mode.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/browser/profiles/profile_destroyer.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#if defined(OS_WIN)
-#include "chrome/installer/util/browser_distribution.h"
-#endif
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
@@ -47,9 +52,15 @@
 #include "net/url_request/url_request_job.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if defined(OS_WIN)
+#include "base/win/metro.h"
+#include "chrome/installer/util/browser_distribution.h"
+#endif
+
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/cryptohome_library.h"
+#include "chromeos/dbus/cryptohome_client.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
 #endif
 
 using content::BrowserThread;
@@ -144,14 +155,29 @@ void QueueProfileDirectoryForDeletion(const FilePath& path) {
 void OnOpenWindowForNewProfile(Profile* profile,
                                Profile::CreateStatus status) {
   if (status == Profile::CREATE_STATUS_INITIALIZED) {
-    ProfileManager::NewWindowWithProfile(profile,
-                                         BrowserInit::IS_PROCESS_STARTUP,
-                                         BrowserInit::IS_FIRST_RUN);
+    ProfileManager::FindOrCreateNewWindowForProfile(
+        profile,
+        chrome::startup::IS_PROCESS_STARTUP,
+        chrome::startup::IS_FIRST_RUN,
+        false);
   }
 }
 
+#if defined(OS_CHROMEOS)
+void CheckCryptohomeIsMounted(chromeos::DBusMethodCallStatus call_status,
+                              bool is_mounted) {
+  if (call_status != chromeos::DBUS_METHOD_CALL_SUCCESS) {
+    LOG(ERROR) << "IsMounted call failed.";
+    return;
+  }
+  if (!is_mounted)
+    LOG(ERROR) << "Cryptohome is not mounted.";
+}
+#endif
+
 } // namespace
 
+#if defined(ENABLE_SESSION_SERVICE)
 // static
 void ProfileManager::ShutdownSessionServices() {
   ProfileManager* pm = g_browser_process->profile_manager();
@@ -161,6 +187,7 @@ void ProfileManager::ShutdownSessionServices() {
   for (size_t i = 0; i < profiles.size(); ++i)
     SessionServiceFactory::ShutdownForProfile(profiles[i]);
 }
+#endif
 
 // static
 void ProfileManager::NukeDeletedProfilesFromDisk() {
@@ -168,7 +195,11 @@ void ProfileManager::NukeDeletedProfilesFromDisk() {
           ProfilesToDelete().begin();
        it != ProfilesToDelete().end();
        ++it) {
+    // Delete both the profile directory and its corresponding cache.
+    FilePath cache_path;
+    chrome::GetUserCacheDirectory(*it, &cache_path);
     file_util::Delete(*it, true);
+    file_util::Delete(cache_path, true);
   }
   ProfilesToDelete().clear();
 }
@@ -177,6 +208,18 @@ void ProfileManager::NukeDeletedProfilesFromDisk() {
 Profile* ProfileManager::GetDefaultProfile() {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   return profile_manager->GetDefaultProfile(profile_manager->user_data_dir_);
+}
+
+// static
+Profile* ProfileManager::GetDefaultProfileOrOffTheRecord() {
+  // TODO (mukai,nkostylev): In the long term we should fix those cases that
+  // crash on Guest mode and have only one GetDefaultProfile() method.
+  Profile* profile = GetDefaultProfile();
+#if defined(OS_CHROMEOS)
+  if (chromeos::UserManager::Get()->IsLoggedInAsGuest())
+    profile = profile->GetOffTheRecordProfile();
+#endif
+  return profile;
 }
 
 // static
@@ -196,8 +239,11 @@ ProfileManager::ProfileManager(const FilePath& user_data_dir)
     : user_data_dir_(user_data_dir),
       logged_in_(false),
       will_import_(false),
-      shutdown_started_(false) {
-  BrowserList::AddObserver(this);
+#if !defined(OS_ANDROID)
+      ALLOW_THIS_IN_INITIALIZER_LIST(
+          browser_list_observer_(this)),
+#endif
+      closing_all_browsers_(false) {
 #if defined(OS_CHROMEOS)
   registrar_.Add(
       this,
@@ -214,12 +260,15 @@ ProfileManager::ProfileManager(const FilePath& user_data_dir)
       content::NotificationService::AllSources());
   registrar_.Add(
       this,
-      content::NOTIFICATION_APP_EXITING,
+      chrome::NOTIFICATION_CLOSE_ALL_BROWSERS_REQUEST,
+      content::NotificationService::AllSources());
+  registrar_.Add(
+      this,
+      chrome::NOTIFICATION_BROWSER_CLOSE_CANCELLED,
       content::NotificationService::AllSources());
 }
 
 ProfileManager::~ProfileManager() {
-  BrowserList::RemoveObserver(this);
 #if defined(OS_WIN)
   if (profile_shortcut_manager_.get())
     profile_info_cache_->RemoveObserver(profile_shortcut_manager_.get());
@@ -370,8 +419,18 @@ Profile* ProfileManager::GetProfile(const FilePath& profile_dir) {
 }
 
 void ProfileManager::CreateProfileAsync(const FilePath& profile_path,
-                                        const CreateCallback& callback) {
+                                        const CreateCallback& callback,
+                                        const string16& name,
+                                        const string16& icon_url) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // Make sure that this profile is not pending deletion.
+  if (std::find(ProfilesToDelete().begin(), ProfilesToDelete().end(),
+      profile_path) != ProfilesToDelete().end()) {
+    callback.Run(NULL, Profile::CREATE_STATUS_FAIL);
+    return;
+  }
+
   ProfilesInfoMap::iterator iter = profiles_info_.find(profile_path);
   if (iter != profiles_info_.end()) {
     ProfileInfo* info = iter->second.get();
@@ -386,6 +445,14 @@ void ProfileManager::CreateProfileAsync(const FilePath& profile_path,
     // Initiate asynchronous creation process.
     ProfileInfo* info =
         RegisterProfile(CreateProfileAsyncHelper(profile_path, this), false);
+    ProfileInfoCache& cache = GetProfileInfoCache();
+    // Get the icon index from the user's icon url
+    size_t icon_index;
+    std::string icon_url_std = UTF16ToASCII(icon_url);
+    if (cache.IsDefaultAvatarIconUrl(icon_url_std, &icon_index)) {
+      // add profile to cache with user selected name and avatar
+      cache.AddProfileToCache(profile_path, name, string16(), icon_index);
+    }
     info->callbacks.push_back(callback);
   }
 }
@@ -400,7 +467,8 @@ void ProfileManager::CreateDefaultProfileAsync(const CreateCallback& callback) {
   default_profile_dir = default_profile_dir.Append(
       profile_manager->GetInitialProfileDir());
 
-  profile_manager->CreateProfileAsync(default_profile_dir, callback);
+  profile_manager->CreateProfileAsync(default_profile_dir, callback,
+                                      string16(), string16());
 }
 
 bool ProfileManager::AddProfile(Profile* profile) {
@@ -417,7 +485,6 @@ bool ProfileManager::AddProfile(Profile* profile) {
 
   RegisterProfile(profile, true);
   DoFinalInit(profile, ShouldGoOffTheRecord());
-  ProfileMetrics::LogNumberOfProfiles(this, ProfileMetrics::ADD_PROFILE_EVENT);
   return true;
 }
 
@@ -434,22 +501,27 @@ Profile* ProfileManager::GetProfileByPath(const FilePath& path) const {
 }
 
 // static
-void ProfileManager::NewWindowWithProfile(
+void ProfileManager::FindOrCreateNewWindowForProfile(
     Profile* profile,
-    BrowserInit::IsProcessStartup process_startup,
-    BrowserInit::IsFirstRun is_first_run) {
+    chrome::startup::IsProcessStartup process_startup,
+    chrome::startup::IsFirstRun is_first_run,
+    bool always_create) {
   DCHECK(profile);
-  Browser* browser = BrowserList::FindTabbedBrowser(profile, false);
-  if (browser) {
-    browser->window()->Activate();
-  } else {
-    content::RecordAction(UserMetricsAction("NewWindow"));
-    CommandLine command_line(CommandLine::NO_PROGRAM);
-    int return_code;
-    BrowserInit browser_init;
-    browser_init.LaunchBrowser(command_line, profile, FilePath(),
-                               process_startup, is_first_run, &return_code);
+
+  if (!always_create) {
+    Browser* browser = browser::FindTabbedBrowser(profile, false);
+    if (browser) {
+      browser->window()->Activate();
+      return;
+    }
   }
+
+  content::RecordAction(UserMetricsAction("NewWindow"));
+  CommandLine command_line(CommandLine::NO_PROGRAM);
+  int return_code;
+  StartupBrowserCreator browser_creator;
+  browser_creator.LaunchBrowser(command_line, profile, FilePath(),
+                                process_startup, is_first_run, &return_code);
 }
 
 void ProfileManager::Observe(
@@ -466,8 +538,8 @@ void ProfileManager::Observe(
       // TODO(davemoore) Once we have better api this check should ensure that
       // our profile directory is the one that's mounted, and that it's mounted
       // as the current user.
-      CHECK(chromeos::CrosLibrary::Get()->GetCryptohomeLibrary()->IsMounted())
-          << "The cryptohome was not mounted at login.";
+      chromeos::DBusThreadManager::Get()->GetCryptohomeClient()->IsMounted(
+          base::Bind(&CheckCryptohomeIsMounted));
 
       // Confirm that we hadn't loaded the new profile previously.
       FilePath default_profile_dir =
@@ -478,14 +550,20 @@ void ProfileManager::Observe(
     return;
   }
 #endif
-  if (shutdown_started_)
-    return;
-
-  bool update_active_profiles = false;
+  bool save_active_profiles = false;
   switch (type) {
-    case content::NOTIFICATION_APP_EXITING: {
+    case chrome::NOTIFICATION_CLOSE_ALL_BROWSERS_REQUEST: {
       // Ignore any browsers closing from now on.
-      shutdown_started_ = true;
+      closing_all_browsers_ = true;
+      break;
+    }
+    case chrome::NOTIFICATION_BROWSER_CLOSE_CANCELLED: {
+      // This will cancel the shutdown process, so the active profiles are
+      // tracked again. Also, as the active profiles may have changed (i.e. if
+      // some windows were closed) we save the current list of active profiles
+      // again.
+      closing_all_browsers_ = false;
+      save_active_profiles = true;
       break;
     }
     case chrome::NOTIFICATION_BROWSER_OPENED: {
@@ -495,8 +573,13 @@ void ProfileManager::Observe(
       DCHECK(profile);
       if (!profile->IsOffTheRecord() && ++browser_counts_[profile] == 1) {
         active_profiles_.push_back(profile);
-        update_active_profiles = true;
+        save_active_profiles = true;
       }
+      // If browsers are opening, we can't be closing all the browsers. This
+      // can happen if the application was exited, but background mode or
+      // packaged apps prevented the process from shutting down, and then
+      // a new browser window was opened.
+      closing_all_browsers_ = false;
       break;
     }
     case chrome::NOTIFICATION_BROWSER_CLOSED: {
@@ -505,11 +588,9 @@ void ProfileManager::Observe(
       Profile* profile = browser->profile();
       DCHECK(profile);
       if (!profile->IsOffTheRecord() && --browser_counts_[profile] == 0) {
-        active_profiles_.erase(
-            std::remove(active_profiles_.begin(), active_profiles_.end(),
-                        profile),
-            active_profiles_.end());
-        update_active_profiles = true;
+        active_profiles_.erase(std::find(active_profiles_.begin(),
+                                         active_profiles_.end(), profile));
+        save_active_profiles = !closing_all_browsers_;
       }
       break;
     }
@@ -518,17 +599,27 @@ void ProfileManager::Observe(
       break;
     }
   }
-  if (update_active_profiles) {
+
+  if (save_active_profiles) {
     PrefService* local_state = g_browser_process->local_state();
     DCHECK(local_state);
     ListPrefUpdate update(local_state, prefs::kProfilesLastActive);
     ListValue* profile_list = update.Get();
 
     profile_list->Clear();
+
+    // crbug.com/120112 -> several non-incognito profiles might have the same
+    // GetPath().BaseName(). In that case, we cannot restore both
+    // profiles. Include each base name only once in the last active profile
+    // list.
+    std::set<std::string> profile_paths;
     std::vector<Profile*>::const_iterator it;
     for (it = active_profiles_.begin(); it != active_profiles_.end(); ++it) {
-      profile_list->Append(
-          new StringValue((*it)->GetPath().BaseName().MaybeAsASCII()));
+      std::string profile_path = (*it)->GetPath().BaseName().MaybeAsASCII();
+      if (profile_paths.find(profile_path) == profile_paths.end()) {
+        profile_paths.insert(profile_path);
+        profile_list->Append(new StringValue(profile_path));
+      }
     }
   }
 }
@@ -546,20 +637,36 @@ void ProfileManager::OnImportFinished(Profile* profile) {
       content::NotificationService::NoDetails());
 }
 
-void ProfileManager::OnBrowserAdded(const Browser* browser) {}
+#if !defined(OS_ANDROID)
+ProfileManager::BrowserListObserver::BrowserListObserver(
+    ProfileManager* manager)
+    : profile_manager_(manager) {
+  BrowserList::AddObserver(this);
+}
 
-void ProfileManager::OnBrowserRemoved(const Browser* browser) {}
+ProfileManager::BrowserListObserver::~BrowserListObserver() {
+  BrowserList::RemoveObserver(this);
+}
 
-void ProfileManager::OnBrowserSetLastActive(const Browser* browser) {
-  Profile* last_active = browser->GetProfile();
+void ProfileManager::BrowserListObserver::OnBrowserAdded(
+    Browser* browser) {}
+
+void ProfileManager::BrowserListObserver::OnBrowserRemoved(
+    Browser* browser) {}
+
+void ProfileManager::BrowserListObserver::OnBrowserSetLastActive(
+    Browser* browser) {
+  Profile* last_active = browser->profile();
   PrefService* local_state = g_browser_process->local_state();
   DCHECK(local_state);
   // Only keep track of profiles that we are managing; tests may create others.
-  if (profiles_info_.find(last_active->GetPath()) != profiles_info_.end()) {
+  if (profile_manager_->profiles_info_.find(
+      last_active->GetPath()) != profile_manager_->profiles_info_.end()) {
     local_state->SetString(prefs::kProfileLastUsed,
                            last_active->GetPath().BaseName().MaybeAsASCII());
   }
 }
+#endif  // !defined(OS_ANDROID)
 
 void ProfileManager::DoFinalInit(Profile* profile, bool go_off_the_record) {
   DoFinalInitForServices(profile, go_off_the_record);
@@ -569,12 +676,26 @@ void ProfileManager::DoFinalInit(Profile* profile, bool go_off_the_record) {
 #if defined(OS_WIN)
   CreateDesktopShortcut(profile);
 #endif
+
+  ProfileMetrics::LogNumberOfProfiles(this, ProfileMetrics::ADD_PROFILE_EVENT);
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_PROFILE_ADDED,
+      content::Source<Profile>(profile),
+      content::NotificationService::NoDetails());
+
 }
 
 void ProfileManager::DoFinalInitForServices(Profile* profile,
-                                         bool go_off_the_record) {
+                                            bool go_off_the_record) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  profile->InitExtensions(!go_off_the_record);
+  extensions::ExtensionSystem::Get(profile)->InitForRegularProfile(
+      !go_off_the_record);
+  // During tests, when |profile| is an instance of TestingProfile,
+  // ExtensionSystem might not create an ExtensionService.
+  if (extensions::ExtensionSystem::Get(profile)->extension_service()) {
+    profile->GetHostContentSettingsMap()->RegisterExtensionService(
+        extensions::ExtensionSystem::Get(profile)->extension_service());
+  }
   if (!command_line.HasSwitch(switches::kDisableWebResources))
     profile->InitPromoResources();
 }
@@ -590,16 +711,18 @@ void ProfileManager::DoFinalInitLogging(Profile* profile) {
   BrowserThread::PostDelayedTask(
       BrowserThread::FILE, FROM_HERE,
       base::Bind(&ProfileSizeTask, profile->GetPath(), extension_count),
-      112000);
+      base::TimeDelta::FromSeconds(112));
 }
 
 Profile* ProfileManager::CreateProfileHelper(const FilePath& path) {
-  return Profile::CreateProfile(path);
+  return Profile::CreateProfile(path, NULL, Profile::CREATE_MODE_SYNCHRONOUS);
 }
 
 Profile* ProfileManager::CreateProfileAsyncHelper(const FilePath& path,
                                                   Delegate* delegate) {
-  return Profile::CreateProfileAsync(path, delegate);
+  return Profile::CreateProfile(path,
+                                delegate,
+                                Profile::CREATE_MODE_ASYNCHRONOUS);
 }
 
 #if defined(OS_WIN)
@@ -608,7 +731,9 @@ ProfileShortcutManagerWin* ProfileManager::CreateShortcutManager() {
 }
 #endif
 
-void ProfileManager::OnProfileCreated(Profile* profile, bool success) {
+void ProfileManager::OnProfileCreated(Profile* profile,
+                                      bool success,
+                                      bool is_new_profile) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   ProfilesInfoMap::iterator iter = profiles_info_.find(profile->GetPath());
@@ -648,6 +773,8 @@ FilePath ProfileManager::GenerateNextProfileDirectoryPath() {
   PrefService* local_state = g_browser_process->local_state();
   DCHECK(local_state);
 
+  DCHECK(IsMultipleProfilesEnabled());
+
   // Create the next profile in the next available directory slot.
   int next_directory = local_state->GetInteger(prefs::kProfilesNumCreated);
   std::string profile_name = chrome::kMultiProfileDirPrefix;
@@ -663,7 +790,8 @@ FilePath ProfileManager::GenerateNextProfileDirectoryPath() {
 }
 
 // static
-void ProfileManager::CreateMultiProfileAsync() {
+void ProfileManager::CreateMultiProfileAsync(const string16& name,
+                                             const string16& icon_url) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   ProfileManager* profile_manager = g_browser_process->profile_manager();
@@ -671,7 +799,8 @@ void ProfileManager::CreateMultiProfileAsync() {
   FilePath new_path = profile_manager->GenerateNextProfileDirectoryPath();
 
   profile_manager->CreateProfileAsync(new_path,
-                                      base::Bind(&OnOpenWindowForNewProfile));
+                                      base::Bind(&OnOpenWindowForNewProfile),
+                                      name, icon_url);
 }
 
 // static
@@ -705,7 +834,9 @@ ProfileInfoCache& ProfileManager::GetProfileInfoCache() {
 #if defined(OS_WIN)
     BrowserDistribution* dist = BrowserDistribution::GetDistribution();
     ProfileShortcutManagerWin* shortcut_manager = CreateShortcutManager();
-    if (dist && dist->CanCreateDesktopShortcuts() && shortcut_manager) {
+    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    if (dist && dist->CanCreateDesktopShortcuts() && shortcut_manager &&
+        !command_line.HasSwitch(switches::kDisableDesktopShortcuts)) {
       profile_shortcut_manager_.reset(shortcut_manager);
       profile_info_cache_->AddObserver(profile_shortcut_manager_.get());
     }
@@ -807,13 +938,16 @@ bool ProfileManager::ShouldGoOffTheRecord() {
 }
 
 void ProfileManager::ScheduleProfileForDeletion(const FilePath& profile_dir) {
+  DCHECK(IsMultipleProfilesEnabled());
+
   // If we're deleting the last profile, then create a new profile in its
   // place.
   ProfileInfoCache& cache = GetProfileInfoCache();
   if (cache.GetNumberOfProfiles() == 1) {
     FilePath new_path = GenerateNextProfileDirectoryPath();
 
-    CreateProfileAsync(new_path, base::Bind(&OnOpenWindowForNewProfile));
+    CreateProfileAsync(new_path, base::Bind(&OnOpenWindowForNewProfile),
+                       string16(), string16());
   }
 
   // Update the last used profile pref before closing browser windows. This way
@@ -855,10 +989,14 @@ void ProfileManager::ScheduleProfileForDeletion(const FilePath& profile_dir) {
 // static
 bool ProfileManager::IsMultipleProfilesEnabled() {
 #if defined(OS_CHROMEOS)
-  return CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles);
-#else
-  return true;
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles))
+    return false;
 #endif
+#if defined(OS_WIN)
+  if (base::win::IsMetroProcess())
+    return false;
+#endif
+  return !ManagedMode::IsInManagedMode();
 }
 
 void ProfileManager::AutoloadProfiles() {
@@ -883,7 +1021,7 @@ ProfileManagerWithoutInit::ProfileManagerWithoutInit(
 void ProfileManager::RegisterTestingProfile(Profile* profile,
                                             bool add_to_cache) {
   RegisterProfile(profile, true);
-  if (add_to_cache){
+  if (add_to_cache) {
     InitProfileUserPrefs(profile);
     AddProfileToCache(profile);
   }
@@ -894,4 +1032,8 @@ void ProfileManager::RunCallbacks(const std::vector<CreateCallback>& callbacks,
                                   Profile::CreateStatus status) {
   for (size_t i = 0; i < callbacks.size(); ++i)
     callbacks[i].Run(profile, status);
+}
+
+ProfileManager::ProfileInfo::~ProfileInfo() {
+  ProfileDestroyer::DestroyProfileWhenAppropriate(profile.release());
 }

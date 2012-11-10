@@ -6,6 +6,8 @@
 #define PPAPI_PPB_IMAGE_DATA_PROXY_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "base/shared_memory.h"
+#include "build/build_config.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_instance.h"
@@ -22,14 +24,7 @@
 
 class TransportDIB;
 
-namespace skia {
-class PlatformCanvas;
-}
-
 namespace ppapi {
-
-class HostResource;
-
 namespace proxy {
 
 // The proxied image data resource. Unlike most resources, this needs to be
@@ -38,13 +33,24 @@ class ImageData : public ppapi::Resource,
                   public ppapi::thunk::PPB_ImageData_API,
                   public ppapi::PPB_ImageData_Shared {
  public:
+#if !defined(OS_NACL)
   ImageData(const ppapi::HostResource& resource,
             const PP_ImageDataDesc& desc,
             ImageHandle handle);
+#else
+  // In NaCl, we only allow creating an ImageData using a SharedMemoryHandle.
+  // ImageHandle can differ by host platform. We need something that is
+  // more consistent across platforms for NaCl, so that we can communicate to
+  // the host OS in a consistent way.
+  ImageData(const ppapi::HostResource& resource,
+            const PP_ImageDataDesc& desc,
+            const base::SharedMemoryHandle& handle);
+#endif
   virtual ~ImageData();
 
   // Resource overrides.
   virtual ppapi::thunk::PPB_ImageData_API* AsPPB_ImageData_API() OVERRIDE;
+  virtual void LastPluginRefWasDeleted() OVERRIDE;
 
   // PPB_ImageData API.
   virtual PP_Bool Describe(PP_ImageDataDesc* desc) OVERRIDE;
@@ -52,19 +58,38 @@ class ImageData : public ppapi::Resource,
   virtual void Unmap() OVERRIDE;
   virtual int32_t GetSharedMemory(int* handle, uint32_t* byte_count) OVERRIDE;
   virtual skia::PlatformCanvas* GetPlatformCanvas() OVERRIDE;
+  virtual SkCanvas* GetCanvas() OVERRIDE;
 
   const PP_ImageDataDesc& desc() const { return desc_; }
 
-  static const ImageHandle NullHandle;
+  void set_used_in_replace_contents() { used_in_replace_contents_ = true; }
+
+  // Prepares this image data to be recycled to the plugin. The contents will be
+  // cleared if zero_contents is set.
+  void RecycleToPlugin(bool zero_contents);
+
+#if !defined(OS_NACL)
+  static ImageHandle NullHandle();
   static ImageHandle HandleFromInt(int32_t i);
+#endif
 
  private:
   PP_ImageDataDesc desc_;
 
+#if defined(OS_NACL)
+  base::SharedMemory shm_;
+  uint32 size_;
+  int map_count_;
+#else
   scoped_ptr<TransportDIB> transport_dib_;
 
   // Null when the image isn't mapped.
   scoped_ptr<skia::PlatformCanvas> mapped_canvas_;
+#endif
+
+  // Set to true when this ImageData has been used in a call to
+  // Graphics2D.ReplaceContents. This is used to signal that it can be cached.
+  bool used_in_replace_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(ImageData);
 };
@@ -85,7 +110,7 @@ class PPB_ImageData_Proxy : public InterfaceProxy {
   static const ApiID kApiID = API_ID_PPB_IMAGE_DATA;
 
  private:
-  // Message handler.
+  // Plugin->Host message handlers.
   void OnHostMsgCreate(PP_Instance instance,
                        int32_t format,
                        const PP_Size& size,
@@ -93,6 +118,16 @@ class PPB_ImageData_Proxy : public InterfaceProxy {
                        HostResource* result,
                        std::string* image_data_desc,
                        ImageHandle* result_image_handle);
+  void OnHostMsgCreateNaCl(PP_Instance instance,
+                           int32_t format,
+                           const PP_Size& size,
+                           PP_Bool init_to_zero,
+                           HostResource* result,
+                           std::string* image_data_desc,
+                           base::SharedMemoryHandle* result_image_handle);
+
+  // Host->Plugin message handlers.
+  void OnPluginMsgNotifyUnusedImageData(const HostResource& old_image_data);
 
   DISALLOW_COPY_AND_ASSIGN(PPB_ImageData_Proxy);
 };

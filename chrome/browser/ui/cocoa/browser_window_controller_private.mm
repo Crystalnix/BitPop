@@ -14,44 +14,35 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_util.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/browser_window_state.h"
+#include "chrome/browser/ui/cocoa/last_active_browser_cocoa.h"
 #import "chrome/browser/ui/cocoa/browser/avatar_button_controller.h"
 #import "chrome/browser/ui/cocoa/fast_resize_view.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_cocoa_controller.h"
 #import "chrome/browser/ui/cocoa/floating_bar_backing_view.h"
-#import "chrome/browser/ui/cocoa/focus_tracker.h"
 #import "chrome/browser/ui/cocoa/framed_browser_window.h"
 #import "chrome/browser/ui/cocoa/fullscreen_window.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
+#import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/presentation_mode_controller.h"
 #import "chrome/browser/ui/cocoa/status_bubble_mac.h"
 #import "chrome/browser/ui/cocoa/tab_contents/previewable_contents_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/renderer_host/render_widget_host_view.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#import "ui/base/cocoa/focus_tracker.h"
 #include "ui/base/ui_base_types.h"
 
+using content::RenderWidgetHostView;
 using content::WebContents;
-
-// Forward-declare symbols that are part of the 10.6 SDK.
-#if !defined(MAC_OS_X_VERSION_10_6) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_6
-
-enum {
-  NSApplicationPresentationDefault                    = 0,
-  NSApplicationPresentationAutoHideDock               = (1 <<  0),
-  NSApplicationPresentationHideDock                   = (1 <<  1),
-  NSApplicationPresentationAutoHideMenuBar            = (1 <<  2),
-  NSApplicationPresentationHideMenuBar                = (1 <<  3),
-};
-typedef NSUInteger NSApplicationPresentationOptions;
-
-#endif  // MAC_OS_X_VERSION_10_6
 
 namespace {
 
@@ -61,9 +52,6 @@ const CGFloat kAvatarRightOffset = 4;
 // The amount by which to shrink the tab strip (on the right) when the
 // incognito badge is present.
 const CGFloat kAvatarTabStripShrink = 18;
-
-// The amount by which to shift the avatar to the right if on Lion.
-const CGFloat kAvatarShiftForLion = 20;
 
 // Insets for the location bar, used when the full toolbar is hidden.
 // TODO(viettrungluu): We can argue about the "correct" insetting; I like the
@@ -90,28 +78,8 @@ const CGFloat kLocBarBottomInset = 1;
           delegate:self]);
 }
 
-- (void)createAndInstallPresentationModeToggleButton {
-  DCHECK(base::mac::IsOSLionOrLater());
-  if (presentationModeToggleButton_.get())
-    return;
-
-  // TODO(rohitrao): Make this button prettier.
-  presentationModeToggleButton_.reset(
-      [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 25, 25)]);
-  NSButton* button = presentationModeToggleButton_.get();
-  [button setButtonType:NSMomentaryLightButton];
-  [button setBezelStyle:NSRegularSquareBezelStyle];
-  [button setBordered:NO];
-  [[button cell] setHighlightsBy:NSContentsCellMask];
-  [[button cell] setShowsStateBy:NSContentsCellMask];
-  [button setImage:[NSImage imageNamed:NSImageNameIChatTheaterTemplate]];
-  [button setTarget:self];
-  [button setAction:@selector(togglePresentationModeForLionOrLater:)];
-  [[[[self window] contentView] superview] addSubview:button];
-}
-
 - (void)saveWindowPositionIfNeeded {
-  if (!browser_->ShouldSaveWindowPlacement())
+  if (!chrome::ShouldSaveWindowPlacement(browser_.get()))
     return;
 
   // If we're in fullscreen mode, save the position of the regular window
@@ -122,6 +90,19 @@ const CGFloat kLocBarBottomInset = 1;
   NSRect monitorFrame = [[[NSScreen screens] objectAtIndex:0] frame];
   NSScreen* windowScreen = [window screen];
 
+  // Start with the window's frame, which is in virtual coordinates.
+  // Do some y twiddling to flip the coordinate system.
+  gfx::Rect bounds(NSRectToCGRect([window frame]));
+  bounds.set_y(monitorFrame.size.height - bounds.y() - bounds.height());
+
+  // Browser::SaveWindowPlacement saves information for session restore.
+  ui::WindowShowState show_state = ui::SHOW_STATE_NORMAL;
+  if ([window isMiniaturized])
+    show_state = ui::SHOW_STATE_MINIMIZED;
+  else if ([self isFullscreen])
+    show_state = ui::SHOW_STATE_FULLSCREEN;
+  chrome::SaveWindowPlacement(browser_.get(), bounds, show_state);
+
   // |windowScreen| can be nil (for example, if the monitor arrangement was
   // changed while in fullscreen mode).  If we see a nil screen, return without
   // saving.
@@ -130,26 +111,18 @@ const CGFloat kLocBarBottomInset = 1;
   if (!windowScreen)
     return;
 
-  // Start with the window's frame, which is in virtual coordinates.
-  // Do some y twiddling to flip the coordinate system.
-  gfx::Rect bounds(NSRectToCGRect([window frame]));
-  bounds.set_y(monitorFrame.size.height - bounds.y() - bounds.height());
-
-  // Browser::SaveWindowPlacement saves information for session restore.
-  ui::WindowShowState show_state = [window isMiniaturized] ?
-      ui::SHOW_STATE_MINIMIZED : ui::SHOW_STATE_NORMAL;
-  browser_->SaveWindowPlacement(bounds, show_state);
-
   // Only save main window information to preferences.
   PrefService* prefs = browser_->profile()->GetPrefs();
-  if (!prefs || browser_ != BrowserList::GetLastActive())
+  if (!prefs || browser_ != browser::GetLastActiveBrowser())
     return;
 
   // Save the current work area, in flipped coordinates.
   gfx::Rect workArea(NSRectToCGRect([windowScreen visibleFrame]));
   workArea.set_y(monitorFrame.size.height - workArea.y() - workArea.height());
 
-  DictionaryPrefUpdate update(prefs, browser_->GetWindowPlacementKey().c_str());
+  DictionaryPrefUpdate update(
+      prefs,
+      chrome::GetWindowPlacementKey(browser_.get()).c_str());
   DictionaryValue* windowPreferences = update.Get();
   windowPreferences->SetInteger("left", bounds.x());
   windowPreferences->SetInteger("top", bounds.y());
@@ -217,12 +190,6 @@ willPositionSheet:(NSWindow*)sheet
       (std::floor((1 - floatingBarShownFraction_) * floatingBarHeight) -
           [presentationModeController_ floatingBarVerticalOffset]) : 0;
   CGFloat maxY = NSMaxY(contentBounds) + yOffset;
-
-  CGFloat overlayMaxY =
-      NSMaxY([window frame]) +
-      std::floor((1 - floatingBarShownFraction_) * floatingBarHeight);
-  [self layoutPresentationModeToggleAtOverlayMaxX:NSMaxX([window frame])
-                                      overlayMaxY:overlayMaxY];
 
   if ([self hasTabStrip]) {
     // If we need to lay out the top tab strip, replace |maxY| with a higher
@@ -307,23 +274,6 @@ willPositionSheet:(NSWindow*)sheet
   return totalHeight;
 }
 
-- (void)layoutPresentationModeToggleAtOverlayMaxX:(CGFloat)maxX
-                                      overlayMaxY:(CGFloat)maxY {
-  // Lay out the presentation mode toggle button at the very top of the
-  // tab strip.
-  if ([self shouldShowPresentationModeToggle]) {
-    [self createAndInstallPresentationModeToggleButton];
-
-    NSPoint origin =
-        NSMakePoint(maxX - NSWidth([presentationModeToggleButton_ frame]),
-                    maxY - NSHeight([presentationModeToggleButton_ frame]));
-    [presentationModeToggleButton_ setFrameOrigin:origin];
-  } else {
-    [presentationModeToggleButton_ removeFromSuperview];
-    presentationModeToggleButton_.reset();
-  }
-}
-
 - (CGFloat)layoutTabStripAtMaxY:(CGFloat)maxY
                           width:(CGFloat)width
                      fullscreen:(BOOL)fullscreen {
@@ -342,15 +292,17 @@ willPositionSheet:(NSWindow*)sheet
 
   // Calculate the right indentation.  The default indentation built into the
   // tabstrip leaves enough room for the fullscreen button or presentation mode
-  // toggle button on Lion.  On non-Lion systems, the default indentation also
-  // looks fine.  If an avatar button is present, indent enough to account for
-  // its width.
-  const CGFloat possibleExtraShiftForLion =
-      base::mac::IsOSLionOrLater() ? kAvatarShiftForLion : 0;
-
+  // toggle button on Lion.  On non-Lion systems, the right indent needs to be
+  // adjusted to make room for the new tab button when an avatar is present.
   CGFloat rightIndent = 0;
-  if ([self shouldShowAvatar])
-    rightIndent += (kAvatarTabStripShrink + possibleExtraShiftForLion);
+  if (base::mac::IsOSLionOrLater()) {
+    FramedBrowserWindow* window =
+        static_cast<FramedBrowserWindow*>([self window]);
+    DCHECK([window isKindOfClass:[FramedBrowserWindow class]]);
+    rightIndent += -[window fullScreenButtonOriginAdjustment].x;
+  } else if ([self shouldShowAvatar]) {
+    rightIndent += kAvatarTabStripShrink;
+  }
   [tabStripController_ setRightIndentForControls:rightIndent];
 
   // Go ahead and layout the tabs.
@@ -364,13 +316,12 @@ willPositionSheet:(NSWindow*)sheet
     [avatarButton setFrameSize:NSMakeSize(profiles::kAvatarIconWidth,
                                           buttonHeight)];
 
-    // Actually place the badge *above* |maxY|, by +2 to miss the divider.  On
-    // Lion or later, shift the badge left to move it away from the fullscreen
-    // button.
-    CGFloat badgeOffset = kAvatarRightOffset + possibleExtraShiftForLion;
+    // Actually place the badge *above* |maxY|, by +2 to miss the divider.
+    CGFloat badgeXOffset = -kAvatarRightOffset;
+    CGFloat badgeYOffset = 2 * [[avatarButton superview] cr_lineWidth];
     NSPoint origin =
-        NSMakePoint(width - NSWidth([avatarButton frame]) - badgeOffset,
-                    maxY + 2);
+        NSMakePoint(width - NSWidth([avatarButton frame]) + badgeXOffset,
+                    maxY + badgeYOffset);
     [avatarButton setFrameOrigin:origin];
     [avatarButton setHidden:NO];  // Make sure it's shown.
   }
@@ -520,7 +471,7 @@ willPositionSheet:(NSWindow*)sheet
 
   // If the relayout shifts the content area up or down, let the renderer know.
   if (contentShifted) {
-    if (WebContents* contents = browser_->GetSelectedWebContents()) {
+    if (WebContents* contents = chrome::GetActiveWebContents(browser_.get())) {
       if (RenderWidgetHostView* rwhv = contents->GetRenderWidgetHostView())
         rwhv->WindowFrameChanged();
     }
@@ -535,7 +486,7 @@ willPositionSheet:(NSWindow*)sheet
 
 - (BOOL)shouldShowDetachedBookmarkBar {
   DCHECK(browser_.get());
-  TabContentsWrapper* tab = browser_->GetSelectedTabContentsWrapper();
+  TabContents* tab = chrome::GetActiveTabContents(browser_.get());
   return (tab && tab->bookmark_tab_helper()->ShouldShowBookmarkBar() &&
           ![previewableContentsController_ isShowingPreview]);
 }
@@ -558,16 +509,6 @@ willPositionSheet:(NSWindow*)sheet
 }
 
 // Fullscreen and presentation mode methods
-
-- (BOOL)shouldUsePresentationModeWhenEnteringFullscreen {
-  return browser_->profile()->GetPrefs()->GetBoolean(
-      prefs::kPresentationModeEnabled);
-}
-
-- (void)setShouldUsePresentationModeWhenEnteringFullscreen:(BOOL)flag {
-  browser_->profile()->GetPrefs()->SetBoolean(
-      prefs::kPresentationModeEnabled, flag);
-}
 
 - (BOOL)shouldShowPresentationModeToggle {
   return base::mac::IsOSLionOrLater() && [self isFullscreen];
@@ -672,8 +613,12 @@ willPositionSheet:(NSWindow*)sheet
     return;
 
   if (presentationMode) {
-    BOOL fullscreen_for_tab = browser_->IsFullscreenForTab();
+    BOOL fullscreen_for_tab =
+        browser_->fullscreen_controller()->IsFullscreenForTabOrPending();
+    BOOL kiosk_mode =
+        CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode);
     BOOL showDropdown = !fullscreen_for_tab &&
+        !kiosk_mode &&
         (forceDropdown || [self floatingBarHasFocus]);
     NSView* contentView = [[self window] contentView];
     presentationModeController_.reset(
@@ -752,6 +697,8 @@ willPositionSheet:(NSWindow*)sheet
   fullscreenWindow_.reset();
   [self layoutSubviews];
 
+  [self windowDidExitFullScreen:nil];
+
   // Fade back in.
   if (didFadeOut) {
     CGDisplayFade(token, kFadeDurationSeconds / 2, kCGDisplayBlendSolidColor,
@@ -785,24 +732,30 @@ willPositionSheet:(NSWindow*)sheet
 }
 
 - (void)showFullscreenExitBubbleIfNecessary {
-  if (!browser_->IsFullscreenForTab()) {
+  // This method is called in response to
+  // |-updateFullscreenExitBubbleURL:bubbleType:|. If on Lion the system is
+  // transitioning, do not show the bubble because it will cause visual jank
+  // <http://crbug.com/130649>. This will be called again as part of
+  // |-windowDidEnterFullScreen:|, so arrange to do that work then instead.
+  if (enteringFullscreen_)
     return;
-  }
 
   [presentationModeController_ ensureOverlayHiddenWithAnimation:NO delay:NO];
 
-  fullscreenExitBubbleController_.reset(
-      [[FullscreenExitBubbleController alloc]
-          initWithOwner:self
-                browser:browser_.get()
-                    url:fullscreenUrl_
-             bubbleType:fullscreenBubbleType_]);
-  NSView* contentView = [[self window] contentView];
-  CGFloat maxWidth = NSWidth([contentView frame]);
-  CGFloat maxY = NSMaxY([[[self window] contentView] frame]);
-  [fullscreenExitBubbleController_
-      positionInWindowAtTop:maxY width:maxWidth];
-  [fullscreenExitBubbleController_ showWindow];
+  if (fullscreenBubbleType_ == FEB_TYPE_NONE ||
+      fullscreenBubbleType_ == FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION) {
+    // Show no exit instruction bubble on Mac when in Browser Fullscreen.
+    [self destroyFullscreenExitBubbleIfNecessary];
+  } else {
+    [fullscreenExitBubbleController_ closeImmediately];
+    fullscreenExitBubbleController_.reset(
+        [[FullscreenExitBubbleController alloc]
+            initWithOwner:self
+                  browser:browser_.get()
+                      url:fullscreenUrl_
+               bubbleType:fullscreenBubbleType_]);
+    [fullscreenExitBubbleController_ showWindow];
+  }
 }
 
 - (void)destroyFullscreenExitBubbleIfNecessary {
@@ -846,8 +799,8 @@ willPositionSheet:(NSWindow*)sheet
 
   NSWindow* window = [self window];
   savedRegularWindowFrame_ = [window frame];
-  BOOL mode = [self shouldUsePresentationModeWhenEnteringFullscreen];
-  mode = mode || browser_->IsFullscreenForTab();
+  BOOL mode = enteringPresentationMode_ ||
+       browser_->fullscreen_controller()->IsFullscreenForTabOrPending();
   enteringFullscreen_ = YES;
   [self setPresentationModeInternal:mode forceDropdown:NO];
 }
@@ -856,7 +809,9 @@ willPositionSheet:(NSWindow*)sheet
   if (base::mac::IsOSLionOrLater())
     [self deregisterForContentViewResizeNotifications];
   enteringFullscreen_ = NO;
+  enteringPresentationMode_ = NO;
   [self showFullscreenExitBubbleIfNecessary];
+  browser_->WindowFullscreenStateChanged();
 }
 
 - (void)windowWillExitFullScreen:(NSNotification*)notification {
@@ -867,13 +822,18 @@ willPositionSheet:(NSWindow*)sheet
 }
 
 - (void)windowDidExitFullScreen:(NSNotification*)notification {
-  [self deregisterForContentViewResizeNotifications];
+  if (base::mac::IsOSLionOrLater())
+    [self deregisterForContentViewResizeNotifications];
+  browser_->WindowFullscreenStateChanged();
 }
 
 - (void)windowDidFailToEnterFullScreen:(NSWindow*)window {
   [self deregisterForContentViewResizeNotifications];
   enteringFullscreen_ = NO;
   [self setPresentationModeInternal:NO forceDropdown:NO];
+
+  // Force a relayout to try and get the window back into a reasonable state.
+  [self layoutSubviews];
 }
 
 - (void)windowDidFailToExitFullScreen:(NSWindow*)window {

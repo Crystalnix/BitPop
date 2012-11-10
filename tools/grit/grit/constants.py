@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -14,9 +14,5 @@ ENCODING_CHECK = u'm\u00f6l'
 
 # A special language, translations into which are always "TTTTTT".
 CONSTANT_LANGUAGE = 'x_constant'
-
-# The Unicode byte-order-marker character (this is the Unicode code point,
-# not the encoding of that character into any particular Unicode encoding).
-BOM = u"\ufeff"
 
 FAKE_BIDI = 'fake-bidi'

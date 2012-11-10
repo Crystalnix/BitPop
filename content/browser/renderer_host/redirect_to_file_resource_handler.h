@@ -13,31 +13,32 @@
 #include "content/browser/renderer_host/layered_resource_handler.h"
 #include "net/url_request/url_request_status.h"
 
-class ResourceDispatcherHost;
-
 namespace net {
 class FileStream;
 class GrowableIOBuffer;
 }
 
 namespace webkit_blob {
-class DeletableFileReference;
+class ShareableFileReference;
 }
 
 namespace content {
+class ResourceDispatcherHostImpl;
 
 // Redirects network data to a file.  This is intended to be layered in front
 // of either the AsyncResourceHandler or the SyncResourceHandler.
 class RedirectToFileResourceHandler : public LayeredResourceHandler {
  public:
   RedirectToFileResourceHandler(
-      ResourceHandler* next_handler,
+      scoped_ptr<ResourceHandler> next_handler,
       int process_id,
-      ResourceDispatcherHost* resource_dispatcher_host);
+      ResourceDispatcherHostImpl* resource_dispatcher_host);
+  virtual ~RedirectToFileResourceHandler();
 
   // ResourceHandler implementation:
   virtual bool OnResponseStarted(int request_id,
-                                 ResourceResponse* response) OVERRIDE;
+                                 ResourceResponse* response,
+                                 bool* defer) OVERRIDE;
   virtual bool OnWillStart(int request_id,
                            const GURL& url,
                            bool* defer) OVERRIDE;
@@ -46,24 +47,24 @@ class RedirectToFileResourceHandler : public LayeredResourceHandler {
                           int* buf_size,
                           int min_size) OVERRIDE;
   virtual bool OnReadCompleted(int request_id,
-                               int* bytes_read) OVERRIDE;
+                               int bytes_read,
+                               bool* defer) OVERRIDE;
   virtual bool OnResponseCompleted(int request_id,
                                    const net::URLRequestStatus& status,
                                    const std::string& security_info) OVERRIDE;
-  virtual void OnRequestClosed() OVERRIDE;
 
  private:
-  virtual ~RedirectToFileResourceHandler();
   void DidCreateTemporaryFile(base::PlatformFileError error_code,
                               base::PassPlatformFile file_handle,
                               const FilePath& file_path);
   void DidWriteToFile(int result);
   bool WriteMore();
   bool BufIsFull() const;
+  void ResumeIfDeferred();
 
   base::WeakPtrFactory<RedirectToFileResourceHandler> weak_factory_;
 
-  ResourceDispatcherHost* host_;
+  ResourceDispatcherHostImpl* host_;
   int process_id_;
   int request_id_;
 
@@ -81,12 +82,18 @@ class RedirectToFileResourceHandler : public LayeredResourceHandler {
   scoped_ptr<net::FileStream> file_stream_;
   bool write_callback_pending_;
 
-  // We create a DeletableFileReference for the temp file created as
-  // a result of the download.
-  scoped_refptr<webkit_blob::DeletableFileReference> deletable_file_;
+  // |next_buffer_size_| is the size of the buffer to be allocated on the next
+  // OnWillRead() call.  We exponentially grow the size of the buffer allocated
+  // when our owner fills our buffers. On the first OnWillRead() call, we
+  // allocate a buffer of 32k and double it in OnReadCompleted() if the buffer
+  // was filled, up to a maximum size of 512k.
+  int next_buffer_size_;
 
-  // True if OnRequestClosed() has already been called.
-  bool request_was_closed_;
+  // We create a ShareableFileReference that's deletable for the temp
+  // file created as  a result of the download.
+  scoped_refptr<webkit_blob::ShareableFileReference> deletable_file_;
+
+  bool did_defer_ ;
 
   bool completed_during_write_;
   net::URLRequestStatus completed_status_;

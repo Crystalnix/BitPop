@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_UI_GTK_BUBBLE_BUBBLE_GTK_H_
 #define CHROME_BROWSER_UI_GTK_BUBBLE_BUBBLE_GTK_H_
-#pragma once
 
 #include <gtk/gtk.h>
 
@@ -52,11 +51,20 @@ class BubbleGtk : public content::NotificationObserver {
   // Where should the arrow be placed relative to the bubble?
   enum ArrowLocationGtk {
     ARROW_LOCATION_TOP_LEFT,
+    ARROW_LOCATION_TOP_MIDDLE,
     ARROW_LOCATION_TOP_RIGHT,
     ARROW_LOCATION_BOTTOM_LEFT,
+    ARROW_LOCATION_BOTTOM_MIDDLE,
     ARROW_LOCATION_BOTTOM_RIGHT,
     ARROW_LOCATION_NONE,  // No arrow. Positioned under the supplied rect.
     ARROW_LOCATION_FLOAT,  // No arrow. Centered over the supplied rect.
+  };
+
+  enum BubbleAttribute {
+    NONE = 0,
+    MATCH_SYSTEM_THEME = 1 << 0, // Matches system colors/themes when possible.
+    POPUP_WINDOW = 1 << 1, // Displays as popup instead of top-level window.
+    GRAB_INPUT = 1 << 2, // Causes bubble to grab keyboard/pointer input.
   };
 
   // Show a bubble, pointing at the area |rect| (in coordinates relative to
@@ -71,8 +79,7 @@ class BubbleGtk : public content::NotificationObserver {
                          const gfx::Rect* rect,
                          GtkWidget* content,
                          ArrowLocationGtk arrow_location,
-                         bool match_system_theme,
-                         bool grab_input,
+                         int attribute_flags,
                          GtkThemeService* provider,
                          BubbleDelegateGtk* delegate);
 
@@ -95,6 +102,14 @@ class BubbleGtk : public content::NotificationObserver {
   // in them.
   void HandlePointerAndKeyboardUngrabbedByContent();
 
+  // Change an input-grabbing bubble into a non-input-grabbing bubble. This
+  // allows a window to change from auto closing when it loses to focus to being
+  // a window that does not auto close, and is useful if an auto closing window
+  // starts being inspected.
+  void StopGrabbingInput();
+
+  GtkWidget* anchor_widget() { return anchor_widget_; }
+
  private:
   FRIEND_TEST_ALL_PREFIXES(BubbleGtkTest, ArrowLocation);
   FRIEND_TEST_ALL_PREFIXES(BubbleGtkTest, NoArrow);
@@ -104,7 +119,7 @@ class BubbleGtk : public content::NotificationObserver {
     FRAME_STROKE,
   };
 
-  BubbleGtk(GtkThemeService* provider, bool match_system_theme);
+  BubbleGtk(GtkThemeService* provider, int attribute_flags);
   virtual ~BubbleGtk();
 
   // Creates the Bubble.
@@ -112,7 +127,7 @@ class BubbleGtk : public content::NotificationObserver {
             const gfx::Rect* rect,
             GtkWidget* content,
             ArrowLocationGtk arrow_location,
-            bool grab_input);
+            int attribute_flags);
 
   // Make the points for our polygon frame, either for fill (the mask), or for
   // when we stroke the border.

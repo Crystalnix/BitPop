@@ -4,25 +4,27 @@
 
 #ifndef CONTENT_BROWSER_RENDERER_HOST_JAVA_JAVA_BRIDGE_DISPATCHER_HOST_MANAGER_H_
 #define CONTENT_BROWSER_RENDERER_HOST_JAVA_JAVA_BRIDGE_DISPATCHER_HOST_MANAGER_H_
-#pragma once
 
 #include <map>
 
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "content/public/browser/web_contents_observer.h"
 
 class JavaBridgeDispatcherHost;
-class RenderViewHost;
 struct NPObject;
+
+namespace content {
+class RenderViewHost;
+}
 
 // This class handles injecting Java objects into all of the RenderViews
 // associated with a WebContents. It manages a set of JavaBridgeDispatcherHost
 // objects, one per RenderViewHost.
 class JavaBridgeDispatcherHostManager : public content::WebContentsObserver {
  public:
-  JavaBridgeDispatcherHostManager(content::WebContents* web_contents);
+  explicit JavaBridgeDispatcherHostManager(content::WebContents* web_contents);
   virtual ~JavaBridgeDispatcherHostManager();
 
   // These methods add or remove the object to each JavaBridgeDispatcherHost.
@@ -32,13 +34,16 @@ class JavaBridgeDispatcherHostManager : public content::WebContentsObserver {
   void RemoveNamedObject(const string16& name);
 
   // content::WebContentsObserver overrides
-  virtual void RenderViewCreated(RenderViewHost* render_view_host) OVERRIDE;
-  virtual void RenderViewDeleted(RenderViewHost* render_view_host) OVERRIDE;
+  virtual void RenderViewCreated(
+      content::RenderViewHost* render_view_host) OVERRIDE;
+  virtual void RenderViewDeleted(
+      content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void WebContentsDestroyed(
       content::WebContents* web_contents) OVERRIDE;
 
  private:
-  typedef std::map<RenderViewHost*, scoped_refptr<JavaBridgeDispatcherHost> >
+  typedef std::map<content::RenderViewHost*,
+      scoped_refptr<JavaBridgeDispatcherHost> >
       InstanceMap;
   InstanceMap instances_;
   typedef std::map<string16, NPObject*> ObjectMap;

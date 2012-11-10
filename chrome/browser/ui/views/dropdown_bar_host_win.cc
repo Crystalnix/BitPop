@@ -6,12 +6,13 @@
 
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "content/browser/renderer_host/render_view_host.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "ui/base/keycodes/keyboard_code_conversion_win.h"
 #include "ui/views/controls/scrollbar/native_scroll_bar.h"
 
+using content::NativeWebKeyboardEvent;
 using content::WebContents;
 
 NativeWebKeyboardEvent DropdownBarHost::GetKeyboardEvent(

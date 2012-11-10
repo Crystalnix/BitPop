@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_VIEWS_CONTROLS_BUTTON_BUTTON_DROPDOWN_H_
 #define UI_VIEWS_CONTROLS_BUTTON_BUTTON_DROPDOWN_H_
-#pragma once
 
 #include "base/memory/weak_ptr.h"
 #include "ui/views/controls/button/image_button.h"
@@ -14,6 +13,8 @@ class MenuModel;
 }
 
 namespace views {
+
+class MenuRunner;
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -30,6 +31,12 @@ class VIEWS_EXPORT ButtonDropDown : public ImageButton {
 
   ButtonDropDown(ButtonListener* listener, ui::MenuModel* model);
   virtual ~ButtonDropDown();
+
+  // If menu is currently pending for long press - stop it.
+  void ClearPendingMenu();
+
+  // Indicates if menu is currently showing.
+  bool IsMenuShowing() const;
 
   // Overridden from views::View
   virtual bool OnMousePressed(const MouseEvent& event) OVERRIDE;
@@ -50,17 +57,26 @@ class VIEWS_EXPORT ButtonDropDown : public ImageButton {
   // pressed when a user holds the mouse down over the button. For this
   // implementation, both left and right mouse buttons can trigger a change
   // to the PUSHED state.
-  virtual bool ShouldEnterPushedState(const MouseEvent& event) OVERRIDE;
+  virtual bool ShouldEnterPushedState(const Event& event) OVERRIDE;
+
+  // Returns if menu should be shown. Override this to change default behavior.
+  virtual bool ShouldShowMenu();
+
+  // Function to show the dropdown menu.
+  virtual void ShowDropDownMenu();
 
  private:
-  // Internal function to show the dropdown menu
-  void ShowDropDownMenu(gfx::NativeView window);
-
   // The model that populates the attached menu.
   ui::MenuModel* model_;
 
+  // Indicates if menu is currently showing.
+  bool menu_showing_;
+
   // Y position of mouse when left mouse button is pressed
   int y_position_on_lbuttondown_;
+
+  // Menu runner to display drop down menu.
+  scoped_ptr<MenuRunner> menu_runner_;
 
   // A factory for tasks that show the dropdown context menu for the button.
   base::WeakPtrFactory<ButtonDropDown> show_menu_factory_;

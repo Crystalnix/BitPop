@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_COMMON_EXTENSIONS_USER_SCRIPT_H_
 #define CHROME_COMMON_EXTENSIONS_USER_SCRIPT_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -16,6 +15,9 @@
 #include "chrome/common/extensions/url_pattern_set.h"
 
 class Pickle;
+class PickleIterator;
+
+namespace extensions {
 
 // Represents a user script, either a standalone one, or one that is part of an
 // extension.
@@ -38,6 +40,7 @@ class UserScript {
 
   // Locations that user scripts can be run inside the document.
   enum RunLocation {
+    UNDEFINED,
     DOCUMENT_START,  // After the documentElemnet is created, but before
                      // anything else happens.
     DOCUMENT_END,  // After the entire document is parsed. Same as
@@ -46,7 +49,6 @@ class UserScript {
                     // is "idle". Currently this uses the simple heuristic of:
                     // min(DOM_CONTENT_LOADED + TIMEOUT, ONLOAD), but no
                     // particular injection point is guaranteed.
-
     RUN_LOCATION_LAST  // Leave this as the last item.
   };
 
@@ -82,7 +84,7 @@ class UserScript {
     // Serialization support. The content and FilePath members will not be
     // serialized!
     void Pickle(::Pickle* pickle) const;
-    void Unpickle(const ::Pickle& pickle, void** iter);
+    void Unpickle(const ::Pickle& pickle, PickleIterator* iter);
 
    private:
     // Where the script file lives on the disk. We keep the path split so that
@@ -187,7 +189,7 @@ class UserScript {
   // Deserialize the script from a pickle. Note that this always succeeds
   // because presumably we were the one that pickled it, and we did it
   // correctly.
-  void Unpickle(const ::Pickle& pickle, void** iter);
+  void Unpickle(const ::Pickle& pickle, PickleIterator* iter);
 
  private:
   // Pickle helper functions used to pickle the individual types of components.
@@ -198,11 +200,11 @@ class UserScript {
   void PickleScripts(::Pickle* pickle, const FileList& scripts) const;
 
   // Unpickle helper functions used to unpickle individual types of components.
-  void UnpickleGlobs(const ::Pickle& pickle, void** iter,
+  void UnpickleGlobs(const ::Pickle& pickle, PickleIterator* iter,
                      std::vector<std::string>* globs);
-  void UnpickleURLPatternSet(const ::Pickle& pickle, void** iter,
+  void UnpickleURLPatternSet(const ::Pickle& pickle, PickleIterator* iter,
                              URLPatternSet* pattern_list);
-  void UnpickleScripts(const ::Pickle& pickle, void** iter,
+  void UnpickleScripts(const ::Pickle& pickle, PickleIterator* iter,
                        FileList* scripts);
 
   // The location to run the script inside the document.
@@ -255,5 +257,7 @@ class UserScript {
 };
 
 typedef std::vector<UserScript> UserScriptList;
+
+}  // namespace extensions
 
 #endif  // CHROME_COMMON_EXTENSIONS_USER_SCRIPT_H_

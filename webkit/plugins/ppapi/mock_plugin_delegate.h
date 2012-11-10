@@ -8,6 +8,8 @@
 #include "webkit/plugins/ppapi/plugin_delegate.h"
 
 struct PP_NetAddress_Private;
+namespace ppapi { class PPB_X509Certificate_Fields; }
+namespace webkit_glue { class ClipboardClient; }
 
 namespace webkit {
 namespace ppapi {
@@ -21,40 +23,53 @@ class MockPluginDelegate : public PluginDelegate {
   virtual void PluginTextInputTypeChanged(PluginInstance* instance);
   virtual void PluginCaretPositionChanged(PluginInstance* instance);
   virtual void PluginRequestedCancelComposition(PluginInstance* instance);
+  virtual void PluginSelectionChanged(PluginInstance* instance);
+  virtual void SimulateImeSetComposition(
+      const string16& text,
+      const std::vector<WebKit::WebCompositionUnderline>& underlines,
+      int selection_start,
+      int selection_end);
+  virtual void SimulateImeConfirmComposition(const string16& text);
   virtual void PluginCrashed(PluginInstance* instance);
   virtual void InstanceCreated(PluginInstance* instance);
   virtual void InstanceDeleted(PluginInstance* instance);
+  virtual scoped_ptr< ::ppapi::thunk::ResourceCreationAPI>
+      CreateResourceCreationAPI(PluginInstance* instance);
   virtual SkBitmap* GetSadPluginBitmap();
+  virtual WebKit::WebPlugin* CreatePluginReplacement(const FilePath& file_path);
   virtual PlatformImage2D* CreateImage2D(int width, int height);
   virtual PlatformContext3D* CreateContext3D();
   virtual PlatformVideoDecoder* CreateVideoDecoder(
       media::VideoDecodeAccelerator::Client* client,
       int32 command_buffer_route_id);
   virtual PlatformVideoCapture* CreateVideoCapture(
-      media::VideoCapture::EventHandler* handler);
-  virtual PlatformAudio* CreateAudio(uint32_t sample_rate,
-                                     uint32_t sample_count,
-                                     PlatformAudioCommonClient* client);
-  virtual PlatformAudioInput* CreateAudioInput(
+      const std::string& device_id,
+      PlatformVideoCaptureEventHandler* handler);
+  virtual uint32_t GetAudioHardwareOutputSampleRate();
+  virtual uint32_t GetAudioHardwareOutputBufferSize();
+  virtual PlatformAudioOutput* CreateAudioOutput(
       uint32_t sample_rate,
       uint32_t sample_count,
-      PlatformAudioCommonClient* client);
-  virtual PpapiBroker* ConnectToPpapiBroker(PPB_Broker_Impl* client);
+      PlatformAudioOutputClient* client);
+  virtual PlatformAudioInput* CreateAudioInput(
+      const std::string& device_id,
+      uint32_t sample_rate,
+      uint32_t sample_count,
+      PlatformAudioInputClient* client);
+  virtual Broker* ConnectToBroker(PPB_Broker_Impl* client);
   virtual void NumberOfFindResultsChanged(int identifier,
                                           int total,
                                           bool final_result);
   virtual void SelectedFindResultChanged(int identifier, int index);
-  virtual bool RunFileChooser(
-      const WebKit::WebFileChooserParams& params,
-      WebKit::WebFileChooserCompletion* chooser_completion);
   virtual bool AsyncOpenFile(const FilePath& path,
                              int flags,
                              const AsyncOpenFileCallback& callback);
-  virtual bool AsyncOpenFileSystemURL(const GURL& path,
-                                      int flags,
-                                      const AsyncOpenFileCallback& callback);
+  virtual bool AsyncOpenFileSystemURL(
+      const GURL& path,
+      int flags,
+      const AsyncOpenFileSystemURLCallback& callback);
   virtual bool OpenFileSystem(
-      const GURL& url,
+      const GURL& origin_url,
       fileapi::FileSystemType type,
       long long size,
       fileapi::FileSystemCallbackDispatcher* dispatcher);
@@ -81,29 +96,30 @@ class MockPluginDelegate : public PluginDelegate {
                                    const AvailableSpaceCallback& callback);
   virtual void WillUpdateFile(const GURL& file_path);
   virtual void DidUpdateFile(const GURL& file_path, int64_t delta);
-  virtual base::PlatformFileError OpenFile(const PepperFilePath& path,
-                                           int flags,
-                                           base::PlatformFile* file);
-  virtual base::PlatformFileError RenameFile(const PepperFilePath& from_path,
-                                             const PepperFilePath& to_path);
-  virtual base::PlatformFileError DeleteFileOrDir(const PepperFilePath& path,
-                                                  bool recursive);
-  virtual base::PlatformFileError CreateDir(const PepperFilePath& path);
-  virtual base::PlatformFileError QueryFile(const PepperFilePath& path,
-                                            base::PlatformFileInfo* info);
-  virtual base::PlatformFileError GetDirContents(const PepperFilePath& path,
-                                                 DirContents* contents);
+  virtual base::PlatformFileError OpenFile(
+      const ::ppapi::PepperFilePath& path,
+      int flags,
+      base::PlatformFile* file);
+  virtual base::PlatformFileError RenameFile(
+      const ::ppapi::PepperFilePath& from_path,
+      const ::ppapi::PepperFilePath& to_path);
+  virtual base::PlatformFileError DeleteFileOrDir(
+      const ::ppapi::PepperFilePath& path,
+      bool recursive);
+  virtual base::PlatformFileError CreateDir(
+      const ::ppapi::PepperFilePath& path);
+  virtual base::PlatformFileError QueryFile(
+      const ::ppapi::PepperFilePath& path,
+      base::PlatformFileInfo* info);
+  virtual base::PlatformFileError GetDirContents(
+      const ::ppapi::PepperFilePath& path,
+      ::ppapi::DirContents* contents);
+  virtual base::PlatformFileError CreateTemporaryFile(
+      base::PlatformFile* file);
   virtual void SyncGetFileSystemPlatformPath(const GURL& url,
                                              FilePath* platform_path);
   virtual scoped_refptr<base::MessageLoopProxy>
       GetFileThreadMessageLoopProxy();
-  virtual int32_t ConnectTcp(
-      webkit::ppapi::PPB_Flash_NetConnector_Impl* connector,
-      const char* host,
-      uint16_t port);
-  virtual int32_t ConnectTcpAddress(
-      webkit::ppapi::PPB_Flash_NetConnector_Impl* connector,
-      const PP_NetAddress_Private* addr);
   virtual uint32 TCPSocketCreate();
   virtual void TCPSocketConnect(PPB_TCPSocket_Private_Impl* socket,
                                 uint32 socket_id,
@@ -113,12 +129,17 @@ class MockPluginDelegate : public PluginDelegate {
       PPB_TCPSocket_Private_Impl* socket,
       uint32 socket_id,
       const PP_NetAddress_Private& addr);
-  virtual void TCPSocketSSLHandshake(uint32 socket_id,
-                                     const std::string& server_name,
-                                     uint16_t server_port);
+  virtual void TCPSocketSSLHandshake(
+      uint32 socket_id,
+      const std::string& server_name,
+      uint16_t server_port,
+      const std::vector<std::vector<char> >& trusted_certs,
+      const std::vector<std::vector<char> >& untrusted_certs);
   virtual void TCPSocketRead(uint32 socket_id, int32_t bytes_to_read);
   virtual void TCPSocketWrite(uint32 socket_id, const std::string& buffer);
   virtual void TCPSocketDisconnect(uint32 socket_id);
+  virtual void RegisterTCPSocket(PPB_TCPSocket_Private_Impl* socket,
+                                 uint32 socket_id);
   virtual uint32 UDPSocketCreate();
   virtual void UDPSocketBind(PPB_UDPSocket_Private_Impl* socket,
                              uint32 socket_id,
@@ -128,6 +149,29 @@ class MockPluginDelegate : public PluginDelegate {
                                const std::string& buffer,
                                const PP_NetAddress_Private& addr);
   virtual void UDPSocketClose(uint32 socket_id);
+  virtual void TCPServerSocketListen(PP_Resource socket_resource,
+                                     const PP_NetAddress_Private& addr,
+                                     int32_t backlog);
+  virtual void TCPServerSocketAccept(uint32 server_socket_id);
+  virtual void TCPServerSocketStopListening(PP_Resource socket_resource,
+                                            uint32 socket_id);
+  virtual void RegisterHostResolver(
+      ::ppapi::PPB_HostResolver_Shared* host_resolver,
+      uint32 host_resolver_id);
+  virtual void HostResolverResolve(
+      uint32 host_resolver_id,
+      const ::ppapi::HostPortPair& host_port,
+      const PP_HostResolver_Private_Hint* hint);
+  virtual void UnregisterHostResolver(uint32 host_resolver_id);
+  // Add/remove a network list observer.
+  virtual bool AddNetworkListObserver(
+      webkit_glue::NetworkListObserver* observer) OVERRIDE;
+  virtual void RemoveNetworkListObserver(
+      webkit_glue::NetworkListObserver* observer) OVERRIDE;
+  virtual bool X509CertificateParseDER(
+      const std::vector<char>& der,
+      ::ppapi::PPB_X509Certificate_Fields* fields);
+
   virtual int32_t ShowContextMenu(
       PluginInstance* instance,
       webkit::ppapi::PPB_Flash_Menu_Impl* menu,
@@ -145,7 +189,6 @@ class MockPluginDelegate : public PluginDelegate {
   virtual void SaveURLAs(const GURL& url);
   virtual webkit_glue::P2PTransport* CreateP2PTransport();
   virtual double GetLocalTimeZoneOffset(base::Time t);
-  virtual std::string GetFlashCommandLineArgs();
   virtual base::SharedMemory* CreateAnonymousSharedMemory(uint32_t size);
   virtual ::ppapi::Preferences GetPreferences();
   virtual bool LockMouse(PluginInstance* instance);
@@ -157,6 +200,13 @@ class MockPluginDelegate : public PluginDelegate {
   virtual void SampleGamepads(WebKit::WebGamepads* data) OVERRIDE;
   virtual bool IsInFullscreenMode();
   virtual bool IsPageVisible() const;
+  virtual int EnumerateDevices(PP_DeviceType_Dev type,
+                               const EnumerateDevicesCallback& callback);
+  virtual webkit_glue::ClipboardClient* CreateClipboardClient() const;
+  virtual std::string GetDeviceID();
+  virtual PP_FlashLSORestrictions GetLocalDataRestrictions(
+      const GURL& document_url,
+      const GURL& plugin_url);
 };
 
 }  // namespace ppapi

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,6 +37,21 @@ function assertNotValid(type, instance, schema, errors, types) {
       assert(false);
     }
   }
+}
+
+function assertListConsistsOfElements(list, elements) {
+  for (var li = 0; li < list.length; li++) {
+    for (var ei = 0; ei < elements.length && list[li] != elements[ei]; ei++) { }
+    if (ei == elements.length) {
+      log("Expected type not found: " + list[li]);
+      assert(false);
+    }
+  }
+}
+
+function assertEqualSets(set1, set2) {
+  assertListConsistsOfElements(set1, set2);
+  assertListConsistsOfElements(set2, set1);
 }
 
 function formatError(key, replacements) {
@@ -167,16 +182,6 @@ function testExtends() {
   assertValid("", 43, schema);
 }
 
-function ClassA() {
-  this.a = "a";
-}
-function ClassB() {
-}
-ClassB.prototype = new ClassA();
-function ClassC() {
-  this.a = "a";
-}
-
 function testObject() {
   var schema = {
     properties: {
@@ -209,33 +214,10 @@ function testObject() {
   schema.properties.bar.optional = true;
   assertValid("Object", {foo:"foo", bar:42}, schema);
   assertValid("Object", {foo:"foo"}, schema);
-  assertNotValid("Object", {foo:"foo", bar:null}, schema,
-                 [formatError("invalidType", ["integer", "null"])]);
+  assertValid("Object", {foo:"foo", bar:null}, schema);
   assertValid("Object", {foo:"foo", bar:undefined}, schema);
   assertNotValid("Object", {foo:"foo", bar:"42"}, schema,
                  [formatError("invalidType", ["integer", "string"])]);
-
-  var classASchema = {
-    properties: {
-      "a": { type: "string" }
-    },
-    isInstanceOf: "ClassA"
-  };
-
-  var classBSchema = {
-    properties: {},
-    isInstanceOf: "ClassB"
-  };
-
-  var a = new ClassA();
-  var b = new ClassB();
-  var c = new ClassC();
-
-  assertValid("Object", a, classASchema);
-  assertValid("Object", b, classBSchema);
-  assertValid("Object", b, classASchema);
-  assertNotValid("Object", c, classASchema,
-                 [formatError("notInstance", [classASchema.isInstanceOf])]);
 }
 
 function testTypeReference() {
@@ -480,4 +462,148 @@ function testType() {
                  [formatError("invalidType", ["null", "undefined"])]);
   assertNotValid("Type", {}, {type: "function"},
                  [formatError("invalidType", ["function", "object"])]);
+}
+
+function testGetAllTypesForSchema() {
+  var referencedTypes = [
+    {
+      id: "ChoicesRef",
+      choices: [
+        { type: "integer" },
+        { type: "string" }
+      ]
+    },
+    {
+      id: "ObjectRef",
+      type: "object",
+    }
+  ];
+
+  var arraySchema = {
+    type: "array"
+  };
+
+  var choicesSchema = {
+    choices: [
+      { type: "object" },
+      { type: "function" }
+    ]
+  };
+
+  var objectRefSchema = {
+    $ref: "ObjectRef"
+  };
+
+  var complexSchema = {
+    choices: [
+      { $ref: "ChoicesRef" },
+      { type: "function" },
+      { $ref: "ObjectRef" }
+    ]
+  };
+
+  var validator = new chromeHidden.JSONSchemaValidator();
+  validator.addTypes(referencedTypes);
+
+  var arraySchemaTypes = validator.getAllTypesForSchema(arraySchema);
+  assertEqualSets(arraySchemaTypes, ["array"]);
+
+  var choicesSchemaTypes = validator.getAllTypesForSchema(choicesSchema);
+  assertEqualSets(choicesSchemaTypes, ["object", "function"]);
+
+  var objectRefSchemaTypes = validator.getAllTypesForSchema(objectRefSchema);
+  assertEqualSets(objectRefSchemaTypes, ["object"]);
+
+  var complexSchemaTypes = validator.getAllTypesForSchema(complexSchema);
+  assertEqualSets(complexSchemaTypes,
+      ["integer", "string", "function", "object"]);
+}
+
+function testIsValidSchemaType() {
+  var referencedTypes = [
+    {
+      id: "ChoicesRef",
+      choices: [
+        { type: "integer" },
+        { type: "string" }
+      ]
+    }
+  ];
+
+  var objectSchema = {
+    type: "object",
+    optional: true
+  };
+
+  var complexSchema = {
+    choices: [
+      { $ref: "ChoicesRef" },
+      { type: "function" },
+    ]
+  };
+
+  var validator = new chromeHidden.JSONSchemaValidator();
+  validator.addTypes(referencedTypes);
+
+  assert(validator.isValidSchemaType("object", objectSchema));
+  assert(!validator.isValidSchemaType("integer", objectSchema));
+  assert(!validator.isValidSchemaType("array", objectSchema));
+  assert(validator.isValidSchemaType("null", objectSchema));
+  assert(validator.isValidSchemaType("undefined", objectSchema));
+
+  assert(validator.isValidSchemaType("integer", complexSchema));
+  assert(validator.isValidSchemaType("function", complexSchema));
+  assert(validator.isValidSchemaType("string", complexSchema));
+  assert(!validator.isValidSchemaType("object", complexSchema));
+  assert(!validator.isValidSchemaType("null", complexSchema));
+  assert(!validator.isValidSchemaType("undefined", complexSchema));
+}
+
+function testCheckSchemaOverlap() {
+  var referencedTypes = [
+    {
+      id: "ChoicesRef",
+      choices: [
+        { type: "integer" },
+        { type: "string" }
+      ]
+    },
+    {
+      id: "ObjectRef",
+      type: "object",
+    }
+  ];
+
+  var arraySchema = {
+    type: "array"
+  };
+
+  var choicesSchema = {
+    choices: [
+      { type: "object" },
+      { type: "function" }
+    ]
+  };
+
+  var objectRefSchema = {
+    $ref: "ObjectRef"
+  };
+
+  var complexSchema = {
+    choices: [
+      { $ref: "ChoicesRef" },
+      { type: "function" },
+      { $ref: "ObjectRef" }
+    ]
+  };
+
+  var validator = new chromeHidden.JSONSchemaValidator();
+  validator.addTypes(referencedTypes);
+
+  assert(!validator.checkSchemaOverlap(arraySchema, choicesSchema));
+  assert(!validator.checkSchemaOverlap(arraySchema, objectRefSchema));
+  assert(!validator.checkSchemaOverlap(arraySchema, complexSchema));
+  assert(validator.checkSchemaOverlap(choicesSchema, objectRefSchema));
+  assert(validator.checkSchemaOverlap(choicesSchema, complexSchema));
+  assert(validator.checkSchemaOverlap(objectRefSchema, complexSchema));
 }

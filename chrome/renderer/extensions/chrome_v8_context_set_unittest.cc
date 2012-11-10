@@ -1,8 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/message_loop.h"
+#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/features/feature.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/chrome_v8_context_set.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -20,9 +22,12 @@ TEST(ChromeV8ContextSet, Lifecycle) {
   // Dirty hack, but we don't actually need the frame, and this is easier than
   // creating a whole webview.
   WebKit::WebFrame* frame = reinterpret_cast<WebKit::WebFrame*>(1);
-  std::string extension_id = "00000000000000000000000000000000";
-  ChromeV8Context* context =
-      new ChromeV8Context(v8_context, frame, extension_id);
+  const extensions::Extension* extension = NULL;
+  ChromeV8Context* context = new ChromeV8Context(
+      v8_context,
+      frame,
+      extension,
+      extensions::Feature::BLESSED_EXTENSION_CONTEXT);
 
   context_set.Add(context);
   EXPECT_EQ(1u, context_set.GetAll().count(context));

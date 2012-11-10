@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,8 @@
 #include "chrome/common/extensions/user_script.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+namespace extensions {
 
 static const int kAllSchemes =
     URLPattern::SCHEME_HTTP |
@@ -189,7 +191,7 @@ TEST(ExtensionUserScriptTest, Pickle) {
   Pickle pickle;
   script1.Pickle(&pickle);
 
-  void* iter = NULL;
+  PickleIterator iter(pickle);
   UserScript script2;
   script2.Unpickle(pickle, &iter);
 
@@ -214,3 +216,5 @@ TEST(ExtensionUserScriptTest, Defaults) {
   UserScript script;
   ASSERT_EQ(UserScript::DOCUMENT_IDLE, script.run_location());
 }
+
+}  // namespace extensions

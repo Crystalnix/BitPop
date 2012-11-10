@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -23,6 +23,7 @@ class GroupingNode(base.Node):
       'first_id' : '',
       'comment' : '',
       'fallback_to_english' : 'false',
+      'fallback_to_low_resolution' : 'false',
     }
 
 
@@ -42,9 +43,15 @@ class MessagesNode(GroupingNode):
     if t in ['rc_all', 'rc_translateable', 'rc_nontranslateable']:
       from grit.format import rc  # avoid circular dep by importing here
       return rc.StringTable()
+    elif t == 'c_format':
+      from grit.format import c_format
+      return c_format.StringTable()
     elif t == 'js_map_format':
       from grit.format import js_map_format
       return js_map_format.StringTable()
+    elif t == 'android':
+      from grit.format import android_xml
+      return android_xml.ResourcesElement()
 
 
 class StructuresNode(GroupingNode):

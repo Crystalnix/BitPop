@@ -8,11 +8,11 @@
 
 #include "base/bind.h"
 #include "base/message_loop.h"
-#include "content/browser/child_process_security_policy.h"
+#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/debugger/devtools_netlog_observer.h"
 #include "content/browser/debugger/render_view_devtools_agent_host.h"
-#include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_agent_host_registry.h"
@@ -38,7 +38,7 @@ DevToolsManagerImpl::~DevToolsManagerImpl() {
   DCHECK(agent_to_client_host_.empty());
   DCHECK(client_to_agent_host_.empty());
   // By the time we destroy devtools manager, all orphan client hosts should
-  // have been delelted, no need to notify them upon tab closing.
+  // have been deleted; no need to notify them upon contents closing.
   DCHECK(orphan_client_hosts_.empty());
 }
 
@@ -98,6 +98,12 @@ void DevToolsManagerImpl::InspectElement(DevToolsAgentHost* agent_host,
   agent_host->InspectElement(x, y);
 }
 
+void DevToolsManagerImpl::AddMessageToConsole(DevToolsAgentHost* agent_host,
+                                              ConsoleMessageLevel level,
+                                              const std::string& message) {
+  agent_host->AddMessageToConsole(level, message);
+}
+
 void DevToolsManagerImpl::ClientHostClosing(DevToolsClientHost* client_host) {
   DevToolsAgentHost* agent_host = GetDevToolsAgentHostFor(client_host);
   if (!agent_host) {
@@ -127,14 +133,16 @@ void DevToolsManagerImpl::UnregisterDevToolsClientHostFor(
   if (!client_host)
     return;
   UnbindClientHost(agent_host, client_host);
-  client_host->InspectedTabClosing();
+  client_host->InspectedContentsClosing();
 }
 
-void DevToolsManagerImpl::OnNavigatingToPendingEntry(RenderViewHost* rvh,
-                                                     RenderViewHost* dest_rvh,
-                                                     const GURL& gurl) {
-  if (rvh == dest_rvh && rvh->render_view_termination_status() ==
-          base::TERMINATION_STATUS_STILL_RUNNING)
+void DevToolsManagerImpl::OnNavigatingToPendingEntry(
+    RenderViewHost* rvh,
+    RenderViewHost* dest_rvh,
+    const GURL& gurl) {
+  if (rvh == dest_rvh && static_cast<RenderViewHostImpl*>(
+          rvh)->render_view_termination_status() ==
+              base::TERMINATION_STATUS_STILL_RUNNING)
     return;
   int cookie = DetachClientHost(rvh);
   if (cookie != -1) {
@@ -149,8 +157,9 @@ void DevToolsManagerImpl::OnNavigatingToPendingEntry(RenderViewHost* rvh,
   }
 }
 
-void DevToolsManagerImpl::OnCancelPendingNavigation(RenderViewHost* pending,
-                                                    RenderViewHost* current) {
+void DevToolsManagerImpl::OnCancelPendingNavigation(
+    RenderViewHost* pending,
+    RenderViewHost* current) {
   int cookie = DetachClientHost(pending);
   if (cookie != -1) {
     // Navigating to URL in the inspected window.
@@ -158,9 +167,9 @@ void DevToolsManagerImpl::OnCancelPendingNavigation(RenderViewHost* pending,
   }
 }
 
-void DevToolsManagerImpl::TabReplaced(WebContents* old_tab,
-                                      WebContents* new_tab) {
-  RenderViewHost* old_rvh = old_tab->GetRenderViewHost();
+void DevToolsManagerImpl::ContentsReplaced(WebContents* old_contents,
+                                           WebContents* new_contents) {
+  RenderViewHost* old_rvh = old_contents->GetRenderViewHost();
   if (!DevToolsAgentHostRegistry::HasDevToolsAgentHost(old_rvh))
     return;
 
@@ -168,13 +177,13 @@ void DevToolsManagerImpl::TabReplaced(WebContents* old_tab,
       DevToolsAgentHostRegistry::GetDevToolsAgentHost(old_rvh);
   DevToolsClientHost* client_host = GetDevToolsClientHostFor(old_agent_host);
   if (!client_host)
-    return;  // Didn't know about old_tab.
+    return;  // Didn't know about old_contents.
   int cookie = DetachClientHost(old_rvh);
   if (cookie == -1)
-    return;  // Didn't know about old_tab.
+    return;  // Didn't know about old_contents.
 
-  client_host->TabReplaced(new_tab);
-  AttachClientHost(cookie, new_tab->GetRenderViewHost());
+  client_host->ContentsReplaced(new_contents);
+  AttachClientHost(cookie, new_contents->GetRenderViewHost());
 }
 
 int DevToolsManagerImpl::DetachClientHost(RenderViewHost* from_rvh) {
@@ -240,7 +249,8 @@ void DevToolsManagerImpl::BindClientHost(
 
   int process_id = agent_host->GetRenderProcessId();
   if (process_id != -1)
-    ChildProcessSecurityPolicy::GetInstance()->GrantReadRawCookies(process_id);
+    ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadRawCookies(
+        process_id);
 }
 
 void DevToolsManagerImpl::UnbindClientHost(DevToolsAgentHost* agent_host,
@@ -274,7 +284,8 @@ void DevToolsManagerImpl::UnbindClientHost(DevToolsAgentHost* agent_host,
       return;
   }
   // We've disconnected from the last renderer -> revoke cookie permissions.
-  ChildProcessSecurityPolicy::GetInstance()->RevokeReadRawCookies(process_id);
+  ChildProcessSecurityPolicyImpl::GetInstance()->RevokeReadRawCookies(
+      process_id);
 }
 
 void DevToolsManagerImpl::CloseAllClientHosts() {

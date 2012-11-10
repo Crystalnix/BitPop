@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,8 +20,7 @@ const char ClientView::kViewClassName[] =
 // ClientView, public:
 
 ClientView::ClientView(Widget* widget, View* contents_view)
-    : widget_(widget),
-      contents_view_(contents_view) {
+    : contents_view_(contents_view) {
 }
 
 int ClientView::NonClientHitTest(const gfx::Point& point) {
@@ -49,9 +48,19 @@ void ClientView::WidgetClosing() {
 gfx::Size ClientView::GetPreferredSize() {
   // |contents_view_| is allowed to be NULL up until the point where this view
   // is attached to a Container.
-  if (contents_view_)
-    return contents_view_->GetPreferredSize();
-  return gfx::Size();
+  return contents_view_ ? contents_view_->GetPreferredSize() : gfx::Size();
+}
+
+gfx::Size ClientView::GetMaximumSize() {
+  // |contents_view_| is allowed to be NULL up until the point where this view
+  // is attached to a Container.
+  return contents_view_ ? contents_view_->GetMaximumSize() : gfx::Size();
+}
+
+gfx::Size ClientView::GetMinimumSize() {
+  // |contents_view_| is allowed to be NULL up until the point where this view
+  // is attached to a Container.
+  return contents_view_ ? contents_view_->GetMinimumSize() : gfx::Size();
 }
 
 void ClientView::Layout() {

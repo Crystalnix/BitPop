@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,6 +21,8 @@ bool UrlMatchesGlobs(const std::vector<std::string>* globs,
 }
 
 }  // namespace
+
+namespace extensions {
 
 // static
 const char UserScript::kFileExtension[] = ".user.js";
@@ -89,7 +91,7 @@ void UserScript::File::Pickle(::Pickle* pickle) const {
   // Do not write content. It will be serialized by other means.
 }
 
-void UserScript::File::Unpickle(const ::Pickle& pickle, void** iter) {
+void UserScript::File::Unpickle(const ::Pickle& pickle, PickleIterator* iter) {
   // Read the url from the pickle.
   std::string url;
   CHECK(pickle.ReadString(iter, &url));
@@ -114,7 +116,7 @@ void UserScript::Pickle(::Pickle* pickle) const {
 
 void UserScript::PickleGlobs(::Pickle* pickle,
                              const std::vector<std::string>& globs) const {
-  pickle->WriteSize(globs.size());
+  pickle->WriteUInt64(globs.size());
   for (std::vector<std::string>::const_iterator glob = globs.begin();
        glob != globs.end(); ++glob) {
     pickle->WriteString(*glob);
@@ -123,7 +125,7 @@ void UserScript::PickleGlobs(::Pickle* pickle,
 
 void UserScript::PickleURLPatternSet(::Pickle* pickle,
                                      const URLPatternSet& pattern_list) const {
-  pickle->WriteSize(pattern_list.patterns().size());
+  pickle->WriteUInt64(pattern_list.patterns().size());
   for (URLPatternSet::const_iterator pattern = pattern_list.begin();
        pattern != pattern_list.end(); ++pattern) {
     pickle->WriteInt(pattern->valid_schemes());
@@ -133,14 +135,14 @@ void UserScript::PickleURLPatternSet(::Pickle* pickle,
 
 void UserScript::PickleScripts(::Pickle* pickle,
                                const FileList& scripts) const {
-  pickle->WriteSize(scripts.size());
+  pickle->WriteUInt64(scripts.size());
   for (FileList::const_iterator file = scripts.begin();
        file != scripts.end(); ++file) {
     file->Pickle(pickle);
   }
 }
 
-void UserScript::Unpickle(const ::Pickle& pickle, void** iter) {
+void UserScript::Unpickle(const ::Pickle& pickle, PickleIterator* iter) {
   // Read the run location.
   int run_location = 0;
   CHECK(pickle.ReadInt(iter, &run_location));
@@ -160,25 +162,26 @@ void UserScript::Unpickle(const ::Pickle& pickle, void** iter) {
   UnpickleScripts(pickle, iter, &css_scripts_);
 }
 
-void UserScript::UnpickleGlobs(const ::Pickle& pickle, void** iter,
+void UserScript::UnpickleGlobs(const ::Pickle& pickle, PickleIterator* iter,
                                std::vector<std::string>* globs) {
-  size_t num_globs = 0;
-  CHECK(pickle.ReadSize(iter, &num_globs));
+  uint64 num_globs = 0;
+  CHECK(pickle.ReadUInt64(iter, &num_globs));
   globs->clear();
-  for (size_t i = 0; i < num_globs; ++i) {
+  for (uint64 i = 0; i < num_globs; ++i) {
     std::string glob;
     CHECK(pickle.ReadString(iter, &glob));
     globs->push_back(glob);
   }
 }
 
-void UserScript::UnpickleURLPatternSet(const ::Pickle& pickle, void** iter,
+void UserScript::UnpickleURLPatternSet(const ::Pickle& pickle,
+                                       PickleIterator* iter,
                                        URLPatternSet* pattern_list) {
-  size_t num_patterns = 0;
-  CHECK(pickle.ReadSize(iter, &num_patterns));
+  uint64 num_patterns = 0;
+  CHECK(pickle.ReadUInt64(iter, &num_patterns));
 
   pattern_list->ClearPatterns();
-  for (size_t i = 0; i < num_patterns; ++i) {
+  for (uint64 i = 0; i < num_patterns; ++i) {
     int valid_schemes;
     CHECK(pickle.ReadInt(iter, &valid_schemes));
     std::string pattern_str;
@@ -199,14 +202,16 @@ void UserScript::UnpickleURLPatternSet(const ::Pickle& pickle, void** iter,
   }
 }
 
-void UserScript::UnpickleScripts(const ::Pickle& pickle, void** iter,
+void UserScript::UnpickleScripts(const ::Pickle& pickle, PickleIterator* iter,
                                  FileList* scripts) {
-  size_t num_files = 0;
-  CHECK(pickle.ReadSize(iter, &num_files));
+  uint64 num_files = 0;
+  CHECK(pickle.ReadUInt64(iter, &num_files));
   scripts->clear();
-  for (size_t i = 0; i < num_files; ++i) {
+  for (uint64 i = 0; i < num_files; ++i) {
     File file;
     file.Unpickle(pickle, iter);
     scripts->push_back(file);
   }
 }
+
+}  // namespace extensions

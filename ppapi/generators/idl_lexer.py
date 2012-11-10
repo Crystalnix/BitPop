@@ -55,6 +55,16 @@ class IDLLexer(object):
       'STRUCT',
       'TYPEDEF',
 
+    # Extra WebIDL keywords
+      'CALLBACK',
+      'DICTIONARY',
+      'OPTIONAL',
+      'STATIC',
+
+    # Invented for apps use
+      'NAMESPACE',
+
+
     # Data types
       'FLOAT',
       'OCT',
@@ -70,7 +80,6 @@ class IDLLexer(object):
   # 'keywords' is a map of string to token type.  All SYMBOL tokens are
   # matched against keywords, to determine if the token is actually a keyword.
   keywords = {
-    'attribute' : 'ATTRIBUTE',
     'describe' : 'DESCRIBE',
     'enum'  : 'ENUM',
     'label' : 'LABEL',
@@ -78,11 +87,17 @@ class IDLLexer(object):
     'readonly' : 'READONLY',
     'struct' : 'STRUCT',
     'typedef' : 'TYPEDEF',
+
+    'callback' : 'CALLBACK',
+    'dictionary' : 'DICTIONARY',
+    'optional' : 'OPTIONAL',
+    'static' : 'STATIC',
+    'namespace' : 'NAMESPACE',
   }
 
   # 'literals' is a value expected by lex which specifies a list of valid
   # literal tokens, meaning the token type and token value are identical.
-  literals = '"*.(){}[],;:=+-/~|&^'
+  literals = '"*.(){}[],;:=+-/~|&^?'
 
   # Token definitions
   #
@@ -117,13 +132,13 @@ class IDLLexer(object):
 
   # A C or C++ style comment:  /* xxx */ or //
   def t_COMMENT(self, t):
-    r'(/\*(.|\n)*?\*/)|(//.*)'
+    r'(/\*(.|\n)*?\*/)|(//.*(\n[ \t]*//.*)*)'
     self.AddLines(t.value.count('\n'))
     return t
 
   # Return a "preprocessor" inline block
   def t_INLINE(self, t):
-    r'\#inline (.|\n)*\#endinl.*'
+    r'\#inline (.|\n)*?\#endinl.*'
     self.AddLines(t.value.count('\n'))
     return t
 

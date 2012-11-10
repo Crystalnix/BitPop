@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_GTK_FIND_BAR_GTK_H_
 #define CHROME_BROWSER_UI_GTK_FIND_BAR_GTK_H_
-#pragma once
 
 #include <gtk/gtk.h>
 
@@ -104,7 +103,7 @@ class FindBarGtk : public FindBar,
   // the top of the page area, (it will be converted to coordinates relative to
   // the top of the browser window, when comparing against the dialog
   // coordinates). The returned value is relative to the browser window.
-  gfx::Rect GetDialogPosition(gfx::Rect avoid_overlapping_rect);
+  gfx::Rect GetDialogPosition(const gfx::Rect& avoid_overlapping_rect);
 
   // Adjust the text alignment according to the text direction of the widget
   // and |text_entry_|'s content, to make sure the real text alignment is

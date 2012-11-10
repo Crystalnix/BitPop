@@ -1,10 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef MEDIA_BASE_CHANNEL_LAYOUT_H_
 #define MEDIA_BASE_CHANNEL_LAYOUT_H_
 
+#include "build/build_config.h"
 #include "media/base/media_export.h"
 
 enum ChannelLayout {
@@ -24,7 +25,7 @@ enum ChannelLayout {
   CHANNEL_LAYOUT_SURROUND,
 
   // Front L, Front R, Front C, Back C
-  CHANNEL_LAYOUT_4POINT0,
+  CHANNEL_LAYOUT_4_0,
 
   // Front L, Front R, Side L, Side R
   CHANNEL_LAYOUT_2_2,
@@ -33,25 +34,25 @@ enum ChannelLayout {
   CHANNEL_LAYOUT_QUAD,
 
   // Front L, Front R, Front C, Side L, Side R
-  CHANNEL_LAYOUT_5POINT0,
+  CHANNEL_LAYOUT_5_0,
 
   // Front L, Front R, Front C, Side L, Side R, LFE
-  CHANNEL_LAYOUT_5POINT1,
+  CHANNEL_LAYOUT_5_1,
 
   // Front L, Front R, Front C, Back L, Back R
-  CHANNEL_LAYOUT_5POINT0_BACK,
+  CHANNEL_LAYOUT_5_0_BACK,
 
   // Front L, Front R, Front C, Back L, Back R, LFE
-  CHANNEL_LAYOUT_5POINT1_BACK,
+  CHANNEL_LAYOUT_5_1_BACK,
 
   // Front L, Front R, Front C, Side L, Side R, Back L, Back R
-  CHANNEL_LAYOUT_7POINT0,
+  CHANNEL_LAYOUT_7_0,
 
   // Front L, Front R, Front C, Side L, Side R, LFE, Back L, Back R
-  CHANNEL_LAYOUT_7POINT1,
+  CHANNEL_LAYOUT_7_1,
 
   // Front L, Front R, Front C, Back L, Back R, LFE, Front LofC, Front RofC
-  CHANNEL_LAYOUT_7POINT1_WIDE,
+  CHANNEL_LAYOUT_7_1_WIDE,
 
   // Stereo L, Stereo R
   CHANNEL_LAYOUT_STEREO_DOWNMIX,
@@ -77,6 +78,7 @@ enum Channels {
   CHANNELS_MAX
 };
 
+#if defined(OS_MACOSX) || defined(USE_PULSEAUDIO)
 // The channel orderings for each layout as specified by FFmpeg.
 // Values represent the index of each channel in each layout. For example, the
 // left side surround sound channel in FFmpeg's 5.1 layout is in the 5th
@@ -84,6 +86,7 @@ enum Channels {
 // kChannelOrderings[CHANNEL_LAYOUT_5POINT1][SIDE_LEFT] = 4;
 // Values of -1 mean the channel at that index is not used for that layout.
 extern const int kChannelOrderings[CHANNEL_LAYOUT_MAX][CHANNELS_MAX];
+#endif
 
 // Returns the number of channels in a given ChannelLayout.
 MEDIA_EXPORT int ChannelLayoutToChannelCount(ChannelLayout layout);

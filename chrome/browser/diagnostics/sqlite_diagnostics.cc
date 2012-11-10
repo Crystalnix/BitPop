@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
+#include "content/public/common/content_constants.h"
 #include "sql/connection.h"
 #include "sql/diagnostic_error_delegate.h"
 #include "sql/statement.h"
@@ -53,7 +54,7 @@ class SqliteIntegrityTest : public DiagnosticTest {
         return true;
       }
       sql::Statement s(db.GetUniqueStatement("PRAGMA integrity_check;"));
-      if (!s) {
+      if (!s.is_valid()) {
         int error = db.GetErrorCode();
         if (SQLITE_BUSY == error) {
           RecordFailure(ASCIIToUTF16("DB locked by another process"));
@@ -152,7 +153,7 @@ DiagnosticTest* MakeSqliteThumbnailsDbTest() {
 }
 
 DiagnosticTest* MakeSqliteAppCacheDbTest() {
-  FilePath appcache_dir(chrome::kAppCacheDirname);
+  FilePath appcache_dir(content::kAppCacheDirname);
   FilePath appcache_db = appcache_dir.Append(appcache::kAppCacheDatabaseName);
   return new SqliteIntegrityTest(false, ASCIIToUTF16("AppCache DB"),
                                  appcache_db);

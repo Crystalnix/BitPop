@@ -1,11 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
-#include "base/json/json_value_serializer.h"
+#include "base/json/json_string_value_serializer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/string_split.h"
@@ -145,7 +145,7 @@ class DomCheckerTest : public UITest {
   bool WaitUntilTestCompletes(TabProxy* tab) {
     return WaitUntilJavaScriptCondition(tab, L"",
         L"window.domAutomationController.send(automation.IsDone());",
-        TestTimeouts::large_test_timeout_ms());
+        TestTimeouts::large_test_timeout());
   }
 
   bool GetTestCount(TabProxy* tab, int* test_count) {
@@ -229,7 +229,8 @@ class DomCheckerTest : public UITest {
   DISALLOW_COPY_AND_ASSIGN(DomCheckerTest);
 };
 
-TEST_F(DomCheckerTest, File) {
+// Always fails, see but http://crbug.com/21321
+TEST_F(DomCheckerTest, FAILS_File) {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(kRunDomCheckerTest))
     return;
 

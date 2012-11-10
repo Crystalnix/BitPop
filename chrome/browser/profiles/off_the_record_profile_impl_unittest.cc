@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "chrome/browser/net/ssl_config_service_manager.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -24,19 +25,13 @@ namespace {
 class TestingProfileWithHostZoomMap : public TestingProfile,
                                       public content::NotificationObserver {
  public:
-  TestingProfileWithHostZoomMap() {}
+  TestingProfileWithHostZoomMap() {
+    HostZoomMap* host_zoom_map = HostZoomMap::GetForBrowserContext(this);
+    registrar_.Add(this, content::NOTIFICATION_ZOOM_LEVEL_CHANGED,
+                     content::Source<HostZoomMap>(host_zoom_map));
+  }
 
   virtual ~TestingProfileWithHostZoomMap() {}
-
-  virtual HostZoomMap* GetHostZoomMap() {
-    if (!host_zoom_map_) {
-      host_zoom_map_ = HostZoomMap::Create();
-
-      registrar_.Add(this, content::NOTIFICATION_ZOOM_LEVEL_CHANGED,
-                     content::Source<HostZoomMap>(host_zoom_map_));
-    }
-    return host_zoom_map_.get();
-  }
 
   virtual Profile* GetOffTheRecordProfile() OVERRIDE {
     if (!off_the_record_profile_.get())
@@ -57,10 +52,11 @@ class TestingProfileWithHostZoomMap : public TestingProfile,
     if (host.empty())
       return;
 
-    double level = host_zoom_map_->GetZoomLevel(host);
+    HostZoomMap* host_zoom_map = HostZoomMap::GetForBrowserContext(this);
+    double level = host_zoom_map->GetZoomLevel(host);
     DictionaryPrefUpdate update(prefs_.get(), prefs::kPerHostZoomLevels);
     DictionaryValue* host_zoom_dictionary = update.Get();
-    if (level == host_zoom_map_->GetDefaultZoomLevel()) {
+    if (level == host_zoom_map->GetDefaultZoomLevel()) {
       host_zoom_dictionary->RemoveWithoutPathExpansion(host, NULL);
     } else {
       host_zoom_dictionary->SetWithoutPathExpansion(
@@ -70,7 +66,6 @@ class TestingProfileWithHostZoomMap : public TestingProfile,
 
  private:
   content::NotificationRegistrar registrar_;
-  scoped_refptr<HostZoomMap> host_zoom_map_;
   scoped_ptr<Profile> off_the_record_profile_;
   scoped_ptr<SSLConfigServiceManager> ssl_config_service_manager_;
 
@@ -90,7 +85,7 @@ class OffTheRecordProfileImplTest : public BrowserWithTestWindowTest {
 
   virtual void SetUp() OVERRIDE {
     prefs_.reset(new TestingPrefService);
-    browser::RegisterLocalState(prefs_.get());
+    chrome::RegisterLocalState(prefs_.get());
 
     browser_process()->SetLocalState(prefs_.get());
 
@@ -100,7 +95,7 @@ class OffTheRecordProfileImplTest : public BrowserWithTestWindowTest {
   virtual void TearDown() OVERRIDE {
     BrowserWithTestWindowTest::TearDown();
     browser_process()->SetLocalState(NULL);
-    DestroyBrowser();
+    DestroyBrowserAndProfile();
     prefs_.reset();
   }
 
@@ -133,7 +128,8 @@ TEST_F(OffTheRecordProfileImplTest, GetHostZoomMap) {
   ASSERT_TRUE(parent_profile->GetOffTheRecordPrefs());
 
   // Prepare parent host zoom map.
-  HostZoomMap* parent_zoom_map = parent_profile->GetHostZoomMap();
+  HostZoomMap* parent_zoom_map =
+      HostZoomMap::GetForBrowserContext(parent_profile.get());
   ASSERT_TRUE(parent_zoom_map);
 
   parent_zoom_map->SetZoomLevel(host, zoom_level_25);
@@ -143,11 +139,16 @@ TEST_F(OffTheRecordProfileImplTest, GetHostZoomMap) {
   // NOTIFICATION_ZOOM_LEVEL_CHANGED.
 
   // Prepare child profile as off the record profile.
-  scoped_ptr<Profile> child_profile(
+  scoped_ptr<OffTheRecordProfileImpl> child_profile(
       new OffTheRecordProfileImpl(parent_profile.get()));
+  child_profile->InitHostZoomMap();
+
+  ProfileDependencyManager::GetInstance()->CreateProfileServices(
+      child_profile.get(), false);
 
   // Prepare child host zoom map.
-  HostZoomMap* child_zoom_map = child_profile->GetHostZoomMap();
+  HostZoomMap* child_zoom_map =
+      HostZoomMap::GetForBrowserContext(child_profile.get());
   ASSERT_TRUE(child_zoom_map);
 
   // Verity.
@@ -162,12 +163,12 @@ TEST_F(OffTheRecordProfileImplTest, GetHostZoomMap) {
 
   EXPECT_NE(parent_zoom_map->GetZoomLevel(host),
             child_zoom_map->GetZoomLevel(host)) <<
-                "Child change must not propaget to parent.";
+                "Child change must not propagate to parent.";
 
   parent_zoom_map->SetZoomLevel(host, zoom_level_40);
   ASSERT_EQ(parent_zoom_map->GetZoomLevel(host), zoom_level_40);
 
   EXPECT_EQ(parent_zoom_map->GetZoomLevel(host),
             child_zoom_map->GetZoomLevel(host)) <<
-                "Parent change should propaget to child.";
+                "Parent change should propagate to child.";
 }

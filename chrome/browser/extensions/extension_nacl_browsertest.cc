@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,16 +12,19 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/browser_test_utils.h"
 #include "webkit/plugins/webplugininfo.h"
 
 using content::PluginService;
 using content::WebContents;
+using extensions::Extension;
 
 namespace {
 
@@ -31,9 +34,7 @@ const char* kExtensionId = "bjjcibdiodkkeanflmiijlcfieiemced";
 // .nexe is part of an extension from the Chrome Webstore.
 class NaClExtensionTest : public ExtensionBrowserTest {
  public:
-  NaClExtensionTest() {
-    EnableDOMAutomation();
-  }
+  NaClExtensionTest() {}
 
  protected:
   enum InstallType {
@@ -98,12 +99,12 @@ class NaClExtensionTest : public ExtensionBrowserTest {
 
     bool embedded_plugin_created = false;
     bool content_handler_plugin_created = false;
-    WebContents* web_contents = browser()->GetSelectedWebContents();
-    ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
+    WebContents* web_contents = chrome::GetActiveWebContents(browser());
+    ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
         web_contents->GetRenderViewHost(), L"",
         L"window.domAutomationController.send(EmbeddedPluginCreated());",
         &embedded_plugin_created));
-    ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
+    ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
         web_contents->GetRenderViewHost(), L"",
         L"window.domAutomationController.send(ContentHandlerPluginCreated());",
         &content_handler_plugin_created));

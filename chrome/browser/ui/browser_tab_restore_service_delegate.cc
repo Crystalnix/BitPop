@@ -1,15 +1,20 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/browser_tab_restore_service_delegate.h"
 
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_tabrestore.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/navigation_controller.h"
 
 using content::NavigationController;
+using content::SessionStorageNamespace;
 using content::WebContents;
 
 void BrowserTabRestoreServiceDelegate::ShowBrowserWindow() {
@@ -28,17 +33,21 @@ int BrowserTabRestoreServiceDelegate::GetSelectedIndex() const {
   return browser_->active_index();
 }
 
-WebContents* BrowserTabRestoreServiceDelegate::GetWebContentsAt(
-    int index) const {
-  return browser_->GetWebContentsAt(index);
+std::string BrowserTabRestoreServiceDelegate::GetAppName() const {
+  return browser_->app_name();
 }
 
-WebContents* BrowserTabRestoreServiceDelegate::GetSelectedWebContents() const {
-  return browser_->GetSelectedWebContents();
+WebContents* BrowserTabRestoreServiceDelegate::GetWebContentsAt(
+    int index) const {
+  return chrome::GetWebContentsAt(browser_, index);
+}
+
+WebContents* BrowserTabRestoreServiceDelegate::GetActiveWebContents() const {
+  return chrome::GetActiveWebContents(browser_);
 }
 
 bool BrowserTabRestoreServiceDelegate::IsTabPinned(int index) const {
-  return browser_->IsTabPinned(index);
+  return browser_->tab_strip_model()->IsTabPinned(index);
 }
 
 WebContents* BrowserTabRestoreServiceDelegate::AddRestoredTab(
@@ -50,9 +59,9 @@ WebContents* BrowserTabRestoreServiceDelegate::AddRestoredTab(
       bool pin,
       bool from_last_session,
       SessionStorageNamespace* storage_namespace) {
-  return browser_->AddRestoredTab(navigations, tab_index, selected_navigation,
-                                  extension_app_id, select, pin,
-                                  from_last_session, storage_namespace);
+  return chrome::AddRestoredTab(browser_, navigations, tab_index,
+                                selected_navigation, extension_app_id, select,
+                                pin, from_last_session, storage_namespace);
 }
 
 void BrowserTabRestoreServiceDelegate::ReplaceRestoredTab(
@@ -61,20 +70,29 @@ void BrowserTabRestoreServiceDelegate::ReplaceRestoredTab(
       bool from_last_session,
       const std::string& extension_app_id,
       SessionStorageNamespace* session_storage_namespace) {
-  browser_->ReplaceRestoredTab(navigations, selected_navigation,
-                               from_last_session, extension_app_id,
-                               session_storage_namespace);
+  chrome::ReplaceRestoredTab(browser_, navigations, selected_navigation,
+                             from_last_session, extension_app_id,
+                             session_storage_namespace);
 }
 
 void BrowserTabRestoreServiceDelegate::CloseTab() {
-  browser_->CloseTab();
+  chrome::CloseTab(browser_);
 }
 
 // Implementations of TabRestoreServiceDelegate static methods
 
 // static
-TabRestoreServiceDelegate* TabRestoreServiceDelegate::Create(Profile* profile) {
-  Browser* browser = Browser::Create(profile);
+TabRestoreServiceDelegate* TabRestoreServiceDelegate::Create(
+    Profile* profile,
+    const std::string& app_name) {
+  Browser* browser;
+  if (app_name.empty()) {
+    browser = new Browser(Browser::CreateParams(profile));
+  } else {
+    browser = new Browser(
+        Browser::CreateParams::CreateForApp(
+            Browser::TYPE_POPUP, app_name, gfx::Rect(), profile));
+  }
   if (browser)
     return browser->tab_restore_service_delegate();
   else
@@ -82,22 +100,16 @@ TabRestoreServiceDelegate* TabRestoreServiceDelegate::Create(Profile* profile) {
 }
 
 // static
-TabRestoreServiceDelegate* TabRestoreServiceDelegate::FindDelegateForController(
-    const NavigationController* controller,
-    int* index) {
-  Browser* browser = Browser::GetBrowserForController(controller, index);
-  if (browser)
-    return browser->tab_restore_service_delegate();
-  else
-    return NULL;
+TabRestoreServiceDelegate*
+    TabRestoreServiceDelegate::FindDelegateForWebContents(
+        const WebContents* contents) {
+  Browser* browser = browser::FindBrowserWithWebContents(contents);
+  return browser ? browser->tab_restore_service_delegate() : NULL;
 }
 
 // static
 TabRestoreServiceDelegate* TabRestoreServiceDelegate::FindDelegateWithID(
     SessionID::id_type desired_id) {
-  Browser* browser = BrowserList::FindBrowserWithID(desired_id);
-  if (browser)
-    return browser->tab_restore_service_delegate();
-  else
-    return NULL;
+  Browser* browser = browser::FindBrowserWithID(desired_id);
+  return browser ? browser->tab_restore_service_delegate() : NULL;
 }

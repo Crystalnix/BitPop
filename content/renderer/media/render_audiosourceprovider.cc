@@ -5,98 +5,38 @@
 #include "content/renderer/media/render_audiosourceprovider.h"
 
 #include "base/basictypes.h"
+#include "base/command_line.h"
 #include "base/logging.h"
+#include "content/public/common/content_switches.h"
+#include "content/renderer/media/audio_device_factory.h"
+#include "content/renderer/media/audio_renderer_mixer_manager.h"
+#include "content/renderer/render_thread_impl.h"
+#include "media/base/audio_renderer_mixer_input.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAudioSourceProviderClient.h"
 
+using content::AudioDeviceFactory;
+using content::AudioRendererMixerManager;
 using std::vector;
 using WebKit::WebVector;
 
 RenderAudioSourceProvider::RenderAudioSourceProvider()
     : is_initialized_(false),
       channels_(0),
-      sample_rate_(0.0),
+      sample_rate_(0),
       is_running_(false),
-      volume_(1.0),
       renderer_(NULL),
       client_(NULL) {
-  // We create the AudioDevice here because it must be created in the
-  // main thread.  But we don't yet know the audio format (sample-rate, etc.)
-  // at this point.  Later, when Initialize() is called, we have
-  // the audio format information and call the AudioDevice::Initialize()
-  // method to fully initialize it.
-  default_sink_ = new AudioDevice();
-}
-
-RenderAudioSourceProvider::~RenderAudioSourceProvider() {}
-
-void RenderAudioSourceProvider::Start() {
-  base::AutoLock auto_lock(sink_lock_);
-  if (!client_)
-    default_sink_->Start();
-  is_running_ = true;
-}
-
-void RenderAudioSourceProvider::Stop() {
-  base::AutoLock auto_lock(sink_lock_);
-  if (!client_)
-    default_sink_->Stop();
-  is_running_ = false;
-}
-
-void RenderAudioSourceProvider::Play() {
-  base::AutoLock auto_lock(sink_lock_);
-  if (!client_)
-    default_sink_->Play();
-  is_running_ = true;
-}
-
-void RenderAudioSourceProvider::Pause(bool flush) {
-  base::AutoLock auto_lock(sink_lock_);
-  if (!client_)
-    default_sink_->Pause(flush);
-  is_running_ = false;
-}
-
-bool RenderAudioSourceProvider::SetVolume(double volume) {
-  base::AutoLock auto_lock(sink_lock_);
-  if (!client_)
-    default_sink_->SetVolume(volume);
-  volume_ = volume;
-  return true;
-}
-
-void RenderAudioSourceProvider::GetVolume(double* volume) {
-  if (!client_)
-    default_sink_->GetVolume(volume);
-  else if (volume)
-    *volume = volume_;
-}
-
-void RenderAudioSourceProvider::Initialize(
-    size_t buffer_size,
-    int channels,
-    double sample_rate,
-    AudioParameters::Format latency_format,
-    RenderCallback* renderer) {
-  base::AutoLock auto_lock(sink_lock_);
-  CHECK(!is_initialized_);
-  renderer_ = renderer;
-
-  default_sink_->Initialize(buffer_size,
-                            channels,
-                            sample_rate,
-                            latency_format,
-                            renderer);
-
-  if (client_) {
-    // Inform WebKit about the audio stream format.
-    client_->setFormat(channels, sample_rate);
+  // We create an AudioRendererSink here, but we don't yet know the audio format
+  // (sample-rate, etc.) at this point.  Later, when Initialize() is called, we
+  // have the audio format information and call AudioRendererSink::Initialize()
+  // to fully initialize it.
+  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  if (cmd_line->HasSwitch(switches::kEnableRendererSideMixing)) {
+    default_sink_ = RenderThreadImpl::current()->
+        GetAudioRendererMixerManager()->CreateInput();
+  } else {
+    default_sink_ = AudioDeviceFactory::NewOutputDevice();
   }
-
-  // Keep track of the format in case the client hasn't yet been set.
-  channels_ = channels;
-  sample_rate_ = sample_rate;
-  is_initialized_ = true;
 }
 
 void RenderAudioSourceProvider::setClient(
@@ -106,7 +46,7 @@ void RenderAudioSourceProvider::setClient(
 
   if (client && client != client_) {
     // Detach the audio renderer from normal playback.
-    default_sink_->Pause(true);
+    default_sink_->Stop();
 
     // The client will now take control by calling provideInput() periodically.
     client_ = client;
@@ -143,6 +83,64 @@ void RenderAudioSourceProvider::provideInput(
   } else {
     // Provide silence if the source is not running.
     for (size_t i = 0; i < audio_data.size(); ++i)
-      memset(audio_data[i], 0, sizeof(float) * number_of_frames);
+      memset(audio_data[i], 0, sizeof(*audio_data[0]) * number_of_frames);
   }
 }
+
+void RenderAudioSourceProvider::Start() {
+  base::AutoLock auto_lock(sink_lock_);
+  if (!client_)
+    default_sink_->Start();
+  is_running_ = true;
+}
+
+void RenderAudioSourceProvider::Stop() {
+  base::AutoLock auto_lock(sink_lock_);
+  if (!client_)
+    default_sink_->Stop();
+  is_running_ = false;
+}
+
+void RenderAudioSourceProvider::Play() {
+  base::AutoLock auto_lock(sink_lock_);
+  if (!client_)
+    default_sink_->Play();
+  is_running_ = true;
+}
+
+void RenderAudioSourceProvider::Pause(bool flush) {
+  base::AutoLock auto_lock(sink_lock_);
+  if (!client_)
+    default_sink_->Pause(flush);
+  is_running_ = false;
+}
+
+bool RenderAudioSourceProvider::SetVolume(double volume) {
+  base::AutoLock auto_lock(sink_lock_);
+  if (!client_)
+    default_sink_->SetVolume(volume);
+  return true;
+}
+
+void RenderAudioSourceProvider::Initialize(
+    const media::AudioParameters& params,
+    RenderCallback* renderer) {
+  base::AutoLock auto_lock(sink_lock_);
+  CHECK(!is_initialized_);
+  renderer_ = renderer;
+
+  default_sink_->Initialize(params, renderer);
+
+  // Keep track of the format in case the client hasn't yet been set.
+  channels_ = params.channels();
+  sample_rate_ = params.sample_rate();
+
+  if (client_) {
+    // Inform WebKit about the audio stream format.
+    client_->setFormat(channels_, sample_rate_);
+  }
+
+  is_initialized_ = true;
+}
+
+RenderAudioSourceProvider::~RenderAudioSourceProvider() {}

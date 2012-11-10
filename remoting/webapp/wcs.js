@@ -52,8 +52,12 @@ remoting.Wcs = function(wcsIqClient, token, onReady) {
    */
   this.clientFullJid_ = '';
 
-  /** @type {remoting.Wcs} */
-  var that = this;
+  var updateAccessToken = this.updateAccessToken_.bind(this);
+  /** @param {remoting.Error} error */
+  var onError = function(error) {
+    console.error('updateAccessToken: Authentication failed: ' + error);
+  };
+
   /**
    * A timer that polls for an updated access token.
    * @type {number}
@@ -61,11 +65,7 @@ remoting.Wcs = function(wcsIqClient, token, onReady) {
    */
   this.pollForUpdatedToken_ = setInterval(
       function() {
-        /** @param {string} token */
-        var updateAccessToken = function(token) {
-          that.updateAccessToken_(token);
-        }
-        remoting.oauth2.callWithToken(updateAccessToken);
+        remoting.oauth2.callWithToken(updateAccessToken, onError);
       },
       60 * 1000);
 
@@ -77,9 +77,7 @@ remoting.Wcs = function(wcsIqClient, token, onReady) {
   this.onIq_ = function(stanza) {};
 
   // Handle messages from the WcsIqClient.
-  /** @param {Array.<string>} msg An array of message strings. */
-  var onMessage = function(msg) { that.onMessage_(msg); };
-  this.wcsIqClient_.setOnMessage(onMessage);
+  this.wcsIqClient_.setOnMessage(this.onMessage_.bind(this));
 
   // Start the WcsIqClient.
   this.wcsIqClient_.connectChannel();
@@ -111,7 +109,7 @@ remoting.Wcs.prototype.onMessage_ = function(msg) {
     this.onIq_(msg[1]);
   } else if (msg[0] == 'cfj') {
     this.clientFullJid_ = msg[1];
-    remoting.debug.log('Received JID: ' + this.clientFullJid_);
+    console.log('Received JID: ' + this.clientFullJid_);
     this.onReady_(true);
     this.onReady_ = function(success) {};
   }

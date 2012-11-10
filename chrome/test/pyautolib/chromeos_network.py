@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -128,18 +128,16 @@ class PyNetworkUITest(pyauto.PyUITest):
   _ROUTER_CONFIG_FILE = os.path.join(pyauto.PyUITest.DataDir(),
                                      'pyauto_private', 'chromeos', 'network',
                                      'wifi_testbed_config')
-
   _FLIMFLAM_PATH = 'org.chromium.flimflam'
-  _proxy = dbus.SystemBus().get_object(_FLIMFLAM_PATH, '/')
-  _manager = dbus.Interface(_proxy, _FLIMFLAM_PATH + '.Manager')
 
   def setUp(self):
     # Move ethernet to the end of the flimflam priority list,
     # effectively hiding any ssh connections that the
     # test harness might be using and putting wifi ahead.
-    self._PushServiceOrder('vpn,bluetooth,wifi,wimax,cellular,ethernet')
+    self._PushServiceOrder('wifi,ethernet')
     self._ParseDefaultRoutingTable()
     pyauto.PyUITest.setUp(self)
+    self.CleanupFlimflamDirsOnChromeOS()
     self.ForgetAllRememberedNetworks()
     self._wifi_power_strip = None
 
@@ -154,6 +152,10 @@ class PyNetworkUITest(pyauto.PyUITest):
       os.system('route del -net %(ipaddress)s gateway %(gateway)s netmask '
                 '%(netmask)s dev %(iface)s' % self.ps_route_entry)
 
+  def _GetFlimflamManager(self):
+    _proxy = dbus.SystemBus().get_object(self._FLIMFLAM_PATH, '/')
+    return dbus.Interface(_proxy, self._FLIMFLAM_PATH + '.Manager')
+
   def _ParseDefaultRoutingTable(self):
     """Creates and stores a dictionary of the default routing paths."""
     route_table_headers = ['destination', 'gateway', 'genmask', 'flags',
@@ -164,30 +166,25 @@ class PyNetworkUITest(pyauto.PyUITest):
     for iface in routes:
       self.default_routes[iface[-1]] = dict(zip(route_table_headers, iface))
 
-  def ForgetAllRememberedNetworks(self):
-    """Forgets all networks that the device has marked as remembered."""
-    for service in self.GetNetworkInfo()['remembered_wifi']:
-      self.ForgetWifiNetwork(service)
-
   def _SetServiceOrder(self, service_order):
-    self._manager.SetServiceOrder(service_order)
+    self._GetFlimflamManager().SetServiceOrder(service_order)
     # Flimflam throws a dbus exception if device is already disabled.  This
     # is not an error.
     try:
-      self._manager.DisableTechnology('wifi')
+      self._GetFlimflamManager().DisableTechnology('wifi')
     except dbus.DBusException as e:
       if 'org.chromium.flimflam.Error.AlreadyDisabled' not in str(e):
         raise e
-    self._manager.EnableTechnology('wifi')
+    self._GetFlimflamManager().EnableTechnology('wifi')
 
   def _PushServiceOrder(self, service_order):
-    self._old_service_order = self._manager.GetServiceOrder()
+    self._old_service_order = self._GetFlimflamManager().GetServiceOrder()
     self._SetServiceOrder(service_order)
     service_order = service_order.split(',')
 
     # Verify services that are present in both the service_order
     # we set and the one retrieved from device are in the correct order.
-    set_service_order = self._manager.GetServiceOrder().split(',')
+    set_service_order = self._GetFlimflamManager().GetServiceOrder().split(',')
     common_service = set(service_order) & set(set_service_order)
 
     service_order = [s for s in service_order if s in common_service]
@@ -203,7 +200,7 @@ class PyNetworkUITest(pyauto.PyUITest):
     # Verify services that are present in both the service_order
     # we set and the one retrieved from device are in the correct order.
     old_service_order = self._old_service_order.split(',')
-    set_service_order = self._manager.GetServiceOrder().split(',')
+    set_service_order = self._GetFlimflamManager().GetServiceOrder().split(',')
     common_service = set(old_service_order) & set(set_service_order)
 
     old_service_order = [s for s in old_service_order if s in common_service]
@@ -253,71 +250,6 @@ class PyNetworkUITest(pyauto.PyUITest):
     self.RouterPower = self._wifi_power_strip.RouterPower
     self.TurnOffAllRouters = self._wifi_power_strip.TurnOffAllRouters
     self.GetRouterConfig = self._wifi_power_strip.GetRouterConfig
-
-  def WaitUntilWifiNetworkAvailable(self, ssid, timeout=60, is_hidden=False):
-    """Waits until the given network is available.
-
-    Routers that are just turned on may take up to 1 minute upon turning them
-    on to broadcast their SSID.
-
-    Args:
-      ssid: SSID of the service we want to connect to.
-      timeout: timeout (in seconds)
-
-    Raises:
-      Exception if timeout duration has been hit before wifi router is seen.
-
-    Returns:
-      True, when the wifi network is seen within the timout period.
-      False, otherwise.
-    """
-    def _GotWifiNetwork():
-      # Returns non-empty array if desired SSID is available.
-      try:
-        return [wifi for wifi in
-                self.NetworkScan().get('wifi_networks', {}).values()
-                if wifi.get('name') == ssid]
-      except pyauto_errors.JSONInterfaceError:
-        # Temporary fix until crosbug.com/14174 is fixed.
-        # NetworkScan is only used in updating the list of networks so errors
-        # thrown by it are not critical to the results of wifi tests that use
-        # this method.
-        return False
-
-    # The hidden AP's will always be on, thus we will assume it is ready to
-    # connect to.
-    if is_hidden:
-      return bool(_GotWifiNetwork())
-
-    return self.WaitUntil(_GotWifiNetwork, timeout=timeout, retry_sleep=1)
-
-  def GetConnectedWifi(self):
-    """Returns the SSID of the currently connected wifi network.
-
-    Returns:
-      The SSID of the connected network or None if we're not connected.
-    """
-    service_list = self.GetNetworkInfo()
-    connected_service_path = service_list.get('connected_wifi')
-    if 'wifi_networks' in service_list and \
-       connected_service_path in service_list['wifi_networks']:
-       return service_list['wifi_networks'][connected_service_path]['name']
-
-  def GetServicePath(self, ssid):
-    """Returns the service path associated with an SSID.
-
-    Args:
-      ssid: String defining the SSID we are searching for.
-
-    Returns:
-      The service path or None if SSID does not exist.
-    """
-    service_list = self.GetNetworkInfo()
-    service_list = service_list.get('wifi_networks', [])
-    for service_path, service_obj in service_list.iteritems():
-      if service_obj['name'] == ssid:
-        return service_path
-    return None
 
   def ConnectToWifiRouter(self, router_name, shared=True):
     """Connects to a router by name.

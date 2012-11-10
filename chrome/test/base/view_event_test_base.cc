@@ -4,23 +4,24 @@
 
 #include "chrome/test/base/view_event_test_base.h"
 
-#if defined(OS_WIN)
-#include <ole2.h>
-#endif
-
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/message_loop.h"
 #include "base/string_number_conversions.h"
-#include "chrome/browser/automation/ui_controls.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/browser_thread.h"
-#include "ui/gfx/compositor/test/compositor_test_support.h"
+#include "ui/base/ime/text_input_test_support.h"
+#include "ui/compositor/test/compositor_test_support.h"
+#include "ui/ui_controls/ui_controls.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
-#if defined(USE_AURA)
+#if defined(USE_ASH)
 #include "ash/shell.h"
+#endif
+#if defined(USE_AURA)
+#include "ui/aura/client/event_client.h"
+#include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #endif
 
@@ -67,10 +68,11 @@ ViewEventTestBase::ViewEventTestBase()
 void ViewEventTestBase::Done() {
   MessageLoop::current()->Quit();
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
   // We need to post a message to tickle the Dispatcher getting called and
   // exiting out of the nested loop. Without this the quit never runs.
-  PostMessage(window_->GetNativeWindow(), WM_USER, 0, 0);
+  if (window_)
+    PostMessage(window_->GetNativeWindow(), WM_USER, 0, 0);
 #endif
 
   // If we're in a nested message loop, as is the case with menus, we
@@ -81,35 +83,36 @@ void ViewEventTestBase::Done() {
 }
 
 void ViewEventTestBase::SetUp() {
-#if defined(OS_WIN)
-  OleInitialize(NULL);
-#endif
+  ui::TextInputTestSupport::Initilaize();
   ui::CompositorTestSupport::Initialize();
-#if defined(USE_AURA)
-  aura::RootWindow::GetInstance();
+#if defined(USE_ASH)
   ash::Shell::CreateInstance(NULL);
+  // The shell runs with a locked screen in tests, so we must clear the event
+  // client so it doesn't interfere with event propagation.
+  aura::client::SetEventClient(ash::Shell::GetPrimaryRootWindow(),
+                               NULL);
 #endif
   window_ = views::Widget::CreateWindow(this);
 }
 
 void ViewEventTestBase::TearDown() {
   if (window_) {
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
     DestroyWindow(window_->GetNativeWindow());
 #else
     window_->Close();
-    ui_test_utils::RunAllPendingInMessageLoop();
+    content::RunAllPendingInMessageLoop();
 #endif
     window_ = NULL;
   }
-#if defined(USE_AURA)
+#if defined(USE_ASH)
   ash::Shell::DeleteInstance();
-  aura::RootWindow::DeleteInstance();
+#endif
+#if defined(USE_AURA)
+  aura::Env::DeleteInstance();
 #endif
   ui::CompositorTestSupport::Terminate();
-#if defined(OS_WIN)
-  OleUninitialize();
-#endif
+  ui::TextInputTestSupport::Shutdown();
 }
 
 bool ViewEventTestBase::CanResize() const {
@@ -143,12 +146,12 @@ void ViewEventTestBase::StartMessageLoopAndRunTest() {
   window_->Show();
   // Make sure the window is the foreground window, otherwise none of the
   // mouse events are going to be targeted correctly.
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
   SetForegroundWindow(window_->GetNativeWindow());
 #endif
 
   // Flush any pending events to make sure we start with a clean slate.
-  ui_test_utils::RunAllPendingInMessageLoop();
+  content::RunAllPendingInMessageLoop();
 
   // Schedule a task that starts the test. Need to do this as we're going to
   // run the message loop.
@@ -156,7 +159,7 @@ void ViewEventTestBase::StartMessageLoopAndRunTest() {
       FROM_HERE,
       base::Bind(&ViewEventTestBase::DoTestOnMessageLoop, this));
 
-  ui_test_utils::RunMessageLoop();
+  content::RunMessageLoop();
 }
 
 gfx::Size ViewEventTestBase::GetPreferredSize() {
@@ -171,7 +174,7 @@ void ViewEventTestBase::ScheduleMouseMoveInBackground(int x, int y) {
   dnd_thread_->message_loop()->PostDelayedTask(
       FROM_HERE,
       base::Bind(base::IgnoreResult(&ui_controls::SendMouseMove), x, y),
-      kMouseMoveDelayMS);
+      base::TimeDelta::FromMilliseconds(kMouseMoveDelayMS));
 }
 
 void ViewEventTestBase::StopBackgroundThread() {

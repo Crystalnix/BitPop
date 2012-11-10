@@ -4,15 +4,16 @@
 
 #ifndef ASH_WM_WORKSPACE_WORKSPACE_LAYOUT_MANAGER_H_
 #define ASH_WM_WORKSPACE_WORKSPACE_LAYOUT_MANAGER_H_
-#pragma once
 
-#include "ash/ash_export.h"
+#include "ash/wm/base_layout_manager.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "ui/aura/layout_manager.h"
+#include "ui/aura/window_observer.h"
 
 namespace aura {
 class MouseEvent;
+class RootWindow;
 class Window;
 }
 
@@ -26,9 +27,10 @@ namespace internal {
 class WorkspaceManager;
 
 // LayoutManager for top level windows when WorkspaceManager is enabled.
-class ASH_EXPORT WorkspaceLayoutManager : public aura::LayoutManager {
+class ASH_EXPORT WorkspaceLayoutManager : public BaseLayoutManager {
  public:
-  explicit WorkspaceLayoutManager(WorkspaceManager* workspace_manager);
+  WorkspaceLayoutManager(aura::RootWindow* root_window,
+                         WorkspaceManager* workspace_manager);
   virtual ~WorkspaceLayoutManager();
 
   // Returns the workspace manager for this container.
@@ -36,29 +38,23 @@ class ASH_EXPORT WorkspaceLayoutManager : public aura::LayoutManager {
     return workspace_manager_;
   }
 
-  // Invoked when a window receives drag event.
-  void PrepareForMoveOrResize(aura::Window* drag, aura::MouseEvent* event);
-
-  // Invoked when a drag event didn't start any drag operation.
-  void CancelMoveOrResize(aura::Window* drag, aura::MouseEvent* event);
-
-  // Invoked when a drag event moved the |window|.
-  void ProcessMove(aura::Window* window, aura::MouseEvent* event);
-
-  // Invoked when a user finished moving window.
-  void EndMove(aura::Window* drag, aura::MouseEvent* event);
-
-  // Invoked when a user finished resizing window.
-  void EndResize(aura::Window* drag, aura::MouseEvent* event);
-
-  // Overridden from aura::LayoutManager:
+  // Overridden from BaseLayoutManager:
   virtual void OnWindowResized() OVERRIDE;
   virtual void OnWindowAddedToLayout(aura::Window* child) OVERRIDE;
   virtual void OnWillRemoveWindowFromLayout(aura::Window* child) OVERRIDE;
+  virtual void OnWindowRemovedFromLayout(aura::Window* child) OVERRIDE;
   virtual void OnChildWindowVisibilityChanged(aura::Window* child,
                                               bool visibile) OVERRIDE;
   virtual void SetChildBounds(aura::Window* child,
                               const gfx::Rect& requested_bounds) OVERRIDE;
+
+  // Overriden from aura::WindowObserver:
+  virtual void OnWindowPropertyChanged(aura::Window* window,
+                                       const void* key,
+                                       intptr_t old) OVERRIDE;
+ protected:
+  virtual void ShowStateChanged(aura::Window* window,
+                                ui::WindowShowState last_show_state) OVERRIDE;
 
  private:
   // Owned by WorkspaceController.

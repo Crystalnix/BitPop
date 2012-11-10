@@ -4,7 +4,6 @@
 
 #ifndef NET_BASE_SSL_CONFIG_SERVICE_H_
 #define NET_BASE_SSL_CONFIG_SERVICE_H_
-#pragma once
 
 #include <vector>
 
@@ -19,10 +18,24 @@
 
 namespace net {
 
+// Various TLS/SSL ProtocolVersion values encoded as uint16
+//      struct {
+//          uint8 major;
+//          uint8 minor;
+//      } ProtocolVersion;
+// The most significant byte is |major|, and the least significant byte
+// is |minor|.
+enum {
+  SSL_PROTOCOL_VERSION_SSL3 = 0x0300,
+  SSL_PROTOCOL_VERSION_TLS1 = 0x0301,
+  SSL_PROTOCOL_VERSION_TLS1_1 = 0x0302,
+  SSL_PROTOCOL_VERSION_TLS1_2 = 0x0303,
+};
+
 // A collection of SSL-related configuration settings.
 struct NET_EXPORT SSLConfig {
   // Default to revocation checking.
-  // Default to SSL 3.0 on and TLS 1.0 on.
+  // Default to SSL 3.0 ~ default_version_max() on.
   SSLConfig();
   ~SSLConfig();
 
@@ -36,13 +49,20 @@ struct NET_EXPORT SSLConfig {
   bool IsAllowedBadCert(const base::StringPiece& der_cert,
                         CertStatus* cert_status) const;
 
-  bool rev_checking_enabled;  // True if server certificate revocation
-                              // checking is enabled.
-  // SSL 2.0 is not supported.
-  bool ssl3_enabled;  // True if SSL 3.0 is enabled.
-  bool tls1_enabled;  // True if TLS 1.0 is enabled.
-  // True if we'll do async checks for certificate provenance using DNS.
-  bool dns_cert_provenance_checking_enabled;
+  // rev_checking_enabled is true if online certificate revocation checking is
+  // enabled (i.e. OCSP and CRL fetching).
+  //
+  // Regardless of this flag, CRLSet checking is always enabled and locally
+  // cached revocation information will be considered.
+  bool rev_checking_enabled;
+
+  // The minimum and maximum protocol versions that are enabled.
+  // SSL 3.0 is 0x0300, TLS 1.0 is 0x0301, TLS 1.1 is 0x0302, and so on.
+  // (Use the SSL_PROTOCOL_VERSION_xxx enumerators defined above.)
+  // SSL 2.0 is not supported. If version_max < version_min, it means no
+  // protocol versions are enabled.
+  uint16 version_min;
+  uint16 version_max;
 
   // Presorted list of cipher suites which should be explicitly prevented from
   // being used in addition to those disabled by the net built-in policy.
@@ -54,6 +74,9 @@ struct NET_EXPORT SSLConfig {
   // - FORTEZZA cipher suites (obsolete).
   // - IDEA cipher suites (RFC 5469 explains why).
   // - Anonymous cipher suites.
+  // - ECDSA cipher suites on platforms that do not support ECDSA signed
+  //   certificates, as servers may use the presence of such ciphersuites as a
+  //   hint to send an ECDSA certificate.
   // The ciphers listed in |disabled_cipher_suites| will be removed in addition
   // to the above list.
   //
@@ -67,8 +90,7 @@ struct NET_EXPORT SSLConfig {
   std::vector<uint16> disabled_cipher_suites;
 
   bool cached_info_enabled;  // True if TLS cached info extension is enabled.
-  bool origin_bound_certs_enabled;  // True if TLS origin bound cert extension
-                                    // is enabled.
+  bool channel_id_enabled;  // True if TLS channel ID extension is enabled.
   bool false_start_enabled;  // True if we'll use TLS False Start.
 
   // TODO(wtc): move the following members to a new SSLParams structure.  They
@@ -93,8 +115,16 @@ struct NET_EXPORT SSLConfig {
 
   bool verify_ev_cert;  // True if we should verify the certificate for EV.
 
-  bool ssl3_fallback;  // True if we are falling back to SSL 3.0 (one still
-                       // needs to clear tls1_enabled).
+  bool version_fallback;  // True if we are falling back to an older protocol
+                          // version (one still needs to decrement
+                          // version_max).
+
+  // If cert_io_enabled is false, then certificate verification will not
+  // result in additional HTTP requests. (For example: to fetch missing
+  // intermediates or to perform OCSP/CRL fetches.) It also implies that online
+  // revocation checking is disabled.
+  // NOTE: currently only effective on Linux
+  bool cert_io_enabled;
 
   // The list of application level protocols supported. If set, this will
   // enable Next Protocol Negotiation (if supported). The order of the
@@ -121,9 +151,11 @@ class NET_EXPORT SSLConfigService
     // data in SSLConfig, just those that qualify as a user config change.
     // The following settings are considered user changes:
     //     rev_checking_enabled
-    //     ssl3_enabled
-    //     tls1_enabled
+    //     version_min
+    //     version_max
     //     disabled_cipher_suites
+    //     channel_id_enabled
+    //     false_start_enabled
     virtual void OnSSLConfigChanged() = 0;
 
    protected:
@@ -135,14 +167,6 @@ class NET_EXPORT SSLConfigService
   // May not be thread-safe, should only be called on the IO thread.
   virtual void GetSSLConfig(SSLConfig* config) = 0;
 
-  // Returns true if the given hostname is known to be incompatible with TLS
-  // False Start.
-  static bool IsKnownFalseStartIncompatibleServer(const std::string& hostname);
-
-  // Enables DNS side checks for certificates.
-  static void EnableDNSCertProvenanceChecking();
-  static bool dns_cert_provenance_checking_enabled();
-
   // Sets and gets the current, global CRL set.
   static void SetCRLSet(scoped_refptr<CRLSet> crl_set);
   static scoped_refptr<CRLSet> GetCRLSet();
@@ -151,6 +175,16 @@ class NET_EXPORT SSLConfigService
   // just a digest of its certificate chain.
   static void EnableCachedInfo();
   static bool cached_info_enabled();
+
+  // Gets the default minimum protocol version.
+  static uint16 default_version_min();
+
+  // Sets and gets the default maximum protocol version.
+  static void SetDefaultVersionMax(uint16 version_max);
+  static uint16 default_version_max();
+
+  // Force channel ID support to be enabled.
+  static void EnableChannelIDTrial();
 
   // Is SNI available in this configuration?
   static bool IsSNIAvailable(SSLConfigService* service);

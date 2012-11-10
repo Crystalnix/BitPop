@@ -1,11 +1,13 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/notifications/notification_object_proxy.h"
 
 #include "base/stringprintf.h"
-#include "content/browser/renderer_host/render_view_host.h"
+#include "content/public/browser/render_view_host.h"
+
+using content::RenderViewHost;
 
 NotificationObjectProxy::NotificationObjectProxy(int process_id, int route_id,
     int notification_id, bool worker)
@@ -46,4 +48,8 @@ void NotificationObjectProxy::Click() {
 std::string NotificationObjectProxy::id() const {
   return StringPrintf("%d:%d:%d:%d", process_id_, route_id_,
                       notification_id_, worker_);
+}
+
+RenderViewHost* NotificationObjectProxy::GetRenderViewHost() const {
+  return RenderViewHost::FromID(process_id_, route_id_);
 }

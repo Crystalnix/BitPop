@@ -10,21 +10,20 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
-#include "chrome/browser/net/view_blob_internals_job_factory.h"
-#include "chrome/browser/net/view_http_cache_job_factory.h"
 #include "chrome/browser/ui/webui/shared_resources_data_source.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "googleurl/src/url_util.h"
 #include "grit/platform_locale_settings.h"
@@ -32,10 +31,10 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
+#include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_file_job.h"
 #include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_job_factory.h"
-#include "webkit/appcache/view_appcache_internals_job.h"
 
 using content::BrowserThread;
 
@@ -47,10 +46,13 @@ namespace {
 // TODO(tsepez) chrome-extension: permits the ChromeVox screen reader
 //     extension to function on these pages.  Remove it when the extension
 //     is updated to stop injecting script into the pages.
-const char kChromeURLContentSecurityPolicyHeader[] =
-    "X-WebKit-CSP: object-src 'self'; script-src chrome://resources "
+const char kChromeURLContentSecurityPolicyHeaderBase[] =
+    "X-WebKit-CSP: script-src chrome://resources "
     "chrome-extension://mndnfokpggljbaajbnioimlmbfngpief "
-    "'self' 'unsafe-eval'";
+    "'self' 'unsafe-eval'; ";
+
+// TODO(tsepez) The following should be replaced with a centralized table.
+// See crbug.com/104631.
 
 // If you are inserting new exemptions into this list, then you have a bug.
 // It is not acceptable to disable content-security-policy on chrome:// pages
@@ -69,7 +71,6 @@ class ChromeURLContentSecurityPolicyExceptionSet
     insert(chrome::kChromeUIDialogHost);
     insert(chrome::kChromeUIInputWindowDialogHost);
     insert(chrome::kChromeUINewTabHost);
-    insert(chrome::kChromeUITaskManagerHost);
 #if defined(OS_CHROMEOS)
     insert(chrome::kChromeUIMobileSetupHost);
     insert(chrome::kChromeUIOobeHost);
@@ -79,9 +80,6 @@ class ChromeURLContentSecurityPolicyExceptionSet
     insert(chrome::kChromeUISimUnlockHost);
     insert(chrome::kChromeUISystemInfoHost);
 #endif
-#if defined(USE_VIRTUAL_KEYBOARD)
-    insert(chrome::kChromeUIKeyboardHost);
-#endif
 #if defined(OS_CHROMEOS) || defined(USE_AURA)
     insert(chrome::kChromeUICollectedCookiesHost);
     insert(chrome::kChromeUIHttpAuthHost);
@@ -90,8 +88,92 @@ class ChromeURLContentSecurityPolicyExceptionSet
   }
 };
 
+// It is OK to add URLs to these maps which map specific URLs to custom CSP
+// directives thereby slightly reducing the protection applied to the page.
+class ChromeURLObjectSrcExceptionMap
+    : public std::map<std::string, std::string> {
+ public:
+  ChromeURLObjectSrcExceptionMap() : std::map<std::string, std::string>() {
+    insert(std::pair<std::string, std::string>(
+        chrome::kChromeUIPrintHost, "object-src 'self';"));
+  }
+};
+
+class ChromeURLFrameSrcExceptionMap
+    : public std::map<std::string, std::string> {
+ public:
+  ChromeURLFrameSrcExceptionMap() : std::map<std::string, std::string>() {
+    insert(std::pair<std::string, std::string>(
+        chrome::kChromeUIUberHost, "frame-src chrome:;"));
+    insert(std::pair<std::string, std::string>(
+        chrome::kChromeUIUberFrameHost, "frame-src chrome:;"));
+  }
+};
+
 base::LazyInstance<ChromeURLContentSecurityPolicyExceptionSet>
-    g_chrome_url_content_security_policy_exceptions = LAZY_INSTANCE_INITIALIZER;
+    g_chrome_url_content_security_policy_exception_set =
+        LAZY_INSTANCE_INITIALIZER;
+
+base::LazyInstance<ChromeURLObjectSrcExceptionMap>
+    g_chrome_url_object_src_exception_map = LAZY_INSTANCE_INITIALIZER;
+
+base::LazyInstance<ChromeURLFrameSrcExceptionMap>
+    g_chrome_url_frame_src_exception_map = LAZY_INSTANCE_INITIALIZER;
+
+// Determine the least-privileged content security policy header, if any,
+// that is compatible with a given WebUI URL, and append it to the existing
+// response headers.
+void AddContentSecurityPolicyHeader(
+    const GURL& url, net::HttpResponseHeaders* headers) {
+  ChromeURLContentSecurityPolicyExceptionSet* exceptions =
+      g_chrome_url_content_security_policy_exception_set.Pointer();
+
+  if (exceptions->find(url.host()) == exceptions->end()) {
+    std::string base = kChromeURLContentSecurityPolicyHeaderBase;
+
+    ChromeURLObjectSrcExceptionMap* object_map =
+        g_chrome_url_object_src_exception_map.Pointer();
+    ChromeURLObjectSrcExceptionMap::iterator object_iter =
+        object_map->find(url.host());
+    base.append(object_iter == object_map->end() ?
+                "object-src 'none';" : object_iter->second);
+
+    ChromeURLFrameSrcExceptionMap* frame_map =
+        g_chrome_url_frame_src_exception_map.Pointer();
+    ChromeURLFrameSrcExceptionMap::iterator frame_iter =
+        frame_map->find(url.host());
+    base.append(frame_iter == frame_map->end() ?
+                "frame-src 'none';" : frame_iter->second);
+
+    headers->AddHeader(base);
+  }
+}
+
+const char kChromeURLXFrameOptionsHeader[] = "X-Frame-Options: DENY";
+
+// It is OK to add exceptions to this set as needed.
+class ChromeURLXFrameOptionsExceptionSet
+    : public std::set<std::string> {
+ public:
+  ChromeURLXFrameOptionsExceptionSet() : std::set<std::string>() {
+    insert(chrome::kChromeUIExtensionsFrameHost);
+    insert(chrome::kChromeUIHelpFrameHost);
+    insert(chrome::kChromeUIHistoryFrameHost);
+    insert(chrome::kChromeUISettingsFrameHost);
+    insert(chrome::kChromeUIUberFrameHost);
+  }
+};
+
+base::LazyInstance<ChromeURLXFrameOptionsExceptionSet>
+    g_chrome_url_x_frame_options_exception_set = LAZY_INSTANCE_INITIALIZER;
+
+void AddXFrameOptionsHeader(
+    const GURL& url, net::HttpResponseHeaders* headers) {
+  ChromeURLXFrameOptionsExceptionSet* exceptions =
+      g_chrome_url_x_frame_options_exception_set.Pointer();
+  if (exceptions->find(url.host()) == exceptions->end())
+    headers->AddHeader(kChromeURLXFrameOptionsHeader);
+}
 
 // Parse a URL into the components used to resolve its request. |source_name|
 // is the hostname and |path| is the remaining portion of the URL.
@@ -125,7 +207,8 @@ void URLToRequest(const GURL& url, std::string* source_name,
 // chrome-internal resource requests asynchronously.
 // It hands off URL requests to ChromeURLDataManager, which asynchronously
 // calls back once the data is available.
-class URLRequestChromeJob : public net::URLRequestJob {
+class URLRequestChromeJob : public net::URLRequestJob,
+                            public base::SupportsWeakPtr<URLRequestChromeJob> {
  public:
   URLRequestChromeJob(net::URLRequest* request,
                       ChromeURLDataManagerBackend* backend);
@@ -139,12 +222,19 @@ class URLRequestChromeJob : public net::URLRequestJob {
   virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
   virtual void GetResponseInfo(net::HttpResponseInfo* info) OVERRIDE;
 
+  // Used to notify that the requested data's |mime_type| is ready.
+  void MimeTypeAvailable(const std::string& mime_type);
+
   // Called by ChromeURLDataManager to notify us that the data blob is ready
   // for us.
-  void DataAvailable(RefCountedMemory* bytes);
+  void DataAvailable(base::RefCountedMemory* bytes);
 
-  void SetMimeType(const std::string& mime_type) {
+  void set_mime_type(const std::string& mime_type) {
     mime_type_ = mime_type;
+  }
+
+  void set_allow_caching(bool allow_caching) {
+    allow_caching_ = allow_caching;
   }
 
  private:
@@ -159,7 +249,7 @@ class URLRequestChromeJob : public net::URLRequestJob {
   void CompleteRead(net::IOBuffer* buf, int buf_size, int* bytes_read);
 
   // The actual data we're serving.  NULL until it's been fetched.
-  scoped_refptr<RefCountedMemory> data_;
+  scoped_refptr<base::RefCountedMemory> data_;
   // The current offset into the data that we're handing off to our
   // callers via the Read interfaces.
   int data_offset_;
@@ -169,6 +259,9 @@ class URLRequestChromeJob : public net::URLRequestJob {
   scoped_refptr<net::IOBuffer> pending_buf_;
   int pending_buf_size_;
   std::string mime_type_;
+
+  // If true, set a header in the response to prevent it from being cached.
+  bool allow_caching_;
 
   // The backend is owned by ChromeURLRequestContext and always outlives us.
   ChromeURLDataManagerBackend* backend_;
@@ -180,9 +273,10 @@ class URLRequestChromeJob : public net::URLRequestJob {
 
 URLRequestChromeJob::URLRequestChromeJob(net::URLRequest* request,
                                          ChromeURLDataManagerBackend* backend)
-    : net::URLRequestJob(request),
+    : net::URLRequestJob(request, request->context()->network_delegate()),
       data_offset_(0),
       pending_buf_size_(0),
+      allow_caching_(true),
       backend_(backend),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   DCHECK(backend);
@@ -199,6 +293,9 @@ void URLRequestChromeJob::Start() {
       FROM_HERE,
       base::Bind(&URLRequestChromeJob::StartAsync,
                  weak_factory_.GetWeakPtr()));
+
+  TRACE_EVENT_ASYNC_BEGIN1("browser", "DataManager:Request", this, "URL",
+      request_->url().possibly_invalid_spec());
 }
 
 void URLRequestChromeJob::Kill() {
@@ -216,13 +313,19 @@ void URLRequestChromeJob::GetResponseInfo(net::HttpResponseInfo* info) {
   // status code of 200. Without this they return a 0, which makes the status
   // indistiguishable from other error types. Instant relies on getting a 200.
   info->headers = new net::HttpResponseHeaders("HTTP/1.1 200 OK");
-  ChromeURLContentSecurityPolicyExceptionSet* exceptions =
-      g_chrome_url_content_security_policy_exceptions.Pointer();
-  if (exceptions->find(request_->url().host()) == exceptions->end())
-    info->headers->AddHeader(kChromeURLContentSecurityPolicyHeader);
+  AddContentSecurityPolicyHeader(request_->url(), info->headers);
+  AddXFrameOptionsHeader(request_->url(), info->headers);
+  if (!allow_caching_)
+    info->headers->AddHeader("Cache-Control: no-cache");
 }
 
-void URLRequestChromeJob::DataAvailable(RefCountedMemory* bytes) {
+void URLRequestChromeJob::MimeTypeAvailable(const std::string& mime_type) {
+  set_mime_type(mime_type);
+  NotifyHeadersComplete();
+}
+
+void URLRequestChromeJob::DataAvailable(base::RefCountedMemory* bytes) {
+  TRACE_EVENT_ASYNC_END0("browser", "DataManager:Request", this);
   if (bytes) {
     // The request completed, and we have all the data.
     // Clear any IO pending status.
@@ -275,9 +378,7 @@ void URLRequestChromeJob::StartAsync() {
   if (!request_)
     return;
 
-  if (backend_->StartRequest(request_->url(), this)) {
-    NotifyHeadersComplete();
-  } else {
+  if (!backend_->StartRequest(request_->url(), this)) {
     NotifyStartError(net::URLRequestStatus(net::URLRequestStatus::FAILED,
                                            net::ERR_INVALID_URL));
   }
@@ -285,18 +386,28 @@ void URLRequestChromeJob::StartAsync() {
 
 namespace {
 
-bool IsViewAppCacheInternalsURL(const GURL& url) {
-  return url.SchemeIs(chrome::kChromeUIScheme) &&
-         url.host() == chrome::kChromeUIAppCacheInternalsHost;
+// Gets mime type for data that is available from |source| by |path|.
+// After that, notifies |job| that mime type is available. This method
+// should be called on the UI thread, but notification is performed on
+// the IO thread.
+void GetMimeTypeOnUI(ChromeURLDataManager::DataSource* source,
+                     const std::string& path,
+                     const base::WeakPtr<URLRequestChromeJob>& job) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  std::string mime_type = source->GetMimeType(path);
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&URLRequestChromeJob::MimeTypeAvailable, job, mime_type));
 }
+
+}  // namespace
+
+namespace {
 
 class ChromeProtocolHandler
     : public net::URLRequestJobFactory::ProtocolHandler {
  public:
-  ChromeProtocolHandler(
-      ChromeURLDataManagerBackend* backend,
-      ChromeAppCacheService* appcache_service,
-      webkit_blob::BlobStorageController* blob_storage_controller);
+  explicit ChromeProtocolHandler(ChromeURLDataManagerBackend* backend);
   ~ChromeProtocolHandler();
 
   virtual net::URLRequestJob* MaybeCreateJob(
@@ -305,39 +416,19 @@ class ChromeProtocolHandler
  private:
   // These members are owned by ProfileIOData, which owns this ProtocolHandler.
   ChromeURLDataManagerBackend* const backend_;
-  ChromeAppCacheService* const appcache_service_;
-  webkit_blob::BlobStorageController* const blob_storage_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeProtocolHandler);
 };
 
 ChromeProtocolHandler::ChromeProtocolHandler(
-    ChromeURLDataManagerBackend* backend,
-    ChromeAppCacheService* appcache_service,
-    webkit_blob::BlobStorageController* blob_storage_controller)
-    : backend_(backend),
-      appcache_service_(appcache_service),
-      blob_storage_controller_(blob_storage_controller) {}
+    ChromeURLDataManagerBackend* backend)
+    : backend_(backend) {}
 
 ChromeProtocolHandler::~ChromeProtocolHandler() {}
 
 net::URLRequestJob* ChromeProtocolHandler::MaybeCreateJob(
     net::URLRequest* request) const {
   DCHECK(request);
-
-  // Next check for chrome://view-http-cache/*, which uses its own job type.
-  if (ViewHttpCacheJobFactory::IsSupportedURL(request->url()))
-    return ViewHttpCacheJobFactory::CreateJobForRequest(request);
-
-  // Next check for chrome://appcache-internals/, which uses its own job type.
-  if (IsViewAppCacheInternalsURL(request->url()))
-    return appcache::ViewAppCacheInternalsJobFactory::CreateJobForRequest(
-        request, appcache_service_);
-
-  // Next check for chrome://blob-internals/, which uses its own job type.
-  if (ViewBlobInternalsJobFactory::IsSupportedURL(request->url()))
-    return ViewBlobInternalsJobFactory::CreateJobForRequest(
-        request, blob_storage_controller_);
 
   // Fall back to using a custom handler
   return new URLRequestChromeJob(request, backend_);
@@ -361,14 +452,9 @@ ChromeURLDataManagerBackend::~ChromeURLDataManagerBackend() {
 // static
 net::URLRequestJobFactory::ProtocolHandler*
 ChromeURLDataManagerBackend::CreateProtocolHandler(
-    ChromeURLDataManagerBackend* backend,
-    ChromeAppCacheService* appcache_service,
-    webkit_blob::BlobStorageController* blob_storage_controller) {
-  DCHECK(appcache_service);
-  DCHECK(blob_storage_controller);
+    ChromeURLDataManagerBackend* backend) {
   DCHECK(backend);
-  return new ChromeProtocolHandler(
-      backend, appcache_service, blob_storage_controller);
+  return new ChromeProtocolHandler(backend);
 }
 
 void ChromeURLDataManagerBackend::AddDataSource(
@@ -412,10 +498,7 @@ bool ChromeURLDataManagerBackend::StartRequest(const GURL& url,
   RequestID request_id = next_request_id_++;
   pending_requests_.insert(std::make_pair(request_id, job));
 
-  // TODO(eroman): would be nicer if the mimetype were set at the same time
-  // as the data blob. For now do it here, since NotifyHeadersComplete() is
-  // going to get called once we return.
-  job->SetMimeType(source->GetMimeType(path));
+  job->set_allow_caching(source->AllowCaching());
 
   const ChromeURLRequestContext* context =
       static_cast<const ChromeURLRequestContext*>(job->request()->context());
@@ -423,11 +506,23 @@ bool ChromeURLDataManagerBackend::StartRequest(const GURL& url,
   // Forward along the request to the data source.
   MessageLoop* target_message_loop = source->MessageLoopForRequestPath(path);
   if (!target_message_loop) {
+    job->MimeTypeAvailable(source->GetMimeType(path));
+
     // The DataSource is agnostic to which thread StartDataRequest is called
     // on for this path.  Call directly into it from this thread, the IO
     // thread.
     source->StartDataRequest(path, context->is_incognito(), request_id);
   } else {
+    // URLRequestChromeJob should receive mime type before data. This
+    // is guaranteed because request for mime type is placed in the
+    // message loop before request for data. And correspondingly their
+    // replies are put on the IO thread in the same order.
+    target_message_loop->PostTask(
+        FROM_HERE,
+        base::Bind(&GetMimeTypeOnUI,
+                   scoped_refptr<ChromeURLDataManager::DataSource>(source),
+                   path, job->AsWeakPtr()));
+
     // The DataSource wants StartDataRequest to be called on a specific thread,
     // usually the UI thread, for this path.
     target_message_loop->PostTask(
@@ -452,7 +547,7 @@ void ChromeURLDataManagerBackend::RemoveRequest(URLRequestChromeJob* job) {
 }
 
 void ChromeURLDataManagerBackend::DataAvailable(RequestID request_id,
-                                                RefCountedMemory* bytes) {
+                                                base::RefCountedMemory* bytes) {
   // Forward this data on to the pending net::URLRequest, if it exists.
   PendingRequestMap::iterator i = pending_requests_.find(request_id);
   if (i != pending_requests_.end()) {

@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_SSL_SSL_HOST_STATE_H_
 #define CONTENT_BROWSER_SSL_SSL_HOST_STATE_H_
-#pragma once
 
 #include <string>
 #include <map>
@@ -12,10 +11,15 @@
 
 #include "base/compiler_specific.h"
 #include "base/basictypes.h"
+#include "base/supports_user_data.h"
 #include "base/threading/non_thread_safe.h"
 #include "content/common/content_export.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/x509_certificate.h"
+
+namespace content {
+class BrowserContext;
+}
 
 // SSLHostState
 //
@@ -26,10 +30,13 @@
 // controllers.
 
 class CONTENT_EXPORT SSLHostState
-    : NON_EXPORTED_BASE(public base::NonThreadSafe) {
+    : NON_EXPORTED_BASE(base::SupportsUserData::Data),
+      NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
+  static SSLHostState* GetFor(content::BrowserContext* browser_context);
+
   SSLHostState();
-  ~SSLHostState();
+  virtual ~SSLHostState();
 
   // Records that a host has run insecure content.
   void HostRanInsecureContent(const std::string& host, int pid);
@@ -42,6 +49,9 @@ class CONTENT_EXPORT SSLHostState
 
   // Records that |cert| is not permitted to be used for |host| in the future.
   void AllowCertForHost(net::X509Certificate* cert, const std::string& host);
+
+  // Clear all allow/deny preferences.
+  void Clear();
 
   // Queries whether |cert| is allowed or denied for |host|.
   net::CertPolicy::Judgment QueryPolicy(

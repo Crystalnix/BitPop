@@ -7,6 +7,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "ui/aura/event.h"
+#include "ui/aura/focus_manager.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/aura_test_base.h"
 #include "ui/aura/test/event_generator.h"
@@ -71,7 +72,7 @@ class TestEventFilterWindowDelegate : public TestWindowDelegate {
 Window* CreateWindow(int id, Window* parent, WindowDelegate* delegate) {
   Window* window = new Window(delegate ? delegate : new TestWindowDelegate);
   window->set_id(id);
-  window->Init(ui::Layer::LAYER_TEXTURED);
+  window->Init(ui::LAYER_TEXTURED);
   window->SetParent(parent);
   window->SetBounds(gfx::Rect(0, 0, 100, 100));
   window->Show();
@@ -86,28 +87,27 @@ Window* CreateWindow(int id, Window* parent, WindowDelegate* delegate) {
 //      +- w111 (EF)
 //        +- w1111 <-- target window
 TEST_F(EventFilterTest, Basic) {
-  scoped_ptr<Window> w1(CreateWindow(1, RootWindow::GetInstance(), NULL));
+  scoped_ptr<Window> w1(CreateWindow(1, root_window(), NULL));
   scoped_ptr<Window> w11(CreateWindow(11, w1.get(), NULL));
   scoped_ptr<Window> w111(CreateWindow(111, w11.get(), NULL));
   TestEventFilterWindowDelegate* d1111 = new TestEventFilterWindowDelegate;
   scoped_ptr<Window> w1111(CreateWindow(1111, w111.get(), d1111));
 
-  TestEventFilter* root_window_filter =
-      new TestEventFilter(RootWindow::GetInstance());
-  TestEventFilter* w1_filter = new TestEventFilter(w1.get());
-  TestEventFilter* w111_filter = new TestEventFilter(w111.get());
-  RootWindow::GetInstance()->SetEventFilter(root_window_filter);
+  TestEventFilter* root_window_filter = new TestEventFilter;
+  TestEventFilter* w1_filter = new TestEventFilter;
+  TestEventFilter* w111_filter = new TestEventFilter;
+  root_window()->SetEventFilter(root_window_filter);
   w1->SetEventFilter(w1_filter);
   w111->SetEventFilter(w111_filter);
 
-  w1111->GetFocusManager()->SetFocusedWindow(w1111.get());
+  w1111->GetFocusManager()->SetFocusedWindow(w1111.get(), NULL);
 
   // To start with, no one is going to consume any events. All three filters
   // and the w1111's delegate should receive the event.
-  EventGenerator generator(w1111.get());
+  EventGenerator generator(root_window(), w1111.get());
   generator.PressLeftButton();
   KeyEvent key_event(ui::ET_KEY_PRESSED, ui::VKEY_A, 0);
-  RootWindow::GetInstance()->DispatchKeyEvent(&key_event);
+  root_window()->AsRootWindowHostDelegate()->OnHostKeyEvent(&key_event);
 
   // TODO(sadrul): TouchEvent!
   EXPECT_EQ(1, root_window_filter->key_event_count());
@@ -133,7 +133,7 @@ TEST_F(EventFilterTest, Basic) {
   w1_filter->set_consumes_mouse_events(true);
 
   generator.ReleaseLeftButton();
-  RootWindow::GetInstance()->DispatchKeyEvent(&key_event);
+  root_window()->AsRootWindowHostDelegate()->OnHostKeyEvent(&key_event);
 
   // TODO(sadrul): TouchEvent!
   EXPECT_EQ(1, root_window_filter->key_event_count());

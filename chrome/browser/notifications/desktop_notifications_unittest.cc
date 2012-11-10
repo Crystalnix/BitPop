@@ -6,13 +6,16 @@
 
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/notifications/fake_balloon_view.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service.h"
 #include "content/public/common/show_desktop_notification_params.h"
 
 #if defined(USE_AURA)
+#include "ash/shell.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
+#include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #endif
 
@@ -50,7 +53,7 @@ Balloon* MockBalloonCollection::MakeBalloon(const Notification& notification,
                                             Profile* profile) {
   // Start with a normal balloon but mock out the view.
   Balloon* balloon = BalloonCollectionImpl::MakeBalloon(notification, profile);
-  balloon->set_view(new MockBalloonView(balloon));
+  balloon->set_view(new FakeBalloonView(balloon));
   balloons_.push_back(balloon);
   return balloon;
 }
@@ -89,14 +92,14 @@ DesktopNotificationsTest::~DesktopNotificationsTest() {
 }
 
 void DesktopNotificationsTest::SetUp() {
-#if defined(USE_AURA)
-  WebKit::initialize(&webkit_platform_support_);
+#if defined(USE_ASH)
+  WebKit::initialize(webkit_platform_support_.Get());
   // MockBalloonCollection retrieves information about the screen on creation.
   // So it is necessary to make sure the desktop gets created first.
-  aura::RootWindow::GetInstance();
+  ash::Shell::CreateInstance(NULL);
 #endif
 
-  browser::RegisterLocalState(&local_state_);
+  chrome::RegisterLocalState(&local_state_);
   profile_.reset(new TestingProfile());
   balloon_collection_ = new MockBalloonCollection();
   ui_manager_.reset(NotificationUIManager::Create(&local_state_,
@@ -109,8 +112,9 @@ void DesktopNotificationsTest::TearDown() {
   service_.reset(NULL);
   ui_manager_.reset(NULL);
   profile_.reset(NULL);
-#if defined(USE_AURA)
-  aura::RootWindow::DeleteInstance();
+#if defined(USE_ASH)
+  ash::Shell::DeleteInstance();
+  aura::Env::DeleteInstance();
   WebKit::shutdown();
 #endif
 }

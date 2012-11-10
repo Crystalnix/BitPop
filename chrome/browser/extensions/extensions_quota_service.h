@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,6 @@
 
 #ifndef CHROME_BROWSER_EXTENSIONS_EXTENSIONS_QUOTA_SERVICE_H_
 #define CHROME_BROWSER_EXTENSIONS_EXTENSIONS_QUOTA_SERVICE_H_
-#pragma once
 
 #include <list>
 #include <map>
@@ -22,6 +21,7 @@
 #include "base/compiler_specific.h"
 #include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/threading/non_thread_safe.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "base/values.h"
@@ -30,7 +30,17 @@ class ExtensionFunction;
 class QuotaLimitHeuristic;
 typedef std::list<QuotaLimitHeuristic*> QuotaLimitHeuristics;
 
-class ExtensionsQuotaService {
+namespace extensions {
+class TestResetQuotaFunction;
+}
+
+// The ExtensionsQuotaService takes care that calls to certain extension
+// functions do not exceed predefined quotas.
+//
+// The ExtensionsQuotaService needs to live entirely on one thread, i.e.
+// be created, called and destroyed on the same thread, due to its use
+// of a RepeatingTimer.
+class ExtensionsQuotaService : public base::NonThreadSafe {
  public:
   // Some concrete heuristics (declared below) that ExtensionFunctions can
   // use to help the service make decisions about quota violations.
@@ -38,7 +48,7 @@ class ExtensionsQuotaService {
   class SustainedLimit;
 
   ExtensionsQuotaService();
-  ~ExtensionsQuotaService();
+  virtual ~ExtensionsQuotaService();
 
   // Decide whether the invocation of |function| with argument |args| by the
   // extension specified by |extension_id| results in a quota limit violation.
@@ -47,8 +57,11 @@ class ExtensionsQuotaService {
   bool Assess(const std::string& extension_id, ExtensionFunction* function,
               const ListValue* args, const base::TimeTicks& event_time);
  private:
-  friend class ExtensionTestQuotaResetFunction;
-  typedef std::map<std::string, QuotaLimitHeuristics> FunctionHeuristicsMap;
+  friend class extensions::TestResetQuotaFunction;
+  typedef std::string ExtensionId;
+  typedef std::string FunctionName;
+  // All QuotaLimitHeuristic instances in this map are owned by us.
+  typedef std::map<FunctionName, QuotaLimitHeuristics> FunctionHeuristicsMap;
 
   // Purge resets all accumulated data (except |violators_|) as if the service
   // was just created. Called periodically so we don't consume an unbounded
@@ -65,7 +78,7 @@ class ExtensionsQuotaService {
   // key for the mapping.  As an extension invokes functions, the map keeps
   // track of which functions it has invoked and the heuristics for each one.
   // Each heuristic will be evaluated and ANDed together to get a final answer.
-  std::map<std::string, FunctionHeuristicsMap> function_heuristics_;
+  std::map<ExtensionId, FunctionHeuristicsMap> function_heuristics_;
 
   // For now, as soon as an extension violates quota, we don't allow it to
   // make any more requests to quota limited functions.  This provides a quick

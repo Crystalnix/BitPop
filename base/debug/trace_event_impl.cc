@@ -20,6 +20,7 @@
 #include "base/utf_string_conversions.h"
 #include "base/stl_util.h"
 #include "base/sys_info.h"
+#include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/time.h"
 
 #if defined(OS_WIN)
@@ -147,6 +148,7 @@ TraceEvent::TraceEvent()
       flags_(0) {
   arg_names_[0] = NULL;
   arg_names_[1] = NULL;
+  memset(arg_values_, 0, sizeof(arg_values_));
 }
 
 TraceEvent::TraceEvent(int thread_id,
@@ -320,8 +322,24 @@ TraceLog* TraceLog::GetInstance() {
 }
 
 TraceLog::TraceLog()
-    : enabled_(false) {
+    : enabled_(false)
+    , dispatching_to_observer_list_(false) {
+  // Trace is enabled or disabled on one thread while other threads are
+  // accessing the enabled flag. We don't care whether edge-case events are
+  // traced or not, so we allow races on the enabled flag to keep the trace
+  // macros fast.
+  // TODO(jbates): ANNOTATE_BENIGN_RACE_SIZED crashes windows TSAN bots:
+  // ANNOTATE_BENIGN_RACE_SIZED(g_category_enabled, sizeof(g_category_enabled),
+  //                            "trace_event category enabled");
+  for (int i = 0; i < TRACE_EVENT_MAX_CATEGORIES; ++i) {
+    ANNOTATE_BENIGN_RACE(&g_category_enabled[i],
+                         "trace_event category enabled");
+  }
+#if defined(OS_NACL)  // NaCl shouldn't expose the process id.
+  SetProcessID(0);
+#else
   SetProcessID(static_cast<int>(base::GetCurrentProcId()));
+#endif
 }
 
 TraceLog::~TraceLog() {
@@ -360,8 +378,6 @@ static void EnableMatchingCategory(int category_index,
     if (is_match)
       break;
   }
-  ANNOTATE_BENIGN_RACE(&g_category_enabled[category_index],
-                       "trace_event category enabled");
   g_category_enabled[category_index] = is_match ?
       is_included : (is_included ^ 1);
 }
@@ -400,8 +416,6 @@ const unsigned char* TraceLog::GetCategoryEnabledInternal(const char* name) {
       else
         EnableMatchingCategory(new_index, excluded_categories_, 0);
     } else {
-      ANNOTATE_BENIGN_RACE(&g_category_enabled[new_index],
-                           "trace_event category enabled");
       g_category_enabled[new_index] = 0;
     }
     return &g_category_enabled[new_index];
@@ -421,6 +435,18 @@ void TraceLog::SetEnabled(const std::vector<std::string>& included_categories,
   AutoLock lock(lock_);
   if (enabled_)
     return;
+
+  if (dispatching_to_observer_list_) {
+    DLOG(ERROR) <<
+        "Cannot manipulate TraceLog::Enabled state from an observer.";
+    return;
+  }
+
+  dispatching_to_observer_list_ = true;
+  FOR_EACH_OBSERVER(EnabledStateChangedObserver, enabled_state_observer_list_,
+                    OnTraceLogWillEnable());
+  dispatching_to_observer_list_ = false;
+
   logged_events_.reserve(1024);
   enabled_ = true;
   included_categories_ = included_categories;
@@ -470,6 +496,17 @@ void TraceLog::SetDisabled() {
     if (!enabled_)
       return;
 
+    if (dispatching_to_observer_list_) {
+      DLOG(ERROR)
+          << "Cannot manipulate TraceLog::Enabled state from an observer.";
+      return;
+    }
+
+    dispatching_to_observer_list_ = true;
+    FOR_EACH_OBSERVER(EnabledStateChangedObserver, enabled_state_observer_list_,
+                      OnTraceLogWillDisable());
+    dispatching_to_observer_list_ = false;
+
     enabled_ = false;
     included_categories_.clear();
     excluded_categories_.clear();
@@ -486,6 +523,15 @@ void TraceLog::SetEnabled(bool enabled) {
     SetEnabled(std::vector<std::string>(), std::vector<std::string>());
   else
     SetDisabled();
+}
+
+void TraceLog::AddEnabledStateObserver(EnabledStateChangedObserver* listener) {
+  enabled_state_observer_list_.AddObserver(listener);
+}
+
+void TraceLog::RemoveEnabledStateObserver(
+    EnabledStateChangedObserver* listener) {
+  enabled_state_observer_list_.RemoveObserver(listener);
 }
 
 float TraceLog::GetBufferPercentFull() const {
@@ -522,7 +568,7 @@ void TraceLog::Flush() {
     TraceEvent::AppendEventsAsJSON(previous_logged_events,
                                    i,
                                    kTraceEventBatchSize,
-                                   &(json_events_str_ptr->data));
+                                   &(json_events_str_ptr->data()));
     output_callback_copy.Run(json_events_str_ptr);
   }
 }
@@ -539,7 +585,7 @@ int TraceLog::AddTraceEvent(char phase,
                             long long threshold,
                             unsigned char flags) {
   DCHECK(name);
-  TimeTicks now = TimeTicks::HighResNow();
+  TimeTicks now = TimeTicks::NowFromSystemTraceTime();
   BufferFullCallback buffer_full_callback_copy;
   int ret_begin_id = -1;
   {
@@ -664,7 +710,7 @@ void TraceLog::AddClockSyncMetadataEvents() {
   // debugfs that takes the written data and pushes it onto the trace
   // buffer. So, to establish clock sync, we write our monotonic clock into that
   // trace buffer.
-  TimeTicks now = TimeTicks::HighResNow();
+  TimeTicks now = TimeTicks::NowFromSystemTraceTime();
 
   double now_in_seconds = now.ToInternalValue() / 1000000.0;
   std::string marker =

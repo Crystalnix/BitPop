@@ -13,6 +13,7 @@
 #include "ipc/ipc_message_macros.h"
 #include "printing/page_size_margins.h"
 #include "printing/print_job_constants.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintScalingOption.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 
@@ -38,9 +39,10 @@ struct PrintMsg_Print_Params {
   int document_cookie;
   bool selection_only;
   bool supports_alpha_blend;
-  std::string preview_ui_addr;
+  int32 preview_ui_id;
   int preview_request_id;
   bool is_first_request;
+  WebKit::WebPrintScalingOption print_scaling_option;
   bool print_to_pdf;
   bool display_header_footer;
   string16 date;
@@ -64,6 +66,7 @@ struct PrintMsg_PrintPages_Params {
 #define IPC_MESSAGE_START PrintMsgStart
 
 IPC_ENUM_TRAITS(printing::MarginType)
+IPC_ENUM_TRAITS(WebKit::WebPrintScalingOption)
 
 // Parameters for a render request.
 IPC_STRUCT_TRAITS_BEGIN(PrintMsg_Print_Params)
@@ -107,13 +110,16 @@ IPC_STRUCT_TRAITS_BEGIN(PrintMsg_Print_Params)
   // *** Parameters below are used only for print preview. ***
 
   // The print preview ui associated with this request.
-  IPC_STRUCT_TRAITS_MEMBER(preview_ui_addr)
+  IPC_STRUCT_TRAITS_MEMBER(preview_ui_id)
 
   // The id of the preview request.
   IPC_STRUCT_TRAITS_MEMBER(preview_request_id)
 
   // True if this is the first preview request.
   IPC_STRUCT_TRAITS_MEMBER(is_first_request)
+
+  // Specifies the page scaling option for preview printing.
+  IPC_STRUCT_TRAITS_MEMBER(print_scaling_option)
 
   // True if print to pdf is requested.
   IPC_STRUCT_TRAITS_MEMBER(print_to_pdf)
@@ -245,7 +251,6 @@ IPC_STRUCT_END()
 
 // Parameters for the IPC message ViewHostMsg_ScriptedPrint
 IPC_STRUCT_BEGIN(PrintHostMsg_ScriptedPrint_Params)
-  IPC_STRUCT_MEMBER(gfx::NativeViewId, host_window_id)
   IPC_STRUCT_MEMBER(int, cookie)
   IPC_STRUCT_MEMBER(int, expected_pages_count)
   IPC_STRUCT_MEMBER(bool, has_selection)
@@ -276,8 +281,9 @@ IPC_MESSAGE_ROUTED0(PrintMsg_PrintPages)
 IPC_MESSAGE_ROUTED1(PrintMsg_PrintingDone,
                     bool /* success */)
 
-// Tells the render view that preview printing request has been cancelled.
-IPC_MESSAGE_ROUTED0(PrintMsg_PreviewPrintingRequestCancelled)
+// Tells the render view whether scripted printing is blocked or not.
+IPC_MESSAGE_ROUTED1(PrintMsg_SetScriptedPrintingBlocked,
+                    bool /* blocked */)
 
 // Tells the render view to switch the CSS to print media type, renders every
 // requested pages for print preview using the given |settings|. This gets
@@ -346,7 +352,8 @@ IPC_SYNC_MESSAGE_ROUTED1_1(PrintHostMsg_ScriptedPrint,
 IPC_SYNC_MESSAGE_CONTROL0_2(PrintHostMsg_AllocateTempFileForPrinting,
                             base::FileDescriptor /* temp file fd */,
                             int /* fd in browser*/)
-IPC_MESSAGE_CONTROL1(PrintHostMsg_TempFileForPrintingWritten,
+IPC_MESSAGE_CONTROL2(PrintHostMsg_TempFileForPrintingWritten,
+                     int /* render_view_id */,
                      int /* fd in browser */)
 #endif
 
@@ -365,10 +372,12 @@ IPC_MESSAGE_ROUTED1(PrintHostMsg_DidGetPreviewPageCount,
 
 // Notify the browser of the default page layout according to the currently
 // selected printer and page size.
+// |printable_area_in_points| Specifies the printable area in points.
 // |has_custom_page_size_style| is true when the printing frame has a custom
 // page size css otherwise false.
-IPC_MESSAGE_ROUTED2(PrintHostMsg_DidGetDefaultPageLayout,
+IPC_MESSAGE_ROUTED3(PrintHostMsg_DidGetDefaultPageLayout,
                     printing::PageSizeMargins /* page layout in points */,
+                    gfx::Rect /* printable area in points */,
                     bool /* has custom page size style */)
 
 // Notify the browser a print preview page has been rendered.
@@ -377,7 +386,7 @@ IPC_MESSAGE_ROUTED1(PrintHostMsg_DidPreviewPage,
 
 // Asks the browser whether the print preview has been cancelled.
 IPC_SYNC_MESSAGE_ROUTED2_1(PrintHostMsg_CheckForCancel,
-                           std::string /* print preview ui address */,
+                           int32 /* PrintPreviewUI ID */,
                            int /* request id */,
                            bool /* print preview cancelled */)
 
@@ -409,3 +418,7 @@ IPC_MESSAGE_ROUTED1(PrintHostMsg_PrintPreviewInvalidPrinterSettings,
 // window.print() finishes.
 IPC_SYNC_MESSAGE_ROUTED1_0(PrintHostMsg_ScriptedPrintPreview,
                            bool /* is_modifiable */)
+
+// Notify the browser that the PDF in the initiator renderer has disabled print
+// scaling option.
+IPC_MESSAGE_ROUTED0(PrintHostMsg_PrintPreviewScalingDisabled)

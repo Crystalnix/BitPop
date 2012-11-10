@@ -9,16 +9,11 @@
 
 #ifndef CHROME_BROWSER_BROWSER_PROCESS_H_
 #define CHROME_BROWSER_BROWSER_PROCESS_H_
-#pragma once
 
 #include <string>
-#include <vector>
 
 #include "base/basictypes.h"
-#include "base/memory/ref_counted.h"
-#include "ipc/ipc_message.h"
 
-class AudioManager;
 class AutomationProviderList;
 class BackgroundModeManager;
 class ChromeNetLog;
@@ -26,32 +21,40 @@ class CRLSetFetcher;
 class ComponentUpdateService;
 class DownloadRequestLimiter;
 class DownloadStatusUpdater;
-class ExtensionEventRouterForwarder;
-class GoogleURLTracker;
 class IconManager;
 class IntranetRedirectDetector;
 class IOThread;
 class MetricsService;
-class MHTMLGenerationManager;
 class NotificationUIManager;
 class PrefService;
 class Profile;
 class ProfileManager;
-class ResourceDispatcherHost;
 class SafeBrowsingService;
 class StatusTray;
-class TabCloseableStateWatcher;
 class ThumbnailGenerator;
 class WatchDogThread;
 
 #if defined(OS_CHROMEOS)
-namespace browser {
+namespace chromeos {
 class OomPriorityManager;
 }
 #endif  // defined(OS_CHROMEOS)
 
+namespace chrome_variations {
+class VariationsService;
+}
+
+namespace extensions {
+class EventRouterForwarder;
+}
+
 namespace net {
 class URLRequestContextGetter;
+}
+
+namespace policy {
+class BrowserPolicyConnector;
+class PolicyService;
 }
 
 namespace prerender {
@@ -62,10 +65,6 @@ namespace printing {
 class BackgroundPrintingManager;
 class PrintJobManager;
 class PrintPreviewTabController;
-}
-
-namespace policy {
-class BrowserPolicyConnector;
 }
 
 namespace safe_browsing {
@@ -98,13 +97,14 @@ class BrowserProcess {
   virtual PrefService* local_state() = 0;
   virtual ui::Clipboard* clipboard() = 0;
   virtual net::URLRequestContextGetter* system_request_context() = 0;
+  virtual chrome_variations::VariationsService* variations_service() = 0;
 
 #if defined(OS_CHROMEOS)
   // Returns the out-of-memory priority manager.
-  virtual browser::OomPriorityManager* oom_priority_manager() = 0;
+  virtual chromeos::OomPriorityManager* oom_priority_manager() = 0;
 #endif  // defined(OS_CHROMEOS)
 
-  virtual ExtensionEventRouterForwarder*
+  virtual extensions::EventRouterForwarder*
       extension_event_router_forwarder() = 0;
 
   // Returns the manager for desktop notifications.
@@ -123,7 +123,12 @@ class BrowserProcess {
   // Returns the thread that is used for health check of all browser threads.
   virtual WatchDogThread* watchdog_thread() = 0;
 
+  // Starts and manages the policy system.
   virtual policy::BrowserPolicyConnector* browser_policy_connector() = 0;
+
+  // This is the main interface for chromium components to retrieve policy
+  // information from the policy system.
+  virtual policy::PolicyService* policy_service() = 0;
 
   virtual IconManager* icon_manager() = 0;
 
@@ -148,7 +153,6 @@ class BrowserProcess {
   virtual printing::BackgroundPrintingManager*
       background_printing_manager() = 0;
 
-  virtual GoogleURLTracker* google_url_tracker() = 0;
   virtual IntranetRedirectDetector* intranet_redirect_detector() = 0;
 
   // Returns the locale used by the application.
@@ -157,9 +161,6 @@ class BrowserProcess {
 
   virtual DownloadStatusUpdater* download_status_updater() = 0;
   virtual DownloadRequestLimiter* download_request_limiter() = 0;
-
-  // Returns the object that watches for changes in the closeable state of tab.
-  virtual TabCloseableStateWatcher* tab_closeable_state_watcher() = 0;
 
   // Returns the object that manages background applications.
   virtual BackgroundModeManager* background_mode_manager() = 0;
@@ -196,13 +197,9 @@ class BrowserProcess {
 
   virtual prerender::PrerenderTracker* prerender_tracker() = 0;
 
-  virtual MHTMLGenerationManager* mhtml_generation_manager() = 0;
-
   virtual ComponentUpdateService* component_updater() = 0;
 
   virtual CRLSetFetcher* crl_set_fetcher() = 0;
-
-  virtual AudioManager* audio_manager() = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BrowserProcess);

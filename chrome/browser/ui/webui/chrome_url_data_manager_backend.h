@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_WEBUI_CHROME_URL_DATA_MANAGER_BACKEND_H_
 #define CHROME_BROWSER_UI_WEBUI_CHROME_URL_DATA_MANAGER_BACKEND_H_
-#pragma once
 
 #include <map>
 #include <string>
@@ -15,18 +14,17 @@
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "net/url_request/url_request_job_factory.h"
 
-class ChromeAppCacheService;
 class ChromeURLDataManagerBackend;
 class GURL;
-class RefCountedMemory;
 class URLRequestChromeJob;
+
+namespace base {
+class RefCountedMemory;
+}
 
 namespace net {
 class URLRequest;
 class URLRequestJob;
-}
-namespace webkit_blob {
-class BlobStorageController;
 }
 
 // ChromeURLDataManagerBackend is used internally by ChromeURLDataManager on the
@@ -42,15 +40,13 @@ class ChromeURLDataManagerBackend {
 
   // Invoked to create the protocol handler for chrome://.
   static net::URLRequestJobFactory::ProtocolHandler* CreateProtocolHandler(
-      ChromeURLDataManagerBackend* backend,
-      ChromeAppCacheService* appcache_service,
-      webkit_blob::BlobStorageController* blob_storage_controller);
+      ChromeURLDataManagerBackend* backend);
 
   // Adds a DataSource to the collection of data sources.
   void AddDataSource(ChromeURLDataManager::DataSource* source);
 
   // DataSource invokes this. Sends the data to the URLRequest.
-  void DataAvailable(RequestID request_id, RefCountedMemory* bytes);
+  void DataAvailable(RequestID request_id, base::RefCountedMemory* bytes);
 
   static net::URLRequestJob* Factory(net::URLRequest* request,
                                      const std::string& scheme);

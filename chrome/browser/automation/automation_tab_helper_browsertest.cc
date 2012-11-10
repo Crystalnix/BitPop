@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,19 +12,21 @@
 #include "chrome/browser/automation/automation_tab_helper.h"
 #include "chrome/browser/automation/mock_tab_event_observer.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/browser/renderer_host/render_view_host.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/browser_test_utils.h"
 #include "net/base/net_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -52,10 +54,8 @@ class MockNotificationObserver : public content::NotificationObserver {
 
 class AutomationTabHelperBrowserTest : public InProcessBrowserTest {
  public:
-  AutomationTabHelperBrowserTest() {
-    EnableDOMAutomation();
-  }
-  virtual ~AutomationTabHelperBrowserTest() { }
+  AutomationTabHelperBrowserTest() {}
+  virtual ~AutomationTabHelperBrowserTest() {}
 
   void SetUpInProcessBrowserTestFixture() {
     EXPECT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir_));
@@ -69,14 +69,14 @@ class AutomationTabHelperBrowserTest : public InProcessBrowserTest {
       MockTabEventObserver* mock_tab_observer,
       MockNotificationObserver* mock_notification_observer) {
     mock_notification_observer->Register(
-        chrome::NOTIFICATION_DOM_OPERATION_RESPONSE,
+        content::NOTIFICATION_DOM_OPERATION_RESPONSE,
         content::NotificationService::AllSources());
 
     testing::InSequence expect_in_sequence;
     EXPECT_CALL(*mock_tab_observer, OnFirstPendingLoad(_));
     EXPECT_CALL(*mock_notification_observer, Observe(
         testing::Eq(
-            static_cast<int>(chrome::NOTIFICATION_DOM_OPERATION_RESPONSE)),
+            static_cast<int>(content::NOTIFICATION_DOM_OPERATION_RESPONSE)),
             _, _));
     EXPECT_CALL(*mock_tab_observer, OnNoMorePendingLoads(_))
         .WillOnce(testing::InvokeWithoutArgs(
@@ -90,10 +90,10 @@ class AutomationTabHelperBrowserTest : public InProcessBrowserTest {
   void RunTestCaseInJavaScript(int test_case_number, bool wait_for_response) {
     std::string script = base::StringPrintf("runTestCase(%d);",
                                             test_case_number);
-    RenderViewHost* host =
-        browser()->GetSelectedWebContents()->GetRenderViewHost();
+    content::RenderViewHost* host =
+        chrome::GetActiveWebContents(browser())->GetRenderViewHost();
     if (wait_for_response) {
-      ASSERT_TRUE(ui_test_utils::ExecuteJavaScript(
+      ASSERT_TRUE(content::ExecuteJavaScript(
           host, L"", ASCIIToWide(script)));
     } else {
       script += "window.domAutomationController.setAutomationId(0);"
@@ -104,7 +104,7 @@ class AutomationTabHelperBrowserTest : public InProcessBrowserTest {
 
   // Returns the |AutomationTabHelper| for the first browser's first tab.
   AutomationTabHelper* tab_helper() {
-    return browser()->GetTabContentsWrapperAt(0)->automation_tab_helper();
+    return chrome::GetTabContentsAt(browser(), 0)->automation_tab_helper();
   }
 
  protected:
@@ -121,7 +121,7 @@ IN_PROC_BROWSER_TEST_F(AutomationTabHelperBrowserTest, FormSubmission) {
   ExpectClientRedirectAndBreak(&mock_observer, &mock_notification_observer);
 
   ASSERT_NO_FATAL_FAILURE(RunTestCaseInJavaScript(1, false));
-  ui_test_utils::RunMessageLoop();
+  content::RunMessageLoop();
 }
 
 IN_PROC_BROWSER_TEST_F(AutomationTabHelperBrowserTest,
@@ -149,7 +149,7 @@ IN_PROC_BROWSER_TEST_F(AutomationTabHelperBrowserTest,
   ExpectClientRedirectAndBreak(&mock_observer, &mock_notification_observer);
 
   ASSERT_NO_FATAL_FAILURE(RunTestCaseInJavaScript(3, false));
-  ui_test_utils::RunMessageLoop();
+  content::RunMessageLoop();
 }
 
 IN_PROC_BROWSER_TEST_F(AutomationTabHelperBrowserTest,
@@ -163,7 +163,7 @@ IN_PROC_BROWSER_TEST_F(AutomationTabHelperBrowserTest,
   ExpectClientRedirectAndBreak(&mock_observer, &mock_notification_observer);
 
   ASSERT_NO_FATAL_FAILURE(RunTestCaseInJavaScript(4, false));
-  ui_test_utils::RunMessageLoop();
+  content::RunMessageLoop();
 }
 
 IN_PROC_BROWSER_TEST_F(AutomationTabHelperBrowserTest,
@@ -185,7 +185,7 @@ IN_PROC_BROWSER_TEST_F(AutomationTabHelperBrowserTest,
                        LoadStopComesAfterOnLoad) {
   MockNotificationObserver mock_notification_observer;
   mock_notification_observer.Register(
-      chrome::NOTIFICATION_DOM_OPERATION_RESPONSE,
+      content::NOTIFICATION_DOM_OPERATION_RESPONSE,
       content::NotificationService::AllSources());
   MockTabEventObserver mock_tab_observer(tab_helper());
 
@@ -194,7 +194,7 @@ IN_PROC_BROWSER_TEST_F(AutomationTabHelperBrowserTest,
     testing::InSequence expect_in_sequence;
     EXPECT_CALL(mock_notification_observer, Observe(
         testing::Eq(
-            static_cast<int>(chrome::NOTIFICATION_DOM_OPERATION_RESPONSE)),
+            static_cast<int>(content::NOTIFICATION_DOM_OPERATION_RESPONSE)),
             _, _));
     EXPECT_CALL(mock_tab_observer, OnNoMorePendingLoads(_));
   }

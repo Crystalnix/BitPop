@@ -4,54 +4,75 @@
 
 #ifndef CHROME_BROWSER_EXTENSIONS_API_SOCKET_SOCKET_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_SOCKET_SOCKET_API_H_
-#pragma once
 
-#include "chrome/browser/extensions/extension_function.h"
+#include "base/memory/ref_counted.h"
+#include "chrome/browser/extensions/api/api_function.h"
+#include "chrome/browser/extensions/api/api_resource_manager.h"
+#include "chrome/common/extensions/api/socket.h"
+#include "net/base/address_list.h"
+#include "net/base/host_resolver.h"
 
 #include <string>
 
+class IOThread;
+
+namespace net {
+class IOBuffer;
+}
+
 namespace extensions {
 
-class SocketController;
+class ApiResourceEventNotifier;
+class Socket;
 
-extern const char kBytesWrittenKey[];
-extern const char kSocketIdKey[];
-extern const char kUdpSocketType[];
+class SocketAsyncApiFunction : public AsyncApiFunction {
+ public:
+  SocketAsyncApiFunction();
 
-class SocketApiFunction : public AsyncExtensionFunction {
  protected:
-  // Set up for work. Guaranteed to happen on UI thread.
-  virtual bool Prepare() = 0;
+  virtual ~SocketAsyncApiFunction();
 
-  // Do actual work. Guaranteed to happen on IO thread.
-  virtual void Work() = 0;
+  // AsyncApiFunction:
+  virtual bool PrePrepare() OVERRIDE;
+  virtual bool Respond() OVERRIDE;
 
-  // Respond. Guaranteed to happen on UI thread.
-  virtual bool Respond() = 0;
-
-  virtual bool RunImpl() OVERRIDE;
-
-  SocketController* controller();
-
- private:
-  void WorkOnIOThread();
-  void RespondOnUIThread();
+  ApiResourceManager<Socket>* manager_;
 };
 
-// Many of these socket functions are synchronous in the sense that
-// they don't involve blocking operations, but we've made them all
-// AsyncExtensionFunctions because the underlying UDPClientSocket
-// library wants all operations to happen on the same thread as the
-// one that created the socket. Too bad.
+class SocketExtensionWithDnsLookupFunction : public SocketAsyncApiFunction {
+ protected:
+  SocketExtensionWithDnsLookupFunction();
+  virtual ~SocketExtensionWithDnsLookupFunction();
 
-class SocketCreateFunction : public SocketApiFunction {
+  void StartDnsLookup(const std::string& hostname);
+  virtual void AfterDnsLookup(int lookup_result) = 0;
+
+  std::string resolved_address_;
+
+ private:
+  void OnDnsLookup(int resolve_result);
+
+  // This instance is widely available through BrowserProcess, but we need to
+  // acquire it on the UI thread and then use it on the IO thread, so we keep a
+  // plain pointer to it here as we move from thread to thread.
+  IOThread* io_thread_;
+
+  scoped_ptr<net::HostResolver::RequestHandle> request_handle_;
+  scoped_ptr<net::AddressList> addresses_;
+};
+
+class SocketCreateFunction : public SocketAsyncApiFunction {
  public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.create")
+
   SocketCreateFunction();
 
  protected:
+  virtual ~SocketCreateFunction();
+
+  // AsyncApiFunction:
   virtual bool Prepare() OVERRIDE;
   virtual void Work() OVERRIDE;
-  virtual bool Respond() OVERRIDE;
 
  private:
   enum SocketType {
@@ -60,73 +81,219 @@ class SocketCreateFunction : public SocketApiFunction {
     kSocketTypeUDP
   };
 
-  int src_id_;
+  scoped_ptr<api::socket::Create::Params> params_;
   SocketType socket_type_;
+  int src_id_;
+  ApiResourceEventNotifier* event_notifier_;
+};
+
+class SocketDestroyFunction : public SocketAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.destroy")
+
+ protected:
+  virtual ~SocketDestroyFunction() {}
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void Work() OVERRIDE;
+
+ private:
+  int socket_id_;
+};
+
+class SocketConnectFunction : public SocketExtensionWithDnsLookupFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.connect")
+
+  SocketConnectFunction();
+
+ protected:
+  virtual ~SocketConnectFunction();
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void AsyncWorkStart() OVERRIDE;
+
+  // SocketExtensionWithDnsLookupFunction:
+  virtual void AfterDnsLookup(int lookup_result) OVERRIDE;
+
+ private:
+  void StartConnect();
+  void OnConnect(int result);
+
+  int socket_id_;
+  std::string hostname_;
+  int port_;
+};
+
+class SocketDisconnectFunction : public SocketAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.disconnect")
+
+ protected:
+  virtual ~SocketDisconnectFunction() {}
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void Work() OVERRIDE;
+
+ private:
+  int socket_id_;
+};
+
+class SocketBindFunction : public SocketAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.bind")
+
+ protected:
+  virtual ~SocketBindFunction() {}
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void Work() OVERRIDE;
+
+ private:
+  int socket_id_;
   std::string address_;
   int port_;
-
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.socket.create")
 };
 
-class SocketDestroyFunction : public SocketApiFunction {
+class SocketReadFunction : public SocketAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.read")
+
+  SocketReadFunction();
+
  protected:
+  virtual ~SocketReadFunction();
+
+  // AsyncApiFunction:
   virtual bool Prepare() OVERRIDE;
-  virtual void Work() OVERRIDE;
-  virtual bool Respond() OVERRIDE;
+  virtual void AsyncWorkStart() OVERRIDE;
+  void OnCompleted(int result, scoped_refptr<net::IOBuffer> io_buffer);
+
+ private:
+  scoped_ptr<api::socket::Read::Params> params_;
+};
+
+class SocketWriteFunction : public SocketAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.write")
+
+  SocketWriteFunction();
+
+ protected:
+  virtual ~SocketWriteFunction();
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void AsyncWorkStart() OVERRIDE;
+  void OnCompleted(int result);
 
  private:
   int socket_id_;
-
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.socket.destroy")
+  scoped_refptr<net::IOBuffer> io_buffer_;
+  size_t io_buffer_size_;
 };
 
-class SocketConnectFunction : public SocketApiFunction {
+class SocketRecvFromFunction : public SocketAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.recvFrom")
+
+  SocketRecvFromFunction();
+
  protected:
+  virtual ~SocketRecvFromFunction();
+
+  // AsyncApiFunction
   virtual bool Prepare() OVERRIDE;
-  virtual void Work() OVERRIDE;
-  virtual bool Respond() OVERRIDE;
+  virtual void AsyncWorkStart() OVERRIDE;
+  void OnCompleted(int result,
+                   scoped_refptr<net::IOBuffer> io_buffer,
+                   const std::string& address,
+                   int port);
 
  private:
-  int socket_id_;
-
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.socket.connect")
+  scoped_ptr<api::socket::RecvFrom::Params> params_;
 };
 
-class SocketDisconnectFunction : public SocketApiFunction {
+class SocketSendToFunction : public SocketExtensionWithDnsLookupFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.sendTo")
+
+  SocketSendToFunction();
+
  protected:
+  virtual ~SocketSendToFunction();
+
+  // AsyncApiFunction:
   virtual bool Prepare() OVERRIDE;
-  virtual void Work() OVERRIDE;
-  virtual bool Respond() OVERRIDE;
+  virtual void AsyncWorkStart() OVERRIDE;
+  void OnCompleted(int result);
+
+  // SocketExtensionWithDnsLookupFunction:
+  virtual void AfterDnsLookup(int lookup_result) OVERRIDE;
 
  private:
-  int socket_id_;
+  void StartSendTo();
 
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.socket.disconnect")
+  int socket_id_;
+  scoped_refptr<net::IOBuffer> io_buffer_;
+  size_t io_buffer_size_;
+  std::string hostname_;
+  int port_;
 };
 
-class SocketReadFunction : public SocketApiFunction {
+class SocketSetKeepAliveFunction : public SocketAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.setKeepAlive")
+
+  SocketSetKeepAliveFunction();
+
  protected:
+  virtual ~SocketSetKeepAliveFunction();
+
+  // AsyncApiFunction:
   virtual bool Prepare() OVERRIDE;
   virtual void Work() OVERRIDE;
-  virtual bool Respond() OVERRIDE;
 
  private:
-  int socket_id_;
-
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.socket.read")
+  scoped_ptr<api::socket::SetKeepAlive::Params> params_;
 };
 
-class SocketWriteFunction : public SocketApiFunction {
+class SocketSetNoDelayFunction : public SocketAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.setNoDelay")
+
+  SocketSetNoDelayFunction();
+
  protected:
+  virtual ~SocketSetNoDelayFunction();
+
+  // AsyncApiFunction:
   virtual bool Prepare() OVERRIDE;
   virtual void Work() OVERRIDE;
-  virtual bool Respond() OVERRIDE;
 
  private:
-  int socket_id_;
-  std::string message_;
+  scoped_ptr<api::socket::SetNoDelay::Params> params_;
+};
 
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.socket.write")
+class SocketGetInfoFunction : public SocketAsyncApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION_NAME("socket.getInfo");
+
+  SocketGetInfoFunction();
+
+ protected:
+  virtual ~SocketGetInfoFunction();
+
+  // AsyncApiFunction:
+  virtual bool Prepare() OVERRIDE;
+  virtual void Work() OVERRIDE;
+
+ private:
+  scoped_ptr<api::socket::GetInfo::Params> params_;
 };
 
 }  // namespace extensions

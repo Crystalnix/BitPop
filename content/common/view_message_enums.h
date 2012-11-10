@@ -1,73 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_COMMON_VIEW_MESSAGES_ENUMS_H_
 #define CONTENT_COMMON_VIEW_MESSAGES_ENUMS_H_
 
-struct ViewHostMsg_AccEvent {
-  enum Value {
-    // The active descendant of a node has changed.
-    ACTIVE_DESCENDANT_CHANGED,
-
-    // An alert appeared.
-    ALERT,
-
-    // The node checked state has changed.
-    CHECK_STATE_CHANGED,
-
-    // The node tree structure has changed.
-    CHILDREN_CHANGED,
-
-    // The node in focus has changed.
-    FOCUS_CHANGED,
-
-    // Page layout has completed.
-    LAYOUT_COMPLETE,
-
-    // Content within a part of the page marked as a live region changed.
-    LIVE_REGION_CHANGED,
-
-    // The document node has loaded.
-    LOAD_COMPLETE,
-
-    // A menu list value changed.
-    MENU_LIST_VALUE_CHANGED,
-
-    // An object was shown.
-    OBJECT_SHOW,
-
-    // An object was hidden.
-    OBJECT_HIDE,
-
-    // The number of rows in a grid or tree control changed.
-    ROW_COUNT_CHANGED,
-
-    // A row in a grid or tree control was collapsed.
-    ROW_COLLAPSED,
-
-    // A row in a grid or tree control was expanded.
-    ROW_EXPANDED,
-
-    // The document was scrolled to an anchor node.
-    SCROLLED_TO_ANCHOR,
-
-    // One or more selected children of this node have changed.
-    SELECTED_CHILDREN_CHANGED,
-
-    // The text cursor or selection changed.
-    SELECTED_TEXT_CHANGED,
-
-    // Text was inserted in a node with text content.
-    TEXT_INSERTED,
-
-    // Text was removed in a node with text content.
-    TEXT_REMOVED,
-
-    // The node value has changed.
-    VALUE_CHANGED,
-  };
-};
+#include "ipc/ipc_message_macros.h"
 
 // Values that may be OR'd together to form the 'flags' parameter of a
 // ViewHostMsg_UpdateRect_Params structure.
@@ -97,6 +35,9 @@ struct ViewMsg_Navigate_Type {
     // Reload the page, ignoring any cache entries.
     RELOAD_IGNORING_CACHE,
 
+    // Reload the page using the original request URL.
+    RELOAD_ORIGINAL_REQUEST_URL,
+
     // The navigation is the result of session restore and should honor the
     // page's cache policy while restoring form state. This is set to true if
     // restoring a tab/session from the previous session and the previous
@@ -104,9 +45,27 @@ struct ViewMsg_Navigate_Type {
     // the page's cache policy is ignored and we load from the cache.
     RESTORE,
 
+    // Like RESTORE, except that the navigation contains POST data.
+    RESTORE_WITH_POST,
+
     // Navigation type not categorized by the other types.
     NORMAL
   };
+};
+
+enum AccessibilityMode {
+  // WebKit accessibility is off and no accessibility information is
+  // sent from the renderer to the browser process.
+  AccessibilityModeOff,
+
+  // WebKit accessibility is on, but only limited information about
+  // editable text nodes is sent to the browser process. Useful for
+  // implementing limited UIA on tablets.
+  AccessibilityModeEditableTextOnly,
+
+  // WebKit accessibility is on, and the full accessibility tree is synced
+  // to the browser process. Useful for screen readers and magnifiers.
+  AccessibilityModeComplete,
 };
 
 #endif  // CONTENT_COMMON_VIEW_MESSAGES_ENUMS_H_

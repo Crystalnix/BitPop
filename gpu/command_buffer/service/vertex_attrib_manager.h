@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,17 +8,18 @@
 #include "build/build_config.h"
 #include "gpu/command_buffer/service/buffer_manager.h"
 #include "gpu/command_buffer/service/gl_utils.h"
+#include "gpu/gpu_export.h"
 
 namespace gpu {
 namespace gles2 {
 
 // Manages vertex attributes.
-class VertexAttribManager {
+class GPU_EXPORT VertexAttribManager {
  public:
   // Info about Vertex Attributes. This is used to track what the user currently
   // has bound on each Vertex Attribute so that checking can be done at
   // glDrawXXX time.
-  class VertexAttribInfo {
+  class GPU_EXPORT VertexAttribInfo {
    public:
     typedef std::list<VertexAttribInfo*> VertexAttribInfoList;
     struct Vec4 {
@@ -59,6 +60,10 @@ class VertexAttribManager {
       return gl_stride_;
     }
 
+    GLuint divisor() const {
+      return divisor_;
+    }
+
     bool enabled() const {
       return enabled_;
     }
@@ -69,6 +74,13 @@ class VertexAttribManager {
 
     const Vec4& value() const {
       return value_;
+    }
+
+    // Find the maximum vertex accessed, accounting for instancing.
+    GLuint MaxVertexAccessed(GLsizei primcount,
+                             GLuint max_vertex_accessed) const {
+      return (primcount && divisor_) ? ((primcount - 1) / divisor_) :
+                                       max_vertex_accessed;
     }
 
    private:
@@ -111,6 +123,10 @@ class VertexAttribManager {
       offset_ = offset;
     }
 
+    void SetDivisor(GLsizei divisor) {
+      divisor_ = divisor;
+    }
+
     void Unbind(BufferManager::BufferInfo* buffer) {
       if (buffer_ == buffer) {
         buffer_ = NULL;
@@ -141,6 +157,8 @@ class VertexAttribManager {
     // stide, NOT the GL bogus stride. In other words there is never a stride
     // of 0.
     GLsizei real_stride_;
+
+    GLsizei divisor_;
 
     // The current value of the attrib.
     Vec4 value_;
@@ -198,6 +216,13 @@ class VertexAttribManager {
       }
       info->SetInfo(
           buffer, size, type, normalized, gl_stride, real_stride, offset);
+    }
+  }
+
+  void SetDivisor(GLuint index, GLuint divisor) {
+    VertexAttribInfo* info = GetVertexAttribInfo(index);
+    if (info) {
+      info->SetDivisor(divisor);
     }
   }
 

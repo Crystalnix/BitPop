@@ -4,7 +4,6 @@
 
 #ifndef CHROME_BROWSER_HISTORY_VISIT_DATABASE_H_
 #define CHROME_BROWSER_HISTORY_VISIT_DATABASE_H_
-#pragma once
 
 #include "chrome/browser/history/history_types.h"
 
@@ -14,6 +13,8 @@ class Statement;
 }
 
 namespace history {
+
+class VisitFilter;
 
 // A visit database is one which stores visits for URLs, that is, times and
 // linking information. A visit database must also be a URLDatabase, as this
@@ -102,6 +103,17 @@ class VisitDatabase {
                                int max_count,
                                VisitVector* visits);
 
+  // Fills all visits in the given time ranges into the given vector that are
+  // visits made directly by the user (typed or bookmarked visits only). The
+  // begin time is inclusive, the end time is exclusive.
+  //
+  // Up to |max_count| visits will be returned. If there are more visits than
+  // that, the most recent |max_count| will be returned. If 0, all visits in the
+  // range will be computed.
+  void GetDirectVisitsDuringTimes(const VisitFilter& time_filter,
+                                   int max_count,
+                                   VisitVector* visits);
+
   // Returns the visit ID for the most recent visit of the given URL ID, or 0
   // if there is no visit for the URL.
   //
@@ -156,6 +168,12 @@ class VisitDatabase {
   void GetVisitsSource(const VisitVector& visits,
                        VisitSourceMap* sources);
 
+  // Obtains BriefVisitInfo for the specified number of most recent visits
+  // from the visit database.
+  void GetBriefVisitInfoOfMostRecentVisits(
+      int max_visits,
+      std::vector<BriefVisitInfo>* result_vector);
+
  protected:
   // Returns the database for the functions in this interface.
   virtual sql::Connection& GetDB() = 0;
@@ -172,7 +190,12 @@ class VisitDatabase {
   // hasn't happened yet.
   static bool FillVisitVector(sql::Statement& statement, VisitVector* visits);
 
+  // Called by the derived classes to migrate the older visits table which
+  // don't have visit_duration column yet.
+  bool MigrateVisitsWithoutDuration();
+
  private:
+
   DISALLOW_COPY_AND_ASSIGN(VisitDatabase);
 };
 
