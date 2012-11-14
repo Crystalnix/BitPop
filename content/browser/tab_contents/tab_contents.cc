@@ -848,6 +848,8 @@ bool TabContents::NavigateToEntry(
 #if defined(OS_CHROMEOS)
   is_allowed_in_web_ui_renderer |= entry.GetURL().SchemeIs(chrome::kDataScheme);
 #endif
+  DLOG(INFO) << entry.GetURL().spec();
+
   CHECK(!(enabled_bindings & content::BINDINGS_POLICY_WEB_UI) ||
         is_allowed_in_web_ui_renderer);
 

@@ -1,5 +1,4 @@
 *.Makefile
-*.gypcmd
 *.mk
 *.ncb
 *.ninja

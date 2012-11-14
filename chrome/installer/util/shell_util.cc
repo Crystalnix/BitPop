@@ -1114,7 +1114,7 @@ bool ShellUtil::GetQuickLaunchPath(bool system_level, FilePath* path) {
   if (system_level) {
     wchar_t qlaunch[MAX_PATH];
     // We are accessing GetDefaultUserProfileDirectory this way so that we do
-    // not have to declare dependency to Userenv.lib for chrome.exe
+    // not have to declare dependency to Userenv.lib for bitpop.exe
     typedef BOOL (WINAPI *PROFILE_FUNC)(LPWSTR, LPDWORD);
     HMODULE module = LoadLibrary(L"Userenv.dll");
     PROFILE_FUNC p = reinterpret_cast<PROFILE_FUNC>(GetProcAddress(module,

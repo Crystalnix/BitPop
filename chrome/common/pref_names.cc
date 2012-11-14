@@ -2042,4 +2042,7 @@ const char kMacLeopardObsoleteInfobarLastShown[] =
     "mac_105_obsolete_infobar_last_shown";
 #endif  // defined(OS_MACOSX)
 
+const char kAutomaticUpdatesEnabled[] = "automatic_updates.enabled";
+const char kFacebookShowFriendsList[] = "facebook.showFriendsList";
+
 }  // namespace prefs

@@ -11,6 +11,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/browser_actions_container.h"
 #include "chrome/browser/ui/views/toolbar_view.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
@@ -56,6 +57,13 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
   set_alignment(TextButton::ALIGN_CENTER);
   set_context_menu_controller(this);
 
+  if (extension->id() == chrome::kFacebookChatExtensionId) {
+    is_custom_extension_ = true;
+
+    PrefService *prefService = panel->profile()->GetPrefs();
+    set_should_draw_as_pushed(prefService->GetBoolean(prefs::kFacebookShowFriendsList));
+  }
+
   // No UpdateState() here because View hierarchy not setup yet. Our parent
   // should call UpdateState() after creation.
 
@@ -67,6 +75,8 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_COMMAND_REMOVED,
                  content::Source<Profile>(
                      panel_->profile()->GetOriginalProfile()));
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
+                 content::NotificationService::AllSources());
 }
 
 void BrowserActionButton::Destroy() {
@@ -248,6 +258,13 @@ void BrowserActionButton::Observe(int type,
       }
       break;
     }
+    case content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED: {
+      if (is_custom_extension_) {
+        content::Details<bool> detailsBool(details);
+        set_should_draw_as_pushed(*detailsBool.ptr());
+      }
+      break;
+    }
     default:
       NOTREACHED();
       break;
@@ -291,13 +308,40 @@ void BrowserActionButton::OnMouseReleased(const views::MouseEvent& event) {
   } else {
     TextButton::OnMouseReleased(event);
   }
+
+  if (should_draw_as_pushed_)
+    SetState(views::CustomButton::BS_PUSHED);
 }
 
 void BrowserActionButton::OnMouseExited(const views::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+
   if (IsPopup() || context_menu_)
     MenuButton::OnMouseExited(event);
   else
     TextButton::OnMouseExited(event);
+}
+
+void BrowserActionButton::OnMouseEntered(const views::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseEntered(event);
+}
+
+void BrowserActionButton::OnMouseMoved(const views::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseMoved(event);
+}
+
+void BrowserActionButton::OnMouseCaptureLost() {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseCaptureLost();
 }
 
 bool BrowserActionButton::OnKeyReleased(const views::KeyEvent& event) {
@@ -363,6 +407,13 @@ void BrowserActionButton::MaybeUnregisterExtensionCommand(bool only_if_active) {
   }
 }
 
+void BrowserActionButton::set_should_draw_as_pushed(bool flag) {
+  should_draw_as_pushed_ = flag;
+  if (flag)
+    SetState(views::CustomButton::BS_PUSHED);
+  else
+    SetState(views::CustomButton::BS_NORMAL);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserActionView

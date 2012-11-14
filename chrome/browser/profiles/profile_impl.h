@@ -56,6 +56,8 @@ class ProfileImpl : public Profile,
   virtual content::DownloadManagerDelegate*
       GetDownloadManagerDelegate() OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
+  virtual FacebookChatManager* GetFacebookChatManager() OVERRIDE;
+  virtual bool HasCreatedFacebookChatManager() const OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
       int renderer_child_id) OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContextForMedia() OVERRIDE;
@@ -124,6 +126,10 @@ class ProfileImpl : public Profile,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  virtual bool should_show_additional_extensions() const OVERRIDE;
+  virtual void set_should_show_additional_extensions(bool flag) OVERRIDE;
+
+  virtual FacebookBitpopNotification* GetFacebookBitpopNotification() const OVERRIDE;
  private:
   friend class Profile;
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest,
@@ -208,6 +214,7 @@ class ProfileImpl : public Profile,
   scoped_refptr<content::GeolocationPermissionContext>
       geolocation_permission_context_;
   scoped_ptr<GAIAInfoUpdateService> gaia_info_update_service_;
+  scoped_refptr<FacebookChatManager> facebook_chat_manager_;
   scoped_ptr<FaviconService> favicon_service_;
   scoped_refptr<history::ShortcutsBackend> shortcuts_backend_;
   bool favicon_service_created_;
@@ -256,6 +263,10 @@ class ProfileImpl : public Profile,
   chrome_browser_net::Predictor* predictor_;
 
   bool session_restore_enabled_;
+
+  bool should_show_additional_extensions_;
+
+  scoped_ptr<FacebookBitpopNotification> facebook_bitpop_notification_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileImpl);
 };

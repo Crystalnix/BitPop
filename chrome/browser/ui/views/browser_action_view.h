@@ -104,6 +104,8 @@ class BrowserActionButton : public views::MenuButton,
  private:
   virtual ~BrowserActionButton();
 
+  void set_should_draw_as_pushed(bool flag);
+
   // Register an extension command if the extension has an active one.
   void MaybeRegisterExtensionCommand();
 
@@ -133,6 +135,9 @@ class BrowserActionButton : public views::MenuButton,
   // The extension keybinding accelerator this browser action is listening for
   // (to show the popup).
   scoped_ptr<ui::Accelerator> keybinding_;
+
+  bool should_draw_as_pushed_;
+  bool is_custom_extension_;
 
   friend class base::DeleteHelper<BrowserActionButton>;
 

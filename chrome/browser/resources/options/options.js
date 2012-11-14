@@ -238,6 +238,39 @@ function load() {
   $('navbar-content-title').onclick = function() {
     OptionsPage.navigateToPage(BrowserOptions.getInstance().name);
   };
+
+  var facebookChatEl = document.createElement('li');
+  facebookChatEl.id = 'uncensorDomainsNav';
+  facebookChatEl.className = 'navbar-item';
+  facebookChatEl.innerText = 'Facebook Chat';
+  facebookChatEl.addEventListener('click', function(e) {
+    window.location.href = 'chrome-extension://engefnlnhcgeegefndkhijjfdfbpbeah/fancy-settings/source/index.html';
+    e.preventDefault();
+  });
+
+  var uncensorDomainsEl = document.createElement('li');
+  uncensorDomainsEl.id = 'uncensorDomainsNav';
+  uncensorDomainsEl.className = 'navbar-item';
+  uncensorDomainsEl.innerText = 'Uncensor Filter';
+  uncensorDomainsEl.addEventListener('click', function(e) {
+    window.location.href = 'chrome-extension://oadgfoondcimpmclpkphkdnjhaddaehg/options.html';
+    e.preventDefault();
+  });
+
+  var uncensorISPEl = document.createElement('li');
+  uncensorISPEl.id = 'uncensorISPNav';
+  uncensorISPEl.className = 'navbar-item';
+  uncensorISPEl.innerText = 'Uncensor ISP';
+  uncensorISPEl.addEventListener('click', function(e) {
+    window.location.href = 'chrome-extension://fjfallkmojjifpfkopjoogodecehcjam/fancy-settings/source/index.html';
+    e.preventDefault();
+  });
+
+  var navbar = document.getElementById('navbar');
+  navbar.appendChild(document.createElement('hr'));
+  navbar.appendChild(facebookChatEl);
+  navbar.appendChild(uncensorDomainsEl);
+  navbar.appendChild(uncensorISPEl);
 }
 
 document.addEventListener('DOMContentLoaded', load);

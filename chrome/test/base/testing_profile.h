@@ -235,6 +235,10 @@ class TestingProfile : public Profile {
 
   virtual PrefService* GetOffTheRecordPrefs() OVERRIDE;
 
+  virtual FacebookChatManager* GetFacebookChatManager() OVERRIDE;
+  virtual bool HasCreatedFacebookChatManager() const OVERRIDE;
+  virtual FacebookBitpopNotification* GetFacebookBitpopNotification() const OVERRIDE;
+
  protected:
   base::Time start_time_;
   scoped_ptr<PrefService> prefs_;

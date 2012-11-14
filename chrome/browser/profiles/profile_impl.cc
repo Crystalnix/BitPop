@@ -40,6 +40,7 @@
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/user_script_master.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context.h"
 #include "chrome/browser/history/history.h"
@@ -100,6 +101,8 @@
 
 #if defined(OS_WIN)
 #include "chrome/installer/util/install_util.h"
+#elif defined(OS_MACOSX)
+#include "chrome/browser/ui/cocoa/facebook_chat/facebook_bitpop_notification_mac.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -251,6 +254,9 @@ void ProfileImpl::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kClearSiteDataOnExit,
                              false,
                              PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kFacebookShowFriendsList,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
 }
 
 ProfileImpl::ProfileImpl(const FilePath& path,
@@ -265,7 +271,18 @@ ProfileImpl::ProfileImpl(const FilePath& path,
       start_time_(Time::Now()),
       delegate_(delegate),
       predictor_(NULL),
-      session_restore_enabled_(false) {
+      session_restore_enabled_(false),
+      should_show_additional_extensions_(false),
+#if defined(OS_WIN)
+      ALLOW_THIS_IN_INITIALIZER_LIST(facebook_bitpop_notification_(
+            new FacebookBitpopNotificationWin(this)))
+#elif defined(OS_MACOSX)
+      ALLOW_THIS_IN_INITIALIZER_LIST(facebook_bitpop_notification_(
+            new FacebookBitpopNotificationMac(this)))
+#else
+      facebook_bitpop_notification_(NULL)
+#endif
+  {
   DCHECK(!path.empty()) << "Using an empty path will attempt to write " <<
                             "profile files to the root directory!";
 
@@ -771,6 +788,20 @@ HistoryService* ProfileImpl::GetHistoryServiceWithoutCreating() {
   return HistoryServiceFactory::GetForProfileWithoutCreating(this).get();
 }
 
+FacebookChatManager* ProfileImpl::GetFacebookChatManager() {
+  if (!facebook_chat_manager_.get()) {
+    scoped_refptr<FacebookChatManager> fbcm(
+        new FacebookChatManager());
+    fbcm->Init(this);
+    facebook_chat_manager_.swap(fbcm);
+  }
+  return facebook_chat_manager_.get();
+}
+
+bool ProfileImpl::HasCreatedFacebookChatManager() const {
+  return (facebook_chat_manager_.get() != NULL);
+}
+
 DownloadManagerDelegate* ProfileImpl::GetDownloadManagerDelegate() {
   return DownloadServiceFactory::GetForProfile(this)->
       GetDownloadManagerDelegate();
@@ -1091,4 +1122,15 @@ void ProfileImpl::GetCacheParameters(bool is_media_context,
 base::Callback<ChromeURLDataManagerBackend*(void)>
     ProfileImpl::GetChromeURLDataManagerBackendGetter() const {
   return io_data_.GetChromeURLDataManagerBackendGetter();
+
+bool ProfileImpl::should_show_additional_extensions() const {
+  return should_show_additional_extensions_;
+}
+
+void ProfileImpl::set_should_show_additional_extensions(bool flag) {
+  should_show_additional_extensions_ = flag;
+}
+
+FacebookBitpopNotification* ProfileImpl::GetFacebookBitpopNotification() const {
+  return facebook_bitpop_notification_.get();
 }

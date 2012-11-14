@@ -9,6 +9,7 @@
 #include "base/message_loop.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/download/download_shelf.h"
+#include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -32,7 +33,8 @@ FullscreenController::FullscreenController(BrowserWindow* window,
     fullscreened_tab_(NULL),
     tab_caused_fullscreen_(false),
     tab_fullscreen_accepted_(false),
-    mouse_lock_state_(MOUSELOCK_NOT_REQUESTED) {
+    mouse_lock_state_(MOUSELOCK_NOT_REQUESTED),
+    chatbar_temporarily_hidden_(false) {
 }
 
 FullscreenController::~FullscreenController() {}
@@ -105,6 +107,8 @@ void FullscreenController::ToggleFullscreenModeForTab(WebContents* tab,
   in_browser_or_tab_fullscreen_mode = window_->IsFullscreen();
 #endif
 
+  bool is_friends_visible = window_->IsFriendsSidebarVisible();
+
   if (enter_fullscreen) {
     fullscreened_tab_ = TabContentsWrapper::GetCurrentWrapperForContents(tab);
     if (!in_browser_or_tab_fullscreen_mode) {
@@ -124,6 +128,12 @@ void FullscreenController::ToggleFullscreenModeForTab(WebContents* tab,
       }
       UpdateFullscreenExitBubbleContent();
     }
+    if (is_friends_visible)
+        window_->UpdateFriendsSidebarForContents(NULL);
+    if (window_->IsChatbarVisible()) {
+      window_->GetChatbar()->Hide();
+      chatbar_temporarily_hidden_ = true;
+    }
   } else {
     if (in_browser_or_tab_fullscreen_mode) {
       if (tab_caused_fullscreen_) {
@@ -140,6 +150,11 @@ void FullscreenController::ToggleFullscreenModeForTab(WebContents* tab,
         // fullscreen" mode.
         NotifyTabOfFullscreenExitIfNecessary();
       }
+    }
+    browser_->UpdateFriendsSidebarVisibility();
+    if (chatbar_temporarily_hidden_ && !window_->IsChatbarVisible()) {
+      window_->GetChatbar()->Show();
+      chatbar_temporarily_hidden_ = false;
     }
   }
 }

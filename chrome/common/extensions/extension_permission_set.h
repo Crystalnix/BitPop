@@ -51,6 +51,7 @@ class ExtensionPermissionMessage {
     kContentSettings,
     kAllPageContent,
     kPrivacy,
+    kBitpop,
     kEnumBoundary
   };
 
@@ -96,6 +97,7 @@ class ExtensionAPIPermission {
     // Real permissions.
     kAppNotifications,
     kBackground,
+    kBitpopFacebookChat,
     kBookmark,
     kChromeAuthPrivate,
     kChromePrivate,

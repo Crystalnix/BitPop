@@ -109,6 +109,10 @@ class BrowserOptionsHandler : public OptionsPageUIHandler,
   // Called to request information about the Instant field trial.
   void GetInstantFieldTrialStatus(const ListValue* args);
 
+  // Called when 'Automatic updates' checkbox is toggled.
+  // Sets SUUpdater property. |args| is ignored.
+  void ToggleAutomaticUpdates(const ListValue* args);
+
   // Returns the string ID for the given default browser state.
   int StatusStringIdForState(ShellIntegration::DefaultWebClientState state);
 

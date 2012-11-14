@@ -137,6 +137,12 @@ class Panel : public BaseWindow,
       int id,
       WindowOpenDisposition disposition) OVERRIDE;
 
+  virtual void UpdateFriendsSidebarForContents(content::WebContents *friends_contents) OVERRIDE;
+  virtual bool IsChatbarVisible() const OVERRIDE;
+  virtual FacebookChatbar* GetChatbar() OVERRIDE;
+  virtual bool IsFriendsSidebarVisible() const OVERRIDE;
+  virtual void CreateFriendsSidebarIfNeeded() OVERRIDE;
+
   // content::NotificationObserver overrides.
   virtual void Observe(int type,
                        const content::NotificationSource& source,

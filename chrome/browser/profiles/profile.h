@@ -22,6 +22,8 @@ class ChromeURLDataManager;
 class ExtensionProcessManager;
 class ExtensionService;
 class ExtensionSpecialStoragePolicy;
+class FacebookBitpopNotification;
+class FacebookChatManager;
 class FaviconService;
 class GAIAInfoUpdateService;
 class HistoryService;
@@ -264,6 +266,10 @@ class Profile : public content::BrowserContext {
   // Returns the main request context.
   virtual net::URLRequestContextGetter* GetRequestContext() = 0;
 
+  // Returns the FacebookChatManager associated with this profile
+  virtual FacebookChatManager* GetFacebookChatManager() = 0;
+  virtual bool HasCreatedFacebookChatManager() const = 0;
+
   // Returns the request context used for extension-related requests.  This
   // is only used for a separate cookie store currently.
   virtual net::URLRequestContextGetter* GetRequestContextForExtensions() = 0;
@@ -397,6 +403,11 @@ class Profile : public content::BrowserContext {
 
   // Creates an OffTheRecordProfile which points to this Profile.
   Profile* CreateOffTheRecordProfile();
+
+  virtual bool should_show_additional_extensions() const;
+  virtual void set_should_show_additional_extensions(bool flag);
+
+  virtual FacebookBitpopNotification* GetFacebookBitpopNotification() const = 0;
 
  protected:
   // TODO(erg, willchan): Remove friendship once |ProfileIOData| is made into

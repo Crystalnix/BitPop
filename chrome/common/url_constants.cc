@@ -490,4 +490,11 @@ const int kNumberOfChromeDebugURLs =
 const char kExtensionScheme[] = "chrome-extension";
 const char kExtensionResourceScheme[] = "chrome-extension-resource";
 
+const char kFacebookChatExtensionPrefixURL[] =
+    //"chrome-extension://gbldbegolgpdenofnibkpmffbpnmgppc/";
+    "chrome-extension://engefnlnhcgeegefndkhijjfdfbpbeah/";
+
+const char kFacebookChatExtensionSidebarPage[] = "friends_sidebar.html";
+
+const char kFacebookChatExtensionChatPage[] = "chat.html";
 }  // namespace chrome

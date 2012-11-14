@@ -141,6 +141,17 @@ class TestBrowserWindow : public BrowserWindow {
                                 const gfx::Rect& rect) OVERRIDE {}
   virtual void ShowAvatarBubbleFromAvatarButton() OVERRIDE {}
 
+  virtual bool IsChatbarVisible() const OVERRIDE;
+  virtual FacebookChatbar* GetChatbar() OVERRIDE;
+
+  // Whether or not the facebook friends sidebar is visible
+  virtual bool IsFriendsSidebarVisible() const OVERRIDE;
+
+  // Creates the facebook friends sidebar
+  virtual void CreateFriendsSidebarIfNeeded() OVERRIDE {}
+
+  virtual void UpdateFriendsSidebarForContents(content::WebContents *friends_contents) OVERRIDE {}
+
  protected:
   virtual void DestroyBrowser() OVERRIDE {}
 

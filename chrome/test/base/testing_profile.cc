@@ -732,3 +732,15 @@ base::Callback<ChromeURLDataManagerBackend*(void)>
     TestingProfile::GetChromeURLDataManagerBackendGetter() const {
   return base::Callback<ChromeURLDataManagerBackend*(void)>();
 }
+
+FacebookChatManager* TestingProfile::GetFacebookChatManager() {
+  return NULL;
+}
+
+bool TestingProfile::HasCreatedFacebookChatManager() const {
+  return false;
+}
+
+FacebookBitpopNotification* TestingProfile::GetFacebookBitpopNotification() const {
+  return NULL;
+}

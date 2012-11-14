@@ -48,6 +48,11 @@ cr.define('options', function() {
       $('startupUseCurrentButton').onclick = function(event) {
         chrome.send('setStartupPagesToCurrentPages');
       };
+      if (cr.isMac) {
+        $('autoCheckCheckbox').onchange = function() {
+          chrome.send('toggleAutomaticUpdates');
+        };
+      }
       $('defaultSearchManageEnginesButton').onclick = function(event) {
         OptionsPage.navigateToPage('searchEngines');
         chrome.send('coreOptionsUserMetricsAction',

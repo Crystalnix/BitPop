@@ -37,6 +37,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/page_zoom.h"
 #include "ui/base/dialogs/select_file_dialog.h"
@@ -103,7 +104,8 @@ class Browser : public TabStripModelObserver,
                 public ZoomObserver,
                 public content::PageNavigator,
                 public content::NotificationObserver,
-                public ui::SelectFileDialog::Listener {
+                public ui::SelectFileDialog::Listener,
+                public content::WebContentsObserver { // to observe sidebar view load
  public:
   // SessionService::WindowType mirrors these values.  If you add to this
   // enum, look at SessionService::WindowType to see if it needs to be
@@ -359,6 +361,7 @@ class Browser : public TabStripModelObserver,
   void OpenFile();
 
   void UpdateDownloadShelfVisibility(bool visible);
+  void UpdateFriendsSidebarVisibility();
 
   /////////////////////////////////////////////////////////////////////////////
 
@@ -676,6 +679,13 @@ class Browser : public TabStripModelObserver,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+// Overriden for content::WebContentsObserver
+  virtual void RenderViewReady() OVERRIDE;
+  virtual void DidOpenURL(const GURL& url,
+                          const content::Referrer& referrer,
+                          WindowOpenDisposition disposition,
+                          content::PageTransition transition) OVERRIDE;
+
   // Command and state updating ///////////////////////////////////////////////
 
   // Set the preference that indicates that the home page has been changed.
@@ -914,6 +924,8 @@ class Browser : public TabStripModelObserver,
   // Currently open color chooser. Non-NULL after OpenColorChooser is called and
   // before DidEndColorChooser is called.
   scoped_ptr<content::ColorChooser> color_chooser_;
+
+  TabContentsWrapper* friends_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(Browser);
 };

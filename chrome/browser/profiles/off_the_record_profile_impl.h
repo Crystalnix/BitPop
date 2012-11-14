@@ -52,6 +52,8 @@ class OffTheRecordProfileImpl : public Profile,
   virtual policy::PolicyService* GetPolicyService() OVERRIDE;
   virtual PrefService* GetPrefs() OVERRIDE;
   virtual PrefService* GetOffTheRecordPrefs() OVERRIDE;
+  virtual FacebookChatManager* GetFacebookChatManager() OVERRIDE;
+  virtual bool HasCreatedFacebookChatManager() const OVERRIDE;
   virtual net::URLRequestContextGetter*
       GetRequestContextForExtensions() OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContextForIsolatedApp(
@@ -107,6 +109,8 @@ class OffTheRecordProfileImpl : public Profile,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  virtual FacebookBitpopNotification* GetFacebookBitpopNotification() const OVERRIDE;
+
  private:
   FRIEND_TEST_ALL_PREFIXES(OffTheRecordProfileImplTest, GetHostZoomMap);
   void InitHostZoomMap();
@@ -133,6 +137,10 @@ class OffTheRecordProfileImpl : public Profile,
   FilePath last_selected_directory_;
 
   scoped_ptr<PrefProxyConfigTracker> pref_proxy_config_tracker_;
+
+  scoped_refptr<FacebookChatManager> facebook_chat_manager_;
+
+  scoped_ptr<FacebookBitpopNotification> facebook_bitpop_notification_;
 
   DISALLOW_COPY_AND_ASSIGN(OffTheRecordProfileImpl);
 };

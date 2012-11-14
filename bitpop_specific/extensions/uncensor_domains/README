@@ -1,0 +1,11 @@
+Uncensor extension for Google Chromium based browsers.
+Copyright (C) 2011 House of Life Property Ltd.
+Copyright (C) 2011 Crystalnix <vgachkaylo@crystalnix.com>
+
+Redirects users to new addresses of sites being censored.
+
+To use in a Google Chromium based browser - go to
+chrome://extensions web page. Enable developer mode.
+Use load unpacked extension button to point to the project's
+folder. One can easily create .crx files with the help
+of browser's developer interface.

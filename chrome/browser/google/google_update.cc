@@ -35,7 +35,8 @@ namespace {
 // Chrome distribution installed in a standard location.
 GoogleUpdateErrorCode CanUpdateCurrentChrome(
     const FilePath& chrome_exe_path) {
-#if !defined(GOOGLE_CHROME_BUILD)
+#if !defined(OS_WIN)
+//#if !defined(GOOGLE_CHROME_BUILD)
   return CANNOT_UPGRADE_CHROME_IN_THIS_DIRECTORY;
 #else
   // TODO(tommi): Check if using the default distribution is always the right

@@ -1342,6 +1342,9 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         <message name="IDS_EXIT" desc="The text label of the Exit menu item">
           E&amp;xit
         </message>
+        <message name="IDS_CHECK_FOR_UPDATES" desc="Title of menu item starting update check.">
+          Check for updates...
+        </message>
       </if>
       <if expr="pp_ifdef('use_titlecase')">
         <message name="IDS_SHOW_HISTORY" desc="In Title Case: The show history menu in the app menu">
@@ -1382,6 +1385,9 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         </message>
         <message name="IDS_EXIT" desc="In Title Case: The text label of the Exit menu item">
           E&amp;xit
+        </message>
+        <message name="IDS_CHECK_FOR_UPDATES" desc="In Title Case: Title of menu item starting update check.">
+          Check For Updates...
         </message>
       </if>
       <if expr="pp_ifdef('chromeos')">
@@ -6521,6 +6527,20 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Set to default
       </message>
 
+      <!-- mybub tooltip messages -->
+      <message name="IDS_TOOLTIP_MYBUB_WIKIPEDIA" desc="The tooltip for mybub wikipedia search button">
+        Search Wikipedia
+      </message>
+      <message name="IDS_TOOLTIP_MYBUB_YOUTUBE" desc="The tooltip for mybub youtube search button">
+        Search YouTube Videos
+      </message>
+      <message name="IDS_TOOLTIP_MYBUB_REVIEWS" desc="The tooltip for mybub reviews search button">
+        Search Reviews
+      </message>
+      <message name="IDS_TOOLTIP_MYBUB_NEWS" desc="The tooltip for mybub news search button">
+        Search News
+      </message>
+
       <!--Accessible name/action strings-->
       <message name="IDS_ACCESSIBLE_INCOGNITO_WINDOW_TITLE_FORMAT" desc="The format for the accessible title of an incognito window">
         <ph name="WINDOW_TITLE">$1</ph> (Incognito)
@@ -9097,6 +9117,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_OPTIONS_ADVANCED_TAB_LABEL" desc="The title of the Under the Hood tab">
         Under the hood
       </message>
+      <message name="IDS_OPTIONS_UNCENSOR_TAB_LABEL" desc="The title of the Uncensor filter extension settings tab">
+        Uncensor Filter
+      </message>
       <message name="IDS_OPTIONS_TAB_TITLE" desc="The format of the title on the browser tab for an options subpage, e.g. Settings - Basics">
         <ph name="OPTIONS_TITLE">$1<ex>Settings</ex></ph> - <ph name="SUBPAGE_TITLE">$2<ex>Under the Hood</ex></ph>
       </message>
@@ -9312,6 +9335,22 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
           Launch <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> automatically when I start my computer
         </message>
       </if>
+      <!-- House of Life browser additions -->
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME" desc="The title of the check for update group">
+          Check for update
+        </message>
+      </if>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME" desc="In Title Case: The title of the check for update group">
+          Check For Update
+        </message>
+      </if>
+      <message name="IDS_OPTIONS_UPDATES_AUTOCHECK_LABEL" desc="The label for automatic updates checkbox">
+        Automatically check daily
+      </message>
+      <!-- end of Tree of life browser options -->
+
       <message name="IDS_OPTIONS_DEFAULTBROWSER_USEASDEFAULT" desc="The label of the 'Use Chrome as default' browser button">
         Make <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> my default browser
       </message>
