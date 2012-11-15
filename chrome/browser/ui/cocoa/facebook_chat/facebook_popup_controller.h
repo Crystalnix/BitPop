@@ -19,7 +19,9 @@
 
 class Browser;
 class DevtoolsNotificationBridge;
-class ExtensionHost;
+namespace extensions {
+  class ExtensionHost;
+}
 @class InfoBubbleWindow;
 
 namespace content {
@@ -52,7 +54,7 @@ class NotificationRegistrar;
   NSRect extensionFrame_;
 
   // The extension host object.
-  scoped_ptr<ExtensionHost> host_;
+  scoped_ptr<extensions::ExtensionHost> host_;
 
   scoped_ptr<content::NotificationRegistrar> registrar_;
   scoped_ptr<DevtoolsNotificationBridge> notificationBridge_;
@@ -64,7 +66,7 @@ class NotificationRegistrar;
 @property (nonatomic,assign) NSPoint anchor;
 
 // Returns the ExtensionHost object associated with this popup.
-- (ExtensionHost*)extensionHost;
+- (extensions::ExtensionHost*)extensionHost;
 
 // Starts the process of showing the given popup URL. Instantiates an
 // ExtensionPopupController with the parent window retrieved from |browser|, a

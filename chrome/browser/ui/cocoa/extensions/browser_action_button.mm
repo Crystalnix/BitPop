@@ -12,6 +12,7 @@
 #include "chrome/browser/extensions/image_loading_tracker.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_action_context_menu.h"
 #import "chrome/browser/ui/cocoa/image_utils.h"
 #include "chrome/common/chrome_constants.h"
@@ -35,7 +36,6 @@
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gfx/size.h"
 #include "grit/theme_resources.h"
-#include "grit/theme_resources_standard.h"
 
 using extensions::Extension;
 

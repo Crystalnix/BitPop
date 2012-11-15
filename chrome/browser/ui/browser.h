@@ -925,7 +925,7 @@ class Browser : public TabStripModelObserver,
   // before DidEndColorChooser is called.
   scoped_ptr<content::ColorChooser> color_chooser_;
 
-  TabContentsWrapper* friends_contents_;
+  TabContents* friends_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(Browser);
 };

@@ -23,7 +23,6 @@
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/theme_resources_standard.h"
 #include "grit/ui_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -32,7 +31,6 @@
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/skia_util.h"
 
@@ -382,7 +380,7 @@ if (!button_)
     if (!notificationController_.get()) {
       notificationController_.reset([[FacebookNotificationController alloc]
           initWithParentWindow:[chatbarController_ bridge]->
-                                 browser()->window()->GetNativeHandle()
+                                 browser()->window()->GetNativeWindow()
                     anchoredAt:[self popupPointForNotificationWindow]]);
 
     }

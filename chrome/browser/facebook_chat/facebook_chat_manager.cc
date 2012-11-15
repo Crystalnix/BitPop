@@ -26,7 +26,7 @@ FacebookChatManager::FacebookChatManager() :
 FacebookChatManager::~FacebookChatManager() {
 }
 
-void FacebookChatManager::Shutdown() {
+void FacebookChatManager::ShutdownOnUIThread() {
   if (!shutdown_needed_)
     return;
   shutdown_needed_ = false;

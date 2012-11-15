@@ -487,3 +487,24 @@ void PanelBrowserWindow::TabInsertedAt(TabContents* contents,
     panel_->EnableWebContentsAutoResize(contents->web_contents());
   }
 }
+
+void PanelBrowserWindow::UpdateFriendsSidebarForContents(content::WebContents *friends_contents) {
+  NOTIMPLEMENTED();
+}
+
+void PanelBrowserWindow::CreateFriendsSidebarIfNeeded() {
+  NOTIMPLEMENTED();
+}
+
+FacebookChatbar* PanelBrowserWindow::GetChatbar() {
+  NOTIMPLEMENTED();
+  return NULL;
+}
+
+bool PanelBrowserWindow::IsFriendsSidebarVisible() const {
+  return false;
+}
+
+bool PanelBrowserWindow::IsChatbarVisible() const {
+  return false;
+}

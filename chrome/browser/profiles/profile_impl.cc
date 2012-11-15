@@ -1122,6 +1122,7 @@ void ProfileImpl::GetCacheParameters(bool is_media_context,
 base::Callback<ChromeURLDataManagerBackend*(void)>
     ProfileImpl::GetChromeURLDataManagerBackendGetter() const {
   return io_data_.GetChromeURLDataManagerBackendGetter();
+}
 
 bool ProfileImpl::should_show_additional_extensions() const {
   return should_show_additional_extensions_;

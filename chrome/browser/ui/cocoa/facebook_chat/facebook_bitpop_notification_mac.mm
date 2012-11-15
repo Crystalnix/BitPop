@@ -9,11 +9,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/profiles/profile.h"
 #import  "chrome/browser/ui/cocoa/dock_icon.h"
-#include "content/common/net/url_fetcher_impl.h"
+#include "net/url_request/url_fetcher_impl.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/url_fetcher.h"
-#include "content/public/common/url_fetcher_delegate.h"
-#include "content/public/common/url_fetcher_factory.h"
+#include "net/url_request/url_fetcher.h"
+#include "net/url_request/url_fetcher_delegate.h"
+#include "net/url_request/url_fetcher_factory.h"
 #include "googleurl/src/gurl.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request_status.h"
@@ -22,13 +22,13 @@
 #include "webkit/glue/image_decoder.h"
 
 using content::BrowserThread;
-using content::URLFetcher;
+using net::URLFetcher;
 
 static const char* kProfileImageURLPart1 = "http://graph.facebook.com/";
 static const char* kProfileImageURLPart2 = "/picture?type=square";
 
 
-class FacebookProfileImageFetcherDelegate : public content::URLFetcherDelegate {
+class FacebookProfileImageFetcherDelegate : public net::URLFetcherDelegate {
 public:
   FacebookProfileImageFetcherDelegate(Profile* profile,
       const std::string &uid, int num_unread_to_set_on_callback);
@@ -47,7 +47,7 @@ FacebookProfileImageFetcherDelegate::FacebookProfileImageFetcherDelegate(
   profile_(profile),
   num_unread_to_set_(num_unread_to_set_on_callback) {
 
-  url_fetcher_.reset(new URLFetcherImpl(
+  url_fetcher_.reset(new net::URLFetcherImpl(
       GURL(std::string(kProfileImageURLPart1) + uid +
               std::string(kProfileImageURLPart2)),
           URLFetcher::GET,

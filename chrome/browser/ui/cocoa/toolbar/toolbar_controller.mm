@@ -47,6 +47,7 @@
 #import "chrome/browser/ui/cocoa/wrench_menu/wrench_menu_controller.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
+#include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
@@ -60,7 +61,6 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/theme_resources_standard.h"
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
@@ -974,7 +974,7 @@ class NotificationBridge : public content::NotificationObserver {
 }
 
 - (void)positionMybubSearch {
-  OmniboxView *omnibox_view = browser_->window()->GetLocationBar()->location_entry();
+  OmniboxView *omnibox_view = browser_->window()->GetLocationBar()->GetLocationEntry();
 
   static BOOL prevVal = omnibox_view->model()->CurrentTextIsURL();
 
@@ -1004,19 +1004,19 @@ class NotificationBridge : public content::NotificationObserver {
 }
 
 - (void)mybubSearch:(NSString*)uriSuffix {
-  OmniboxView *omnibox_view = browser_->window()->GetLocationBar()->location_entry();
+  OmniboxView *omnibox_view = browser_->window()->GetLocationBar()->GetLocationEntry();
 
   if (!omnibox_view->model()->CurrentTextIsURL()) {
     const string16 userText = omnibox_view->GetText();
-    string16 encodedTerms = net::EscapeQueryParamValueUTF8(userText, true);
+    std::string encodedTerms = net::EscapeQueryParamValue(UTF16ToUTF8(userText), true);
     std::string mybubURL = std::string("http://mybub.com/mod/") +
         base::SysNSStringToUTF8(uriSuffix) + std::string("/");
-    std::string finalURL = mybubURL + UTF16ToUTF8(encodedTerms);
+    std::string finalURL = mybubURL + encodedTerms;
 
     GURL url(finalURL);
     OpenURLParams params(
         url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false);
-    browser_->GetSelectedWebContents()->OpenURL(params);
+    browser_->OpenURL(params);
   }
 }
 

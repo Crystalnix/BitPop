@@ -447,10 +447,6 @@ void Panel::FlashFrame(bool draw_attention) {
   panel_strip_->OnPanelAttentionStateChanged(this);
 }
 
-void Panel::UpdateFriendsSidebarForContents(WebContents *friends_contents) {
-  NOTIMPLEMENTED();
-}
-
 bool Panel::IsAlwaysOnTop() const {
   return always_on_top_;
 }
@@ -619,15 +615,6 @@ void Panel::Observe(int type,
   }
 }
 
-bool Panel::IsFriendsSidebarVisible() const {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-void Panel::CreateFriendsSidebarIfNeeded() {
-	NOTIMPLEMENTED();
-}
-
 void Panel::OnActiveStateChanged(bool active) {
   // Clear attention state when an expanded panel becomes active.
   // On some systems (e.g. Win), mouse-down activates a panel regardless of
@@ -770,14 +757,4 @@ void Panel::LoadingStateChanged(bool is_loading) {
 
 void Panel::WebContentsFocused(content::WebContents* contents) {
   native_panel_->PanelWebContentsFocused(contents);
-}
-
-bool Panel::IsChatbarVisible() const {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-FacebookChatbar* Panel::GetChatbar() {
-  NOTIMPLEMENTED();
-  return NULL;
 }

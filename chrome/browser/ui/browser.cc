@@ -442,7 +442,7 @@ Browser::Browser(const CreateParams& params)
   if (!profile_->IsOffTheRecord()) {
     // Create TabContents with friends sidebar.
     friends_contents_ =
-        TabContentsFactory(profile_, NULL, MSG_ROUTING_NONE, NULL, NULL);
+        chrome::TabContentsFactory(profile_, NULL, MSG_ROUTING_NONE, NULL, NULL);
     SetAsDelegate(friends_contents_, this);
     content::WebContentsObserver::Observe(friends_contents_->web_contents());
   }
@@ -1375,7 +1375,6 @@ bool Browser::IsPopupOrPanel(const WebContents* source) const {
   return is_type_popup() || is_type_panel();
 }
 
-<<<<<<< HEAD
 void Browser::UpdateTargetURL(WebContents* source, int32 page_id,
                               const GURL& url) {
   if (friends_contents_ && source == friends_contents_->web_contents())
@@ -1440,7 +1439,7 @@ gfx::Rect Browser::GetRootWindowResizerRect() const {
 void Browser::BeforeUnloadFired(WebContents* web_contents,
                                 bool proceed,
                                 bool* proceed_to_fire_unload) {
-  if (friends_contents_ && tab == friends_contents_->web_contents())
+  if (friends_contents_ && web_contents == friends_contents_->web_contents())
     return;
   *proceed_to_fire_unload =
       unload_controller_->BeforeUnloadFired(web_contents, proceed);
@@ -1668,6 +1667,9 @@ void Browser::ToggleFullscreenModeForTab(WebContents* web_contents,
 
 bool Browser::IsFullscreenForTabOrPending(
     const WebContents* web_contents) const {
+  if (friends_contents_ && source == friends_contents_->web_contents())
+    return false;
+
   return fullscreen_controller_->IsFullscreenForTabOrPending(web_contents);
 }
 
@@ -1920,7 +1922,7 @@ void Browser::Observe(int type,
         window()->GetLocationBar()->UpdatePageActions();
       break;
 
-    case chrome::NOTIFICATION_EXTENSION_LOADED:
+    case chrome::NOTIFICATION_EXTENSION_LOADED: {
       // During window creation on Windows we may end up calling into
       // SHAppBarMessage, which internally spawns a nested message loop. This
       // makes it possible for us to end up here before window creation has
@@ -1940,6 +1942,7 @@ void Browser::Observe(int type,
           std::string());
       }
       break;
+    }
 
 #if defined(ENABLE_THEMES)
     case chrome::NOTIFICATION_BROWSER_THEME_CHANGED:

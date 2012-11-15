@@ -346,7 +346,7 @@
                 {
                   'postbuild_name': 'Copy Sparkle.framework',
                   'action': [
-                    'tools/build/mac/copy_framework_unversioned',
+                    '../build/mac/copy_framework_unversioned.sh',
                     '${BUILT_PRODUCTS_DIR}/Sparkle.framework',
                     '${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks',
                   ],

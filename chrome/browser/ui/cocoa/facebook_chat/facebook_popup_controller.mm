@@ -39,6 +39,8 @@ CGFloat Clamp(CGFloat value, CGFloat min, CGFloat max) {
 
 }  // namespace
 
+using extensions::ExtensionHost;
+
 class DevtoolsNotificationBridge : public content::NotificationObserver {
  public:
   explicit DevtoolsNotificationBridge(FacebookPopupController* controller)
@@ -56,8 +58,8 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
         break;
       }
       case content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING: {
-        RenderViewHost* rvh = [controller_ extensionHost]->render_view_host();
-        if (content::Details<RenderViewHost>(rvh) == details)
+        content::RenderViewHost* rvh = [controller_ extensionHost]->render_view_host();
+        if (content::Details<content::RenderViewHost>(rvh) == details)
           // Allow the devtools to finish detaching before we close the popup
           [controller_ performSelector:@selector(close)
                             withObject:nil
@@ -239,7 +241,7 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
   // closed, so no need to do that here.
   gPopup = [[FacebookPopupController alloc]
       initWithHost:host
-      parentWindow:browser->window()->GetNativeHandle()
+      parentWindow:browser->window()->GetNativeWindow()
         anchoredAt:anchoredAt
      arrowLocation:arrowLocation
            devMode:devMode];

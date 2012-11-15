@@ -13,21 +13,18 @@
 #include "base/basictypes.h"
 #include "base/hash_tables.h"
 #include "base/observer_list.h"
-#include "base/memory/ref_counted.h"
-#include "content/public/browser/browser_thread.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
+#include "chrome/browser/profiles/refcounted_profile_keyed_service.h"
 
 class Browser;
 class Profile;
 
-class FacebookChatManager : public base::RefCountedThreadSafe<FacebookChatManager,
-                                        content::BrowserThread::DeleteOnUIThread> {
+class FacebookChatManager : public RefcountedProfileKeyedService {
   public:
     FacebookChatManager();
-    virtual ~FacebookChatManager();
 
-    void Shutdown();
+    virtual void ShutdownOnUIThread() OVERRIDE;
 
     FacebookChatItem* GetItem(const std::string &jid);
 
@@ -63,6 +60,8 @@ class FacebookChatManager : public base::RefCountedThreadSafe<FacebookChatManage
     std::string global_my_uid() const { return global_my_uid_; }
     void set_global_my_uid(const std::string& uid) { global_my_uid_ = uid; }
 
+  protected:
+    virtual ~FacebookChatManager();
   private:
     void NotifyModelChanged();
 
