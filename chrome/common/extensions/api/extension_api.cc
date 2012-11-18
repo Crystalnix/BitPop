@@ -344,7 +344,7 @@ void ExtensionAPI::InitDefaultConfiguration() {
   CHECK(unloaded_schemas_.empty());
   RegisterSchema("app", ReadFromResource(
       IDR_EXTENSION_API_JSON_APP));
-  RegisterSchema("bitpop", ReadFromResource(
+  RegisterSchema("bitpop.facebookChat", ReadFromResource(
       IDR_EXTENSION_API_JSON_BITPOP));
   RegisterSchema("bookmarks", ReadFromResource(
       IDR_EXTENSION_API_JSON_BOOKMARKS));

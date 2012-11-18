@@ -15,6 +15,7 @@
 #import "chrome/browser/ui/cocoa/hover_image_button.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #include "skia/ext/skia_utils_mac.h"
+#include "ui/base/cocoa/window_size_constants.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 
@@ -97,7 +98,7 @@ const CGFloat kCloseButtonTopYOffset = 7.0;
 
   scoped_nsobject<DenyingKeyStatusInfoBubbleWindow> window(
       [[DenyingKeyStatusInfoBubbleWindow alloc]
-          initWithContentRect:NSZeroRect
+          initWithContentRect:(ui::kWindowSizeDeterminedLater)
                     styleMask:NSBorderlessWindowMask
                       backing:NSBackingStoreBuffered
                         defer:YES]);

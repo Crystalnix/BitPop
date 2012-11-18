@@ -31,6 +31,10 @@
       "extension", "packaged_app", "hosted_app", "platform_app"
     ]
   },
+  "bitpop": {
+    "channel": "stable",
+    "extension_types": ["extension"]
+  },
   "bookmarks": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"]

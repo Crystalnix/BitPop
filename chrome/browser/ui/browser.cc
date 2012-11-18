@@ -454,7 +454,7 @@ Browser::Browser(const CreateParams& params)
               GURL(std::string(chrome::kFacebookChatExtensionPrefixURL) +
                 chrome::kFacebookChatExtensionSidebarPage),
               content::Referrer(),
-              content::PAGE_TRANSITION_START_PAGE,
+              content::PAGE_TRANSITION_GENERATED,
               std::string());
     }
   }
@@ -1532,7 +1532,7 @@ bool Browser::ShouldAddNavigationToHistory(
     const history::HistoryAddPageArgs& add_page_args,
     content::NavigationType navigation_type) {
   // Don't update history if running as app.
-  return !IsApplication();
+  return !IsApplication() && add_page_args.transition != content::PAGE_TRANSITION_GENERATED;
 }
 
 bool Browser::ShouldCreateWebContents(
@@ -1667,7 +1667,7 @@ void Browser::ToggleFullscreenModeForTab(WebContents* web_contents,
 
 bool Browser::IsFullscreenForTabOrPending(
     const WebContents* web_contents) const {
-  if (friends_contents_ && source == friends_contents_->web_contents())
+  if (friends_contents_ && web_contents == friends_contents_->web_contents())
     return false;
 
   return fullscreen_controller_->IsFullscreenForTabOrPending(web_contents);
@@ -1938,7 +1938,7 @@ void Browser::Observe(int type,
           GURL(std::string(chrome::kFacebookChatExtensionPrefixURL) +
             chrome::kFacebookChatExtensionSidebarPage),
           content::Referrer(),
-          content::PAGE_TRANSITION_START_PAGE,
+          content::PAGE_TRANSITION_GENERATED,
           std::string());
       }
       break;

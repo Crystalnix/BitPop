@@ -73,7 +73,7 @@ scoped_ptr<VisitItem> GetVisitItem(const history::VisitRow& row) {
   DCHECK(trans) << "Invalid transition.";
 
   VisitItem::Transition transition = VisitItem::TRANSITION_LINK;
-  switch (row.transition) {
+  switch (row.transition & content::PAGE_TRANSITION_CORE_MASK) {
     case content::PAGE_TRANSITION_LINK:
       transition = VisitItem::TRANSITION_LINK;
       break;

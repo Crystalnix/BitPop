@@ -29,6 +29,7 @@ class APIPermission {
     kAppWindow,
     kAudioCapture,
     kBackground,
+    kBitpopFacebookChat,
     kBookmark,
     kBrowserTag,
     kBrowsingData,
