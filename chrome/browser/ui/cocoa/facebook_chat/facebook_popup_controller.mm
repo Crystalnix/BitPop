@@ -42,9 +42,9 @@ CGFloat Clamp(CGFloat value, CGFloat min, CGFloat max) {
 
 using extensions::ExtensionHost;
 
-class DevtoolsNotificationBridge : public content::NotificationObserver {
+class DevtoolsNotificationBridgeMy : public content::NotificationObserver {
  public:
-  explicit DevtoolsNotificationBridge(FacebookPopupController* controller)
+  explicit DevtoolsNotificationBridgeMy(FacebookPopupController* controller)
     : controller_(controller) {}
 
   void Observe(int type,
@@ -68,6 +68,7 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
         break;
       }
       default: {
+        LOG(INFO) << type;
         NOTREACHED() << "Received unexpected notification";
         break;
       }
@@ -146,7 +147,7 @@ class DevtoolsNotificationBridge : public content::NotificationObserver {
   self = [super initWithWindow:window];
   if (beingInspected_) {
     // Listen for the the devtools window closing.
-    notificationBridge_.reset(new DevtoolsNotificationBridge(self));
+    notificationBridge_.reset(new DevtoolsNotificationBridgeMy(self));
     registrar_.reset(new content::NotificationRegistrar);
     registrar_->Add(notificationBridge_.get(),
                     content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING,

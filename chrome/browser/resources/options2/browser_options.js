@@ -471,6 +471,12 @@ cr.define('options', function() {
               [String($('backgroundModeCheckbox').checked)]);
         };
       }
+
+      if (cr.isMac) {
+        $('autoCheckCheckbox').onchange = function(event) {
+          chrome.send('toggleAutomaticUpdates');
+        };
+      }
     },
 
     /**

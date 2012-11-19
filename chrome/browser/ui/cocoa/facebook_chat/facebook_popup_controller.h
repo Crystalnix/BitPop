@@ -18,7 +18,7 @@
 
 
 class Browser;
-class DevtoolsNotificationBridge;
+class DevtoolsNotificationBridgeMy;
 namespace extensions {
   class ExtensionHost;
 }
@@ -57,7 +57,7 @@ class NotificationRegistrar;
   scoped_ptr<extensions::ExtensionHost> host_;
 
   scoped_ptr<content::NotificationRegistrar> registrar_;
-  scoped_ptr<DevtoolsNotificationBridge> notificationBridge_;
+  scoped_ptr<DevtoolsNotificationBridgeMy> notificationBridge_;
 
   // Whether the popup has a devtools window attached to it.
   BOOL beingInspected_;

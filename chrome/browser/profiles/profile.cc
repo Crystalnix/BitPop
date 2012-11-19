@@ -95,6 +95,11 @@ void Profile::RegisterUserPrefs(PrefService* prefs) {
                             "",
                             PrefService::UNSYNCABLE_PREF);
 #endif
+#if defined(OS_MACOSX)
+  prefs->RegisterBooleanPref(prefs::kAutomaticUpdatesEnabled,
+                             true,
+                             PrefService::SYNCABLE_PREF);
+#endif
 }
 
 
