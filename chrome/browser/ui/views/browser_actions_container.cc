@@ -4,6 +4,9 @@
 
 #include "chrome/browser/ui/views/browser_actions_container.h"
 
+#include "base/bind.h"
+#include "base/logging.h"
+#include "base/message_loop.h"
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/prefs/pref_service.h"
@@ -154,12 +157,11 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
   if (!model_)
     return;
 
-  if (model_->size() != 0) {
-    ExtensionService* service = profile_->GetExtensionService();
-    if (service) {
-      const Extension* extension = service->GetExtensionById(chrome::kFacebookChatExtensionId, false);
-      model_->MoveBrowserAction(extension, 0);
-    }
+  if (model_->size() != 0 && (*model_->begin())->id() != chrome::kFacebookChatExtensionId) {
+      MessageLoopForUI::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&BrowserActionsContainer::MoveBrowserAction,
+          base::Unretained(this), (const char *)chrome::kFacebookChatExtensionId, 0));
   }
 
   for (extensions::ExtensionList::iterator i(model_->begin());
@@ -172,8 +174,14 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
     AddChildView(view);
 
     if (!profile_->should_show_additional_extensions() &&
-        ((*iter)->id() == chrome::kFacebookMessagesExtensionId || (*iter)->id() == chrome::kFacebookNotificationsExtensionId))
-      view->SetVisible(false);
+        ((*i)->id() == chrome::kFacebookMessagesExtensionId || (*i)->id() == chrome::kFacebookNotificationsExtensionId)) {
+      ExtensionService* service = profile_->GetExtensionService();
+      if (service)
+        MessageLoopForUI::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&ExtensionService::SetBrowserActionVisibility,
+                     base::Unretained(service), *i, false));
+    }
   }
 }
 
@@ -252,18 +260,9 @@ void BrowserActionsContainer::Layout() {
 
   // Now draw the icons for the browser actions in the available space.
   int icon_width = IconWidth(false);
-  int sub = 0;
   for (size_t i = 0; i < browser_action_views_.size(); ++i) {
     BrowserActionView* view = browser_action_views_[i];
-    int x = ToolbarView::kStandardSpacing + ((i - sub) * IconWidth(true));
-    if (!profile_->should_show_additional_extensions() &&
-            (view->button()->extension()->id() == chrome::kFacebookMessagesExtensionId ||
-             view->button()->extension()->id() == chrome::kFacebookNotificationsExtensionId)) {
-      sub++;
-      view->SetVisible(false);
-      continue;
-    }
-
+    int x = ToolbarView::kStandardSpacing + (i * IconWidth(true));
     if (x + icon_width <= max_x) {
       view->SetBounds(x, 0, icon_width, height());
       view->SetVisible(true);
@@ -373,8 +372,6 @@ int BrowserActionsContainer::OnPerformDrop(
   size_t i = 0;
   for (; i < browser_action_views_.size(); ++i) {
     int view_x = browser_action_views_[i]->GetMirroredBounds().x();
-    if (!browser_action_views_[i]->visible() && !profile_->IsOffTheRecord() && !profile_->should_show_additional_extensions() && (i == 1 || i == 2))
-      continue;
     if (!browser_action_views_[i]->visible() ||
         (base::i18n::IsRTL() ? (view_x < drop_indicator_position_) :
             (view_x >= drop_indicator_position_))) {
@@ -383,6 +380,9 @@ int BrowserActionsContainer::OnPerformDrop(
       break;
     }
   }
+
+  if (!profile_->IsOffTheRecord() && (i == 0 || (profile_->should_show_additional_extensions() && (i == 1 || i == 2))))
+    i = profile_->should_show_additional_extensions() ? 3 : 1;
 
   // |i| now points to the item to the right of the drop indicator*, which is
   // correct when dragging an icon to the left. When dragging to the right,
@@ -394,13 +394,6 @@ int BrowserActionsContainer::OnPerformDrop(
 
   if (profile_->IsOffTheRecord())
     i = model_->IncognitoIndexToOriginal(i);
-  i += profile_->IsOffTheRecord() ? 3 : 0;
-  std::string extension_id = browser_action_views_[data.index()]->button()->extension()->id();
-  if (i < 3 &&
-        extension_id != chrome::kFacebookChatExtensionId &&
-        extension_id != chrome::kFacebookMessagesExtensionId &&
-        extension_id != chrome::kFacebookNotificationsExtensionId)
-      i = 3;
 
   model_->MoveBrowserAction(
       browser_action_views_[data.index()]->button()->extension(), i);
@@ -520,10 +513,13 @@ void BrowserActionsContainer::MoveBrowserAction(const std::string& extension_id,
   ExtensionService* service = profile_->GetExtensionService();
   if (service) {
     const Extension* extension = service->GetExtensionById(extension_id, false);
-    if (new_index < 3 &&
+    if (new_index == 0 &&
         extension_id != chrome::kFacebookChatExtensionId &&
-        extension_id != chrome::kFacebookMessagesExtensionId &&
-        extension_id != chrome::kFacebookNotificationsExtensionId)
+        !profile_->IsOffTheRecord())
+       new_index = profile_->should_show_additional_extensions() ? 3 : 1;
+    if (((new_index == 1 && extension_id != chrome::kFacebookMessagesExtensionId) ||
+         (new_index == 2 && extension_id != chrome::kFacebookNotificationsExtensionId)) &&
+        profile_->should_show_additional_extensions() && !profile_->IsOffTheRecord())
       new_index = 3;
     model_->MoveBrowserAction(extension, new_index);
     SchedulePaint();
@@ -551,7 +547,7 @@ void BrowserActionsContainer::TestExecuteBrowserAction(int index) {
 
 void BrowserActionsContainer::TestSetIconVisibilityCount(size_t icons) {
   model_->SetVisibleIconCount(icons);
-  chevron_->SetVisible(icons < browser_action_views_.size() - (profile_->IsOffTheRecord() || profile_->should_show_additional_extensions() ? 0 : 2));
+  chevron_->SetVisible(icons < browser_action_views_.size());
   container_width_ = IconCountToWidth(icons, chevron_->visible());
   Layout();
   SchedulePaint();
@@ -658,7 +654,11 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
   if (!profile_->should_show_additional_extensions() &&
       (extension->id() == chrome::kFacebookMessagesExtensionId ||
        extension->id() == chrome::kFacebookNotificationsExtensionId)) {
-    view->SetVisible(false);
+
+    ExtensionService* service = profile_->GetExtensionService();
+    if (service)
+      service->SetBrowserActionVisibility(extension, false);
+
     OnBrowserActionVisibilityChanged();
   }
 }
@@ -681,7 +681,7 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
       if (profile_->GetExtensionService()->IsBeingUpgraded(extension))
         return;
 
-      if (browser_action_views_.size() - (profile_->IsOffTheRecord() || profile_->should_show_additional_extensions() ? 0 : 2) > visible_actions) {
+      if (browser_action_views_.size() > visible_actions) {
         // If we have more icons than we can show, then we must not be changing
         // the container size (since we either removed an icon from the main
         // area and one from the overflow list will have shifted in, or we
@@ -692,7 +692,7 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
         // overflow container by 1.  Either way the size changed, so animate.
         chevron_->SetVisible(false);
         SaveDesiredSizeAndAnimate(ui::Tween::EASE_OUT,
-                                  browser_action_views_.size() - (profile_->IsOffTheRecord() || profile_->should_show_additional_extensions() ? 0 : 2));
+                                  browser_action_views_.size());
       }
       return;
     }
@@ -701,13 +701,16 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
 
 void BrowserActionsContainer::BrowserActionMoved(const Extension* extension,
                                                  int index) {
-  if (!ShouldDisplayBrowserAction(extension) || browser_action_views_.size() == 0)
+  if (!ShouldDisplayBrowserAction(extension))
     return;
 
   if (profile_->IsOffTheRecord())
     index = model_->OriginalIndexToIncognito(index);
 
-  DCHECK(index >= 0 && index < static_cast<int>(browser_action_views_.size()) + (profile_->IsOffTheRecord() ? 3 : 0));
+  DCHECK(index >= 0 && index < static_cast<int>(browser_action_views_.size()));
+
+  if (index == 0 && !profile_->IsOffTheRecord())
+    return;
 
   DeleteBrowserActionViews();
   CreateBrowserActionViews();
@@ -728,20 +731,9 @@ void BrowserActionsContainer::LoadImages() {
 
 void BrowserActionsContainer::SetContainerWidth() {
   int visible_actions = model_->GetVisibleIconCount();
-  if (visible_actions >= 0) {
-    if (model_->size() >= 3 && model_->size() <= 5)
-      visible_actions = static_cast<int>(std::min(static_cast<size_t>(visible_actions), model_->size() -
-          (profile_->should_show_additional_extensions() ? 0 : 2) -
-          (profile_->IsOffTheRecord() ? 1 : 0)));
-    else
-      visible_actions -= (profile_->should_show_additional_extensions() ? 0 : 2) +
-        (profile_->IsOffTheRecord() ? 1 : 0);
-  } else // All icons should be visible.
-    visible_actions = model_->size() - (profile_->should_show_additional_extensions() ? 0 : 2) -
-      (profile_->IsOffTheRecord() ? 1 : 0);
-
-  chevron_->SetVisible(static_cast<size_t>(visible_actions) < model_->size() - (profile_->should_show_additional_extensions() ? 0 : 2) -
-    (profile_->IsOffTheRecord() ? 1 : 0));
+  if (visible_actions < 0)  // All icons should be visible.
+    visible_actions = model_->size();
+  chevron_->SetVisible(static_cast<size_t>(visible_actions) < model_->size());
   container_width_ = IconCountToWidth(visible_actions, chevron_->visible());
 }
 
@@ -781,7 +773,7 @@ void BrowserActionsContainer::SetDropIndicator(int x_pos) {
 int BrowserActionsContainer::IconCountToWidth(int icons,
                                               bool display_chevron) const {
   if (icons < 0)
-    icons = browser_action_views_.size() - (profile_->IsOffTheRecord() || profile_->should_show_additional_extensions() ? 0 : 2);
+    icons = browser_action_views_.size();
   if ((icons == 0) && !display_chevron)
     return ToolbarView::kStandardSpacing;
   int icons_size =
@@ -795,7 +787,7 @@ int BrowserActionsContainer::IconCountToWidth(int icons,
 size_t BrowserActionsContainer::WidthToIconCount(int pixels) const {
   // Check for widths large enough to show the entire icon set.
   if (pixels >= IconCountToWidth(-1, false))
-    return browser_action_views_.size() - (profile_->IsOffTheRecord() || profile_->should_show_additional_extensions() ? 0 : 2);
+    return browser_action_views_.size();
 
   // We need to reserve space for the resize area, chevron, and the spacing on
   // either side of the chevron.
@@ -826,7 +818,7 @@ void BrowserActionsContainer::SaveDesiredSizeAndAnimate(
     model_->SetVisibleIconCount(num_visible_icons);
 
   int target_size = IconCountToWidth(num_visible_icons,
-      num_visible_icons < browser_action_views_.size() - (profile_->IsOffTheRecord() || profile_->should_show_additional_extensions() ? 0 : 2));
+      num_visible_icons < browser_action_views_.size());
   if (!disable_animations_during_testing_) {
     // Animate! We have to set the animation_target_size_ after calling Reset(),
     // because that could end up calling AnimationEnded which clears the value.
@@ -845,10 +837,10 @@ bool BrowserActionsContainer::ShouldDisplayBrowserAction(
   // Only display incognito-enabled extensions while in incognito mode.
   return
       (!profile_->IsOffTheRecord() ||
-       profile_->GetExtensionService()->IsIncognitoEnabled(extension->id()) &&
+       (profile_->GetExtensionService()->IsIncognitoEnabled(extension->id()) &&
        extension->id() != chrome::kFacebookChatExtensionId &&
        extension->id() != chrome::kFacebookMessagesExtensionId &&
-       extension->id() != chrome::kFacebookNotificationsExtensionId);
+       extension->id() != chrome::kFacebookNotificationsExtensionId));
 }
 
 void BrowserActionsContainer::ShowFacebookExtensions() {
@@ -868,35 +860,28 @@ void BrowserActionsContainer::SetFacebookExtensionsVisibility(bool visible) {
   ExtensionService* service = profile_->GetExtensionService();
 
   const Extension* extension = service->GetExtensionById(chrome::kFacebookMessagesExtensionId, false);
-  if (extension) {
-    for (BrowserActionViews::iterator it = browser_action_views_.begin(); it != browser_action_views_.end(); it++) {
-      if ((*it)->button()->extension()->id() == extension->id())
-        (*it)->SetVisible(visible);
-    }
-  }
+  if (extension)
+    MessageLoopForUI::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&ExtensionService::SetBrowserActionVisibility,
+                     base::Unretained(service), extension, visible));
 
   extension = service->GetExtensionById(chrome::kFacebookNotificationsExtensionId, false);
-  if (extension) {
-    for (BrowserActionViews::iterator it = browser_action_views_.begin(); it != browser_action_views_.end(); it++) {
-      if ((*it)->button()->extension()->id() == extension->id())
-        (*it)->SetVisible(visible);
-    }
-  }
-
-  OnBrowserActionVisibilityChanged();
+  if (extension)
+    MessageLoopForUI::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&ExtensionService::SetBrowserActionVisibility,
+                     base::Unretained(service), extension, visible));
 
   if (visible) {
-    MoveBrowserAction(chrome::kFacebookMessagesExtensionId, 1);
-    MoveBrowserAction(chrome::kFacebookNotificationsExtensionId, 2);
-
-    if (model_ && profile_->GetPrefs()->HasPrefPath(prefs::kExtensionToolbarSize)) {
-      int savedIconCount = profile_->GetPrefs()->GetInteger(prefs::kExtensionToolbarSize);
-      if ((size_t)savedIconCount + 2 == model_->size())
-        model_->SetVisibleIconCount(-1);
-    }
-
-    if (model_ && model_->extensions_initialized())
-      SetContainerWidth();
+    MessageLoopForUI::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&BrowserActionsContainer::MoveBrowserAction,
+        base::Unretained(this), (const char *)chrome::kFacebookMessagesExtensionId, 1));
+    MessageLoopForUI::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&BrowserActionsContainer::MoveBrowserAction,
+        base::Unretained(this), (const char *)chrome::kFacebookNotificationsExtensionId, 2));
   }
 }
 
