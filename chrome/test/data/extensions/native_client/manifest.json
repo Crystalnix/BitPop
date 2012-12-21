@@ -7,6 +7,6 @@
   "permissions": ["nativeclient"],
   "nacl_modules": [{
     "path": "dummy.nmf",
-    "mime_type": "application/pdf"
+    "mime_type": "application/pdf" 
   }]
 }

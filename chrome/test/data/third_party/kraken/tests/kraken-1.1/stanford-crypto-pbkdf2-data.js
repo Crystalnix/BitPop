@@ -43,9 +43,9 @@ sjcl.misc.cachedPbkdf2=function(a,b){var c=sjcl.misc.S,d;b=b||{};d=b.iter||1E3;c
 
 var browserUtil = {
   isRhino: true,
-
+  
   pauseAndThen: function (cb) { cb(); },
-
+  
   cpsIterate: function (f, start, end, pause, callback) {
     function go() {
       var called = false;
@@ -59,7 +59,7 @@ var browserUtil = {
     }
     go (start);
   },
-
+  
   cpsMap: function (map, list, pause, callback) {
     browserUtil.cpsIterate(function (i, cb) { map(list[i], i, list.length, cb); },
                            0, list.length, pause, callback);
@@ -71,7 +71,7 @@ var browserUtil = {
       callback && callback();
     }
   },
-
+  
   write: function(type, message) {
     print(message);
     return { update: function (type2, message2) {
@@ -80,9 +80,9 @@ var browserUtil = {
       else { print("  - " + message2); }
     }};
   },
-
+  
   writeNewline: function () { print(""); },
-
+  
   status: function(message) {}
 };
 
@@ -108,7 +108,7 @@ sjcl.test.TestCase = function(name, doRun) {
 sjcl.test.TestCase.prototype = {
   /** Pass some subtest of this test */
   pass: function () { this.passes ++; },
-
+  
   /** Fail some subtest of this test */
   fail: function (message) {
     if (message !== undefined) {
@@ -119,14 +119,14 @@ sjcl.test.TestCase.prototype = {
     this.failures ++;
     browserUtil.allPassed = false;
   },
-
+  
   unimplemented: function() {
     this.isUnimplemented = true;
   },
-
+  
   /** Log a message to the console */
   log: browserUtil.write,
-
+  
   /** Require that the first argument is true; otherwise fail with the given message */
   require: function (bool, message) {
     if (bool) {
@@ -140,10 +140,10 @@ sjcl.test.TestCase.prototype = {
 
   /** Pause and then take the specified action. */
   pauseAndThen: browserUtil.pauseAndThen,
-
+  
   /** Continuation-passing-style iteration */
   cpsIterate: browserUtil.cpsIterate,
-
+  
   /** Continuation-passing-style iteration */
   cpsMap: browserUtil.cpsMap,
 
@@ -162,7 +162,7 @@ sjcl.test.TestCase.prototype = {
     }
     browserUtil.writeNewline();
   },
-
+  
 
   /** Run the test. */
   run: function (ntests, i, cb) {
@@ -179,7 +179,7 @@ sjcl.test.TestCase.prototype = {
 // pass a list of tests to run, or pass nothing and it will run them all
 sjcl.test.run = function (tests, callback) {
   var t;
-
+    
   if (tests === undefined || tests.length == 0) {
     tests = [];
     for (t in sjcl.test.all) {
@@ -188,7 +188,7 @@ sjcl.test.run = function (tests, callback) {
       }
     }
   }
-
+  
   browserUtil.cpsMap(function (t, i, n, cb) {
     sjcl.test.all[tests[i]].run(n, i+1, cb);
   }, tests, true, callback);

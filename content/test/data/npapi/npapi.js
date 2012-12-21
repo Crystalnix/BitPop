@@ -14,7 +14,7 @@
 
 
 
-// Finish running a test by setting the status
+// Finish running a test by setting the status 
 // and the cookie.
 /* private */ function onFinished(name, id, result)
 {

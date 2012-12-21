@@ -43,7 +43,7 @@
 <translation id="2908277604670530363">Högsta antalet samtidiga anslutningar till proxyservern</translation>
 <translation id="4838572175671839397">Innehåller ett reguljärt uttryck som används för att bestämma vilka användare som kan logga in på <ph name="PRODUCT_NAME"/>.
 
-      Ett lämpligt fel visas om en användare försöker logga in med ett användarnamn som inte matchar detta mönster.
+      Ett lämpligt fel visas om en användare försöker logga in med ett användarnamn som inte matchar detta mönster. 
 
       Om denna policy inte anges eller lämnas tom kan alla användare logga in på <ph name="PRODUCT_NAME"/>.</translation>
 <translation id="7298195798382681320">Rekommenderas</translation>
@@ -957,7 +957,7 @@
       kan välja att åsidosätta detta och låta <ph name="PRODUCT_FRAME_NAME"/> rendera HTML-sidor som standard.</translation>
 <translation id="9142678351429467783">Policyn aktiverar utskrift i <ph name="PRODUCT_NAME"/> och förhindrar att användarna ändrar inställningen.
 
-      Om inställningen är aktiverad eller inte konfigurerad kan användarna skriva ut.
+      Om inställningen är aktiverad eller inte konfigurerad kan användarna skriva ut. 
 
       Om inställningen är inaktiverad kan användarna inte skriva ut från <ph name="PRODUCT_NAME"/>. Utskrift är inaktiverad på skiftnyckelmenyn, i tillägg, i JavaScript-program osv. Det går fortfarande att skriva ut från plugin-program som förbigår <ph name="PRODUCT_NAME"/> under utskriften. Vissa Flash-program har till exempel alternativet Skriv ut på snabbmenyn, och det inaktiveras inte.
 

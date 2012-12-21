@@ -16,7 +16,7 @@ new sjcl.test.TestCase("SHA-256 iterative", function (cb) {
     cb && cb();
     return;
   }
-
+  
   var toBeHashed = "", cumulative = new sjcl.hash.sha256(), hash, thiz=this;
   browserUtil.cpsIterate(function (i, cbb) {
     for (var n=100*i; n<100*(i+1); n++) {

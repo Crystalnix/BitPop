@@ -9,9 +9,9 @@ extension.
 <h2 id="package_header">Package header</h2>
 
 <p>
-The header contains the author's public key and the extension's signature.
+The header contains the author's public key and the extension's signature. 
 The signature is generated from the ZIP file using SHA-1 with the
-author's private key. The header requires a little-endian byte ordering with
+author's private key. The header requires a little-endian byte ordering with 
 4-byte alignment. The following table describes the fields of
 the <code>.crx</code> header in order:
 </p>
@@ -29,7 +29,7 @@ the <code>.crx</code> header in order:
   </tr>
   <tr>
     <td><em>version</em></td><td>unsigned&nbsp;int</td><td>32 bits</td><td>2</td>
-    <td>The version of the <code>*.crx</code> file format used (currently 2).</td>
+    <td>The version of the <code>*.crx</code> file format used (currently 2).</td> 
   </tr>
   <tr>
     <td><em>public key length</em></td><td>unsigned&nbsp;int</td><td>32 bits</td>
@@ -49,7 +49,7 @@ the <code>.crx</code> header in order:
     <td><em>public key</em></td><td>byte[]</td><td><i>pubkey.length</i></i></td>
     <td><i>pubkey.contents</i></td>
     <td>
-      The contents of the author's RSA public key, formatted as an X509
+      The contents of the author's RSA public key, formatted as an X509 
       SubjectPublicKeyInfo block.
     </td>
   </tr>
@@ -74,7 +74,7 @@ was generated from.
 <h2 id="example">Example</h2>
 
 <p>
-The following is an example hex dump from the beginning of a <code>.crx</code>
+The following is an example hex dump from the beginning of a <code>.crx</code> 
 file.
 </p>
 
@@ -91,7 +91,7 @@ A2 00 00 00   # 162 -- length of public key in bytes
 
 <h2 id="scripts">Packaging scripts</h2>
 <p>
-Members of the community have written the following scripts to package
+Members of the community have written the following scripts to package 
 <code>.crx</code> files.
 </p>
 

@@ -3,7 +3,7 @@
 <translationbundle lang="fr">
 <translation id="8000275528373650868">Google Chrome requiert Windows Vista ou Windows XP avec SP2 ou une version ultérieure.</translation>
 <translation id="8485767968786176057">Dans le cas présent, l'adresse indiquée dans le certificat ne correspond pas à celle du site Web auquel vous avez tenté d'accéder. Il est possible que vos communications soient interceptées par un pirate informatique qui présente un certificat correspondant à un autre site Web. Il est également possible que le serveur soit configuré de façon à renvoyer un même certificat pour plusieurs sites Web, y compris celui auquel vous tentez d'accéder, même si ce certificat n'est pas valide pour tous les sites. Google Chrome a permis de déterminer que vous avez accédé au domaine &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;. Toutefois, il n'est pas possible de vérifier qu'il s'agit réellement du site &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, auquel vous avez tenté d'accéder. Si vous décidez de poursuivre, Google Chrome ne vérifiera plus les éventuelles incohérences au niveau des noms des certificats.</translation>
-<translation id="5430073640787465221">Le fichier des préférences est endommagé ou n'est pas valide.
+<translation id="5430073640787465221">Le fichier des préférences est endommagé ou n'est pas valide. 
 
 Google Chrome ne peut pas récupérer vos paramètres.</translation>
 <translation id="6676384891291319759">Accéder à Internet</translation>
@@ -40,7 +40,7 @@ Certaines fonctionnalités ne seront peut-être pas disponibles, et les modifica
 <translation id="4149882025268051530">Échec de la décompression de l'archive par le programme d'installation. Veuillez télécharger de nouveau Google Chrome.</translation>
 <translation id="6989339256997917931">Google Chrome a été mis à jour, mais vous ne l'avez pas utilisé depuis plus de 30 jours.</translation>
 <translation id="5744005218040929396">Utilitaire Google Chrome</translation>
-<translation id="1682634494516646069">Google Chrome ne peut pas lire et écrire dans son répertoire de données :
+<translation id="1682634494516646069">Google Chrome ne peut pas lire et écrire dans son répertoire de données : 
 
 <ph name="USER_DATA_DIRECTORY"/></translation>
 <translation id="4343226815564935778">Le répertoire d'installation de Google Chrome semble être en cours d'utilisation. Veuillez redémarrer votre ordinateur, puis réessayer.</translation>
@@ -73,7 +73,7 @@ Certaines fonctionnalités ne seront peut-être pas disponibles, et les modifica
 <translation id="2580411288591421699">Impossible d'installer la version de Google Chrome qui est en cours d'exécution. Fermez Google Chrome et réessayez.</translation>
 <translation id="1457721931618994305">Mise à jour de Google Chrome en cours…</translation>
 <translation id="7747138024166251722">Le programme d'installation n'a pas pu créer de répertoire temporaire. Vérifiez que le disque a suffisamment d'espace libre et que vous disposez des autorisations nécessaires pour installer le logiciel.</translation>
-<translation id="5170938038195470297">Votre profil ne peut pas être utilisé parce qu'il vient d'une version plus récente de Google Chrome.
+<translation id="5170938038195470297">Votre profil ne peut pas être utilisé parce qu'il vient d'une version plus récente de Google Chrome. 
 
 Certaines fonctionnalités peuvent être indisponibles. Veuillez spécifier un répertoire de profil différent ou utiliser une version plus récente de Google Chrome.</translation>
 <translation id="8738921060445980047">Version inconnue</translation>

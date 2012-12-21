@@ -11,7 +11,7 @@
 <meta http-equiv="Expires" content="-1">
 </head>
 <body>
-
+        
           <div id="header-g3">
             <div class="top-nav-signin">
                 <div class="top-nav-links">
@@ -28,9 +28,11 @@
 		<div class="mid-edge-cont">
                     <form name="initRegistrationActionForm" id="initRegistrationActionForm" action="/productsweb/subflows/FreeMemberRegistration/FreeAolRegistrationAction.do" class="mainCont" method="post" >
                         <div class="beforeRegFields">
-
+                            
                         </div>
 
+                        
+                                    
 
 
 
@@ -39,14 +41,12 @@
 
 
 
-
-
-
+                        
                             <fieldset class="contBlock" id="createEmail">
 <h3>Create Your Account</h3>
+                        
 
-
-
+                                    
 
 
 
@@ -70,21 +70,21 @@
 <div id="name-cont">
     <div id="fname-field">
         <label for="firstName">
-
+            
                 First Name
-
+            
         </label>
-
+        
             <input type="text" name="{actionForm.firstName}" id="firstName" maxlength="15"><div id="firstNameError" class="errorMsg"></div>
     </div>
 
     <div id="lname-field">
         <label for="lastName">
-
+            
               Last Name
-
+            
         </label>
-
+        
             <input type="text" name="{actionForm.lastName}" id="lastName" maxlength="15"><div id="lastNameError" class="errorMsg"></div>
     </div>
 </div>
@@ -93,33 +93,33 @@
     <label for="desiredSN" id="username-label">
         <span class="callout">NEW!</span>
         <span id="usernameLabelText">
-
+            
                 Pick a username:
-
+            
         </span>
         <a  class="whatsNew" >What's new?</a>
     </label>
 
-
+    
         <input type="text" name="{actionForm.desiredSN}" id="desiredSN" value="" maxlength="16"><span id="postInpSN">@aol.com</span>
-
+    
 
     <p id="check-avail-butt" class="phantomButt">
         <span >CHECK</span>
     </p>
     <p id="change-link" class="changeLink"><a >Change</a></p>
 
-
+    
 </div>
 
 <div id="usernameError" class="errorMsg"></div>
 
 <div id="password-cont">
-
+    
         <input type="hidden" id="snChoice" name="snChoice" value="newEmail" class="hiddenInp"><label for="password">
-
+        
             Password
-
+        
     </label>
     <input type="password" name="{actionForm.password}" id="password" maxlength="16"><input type="text" id="verifyPasswordHint" value="Retype password" readonly ><input type="password" name="{actionForm.verifyPassword}" id="verifyPassword" maxlength="16"><div id="passwordError" class="errorMsg"></div>
 </div>
@@ -132,13 +132,13 @@
         <a  id="step-one" class="button next" ><span class="ltbtnedge">Next</span></a>
     </span>
 </div>
-
+                        
                                 </fieldset>
 <fieldset class="contBlock" id="aboutYou">
 <h3>Tell Us About Yourself</h3>
+                        
 
-
-
+                                    
 
 
 
@@ -158,9 +158,9 @@
 <h2 class="sect-headline">Okay, now let's get personal...</h2>
 
 <label class="selectLabel" for="dob" id="dob-label">
-
+  
          Date of Birth
-
+  
   <a  class="whatsNew" id="whats-new" >Why so Personal?</a>
 </label>
 <div id="dob">
@@ -168,7 +168,7 @@
 
 
     <div id="month-cont" class="month-cont">
-
+        
 
 
 
@@ -211,20 +211,20 @@
 
   <div class="gender-cont">
     <label for="gender">
-
+      
              Gender
-
+      
     </label>
-
+    
         <div class="female-choice">
-
+            
 <input type="radio" name="wlw-radio_button_group_key:{actionForm.gender}" id="femaleChoice" value="Female"><span><span>&#160;Female</span></span>
         </div>
         <div class="male-choice">
-
+            
 <input type="radio" name="wlw-radio_button_group_key:{actionForm.gender}" id="maleChoice" value="Male"><span><span>&#160;Male</span></span>
         </div>
-
+    
 
     <div id="genderError" class="errorMsg"></div>
   </div>
@@ -235,9 +235,9 @@
 
 <div class="zip-cont">
     <label for="zipCode">
-
+      
              Zip Code
-
+      
     </label>
     <input type="text" name="{actionForm.zipCode}" id="zipCode" class="bbWidth"><div id="zipCodeError" class="errorMsg"></div>
 </div>
@@ -246,14 +246,14 @@
 <h2 class="sect-headline secondary">and keep it secure</h2>
 <h4>If you forget your password, you'll need this information to reset your account.</h4>
 
-
+  
 
     <div id="asq-toggle-sect">
 
       <label class="selectLabel" for="acctSecurityQuestion">
-
+        
              Set a Security Question
-
+        
       </label>
 
       <div class="asq-block">
@@ -283,14 +283,14 @@
 
 
 
-
+      
 
     </div>
 <!--End asq-toggle-sect -->
 
+  
 
-
-
+  
 
    <div id="altemail-toggle-sect">
 
@@ -301,18 +301,18 @@
 
     </div>
 
-
+  
 
     <div class="panel-nav-cont">
         <a class="back" >&lt; Back</a>
-        <span class="button-wrapper">
+        <span class="button-wrapper">            
             <a  id="step-two" class="button next" ><span class="ltbtnedge">Next</span></a>
         </span>
     </div>
 
+                        
 
-
-
+                                    
 
 
 
@@ -320,13 +320,13 @@
 
 <div style="clear:both;"></div>
 
-
+                        
                                 </fieldset>
 <fieldset class="contBlock" id="verify">
 <h3>Verify Your Registration</h3>
+                        
 
-
-
+                                    
 
 
 
@@ -343,27 +343,27 @@
 
 
     <div class="wordVerify" id="wordVerCont">
-
+            
             <div class="wordVerButtons">
                 <a id="refreshWordverBtn"  >
                     <span class="has-graphic">Refresh<br> Image</span>
                 </a>
-
+                
                     <a id="playAudBtn"  >
                         <span class="has-graphic">Audio Assistance</span>
                     </a>
-
+                
             </div>
             <img id="wordVerImage" src="#" alt="">
 </div>
 
         <label for="wordVerify" class="wordVer">
-
+        
              Enter what you see above
-
+        
         </label>
         <input type="text" name="{actionForm.wordVerify}" id="wordVerify" maxlength="10"><div id="captchaError" class="errorMsg"></div>
-
+    
 
 
 
@@ -381,12 +381,12 @@
     </span>
 </div>
 
-
+                        
                                 </fieldset>
 <br class="clearBreak">
 </form>
 <div class="afterRegFields"><!--nothing yet--></div>
-		</div>
+		</div>  
 
                 <div class="nav-dots"></div>
 		<div class="bottom-edge-cont"></div>
@@ -396,14 +396,14 @@
                 <a href="http://www.aol.com">AOL Inc.</a> | <a href="http://legal.aol.com/TOS">Terms of Service</a> | <a href="http://privacy.aol.com">Privacy Policy</a> | <a href="http://help.aol.com/">Help</a> <span class="copy">&#169;2011 AOL Inc. All Rights Reserved</span>
             </div>
 
-        </div>
+        </div> 
 
         <div id="whatsnewOverlay" class="overlay">
             <h2>What's new?</h2>
-
+            
                 <p>Now you can get the perfect email address! AOL Mail now supports additional characters like dots and underscores.</p>
                 <p>Maybe you're in the mood for janey@aol.com, feeling spunky with jammin.jane@aol.com, or maybe you'd like to go formal with jane_doe@aol.com &#8212; the choice is now yours.</p>
-
+            
             <span class="button-wrapper"><a class="button"  ><span class="ltbtnedge">OK</span></a></span>
         </div>
 
@@ -414,6 +414,6 @@
             <span class="button-wrapper"><a class="button"  ><span class="ltbtnedge">OK</span></a></span>
         </div>
 
-
+        
 </body>
 </html>

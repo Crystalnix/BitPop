@@ -44,9 +44,9 @@
       Ne feledje, hogy ezt a házirendet felülírhatják a DisabledPlugins és a DisabledPluginsExceptions értékei.
 
       Ha a házirend beállítatlanul marad, a felhasználó a nem változtatható inkompatibilis, elavult vagy veszélyes bővítmények kivételével a rendszerre telepített valamennyi bővítményt használhatja.</translation>
-<translation id="1492145937778428165">Megadja, hogy az eszközre vonatkozó házirendadatok lekérdezése az eszközkezelési szolgáltatástól hány ezredmásodpercenként történjen.
+<translation id="1492145937778428165">Megadja, hogy az eszközre vonatkozó házirendadatok lekérdezése az eszközkezelési szolgáltatástól hány ezredmásodpercenként történjen. 
 
-Ennek a házirendnek a beállítása felülbírálja az alapértelmezett 3 órás értéket. Ennél a házirendnél az érvényes érték 1 800 000 (30 perc) és 86 400 000 (1 nap) közötti.
+Ennek a házirendnek a beállítása felülbírálja az alapértelmezett 3 órás értéket. Ennél a házirendnél az érvényes érték 1 800 000 (30 perc) és 86 400 000 (1 nap) közötti. 
 
 Bármely érték, amely nem ebben a tartományban van, a közelebbi határhoz lesz igazítva. Ha a házirend konfigurálatlanul marad, akkor a(z) <ph name="PRODUCT_OS_NAME"/> az alapértelmezés szerinti 3 órás értéket használja.</translation>
 <translation id="3765260570442823273">A tétlenség miatti kijelentkeztetés figyelmeztető üzenetének időtartama</translation>
@@ -234,7 +234,7 @@ Bármely érték, amely nem ebben a tartományban van, a közelebbi határhoz le
 <translation id="3450318623141983471">Az eszköz fejlesztői kapcsolójának állapotjelentése a rendszer indításakor. Ha a házirend nincs beállítva, vagy hamis az értéke, akkor a fejlesztői kapcsoló állapota nem lesz jelentve.</translation>
 <translation id="1811270320106005269">Lezárás engedélyezése, ha a(z) <ph name="PRODUCT_OS_NAME"/> eszközök tétlenek, illetve felfüggesztett állapotban vannak.
 
-Ha engedélyezi ezt a beállítást, az eszközök alvásának feloldásakor a felhasználóknak jelszót kell megadniuk.
+Ha engedélyezi ezt a beállítást, az eszközök alvásának feloldásakor a felhasználóknak jelszót kell megadniuk. 
 
 Ha letiltja ezt a beállítást, az eszközök alvásának feloldásakor a felhasználóknak nem kell jelszót megadniuk.
 

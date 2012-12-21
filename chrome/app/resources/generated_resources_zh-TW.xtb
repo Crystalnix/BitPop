@@ -401,7 +401,7 @@
 <translation id="1070066693520972135">WEP</translation>
 <translation id="8694146932926629530">可能會追蹤裝置使用量。</translation>
 <translation id="640711995843785138"><ph name="PRODUCT_NAME"/> 偵測到 ESET 產品攔截了安全加密連線。
-
+          
 一般而言，這不屬於安全性問題，因為 ESET 軟體通常是在同一台電腦上執行。不過，ESET 軟體和 <ph name="PRODUCT_NAME"/> 安全連線的某些設定不相容，因此您必須變更 ESET 產品設定，使其不會執行這項攔截動作。
 
 按一下 [瞭解詳情] 連結以查看相關說明。</translation>
@@ -1178,9 +1178,9 @@
 <translation id="4498419978438799658">存取使用合成語音朗讀的所有文字</translation>
 <translation id="7339898014177206373">新視窗</translation>
 <translation id="3026202950002788510">請依序前往
-
+          
           [應用程式] &gt; [系統偏好設定] &gt; [網路] &gt; [進階] &gt; [Proxy]，
-
+          
           並取勾選取所有已選取的 Proxy。<ph name="BEGIN_BOLD"/><ph name="END_BOLD"/></translation>
 <translation id="3759371141211657149">管理處理常式設定...</translation>
 <translation id="8856844195561710094">無法停止搜索藍牙裝置。</translation>
@@ -1898,9 +1898,9 @@
 <translation id="6231782223312638214">建議</translation>
 <translation id="3378649245744504729">新相簿</translation>
 <translation id="8302838426652833913">請依序前往
-
+          
           [應用程式] &gt; [系統偏好設定] &gt; [網路] &gt; [協助我]，
-
+          
           以測試您的連線。<ph name="BEGIN_BOLD"/><ph name="END_BOLD"/></translation>
 <translation id="8664389313780386848">檢視網頁原始碼(&amp;V)</translation>
 <translation id="8970407809569722516">韌體：</translation>

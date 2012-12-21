@@ -7,7 +7,7 @@
 
 function triggerGeo(onSuccess, onError) {
   if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(onSuccess, onError);
+    navigator.geolocation.getCurrentPosition(onSuccess, onError); 
   } else {
     document.getElementById('lat').innerHTML =
         'Error: navigator.geolocation is false';

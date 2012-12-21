@@ -974,7 +974,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="7241389281993241388">Vui lòng đăng nhập vào <ph name="TOKEN_NAME"/> để nhập chứng chỉ ứng dụng khách.</translation>
 <translation id="7206693748120342859">Đang tải xuống <ph name="PLUGIN_NAME"/>...</translation>
 <translation id="4744574733485822359">Tải xuống của bạn đã hoàn tất</translation>
-<translation id="2872754556057097683">Đã nhận được nhiều tiêu đề Độ dài-Nội dung khác nhau.  Điều này không được phép
+<translation id="2872754556057097683">Đã nhận được nhiều tiêu đề Độ dài-Nội dung khác nhau.  Điều này không được phép 
         nhằm bảo vệ chống lại các cuộc tấn công phân nhỏ phản hồi HTTP.</translation>
 <translation id="4804818685124855865">Ngắt kết nối</translation>
 <translation id="1645228020260124617"><ph name="PRECENTAGE"/>%</translation>

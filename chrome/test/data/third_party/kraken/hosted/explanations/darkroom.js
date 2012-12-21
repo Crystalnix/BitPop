@@ -292,8 +292,8 @@ function Redisplay() {
   if (processTime != -1) {
     $("#log")[0].innerHTML = "<p>" +
       "Size: " + processWidth + "x" + processHeight + " (" + (processWidth*processHeight) + " pixels)<br>" +
-      "Process: " + processTime + "ms" + " Total: " + (t3-t0) + "ms<br>" +
-      "Throughput: " + Math.floor((processWidth*processHeight) / (processTime / 1000.0)) + " pixels per second<br>" +
+      "Process: " + processTime + "ms" + " Total: " + (t3-t0) + "ms<br>" + 
+      "Throughput: " + Math.floor((processWidth*processHeight) / (processTime / 1000.0)) + " pixels per second<br>" + 
       "FPS: " + (Math.floor((1000.0 / (t3-t0)) * 100) / 100) + "<br>" +
     "</p>";
   } else {
@@ -312,12 +312,12 @@ function ZoomToPoint(x, y) {
   gDisplayCanvas.height = gZoomSize[1];
   gZoomPoint = [x/r, y/r];
   $("#canvas").removeClass("canzoomin").addClass("cangrab");
-  Redisplay();
+  Redisplay();  
 }
 
 function ZoomReset() {
   gDisplayCanvas.width = gDisplaySize[0];
-  gDisplayCanvas.height = gDisplaySize[1];
+  gDisplayCanvas.height = gDisplaySize[1];  
   gZoomPoint = null;
   $("#canvas").removeClass("canzoomout cangrab isgrabbing").addClass("canzoomin");
   Redisplay();
@@ -455,7 +455,7 @@ function SetupZoomClick() {
                         return false;
                       }
                     });
-
+  
 }
 
 function CheckboxToggled(skipRedisplay) {
@@ -478,7 +478,7 @@ function ResetSliders() {
 }
 
 function DoReset() {
-  ResetSliders();
+  ResetSliders();  
   ZoomReset();
   OnSliderChanged();
 }

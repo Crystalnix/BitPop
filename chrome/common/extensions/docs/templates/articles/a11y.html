@@ -236,7 +236,7 @@ Check that the user can navigate between
 the different parts of your extension
 without using the mouse.
 Also check that any popups on page actions or browser actions
-are keyboard navigable.
+are keyboard navigable. 
 </p>
 
 <p id="builtin">
@@ -264,7 +264,7 @@ Apple's screenreader.
 Make sure that it's easy to see
 which part of the interface has keyboard focus.
 Usually a focus outline moves around the interface,
-but if you’re using CSS heavily this outline might be suppressed
+but if you’re using CSS heavily this outline might be suppressed 
 or the contrast might be reduced.
 Two examples of focus outline follow.
 </p>
@@ -314,11 +314,11 @@ to reflect the current active toolbar button.
 
 <pre>
 &lt;head&gt;
-&lt;script&gt;
+&lt;script&gt;		
  function optionKeyEvent(event) {
   var tb = event.target;
-  var buttonid;
-
+  var buttonid; 
+ 
   ENTER_KEYCODE = 13;
   RIGHT_KEYCODE = 39;
   LEFT_KEYCODE = 37;
@@ -329,29 +329,29 @@ to reflect the current active toolbar button.
       ExecuteButtonAction(getCurrentButtonID());
       <em>// getCurrentButtonID defined elsewhere </em>
     } else if (event.keyCode == event.RIGHT_KEYCODE) {
-      // Change the active toolbar button to the one to the right (circular).
+      // Change the active toolbar button to the one to the right (circular). 
       var buttonid = getNextButtonID();
       <em>// getNextButtonID defined elsewhere </em>
-      tb.setAttribute("aria-activedescendant", buttonid);
+      tb.setAttribute("aria-activedescendant", buttonid); 
     } else if (event.keyCode == event.LEFT_KEYCODE) {
-      // Change the active toolbar button to the one to the left (circular).
+      // Change the active toolbar button to the one to the left (circular). 
       var buttonid = getPrevButtonID();
       <em>// getPrevButtonID defined elsewhere </em>
-      tb.setAttribute("aria-activedescendant", buttonid);
+      tb.setAttribute("aria-activedescendant", buttonid); 
     } else {
       return true;
     }
     return false;
   }
-}
-&lt;/script&gt;
+}  
+&lt;/script&gt;		
 
-&lt;div role="toolbar" tabindex="0" aria-activedescendant="button1" id="tb1"
+&lt;div role="toolbar" tabindex="0" aria-activedescendant="button1" id="tb1" 
      onkeydown="return optionKeyEvent(event);"
      onkeypress="return optionKeyEvent(event);"&gt;
-  &lt;img src="buttoncut" role="button" alt="cut" id="button1"&gt;
-  &lt;img src="buttoncopy" role="button" alt="copy" id="button1"&gt;
-  &lt;img src="buttonpaste" role="button" alt="paste" id="button1"&gt;
+  &lt;img src="buttoncut" role="button" alt="cut" id="button1"&gt;      
+  &lt;img src="buttoncopy" role="button" alt="copy" id="button1"&gt;     
+  &lt;img src="buttonpaste" role="button" alt="paste" id="button1"&gt;     
 &lt;/div&gt;
 </pre>
 
@@ -417,7 +417,7 @@ to see what an image looks like in various forms of color deficiency.
 <p>
 You might consider offering different color themes,
 or giving the user the ability to customize the color scheme
-for better contrast.
+for better contrast. 
 </p>
 
 <h3 id="sound">Sound</h3>
@@ -427,7 +427,7 @@ If your extension relies upon sound or video to convey information,
 ensure that captions or a transcript are available.
 See the
 <a href="http://www.dcmp.org/ciy/">Described and Captioned Media Program guidelines</a>
-for more information on captions.
+for more information on captions. 
 </p>
 
 <h3 id="images">Images</h3>

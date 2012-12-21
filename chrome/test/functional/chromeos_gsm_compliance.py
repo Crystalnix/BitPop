@@ -41,7 +41,7 @@ class ChromeosGSMCompliance(pyauto.PyUITest):
     """Check if fake-gsm-modem is running.
 
     Returns:
-      True if fake-gsm-modem process is running and False if not.
+      True if fake-gsm-modem process is running and False if not.  
     """
     ps = sub.Popen('ps -ef | grep fake-gsm-modem | grep -v grep',
                      shell=True, stdout=sub.PIPE).communicate()
@@ -54,7 +54,7 @@ class ChromeosGSMCompliance(pyauto.PyUITest):
       carrier_name: The name of the carrier.
       cellular_name: The name in the icon of the cellular network.
     """
-    fake_gsm = sub.Popen(['sudo', '/usr/bin/python',
+    fake_gsm = sub.Popen(['sudo', '/usr/bin/python', 
                           '/usr/local/lib/flimflam/test/fake-gsm-modem',
                           '-c', carrier_name])
     self.assertTrue(self._IsFakeGSMRunning(), msg='Fake GSM is not running.')

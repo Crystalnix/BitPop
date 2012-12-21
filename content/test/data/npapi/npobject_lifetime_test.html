@@ -13,21 +13,21 @@ Test running....
 
 NPObject Lifetime test<p>
 
-Tests the case where a plugin holds on to an NPObject reference
-to another plugin in a different frame in the page and whether
+Tests the case where a plugin holds on to an NPObject reference 
+to another plugin in a different frame in the page and whether 
 the npobject is callable when the frame is destroyed.
 
 <div ID=npobject_lifetime_test_instance2>
-<iframe src="npobject_lifetime_test_second_instance.html" name="plugin_frame">
+<iframe src="npobject_lifetime_test_second_instance.html" name="plugin_frame"> 
 </iframe>
 </div>
 
-<embed	type="application/vnd.npapi-test"
+<embed	type="application/vnd.npapi-test" 
 	src="foo"
 	name="npobject_lifetime_test"
 	id="1"
 	mode="np_embed">
-
+	
 <script>
 
 function GetSecondPluginInstance() {
@@ -35,8 +35,8 @@ function GetSecondPluginInstance() {
   if (!plugin_frame) {
     alert("failed to find frame in frames list");
     return;
-  }
-
+  } 
+  
   var plugin = plugin_frame.document.getElementById(2);
   if (!plugin) {
     alert("Failed to locate second plugin");
@@ -51,8 +51,8 @@ function DeleteSecondPluginInstance() {
     frame_div.parentNode.removeChild(frame_div);
   }
 }
-</script>
-
+</script>	
+    
 </body>
 </html>
 

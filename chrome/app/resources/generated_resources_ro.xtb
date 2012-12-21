@@ -1569,7 +1569,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="5669267381087807207">Activare</translation>
 <translation id="7434823369735508263">Tastatură UK Dvorak</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> zile</translation>
-<translation id="5308845175611284862">Sincronizarea <ph name="PRODUCT_NAME"/> simplifică permiterea accesului la date (cum ar fi marcajele şi setările) între computerele dvs.
+<translation id="5308845175611284862">Sincronizarea <ph name="PRODUCT_NAME"/> simplifică permiterea accesului la date (cum ar fi marcajele şi setările) între computerele dvs. 
           Când vă conectaţi utilizând Contul dvs. Google, <ph name="PRODUCT_NAME"/> sincronizează datele dvs. stocându-le online la Google.</translation>
 <translation id="1707463636381878959">Permiteţi accesul la această reţea altor utilizatori</translation>
 <translation id="2084978867795361905">MS-IME</translation>
@@ -3730,7 +3730,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="7681202901521675750">Cartela SIM este blocată, introduceţi codul PIN. Încercări rămase: <ph name="TRIES_COUNT"/></translation>
 <translation id="2489918096470125693">Adăugaţi un &amp;dosar...</translation>
 <translation id="7353651168734309780"><ph name="EXTENSION_NAME"/> necesită permisiuni noi</translation>
-<translation id="6420812616858267777">Sincronizarea <ph name="PRODUCT_NAME"/> simplifică permiterea accesului la date (cum ar fi marcajele şi setările) între computerele şi dispozitivele dvs. mobile.
+<translation id="6420812616858267777">Sincronizarea <ph name="PRODUCT_NAME"/> simplifică permiterea accesului la date (cum ar fi marcajele şi setările) între computerele şi dispozitivele dvs. mobile. 
            Când vă conectaţi utilizând Contul dvs. Google, <ph name="PRODUCT_NAME"/> sincronizează datele dvs. stocându-le online la Google.</translation>
 <translation id="7484964289312150019">Deschideți toate marcajele într-o &amp;fereastră nouă</translation>
 <translation id="1731346223650886555">Punct şi virgulă</translation>
@@ -4358,7 +4358,7 @@ Apăsaţi pe orice tastă pentru a continua explorarea.</translation>
 <translation id="7322037929240387249">Setări tastatură...</translation>
 <translation id="3709244229496787112">Browserul a fost oprit înainte de finalizarea descărcării.</translation>
 <translation id="7999229196265990314">Au fost create următoarele fișiere:
-
+        
 Extensie: <ph name="EXTENSION_FILE"/>
 Fișier cheie: <ph name="KEY_FILE"/>
 

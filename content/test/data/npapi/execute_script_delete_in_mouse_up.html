@@ -7,7 +7,7 @@
 function DeletePluginWithinScript() {
   var plugin_div = document.getElementById("PluginDiv");
   plugin_div.innerHTML = "Object Deleted";
-  onSuccess("execute_script_delete_in_mouse_up", 1);
+  onSuccess("execute_script_delete_in_mouse_up", 1); 
 }
 </script>
 </head>
@@ -21,10 +21,10 @@ Test running....
 NPObject Proxy Test<p>
 
 Tests the case where a plugin instance is deleted in the context
-of a synchronous mouse event.
+of a synchronous mouse event. 
 
 <DIV ID=PluginDiv>
-<embed	type="application/vnd.npapi-test"
+<embed	type="application/vnd.npapi-test" 
 	src="foo"
 	name="execute_script_delete_in_mouse_up"
 	id="1"
@@ -33,7 +33,7 @@ of a synchronous mouse event.
   height="100%"
 >
 </DIV>
-<script>
+<script> 
     var height = document.body.offsetHeight;
 </script>
 

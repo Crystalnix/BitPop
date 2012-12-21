@@ -50216,8 +50216,8 @@ GraphNode.prototype.toJSON = function() {
 GraphNode.prototype.toString = function() {
     return "[" + this.x + " " + this.y + "]";
 }
-GraphNode.prototype.isAt = function(x,y) {
-    return (x == this.x) && (y == this.y);
+GraphNode.prototype.isAt = function(x,y) { 
+    return (x == this.x) && (y == this.y); 
 };
 GraphNode.prototype.isWall = function() {
   return this._isWall;

@@ -18,7 +18,7 @@
           Do odprtih zavihkov lahko dostopate tukaj.
           &lt;/p&gt;
           &lt;p&gt;
-          V računalniku odprite Chrome, odprite meni in izberite »Prijava v Chrome ...«
+          V računalniku odprite Chrome, odprite meni in izberite »Prijava v Chrome ...« 
           &lt;/p&gt;</translation>
 <translation id="7040807039050164757">&amp;Preveri črkovanje v tem polju</translation>
 <translation id="778579833039460630">Prejeti niso bili nobeni podatki</translation>
@@ -1506,7 +1506,7 @@ Ali želite zagnati <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="2728624657977418581">Dodajte ime</translation>
 <translation id="4062903950301992112">Če razumete, da lahko obisk tega spletnega mesta škodi vašemu računalniku, <ph name="PROCEED_LINK"/>.</translation>
 <translation id="32330993344203779">Naprava je bila uspešno prijavljena v upravljanje v podjetju.</translation>
-<translation id="158917669717260118">Spletne strani ni mogoče naložiti, ker je računalnik prešel v stanje pripravljenosti ali
+<translation id="158917669717260118">Spletne strani ni mogoče naložiti, ker je računalnik prešel v stanje pripravljenosti ali 
           mirovanja. Ko se to zgodi, so omrežne povezave prekinjene
           in nove zahteve do omrežja niso uspešne. Težavo odpravite z vnovičnim
           nalaganjem strani.</translation>
@@ -2079,7 +2079,7 @@ Javni eksponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="2950186680359523359">Strežnik je prekinil povezavo, ne da bi poslal podatke.</translation>
 <translation id="9142623379911037913">Želite dovoliti, da <ph name="SITE"/> prikaže namizna obvestila?</translation>
 <translation id="9118804773997839291">V nadaljevanju si lahko ogledate seznam vseh nevarnih elementov na strani. Če želite izvedeti več o izvoru posameznega elementa, kliknite povezavo »Diagnostika«.</translation>
-<translation id="3808504580859735057">Spletne strani ni mogoče naložiti, ker je mobilna naprava prešla v stanje pripravljenosti ali
+<translation id="3808504580859735057">Spletne strani ni mogoče naložiti, ker je mobilna naprava prešla v stanje pripravljenosti ali 
           mirovanja. Ko se to zgodi, so omrežne povezave prekinjene
           in nove zahteve do omrežja niso uspešne. Težavo odpravite z vnovičnim
           nalaganjem stran.</translation>

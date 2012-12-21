@@ -4,7 +4,7 @@ new sjcl.test.TestCase("AES official known-answer tests", function (cb) {
     cb && cb();
     return;
   }
-
+  
   var i, kat = sjcl.test.vector.aes, tv, len, aes;
 
   //XXX add more vectors instead of looping

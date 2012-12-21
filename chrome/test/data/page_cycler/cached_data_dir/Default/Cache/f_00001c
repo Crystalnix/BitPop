@@ -47,11 +47,11 @@ History:
 2010-03-09  Changed 900px fixed width to 960px on #container
 2010-06-30  Added 3rd level indented links to leftnav and rightcol; Edited scope to include .quicklinks class in content
 			Added column 1,2,3 , 1-2,3 , 1,2-3 layout for use on any page; Footer navigation now available as an unordered
-			list; Added sample_homepage2-1.
+			list; Added sample_homepage2-1.								
 			Added .colSplash class to allow use of splash image in columns layout
-2010-11-30  Added icon links class and scoped for #content; Re-scoped #content ul and #content ol that was listed
+2010-11-30  Added icon links class and scoped for #content; Re-scoped #content ul and #content ol that was listed 
 			in the homepage quicklinks to be within #columns only; Substitued bullet and space characters with
-			unicode; Added !important to margin property on quicklinks and iconlinks to override #columns ul (it's a
+			unicode; Added !important to margin property on quicklinks and iconlinks to override #columns ul (it's a 
 			precidence thing)
 2010-12-08	Width changed from 100% on table.directory class to accomodate for DW CS5 overflow bug. Added .emphRed class for
 			bolded red text and .emphBlue class for bolded blue text.
@@ -91,9 +91,9 @@ body {
 
 /*==============================| SKIPLINK |==============================*/
 
-/*	This is the top part of the site so Web users with accessibility
+/*	This is the top part of the site so Web users with accessibility 
 	issues can more easily navigate the site */
-
+	
 #skiplink {
 	padding: 3px 10px 3px 0;
 	height: 100%;
@@ -112,7 +112,7 @@ body {
 	color: #000000;
 	text-decoration: underline;
 	}
-
+	
 /*==============================| HEADER, LOGO, and DEPTARTMENT INFO |==============================*/
 
 #header {
@@ -177,7 +177,7 @@ body {
 	}
 * html #header, * html #header #cp { \height: 1%; }
 	/* Goldbar fix in IE6 - aka "Holly Hack" */
-
+	
 #header #cp p {
 	font-weight: normal;
 	font-size: 65%;
@@ -367,26 +367,26 @@ input#q {
 #leftnav ul ul ul {
 	background:#f9f9f9;
 	}
-
+	
 #leftnav ul ul ul li {
 	font-size: 100%;
-	}
-
+	}	
+		
 #leftnav ul ul ul li a {
 	padding: 5px 5px 5px 35px;
 	}
-
+	
 #leftnav ul ul ul li a:link,
 #leftnav ul ul ul li a:visited {
 	background: url(../images/navigation/circle.gif) 28px 9px no-repeat;
 	}
-
+	
 #leftnav ul ul ul li a:focus,
 #leftnav ul ul ul li a:hover,
 #leftnav ul ul ul li a:active {
 	background: url(../images/navigation/circle.gif) 28px 9px no-repeat #f4f4f4;
 	}
-
+	
 #leftnav p {
 	background: #efefef;
 	border-left: #ccc solid 1px;
@@ -401,7 +401,7 @@ input#q {
 	margin: 20px 5px 0 5px;
 	padding: 0 0 0 0;
 	}
-#navcontent1 h2 {
+#navcontent1 h2 {	
 	font-size: 90%;
 	margin: 0 0 10px 0;
 	padding: 0;
@@ -635,16 +635,16 @@ input#q {
 #rightcol ul ul ul li {
 	font-size: 100%;
 	}
-
+	
 #rightcol ul ul ul li a {
 	padding: 4px 5px 4px 35px;
 	}
-
+	
 #rightcol ul ul ul li a:link,
 #rightcol ul ul ul li a:visited {
 	background: url(../images/navigation/circle.gif) 28px 8px no-repeat;
 	}
-
+	
 #rightcol ul ul ul li a:focus,
 #rightcol ul ul ul li a:hover,
 #rightcol ul ul ul li a:active {
@@ -658,7 +658,7 @@ input#q {
 	margin: 20px 5px 0 5px;
 	padding: 0 0 0 0;
 	}
-#navcontent2 h2 {
+#navcontent2 h2 {	
 	font-size: 90%;
 	margin: 0 0 10px 0;
 	padding: 0;
@@ -807,7 +807,7 @@ input#q {
 	margin: 0 0 10px 0;
 	padding: 10px 10px 1px;
 	}
-
+	
 /*==============================| BREADCRUMB |==============================*/
 
 #breadcrumb {
@@ -838,7 +838,7 @@ input#q {
 /*------------ IE 6 Hacks ------------*/
 
 * html #content-1col { mar\gin: 0; f\loat: left; }
-* html #content-2col { mar\gin: 0; f\loat: left; }
+* html #content-2col { mar\gin: 0; f\loat: left; } 
 /** html #content-3col { mar\gin: 0; f\loat: left; }*/
 
 
@@ -856,9 +856,9 @@ input#q {
 #content #topContent { /*#topContent used at top of homepage.dwt template*/
 	width: 100%;
 	}
+	
 
-
-
+	
 
 /*==============================| FOOTER |==============================*/
 
@@ -901,7 +901,7 @@ input#q {
 #footer_deptlinks ul {
 	margin:10px;
 	padding:0;
-	}
+	}		
 #footer_deptlinks ul li {
 	display:inline;
 	list-style-type:none;
@@ -911,7 +911,7 @@ input#q {
 	}
 #footer_deptlinks ul li.removeBullet:before {
 	content:"";
-	}
+	}	
 #footer_deptlinks a:link,
 #footer_deptlinks a:visited {
 	color: #000;
@@ -1088,7 +1088,7 @@ body {
 #content blockquote p {
 	background: url(../images/content/end_quote.gif) bottom right no-repeat;
 	padding-right: 30px;
-	}
+	}	
 #content em { font-style: oblique; }
 
 #content strong { font-weight: bold; }
@@ -1142,7 +1142,7 @@ body {
 	text-decoration: underline;
 	}
 #content table.center { margin: 0 auto 20px; }
-
+	
 #content table.center caption {	margin: 0 auto; }
 
 #content table td.center,
@@ -1303,7 +1303,7 @@ code, kbd {
 	font-size: 12px;
 	color: #000066;
 	}
-
+	
 /*==============================| COLUMNS |==============================*/
 /*#columns is used for backward compatability for original divs on homepage*/
 
@@ -1316,7 +1316,7 @@ code, kbd {
 #columns , .columns {
 	overflow: hidden;
 	padding: 0 0 15px 0;
-	}
+	}	
 #columns { /*Override for columns div used only on homepages (provides extra space under h1) */
 	padding:20px 0 0 0;
 	}
@@ -1324,37 +1324,37 @@ code, kbd {
 	width: 22%;
 	float: left;
 	padding: 0 1.5% 0 0;
-	}
+	}	
 #columns #column2 , .columns .column2 {
 	width: 49%;
 	float: left;
 	padding: 0 1.5%;
-	}
+	}	
 #columns #column3 , .columns .column3 {
 	width: 22%;
 	float: left;
 	padding: 0 0 0 1.5%;
-	}
+	}	
 #columns #column1-2 , .columns .column1-2 {
 	width: 74%;
 	float: left;
 	padding: 0 1.5% 0 0;
-	}
+	}	
 #columns #column2-3 , .columns .column2-3 {
 	width: 74%;
 	float: left;
 	padding: 0 0 0 1.5%;
-	}
+	}				
 #columns #column2 , .columns .column2 {
 	border-right: #aaa dotted 1px;
 	border-left: #aaa dotted 1px;
 	}
 #columns #column1-2 , .columns .column1-2 {
 	border-right: #aaa dotted 1px;
-	}
+	}		
 #columns #column2-3 , .columns .column2-3 {
 	border-left: #aaa dotted 1px;
-	}
+	}		
 * html  #columns #column2 , * html  .columns .column2 { width: 49%; } /*-- IE 6 Hack --*/
 * html  #columns #column2 , * html  .columns .column2 { width: 49%; } /*-- IE 7 Hack --*/
 
@@ -1388,7 +1388,7 @@ code, kbd {
 	float: left;
 	padding-left: 1%;
 	}
-
+	
 /*-- IE 6 Hack --*/
 * html .split {
 	\width: 90%;

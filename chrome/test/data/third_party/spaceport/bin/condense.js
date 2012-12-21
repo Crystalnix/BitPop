@@ -28,9 +28,9 @@ un.require( ['util/report'], function(report){
         var toProcess = files.filter( function(filename){
             return filename.match(/\.json$/);
         });
-
+    
         fileCount = toProcess.length;
-
+    
         toProcess.forEach( function(filename){
             fs.readFile(path.join(INPUT_DIR, filename), 'utf8', function (err, json) {
                 if( err ){
@@ -42,21 +42,21 @@ un.require( ['util/report'], function(report){
                 var userAgent = data.userData.agentMetadata.userAgent;
                 var type = data.userData.agentMetadata.type;
                 var combo = type + "-" + browser;
-
+                
                 var row = [name];
                 var columnLabels = [""];
-
+                
                 // keys are techniques - like css2DImg
                 Object.keys(data.userData.results[THING][PARAM]).sort().forEach( function(key){
                     var spriteResults = data.userData.results[THING][PARAM][key];
-
+                    
                     // testTypes are things like "scale", "rotation", and "translation"
                     Object.keys( spriteResults ).sort().forEach( function(testType){
                         var testResults = spriteResults[testType];
                         var vals = [null];
                         if( testResults ){
                             vals = [testResults.objectCount];
-
+                        
                             if(!basicDataStructure[type]){
                                 basicDataStructure[type] = {};
                             }
@@ -84,7 +84,7 @@ un.require( ['util/report'], function(report){
                 fileCount -= 1;
                 if( fileCount === 0 ){
                     var spreadsheet = createSpreadsheet();
-
+                    
                     saveSpreadsheet( spreadsheet );
 //                    foo();
 //                    bar();
@@ -95,58 +95,58 @@ un.require( ['util/report'], function(report){
 
     function createSpreadsheet(){
         var spreadsheet = [];
-
+        
         dataStructure = Object.keys(basicDataStructure).map( function(type){
             // type is something like Phone / Tablet / Laptop
-
+            
             spreadsheet.push( [type] );
-
+            
             Object.keys( basicDataStructure[type] ).map( function(browser){
                 // browser is something like Safari or Firefox
-
+                
                 spreadsheet.push( [,browser] );
-
+                
                 var summaryOfTechniques = [];
                 var allEncounteredDevices = [];
-
+                
                 Object.keys( basicDataStructure[type][browser] ).map( function(renderingTechnique){
                     // renderingTechnique is something like css2dImg
-
+                    
                     spreadsheet.push( [,,renderingTechnique] );
                     spreadsheet.push( [,,,"Device","translate","scale","rotate"] );
-
+                    
                     var summaryOfTechnique = {"technique":renderingTechnique, "deviceScores":{}};
-
+                    
                     Object.keys( basicDataStructure[type][browser][renderingTechnique] ).map( function(device){
                         // Device is something like the iPhone 4S
-
+                        
                         if( allEncounteredDevices.indexOf( device ) === -1 ){
                             allEncounteredDevices.push( device );
                         }
-
+                        
                         var dataRow = [,,,device];
                         var sumOfTestTypes = undefined;
-
+                        
                         // Object.keys( basicDataStructure[type][browser][renderingTechnique][device] )
                         ['translate', 'scale', 'rotate'].map( function(testType){
                             // testType is something like 'translate', 'scale', or 'rotate;
                             var dataPoint = basicDataStructure[type][browser][renderingTechnique][device][testType];
                             dataRow.push( dataPoint );
-
+                            
                             sumOfTestTypes = sumOfTestTypes || 0;
                             sumOfTestTypes += dataPoint;
                         });
-
+                        
                         spreadsheet.push( dataRow );
-
+                        
                         summaryOfTechnique.deviceScores[ device ] = sumOfTestTypes;
                     });
-
+                    
                     spreadsheet.push( [] );
-
+                    
                     summaryOfTechniques.push( summaryOfTechnique );
                 });
-
+                
                 spreadsheet.push( [,"Summary"] );
                 spreadsheet.push( [,].concat(allEncounteredDevices) );
                 for( var i = 0; i < summaryOfTechniques.length; i++ ){
@@ -161,17 +161,17 @@ un.require( ['util/report'], function(report){
                 spreadsheet.push( [] );
             })
         });
-
+        
         return spreadsheet;
     }
-
+    
     function saveSpreadsheet(spreadsheet){
         fs.writeFile( path.join(OUTPUT_DIR, THING + "-" + PARAM + "-RAW.csv"), report.csvByTable(spreadsheet), 'utf8', function(err){
             if(err) throw err;
             console.log("saved RAW!");
         } );
     }
-
+    
 
     function foo(){
         var toSave = [];
@@ -192,7 +192,7 @@ un.require( ['util/report'], function(report){
                 var avg = sum / legitCount;
                 averages[i] = avg;
             }
-
+            
             var bestTheWorstPhoneCanDo = Infinity;
             var bestTheBestPhoneCanDo = -Infinity;
             var averageOfEachBestTechnique = 0;
@@ -206,25 +206,25 @@ un.require( ['util/report'], function(report){
                         maxForPhone = Math.max( maxForPhone, temp );
                     }
                 }
-
+                
                 bestTheWorstPhoneCanDo = Math.min( bestTheWorstPhoneCanDo, maxForPhone );
                 bestTheBestPhoneCanDo = Math.max( bestTheBestPhoneCanDo, maxForPhone );
                 averageOfEachBestTechnique += maxForPhone;
             }
             averageOfEachBestTechnique = (averageOfEachBestTechnique / phoneCount);
-
+            
             toSave = toSave.concat( rows, [averages] );
             roundUp.push( [combo, bestTheBestPhoneCanDo, averageOfEachBestTechnique, bestTheWorstPhoneCanDo] );
         });
         console.log( roundUp );
         toSave = toSave.concat( roundUp );
-
+        
         fs.writeFile( path.join(OUTPUT_DIR, THING + "-" + PARAM + ".csv"), report.csvByTable(toSave), 'utf8', function(err){
             if(err) throw err;
             console.log("saved!");
         } );
     }
-
+    
     function bar(){
         var output = [];
         Object.keys( basicDataStructure ).sort().forEach( function(type){
@@ -233,12 +233,12 @@ un.require( ['util/report'], function(report){
                 output.push( ["", browser] );
                 Object.keys( basicDataStructure[type][browser] ).sort().forEach( function(techniqueName){
                     output.push( ["", "", techniqueName] );
-
+                    
                     var uniqueXValues = [];
-
+                    
                     Object.keys( basicDataStructure[type][browser][techniqueName] ).sort().forEach( function(deviceName){
                         var data = basicDataStructure[type][browser][techniqueName][deviceName];
-
+                        
                         data.forEach( function(tuple){
                             var objectCount = tuple[0];
                             if( uniqueXValues.indexOf(objectCount) === -1 ){
@@ -246,14 +246,14 @@ un.require( ['util/report'], function(report){
                             }
                         });
                     });
-
+                    
                     uniqueXValues.sort( NUMERIC_SORT );
-
+                    
                     output.push( ["", "", "", ""].concat( uniqueXValues ) );
-
+                    
                     Object.keys( basicDataStructure[type][browser][techniqueName] ).sort().forEach( function(deviceName){
                         var data = basicDataStructure[type][browser][techniqueName][deviceName];
-
+                        
                         var yValues = uniqueXValues.map( function(numObjects){
                             var fps = fpsForObjectCount(data, numObjects);
                             if( fps === null ){
@@ -262,18 +262,18 @@ un.require( ['util/report'], function(report){
                                 return fps;
                             }
                         });
-
+                        
                         output.push( ["", "", "", deviceName].concat( yValues ) );
                     });
                 });
             });
         });
-
-
+        
+        
         fs.writeFile( path.join(OUTPUT_DIR, THING + "-" + PARAM + "-RAW.csv"), report.csvByTable(output), 'utf8', function(err){
             if(err) throw err;
             console.log("saved RAW!");
-        } );
+        } );    
     }
 });
 

@@ -10,7 +10,7 @@ such as editing images via the <code>manifest.json</code>;
 your application can also invoke actions to be handled by other applications.
 </p>
 
-<p>Pacakged apps use Web Intents as their primary mechanism for inter-app
+<p>Pacakged apps use Web Intents as their primary mechanism for inter-app 
 communication.</p>
 
 <p class="note">
@@ -36,10 +36,10 @@ You must supply the intent in the manifest:
 </pre>
 
 <p>
-Unlike extensions and hosted apps, packaged applications do not
-need a "href" attribute in the manifest declaration, this is
-because packaged apps have a single entry point for
-launch - the <code>onLaunched</code> event.
+Unlike extensions and hosted apps, packaged applications do not 
+need a "href" attribute in the manifest declaration, this is 
+because packaged apps have a single entry point for 
+launch - the <code>onLaunched</code> event.  
 </p>
 
 <h2 id="content">Handling content types</h2>
@@ -50,7 +50,7 @@ For example, your application could handle viewing images or viewing pdfs.
 You must supply the intent in the manifest
 and use the "http://webintents.org/view" action:
 </p>
-<p>To be able declare your application's ability to view RSS and ATOM
+<p>To be able declare your application's ability to view RSS and ATOM 
 feeds, you would add the following to your manifest.
 </p>
 <pre>
@@ -88,7 +88,7 @@ chrome.exe --app-id [app_id] [path_to_file]
 </pre>
 <p>
 This will implicity launch your application with an intent payload populated
-with the action set to "http://webintents.org/view", the type set to the
+with the action set to "http://webintents.org/view", the type set to the 
 mime-type of the file and the data as a <code>FileEntry</code> object.
 </p>
 <pre>

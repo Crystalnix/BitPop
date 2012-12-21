@@ -155,7 +155,7 @@
       Hvis du deaktiverer denne innstillingen, kan bokmerker ikke legges til, fjernes eller endres. Eksisterende bokmerker vil fremdeles være tilgjengelige.</translation>
 <translation id="3496296378755072552">Passordbehandling</translation>
 <translation id="2565967352111237512">Aktiverer anonym rapportering av bruk og programstopprelaterte data om <ph name="PRODUCT_NAME"/> til Google, og hindrer brukere i å endre denne innstillingen.
-Hvis du aktiverer denne innstillingen, sendes anonym rapportering av bruk og programstopprelaterte data til Google. Hvis du deaktiverer denne innstillingen, sendes aldri anonym rapportering av bruk og programstopprelaterte data til Google.
+Hvis du aktiverer denne innstillingen, sendes anonym rapportering av bruk og programstopprelaterte data til Google. Hvis du deaktiverer denne innstillingen, sendes aldri anonym rapportering av bruk og programstopprelaterte data til Google. 
 
      Hvis du aktiverer eller deaktiverer denne innstillingen, kan ikke brukerne endre eller overstyre denne innstillingen i <ph name="PRODUCT_NAME"/>.
 
@@ -448,7 +448,7 @@ Hvis du aktiverer denne innstillingen, sendes anonym rapportering av bruk og pro
 
           Hvis denne retningslinjen ikke angis, vil det ikke utføres automatiske valg for noen nettsteder.</translation>
 <translation id="3866249974567520381">Beskrivelse</translation>
-<translation id="5192837635164433517">Aktiverer bruken av alternative sider for feilmeldinger som er innebygd i <ph name="PRODUCT_NAME"/> (for eksempel «Siden ble ikke funnet»), og hindrer brukerne i å endre denne innstillingen.
+<translation id="5192837635164433517">Aktiverer bruken av alternative sider for feilmeldinger som er innebygd i <ph name="PRODUCT_NAME"/> (for eksempel «Siden ble ikke funnet»), og hindrer brukerne i å endre denne innstillingen. 
 
       Hvis du aktiverer denne innstillingen, brukes alternative sider for feilmeldinger.
 

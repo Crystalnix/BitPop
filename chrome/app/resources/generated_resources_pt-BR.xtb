@@ -45,7 +45,7 @@
 <translation id="6610610633807698299">Inserir URL...</translation>
 <translation id="5037435837196003000">Configurações do ponteiro...</translation>
 <translation id="5172758083709347301">Máquina</translation>
-<translation id="5412117152358827401">Tem certeza de que deseja excluir essas páginas do histórico?
+<translation id="5412117152358827401">Tem certeza de que deseja excluir essas páginas do histórico? 
 
 Dica: o modo de navegação anônimo <ph name="SHORTCUT_KEY"/> pode ser útil da próxima vez.</translation>
 <translation id="3300394989536077382">Assinado por</translation>
@@ -303,7 +303,7 @@ Dica: o modo de navegação anônimo <ph name="SHORTCUT_KEY"/> pode ser útil da
 <translation id="6979158407327259162">Google Drive</translation>
 <translation id="6853700448789925482">Ativar elemento <ph name="TRACK_HTML"/></translation>
 <translation id="3150927491400159470">Recarregamento forçado</translation>
-<translation id="7531238562312180404">Como o <ph name="PRODUCT_NAME"/> não controla o modo como as extensões manipulam os seus dados pessoais, todas as extensões foram desativadas nas janelas anônimas. Você pode reativá-las individualmente no
+<translation id="7531238562312180404">Como o <ph name="PRODUCT_NAME"/> não controla o modo como as extensões manipulam os seus dados pessoais, todas as extensões foram desativadas nas janelas anônimas. Você pode reativá-las individualmente no 
         <ph name="BEGIN_LINK"/>gerenciador de extensões<ph name="END_LINK"/>.</translation>
 <translation id="5667293444945855280">Malware</translation>
 <translation id="8707481173455612936">Página da web oficial da fonte de áudio</translation>
@@ -1263,7 +1263,7 @@ Dica: o modo de navegação anônimo <ph name="SHORTCUT_KEY"/> pode ser útil da
 <translation id="6291953229176937411">&amp;Mostrar no Finder</translation>
 <translation id="8598687241883907630">Desconectar sua Conta do Google...</translation>
 <translation id="6410894982725961573">Disponibilizar off-line</translation>
-<translation id="2556718757702023317">Para salvar &quot;<ph name="FILE_NAME"/>&quot; off-line, é preciso liberar mais <ph name="TOTAL_FILE_SIZE"/> de espaço:<ph name="MARKUP_1"/>
+<translation id="2556718757702023317">Para salvar &quot;<ph name="FILE_NAME"/>&quot; off-line, é preciso liberar mais <ph name="TOTAL_FILE_SIZE"/> de espaço:<ph name="MARKUP_1"/> 
         <ph name="MARKUP_2"/>libere arquivos que você não precisa mais acessar off-line<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>exclua arquivos da pasta Downloads<ph name="MARKUP_5"/></translation>
 <translation id="4781649528196590732">Focar painel anterior</translation>
@@ -2544,7 +2544,7 @@ Dica: o modo de navegação anônimo <ph name="SHORTCUT_KEY"/> pode ser útil da
 <translation id="2052389551707911401"><ph name="NUMBER_MANY"/> horas</translation>
 <translation id="7026338066939101231">Reduzir</translation>
 <translation id="5411472733320185105">Não usar as configurações de proxy para estes hosts e domínios:</translation>
-<translation id="3685121001045880436">É provável que o servidor que hospeda a página da web tenha ficado sobrecarregado ou encontrado um erro.
+<translation id="3685121001045880436">É provável que o servidor que hospeda a página da web tenha ficado sobrecarregado ou encontrado um erro. 
         Para evitar que as extensões gerem muito tráfego e piorem a situação, o
         <ph name="PRODUCT_NAME"/>
         foi temporariamente impedido de permitir solicitações de extensões para este URL.
@@ -4234,7 +4234,7 @@ Dica: o modo de navegação anônimo <ph name="SHORTCUT_KEY"/> pode ser útil da
 <translation id="7322037929240387249">Configurações do teclado...</translation>
 <translation id="3709244229496787112">O navegador foi fechado antes do término do download.</translation>
 <translation id="7999229196265990314">Os seguintes arquivos foram criados:
-
+        
 Extensão: <ph name="EXTENSION_FILE"/>
 Chave de arquivo: <ph name="KEY_FILE"/>
 

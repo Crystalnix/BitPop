@@ -3,7 +3,7 @@
 <translationbundle lang="sk">
 <translation id="8000275528373650868">Prehliadač Google Chrome vyžaduje systém Windows Vista alebo Windows XP s balíkom SP2 alebo vyšším.</translation>
 <translation id="8485767968786176057">Adresa uvedená v certifikáte v tomto prípade nezodpovedá adrese webových stránok, na ktoré sa váš prehliadač pokúšal prejsť. Jedným z možných dôvodov je, že vaša komunikácia môže byť zachytávaná útočníkom, ktorý predkladá certifikát pre iné webové stránky, ktoré by mohli spôsobovať nezhodu. Ďalším možným dôvodom je, že server je nastavený tak, aby vracal rovnaký certifikát pre viacero rôznych webových stránok vrátane tej, ktorú sa pokúšate navštíviť, hoci tento certifikát nie je platný pre všetky tieto webové stránky. Prehliadač Google Chrome môže potvrdiť, že ste prešli na doménu &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, ale nemôže overiť, že sa jedná o rovnaké stránky ako v prípade domény &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, na ktorú ste chceli prejsť. Ak budete pokračovať, prehliadač Chrome nebude kontrolovať žiadne ďalšie nezhody názvov.</translation>
-<translation id="5430073640787465221">Súbor predvolieb je poškodený alebo neplatný.
+<translation id="5430073640787465221">Súbor predvolieb je poškodený alebo neplatný. 
 
 Prehliadač Google Chrome nedokáže obnoviť vaše nastavenia.</translation>
 <translation id="6676384891291319759">Prístup do siete Internet</translation>

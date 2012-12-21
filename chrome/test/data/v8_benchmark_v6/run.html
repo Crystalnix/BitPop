@@ -52,16 +52,16 @@ function Run() {
   BenchmarkSuite.RunSuites({ NotifyStep: ShowProgress,
                              NotifyError: AddError,
                              NotifyResult: AddResult,
-                             NotifyScore: AddScore });
+                             NotifyScore: AddScore }); 
 }
 
 function ShowWarningIfObsolete() {
-  // If anything goes wrong we will just catch the exception and no
+  // If anything goes wrong we will just catch the exception and no 
   // warning is shown, i.e., no harm is done.
   try {
     var xmlhttp;
-    var next_version = parseInt(BenchmarkSuite.version) + 1;
-    var next_version_url = "../v" + next_version + "/run.html";
+    var next_version = parseInt(BenchmarkSuite.version) + 1; 
+    var next_version_url = "../v" + next_version + "/run.html";  
     if (window.XMLHttpRequest) {
       xmlhttp = new window.XMLHttpRequest();
     } else if (window.ActiveXObject) {
@@ -75,7 +75,7 @@ function ShowWarningIfObsolete() {
     };
     xmlhttp.send(null);
   } catch(e) {
-    // Ignore exception if check for next version fails.
+    // Ignore exception if check for next version fails. 
     // Hence no warning is displayed.
   }
 }
@@ -83,7 +83,7 @@ function ShowWarningIfObsolete() {
 function Load() {
   var version = BenchmarkSuite.version;
   document.getElementById("version").innerHTML = version;
-  ShowWarningIfObsolete();
+  ShowWarningIfObsolete();  
   setTimeout(Run, 200);
 }
 </script>
@@ -91,11 +91,11 @@ function Load() {
 <body onload="Load()">
 <div>
   <div class="title"><h1>V8 Benchmark Suite - version <span id="version">?</span></h1></div>
-  <div class="warning" id="obsolete">
+  <div class="warning" id="obsolete"> 
 Warning! This is not the latest version of the V8 benchmark
-suite. Consider running the
+suite. Consider running the   
 <a href="http://v8.googlecode.com/svn/data/benchmarks/current/run.html">
-latest version</a>.
+latest version</a>.  
   </div>
   <table>
     <tr>

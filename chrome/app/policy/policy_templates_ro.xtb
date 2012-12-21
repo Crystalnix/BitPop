@@ -437,7 +437,7 @@
 <translation id="3034580675120919256">Vă permite să setaţi dacă site-urile web au permisiunea de a rula JavaScript. Rularea JavaScript poate fi permisă sau refuzată în bloc pentru toate site-urile web. Dacă această politică este lăsată nesetată, va fi utilizată politica „AllowJavaScript”, dar utilizatorul va putea să o schimbe.</translation>
 <translation id="7459381849362539054">Configurează GData în <ph name="PRODUCT_OS_NAME"/>.</translation>
 <translation id="3195451902035818945">Specifică dacă trebuie dezactivată divizarea înregistrărilor SSL. Divizarea înregistrărilor este o soluţie pentru o vulnerabilitate din SSL 3.0 şi TLS 1.0, dar poate provoca probleme de compatibilitate cu unele servere şi proxy-uri HTTPS. Dacă politica nu este setată sau nu este activată, atunci divizarea înregistrărilor va fi utilizată pentru conexiuni SSL/TLS care utilizează combinaţii de algoritmi de criptare CBC.</translation>
-<translation id="6903814433019432303">Această politică este activă numai în modul Vânzare.
+<translation id="6903814433019432303">Această politică este activă numai în modul Vânzare. 
 
       Stabileşte setul de adrese URL de încărcat la pornirea sesiunii demonstrative. Această politică va înlocui orice alte mecanisme de stabilire a adresei URL iniţiale şi astfel poate fi aplicată unei sesiuni care nu este asociată cu un anumit utilizator.</translation>
 <translation id="5868414965372171132">Configuraţie de reţea la nivel de utilizator</translation>

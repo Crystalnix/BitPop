@@ -110,7 +110,7 @@ IN_PROC_BROWSER_TEST_F(FastShutdown, SlowTermination) {
   chrome::CloseTab(browser());
   renderer_shutdown_observer.Wait();
 
-
+  
   EXPECT_EQ("unloaded=ohyeah", GetCookies(url));
 }
 #endif

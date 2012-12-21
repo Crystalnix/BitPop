@@ -216,7 +216,7 @@ class InProcessBrowserTest : public BrowserTestBase {
 #if defined(OS_POSIX)
   bool handle_sigterm_;
 #endif
-
+  
 #if defined(OS_CHROMEOS)
   chromeos::ScopedStubCrosEnabler stub_cros_enabler_;
 #endif  // defined(OS_CHROMEOS)

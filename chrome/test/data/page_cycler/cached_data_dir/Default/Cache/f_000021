@@ -47,7 +47,7 @@ History:
 2010-03-09  Changed 900px fixed width to 960px on #container
 2010-06-30  Added 3rd level indented links to leftnav and rightcol; Edited scope to include .quicklinks class in content
 			Added column 1,2,3 , 1-2,3 , 1,2-3 layout for use on any page; Footer navigation now available as an unordered
-			list; Added sample_homepage2-1.
+			list; Added sample_homepage2-1.								
 			Added .colSplash class to allow use of splash image in columns layout
 2010-11-30  Added icon links class and scoped for #content; Re-scoped #content ul and #content ol that was listed in the
 			homepage quicklinks to be within #columns only; Substitued bullet and space characters with unicode; Added
@@ -90,7 +90,7 @@ body { background: #fff;}
 /*==============================| SKIPLINK |==============================*/
 
 #skiplink { display: none; }
-
+	
 /*==============================| HEADER, LOGO, and DEPTARTMENT INFO |==============================*/
 
 #header {
@@ -154,7 +154,7 @@ body { background: #fff;}
 	}
 * html #header, * html #header #cp { \height: 1%; }
 	/* Goldbar fix in IE6 - aka "Holly Hack" */
-
+	
 #header #cp p {
 	font-weight: normal;
 	font-size: 65%;
@@ -266,12 +266,12 @@ body { background: #fff;}
 	overflow: hidden;
 	background: url(../images/content/splash_bg.jpg) left top repeat-x;
 	}
-
+	
 
 #content #topContent { /*#topContent used at top of homepage.dwt template*/
 	width: 100%;
 	}
-
+	
 
 /**** CASCADE - for WYSIWYG editor CSS - REMOVE BELOW THIS COMMENT - *****/
 
@@ -316,7 +316,7 @@ body { background: #fff;}
 #footer_deptlinks ul {
 	margin:10px;
 	padding:0;
-	}
+	}		
 #footer_deptlinks ul li {
 	display:inline;
 	list-style-type:none;
@@ -326,7 +326,7 @@ body { background: #fff;}
 	}
 #footer_deptlinks ul li.removeBullet:before {
 	content:"";
-	}
+	}	
 #footer_deptlinks a:link,
 #footer_deptlinks a:visited {
 	color: #000;
@@ -556,7 +556,7 @@ body {
 	text-decoration: underline;
 	}
 #content table.center { margin: 0 auto 20px; }
-
+	
 #content table.center caption {	margin: 0 auto; }
 
 #content table td.center,
@@ -714,7 +714,7 @@ code, kbd {
 	font-size: 12px;
 	color: #000066;
 	}
-
+	
 /*==============================| COLUMNS |==============================*/
 /*#columns is used for backward compatability for original divs on homepage*/
 
@@ -727,7 +727,7 @@ code, kbd {
 #columns , .columns {
 	overflow: hidden;
 	padding: 0 0 15px 0;
-	}
+	}	
 #columns { /*Override for columns div used only on homepages (provides extra space under h1) */
 	padding:20px 0 0 0;
 	}
@@ -735,37 +735,37 @@ code, kbd {
 	width: 22%;
 	float: left;
 	padding: 0 1.5% 0 0;
-	}
+	}		
 #columns #column2 , .columns .column2 {
 	width: 49%;
 	float: left;
 	padding: 0 1.5%;
-	}
+	}	
 #columns #column3 , .columns .column3 {
 	width: 22%;
 	float: left;
 	padding: 0 0 0 1.5%;
-	}
+	}	
 #columns #column1-2 , .columns .column1-2 {
 	width: 74%;
 	float: left;
 	padding: 0 1.5% 0 0;
-	}
+	}	
 #columns #column2-3 , .columns .column2-3 {
 	width: 74%;
 	float: left;
 	padding: 0 0 0 1.5%;
-	}
+	}			
 #columns #column2 , .columns .column2 {
 	border-right: #aaa dotted 1px;
 	border-left: #aaa dotted 1px;
 	}
 #columns #column1-2 , .columns .column1-2 {
 	border-right: #aaa dotted 1px;
-	}
+	}		
 #columns #column2-3 , .columns .column2-3 {
 	border-left: #aaa dotted 1px;
-	}
+	}		
 * html  #columns #column2 , * html  .columns .column2 { width: 49%; } /*-- IE 6 Hack --*/
 * html  #columns #column2 , * html  .columns .column2 { width: 49%; } /*-- IE 7 Hack --*/
 
@@ -842,7 +842,7 @@ img.imageleft {
 	float: left;
 	margin: 0 10px 10px 0;
 	}
-
+	
 /*==============================| HOMEPAGE QUICKLINKS |==============================*/
 
 #content h2.quicklinks {

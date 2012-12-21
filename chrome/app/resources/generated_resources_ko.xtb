@@ -408,11 +408,11 @@
 <translation id="2103050821726968278">단축키 - 확장 프로그램 및 앱</translation>
 <translation id="1070066693520972135">WEP</translation>
 <translation id="8694146932926629530">기기 사용량을 추척할 수 있습니다.</translation>
-<translation id="640711995843785138"><ph name="PRODUCT_NAME"/>에서 ESET 제품이 보안 연결을 가로채고 있음을 감지했습니다.
-          ESET 소프트웨어가 대개 같은 컴퓨터에서 작동하고 있기 때문에
-          이는 일반적으로 보안 문제는 아닙니다. 하지만
-          <ph name="PRODUCT_NAME"/>의 일부 보안 연결 요소는 반드시 준수되어야 하므로 ESET 제품이 가로채기를 하지 않도록
-          설정되어야 합니다. 안내를 보려면 '자세히 알아보기' 링크를
+<translation id="640711995843785138"><ph name="PRODUCT_NAME"/>에서 ESET 제품이 보안 연결을 가로채고 있음을 감지했습니다. 
+          ESET 소프트웨어가 대개 같은 컴퓨터에서 작동하고 있기 때문에 
+          이는 일반적으로 보안 문제는 아닙니다. 하지만 
+          <ph name="PRODUCT_NAME"/>의 일부 보안 연결 요소는 반드시 준수되어야 하므로 ESET 제품이 가로채기를 하지 않도록 
+          설정되어야 합니다. 안내를 보려면 '자세히 알아보기' 링크를 
           클릭하세요.</translation>
 <translation id="206683469794463668">일반 주음 모드. 자동 후보자 선택 및 관련 옵션은 사용 중지되거나 무시됩니다.</translation>
 <translation id="5191625995327478163">언어 설정(&amp;L)...</translation>
@@ -508,7 +508,7 @@
         이것은 서버가 보안 연결하려고 하지만 잘못된
         설정 때문에 보안 연결이 되지 않음을 의미합니다.
         <ph name="LINE_BREAK"/> 이 경우 서버를
-        수정해야 합니다.
+        수정해야 합니다. 
         <ph name="PRODUCT_NAME"/>
         은(는) 개인정보 보호를 위해 보안되지 않은 연결을 사용하지 않습니다.</translation>
 <translation id="7851858861565204677">다른 기기</translation>
@@ -1072,7 +1072,7 @@
           &gt;
           &quot;<ph name="OPTIONS_BUTTON"/>&quot;
           <ph name="END_BOLD"/>
-          (현재 네트워크의 경우)(으)로 이동하세요.
+          (현재 네트워크의 경우)(으)로 이동하세요. 
           <ph name="BEGIN_BOLD"/>
           &quot;<ph name="PROXY_BUTTON"/>&quot;
           <ph name="END_BOLD"/>버튼(
@@ -1532,9 +1532,9 @@
 <translation id="2728624657977418581">이름 추가</translation>
 <translation id="4062903950301992112">이 사이트를 방문하면 컴퓨터에 피해를 줄 수 있음을 이해한 경우, <ph name="PROCEED_LINK"/>.</translation>
 <translation id="32330993344203779">기기가 기업 관리에 성공적으로 등록되었습니다.</translation>
-<translation id="158917669717260118">컴퓨터가 절전 또는 최대 절전 모드이기 때문에 웹페이지를
-          로드할 수 없습니다. 이 경우, 네트워크 연결이 종료되며
-          새 네트워크 요청을 전송할 수 없습니다. 페이지를 새로고침하면
+<translation id="158917669717260118">컴퓨터가 절전 또는 최대 절전 모드이기 때문에 웹페이지를 
+          로드할 수 없습니다. 이 경우, 네트워크 연결이 종료되며 
+          새 네트워크 요청을 전송할 수 없습니다. 페이지를 새로고침하면 
           이 문제가 해결됩니다.</translation>
 <translation id="6316671927443834085">'<ph name="DEVICE_NAME"/>'에서 연결을 끊지 못했습니다.</translation>
 <translation id="219008588003277019">네이티브 클라이언트 모듈: <ph name="NEXE_NAME"/></translation>
@@ -1679,9 +1679,9 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="1715795001372061093">반투명 창 프레임을 사용하도록 설정합니다.</translation>
 <translation id="5581211282705227543">설치된 플러그인 없음</translation>
 <translation id="3330206034087160972">프리젠테이션 모드 종료</translation>
-<translation id="6920653475274831310"><ph name="URL"/> 웹페이지에서 리디렉션이 너무 많이
-          발생했습니다. 이 사이트에서 쿠키를 삭제하거나 타사 쿠키를 허용하면 문제가 해결될 수 있습니다. 그래도
-          문제가 해결되지 않으면 컴퓨터에 문제가 있는 것이 아니라 서버 설정과 관련된 문제일 수
+<translation id="6920653475274831310"><ph name="URL"/> 웹페이지에서 리디렉션이 너무 많이 
+          발생했습니다. 이 사이트에서 쿠키를 삭제하거나 타사 쿠키를 허용하면 문제가 해결될 수 있습니다. 그래도 
+          문제가 해결되지 않으면 컴퓨터에 문제가 있는 것이 아니라 서버 설정과 관련된 문제일 수 
           있습니다.</translation>
 <translation id="5488468185303821006">시크릿 모드에서 허용</translation>
 <translation id="6556866813142980365">다시실행</translation>
@@ -2050,7 +2050,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="3328801116991980348">사이트 정보</translation>
 <translation id="7337488620968032387"><ph name="PRODUCT_NAME"/>에서 네트워크에 액세스하는 데 문제가 있습니다.
           <ph name="LINE_BREAK"/>
-          방화벽이나 바이러스 백신 소프트웨어에서
+          방화벽이나 바이러스 백신 소프트웨어에서 
           <ph name="PRODUCT_NAME"/>
           (이)가 사용자의 컴퓨터에 침입하여 인터넷 연결을 차단하고 있다고 잘못 인식했기 때문일 수 있습니다.</translation>
 <translation id="2065985942032347596">인증 필요</translation>
@@ -2098,9 +2098,9 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="2950186680359523359">서버가 데이터를 전송하지 않고 연결을 종료했습니다.</translation>
 <translation id="9142623379911037913"><ph name="SITE"/>에서 바탕화면 알림을 표시하도록 하시겠습니까?</translation>
 <translation id="9118804773997839291">다음은 페이지에 포함된 안전하지 않은 요소의 목록입니다. 특정 요소에 대한 자세한 내용을 보려면 진단 링크를 클릭하세요.</translation>
-<translation id="3808504580859735057">휴대기기가 절전 또는 최대 절전 모드이기 때문에 웹페이지를
-          로드할 수 없습니다. 이 경우, 네트워크 연결이 종료되며
-          새 네트워크 요청을 전송할 수 없습니다. 페이지를 새로고침하면
+<translation id="3808504580859735057">휴대기기가 절전 또는 최대 절전 모드이기 때문에 웹페이지를 
+          로드할 수 없습니다. 이 경우, 네트워크 연결이 종료되며 
+          새 네트워크 요청을 전송할 수 없습니다. 페이지를 새로고침하면 
           이 문제가 해결됩니다.</translation>
 <translation id="7139724024395191329">에미리트</translation>
 <translation id="895586998699996576">$1 이미지</translation>
@@ -2399,7 +2399,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="4634771451598206121">다시 로그인...</translation>
 <translation id="3475110616773907981">컴퓨터 및 방문하는 웹사이트의 전체 데이터에 액세스</translation>
 <translation id="7143207342074048698">연결 중</translation>
-<translation id="4212084985543581100">프록시 서버는 휴대기기와 다른 서버 사이의 중개자 역할을 하는 서버입니다. 현재 시스템이 프록시를 사용하도록 설정되어 있지만
+<translation id="4212084985543581100">프록시 서버는 휴대기기와 다른 서버 사이의 중개자 역할을 하는 서버입니다. 현재 시스템이 프록시를 사용하도록 설정되어 있지만 
           <ph name="PRODUCT_NAME"/>에서 프록시에 연결할 수 없습니다.</translation>
 <translation id="671928215901716392">화면 잠금</translation>
 <translation id="2241468422635044128">확장 프로그램에 의해 허용</translation>
@@ -2434,7 +2434,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="132101382710394432">기본 설정된 네트워크</translation>
 <translation id="532360961509278431">'$1'을(를) 열 수 없음: $2</translation>
 <translation id="5438653034651341183">현재 캡쳐화면 포함:</translation>
-<translation id="8096505003078145654">프록시 서버는 컴퓨터와 다른 서버 사이의 중개자 역할을 하는 서버입니다. 현재 시스템이 프록시를 사용하도록 설정되어 있지만
+<translation id="8096505003078145654">프록시 서버는 컴퓨터와 다른 서버 사이의 중개자 역할을 하는 서버입니다. 현재 시스템이 프록시를 사용하도록 설정되어 있지만 
           <ph name="PRODUCT_NAME"/>에서 프록시에 연결할 수 없습니다.</translation>
 <translation id="1899708097738826574"><ph name="OPTIONS_TITLE"/> - <ph name="SUBPAGE_TITLE"/></translation>
 <translation id="6862635236584086457">이 폴더에 저장된 모든 파일은 온라인으로 자동 백업됨</translation>
@@ -2639,11 +2639,11 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="5411472733320185105">다음 호스트와 도메인에서 프록시 설정을 사용 안함:</translation>
 <translation id="3685121001045880436">웹페이지를 호스팅하는 서버가 오버로드되었거나 오류가 발생한 것 같습니다.
         확장 프로그램이 너무 많은 트래픽을 발생시켜 상황이 악화되는 것을 방지하기 위해
-        <ph name="PRODUCT_NAME"/>이(가)
+        <ph name="PRODUCT_NAME"/>이(가) 
         확장 프로그램이 해당 URL로 요청한 서버 전송 허용을 일시적으로 중지했습니다.
         <ph name="LINE_BREAK"/>
-        이 작업을 원하지 않는 경우(예: 웹사이트 디버깅 작업을 직접 수행),
-        <ph name="URL_FOR_MORE_INFO"/>을(를) 방문하여
+        이 작업을 원하지 않는 경우(예: 웹사이트 디버깅 작업을 직접 수행), 
+        <ph name="URL_FOR_MORE_INFO"/>을(를) 방문하여 
         기능을 사용 중지하는 방법을 포함한 자세한 정보를 확인할 수 있습니다.</translation>
 <translation id="8218008331535230597">콘텐츠 라이선스 승인 취소</translation>
 <translation id="4744728308552504807">휴대기기에 설치된 프린터에 Google 클라우드 프린트 서비스를 연결하는 백그라운드 서비스를 제공합니다. 이 실험실 기능을 사용하도록 설정하면 고급 설정 섹션에서 Google 계정으로 로그인하여 Google 클라우드 프린트 커넥터를 사용할 수 있습니다.</translation>
@@ -3248,11 +3248,11 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="3609002127297296006">고급 설정...</translation>
 <translation id="1352060938076340443">중단됨</translation>
 <translation id="7229570126336867161">EVDO가 필요합니다.</translation>
-<translation id="5516209960248315766"><ph name="PRODUCT_NAME"/>에서 ESET 제품이 보안 연결을 가로채고 있음을 감지했습니다.
-          ESET 소프트웨어가 대개 같은 휴대기기에서 작동하고 있기 때문에
-          이는 일반적으로 보안 문제는 아닙니다. 하지만
-          <ph name="PRODUCT_NAME"/>의 일부 보안 연결 요소는 반드시 준수되어야 하므로 ESET 제품은 가로채기를 하지 않도록
-          설정되어야 합니다. 안내를 보려면 '자세히 알아보기' 링크를
+<translation id="5516209960248315766"><ph name="PRODUCT_NAME"/>에서 ESET 제품이 보안 연결을 가로채고 있음을 감지했습니다. 
+          ESET 소프트웨어가 대개 같은 휴대기기에서 작동하고 있기 때문에 
+          이는 일반적으로 보안 문제는 아닙니다. 하지만 
+          <ph name="PRODUCT_NAME"/>의 일부 보안 연결 요소는 반드시 준수되어야 하므로 ESET 제품은 가로채기를 하지 않도록 
+          설정되어야 합니다. 안내를 보려면 '자세히 알아보기' 링크를 
           클릭하세요.</translation>
 <translation id="7582844466922312471">모바일 데이터</translation>
 <translation id="945522503751344254">의견 보내기</translation>
@@ -3316,10 +3316,10 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="4251486191409116828">애플리케이션 바로가기를 만들지 못했습니다</translation>
 <translation id="3391110846660358513">백그라운드 앱</translation>
 <translation id="7077872827894353012">무시된 프로토콜 핸들러</translation>
-<translation id="8175186925287705914"><ph name="PRODUCT_NAME"/>에서
-          NetNanny가 보안 연결을 가로채고 있음을 감지했습니다. 일반적으로
-          NetNanny 소프트웨어가 대개 같은 휴대기기에서 작동하고 있기 때문에
-          이는 일반적으로 보안 문제는 아닙니다. 하지만 Chrome의 일부 보안 연결 요소는 반드시 준수되어야 하므로 NetNanny는 가로채기를 하지 않도록
+<translation id="8175186925287705914"><ph name="PRODUCT_NAME"/>에서 
+          NetNanny가 보안 연결을 가로채고 있음을 감지했습니다. 일반적으로 
+          NetNanny 소프트웨어가 대개 같은 휴대기기에서 작동하고 있기 때문에 
+          이는 일반적으로 보안 문제는 아닙니다. 하지만 Chrome의 일부 보안 연결 요소는 반드시 준수되어야 하므로 NetNanny는 가로채기를 하지 않도록 
           설정되어야 합니다. 안내를 보려면 '자세히 알아보기' 링크를 클릭하세요.</translation>
 <translation id="6831820634148551662">암호 반복 카운트가 너무 큽니다.</translation>
 <translation id="1472675084647422956">자세히 보기</translation>
@@ -3622,9 +3622,9 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="4763816722366148126">이전 입력 방법 선택</translation>
 <translation id="6458308652667395253">자바스크립트 차단 관리...</translation>
 <translation id="8435334418765210033">기억된 네트워크</translation>
-<translation id="7005776044548004130"><ph name="URL"/> 웹페이지에서 리디렉션이 너무 많이
-          발생했습니다. 이 사이트에서 쿠키를 삭제하거나 타사 쿠키를 허용하면 문제가 해결될 수 있습니다. 그래도
-          문제가 해결되지 않으면 휴대기기에 문제가 있는 것이 아니라 서버 설정과 관련된 문제일 수
+<translation id="7005776044548004130"><ph name="URL"/> 웹페이지에서 리디렉션이 너무 많이 
+          발생했습니다. 이 사이트에서 쿠키를 삭제하거나 타사 쿠키를 허용하면 문제가 해결될 수 있습니다. 그래도 
+          문제가 해결되지 않으면 휴대기기에 문제가 있는 것이 아니라 서버 설정과 관련된 문제일 수 
           있습니다.</translation>
 <translation id="6516193643535292276">인터넷에 연결할 수 없습니다.</translation>
 <translation id="5125751979347152379">잘못된 URL입니다.</translation>
@@ -3666,9 +3666,9 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="4362187533051781987">구/군</translation>
 <translation id="7209475358897642338">언어를 선택하세요.</translation>
 <translation id="9149866541089851383">수정...</translation>
-<translation id="2182565278866468413"><ph name="PRODUCT_NAME"/>에서
-          NetNanny가 보안 연결을 가로채고 있음을 감지했습니다. NetNanny 소프트웨어가 대개 같은 컴퓨터에서 작동하고 있기 때문에
-          이는 일반적으로 보안 문제는 아닙니다. 하지만 Chrome의 일부 보안 연결 요소는  반드시 준수되어야 하므로 NetNanny는 가로채기를 하지 않도록
+<translation id="2182565278866468413"><ph name="PRODUCT_NAME"/>에서 
+          NetNanny가 보안 연결을 가로채고 있음을 감지했습니다. NetNanny 소프트웨어가 대개 같은 컴퓨터에서 작동하고 있기 때문에 
+          이는 일반적으로 보안 문제는 아닙니다. 하지만 Chrome의 일부 보안 연결 요소는  반드시 준수되어야 하므로 NetNanny는 가로채기를 하지 않도록 
           설정되어야 합니다. 안내를 보려면 '자세히 알아보기' 링크를 클릭하세요.</translation>
 <translation id="7939412583708276221">계속 다운로드</translation>
 <translation id="1065245965611933814">저장된 캡쳐화면 포함:</translation>
@@ -3728,7 +3728,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="7681202901521675750">SIM 카드가 잠겼습니다. PIN을 입력하세요. 남은 횟수: <ph name="TRIES_COUNT"/></translation>
 <translation id="2489918096470125693">폴더 추가(&amp;F)...</translation>
 <translation id="7353651168734309780"><ph name="EXTENSION_NAME"/>은(는) 새로운 권한이 필요합니다.</translation>
-<translation id="6420812616858267777"><ph name="PRODUCT_NAME"/> 동기화를 사용하면 북마크나 설정 같은 데이터를 컴퓨터와 휴대기기 간에 쉽게 공유할 수 있습니다.
+<translation id="6420812616858267777"><ph name="PRODUCT_NAME"/> 동기화를 사용하면 북마크나 설정 같은 데이터를 컴퓨터와 휴대기기 간에 쉽게 공유할 수 있습니다. 
           <ph name="PRODUCT_NAME"/>은(는) 사용자가 Google 계정에 로그인하면 Google에 온라인으로 데이터를 저장하여 이를 동기화합니다.</translation>
 <translation id="7484964289312150019">모든 북마크를 새 창에서 열기(&amp;N)</translation>
 <translation id="1731346223650886555">세미콜론</translation>
@@ -3895,7 +3895,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="5509914365760201064">발행기관: <ph name="CERTIFICATE_AUTHORITY"/></translation>
 <translation id="6446356484127229069"><ph name="PRODUCT_NAME"/>에서 네트워크에 액세스하는 데 문제가 있습니다.
           <ph name="LINE_BREAK"/>
-          방화벽이나 바이러스 백신 소프트웨어에서
+          방화벽이나 바이러스 백신 소프트웨어에서 
           <ph name="PRODUCT_NAME"/>
           (이)가 사용자의 휴대기기에 침입하여 인터넷 연결을 차단하고 있다고 잘못 인식했기 때문일 수 있습니다.</translation>
 <translation id="5449588825071916739">모든 탭 북마크</translation>
@@ -4364,7 +4364,7 @@ Public Exponent(<ph name="PUBLIC_EXPONENT_NUM_BITS"/>비트):
 <translation id="7322037929240387249">키보드 설정...</translation>
 <translation id="3709244229496787112">다운로드가 완료되기 전에 브라우저가 종료되었습니다.</translation>
 <translation id="7999229196265990314">생성된 파일:
-
+        
 확장 프로그램: <ph name="EXTENSION_FILE"/>
 키 파일: <ph name="KEY_FILE"/>
 

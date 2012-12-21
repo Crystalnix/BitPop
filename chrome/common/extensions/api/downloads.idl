@@ -323,7 +323,7 @@ namespace downloads {
     // contains an error message. The request will fail if the download is not
     // active.
     // |downloadId|: The id of the download to pause.
-    // |callback|: Called when the pause request is completed.
+    // |callback|: Called when the pause request is completed. 
     static void pause(long downloadId, optional NullCallback callback);
 
     // Resume a paused download. If the request was successful the download is

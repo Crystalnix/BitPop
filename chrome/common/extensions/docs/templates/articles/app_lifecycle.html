@@ -75,7 +75,7 @@ when your application is launched in any way:
 </p>
 
 <pre>
-chrome.experimental.app.onLaunched.addListener(function() {
+chrome.experimental.app.onLaunched.addListener(function() { 
   // Tell your app what to launch and how.
 });
 </pre>
@@ -141,7 +141,7 @@ you need to include the
 </p>
 
 <p>
-Web intents can be launched by other apps invoking their intent,
+Web intents can be launched by other apps invoking their intent, 
 or by the runtime when apps are launched to view or edit files,
 for example from the operating system file explorer.
 To find out how to launch an app with web intents,
@@ -174,7 +174,7 @@ to store and update local settings
 </p>
 
 <pre>
-chrome.runtime.onInstalled.addListener(function() {
+chrome.runtime.onInstalled.addListener(function() { 
   chrome.storage.local.set(object items, function callback);
 });
 </pre>
@@ -222,7 +222,7 @@ Keep the clean-up tasks synchronous and simple.
 </p>
 
 <pre>
-chrome.runtime.onSuspend.addListener(function() {
+chrome.runtime.onSuspend.addListener(function() { 
   // Do some simple clean-up tasks.
 });
 </pre>

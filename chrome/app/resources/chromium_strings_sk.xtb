@@ -142,7 +142,7 @@ Niektoré funkcie nemusia byť k dispozícii. Zadajte iný adresár profilu aleb
 <translation id="5498103559159810756">Prehliadač Chromium používa váš predvolený vyhľadávací nástroj, ktorý je v súčasnosti nastavený na <ph name="PAGE_TITLE"/>. Chcete ponechať predvolený vyhľadávací nástroj?</translation>
 <translation id="5862307444128926510">Vitajte v prehliadači Chromium</translation>
 <translation id="1622565934590470080">Tento počítač už obsahuje novšiu verziu prehliadača Chromium s aplikáciou Chromium Frame. Ak softvér nefunguje, odinštalujte prehliadač Chromium aj aplikáciu Chromium Frame a skúste to znova.</translation>
-<translation id="7318036098707714271">Súbor predvolieb je poškodený alebo neplatný.
+<translation id="7318036098707714271">Súbor predvolieb je poškodený alebo neplatný. 
 
 Prehliadač Chromium nedokáže obnoviť vaše nastavenia.</translation>
 <translation id="7123348595797445166">Vyskúšať (prehliadač je už nainštalovaný)</translation>

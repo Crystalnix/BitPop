@@ -286,7 +286,7 @@
 <translation id="7929480864713075819">Habilitar el suministro de información sobre la memoria (tamaño de pila de archivos JS) a las páginas</translation>
 <translation id="7003746348783715221">Preferencias de <ph name="PRODUCT_NAME"/></translation>
 <translation id="4723829699367336876">Habilitar el cruce seguro de firewall desde clientes de acceso remoto</translation>
-<translation id="726580293849003996">Configura la URL de la página principal predeterminada en <ph name="PRODUCT_NAME"/> y evita que los usuarios la cambien.
+<translation id="726580293849003996">Configura la URL de la página principal predeterminada en <ph name="PRODUCT_NAME"/> y evita que los usuarios la cambien. 
 
           La página principal es la página que se abre al presionar el botón de Inicio. Las páginas que se abren al iniciar son controladas por las políticas de RestoreOnStartup.
 

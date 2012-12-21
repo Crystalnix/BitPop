@@ -3755,7 +3755,7 @@
 <translation id="2927657246008729253">更改...</translation>
 <translation id="7586781939132793422">停用语音反馈</translation>
 <translation id="7978412674231730200">私有密钥</translation>
-<translation id="7056011739864317578">启用后，系统会使用 ClientOAuth 将个人资料连接到一个 Google 帐户。否则，系统会使用 ClientLogin。
+<translation id="7056011739864317578">启用后，系统会使用 ClientOAuth 将个人资料连接到一个 Google 帐户。否则，系统会使用 ClientLogin。 
       在进行身份验证时，ClientOAuth 允许使用的是验证码，而不是 ASP。</translation>
 <translation id="5308380583665731573">连接</translation>
 <translation id="9111395131601239814"><ph name="NETWORKDEVICE"/>：<ph name="STATUS"/></translation>

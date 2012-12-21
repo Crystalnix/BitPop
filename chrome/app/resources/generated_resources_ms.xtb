@@ -412,7 +412,7 @@ Psst! <ph name="SHORTCUT_KEY"/> mod Inkognito mungkin akan berguna pada masa aka
           telah mengesan bahawa terdapat produk ESET yang memintas sambungan
           yang selamat. Ini biasanya bukan suatu masalah keselamatan kerana
           perisian ESET selalunya dijalankan pada komputer yang sama.
-          Bagaimanapun, disebabkan oleh sikap tidak toleransi terhadap aspek
+          Bagaimanapun, disebabkan oleh sikap tidak toleransi terhadap aspek 
           sambungan selamat <ph name="PRODUCT_NAME"/> tertentu,
           produk ESET perlu dikonfigurasi untuk tidak melaksanakan pintasan ini.
           Klik pautan 'Ketahui lebih lanjut' untuk mendapatkan arahan.</translation>
@@ -594,7 +594,7 @@ id eksperimen: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
         tidak boleh dijumpai, kerana carian DNS gagal.  DNS ialah perkhidmatan
         rangkaian yang menterjemahkan nama tapak web kepada alamat Internetnya.  Ralat
         ini paling kerap disebabkan oleh tiada sambungan kepada Internet atau
-        rangkaian salah konfigurasi.  Ia juga boleh disebabkan oleh pelayan DNS
+        rangkaian salah konfigurasi.  Ia juga boleh disebabkan oleh pelayan DNS 
         tidak responsif atau tembok api menghalang
         <ph name="PRODUCT_NAME"/>
         daripada mengakses rangkaian.</translation>
@@ -2090,7 +2090,7 @@ Eksponen Umum (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="2950186680359523359">Pelayan menutup sambungan tanpa menghantar sebarang data.</translation>
 <translation id="9142623379911037913">Membenarkan <ph name="SITE"/> untuk memaparkan pemberitahuan desktop?</translation>
 <translation id="9118804773997839291">Berikut ialah senarai semua unsur tidak selamat untuk halaman. Klik pada pautan Diagnosis untuk mendapatkan maklumat lanjut mengenai urutan untuk unsur tertentu.</translation>
-<translation id="3808504580859735057">Tidak dapat memuatkan halaman web kerana peranti mudah alih anda dalam mod
+<translation id="3808504580859735057">Tidak dapat memuatkan halaman web kerana peranti mudah alih anda dalam mod 
           tidur atau tidak aktif.  Apabila ini berlaku, sambungan rangkaian dimatikan
           dan permintaan rangkaian baharu gagal. Memuat semula halaman ini akan
           menyelesaikan masalah ini.</translation>
@@ -3276,7 +3276,7 @@ Eksponen Umum (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
           telah mengesan bahawa terdapat produk ESET yang memintas sambungan
           yang selamat. Ini biasanya bukan suatu masalah keselamatan kerana
           perisian ESET selalunya dijalankan pada peranti mudah alih yang sama.
-          Bagaimanapun, disebabkan oleh sikap tidak toleransi terhadap aspek
+          Bagaimanapun, disebabkan oleh sikap tidak toleransi terhadap aspek 
           sambungan selamat <ph name="PRODUCT_NAME"/> tertentu,
           produk ESET perlu dikonfigurasi untuk tidak melaksanakan pintasan ini.
           Klik pautan 'Ketahui lebih lanjut' untuk mendapatkan arahan.</translation>

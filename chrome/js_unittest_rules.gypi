@@ -14,7 +14,7 @@
 #  ],
 #
 # Then include this rule file in each of your unittest targets:
-#
+# 
 #    {
 #      'target_name': 'my_unittests',
 #      ...

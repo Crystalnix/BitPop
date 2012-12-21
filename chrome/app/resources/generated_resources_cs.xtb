@@ -314,7 +314,7 @@ Příště by se vám mohl hodit anonymní režim (<ph name="SHORTCUT_KEY"/>).</
 <translation id="6979158407327259162">Disk Google</translation>
 <translation id="6853700448789925482">Povolit prvek sledování <ph name="TRACK_HTML"/></translation>
 <translation id="3150927491400159470">Úplné opětovné načtení</translation>
-<translation id="7531238562312180404">Protože aplikace <ph name="PRODUCT_NAME"/> neřídí, jak rozšíření zacházejí s vašimi osobními údaji, byla všechna rozšíření pro okna v anonymním režimu deaktivována. Ve
+<translation id="7531238562312180404">Protože aplikace <ph name="PRODUCT_NAME"/> neřídí, jak rozšíření zacházejí s vašimi osobními údaji, byla všechna rozšíření pro okna v anonymním režimu deaktivována. Ve 
 <ph name="BEGIN_LINK"/>správci rozšíření<ph name="END_LINK"/> je můžete jednotlivě znovu aktivovat.</translation>
 <translation id="5667293444945855280">Malware</translation>
 <translation id="8707481173455612936">Stránka s oficiálním zvukovým zdrojem</translation>
@@ -506,11 +506,11 @@ identifikátor experimentu: <ph name="EXPERIMENT_ID"/></translation>
 <translation id="168841957122794586">Certifikát serveru obsahuje slabý kryptografický klíč.</translation>
 <translation id="4181841719683918333">Jazyky</translation>
 <translation id="6535131196824081346">K této chybě může dojít při připojování k zabezpečenému serveru (HTTPS).
-        Chyba znamená, že se server pokouší navázat zabezpečené připojení,
-        ale z důvodu mimořádně chybné konfigurace by připojení vůbec
+        Chyba znamená, že se server pokouší navázat zabezpečené připojení, 
+        ale z důvodu mimořádně chybné konfigurace by připojení vůbec 
         zabezpečené nebylo.
-        <ph name="LINE_BREAK"/> V tomto případě je potřeba konfiguraci serveru opravit. Systém
-         nepoužije nezabezpečené připojení z důvodu ochrany osobních
+        <ph name="LINE_BREAK"/> V tomto případě je potřeba konfiguraci serveru opravit. Systém 
+         nepoužije nezabezpečené připojení z důvodu ochrany osobních 
         informací.<ph name="PRODUCT_NAME"/></translation>
 <translation id="7851858861565204677">Jiná zařízení</translation>
 <translation id="5640179856859982418">Švýcarská klávesnice</translation>
@@ -1078,7 +1078,7 @@ Výpočet zbývajícího času</translation>
           <ph name="BEGIN_BOLD"/>
           <ph name="NETWORK_TAB"/>
           <ph name="END_BOLD"/>
-          kartě), klikněte na ně a zkontrolujte, zda je konfigurace
+          kartě), klikněte na ně a zkontrolujte, zda je konfigurace 
           nastavena na možnost Přímé.</translation>
 <translation id="6410063390789552572">Nelze získat přístup k síťové knihovně</translation>
 <translation id="6880587130513028875">Na této stránce byly zablokovány obrázky.</translation>
@@ -2102,7 +2102,7 @@ Veřejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitů):
 <translation id="9118804773997839291">Níže je uveden seznam nebezpečných prvků stránky. Po kliknutí na odkaz Diagnostika se zobrazí další informace související s jednotlivými prvky.</translation>
 <translation id="3808504580859735057">Webovou stránku se nepodařilo načíst, protože vaše mobilní zařízení přešlo
           do režimu spánku nebo hibernace. V takovém případě se připojení k síti
-          vypne a nové síťové požadavky nebudou splněny. Problém by se měl
+          vypne a nové síťové požadavky nebudou splněny. Problém by se měl 
           vyřešit opětovným načtením stránky.</translation>
 <translation id="7139724024395191329">Emirát</translation>
 <translation id="895586998699996576">Obrázek ve formátu $1</translation>
@@ -2558,7 +2558,7 @@ Veřejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitů):
 <translation id="4610637590575890427">Chtěli jste přejít na <ph name="SITE"/>?</translation>
 <translation id="7723779034587221017">Připojení ke službě zásad bylo ztraceno. Restartujte zařízení nebo se obraťte na zástupce podpory.</translation>
 <translation id="5097002363526479830">Připojení k síti <ph name="NAME"/> se nezdařilo: <ph name="DETAILS"/></translation>
-<translation id="6906142274982384363">Pokud je povoleno Dynamické vyhledávání a váš výchozí vyhledávač tuto funkci podporuje, budou se výsledky vyhledávání zobrazovat okamžitě během zadávání hledaného výrazu do omniboxu. Spolu s tím se bude omnibox automaticky doplňovat předpokládanými dotazy.
+<translation id="6906142274982384363">Pokud je povoleno Dynamické vyhledávání a váš výchozí vyhledávač tuto funkci podporuje, budou se výsledky vyhledávání zobrazovat okamžitě během zadávání hledaného výrazu do omniboxu. Spolu s tím se bude omnibox automaticky doplňovat předpokládanými dotazy. 
 
         Protože i během zadávání hledaného výrazu jsou průběžně odesílány žádosti o zobrazení výsledků vyhledávání, může je váš výchozí vyhledávač protokolovat jako vyhledávací dotazy.</translation>
 <translation id="3437994698969764647">Exportovat vše...</translation>
@@ -2758,7 +2758,7 @@ Veřejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitů):
 <translation id="421577943854572179">vloženo do libovolného jiného webu</translation>
 <translation id="580886651983547002">Aplikace <ph name="PRODUCT_NAME"/>
         nemůže získat přístup k požadovaným webovým stránkám. To je většinou
-        způsobeno potížemi se sítí, příčinou však může být také chybně
+        způsobeno potížemi se sítí, příčinou však může být také chybně 
         nakonfigurovaná brána firewall nebo server proxy.</translation>
 <translation id="4228259645864383432"><ph name="BEGIN_LINK"/>Získat další rozšíření<ph name="END_LINK"/></translation>
 <translation id="5445557969380904478">Informace o rozpoznávání hlasu</translation>

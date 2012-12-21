@@ -36,7 +36,7 @@ Mock4JS = {
 		object.atLeastOnce = function() {
 			return new InvokeAtLeastOnce();
 		}
-
+		
 		// syntactic sugar for argument expectations
 		object.ANYTHING = new MatchAnything();
 		object.NOT_NULL = new MatchAnythingBut(new MatchExactly(null));
@@ -65,7 +65,7 @@ Mock4JS = {
 		object.stringContains = function(substring) {
 			return new MatchStringContaining(substring);
 		}
-
+		
 		// syntactic sugar for will()
 		object.returnValue = function(value) {
 			return new ReturnValueAction(value);
@@ -100,11 +100,11 @@ Mock4JSUtil = {
 			} else {
 				result += list[i];
 			}
-
+			
 			if(i<list.length-1) result += ", ";
 		}
 		return result;
-	}
+	}	
 }
 
 Mock4JSException = function(message) {
@@ -119,7 +119,7 @@ Mock4JSException.prototype = {
 
 /**
  * Assert function that makes use of the constraint methods
- */
+ */ 
 assertThat = function(expected, argumentMatcher) {
 	if(!argumentMatcher.argumentMatches(expected)) {
 		fail("Expected '"+expected+"' to be "+argumentMatcher.describe());
@@ -141,13 +141,13 @@ CallCounter.prototype = {
 			throw new Mock4JSException("unexpected invocation");
 		}
 	},
-
+	
 	verify: function() {
 		if(this._actualCallCount < this._expectedCallCount) {
 			throw new Mock4JSException("expected method was not invoked the expected number of times");
 		}
 	},
-
+	
 	describe: function() {
 		if(this._expectedCallCount == 0) {
 			return "not expected";
@@ -175,13 +175,13 @@ InvokeAtLeastOnce.prototype = {
 	addActualCall: function() {
 		this._hasBeenInvoked = true;
 	},
-
+	
 	verify: function() {
 		if(this._hasBeenInvoked === false) {
 			throw new Mock4JSException(describe());
 		}
 	},
-
+	
 	describe: function() {
 		var desc = "expected at least once";
 		if(this._hasBeenInvoked) desc+=" and has been invoked";
@@ -309,11 +309,11 @@ StubInvocation.prototype = {
 		if (invokedMethodName != this._expectedMethodName) {
 			return false;
 		}
-
+		
 		if (invokedMethodArgs.length != this._expectedArgs.length) {
 			return false;
 		}
-
+		
 		for(var i=0; i<invokedMethodArgs.length; i++) {
 			var expectedArg = this._expectedArgs[i];
 			var invokedArg = invokedMethodArgs[i];
@@ -321,10 +321,10 @@ StubInvocation.prototype = {
 				return false;
 			}
 		}
-
+		
 		return true;
 	},
-
+	
 	invoked: function() {
 		try {
 			return this._actionSequence.invokeNextAction();
@@ -336,19 +336,19 @@ StubInvocation.prototype = {
 			}
 		}
 	},
-
+	
 	will: function() {
 		this._actionSequence.addAll.apply(this._actionSequence, arguments);
 	},
-
+	
 	describeInvocationNameAndArgs: function() {
 		return this._expectedMethodName+"("+Mock4JSUtil.join(this._expectedArgs)+")";
 	},
-
+	
 	describe: function() {
 		return "stub: "+this.describeInvocationNameAndArgs();
 	},
-
+	
 	verify: function() {
 	}
 }
@@ -369,7 +369,7 @@ ExpectedInvocation.prototype = {
 			throw new Mock4JSException("method "+this._stubInvocation.describeInvocationNameAndArgs()+": "+e.message);
 		}
 	},
-
+	
 	invoked: function() {
 		try {
 			this._expectedCallCounter.addActualCall();
@@ -378,15 +378,15 @@ ExpectedInvocation.prototype = {
 		}
 		return this._stubInvocation.invoked();
 	},
-
+	
 	will: function() {
 		this._stubInvocation.will.apply(this._stubInvocation, arguments);
 	},
-
+	
 	describe: function() {
 		return this._expectedCallCounter.describe()+": "+this._stubInvocation.describeInvocationNameAndArgs();
 	},
-
+	
 	verify: function() {
 		try {
 			this._expectedCallCounter.verify();
@@ -445,7 +445,7 @@ ActionSequence.prototype = {
 			}
 		}
 	},
-
+	
 	addAll: function() {
 		this._actionSequence = [];
 		for(var i=0; i<arguments.length; i++) {
@@ -461,7 +461,7 @@ function StubActionSequence() {
 	this._ACTIONS_NOT_SETUP = "_ACTIONS_NOT_SETUP";
 	this._actionSequence = this._ACTIONS_NOT_SETUP;
 	this._indexOfNextAction = 0;
-}
+} 
 
 StubActionSequence.prototype = {
 	invokeNextAction: function() {
@@ -480,7 +480,7 @@ StubActionSequence.prototype = {
 			}
 		}
 	},
-
+	
 	addAll: function() {
 		this._actionSequence = [];
 		for(var i=0; i<arguments.length; i++) {
@@ -492,7 +492,7 @@ StubActionSequence.prototype = {
 	}
 }
 
-
+ 
 /**
  * Mock
  */
@@ -512,7 +512,7 @@ function Mock(mockedType) {
 	ChildClass.prototype = new IntermediateClass();
 	this._proxy = new ChildClass();
 	this._proxy.mock = this;
-
+	
 	for(property in mockedType.prototype) {
 		if(this._isPublicMethod(mockedType.prototype, property)) {
 			var publicMethodName = property;
@@ -523,24 +523,24 @@ function Mock(mockedType) {
 }
 
 Mock.prototype = {
-
+	
 	proxy: function() {
 		return this._proxy;
 	},
-
+	
 	expects: function(expectedCallCount) {
 		this._expectedCallCount = expectedCallCount;
 		this._isRecordingExpectations = true;
 		this._isRecordingStubs = false;
 		return this;
 	},
-
+	
 	stubs: function() {
 		this._isRecordingExpectations = false;
 		this._isRecordingStubs = true;
 		return this;
 	},
-
+	
 	verify: function() {
 		for(var i=0; i<this._expectedInvocations.length; i++) {
 			var expectedInvocation = this._expectedInvocations[i];
@@ -552,11 +552,11 @@ Mock.prototype = {
 			}
 		}
 	},
-
+	
 	_isPublicMethod: function(mockedType, property) {
 		try {
 			var isMethod = typeof(mockedType[property]) == 'function';
-			var isPublic = property.charAt(0) != "_";
+			var isPublic = property.charAt(0) != "_"; 
 			return isMethod && isPublic;
 		} catch(e) {
 			return false;
@@ -574,7 +574,7 @@ Mock.prototype = {
 					expectedArgs[i] = new MatchExactly(arguments[i]);
 				}
 			}
-
+			
 			// create stub or expected invocation
 			var expectedInvocation;
 			if(this._isRecordingExpectations) {
@@ -582,15 +582,15 @@ Mock.prototype = {
 			} else {
 				expectedInvocation = new StubInvocation(methodName, expectedArgs, new StubActionSequence());
 			}
-
+			
 			this._expectedInvocations.push(expectedInvocation);
-
+			
 			this._isRecordingExpectations = false;
 			this._isRecordingStubs = false;
 			return expectedInvocation;
 		}
 	},
-
+	
 	_createMockedMethod: function(methodName) {
 		return function() {
 			// go through expectation list backwards to ensure later expectations override earlier ones
@@ -613,7 +613,7 @@ Mock.prototype = {
 			throw new Mock4JSException(failMsg);
 		};
 	},
-
+	
 	_describeMockSetup: function() {
 		var msg = "\nAllowed:";
 		for(var i=0; i<this._expectedInvocations.length; i++) {

@@ -429,10 +429,10 @@ puis cliquez sur <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/>.</translation>
 <translation id="5145331109270917438">Date de modification</translation>
 <translation id="6596816719288285829">Adresse IP</translation>
 <translation id="4508265954913339219">Échec de l'activation</translation>
-<translation id="1884405719612801980">type heuristique : <ph name="HEURISTIC_TYPE"/>
-type de serveur : <ph name="SERVER_TYPE"/>
-signature de champ : <ph name="FIELD_SIGNATURE"/>
-signature de formulaire : <ph name="FORM_SIGNATURE"/>
+<translation id="1884405719612801980">type heuristique : <ph name="HEURISTIC_TYPE"/> 
+type de serveur : <ph name="SERVER_TYPE"/> 
+signature de champ : <ph name="FIELD_SIGNATURE"/> 
+signature de formulaire : <ph name="FORM_SIGNATURE"/> 
 identifiant de test : &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8656768832129462377">Ne pas vérifier</translation>
 <translation id="715487527529576698">Le chinois simplifié est le mode de saisie initial</translation>
@@ -1315,7 +1315,7 @@ Calcul de la durée restante</translation>
 <translation id="7378810950367401542">/</translation>
 <translation id="6426039856985689743">Désactiver les données mobiles</translation>
 <translation id="539643935609409426">Pour masquer l'accès à ce programme, vous devez le désinstaller
-au moyen de l'option <ph name="CONTROL_PANEL_APPLET_NAME"/> du Panneau de configuration.
+au moyen de l'option <ph name="CONTROL_PANEL_APPLET_NAME"/> du Panneau de configuration. 
 Souhaitez-vous lancer <ph name="CONTROL_PANEL_APPLET_NAME"/> ?</translation>
 <translation id="80993596820839389">Lancer <ph name="PRODUCT_NAME"/> automatiquement lors du démarrage de l'appareil mobile</translation>
 <translation id="6562758426028728553">Veuillez saisir l'ancien et le nouveau code PIN.</translation>
@@ -1688,7 +1688,7 @@ Exposant public (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits) :
 <translation id="271083069174183365">Paramètres de saisie en japonais</translation>
 <translation id="1257595095755619623">Si vous utilisez un serveur proxy, vérifiez vos paramètres de proxy ou
         contactez votre administrateur réseau pour vérifier que le serveur
-        proxy fonctionne. Si vous ne pensez pas devoir utiliser de
+        proxy fonctionne. Si vous ne pensez pas devoir utiliser de 
         serveur proxy, réglez vos <ph name="LINK_START"/>paramètres de proxy<ph name="LINK_END"/>.</translation>
 <translation id="1640672724030957280">Téléchargement en cours…</translation>
 <translation id="5185386675596372454">La nouvelle version de &quot;<ph name="EXTENSION_NAME"/>&quot; a été désactivée, car elle nécessite davantage d'autorisations.</translation>
@@ -1697,9 +1697,9 @@ Exposant public (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits) :
 <translation id="4148925816941278100">American Express</translation>
 <translation id="3579358906104462249">Certains paramètres ont été désactivés par votre administrateur et d'autres sont gérés par une extension.</translation>
 <translation id="1507246803636407672">&amp;Supprimer</translation>
-<translation id="2320435940785160168">Ce serveur exige un certificat d'authentification et n'a pas accepté celui envoyé par le navigateur.
-Votre certificat a peut-être expiré ou le serveur n'a pas approuvé l'émetteur.
-Réessayez avec un autre certificat si vous en avez un.
+<translation id="2320435940785160168">Ce serveur exige un certificat d'authentification et n'a pas accepté celui envoyé par le navigateur. 
+Votre certificat a peut-être expiré ou le serveur n'a pas approuvé l'émetteur. 
+Réessayez avec un autre certificat si vous en avez un. 
 Sinon, vous devrez en obtenir un nouveau d'un autre émetteur.</translation>
 <translation id="6295228342562451544">Lorsque vous vous connectez à un site Web sécurisé, le serveur hébergeant ce site présente à votre navigateur un &quot;certificat&quot; afin de vérifier l'identité du site. Ce certificat contient des informations d'identité, telles que l'adresse du site Web, laquelle est vérifiée par un tiers approuvé par votre ordinateur. En vérifiant que l'adresse du certificat correspond à l'adresse du site Web, il est possible de s'assurer que vous êtes connecté de façon sécurisée avec le site Web souhaité et non pas avec un tiers (tel qu'un pirate informatique sur votre réseau).</translation>
 <translation id="6342069812937806050">À l'instant</translation>
@@ -4076,7 +4076,7 @@ Pour poursuivre l'exploration, appuyez sur n'importe quelle touche.</translation
 <translation id="8477241577829954800">Remplacé</translation>
 <translation id="6735304988756581115">Afficher les cookies et autres données de site...</translation>
 <translation id="3048564749795856202">Si vous pensez avoir cerné les risques, vous pouvez <ph name="PROCEED_LINK"/>.</translation>
-<translation id="5996258716334177896">Impossible d'ouvrir votre profil correctement.
+<translation id="5996258716334177896">Impossible d'ouvrir votre profil correctement. 
 
 Il est possible que certaines fonctionnalités ne soient pas disponibles. Veuillez vérifier que ce profil existe et que vous disposez d'une autorisation d'accès à son contenu en lecture et en écriture.</translation>
 <translation id="7953739707111622108">Impossible d'ouvrir ce périphérique, car son système de fichiers n'est pas reconnu.</translation>

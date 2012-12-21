@@ -14,7 +14,7 @@
     '../../build/win_precompile.gypi',
   ],
   'conditions': [
-    # This target won't build in fastbuild, since there are no PDBs.
+    # This target won't build in fastbuild, since there are no PDBs. 
     ['OS=="win" and fastbuild==0', {
       'targets': [
         {

@@ -89,7 +89,7 @@ MockFetcher::MockFetcher(bool success,
     : TestURLFetcher(0, url, d) {
   set_url(url);
   net::URLRequestStatus::Status code;
-
+  
   if (success) {
     set_response_code(net::HTTP_OK);
     code = net::URLRequestStatus::SUCCESS;

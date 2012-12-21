@@ -174,7 +174,7 @@
 <translation id="4969072929772884570">Inhabilitar notificaciones de Ash</translation>
 <translation id="8186609076106987817">El servidor no ha podido encontrar el archivo.</translation>
 <translation id="9134410174832249455"><ph name="PRODUCT_NAME"/>
-        no ha podido cargar la página web porque
+        no ha podido cargar la página web porque 
         <ph name="HOST_NAME"/>
         ha tardado demasiado en responder. Es posible que el sitio web no esté disponible o que
         se haya producido algún problema con tu conexión a Internet.</translation>
@@ -1077,7 +1077,7 @@ Calculando el tiempo restante</translation>
           (de la red actual). Si aparece el botón
           <ph name="BEGIN_BOLD"/>
           <ph name="PROXY_BUTTON"/>
-          <ph name="END_BOLD"/> (en la
+          <ph name="END_BOLD"/> (en la 
           <ph name="BEGIN_BOLD"/>
           <ph name="NETWORK_TAB"/>
           <ph name="END_BOLD"/>pestaña), haz clic en él y asegúrate de que esté establecida la opción Directa.</translation>
@@ -1708,7 +1708,7 @@ Exponente público (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bits):
 <translation id="4148925816941278100">American Express</translation>
 <translation id="3579358906104462249">El administrador ha inhabilitado algunas opciones y otras las administra una extensión.</translation>
 <translation id="1507246803636407672">&amp;Rechazar</translation>
-<translation id="2320435940785160168">Este servidor requiere un certificado para la autenticación y no ha aceptado el que ha enviado el
+<translation id="2320435940785160168">Este servidor requiere un certificado para la autenticación y no ha aceptado el que ha enviado el 
         navegador. Es posible que el certificado esté caducado o que el servidor no confíe en el emisor del mismo.
         Si dispones de otro certificado, puedes volver a intentarlo o es posible que tengas que
         obtener un certificado válido de otra entidad emisora.</translation>
@@ -3902,7 +3902,7 @@ Calculando el tiempo de carga completa</translation>
 <translation id="4193154014135846272">Documento de Google</translation>
 <translation id="4771973620359291008">Se ha producido un error desconocido.</translation>
 <translation id="5509914365760201064">Emisor: <ph name="CERTIFICATE_AUTHORITY"/></translation>
-<translation id="6446356484127229069"><ph name="PRODUCT_NAME"/> no puede acceder a la red.
+<translation id="6446356484127229069"><ph name="PRODUCT_NAME"/> no puede acceder a la red. 
         <ph name="LINE_BREAK"/>
         Esto se puede deber a que el cortafuegos o el software antivirus de tu dispositivo móvil haya considerado erróneamente que <ph name="PRODUCT_NAME"/> es una aplicación intrusa y esté impidiendo que establezca conexión con Internet.</translation>
 <translation id="5449588825071916739">Añadir todas las pestañas a marcadores...</translation>

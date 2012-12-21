@@ -101,7 +101,7 @@ they expect a 'choose file' button
 and standard file-chooser.
 If your app makes heavy use of file-handing,
 you should also implement drag-and-drop
-(see below and also check out
+(see below and also check out 
 <a href="http://www.html5rocks.com/tutorials/dnd/basics/">Native HTML5 Drag and Drop</a>).
 </p>
 
@@ -168,7 +168,7 @@ var chosenFileEntry = null;
 
 chooseFileButton.addEventListener('click', function(e) {
   chrome.fileSystem.chooseFile({type: 'openFile'}, function(readOnlyEntry) {
-
+ 
     readOnlyEntry.file(function(file) {
       var reader = new FileReader();
 
@@ -202,7 +202,7 @@ writes the selected file to it.
 
     chosenFileEntry.file(function(file) {
       writer.write(file);
-    });
+    });   
   }, errorHandler);
 });
 </pre>
@@ -221,7 +221,7 @@ chrome.fileSystem.chooseFile({type: 'saveFile'}, function(writableFileEntry) {
       writer.onwriteend = function(e) {
         console.log('write complete');
       };
-      writer.write(new Blob(['1234567890'], {type: 'text/plain'}));
+      writer.write(new Blob(['1234567890'], {type: 'text/plain'}));  
     }, errorHandler);
 });
 </pre>

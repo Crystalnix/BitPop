@@ -1712,7 +1712,7 @@ Offentlig eksponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biter):
 <translation id="1507246803636407672">&amp;amp;Forkast</translation>
 <translation id="2320435940785160168">Tjeneren krever et autentiseringssertifikat og godkjente ikke sertifikatet som ble sendt av         nettleseren.
 Det kan være at sertifikatet ditt er utløpt, eller at tjeneren ikke stoler på utstederen.         Hvis du har et
-annet sertifikat, kan du prøve å bruke dette. Ellers kan du forsøke å
+annet sertifikat, kan du prøve å bruke dette. Ellers kan du forsøke å                 
         skaffe et gyldig sertifikat fra et annet sted.</translation>
 <translation id="6295228342562451544">Når du kobler deg til et sikkert nettsted, blir et såkalt «sertifikat» presentert til nettleseren av tjeneren som er vert for nettstedet, for å verifisere identiteten. Sertifikatet inneholder identitetsinformasjon, for eksempel adressen til nettstedet, som er bekreftet av en tredjepart som datamaskinen stoler på. Ved å kontrollere at adressen i sertifikatet stemmer med adressen til nettstedet, er det mulig å verifisere at du kommuniserer sikkert med nettstedet du ønsket, og ikke en tredjepart (f.eks. noen som angriper nettverket ditt).</translation>
 <translation id="6342069812937806050">Akkurat nå</translation>
@@ -3633,7 +3633,7 @@ annet sertifikat, kan du prøve å bruke dette. Ellers kan du forsøke å
 <translation id="8435334418765210033">Lagrede nettverk</translation>
 <translation id="7005776044548004130">Nettsiden på <ph name="URL"/> har forårsaket
           for mange viderekoblinger. Problemet kan kanskje løses ved å slette informasjonskapslene dine for dette nettstedet eller tillate informasjonskapsler fra tredjeparter.
-          Hvis dette ikke løser problemet, dreier det seg kanskje om et problem med konfigurasjonen av tjeneren, og ikke med den
+          Hvis dette ikke løser problemet, dreier det seg kanskje om et problem med konfigurasjonen av tjeneren, og ikke med den 
           mobile enheten din.</translation>
 <translation id="6516193643535292276">Kan ikke koble til Internett</translation>
 <translation id="5125751979347152379">Ugyldig nettadresse.</translation>

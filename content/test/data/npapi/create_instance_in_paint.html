@@ -15,7 +15,7 @@ Plugin Instance In Paint Test<p>
 Tests that there's no deadlock when a plugin instance is created while handling a paint message.
 
 <DIV ID="PluginDiv">
-<embed	type="application/vnd.npapi-test"
+<embed	type="application/vnd.npapi-test" 
 	src="foo"
 	name="create_instance_in_paint"
 	id="1"
@@ -25,10 +25,10 @@ Tests that there's no deadlock when a plugin instance is created while handling 
 
 <DIV id="PluginDiv2"></DIV>
 
-<script>
+<script> 
 var height = document.body.offsetHeight;
-
-
+    
+    
 function CreateNewInstance() {
   var obj = document.createElement('embed');
   obj.setAttribute('type', 'application/vnd.npapi-test');

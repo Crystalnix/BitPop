@@ -31,7 +31,7 @@
 <translation id="3478024346823118645">Limpa os dados do usuário ao sair</translation>
 <translation id="8668394701842594241">Especifica uma lista de plug-ins ativados em <ph name="PRODUCT_NAME"/> e impede que os usuários modifiquem esta configuração. Os caracteres curinga &quot;*&quot; e &quot;?&quot; podem ser utilizados para combinar seqüências de caracteres arbitrários. &quot;*&quot; corresponde a um número arbitrário de caracteres enquanto &quot;?&quot; especifica um único caractere opcional, ou seja, corresponde a zero ou um caractere. O caractere de escape é &quot;\&quot;, ou seja, para fazer uma busca que inclua os caracteres &quot;*&quot;, &quot;?&quot;, ou &quot;\&quot;, você pode adicionar um &quot;\&quot; à frente. A lista de plug-ins especificados será sempre utilizada em <ph name="PRODUCT_NAME"/>, caso eles tenham sido instalados. Os plug-ins são marcados como ativados em &quot;about: plugins&quot; e os usuários não podem desativá-los. Esta política se sobrepõe tanto a DisabledPlugins como a DisabledPluginsExceptions. Se esta política for deixada sem definição, o usuário pode desativar qualquer plug-in instalado no sistema.</translation>
 <translation id="4157003184375321727">Informar a versão do sistema operacional e do firmware</translation>
-<translation id="4752214355598028025">O serviço &quot;Navegação segura&quot; mostra uma página de aviso quando os usuários navegam em sites que são sinalizados como potencialmente maliciosos. A ativação desta configuração impede que os usuários prossigam da página de aviso para o site malicioso.
+<translation id="4752214355598028025">O serviço &quot;Navegação segura&quot; mostra uma página de aviso quando os usuários navegam em sites que são sinalizados como potencialmente maliciosos. A ativação desta configuração impede que os usuários prossigam da página de aviso para o site malicioso. 
 
       Se esta configuração for desativada ou não for configurada, os usuários poderão optar por continuar no site sinalizado depois que o aviso for veiculado.</translation>
 <translation id="5255162913209987122">Pode ser recomendada</translation>
@@ -87,7 +87,7 @@
 <translation id="3758249152301468420">Desativar Ferramentas de desenvolvedor</translation>
 <translation id="8665076741187546529">Configurar a lista de extensões instaladas forçadamente</translation>
 <translation id="2505112041294615513">Configura o diretório que o <ph name="PRODUCT_FRAME_NAME"/> usará para armazenar dados do usuário. Se você configurar essa política, o <ph name="PRODUCT_FRAME_NAME"/> usará o diretório fornecido. Se não configurá-la, o diretório de perfil padrão será usado.</translation>
-<translation id="8818173863808665831">Informar a localização geográfica do dispositivo.
+<translation id="8818173863808665831">Informar a localização geográfica do dispositivo. 
 
       Se a política não for configurada, ou for configurada como falsa, o local não será informado.</translation>
 <translation id="4899708173828500852">Ativar Navegação segura</translation>
@@ -124,11 +124,11 @@
 <translation id="8044493735196713914">Informar modo de inicialização do dispositivo</translation>
 <translation id="1942957375738056236">Você pode especificar o URL do servidor de proxy aqui. Esta política só tem efeito caso você tenha selecionado as configurações de proxy manual em &quot;Escolha como especificar as configurações do servidor proxy&quot;. Você deve deixar esta política sem definição caso tenha selecionado qualquer outro modo de definição de políticas proxy. Para obter mais opções e exemplos detalhados, visite: <ph name="PROXY_HELP_URL"/></translation>
 <translation id="8642088216849640113">Permite o recurso de Navegação segura de <ph name="PRODUCT_NAME"/> e impede que os usuários alterem esta configuração. Se ativar esta configuração, a Navegação segura estará sempre ativa. Se desativar esta configuração, a Navegação segura nunca estará ativa. Se ativar ou desativar esta configuração, os usuários não poderão modificar ou substituir essa configuração em <ph name="PRODUCT_NAME"/>. Se esta política for deixada sem definição, a Navegação segura será ativada, mas o usuário será capaz de modificar a configuração.</translation>
-<translation id="6076008833763548615">Desativar montagem de armazenamento externo.
+<translation id="6076008833763548615">Desativar montagem de armazenamento externo. 
 
       Quando esta política for definida como &quot;true&quot;, o armazenamento externo não ficará disponível no navegador de arquivos.
 
-      Esta política afeta todos os tipos de mídia de armazenamento, como por exemplo: USB flash drivers, unidades de disco rígido externas, cartões SD e outros cartões de memória, armazenamento óptico, etc. O armazenamento interno não é afetado; portanto, os arquivos salvos na pasta &quot;Download&quot; podem ser acessados. O Google Drive também não é afetado por esta política.
+      Esta política afeta todos os tipos de mídia de armazenamento, como por exemplo: USB flash drivers, unidades de disco rígido externas, cartões SD e outros cartões de memória, armazenamento óptico, etc. O armazenamento interno não é afetado; portanto, os arquivos salvos na pasta &quot;Download&quot; podem ser acessados. O Google Drive também não é afetado por esta política. 
 
       Se esta configuração for desativada ou não for configurada, os usuários poderão usar todos os tipos de armazenamento externo suportados no dispositivo.</translation>
 <translation id="6936894225179401731">Especifica o número máximo de conexões simultâneas ao servidor proxy.
@@ -186,10 +186,10 @@ Os usuários não poderão desinstalar as extensões que forem especificadas por
 
       Se você definir esta política, o <ph name="PRODUCT_NAME"/> usará o tamanho do cache fornecido, sem considerar se o usuário especificou ou não o sinalizador '-- media-cache-size'.
 
-      Se o valor desta política for 0, o tamanho do cache padrão será usado, mas o usuário não poderá alterá-lo.
+      Se o valor desta política for 0, o tamanho do cache padrão será usado, mas o usuário não poderá alterá-lo. 
 
       Se esta política não for definida, o tamanho padrão será usado, e o usuário poderá substituí-lo pelo sinalizador --media-cache-size.</translation>
-<translation id="3723474915949495925">Especifica uma lista de plug-ins que o usuário pode ativar ou desativar no <ph name="PRODUCT_NAME"/>.
+<translation id="3723474915949495925">Especifica uma lista de plug-ins que o usuário pode ativar ou desativar no <ph name="PRODUCT_NAME"/>. 
 
           Os caracteres curinga '*' e '?' podem ser usados para associar sequências de caracteres arbitrários. '*' associa um número arbitrário de caracteres, enquanto '?' especifica um único caractere opcional; ou seja, associa zero ou um caractere. O caractere de escape é '\'; portanto, para associar '*', '?' ou '\', você pode colocar '\' na frente deles.
 
@@ -214,9 +214,9 @@ Os usuários não poderão desinstalar as extensões que forem especificadas por
 <translation id="1811270320106005269">Ativa o bloqueio quando os dispositivos <ph name="PRODUCT_OS_NAME"/> entram no modo ocioso ou suspenso. Se você ativar esta configuração, será pedido aos usuários uma senha para retirar o dispositivo do modo de espera. Se desativar esta configuração, não será pedido aos usuários uma senha para retirar o dispositivo do modo de espera. Se você ativar ou desativar essa configuração, os usuários não poderão alterá-la ou substituí-la. Se esta política não for configurada, o usuário pode escolher se prefere receber ou não uma solicitação de senha para desbloquear o dispositivo.</translation>
 <translation id="6022948604095165524">Ação na inicialização</translation>
 <translation id="9042911395677044526">Permite aplicar a configuração de rede por usuário de dispositivo <ph name="PRODUCT_OS_NAME"/>. A configuração de rede é uma string formatada em JSON, conforme definido pelo formato Open Network Configuration descrito em <ph name="ONC_SPEC_URL"/></translation>
-<translation id="7128918109610518786">Lista os identificadores de aplicativo que o <ph name="PRODUCT_OS_NAME"/> mostra como aplicativos fixados na barra do iniciador.
+<translation id="7128918109610518786">Lista os identificadores de aplicativo que o <ph name="PRODUCT_OS_NAME"/> mostra como aplicativos fixados na barra do iniciador. 
 
-      Se essa política for configurada, o conjunto de aplicativos é fixado e não pode ser alterado pelo usuário.
+      Se essa política for configurada, o conjunto de aplicativos é fixado e não pode ser alterado pelo usuário. 
 
       Se esta política for deixada sem configuração, o usuário pode alterar a lista de aplicativos fixados no iniciador.</translation>
 <translation id="7625444193696794922">Especifica o canal de liberação ao qual este dispositivo deve ser vinculado.</translation>
@@ -340,7 +340,7 @@ Os usuários não poderão desinstalar as extensões que forem especificadas por
 <translation id="5475361623548884387">Ativar impressão</translation>
 <translation id="3653237928288822292">Ícone do provedor de pesquisa padrão</translation>
 <translation id="4445684791305970001">Desativa as Ferramentas do desenvolvedor e o console JavaScript. Se ativar esta configuração, as Ferramentas do desenvolvedor não podem ser acessadas ​​e elementos de websites não poderão mais ser inspecionados. Quaisquer entradas para abrir as Ferramentas do desenvolvedor ou o Console de JavaScript em atalhos de teclado, menus ou menus de contextos serão desativadas. Definir esta opção como desativada ou deixá-la sem definição permitirá a utilização das Ferramentas do desenvolvedor e do console JavaScript.</translation>
-<translation id="9203071022800375458">Desativa o recurso de captura de tela.
+<translation id="9203071022800375458">Desativa o recurso de captura de tela. 
 
       Se for ativada, não será possível capturar telas usando atalhos do teclado ou APIs de extensão.
 
@@ -486,7 +486,7 @@ Os usuários não poderão desinstalar as extensões que forem especificadas por
 
       A partir do Google Chrome 21, ficou mais difícil instalar extensões, aplicativos e scripts de usuários fora da Chrome Web Store. Anteriormente, os usuários podiam clicar em um link para um arquivo *.crx, e o Google Chrome se oferecia para instalar o arquivo depois de alguns avisos. Desde o surgimento do Google Chrome 21, esses arquivos precisam ser baixados e arrastados para a página de configurações do Google Chrome. Esta configuração permite que URLs específicos tenham o fluxo de instalação antigo e mais fácil.
 
-      Cada item da lista é um padrão de correspondência de estilo de extensões (ver http://code.google.com/chrome/extensions/match_patterns.html). Os usuários poderão instalar itens com facilidade a partir de qualquer URL que corresponda a um item desta lista. Tanto a localização do arquivo *.crx quanto a página a partir da qual o download é iniciado (ou seja, a referência) devem ser autorizados por esses padrões.
+      Cada item da lista é um padrão de correspondência de estilo de extensões (ver http://code.google.com/chrome/extensions/match_patterns.html). Os usuários poderão instalar itens com facilidade a partir de qualquer URL que corresponda a um item desta lista. Tanto a localização do arquivo *.crx quanto a página a partir da qual o download é iniciado (ou seja, a referência) devem ser autorizados por esses padrões. 
 
       ExtensionInstallBlacklist tem precedência sobre esta política. Ou seja, as extensões da lista negra não serão instaladas, mesmo se forem de um site desta lista.</translation>
 <translation id="7848840259379156480">Permite configurar o renderizador padrão de HTML, quando o <ph name="PRODUCT_FRAME_NAME"/> estiver instalado. A configuração padrão é permitir que o navegador do host faça a renderização, mas você pode, opcionalmente, substituí-la e fazer com que o <ph name="PRODUCT_FRAME_NAME"/> renderize páginas HTML por padrão.</translation>
@@ -520,7 +520,7 @@ Os usuários não poderão desinstalar as extensões que forem especificadas por
 <translation id="1948757837129151165">Políticas para a autenticação HTTP</translation>
 <translation id="5946082169633555022">Canal Beta</translation>
 <translation id="8303314579975657113">Especifica qual biblioteca GSSAPI deve ser utilizada para autenticação HTTP. Você pode definir apenas um nome de biblioteca ou um caminho completo. Se nenhuma configuração for fornecida, <ph name="PRODUCT_NAME"/> voltará a utilizar um nome de biblioteca padrão.</translation>
-<translation id="7749402620209366169">Permite autenticação de dois fatores para hosts de acesso remoto em vez de PIN especificado pelo usuário.
+<translation id="7749402620209366169">Permite autenticação de dois fatores para hosts de acesso remoto em vez de PIN especificado pelo usuário. 
 
           Se esta configuração for ativada, os usuários deverão fornecer um código de dois fatores válido ao acessar um host.
 

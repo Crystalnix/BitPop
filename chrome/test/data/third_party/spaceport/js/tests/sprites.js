@@ -5,12 +5,12 @@ define([ 'sprites/sources', 'sprites/transformers', 'sprites/renderers', 'util/e
     function frameGenerator(transformer, frameCount) {
         // objectIndex => frameIndex => transform
         var objectDatas = [ ];
-
+    
         return function generateFrames(objectCount) {
             // Generate frame data for new objects, if necessary
             while (objectDatas.length < objectCount) {
                 var objectIndex = objectDatas.length;
-
+            
                 // frameIndex => transform
                 var transforms = [ ];
                 objectDatas.push(transforms);
@@ -19,7 +19,7 @@ define([ 'sprites/sources', 'sprites/transformers', 'sprites/renderers', 'util/e
                     transforms.push(transformer(frameIndex, objectIndex));
                 }
             }
-
+        
             // frameIndex => objectIndex => transform
             // Transpose objectDatas, with `objectCount` transforms.
             var frames = [ ];
@@ -131,17 +131,17 @@ define([ 'sprites/sources', 'sprites/transformers', 'sprites/renderers', 'util/e
                 factor *= 10;
                 objectCount = Math.floor(objectCount / 10);
             }
-
+            
             var testValue = objectCount*factor;
             if( !Object.prototype.hasOwnProperty.call(fpsResults, testValue) ){
                 return testValue;
             }
-
+            
             testValue = (objectCount+1)*factor;
             if( !Object.prototype.hasOwnProperty.call(fpsResults, testValue) ){
                 return testValue;
             }
-
+            
             testValue = (objectCount-1)*factor;
             if( testValue <= 1 ){
                 return -1;
@@ -149,7 +149,7 @@ define([ 'sprites/sources', 'sprites/transformers', 'sprites/renderers', 'util/e
             if( !Object.prototype.hasOwnProperty.call(fpsResults, testValue) ){
                 return testValue;
             }
-
+            
             return -1;
         }
 
@@ -166,10 +166,10 @@ define([ 'sprites/sources', 'sprites/transformers', 'sprites/renderers', 'util/e
                 if (err) return callback(err);
                 fpsResults[objectCount] = results;
                 rawData.push([ objectCount, results ]);
-
+                
                 var timePerObjectEstimate = 1/(objectCount*results.fps);
                 var estimatedMaxObjects = Math.floor(1/(targetFramerate * timePerObjectEstimate));
-
+                
                 var nextObjectCount = nextNumberToTry(fpsResults, estimatedMaxObjects);
                 test(nextObjectCount);
             });

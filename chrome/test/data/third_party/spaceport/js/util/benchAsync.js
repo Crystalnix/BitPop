@@ -18,7 +18,7 @@ define([ 'util/ensureCallback' ], function (ensureCallback) {
 
         var startTime;
         var running = true;
-
+        
         function checkDone(endTime) {
             if (!running) {
                 return;
@@ -48,10 +48,10 @@ define([ 'util/ensureCallback' ], function (ensureCallback) {
                 requestAnimationFrame(rafUpdate);
             }
         }
-
+        
         var timeoutTimes = [ ];
         var rafTimes = [ ];
-
+        
         function next() {
             fn(timeoutTimes.length, function () {
                 var now = Date.now();

@@ -11,7 +11,7 @@
 <esi:when test="(($(HTTP_COOKIE{BV_IDS}|'false')=='') | ($(HTTP_COOKIE{BV_IDS}|'false')=='false')) & ($(QUERY_STRING{cookies})!='no')">
 	<esi:choose>
 	<esi:when test="(($(QUERY_STRING{BV_SessionID}|'false')!='') & ($(QUERY_STRING{BV_SessionID}|'false')!='false')) & (($(QUERY_STRING{BV_EngineID}|'false')!='') & ($(QUERY_STRING{BV_EngineID}|'false')!='false'))">
-
+		
 	</esi:when>
 	</esi:choose>
 </esi:when>
@@ -63,9 +63,9 @@
 					<input class="login" name="emLogin" type="text" size="30" value="" maxlength="255"><input type="HIDDEN" name="nextPage" value="/jsp/j_Login/j_MyAccount.jsp"><input type="hidden" name="customer_status" value="new"><p class="login_label_negindent"><span class="login_servmsg_new">* </span>Password</p>
 					<input class="login" type="password" name="pw" value="" size="30" maxlength="25"><p class="login_label_negindent"><span class="login_servmsg_new">* </span>Re-Confirm Password</p>
 					<input class="login" type="password" name="verifypw" value="" size="30" maxlength="25"><p class="login_smalltext">Note: Passwords must be at least 6 characters and are case sensitive.</p>
-
+                    
 					<p class="login_text"><input type="checkbox" name="wantMsg" checked>I'd like to hear about new product information, special discounts and offers exclusive to Epson customers only. Please sign me up!</p>
-
+					
 
 
                             <input type="image" src="#" border="0">
@@ -85,12 +85,12 @@
 								<label>First Name<br><input type="text" name="FIRST_NAME" id="FT_FNAME" class="empty" value="(Optional)"></label>
 								<input type="hidden" name="SOURCE" id="SOURCE" value=""><button id="ft-subscribe" class="btn_sign-up-now" title="Sign Up Now"></button>
 </form>
-
-
-
-
-
-
-
+							
+							
+							
+							
+							
+							
+							
 </body>
 </html>

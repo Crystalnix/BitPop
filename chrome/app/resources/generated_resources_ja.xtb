@@ -201,7 +201,7 @@
 <translation id="4552678318981539154">追加ストレージを購入</translation>
 <translation id="8806101649440495124">フォルダを削除</translation>
 <translation id="3011284594919057757">Flash について</translation>
-<translation id="7377169924702866686">CapsLock
+<translation id="7377169924702866686">CapsLock 
 がオンになっています。</translation>
 <translation id="2565670301826831948">タッチパッドの速度:</translation>
 <translation id="4969785127455456148">アルバム</translation>
@@ -502,7 +502,7 @@
         安全に接続できなかったことを意味します。
        <ph name="LINE_BREAK"/> この場合、
         サーバーを修正する必要があります。
-        <ph name="PRODUCT_NAME"/>
+        <ph name="PRODUCT_NAME"/> 
         では、プライバシー保護のために安全でない接続は使用しません。</translation>
 <translation id="7851858861565204677">その他のデバイス</translation>
 <translation id="5640179856859982418">スイスのキーボード</translation>

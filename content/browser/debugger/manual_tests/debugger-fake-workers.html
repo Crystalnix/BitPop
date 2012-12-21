@@ -30,7 +30,7 @@ var timer;
 function startWorkers() {
   startButton.disabled = true;
 
-  primeWorker = new Worker('resources/worker-primes.js');
+  primeWorker = new Worker('resources/worker-primes.js');                         	
   primeWorker.onmessage = onMessage;
   primeWorker.onerror = onError;
   primeWorker.postMessage(2);

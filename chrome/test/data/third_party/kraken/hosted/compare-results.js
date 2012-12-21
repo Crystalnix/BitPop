@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
 function sunspiderCompareResults(output1, output2)
@@ -31,46 +31,46 @@ function sunspiderCompareResults(output1, output2)
 
     var itemTotals1 = {};
     itemTotals1.length = count1;
-
+    
     var total1 = 0;
     var categoryTotals1 = {};
     var testTotalsByCategory1 = {};
-
+    
     var mean1 = 0;
     var categoryMeans1 = {};
     var testMeansByCategory1 = {};
-
+    
     var stdDev1 = 0;
     var categoryStdDevs1 = {};
     var testStdDevsByCategory1 = {};
-
+    
     var stdErr1 = 0;
     var categoryStdErrs1 = {};
     var testStdErrsByCategory1 = {};
-
+    
     var itemTotals2 = {};
     itemTotals2.length = count2;
-
+    
     var total2 = 0;
     var categoryTotals2 = {};
     var testTotalsByCategory2 = {};
-
+    
     var mean2 = 0;
     var categoryMeans2 = {};
     var testMeansByCategory2 = {};
-
+    
     var stdDev2 = 0;
     var categoryStdDevs2 = {};
     var testStdDevsByCategory2 = {};
-
+    
     var stdErr2 = 0;
     var categoryStdErrs2 = {};
     var testStdErrsByCategory2 = {};
-
+    
     function initialize()
     {
         itemTotals1 = {total: []};
-
+        
         for (var i = 0; i < categories.length; i++) {
             var category = categories[i];
             itemTotals1[category] = [];
@@ -83,7 +83,7 @@ function sunspiderCompareResults(output1, output2)
             categoryStdErrs1[category] = 0;
             testStdErrsByCategory1[category] = {};
         }
-
+        
         for (var i = 0; i < tests.length; i++) {
             var test = tests[i];
             itemTotals1[test] = [];
@@ -93,7 +93,7 @@ function sunspiderCompareResults(output1, output2)
             testStdDevsByCategory1[category][test] = 0;
             testStdErrsByCategory1[category][test] = 0;
         }
-
+        
         for (var i = 0; i < count1; i++) {
             itemTotals1["total"][i] = 0;
             for (var category in categoryTotals1) {
@@ -103,9 +103,9 @@ function sunspiderCompareResults(output1, output2)
                 }
             }
         }
-
+        
         itemTotals2 = {total: []};
-
+        
         for (var i = 0; i < categories.length; i++) {
             var category = categories[i];
             itemTotals2[category] = [];
@@ -118,7 +118,7 @@ function sunspiderCompareResults(output1, output2)
             categoryStdErrs2[category] = 0;
             testStdErrsByCategory2[category] = {};
         }
-
+        
         for (var i = 0; i < tests.length; i++) {
             var test = tests[i];
             itemTotals2[test] = [];
@@ -128,7 +128,7 @@ function sunspiderCompareResults(output1, output2)
             testStdDevsByCategory2[category][test] = 0;
             testStdErrsByCategory2[category][test] = 0;
         }
-
+        
         for (var i = 0; i < count2; i++) {
             itemTotals2["total"][i] = 0;
             for (var category in categoryTotals2) {
@@ -138,9 +138,9 @@ function sunspiderCompareResults(output1, output2)
                 }
             }
         }
-
+        
     }
-
+    
     function computeItemTotals(output, itemTotals)
     {
         for (var i = 0; i < output.length; i++) {
@@ -154,11 +154,11 @@ function sunspiderCompareResults(output1, output2)
             }
         }
     }
-
+    
     function computeTotals(output, categoryTotals, testTotalsByCategory)
     {
         var total = 0;
-
+        
         for (var i = 0; i < output.length; i++) {
             var result = output[i];
             for (var test in result) {
@@ -169,10 +169,10 @@ function sunspiderCompareResults(output1, output2)
                 testTotalsByCategory[category][test] += time;
             }
         }
-
+        
         return total;
     }
-
+    
     function computeMeans(count, total, categoryTotals, categoryMeans, testTotalsByCategory, testMeansByCategory)
     {
         var mean = total / count;
@@ -184,7 +184,7 @@ function sunspiderCompareResults(output1, output2)
         }
         return mean;
     }
-
+    
     function standardDeviation(mean, items)
     {
         var deltaSquaredSum = 0;
@@ -195,7 +195,7 @@ function sunspiderCompareResults(output1, output2)
         variance = deltaSquaredSum / (items.length - 1);
         return Math.sqrt(variance);
     }
-
+    
     function computeStdDevs(mean, itemTotals, categoryStdDevs, categoryMeans, testStdDevsByCategory, testMeansByCategory)
     {
         var stdDev = standardDeviation(mean, itemTotals["total"]);
@@ -209,11 +209,11 @@ function sunspiderCompareResults(output1, output2)
         }
         return stdDev;
     }
-
+    
     function computeStdErrors(count, stdDev, categoryStdErrs, categoryStdDevs, testStdErrsByCategory, testStdDevsByCategory)
     {
         var sqrtCount = Math.sqrt(count);
-
+        
         var stdErr = stdDev / sqrtCount;
         for (var category in categoryStdErrs) {
             categoryStdErrs[category] = categoryStdDevs[category] / sqrtCount;
@@ -223,34 +223,34 @@ function sunspiderCompareResults(output1, output2)
                 testStdErrsByCategory[category][test] = testStdDevsByCategory[category][test] / sqrtCount;
             }
         }
-
+        
         return stdErr;
     }
-
+    
     var tDistribution = [NaN, NaN, 12.71, 4.30, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23, 2.20, 2.18, 2.16, 2.14, 2.13, 2.12, 2.11, 2.10, 2.09, 2.09, 2.08, 2.07, 2.07, 2.06, 2.06, 2.06, 2.05, 2.05, 2.05, 2.04, 2.04, 2.04, 2.03, 2.03, 2.03, 2.03, 2.03, 2.02, 2.02, 2.02, 2.02, 2.02, 2.02, 2.02, 2.01, 2.01, 2.01, 2.01, 2.01, 2.01, 2.01, 2.01, 2.01, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 2.00, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.99, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.98, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.97, 1.96];
     var tMax = tDistribution.length;
     var tLimit = 1.96;
-
+    
     function tDist(n)
     {
         if (n > tMax)
             return tLimit;
         return tDistribution[n];
     }
-
-
+    
+    
     function formatMean(meanWidth, mean, stdErr, count)
     {
         var meanString = mean.toFixed(1).toString();
         while (meanString.length < meanWidth) {
             meanString = " " + meanString;
         }
-
+        
         var error = "+/- " + ((tDist(count) * stdErr / mean) * 100).toFixed(1) + "% ";
-
+        
         return meanString + "ms " + error;
     }
-
+    
     function computeLabelWidth()
     {
         var width = "Total".length;
@@ -263,10 +263,10 @@ function sunspiderCompareResults(output1, output2)
             if (shortName.length + 4 > width)
                 width = shortName.length + 4;
         }
-
+        
         return width;
     }
-
+    
     function computeMeanWidth(mean, categoryMeans, testMeansByCategory)
     {
         var width = mean.toFixed(1).toString().length;
@@ -280,10 +280,10 @@ function sunspiderCompareResults(output1, output2)
                     width = candidate;
             }
         }
-
+        
         return width;
     }
-
+    
     function pad(str, n)
     {
         while (str.length < n) {
@@ -291,16 +291,16 @@ function sunspiderCompareResults(output1, output2)
         }
         return str;
     }
-
+    
     function resultLine(labelWidth, indent, label, meanWidth1, mean1, stdErr1, meanWidth2, mean2, stdErr2)
     {
-        result = pad("", indent);
+        result = pad("", indent);    
         result += label + ": ";
         result = pad(result, labelWidth + 2);
-
+        
         var t = (mean1 - mean2) / (Math.sqrt((stdErr1 * stdErr1) + (stdErr2 * stdErr2)));
         var df = count1 + count2 - 2;
-
+        
         var statisticallySignificant = (Math.abs(t) > tDist(df+1));
         var diff = mean2 - mean1;
         var percentage = 100 * diff / mean1;
@@ -312,7 +312,7 @@ function sunspiderCompareResults(output1, output2)
 
         var diffSummary;
         var diffDetail;
-
+        
         if (probablySame) {
             diffSummary = "-";
             diffDetail = "";
@@ -321,18 +321,18 @@ function sunspiderCompareResults(output1, output2)
             diffDetail =  "    might be " + formattedRatio;
         } else {
             diffSummary = formattedRatio;
-            diffDetail = "    significant";
+            diffDetail = "    significant"; 
         }
-
+        
         return result + pad(diffSummary, 18) + formatMean(meanWidth1, mean1, stdErr1, count1) + "  " + formatMean(meanWidth2, mean2, stdErr2, count2) + diffDetail;
     }
-
+    
     function printOutput()
     {
         var labelWidth = computeLabelWidth();
         var meanWidth1 = computeMeanWidth(mean1, categoryMeans1, testMeansByCategory1);
         var meanWidth2 = computeMeanWidth(mean2, categoryMeans2, testMeansByCategory2);
-
+        
         print("\n");
         var header = "TEST";
         while (header.length < labelWidth)
@@ -345,7 +345,7 @@ function sunspiderCompareResults(output1, output2)
         print(resultLine(labelWidth, 0, "** TOTAL **", meanWidth1, mean1, stdErr1, meanWidth2, mean2, stdErr2));
         print("");
         print("====================================================================================");
-
+        
         for (var category in categoryMeans1) {
             print("");
             print(resultLine(labelWidth, 2, category,
@@ -353,15 +353,15 @@ function sunspiderCompareResults(output1, output2)
                              meanWidth2, categoryMeans2[category], categoryStdErrs2[category]));
             for (var test in testMeansByCategory1[category]) {
                 var shortName = test.replace(/^[^-]*-/, "");
-                print(resultLine(labelWidth, 4, shortName,
+                print(resultLine(labelWidth, 4, shortName, 
                                  meanWidth1, testMeansByCategory1[category][test], testStdErrsByCategory1[category][test],
                                  meanWidth2, testMeansByCategory2[category][test], testStdErrsByCategory2[category][test]));
             }
         }
     }
-
+    
     initialize();
-
+    
     computeItemTotals(output1, itemTotals1);
     computeItemTotals(output2, itemTotals2);
 

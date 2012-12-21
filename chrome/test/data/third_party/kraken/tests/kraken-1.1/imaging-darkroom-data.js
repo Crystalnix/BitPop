@@ -6,19 +6,19 @@ var squidImageData = [8, 7, 21, 255, 42, 39, 79, 255, 74, 64, 104, 255, 96, 83, 
         {"blackPoint":0.2,"fill":0.606,"brightness":0.588,"contrast":1.916,"saturation":1.838,"temperature":-1332,"splitPoint":0,"shadowsHue":0.5,"shadowsSaturation":0,"highlightsHue":0.5,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
         {"blackPoint":0,"fill":0,"brightness":1,"contrast":1,"saturation":0,"temperature":0,"splitPoint":0,"shadowsHue":0.5,"shadowsSaturation":0,"highlightsHue":0.5,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
         {"blackPoint":0,"fill":0,"brightness":1.488,"contrast":1.026,"saturation":1.61,"temperature":0,"splitPoint":-0.6619999999999999,"shadowsHue":0.5,"shadowsSaturation":0.625,"highlightsHue":0.166,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
-        {"blackPoint":0.181,"fill":0.622,"brightness":0.384,"contrast":2,"saturation":1.638,"temperature":0,"splitPoint":-0.6759999999999999,"shadowsHue":0.209,"shadowsSaturation":0,"highlightsHue":0.191,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
+        {"blackPoint":0.181,"fill":0.622,"brightness":0.384,"contrast":2,"saturation":1.638,"temperature":0,"splitPoint":-0.6759999999999999,"shadowsHue":0.209,"shadowsSaturation":0,"highlightsHue":0.191,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},        
         {"blackPoint":0,"fill":0,"brightness":1,"contrast":1,"saturation":1,"temperature":-2000,"splitPoint":0,"shadowsHue":0.5,"shadowsSaturation":0,"highlightsHue":0.5,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
         {"blackPoint":0,"fill":0,"brightness":1.626,"contrast":1.777,"saturation":1,"temperature":2000,"splitPoint":0,"shadowsHue":0.5,"shadowsSaturation":0,"highlightsHue":0.5,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
         {"blackPoint":0.2,"fill":0.606,"brightness":0.588,"contrast":1.916,"saturation":1.838,"temperature":-1332,"splitPoint":0,"shadowsHue":0.5,"shadowsSaturation":0,"highlightsHue":0.5,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
         {"blackPoint":0,"fill":0,"brightness":1,"contrast":1,"saturation":0,"temperature":0,"splitPoint":0,"shadowsHue":0.5,"shadowsSaturation":0,"highlightsHue":0.5,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
         {"blackPoint":0,"fill":0,"brightness":1.488,"contrast":1.026,"saturation":1.61,"temperature":0,"splitPoint":-0.6619999999999999,"shadowsHue":0.5,"shadowsSaturation":0.625,"highlightsHue":0.166,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
-        {"blackPoint":0.181,"fill":0.622,"brightness":0.384,"contrast":2,"saturation":1.638,"temperature":0,"splitPoint":-0.6759999999999999,"shadowsHue":0.209,"shadowsSaturation":0,"highlightsHue":0.191,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
+        {"blackPoint":0.181,"fill":0.622,"brightness":0.384,"contrast":2,"saturation":1.638,"temperature":0,"splitPoint":-0.6759999999999999,"shadowsHue":0.209,"shadowsSaturation":0,"highlightsHue":0.191,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},        
         {"blackPoint":0,"fill":0,"brightness":1,"contrast":1,"saturation":1,"temperature":-2000,"splitPoint":0,"shadowsHue":0.5,"shadowsSaturation":0,"highlightsHue":0.5,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
         {"blackPoint":0,"fill":0,"brightness":1.626,"contrast":1.777,"saturation":1,"temperature":2000,"splitPoint":0,"shadowsHue":0.5,"shadowsSaturation":0,"highlightsHue":0.5,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
         {"blackPoint":0.2,"fill":0.606,"brightness":0.588,"contrast":1.916,"saturation":1.838,"temperature":-1332,"splitPoint":0,"shadowsHue":0.5,"shadowsSaturation":0,"highlightsHue":0.5,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
         {"blackPoint":0,"fill":0,"brightness":1,"contrast":1,"saturation":0,"temperature":0,"splitPoint":0,"shadowsHue":0.5,"shadowsSaturation":0,"highlightsHue":0.5,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
         {"blackPoint":0,"fill":0,"brightness":1.488,"contrast":1.026,"saturation":1.61,"temperature":0,"splitPoint":-0.6619999999999999,"shadowsHue":0.5,"shadowsSaturation":0.625,"highlightsHue":0.166,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5},
-        {"blackPoint":0.181,"fill":0.622,"brightness":0.384,"contrast":2,"saturation":1.638,"temperature":0,"splitPoint":-0.6759999999999999,"shadowsHue":0.209,"shadowsSaturation":0,"highlightsHue":0.191,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5}
+        {"blackPoint":0.181,"fill":0.622,"brightness":0.384,"contrast":2,"saturation":1.638,"temperature":0,"splitPoint":-0.6759999999999999,"shadowsHue":0.209,"shadowsSaturation":0,"highlightsHue":0.191,"highlightsSaturation":0,"angle":0.5,"fineangle":0.5}     
       ];
       function FastLog2(x) {
         return Math.log(x) / Math.LN2;
@@ -39,7 +39,7 @@ var squidImageData = [8, 7, 21, 255, 42, 39, 79, 255, 74, 64, 104, 255, 96, 83, 
       function Clamp(x) {
         return (x < 0.0) ? 0.0 : ((x > 1.0) ? 1.0 : x);
       }
-
+      
       function ProcessImageData(data, width, height, params) {
         var saturation = params.saturation;
         var contrast = params.contrast;
@@ -109,6 +109,6 @@ var squidImageData = [8, 7, 21, 255, 42, 39, 79, 255, 74, 64, 104, 255, 96, 83, 
           data[j*4+1] = g * 255.0;
           data[j*4+2] = b * 255.0;
         }
-
+        
         return data;
       }

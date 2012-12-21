@@ -74,7 +74,7 @@
         }]
       ],
     },
-    {
+    { 
       # Experimental / in-progress targets that are expected to fail
       # but we still try to compile them on bots (turning the stage
       # orange, not red).

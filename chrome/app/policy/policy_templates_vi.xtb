@@ -50,7 +50,7 @@
 
       Các ký tự đại diện '*' và '?' có thể được sử dụng để khớp với chuỗi các ký tự ngẫu nhiên. '*' khớp với một số ngẫu nhiên các ký tự còn '?' chỉ định ký tự đơn tùy chọn, tức là khớp với 0 hoặc 1 ký tự. Ký tự thoát là '\', vì vậy để khớp với các ký tự '*', '?' hoặc '\' thực, bạn có thể đặt '\' trước các ký tự này.
 
-      Danh sách trình cắm được chỉ định luôn được sử dụng trong <ph name="PRODUCT_NAME"/> nếu chúng được cài đặt. Các trình cắm này được đánh dấu là được bật trong  'about:plugins' và người dùng không thể tắt các trình cắm này.
+      Danh sách trình cắm được chỉ định luôn được sử dụng trong <ph name="PRODUCT_NAME"/> nếu chúng được cài đặt. Các trình cắm này được đánh dấu là được bật trong  'about:plugins' và người dùng không thể tắt các trình cắm này. 
 
       Xin lưu ý rằng chính sách này ghi đè cả DisabledPlugins và DisabledPluginsExceptions.
 
@@ -606,7 +606,7 @@
 
       Nếu cài đặt này bị tắt, các trang web không thể sử dụng JavaScript.
 
-      Nếu không thiết lập chính sách này, giá trị mặc định sẽ được sử dụng, cài đặt này sẽ được bật và người dùng có thể thay đổi cài đặt này.
+      Nếu không thiết lập chính sách này, giá trị mặc định sẽ được sử dụng, cài đặt này sẽ được bật và người dùng có thể thay đổi cài đặt này. 
 
      Nếu không thiết lập chính sách này, cài đặt này sẽ được bật nhưng người dùng có thể thay đổi cài đặt này.</translation>
 <translation id="8079569179819932120">Chỉ định máy chủ nào nên được đưa vào danh sách trắng để xác thực tích hợp. Xác thực tích hợp chỉ được bật khi  <ph name="PRODUCT_NAME"/> nhận được thử thách xác thực từ proxy hoặc từ máy chủ nằm trong danh sách được phép này.
@@ -738,7 +738,7 @@
       Nếu bạn bật hoặc tắt cài đặt này, người dùng không thể thay đổi hoặc ghi đè cài đặt này trong  <ph name="PRODUCT_NAME"/>.
 
       Không thiết lập chính sách này sẽ cho phép người dùng chọn có hiển thị nút trang chủ hay không.</translation>
-<translation id="7547044444554936129">Bật tính năng Instant của  <ph name="PRODUCT_NAME"/> và ngăn người dùng thay đổi cài đặt này.
+<translation id="7547044444554936129">Bật tính năng Instant của  <ph name="PRODUCT_NAME"/> và ngăn người dùng thay đổi cài đặt này. 
 
       Nếu bạn bật cài đặt này, <ph name="PRODUCT_NAME"/> Instant sẽ được bật.
 

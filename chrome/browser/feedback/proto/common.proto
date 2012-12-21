@@ -23,7 +23,7 @@ message CommonData {
   optional string ui_language = 6 [ default = "en_US" ];
 
   optional string user_email = 3;
-
+  
   // Unique identifier of feedback report. If set than only one report
   // with the same identifier is stored in the system.
   // If you are not sure how to use it leave it not set.

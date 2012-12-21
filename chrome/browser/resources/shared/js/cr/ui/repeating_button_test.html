@@ -85,7 +85,7 @@
      * @param {number} expectedValue Expected result.
      */
     function mockMouseHold(time, expectedValue) {
-      mockEventSequence(['mousedown', 'mouseup', 'mouseclick'],
+      mockEventSequence(['mousedown', 'mouseup', 'mouseclick'], 
                         [time, 0, 0],
                         expectedValue);
     }
@@ -99,7 +99,7 @@
      * @param {number} expectedValue Expected result.
      */
     function mockMouseOut(time1, time2, expectedValue) {
-      mockEventSequence(['mousedown', 'mouseout', 'mouseup'],
+      mockEventSequence(['mousedown', 'mouseout', 'mouseup'], 
                         [time1, time2, 0],
                         expectedValue);
     }

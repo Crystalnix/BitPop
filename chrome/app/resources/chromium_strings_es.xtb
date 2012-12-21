@@ -55,7 +55,7 @@ Es posible que algunas funciones no estén disponibles y que no se guarden los c
 <translation id="3509308970982693815">Cierra todas las ventanas de Chromium e inténtalo de nuevo.</translation>
 <translation id="4077262827416206768">Cierra todas las ventanas de Chromium y vuelve a iniciarlo para que se aplique el cambio.</translation>
 <translation id="9119843944749246249">Copyright © 2006-2012 Los creadores de Chromium. Todos los derechos reservados.</translation>
-<translation id="6944967875980567883">Módulos cargados en Chromium
+<translation id="6944967875980567883">Módulos cargados en Chromium 
 </translation>
 <translation id="118298050220780080">Has intentado acceder a &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, pero el servidor presentó un certificado emitido por una entidad que el sistema operativo del ordenador no tiene registrada como entidad de confianza. Este problema se puede deber a que el servidor haya generado sus propias credenciales de seguridad (en las que Chromium no puede confiar para confirmar la autenticidad del sitio) o a que un hacker esté intentando interceptar tus comunicaciones.</translation>
 <translation id="4561681684759837226"><ph name="PAGE_TITLE"/></translation>

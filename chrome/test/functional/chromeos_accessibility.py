@@ -20,7 +20,7 @@ from autotest.cros import cryptohome
 class AccessibilityTest(pyauto.PyUITest):
   """Tests for Accessibility.
 
-  Test various chromeos functionalities while Accessibility is turned on.
+  Test various chromeos functionalities while Accessibility is turned on. 
   """
   find_test_data_dir = 'find_in_page'
 

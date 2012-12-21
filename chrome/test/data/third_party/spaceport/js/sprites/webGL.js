@@ -249,7 +249,7 @@ define([ ], function () {
         if (false) {  // DEBUG
             context = wrapGL(context);
         }
-
+        
         return context;
     }
 

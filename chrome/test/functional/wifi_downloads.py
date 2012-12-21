@@ -162,7 +162,7 @@ class WifiDownloadsTest(chromeos_network.PyNetworkUITest):
     md5_sum = self._Md5Checksum(file_path)
     md5_url = download_url[:-4] + '.md5'  # replacing .slf with .md5
     md5_file = urllib2.urlopen(md5_url).readlines()[0]
-    self.assertTrue(md5_file.rstrip().endswith(md5_sum.encode()),
+    self.assertTrue(md5_file.rstrip().endswith(md5_sum.encode()), 
                     msg='Unexpected checksum. The download is incomplete.')
     return end - start
 

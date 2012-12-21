@@ -55,7 +55,7 @@
 // "number" is used for all "op" values except "any". "number" and "number2"
 // are in the format of x, x.x, x.x.x, etc.
 // Only "driver_version" supports lexical style if the format is major.minor;
-// in that case, major is still numerical, but minor is lexical.
+// in that case, major is still numerical, but minor is lexical. 
 //
 // STRING includes "op" and "value".  "op" can be any of the following values:
 // "contains", "beginwith", "endwith", "=".  "value" is a string.

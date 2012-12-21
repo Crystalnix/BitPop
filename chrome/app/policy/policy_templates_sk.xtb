@@ -49,9 +49,9 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 
       Ako zástupné znaky je možné použiť znaky „*“ a „?“. Znak „*“ slúži ako zástupný znak pre ľubovoľný počet znakov, zatiaľ čo znak „?“ určuje jeden voliteľný znak (môže teda zastupovať jeden ľubovoľný znak alebo chýbajúci znak). Znak zrušenia významu je „\“, takže ak chcete zadať samotné znaky „*“, „?“ alebo „\“, stačí pred ne umiestniť znak „\“.
 
-      Uvedený zoznam doplnkov je v prehliadači <ph name="PRODUCT_NAME"/> použitý vždy, keď sú doplnky nainštalované. Doplnky sú v príkaze „about:plugins“ označené ako povolené a používatelia ich nemôžu zakázať.
+      Uvedený zoznam doplnkov je v prehliadači <ph name="PRODUCT_NAME"/> použitý vždy, keď sú doplnky nainštalované. Doplnky sú v príkaze „about:plugins“ označené ako povolené a používatelia ich nemôžu zakázať. 
 
-      Toto pravidlo nahrádza pravidlá DisabledPlugins a DisabledPluginsExceptions.
+      Toto pravidlo nahrádza pravidlá DisabledPlugins a DisabledPluginsExceptions. 
 
       Ak toto pravidlo ponecháte nenastavené, používateľ môže zakázať ľubovoľný doplnok nainštalovaný v systéme.</translation>
 <translation id="4157003184375321727">Hlásiť verziu operačného systému a firmvéru</translation>
@@ -340,7 +340,7 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
       Ak pravidlo nenastavíte, použije sa predvolená veľkosť vyrovnávacej pamäte a používatelia ju budú môcť prepísať zadaním príznaku --media-cache-size.</translation>
 <translation id="3723474915949495925">Určuje zoznam doplnkov, ktoré môže používateľ v aplikácii <ph name="PRODUCT_NAME"/> povoliť alebo zakázať.
 
-      Ako zástupné znaky je možné použiť znaky „*“ a „?“. Znak „*“ slúži ako zástupný znak pre niekoľko ľubovoľných znakov, zatiaľ čo znak „?“ zastupuje jeden znak (môže zastupovať ľubovoľný znak alebo tiež žiadny znak). Riadiaci znak je „\“, ak teda chcete zadať znaky „*“, „?“ alebo „\“ ako také, stačí pred ne umiestniť znak „\“.
+      Ako zástupné znaky je možné použiť znaky „*“ a „?“. Znak „*“ slúži ako zástupný znak pre niekoľko ľubovoľných znakov, zatiaľ čo znak „?“ zastupuje jeden znak (môže zastupovať ľubovoľný znak alebo tiež žiadny znak). Riadiaci znak je „\“, ak teda chcete zadať znaky „*“, „?“ alebo „\“ ako také, stačí pred ne umiestniť znak „\“. 
 
       Ak toto nastavenie povolíte, doplnky uvedené v zozname bude možné použiť v aplikácii <ph name="PRODUCT_NAME"/>. Používatelia ich budú môcť povoliť alebo zakázať na stránke about:plugins, a to aj v prípade, že bude určitý doplnok zodpovedať vzoru v pravidle DisabledPlugins. Používatelia budú môcť povoliť a zakázať tiež doplnky, ktoré nezodpovedajú žiadnym vzorom v pravidlách DisabledPlugins, DisabledPluginsExceptions a EnabledPlugins.
 

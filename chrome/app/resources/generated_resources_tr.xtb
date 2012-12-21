@@ -174,7 +174,7 @@ Psst! Bir dahaki sefere Gizli mod <ph name="SHORTCUT_KEY"/> yararlı olabilir.</
 <translation id="4969072929772884570">Kül bildirimlerini devre dışı bırak.</translation>
 <translation id="8186609076106987817">Sunucu dosyayı bulamadı.</translation>
 <translation id="9134410174832249455"><ph name="HOST_NAME"/>
-        uzun süre yanıt vermediğinden
+        uzun süre yanıt vermediğinden 
         <ph name="PRODUCT_NAME"/>,
         web sayfasını yükleyemedi. Web sitesi kapalı olabilir veya
         İnternet bağlantınızla ilgili sorun yaşıyor olabilirsiniz.</translation>
@@ -271,7 +271,7 @@ Psst! Bir dahaki sefere Gizli mod <ph name="SHORTCUT_KEY"/> yararlı olabilir.</
 <translation id="4081383687659939437">Bilgileri kaydet</translation>
 <translation id="2162258841953791026">Uzantı Etkinliği</translation>
 <translation id="1801827354178857021">Nokta</translation>
-<translation id="4560332071395409256">          <ph name="BEGIN_BOLD"/>Başlat<ph name="END_BOLD"/>'ı
+<translation id="4560332071395409256">          <ph name="BEGIN_BOLD"/>Başlat<ph name="END_BOLD"/>'ı 
           ve sonra
           <ph name="BEGIN_BOLD"/>Çalıştır<ph name="END_BOLD"/>'ı
           tıklayın,
@@ -514,8 +514,8 @@ deney kimliği: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="6535131196824081346">Bu hata güvenli (HTTPS) bir sunucuya bağlanırken ortaya çıkabilir. Bu,
         sunucunun güvenli bağlantı kurmaya çalıştığını, ancak yapılandırmanın
         çok bozuk olmasından dolayı bağlantının hiç güvenli olmayacağını gösterir!
-        <ph name="LINE_BREAK"/>Bu durumda,
-        sunucunun düzeltilmesi gerekir. <ph name="PRODUCT_NAME"/>, gizliliğinizi korumak için,
+        <ph name="LINE_BREAK"/>Bu durumda, 
+        sunucunun düzeltilmesi gerekir. <ph name="PRODUCT_NAME"/>, gizliliğinizi korumak için, 
         güvenli olmayan bağlantıları kullanmaz.</translation>
 <translation id="7851858861565204677">Diğer cihazlar</translation>
 <translation id="5640179856859982418">İsviçre dilinde klavye</translation>
@@ -643,7 +643,7 @@ deney kimliği: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="1625974393346699433"><ph name="BEGIN_BOLD"/>Misafir olarak göz atıyorsunuz<ph name="END_BOLD"/>. Bu sekmede görüntülediğiniz sayfalar tarayıcı geçmişi veya arama geçmişinizde görünmez ve oturumu kapattığınızda mobil cihazınızda bunlara ait çerez gibi başka herhangi bir kayıt kalmaz. İndirdiğiniz dosyalar veya oluşturduğunuz yer işaretleri de korunmaz.
           <ph name="LINE_BREAK"/>
           <ph name="BEGIN_LINK"/>Misafir olarak göz atma konusunda daha fazla bilgi edinin<ph name="END_LINK"/>.</translation>
-<translation id="9106577689055281370">Pilin bitmesine
+<translation id="9106577689055281370">Pilin bitmesine 
 <ph name="HOUR"/>:<ph name="MINUTE"/> kaldı</translation>
 <translation id="5524517123096967210">Dosya okunamadı.</translation>
 <translation id="8426519927982004547">HTTPS/SSL</translation>
@@ -1076,7 +1076,7 @@ Kalan süre hesaplanıyor</translation>
           &gt;
           &quot;<ph name="OPTIONS_BUTTON"/>&quot;
           <ph name="END_BOLD"/>
-          (mevcut Ağ için).
+          (mevcut Ağ için). 
           <ph name="BEGIN_BOLD"/>
           &quot;<ph name="PROXY_BUTTON"/>&quot;
           <ph name="END_BOLD"/>düğmesi (
@@ -2230,10 +2230,10 @@ Kalan süre hesaplanıyor</translation>
         indirilen dosyaları geçici olarak diskte saklar.
         <ph name="PRODUCT_NAME"/>
         doğru kapatılmadığında bu dosyalar bozularak bu hataya neden olabilir.
-        Sayfayı yeniden yüklemek sorunu çözecektir. Doğru şekilde kapatmak
+        Sayfayı yeniden yüklemek sorunu çözecektir. Doğru şekilde kapatmak 
         ileride sorunun tekrarlanmasını önler.
         <ph name="LINE_BREAK"/>
-        Sorun devam ederse önbelleği temizlemeyi deneyin. Bazı durumlarda bu,
+        Sorun devam ederse önbelleği temizlemeyi deneyin. Bazı durumlarda bu, 
         arıza vermeye başlayan bir donanımın da belirtisi olabilir.</translation>
 <translation id="5298219193514155779">Temayı oluşturan:</translation>
 <translation id="7366909168761621528">Göz atma verileri</translation>
@@ -2490,7 +2490,7 @@ Kalan süre hesaplanıyor</translation>
             <ph name="BEGIN_LIST_ITEM"/>İnternet servis sağlayıcılarının veya çalışanların ziyaret ettiğiniz sayfaları takip edebileceğini<ph name="END_LIST_ITEM"/>
             <ph name="BEGIN_LIST_ITEM"/>Sohbetlerde kullanılan ifadeleri bir yerden bedava olarak indirirken, tuş vuruşlarınızı kaydeden zararlı yazılımların da bilgisayarınıza girebileceğini<ph name="END_LIST_ITEM"/>
             <ph name="BEGIN_LIST_ITEM"/>Gizli ajanların izleyebileceğini<ph name="END_LIST_ITEM"/>
-            <ph name="BEGIN_LIST_ITEM"/>Arkanızda bulunan kişilerin yaptıklarınızı görebileceğini unutmayın<ph name="END_LIST_ITEM"/>
+            <ph name="BEGIN_LIST_ITEM"/>Arkanızda bulunan kişilerin yaptıklarınızı görebileceğini unutmayın<ph name="END_LIST_ITEM"/> 
           <ph name="END_LIST"/>
           <ph name="BEGIN_LINK"/>Gizli göz atma hakkında daha fazla bilgi edinin<ph name="END_LINK"/>.</translation>
 <translation id="725109152065019550">Maalesef, yöneticiniz hesabınızda harici depolama özelliğini devre dışı bıraktı.</translation>

@@ -7,7 +7,7 @@
    "background": {
      "scripts": ["background.js"]
    },
-   "permissions": [
+   "permissions": [ 
      "management",
      "http://a.com/*"
    ],

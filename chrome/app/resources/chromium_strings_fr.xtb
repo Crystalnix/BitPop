@@ -141,7 +141,7 @@ Certaines fonctionnalités seront peut-être indisponibles. Veuillez spécifier 
 <translation id="5498103559159810756">Chromium utilise votre moteur de recherche par défaut actuel, à savoir <ph name="PAGE_TITLE"/>. Voulez-vous conserver ce moteur de recherche par défaut ?</translation>
 <translation id="5862307444128926510">Bienvenue dans Chromium</translation>
 <translation id="1622565934590470080">Cet ordinateur dispose déjà d'une version plus récente de Chromium et de Chromium Frame. Si le logiciel ne fonctionne pas, veuillez désinstaller Chromium et Chromium Frame, puis réessayer.</translation>
-<translation id="7318036098707714271">Le fichier des préférences est corrompu ou n'est pas valide.
+<translation id="7318036098707714271">Le fichier des préférences est corrompu ou n'est pas valide. 
 
 Chromium ne peut pas récupérer vos paramètres.</translation>
 <translation id="7123348595797445166">Essayer cette version (déjà installée)</translation>

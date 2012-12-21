@@ -1,17 +1,17 @@
 
-body {
+body { 
     font-family: Helvetica, Arial, sans-serif;
-    margin: 20px;
-    background-color: #ffffff;
+    margin: 20px; 
+    background-color: #ffffff; 
     color: #1B0636
 }
 
-h2 {
-    background-color: #fff;
-    padding: 30px 20px 20px 20px;
+h2 { 
+    background-color: #fff; 
+    padding: 30px 20px 20px 20px; 
     border-bottom: 3px solid white;
     color: black;
-    zoom: 1.0 /* I CAN HAS LAYOUT? (ie hack) */
+    zoom: 1.0 /* I CAN HAS LAYOUT? (ie hack) */ 
 }
 
 #content {

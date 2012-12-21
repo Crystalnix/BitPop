@@ -353,7 +353,7 @@
 
       Se pueden utilizar los caracteres comodín &quot;*&quot; y &quot;?&quot; para obtener coincidencias con secuencias de caracteres arbitrarios. El carácter &quot;*&quot; permite obtener coincidencias con un número arbitrario de caracteres y &quot;?&quot; especifica un único carácter opcional (puede coincidir con un carácter o con ninguno). Se puede escribir el carácter de escape (&quot;\&quot;) delante de los caracteres &quot;*&quot;, &quot;?&quot; o &quot;\&quot; para obtener coincidencias con los propios caracteres.
 
-      Si habilitas esta opción, <ph name="PRODUCT_NAME"/> podrá utilizar la lista de complementos especificada. Los usuarios pueden habilitar o inhabilitar estos complementos en &quot;about:plugins&quot;, aunque el complemento también coincida con un patrón de DisabledPlugins. Los usuarios también pueden habilitar
+      Si habilitas esta opción, <ph name="PRODUCT_NAME"/> podrá utilizar la lista de complementos especificada. Los usuarios pueden habilitar o inhabilitar estos complementos en &quot;about:plugins&quot;, aunque el complemento también coincida con un patrón de DisabledPlugins. Los usuarios también pueden habilitar 
 e inhabilitar complementos que no coincidan con ningún patrón de DisabledPlugins, DisabledPluginsExceptions y EnabledPlugins.
 
       Esta política está diseñada para permitir que los complementos se incluyan en una lista negra de complementos estricta cuando la lista de DisabledPlugins contenga entradas con caracteres comodín (por ejemplo, habilitar todos los complementos &quot;*&quot; o inhabilitar todos los complementos Java &quot;*Java*&quot;) y el administrador quiera habilitar alguna versión específica, como &quot;IcedTea Java 2.3&quot;. Esta política permite especificar estas versiones determinadas.
@@ -459,8 +459,8 @@ e inhabilitar complementos que no coincidan con ningún patrón de DisabledPlugi
       Asimismo, permite especificar el prefijo de una versión de destino a la que se debería actualizar <ph name="PRODUCT_OS_NAME"/>. Si el dispositivo está ejecutando una versión anterior al prefijo especificado, se actualizará a la última versión con el prefijo especificado. Si el dispositivo ya dispone de una versión posterior, no ocurrirá nada (es decir, no se cambiará a una versión anterior) y el dispositivo mantendrá la versión actual. El formato del prefijo depende del componente, tal y como se observa en el ejemplo que se indica a continuación.
 
       &quot;&quot; (o no configurado): actualización a la última versión disponible
-      &quot;1412.&quot;: actualización a cualquier versión secundaria de 1412 (por ejemplo, 1412.24.34 o 1412.60.2)
-      &quot;1412.2.&quot;: actualización a cualquier versión secundaria de 1412.2 (por ejemplo, 1412.2.34 o 1412.2.2)
+      &quot;1412.&quot;: actualización a cualquier versión secundaria de 1412 (por ejemplo, 1412.24.34 o 1412.60.2) 
+      &quot;1412.2.&quot;: actualización a cualquier versión secundaria de 1412.2 (por ejemplo, 1412.2.34 o 1412.2.2) 
       &quot;1412.24.34&quot;: actualización únicamente a esta versión específica</translation>
 <translation id="8102913158860568230">Opción predeterminada de MediaStream</translation>
 <translation id="6641981670621198190">Inhabilitar compatibilidad con API de gráficos 3D</translation>

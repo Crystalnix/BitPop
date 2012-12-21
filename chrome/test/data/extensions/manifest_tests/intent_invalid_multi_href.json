@@ -3,7 +3,7 @@
   "version": "1",
   "intents": {
     "http://webintents.org/share": [
-      {
+      { 
         "type": ["text/uri-list"],
         "href": "/services/sharelink.html",
         "title" : "Sample Link Sharing Intent",
@@ -17,5 +17,5 @@
         "disposition" : "window"
       }
     ]
-  }
+  }  
 }

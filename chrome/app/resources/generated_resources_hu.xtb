@@ -2469,7 +2469,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="4610637590575890427">Valójában ide szeretett volna menni: <ph name="SITE"/>?</translation>
 <translation id="7723779034587221017">Megszakadt a kapcsolat a vezérlőszolgáltatással. Kérjük, állítsa alaphelyzetbe az eszközt, vagy lépjen kapcsolatba ügyfélszolgálati képviselőjével.</translation>
 <translation id="5097002363526479830">Nem sikerült csatlakozni a(z) <ph name="NAME"/> hálózathoz: <ph name="DETAILS"/></translation>
-<translation id="6906142274982384363">Ha alapértelmezett keresője támogatja, az Instant funkció bekapcsolásával a találatok azonnal megjelennek, mialatt Ön begépeli a lekérdezéseket a cím- és keresősávba, valamint gyors javaslatok segítik Önt a keresésben.
+<translation id="6906142274982384363">Ha alapértelmezett keresője támogatja, az Instant funkció bekapcsolásával a találatok azonnal megjelennek, mialatt Ön begépeli a lekérdezéseket a cím- és keresősávba, valamint gyors javaslatok segítik Önt a keresésben. 
 
         Mivel a találatokat már a keresési kifejezés gépelése közben lekéri a böngésző, alapértelmezett keresője lekérdezésekként naplózhatja ezeket.</translation>
 <translation id="3437994698969764647">Összes exportálása...</translation>
@@ -4244,7 +4244,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="7322037929240387249">Billentyűzet beállításai...</translation>
 <translation id="3709244229496787112">A böngészőt leállították, mielőtt a letöltés befejeződött volna.</translation>
 <translation id="7999229196265990314">A rendszer a következő fájlokat hozta létre:
-
+        
 Bővítmény: <ph name="EXTENSION_FILE"/>
 Kulcsfájl: <ph name="KEY_FILE"/>
 

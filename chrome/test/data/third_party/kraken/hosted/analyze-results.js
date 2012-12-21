@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
 var count = output.length;
@@ -229,7 +229,7 @@ function resultLine(labelWidth, indent, label, meanWidth, mean, stdErr)
     for (i = 0; i < indent; i++) {
         result += " ";
     }
-
+    
     if (label in explanations)
         result += "<a href='" + explanations[label] + "'>" + label + "</a>: ";
     else
@@ -238,7 +238,7 @@ function resultLine(labelWidth, indent, label, meanWidth, mean, stdErr)
     for (i = 0; i < (labelWidth - (label.length + indent)); i++) {
         result += " ";
     }
-
+    
     return result + formatResult(meanWidth, mean, stdErr, count);
 }
 

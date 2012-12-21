@@ -41,9 +41,9 @@ function runTest(test, iterations) {
  }
 }
 
-/*
- *  DSP.js - a comprehensive digital signal processing  library for javascript
- *
+/*  
+ *  DSP.js - a comprehensive digital signal processing  library for javascript 
+ *  
  *  Created by Corban Brook <corbanbrook@gmail.com> on 2010-01-01.
  *  Copyright 2010 Corban Brook. All rights reserved.
  *
@@ -68,7 +68,7 @@ DSP = {
   SAW:            3,
   SQUARE:         4,
 
-  // Filters
+  // Filters 
   LOWPASS:        0,
   HIGHPASS:       1,
   BANDPASS:       2,
@@ -127,14 +127,14 @@ DSP.interleave = function(left, right) {
   if ( left.length !== right.length ) {
     throw "Can not interleave. Channel lengths differ.";
   }
-
+  
   var stereoInterleaved = new Array(left.length * 2);
-
+  
   for (var i = 0, len = left.length; i < len; i++ ) {
     stereoInterleaved[2*i]   = left[i];
     stereoInterleaved[2*i+1] = right[i];
   }
-
+  
   return stereoInterleaved;
 };
 
@@ -149,13 +149,13 @@ DSP.deinterleave = function(buffer) {
   var left  = new Array(buffer.length/2);
   var right = new Array(buffer.length/2);
   var mix   = new Array(buffer.length/2);
-
+  
   for (var i = 0, len = buffer.length/2; i < len; i ++ ) {
     left[i]  = buffer[2*i];
     right[i] = buffer[2*i+1];
     mix[i]   = (left[i] + right[i]) / 2;
   }
-
+  
   return [left, right, mix];
 };
 
@@ -188,7 +188,7 @@ DSP.BW = 2; // SHARED with BACKWARDS LOOP MODE
 DSP.S = 3;
 
 
-/**
+/** 
  * DFT is a class for calculating the Discrete Fourier Transform of a signal.
  *
  * @param {Number} bufferSize The size of the sample buffer to be computed
@@ -201,21 +201,21 @@ DFT = function(bufferSize, sampleRate) {
   this.sampleRate = sampleRate;
 
   var N = bufferSize/2 * bufferSize;
-
+      
   this.sinTable = new Array(N);
   this.cosTable = new Array(N);
-
+  
   for ( var i = 0; i < N; i++ ) {
     this.sinTable[i] = Math.sin(i * DSP.TWO_PI / bufferSize);
     this.cosTable[i] = Math.cos(i * DSP.TWO_PI / bufferSize);
   }
-
+  
   this.spectrum = new Array(bufferSize/2);
   this.complexValues = new Array(bufferSize/2);
 };
 
 /**
- * Performs a forward tranform on the sample buffer.
+ * Performs a forward tranform on the sample buffer. 
  * Converts a time domain signal to frequency domain spectra.
  *
  * @param {Array} buffer The sample buffer
@@ -236,7 +236,7 @@ DFT.prototype.forward = function(buffer) {
 
     this.complexValues[k] = {real: real, imag: imag};
   }
-
+  
   for ( var i = 0; i < this.bufferSize/2; i++ ) {
     this.spectrum[i] = 2 * Math.sqrt(Math.pow(this.complexValues[i].real, 2) + Math.pow(this.complexValues[i].imag, 2)) / this.bufferSize;
   }
@@ -245,8 +245,8 @@ DFT.prototype.forward = function(buffer) {
 };
 
 
-/**
- * FFT is a class for calculating the Discrete Fourier Transform of a signal
+/** 
+ * FFT is a class for calculating the Discrete Fourier Transform of a signal 
  * with the Fast Fourier Transform algorithm.
  *
  * @param {Number} bufferSize The size of the sample buffer to be computed. Must be power of 2
@@ -260,7 +260,7 @@ FFT = function(bufferSize, sampleRate) {
   this.spectrum         = new Array(bufferSize/2);
   this.real             = new Array(bufferSize);
   this.imag             = new Array(bufferSize);
-
+    
   this.reverseTable     = new Array(bufferSize);
   for (var i = 0; i < this.reverseTable.length; i++) {
     this.reverseTable[i] = 0;
@@ -288,7 +288,7 @@ FFT = function(bufferSize, sampleRate) {
 };
 
 /**
- * Performs a forward tranform on the sample buffer.
+ * Performs a forward tranform on the sample buffer. 
  * Converts a time domain signal to frequency domain spectra.
  *
  * @param {Array} buffer The sample buffer. Buffer Length must be power of 2
@@ -314,15 +314,15 @@ FFT.prototype.forward = function(buffer) {
     imag[i] = 0;
   }
 
-  var halfSize = 1,
-      phaseShiftStepReal,
-      phaseShiftStepImag,
-      currentPhaseShiftReal,
-      currentPhaseShiftImag,
-      off,
-      tr,
-      ti,
-      tmpReal,
+  var halfSize = 1, 
+      phaseShiftStepReal, 
+      phaseShiftStepImag, 
+      currentPhaseShiftReal, 
+      currentPhaseShiftImag, 
+      off, 
+      tr, 
+      ti, 
+      tmpReal, 
       i;
 
   while ( halfSize < bufferSize ) {
@@ -370,7 +370,7 @@ FFT.prototype.inverse = function(real, imag) {
       sinTable        = this.sinTable,
       reverseTable    = this.reverseTable,
       spectrum        = this.spectrum;
-
+      
       real = real || this.real;
       imag = imag || this.imag;
 
@@ -380,24 +380,24 @@ FFT.prototype.inverse = function(real, imag) {
 
   var revReal = new Array(bufferSize);
   var revImag = new Array(bufferSize);
-
+  
   for (var i = 0; i < real.length; i++) {
     revReal[i] = real[reverseTable[i]];
     revImag[i] = imag[reverseTable[i]];
   }
-
+  
   real = revReal;
   imag = revImag;
 
-  var halfSize = 1,
-      phaseShiftStepReal,
-      phaseShiftStepImag,
-      currentPhaseShiftReal,
-      currentPhaseShiftImag,
-      off,
-      tr,
-      ti,
-      tmpReal,
+  var halfSize = 1, 
+      phaseShiftStepReal, 
+      phaseShiftStepImag, 
+      currentPhaseShiftReal, 
+      currentPhaseShiftImag, 
+      off, 
+      tr, 
+      ti, 
+      tmpReal, 
       i;
 
   while ( halfSize < bufferSize ) {
@@ -459,27 +459,27 @@ Sampler = function Sampler(file, bufferSize, sampleRate, playStart, playEnd, loo
   this.duration   = 0;
   this.samplesProcessed = 0;
   this.playhead   = 0;
-
+  
   var audio = /* new Audio();*/ document.createElement("AUDIO");
   var self = this;
-
+  
   this.loadSamples = function(event) {
     var buffer = DSP.getChannel(DSP.MIX, event.frameBuffer);
     for ( var i = 0; i < buffer.length; i++) {
       self.samples.push(buffer[i]);
     }
   };
-
+  
   this.loadComplete = function() {
     // convert flexible js array into a fast typed array
     self.samples = new Array(self.samples);
     self.loaded = true;
   };
-
+  
   this.loadMetaData = function() {
     self.duration = audio.duration;
   };
-
+  
   audio.addEventListener("MozAudioAvailable", this.loadSamples, false);
   audio.addEventListener("loadedmetadata", this.loadMetaData, false)
   audio.addEventListener("ended", this.loadComplete, false);
@@ -495,7 +495,7 @@ Sampler.prototype.applyEnvelope = function() {
 
 Sampler.prototype.generate = function() {
   var frameOffset = this.frameCount * this.bufferSize;
-
+  
   var loopWidth = this.playEnd * this.samples.length - this.playStart * this.samples.length;
   var playStartSamples = this.playStart * this.samples.length; // ie 0.5 -> 50% of the length
   var playEndSamples = this.playEnd * this.samples.length; // ie 0.5 -> 50% of the length
@@ -511,27 +511,27 @@ Sampler.prototype.generate = function() {
           this.signal[i] = 0;
         }
         break;
-
+      
       case DSP.FW:
         this.playhead = Math.round((this.samplesProcessed * this.step) % loopWidth + playStartSamples);
         if (this.playhead < (this.playEnd * this.samples.length) ) {
           this.signal[i] = this.samples[this.playhead] * this.amplitude;
         }
         break;
-
+        
       case DSP.BW:
         this.playhead = playEndSamples - Math.round((this.samplesProcessed * this.step) % loopWidth);
         if (this.playhead < (this.playEnd * this.samples.length) ) {
           this.signal[i] = this.samples[this.playhead] * this.amplitude;
         }
         break;
-
+        
       case DSP.FWBW:
         if ( Math.floor(this.samplesProcessed * this.step / loopWidth) % 2 == 0 ) {
           this.playhead = Math.round((this.samplesProcessed * this.step) % loopWidth + playStartSamples);
         } else {
           this.playhead = playEndSamples - Math.round((this.samplesProcessed * this.step) % loopWidth);
-        }
+        }   
         if (this.playhead < (this.playEnd * this.samples.length) ) {
           this.signal[i] = this.samples[this.playhead] * this.amplitude;
         }
@@ -573,7 +573,7 @@ Oscillator = function Oscillator(type, frequency, amplitude, bufferSize, sampleR
   this.sampleRate = sampleRate;
   //this.pulseWidth = pulseWidth;
   this.frameCount = 0;
-
+  
   this.waveTableLength = 2048;
 
   this.cyclesPerSample = frequency / sampleRate;
@@ -614,12 +614,12 @@ Oscillator = function Oscillator(type, frequency, amplitude, bufferSize, sampleR
     Oscillator.waveTable = {};
   }
 
-  if ( typeof Oscillator.waveTable[this.func] === 'undefined' ) {
+  if ( typeof Oscillator.waveTable[this.func] === 'undefined' ) { 
     this.generateWaveTable();
   }
-
+  
   this.waveTable = Oscillator.waveTable[this.func];
-};
+}; 
 
 /**
  * Set the amplitude of the signal
@@ -633,27 +633,27 @@ Oscillator.prototype.setAmp = function(amplitude) {
     throw "Amplitude out of range (0..1).";
   }
 };
-
+   
 /**
  * Set the frequency of the signal
- *
+ * 
  * @param {Number} frequency The frequency of the signal
- */
+ */   
 Oscillator.prototype.setFreq = function(frequency) {
   this.frequency = frequency;
   this.cyclesPerSample = frequency / this.sampleRate;
 };
-
+      
 // Add an oscillator
 Oscillator.prototype.add = function(oscillator) {
   for ( var i = 0; i < this.bufferSize; i++ ) {
     //this.signal[i] += oscillator.valueAt(i);
     this.signal[i] += oscillator.signal[i];
   }
-
+  
   return this.signal;
 };
-
+      
 // Add a signal to the current generated osc signal
 Oscillator.prototype.addSignal = function(signal) {
   for ( var i = 0; i < signal.length; i++ ) {
@@ -661,7 +661,7 @@ Oscillator.prototype.addSignal = function(signal) {
       break;
     }
     this.signal[i] += signal[i];
-
+    
     /*
     // Constrain amplitude
     if ( this.signal[i] > 1 ) {
@@ -673,7 +673,7 @@ Oscillator.prototype.addSignal = function(signal) {
   }
   return this.signal;
 };
-
+      
 // Add an envelope to the oscillator
 Oscillator.prototype.addEnvelope = function(envelope) {
   this.envelope = envelope;
@@ -682,11 +682,11 @@ Oscillator.prototype.addEnvelope = function(envelope) {
 Oscillator.prototype.applyEnvelope = function() {
   this.envelope.process(this.signal);
 };
-
+      
 Oscillator.prototype.valueAt = function(offset) {
   return this.waveTable[offset % this.waveTableLength];
 };
-
+      
 Oscillator.prototype.generate = function() {
   var frameOffset = this.frameCount * this.bufferSize;
   var step = this.waveTableLength * this.frequency / this.sampleRate;
@@ -695,7 +695,7 @@ Oscillator.prototype.generate = function() {
   for ( var i = 0; i < this.bufferSize; i++ ) {
     //var step = (frameOffset + i) * this.cyclesPerSample % 1;
     //this.signal[i] = this.func(step) * this.amplitude;
-    //this.signal[i] = this.valueAt(Math.round((frameOffset + i) * step)) * this.amplitude;
+    //this.signal[i] = this.valueAt(Math.round((frameOffset + i) * step)) * this.amplitude; 
     offset = Math.round((frameOffset + i) * step);
     this.signal[i] = this.waveTable[offset % this.waveTableLength] * this.amplitude;
   }
@@ -724,7 +724,7 @@ Oscillator.Triangle = function(step) {
 Oscillator.Pulse = function(step) {
   // stub
 };
-
+  
 ADSR = function(attackLength, decayLength, sustainLevel, sustainLength, releaseLength, sampleRate) {
   this.sampleRate = sampleRate;
   // Length in seconds
@@ -734,13 +734,13 @@ ADSR = function(attackLength, decayLength, sustainLevel, sustainLength, releaseL
   this.sustainLength = sustainLength;
   this.releaseLength = releaseLength;
   this.sampleRate    = sampleRate;
-
+  
   // Length in samples
   this.attackSamples  = attackLength  * sampleRate;
   this.decaySamples   = decayLength   * sampleRate;
   this.sustainSamples = sustainLength * sampleRate;
   this.releaseSamples = releaseLength * sampleRate;
-
+  
   // Updates the envelope sample positions
   this.update = function() {
     this.attack         =                this.attackSamples;
@@ -748,9 +748,9 @@ ADSR = function(attackLength, decayLength, sustainLevel, sustainLength, releaseL
     this.sustain        = this.decay   + this.sustainSamples;
     this.release        = this.sustain + this.releaseSamples;
   };
-
+  
   this.update();
-
+  
   this.samplesProcessed = 0;
 };
 
@@ -779,7 +779,7 @@ ADSR.prototype.processSample = function(sample) {
   } else if ( this.samplesProcessed > this.sustain && this.samplesProcessed <= this.release ) {
     amplitude = this.sustainLevel + (0 - this.sustainLevel) * ((this.samplesProcessed - this.sustain) / (this.release - this.sustain));
   }
-
+  
   return sample * amplitude;
 };
 
@@ -795,21 +795,21 @@ ADSR.prototype.value = function() {
   } else if ( this.samplesProcessed > this.sustain && this.samplesProcessed <= this.release ) {
     amplitude = this.sustainLevel + (0 - this.sustainLevel) * ((this.samplesProcessed - this.sustain) / (this.release - this.sustain));
   }
-
+  
   return amplitude;
 };
-
+      
 ADSR.prototype.process = function(buffer) {
   for ( var i = 0; i < buffer.length; i++ ) {
     buffer[i] *= this.value();
 
     this.samplesProcessed++;
   }
-
+  
   return buffer;
 };
-
-
+      
+      
 ADSR.prototype.isActive = function() {
   if ( this.samplesProcessed > this.release || this.samplesProcessed === -1 ) {
     return false;
@@ -821,7 +821,7 @@ ADSR.prototype.isActive = function() {
 ADSR.prototype.disable = function() {
   this.samplesProcessed = -1;
 };
-
+  
 IIRFilter = function(type, cutoff, resonance, sampleRate) {
   this.sampleRate = sampleRate;
   this.cutoff     = cutoff;
@@ -854,16 +854,16 @@ IIRFilter.prototype.addEnvelope = function(envelope) {
 
 IIRFilter.LP12 = function(cutoff, resonance, sampleRate) {
   this.sampleRate = sampleRate;
-  this.vibraPos   = 0;
+  this.vibraPos   = 0; 
   this.vibraSpeed = 0;
   this.envelope = false;
-
+  
   this.calcCoeff = function(cutoff, resonance) {
     this.w = 2.0 * Math.PI * cutoff / this.sampleRate;
     this.q = 1.0 - this.w / (2.0 * (resonance + 0.5 / (1.0 + this.w)) + this.w - 2.0);
     this.r = this.q * this.q;
     this.c = this.r + 1.0 - 2.0 * Math.cos(this.w) * this.q;
-
+    
     this.cutoff = cutoff;
     this.resonance = resonance;
   };
@@ -875,10 +875,10 @@ IIRFilter.LP12 = function(cutoff, resonance, sampleRate) {
       this.vibraSpeed += (buffer[i] - this.vibraPos) * this.c;
       this.vibraPos   += this.vibraSpeed;
       this.vibraSpeed *= this.r;
-
-      /*
+    
+      /* 
       var temp = this.vibraPos;
-
+      
       if ( temp > 1.0 ) {
         temp = 1.0;
       } else if ( temp < -1.0 ) {
@@ -886,9 +886,9 @@ IIRFilter.LP12 = function(cutoff, resonance, sampleRate) {
       } else if ( temp != temp ) {
         temp = 1;
       }
-
+      
       buffer[i] = temp;
-      */
+      */ 
 
       if (this.envelope) {
         buffer[i] = (buffer[i] * (1 - this.envelope.value())) + (this.vibraPos * this.envelope.value());
@@ -898,7 +898,7 @@ IIRFilter.LP12 = function(cutoff, resonance, sampleRate) {
       }
     }
   }
-};
+};  
 
 IIRFilter.LP12.prototype.addEnvelope = function(envelope) {
   this.envelope = envelope;
@@ -907,7 +907,7 @@ IIRFilter.LP12.prototype.addEnvelope = function(envelope) {
 
 
 IIRFilter2 = function(type, cutoff, resonance, sampleRate) {
-  this.type = type;
+  this.type = type; 
   this.cutoff = cutoff;
   this.resonance = resonance;
   this.sampleRate = sampleRate;
@@ -916,10 +916,10 @@ IIRFilter2 = function(type, cutoff, resonance, sampleRate) {
   this.f[0] = 0.0; // lp
   this.f[1] = 0.0; // hp
   this.f[2] = 0.0; // bp
-  this.f[3] = 0.0; // br
-
+  this.f[3] = 0.0; // br  
+  
   this.calcCoeff = function(cutoff, resonance) {
-    this.freq = 2 * Math.sin(Math.PI * Math.min(0.25, cutoff/(this.sampleRate*2)));
+    this.freq = 2 * Math.sin(Math.PI * Math.min(0.25, cutoff/(this.sampleRate*2)));   
     this.damp = Math.min(2 * (1 - Math.pow(resonance, 0.25)), Math.min(2, 2/this.freq - this.freq * 0.5));
   };
 
@@ -931,7 +931,7 @@ IIRFilter2.prototype.process = function(buffer) {
   var f = this.f;
 
   for ( var i = 0; i < buffer.length; i++ ) {
-    input = buffer[i];
+    input = buffer[i]; 
 
     // first pass
     f[3] = input - this.damp * f[2];
@@ -965,53 +965,53 @@ IIRFilter2.prototype.addEnvelope = function(envelope) {
 };
 
 IIRFilter2.prototype.set = function(cutoff, resonance) {
-  this.calcCoeff(cutoff, resonance);
+  this.calcCoeff(cutoff, resonance); 
 };
 
 
 
 WindowFunction = function(type, alpha) {
   this.alpha = alpha;
-
+  
   switch(type) {
     case DSP.BARTLETT:
       this.func = WindowFunction.Bartlett;
       break;
-
+      
     case DSP.BARTLETTHANN:
       this.func = WindowFunction.BartlettHann;
       break;
-
+      
     case DSP.BLACKMAN:
       this.func = WindowFunction.Blackman;
       this.alpha = this.alpha || 0.16;
       break;
-
+    
     case DSP.COSINE:
       this.func = WindowFunction.Cosine;
       break;
-
+      
     case DSP.GAUSS:
       this.func = WindowFunction.Gauss;
       this.alpha = this.alpha || 0.25;
       break;
-
+      
     case DSP.HAMMING:
       this.func = WindowFunction.Hamming;
       break;
-
+      
     case DSP.HANN:
       this.func = WindowFunction.Hann;
       break;
-
+    
     case DSP.LANCZOS:
       this.func = WindowFunction.Lanczoz;
       break;
-
+      
     case DSP.RECTANGULAR:
       this.func = WindowFunction.Rectangular;
       break;
-
+      
     case DSP.TRIANGULAR:
       this.func = WindowFunction.Triangular;
       break;
@@ -1072,8 +1072,8 @@ WindowFunction.Triangular = function(length, index) {
 };
 
 function sinh (arg) {
-    // Returns the hyperbolic sine of the number, defined as (exp(number) - exp(-number))/2
-    //
+    // Returns the hyperbolic sine of the number, defined as (exp(number) - exp(-number))/2  
+    // 
     // version: 1004.2314
     // discuss at: http://phpjs.org/functions/sinh    // +   original by: Onno Marsman
     // *     example 1: sinh(-0.9834330348825909);
@@ -1082,9 +1082,9 @@ function sinh (arg) {
 }
 
 
-/*
+/*  
  *  Biquad filter
- *
+ *  
  *  Created by Ricard Marxer <email@ricardmarxer.com> on 2010-05-23.
  *  Copyright 2010 Ricard Marxer. All rights reserved.
  *
@@ -1168,19 +1168,19 @@ Biquad = function(type, sampleRate) {
     this.parameterType = DSP.BW;
     this.BW = bw;
     this.recalculateCoefficients();
-  }
+  } 
 
   this.setS = function(s) {
     this.parameterType = DSP.S;
     this.S = Math.max(Math.min(s, 5.0), 0.0001);
     this.recalculateCoefficients();
-  }
+  }  
 
   this.setF0 = function(freq) {
     this.f0 = freq;
     this.recalculateCoefficients();
-  }
-
+  }  
+  
   this.setDbGain = function(g) {
     this.dBgain = g;
     this.recalculateCoefficients();
@@ -1191,7 +1191,7 @@ Biquad = function(type, sampleRate) {
     if (type == DSP.PEAKING_EQ || type == DSP.LOW_SHELF || type == DSP.HIGH_SHELF ) {
       A = Math.pow(10, (this.dBgain/40));  // for peaking and shelving EQ filters only
     } else {
-      A  = Math.sqrt( Math.pow(10, (this.dBgain/20)) );
+      A  = Math.sqrt( Math.pow(10, (this.dBgain/20)) );    
     }
 
     var w0 = DSP.TWO_PI * this.f0 / this.Fs;
@@ -1200,12 +1200,12 @@ Biquad = function(type, sampleRate) {
     var sinw0 = Math.sin(w0);
 
     var alpha = 0;
-
+    
     switch (this.parameterType) {
       case DSP.Q:
     alpha = sinw0/(2*this.Q);
     break;
-
+      
       case DSP.BW:
         alpha = sinw0 * sinh( Math.LN2/2 * this.BW * w0/sinw0 );
     break;
@@ -1308,7 +1308,7 @@ Biquad = function(type, sampleRate) {
         this.a2 =        (A+1) - (A-1)*cosw0 - coeff;
           break;
     }
-
+    
     this.b0a0 = this.b0/this.a0;
     this.b1a0 = this.b1/this.a0;
     this.b2a0 = this.b2/this.a0;
@@ -1340,7 +1340,7 @@ Biquad = function(type, sampleRate) {
 
       var len = buffer.length;
       var output = new Array(len);
-
+      
       for ( var i=0; i<len/2; i++ ) {
         output[2*i] = this.b0a0*buffer[2*i] + this.b1a0*this.x_1_l + this.b2a0*this.x_2_l - this.a1a0*this.y_1_l - this.a2a0*this.y_2_l;
           this.y_2_l = this.y_1_l;
@@ -1360,14 +1360,14 @@ Biquad = function(type, sampleRate) {
 };
 
 
-/*
+/*  
  *  Magnitude to decibels
- *
+ *  
  *  Created by Ricard Marxer <email@ricardmarxer.com> on 2010-05-23.
  *  Copyright 2010 Ricard Marxer. All rights reserved.
  *
  *  @buffer array of magnitudes to convert to decibels
- *
+ * 
  *  @returns the array in decibels
  *
  */
@@ -1377,7 +1377,7 @@ DSP.mag2db = function(buffer) {
 
   var log = Math.log;
   var max = Math.max;
-
+  
   var result = Array(buffer.length);
   for (var i=0; i<buffer.length; i++) {
     result[i] = 20.0*log(max(buffer[i], minMag));
@@ -1386,9 +1386,9 @@ DSP.mag2db = function(buffer) {
   return result;
 };
 
-/*
+/*  
  *  Frequency response
- *
+ *  
  *  Created by Ricard Marxer <email@ricardmarxer.com> on 2010-05-23.
  *  Copyright 2010 Ricard Marxer. All rights reserved.
  *
@@ -1397,7 +1397,7 @@ DSP.mag2db = function(buffer) {
  *  @b b coefficients of the filter
  *  @a a coefficients of the filter
  *  @w w points (normally between -PI and PI) where to calculate the frequency response
- *
+ * 
  *  @returns the frequency response in magnitude
  *
  */
@@ -1410,11 +1410,11 @@ DSP.freqz = function(b, a, w) {
   }
 
   var result = Array(w.length);
-
+  
   var sqrt = Math.sqrt;
   var cos = Math.cos;
   var sin = Math.sin;
-
+  
   for (var i=0; i<w.length; i++) {
     var numerator = {real:0.0, imag:0.0};
     for (var j=0; j<b.length; j++) {
@@ -1427,16 +1427,16 @@ DSP.freqz = function(b, a, w) {
       denominator.real += a[j] * cos(-j*w[i]);
       denominator.imag += a[j] * sin(-j*w[i]);
     }
-
+  
     result[i] =  sqrt(numerator.real*numerator.real + numerator.imag*numerator.imag) / sqrt(denominator.real*denominator.real + denominator.imag*denominator.imag);
   }
 
   return result;
 };
 
-/*
+/*  
  *  Graphical Equalizer
- *
+ *  
  *  Created by Ricard Marxer <email@ricardmarxer.com> on 2010-05-23.
  *  Copyright 2010 Ricard Marxer. All rights reserved.
  *
@@ -1495,30 +1495,30 @@ GraphicalEq = function(sampleRate) {
       throw "A gain must be passed."
       return;
     }
-
-
+    
+    
     this.filters[bandIndex].setDbGain(gain);
     this.recalculateFreqz(bandIndex);
   }
-
+  
   this.recalculateFreqz = function(bandIndex) {
     if (!this.calculateFreqzs) {
       return;
     }
 
-
+    
     if (bandIndex < 0 || bandIndex > (this.filters.length-1)) {
       throw "The band index of the graphical equalizer is out of bounds. " + bandIndex + " is out of [" + 0 + ", " + this.filters.length-1 + "]"
       return;
     }
-
+        
     if (!this.w) {
       this.w = Array(400);
       for (var i=0; i<this.w.length; i++) {
          this.w[i] = Math.PI/this.w.length * i;
       }
     }
-
+    
     var b = [this.filters[bandIndex].b0, this.filters[bandIndex].b1, this.filters[bandIndex].b2];
     var a = [this.filters[bandIndex].a0, this.filters[bandIndex].a1, this.filters[bandIndex].a2];
 
@@ -1527,7 +1527,7 @@ GraphicalEq = function(sampleRate) {
 
   this.process = function(buffer) {
       var output = buffer;
-
+      
       for ( var i=0; i<this.filters.length; i++ ) {
     output = this.filters[i].process(output);
       }
@@ -1537,7 +1537,7 @@ GraphicalEq = function(sampleRate) {
 
   this.processStereo = function(buffer) {
       var output = buffer;
-
+      
       for ( var i=0; i<this.filters.length; i++ ) {
     output = this.filters[i].processStereo(output);
       }
@@ -1553,25 +1553,25 @@ GraphicalEq = function(sampleRate) {
  * MultiDelay effect by Almer Thie (http://code.almeros.com).
  * Copyright 2010 Almer Thie. All rights reserved.
  * Example: http://code.almeros.com/code-examples/delay-firefox-audio-api/
- *
- * This is a delay that feeds it's own delayed signal back into its circular
+ * 
+ * This is a delay that feeds it's own delayed signal back into its circular 
  * buffer. Also known as a CombFilter.
  *
- * Compatible with interleaved stereo (or more channel) buffers and
+ * Compatible with interleaved stereo (or more channel) buffers and 
  * non-interleaved mono buffers.
- *
+ * 
  * @param {Number} maxDelayInSamplesSize Maximum possible delay in samples (size of circular buffer)
  * @param {Number} delayInSamples Initial delay in samples
  * @param {Number} masterVolume Initial master volume. Float value: 0.0 (silence), 1.0 (normal), >1.0 (amplify)
  * @param {Number} delayVolume Initial feedback delay volume. Float value: 0.0 (silence), 1.0 (normal), >1.0 (amplify)
- *
+ * 
  * @constructor
  */
 MultiDelay = function(maxDelayInSamplesSize, delayInSamples, masterVolume, delayVolume){
     this.delayBufferSamples     = new Array(maxDelayInSamplesSize); // The maximum size of delay
-    this.delayInputPointer      = delayInSamples;
+    this.delayInputPointer      = delayInSamples; 
     this.delayOutputPointer     = 0;
-
+    
     this.delayInSamples     = delayInSamples;
     this.masterVolume       = masterVolume;
     this.delayVolume        = delayVolume;
@@ -1584,10 +1584,10 @@ MultiDelay = function(maxDelayInSamplesSize, delayInSamples, masterVolume, delay
  */
 MultiDelay.prototype.setDelayInSamples = function (delayInSamples){
     this.delayInSamples = delayInSamples;
-
+    
     this.delayInputPointer = this.delayOutputPointer + delayInSamples;
     if(this.delayInputPointer >= this.delayBufferSamples.length-1)
-        this.delayInputPointer = this.delayInputPointer - this.delayBufferSamples.length;
+        this.delayInputPointer = this.delayInputPointer - this.delayBufferSamples.length;   
 }
 
 /**
@@ -1612,38 +1612,38 @@ MultiDelay.prototype.setDelayVolume = function (delayVolume){
  * Process a given interleaved or mono non-interleaved float value Array and adds the delayed audio.
  *
  * @param {Array} samples Array containing Float values or a Float32Array
- *
+ * 
  * @returns A new Float32Array interleaved or mono non-interleaved as was fed to this function.
  */
 MultiDelay.prototype.process = function (samples){
-    // NB. Make a copy to put in the output samples to return.
+    // NB. Make a copy to put in the output samples to return. 
     var outputSamples = new Array(samples.length);
 
     for(var i=0; i<samples.length; i++){
-
+    
         // delayBufferSamples could contain initial NULL's, return silence in that case
         var delaySample = (this.delayBufferSamples[this.delayOutputPointer]==null ? 0.0 : this.delayBufferSamples[this.delayOutputPointer]);
-
+        
         // Mix normal audio data with delayed audio
-        var sample = (delaySample * this.delayVolume) + samples[i];
-
+        var sample = (delaySample * this.delayVolume) + samples[i]; 
+        
         // Add audio data with the delay in the delay buffer
         this.delayBufferSamples[this.delayInputPointer] = sample;
-
+        
         // Return the audio with delay mix
         outputSamples[i] = sample * this.masterVolume;
-
+        
         // Manage circulair delay buffer pointers
         this.delayInputPointer++;
         if(this.delayInputPointer >= this.delayBufferSamples.length-1)
             this.delayInputPointer = 0;
-
+            
         this.delayOutputPointer++;
         if(this.delayOutputPointer >= this.delayBufferSamples.length-1)
-            this.delayOutputPointer = 0;
-
+            this.delayOutputPointer = 0;    
+            
     }
-
+    
     return outputSamples;
 }
 
@@ -1654,25 +1654,25 @@ MultiDelay.prototype.process = function (samples){
  * SingleDelay effect by Almer Thie (http://code.almeros.com).
  * Copyright 2010 Almer Thie. All rights reserved.
  * Example: See usage in Reverb class
- *
- * This is a delay that does NOT feeds it's own delayed signal back into its
- * circular buffer, neither does it return the original signal. Also known as
+ * 
+ * This is a delay that does NOT feeds it's own delayed signal back into its  
+ * circular buffer, neither does it return the original signal. Also known as 
  * an AllPassFilter(?).
  *
- * Compatible with interleaved stereo (or more channel) buffers and
+ * Compatible with interleaved stereo (or more channel) buffers and 
  * non-interleaved mono buffers.
- *
+ * 
  * @param {Number} maxDelayInSamplesSize Maximum possible delay in samples (size of circular buffer)
  * @param {Number} delayInSamples Initial delay in samples
  * @param {Number} delayVolume Initial feedback delay volume. Float value: 0.0 (silence), 1.0 (normal), >1.0 (amplify)
- *
+ * 
  * @constructor
  */
 SingleDelay = function(maxDelayInSamplesSize, delayInSamples, delayVolume){
     this.delayBufferSamples     = new Array(maxDelayInSamplesSize); // The maximum size of delay
-    this.delayInputPointer      = delayInSamples;
+    this.delayInputPointer      = delayInSamples; 
     this.delayOutputPointer     = 0;
-
+    
     this.delayInSamples     = delayInSamples;
     this.delayVolume        = delayVolume;
 }
@@ -1684,10 +1684,10 @@ SingleDelay = function(maxDelayInSamplesSize, delayInSamples, delayVolume){
  */
 SingleDelay.prototype.setDelayInSamples = function (delayInSamples){
     this.delayInSamples = delayInSamples;
-
+    
     this.delayInputPointer = this.delayOutputPointer + delayInSamples;
     if(this.delayInputPointer >= this.delayBufferSamples.length-1)
-        this.delayInputPointer = this.delayInputPointer - this.delayBufferSamples.length;
+        this.delayInputPointer = this.delayInputPointer - this.delayBufferSamples.length;   
 }
 
 /**
@@ -1700,40 +1700,40 @@ SingleDelay.prototype.setDelayVolume = function (delayVolume){
 }
 
 /**
- * Process a given interleaved or mono non-interleaved float value Array and
+ * Process a given interleaved or mono non-interleaved float value Array and 
  * returns the delayed audio.
  *
  * @param {Array} samples Array containing Float values or a Float32Array
- *
+ * 
  * @returns A new Float32Array interleaved or mono non-interleaved as was fed to this function.
  */
 SingleDelay.prototype.process = function (samples){
-    // NB. Make a copy to put in the output samples to return.
+    // NB. Make a copy to put in the output samples to return. 
     var outputSamples = new Array(samples.length);
 
     for(var i=0; i<samples.length; i++){
 
         // Add audio data with the delay in the delay buffer
         this.delayBufferSamples[this.delayInputPointer] = samples[i];
-
+        
         // delayBufferSamples could contain initial NULL's, return silence in that case
         var delaySample = this.delayBufferSamples[this.delayOutputPointer];
 
         // Return the audio with delay mix
         outputSamples[i] = delaySample * this.delayVolume;
 
-
+        
         // Manage circulair delay buffer pointers
         this.delayInputPointer++;
         if(this.delayInputPointer >= this.delayBufferSamples.length-1)
             this.delayInputPointer = 0;
-
+            
         this.delayOutputPointer++;
         if(this.delayOutputPointer >= this.delayBufferSamples.length-1)
-            this.delayOutputPointer = 0;
-
+            this.delayOutputPointer = 0;    
+            
     }
-
+    
     return outputSamples;
 }
 
@@ -1745,19 +1745,19 @@ SingleDelay.prototype.process = function (samples){
  * Reverb effect by Almer Thie (http://code.almeros.com).
  * Copyright 2010 Almer Thie. All rights reserved.
  * Example: http://code.almeros.com/code-examples/reverb-firefox-audio-api/
- *
- * This reverb consists of 6 SingleDelays, 6 MultiDelays and an IIRFilter2
+ * 
+ * This reverb consists of 6 SingleDelays, 6 MultiDelays and an IIRFilter2 
  * for each of the two stereo channels.
  *
  * Compatible with interleaved stereo buffers only!
- *
+ * 
  * @param {Number} maxDelayInSamplesSize Maximum possible delay in samples (size of circular buffers)
  * @param {Number} delayInSamples Initial delay in samples for internal (Single/Multi)delays
  * @param {Number} masterVolume Initial master volume. Float value: 0.0 (silence), 1.0 (normal), >1.0 (amplify)
  * @param {Number} mixVolume Initial reverb signal mix volume. Float value: 0.0 (silence), 1.0 (normal), >1.0 (amplify)
  * @param {Number} delayVolume Initial feedback delay volume for internal (Single/Multi)delays. Float value: 0.0 (silence), 1.0 (normal), >1.0 (amplify)
  * @param {Number} dampFrequency Initial low pass filter frequency. 0 to 44100 (depending on your maximum sampling frequency)
- *
+ * 
  * @constructor
  */
 Reverb = function(maxDelayInSamplesSize, delayInSamples, masterVolume, mixVolume, delayVolume, dampFrequency){
@@ -1766,22 +1766,22 @@ Reverb = function(maxDelayInSamplesSize, delayInSamples, masterVolume, mixVolume
     this.mixVolume          = mixVolume;
     this.delayVolume        = delayVolume;
     this.dampFrequency      = dampFrequency;
-
+    
     this.NR_OF_MULTIDELAYS = 6;
     this.NR_OF_SINGLEDELAYS = 6;
-
+    
     this.LOWPASSL = new IIRFilter2(DSP.LOWPASS, dampFrequency, 0, 44100);
     this.LOWPASSR = new IIRFilter2(DSP.LOWPASS, dampFrequency, 0, 44100);
-
+    
     this.singleDelays = [];
     for(var i = 0; i<this.NR_OF_SINGLEDELAYS; i++){
-        var delayMultiply = 1.0 + (i/7.0); // 1.0, 1.1, 1.2...
+        var delayMultiply = 1.0 + (i/7.0); // 1.0, 1.1, 1.2... 
         this.singleDelays[i] = new SingleDelay(maxDelayInSamplesSize, Math.round(this.delayInSamples * delayMultiply), this.delayVolume);
     }
-
+    
     this.multiDelays = [];
     for(var i = 0; i<this.NR_OF_MULTIDELAYS; i++){
-        var delayMultiply = 1.0 + (i/10.0); // 1.0, 1.1, 1.2...
+        var delayMultiply = 1.0 + (i/10.0); // 1.0, 1.1, 1.2...  
         this.multiDelays[i] = new MultiDelay(maxDelayInSamplesSize, Math.round(this.delayInSamples * delayMultiply), this.masterVolume, this.delayVolume);
     }
 }
@@ -1793,12 +1793,12 @@ Reverb = function(maxDelayInSamplesSize, delayInSamples, masterVolume, mixVolume
  */
 Reverb.prototype.setDelayInSamples = function (delayInSamples){
     this.delayInSamples = delayInSamples;
-
+    
     for(var i = 0; i<this.NR_OF_SINGLEDELAYS; i++){
         var delayMultiply = 1.0 + (i/7.0); // 1.0, 1.1, 1.2...
         this.singleDelays[i].setDelayInSamples( Math.round(this.delayInSamples * delayMultiply) );
     }
-
+        
     for(var i = 0; i<this.NR_OF_MULTIDELAYS; i++){
         var delayMultiply = 1.0 + (i/10.0); // 1.0, 1.1, 1.2...
         this.multiDelays[i].setDelayInSamples( Math.round(this.delayInSamples * delayMultiply) );
@@ -1830,14 +1830,14 @@ Reverb.prototype.setMixVolume = function (mixVolume){
  */
 Reverb.prototype.setDelayVolume = function (delayVolume){
     this.delayVolume = delayVolume;
-
+    
     for(var i = 0; i<this.NR_OF_SINGLEDELAYS; i++){
         this.singleDelays[i].setDelayVolume(this.delayVolume);
-    }
-
+    }   
+    
     for(var i = 0; i<this.NR_OF_MULTIDELAYS; i++){
         this.multiDelays[i].setDelayVolume(this.delayVolume);
-    }
+    }   
 }
 
 /**
@@ -1847,26 +1847,26 @@ Reverb.prototype.setDelayVolume = function (delayVolume){
  */
 Reverb.prototype.setDampFrequency = function (dampFrequency){
     this.dampFrequency = dampFrequency;
-
+    
     this.LOWPASSL.set(dampFrequency, 0);
-    this.LOWPASSR.set(dampFrequency, 0);
+    this.LOWPASSR.set(dampFrequency, 0);    
 }
 
 /**
  * Process a given interleaved float value Array and copies and adds the reverb signal.
  *
  * @param {Array} samples Array containing Float values or a Float32Array
- *
+ * 
  * @returns A new Float32Array interleaved buffer.
  */
-Reverb.prototype.process = function (interleavedSamples){
-    // NB. Make a copy to put in the output samples to return.
+Reverb.prototype.process = function (interleavedSamples){   
+    // NB. Make a copy to put in the output samples to return. 
     var outputSamples = new Array(interleavedSamples.length);
-
+    
     // Perform low pass on the input samples to mimick damp
     var leftRightMix = DSP.deinterleave(interleavedSamples);
     this.LOWPASSL.process( leftRightMix[DSP.LEFT] );
-    this.LOWPASSR.process( leftRightMix[DSP.RIGHT] );
+    this.LOWPASSR.process( leftRightMix[DSP.RIGHT] );   
     var filteredSamples = DSP.interleave(leftRightMix[DSP.LEFT], leftRightMix[DSP.RIGHT]);
 
     // Process MultiDelays in parallel
@@ -1874,40 +1874,40 @@ Reverb.prototype.process = function (interleavedSamples){
         // Invert the signal of every even multiDelay
         outputSamples = mixSampleBuffers(outputSamples, this.multiDelays[i].process(filteredSamples), 2%i==0, this.NR_OF_MULTIDELAYS);
     }
-
+    
     // Process SingleDelays in series
     var singleDelaySamples = new Array(outputSamples.length);
     for(var i = 0; i<this.NR_OF_SINGLEDELAYS; i++){
         // Invert the signal of every even singleDelay
-        singleDelaySamples = mixSampleBuffers(singleDelaySamples, this.singleDelays[i].process(outputSamples), 2%i==0, 1);
+        singleDelaySamples = mixSampleBuffers(singleDelaySamples, this.singleDelays[i].process(outputSamples), 2%i==0, 1); 
     }
 
     // Apply the volume of the reverb signal
     for(var i = 0; i<singleDelaySamples.length; i++){
         singleDelaySamples[i] *= this.mixVolume;
     }
-
+    
     // Mix the original signal with the reverb signal
-    outputSamples = mixSampleBuffers(singleDelaySamples, interleavedSamples, 0, 1);
+    outputSamples = mixSampleBuffers(singleDelaySamples, interleavedSamples, 0, 1); 
 
     // Apply the master volume to the complete signal
     for(var i = 0; i<outputSamples.length; i++){
         outputSamples[i] *= this.masterVolume;
     }
-
+        
     return outputSamples;
 }
 
 /**
- * Helper method (for Reverb) to mix two (interleaved) samplebuffers. It's possible
- * to negate the second buffer while mixing and to perform a volume correction
+ * Helper method (for Reverb) to mix two (interleaved) samplebuffers. It's possible 
+ * to negate the second buffer while mixing and to perform a volume correction 
  * on the final signal.
- *
+ * 
  * @param {Array} sampleBuffer1 Array containing Float values or a Float32Array
  * @param {Array} sampleBuffer2 Array containing Float values or a Float32Array
  * @param {Boolean} negate When true inverts/flips the audio signal
  * @param {Number} volumeCorrection When you add multiple sample buffers, use this to tame your signal ;)
- *
+ * 
  * @returns A new Float32Array interleaved buffer.
  */
 function mixSampleBuffers(sampleBuffer1, sampleBuffer2, negate, volumeCorrection){
@@ -1916,9 +1916,9 @@ function mixSampleBuffers(sampleBuffer1, sampleBuffer2, negate, volumeCorrection
     for(var i = 0; i<sampleBuffer1.length; i++){
         outputSamples[i] += (negate ? -sampleBuffer2[i] : sampleBuffer2[i]) / volumeCorrection;
     }
-
+    
     return outputSamples;
-}
+}   
 
 /*
  *  BeatDetektor.js
@@ -1952,62 +1952,62 @@ function mixSampleBuffers(sampleBuffer1, sampleBuffer2, negate, volumeCorrection
  */
 
 
-/*
+/* 
  BeatDetektor class
 
 
  Theory:
 
- Trigger detection is performed using a trail of moving averages,
-
- The FFT input is broken up into 128 ranges and averaged, each range has two moving
- averages that tail each other at a rate of (1.0 / BD_DETECTION_RATE) seconds.
+ Trigger detection is performed using a trail of moving averages, 
+ 
+ The FFT input is broken up into 128 ranges and averaged, each range has two moving 
+ averages that tail each other at a rate of (1.0 / BD_DETECTION_RATE) seconds.  
 
  Each time the moving average for a range exceeds it's own tailing average by:
 
  (moving_average[range] * BD_DETECTION_FACTOR >= moving_average[range])
 
- if this is true there's a rising edge and a detection is flagged for that range.
- Next a trigger gap test is performed between rising edges and timestamp recorded.
+ if this is true there's a rising edge and a detection is flagged for that range. 
+ Next a trigger gap test is performed between rising edges and timestamp recorded. 
 
  If the gap is larger than our BPM window (in seconds) then we can discard it and
- reset the timestamp for a new detection -- but only after checking to see if it's a
+ reset the timestamp for a new detection -- but only after checking to see if it's a 
  reasonable match for 2* the current detection in case it's only triggered every
- other beat. Gaps that are lower than the BPM window are ignored and the last
- timestamp will not be reset.
+ other beat. Gaps that are lower than the BPM window are ignored and the last 
+ timestamp will not be reset.  
 
- Gaps that are within a reasonable window are run through a quality stage to determine
- how 'close' they are to that channel's current prediction and are incremented or
- decremented by a weighted value depending on accuracy. Repeated hits of low accuracy
- will still move a value towards erroneous detection but it's quality will be lowered
+ Gaps that are within a reasonable window are run through a quality stage to determine 
+ how 'close' they are to that channel's current prediction and are incremented or 
+ decremented by a weighted value depending on accuracy. Repeated hits of low accuracy 
+ will still move a value towards erroneous detection but it's quality will be lowered 
  and will not be eligible for the gap time quality draft.
-
- Once quality has been assigned ranges are reviewed for good match candidates and if
- BD_MINIMUM_CONTRIBUTIONS or more ranges achieve a decent ratio (with a factor of
- BD_QUALITY_TOLERANCE) of contribution to the overall quality we take them into the
- contest round.  Note that the contest round  won't run on a given process() call if
+ 
+ Once quality has been assigned ranges are reviewed for good match candidates and if 
+ BD_MINIMUM_CONTRIBUTIONS or more ranges achieve a decent ratio (with a factor of 
+ BD_QUALITY_TOLERANCE) of contribution to the overall quality we take them into the 
+ contest round.  Note that the contest round  won't run on a given process() call if 
  the total quality achieved does not meet or exceed BD_QUALITY_TOLERANCE.
-
- Each time through if a select draft of BPM ranges has achieved a reasonable quality
- above others it's awarded a value in the BPM contest.  The BPM contest is a hash
+  
+ Each time through if a select draft of BPM ranges has achieved a reasonable quality 
+ above others it's awarded a value in the BPM contest.  The BPM contest is a hash 
  array indexed by an integer BPM value, each draft winner is awarded BD_QUALITY_REWARD.
 
- Finally the BPM contest is examined to determine a leader and all contest entries
- are normalized to a total value of BD_FINISH_LINE, whichever range is closest to
- BD_FINISH_LINE at any given point is considered to be the best guess however waiting
- until a minimum contest winning value of about 20.0-25.0 will provide more accurate
- results.  Note that the 20-25 rule may vary with lower and higher input ranges.
+ Finally the BPM contest is examined to determine a leader and all contest entries 
+ are normalized to a total value of BD_FINISH_LINE, whichever range is closest to 
+ BD_FINISH_LINE at any given point is considered to be the best guess however waiting 
+ until a minimum contest winning value of about 20.0-25.0 will provide more accurate 
+ results.  Note that the 20-25 rule may vary with lower and higher input ranges. 
  A winning value that exceeds 40 or hovers around 60 (the finish line) is pretty much
  a guaranteed match.
 
 
  Configuration Kernel Notes:
 
- The majority of the ratios and values have been reverse-engineered from my own
- observation and visualization of information from various aspects of the detection
+ The majority of the ratios and values have been reverse-engineered from my own  
+ observation and visualization of information from various aspects of the detection 
  triggers; so not all parameters have a perfect definition nor perhaps the best value yet.
- However despite this it performs very well; I had expected several more layers
- before a reasonable detection would be achieved. Comments for these parameters will be
+ However despite this it performs very well; I had expected several more layers 
+ before a reasonable detection would be achieved. Comments for these parameters will be 
  updated as analysis of their direct effect is explored.
 
 
@@ -2017,14 +2017,14 @@ function mixSampleBuffers(sampleBuffer1, sampleBuffer2, negate, volumeCorrection
  i.e. minimum of 50 must have a maximum of 99 because 50*2 = 100
 
 
- Changelog:
-
- 01/17/2010 - Charles J. Cliffe
+ Changelog: 
+ 
+ 01/17/2010 - Charles J. Cliffe 
   - Tested and tweaked default kernel values for tighter detection
   - Added BeatDetektor.config_48_95, BeatDetektor.config_90_179 and BeatDetektor.config_150_280 for more refined detection ranges
   - Updated unit test to include new range config example
 
-02/21/2010 - Charles J. Cliffe
+02/21/2010 - Charles J. Cliffe 
  - Fixed numerous bugs and divide by 0 on 1% match causing poor accuracy
  - Re-worked the quality calulations, accuracy improved 8-10x
  - Primary value is now a fractional reading (*10, just divide by 10), added win_bpm_int_lo for integral readings
@@ -2037,9 +2037,9 @@ BeatDetektor = function(bpm_minimum, bpm_maximum, alt_config)
 {
     if (typeof(bpm_minimum)=='undefined') bpm_minimum = 85.0;
     if (typeof(bpm_maximum)=='undefined') bpm_maximum = 169.0
-
+    
     this.config = (typeof(alt_config)!='undefined')?alt_config:BeatDetektor.config;
-
+    
     this.BPM_MIN = bpm_minimum;
     this.BPM_MAX = bpm_maximum;
 
@@ -2065,10 +2065,10 @@ BeatDetektor = function(bpm_minimum, bpm_maximum, alt_config)
     this.detection_quality = new Array(this.config.BD_DETECTION_RANGES);
 
     // current trigger state for range n
-    this.detection = new Array(this.config.BD_DETECTION_RANGES);
-
+    this.detection = new Array(this.config.BD_DETECTION_RANGES); 
+    
     this.reset();
-
+    
 
 }
 
@@ -2082,29 +2082,29 @@ BeatDetektor.prototype.reset = function()
         this.ma_freq_range[i] = 0.0;
         this.maa_freq_range[i] = 0.0;
         this.last_detection[i] = 0.0;
-
-        this.ma_bpm_range[i] =
-        this.maa_bpm_range[i] = 60.0/this.BPM_MIN + ((60.0/this.BPM_MAX-60.0/this.BPM_MIN) * (i/this.config.BD_DETECTION_RANGES));
-
+        
+        this.ma_bpm_range[i] = 
+        this.maa_bpm_range[i] = 60.0/this.BPM_MIN + ((60.0/this.BPM_MAX-60.0/this.BPM_MIN) * (i/this.config.BD_DETECTION_RANGES));      
+        
         this.detection_quality[i] = 0.0;
         this.detection[i] = false;
     }
-
+    
     this.ma_quality_avg = 0;
     this.ma_quality_total = 0;
-
+    
     this.bpm_contest = new Array();
     this.bpm_contest_lo = new Array();
-
+    
     this.quality_total = 0.0;
     this.quality_avg = 0.0;
 
-    this.current_bpm = 0.0;
-    this.current_bpm_lo = 0.0;
+    this.current_bpm = 0.0; 
+    this.current_bpm_lo = 0.0; 
 
-    this.winning_bpm = 0.0;
+    this.winning_bpm = 0.0; 
     this.win_val = 0.0;
-    this.winning_bpm_lo = 0.0;
+    this.winning_bpm_lo = 0.0; 
     this.win_val_lo = 0.0;
 
     this.win_bpm_int = 0;
@@ -2148,9 +2148,9 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
 {
     if (!this.last_timer) { this.last_timer = timer_seconds; return; }  // ignore 0 start time
     if (this.last_timer > timer_seconds) { this.reset(); return; }
-
+    
     var timestamp = timer_seconds;
-
+    
     this.last_update = timer_seconds - this.last_timer;
     this.last_timer = timer_seconds;
 
@@ -2158,70 +2158,70 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
 
     var i,x;
     var v;
-
+    
     var bpm_floor = 60.0/this.BPM_MAX;
     var bpm_ceil = 60.0/this.BPM_MIN;
-
+    
     var range_step = (fft_data.length / this.config.BD_DETECTION_RANGES);
     var range = 0;
-
-
+    
+        
     for (x=0; x<fft_data.length; x+=range_step)
     {
         this.a_freq_range[range] = 0;
-
+        
         // accumulate frequency values for this range
         for (i = x; i<x+range_step; i++)
         {
             v = Math.abs(fft_data[i]);
             this.a_freq_range[range] += v;
         }
-
+        
         // average for range
         this.a_freq_range[range] /= range_step;
-
-        // two sets of averages chase this one at a
-
+        
+        // two sets of averages chase this one at a 
+        
         // moving average, increment closer to a_freq_range at a rate of 1.0 / BD_DETECTION_RATE seconds
         this.ma_freq_range[range] -= (this.ma_freq_range[range]-this.a_freq_range[range])*this.last_update*this.config.BD_DETECTION_RATE;
         // moving average of moving average, increment closer to this.ma_freq_range at a rate of 1.0 / BD_DETECTION_RATE seconds
         this.maa_freq_range[range] -= (this.maa_freq_range[range]-this.ma_freq_range[range])*this.last_update*this.config.BD_DETECTION_RATE;
-
-        // if closest moving average peaks above trailing (with a tolerance of BD_DETECTION_FACTOR) then trigger a detection for this range
+        
+        // if closest moving average peaks above trailing (with a tolerance of BD_DETECTION_FACTOR) then trigger a detection for this range 
         var det = (this.ma_freq_range[range]*this.config.BD_DETECTION_FACTOR >= this.maa_freq_range[range]);
-
+        
         // compute bpm clamps for comparison to gap lengths
-
+        
         // clamp detection averages to input ranges
         if (this.ma_bpm_range[range] > bpm_ceil) this.ma_bpm_range[range] = bpm_ceil;
         if (this.ma_bpm_range[range] < bpm_floor) this.ma_bpm_range[range] = bpm_floor;
         if (this.maa_bpm_range[range] > bpm_ceil) this.maa_bpm_range[range] = bpm_ceil;
         if (this.maa_bpm_range[range] < bpm_floor) this.maa_bpm_range[range] = bpm_floor;
-
+            
         var rewarded = false;
-
+        
         // new detection since last, test it's quality
         if (!this.detection[range] && det)
         {
             // calculate length of gap (since start of last trigger)
             var trigger_gap = timestamp-this.last_detection[range];
-
-            // trigger falls within acceptable range,
+            
+            // trigger falls within acceptable range, 
             if (trigger_gap < bpm_ceil && trigger_gap > (bpm_floor))
-            {
+            {       
                 // compute gap and award quality
-
+                
                 // use our tolerances as a funnel to edge detection towards the most likely value
                 for (i = 0; i < this.config.BD_REWARD_TOLERANCES.length; i++)
                 {
                     if (Math.abs(this.ma_bpm_range[range]-trigger_gap) < this.ma_bpm_range[range]*this.config.BD_REWARD_TOLERANCES[i])
                     {
-                        this.detection_quality[range] += this.config.BD_QUALITY_REWARD * this.config.BD_REWARD_MULTIPLIERS[i];
+                        this.detection_quality[range] += this.config.BD_QUALITY_REWARD * this.config.BD_REWARD_MULTIPLIERS[i]; 
                         rewarded = true;
                     }
-                }
-
-                if (rewarded)
+                }               
+                
+                if (rewarded) 
                 {
                     this.last_detection[range] = timestamp;
                 }
@@ -2229,7 +2229,7 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
             else if (trigger_gap >= bpm_ceil) // low quality, gap exceeds maximum time
             {
                 // start a new gap test, next gap is guaranteed to be longer
-
+                
                 // test for 1/2 beat
                 trigger_gap /= 2.0;
 
@@ -2237,20 +2237,20 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
                 {
                     if (Math.abs(this.ma_bpm_range[range]-trigger_gap) < this.ma_bpm_range[range]*this.config.BD_REWARD_TOLERANCES[i])
                     {
-                        this.detection_quality[range] += this.config.BD_QUALITY_REWARD * this.config.BD_REWARD_MULTIPLIERS[i];
+                        this.detection_quality[range] += this.config.BD_QUALITY_REWARD * this.config.BD_REWARD_MULTIPLIERS[i]; 
                         rewarded = true;
                     }
                 }
-
-
+                
+                
                 // decrement quality if no 1/2 beat reward
-                if (!rewarded)
+                if (!rewarded) 
                 {
                     trigger_gap *= 2.0;
                 }
-                this.last_detection[range] = timestamp;
+                this.last_detection[range] = timestamp; 
             }
-
+            
             if (rewarded)
             {
                 var qmp = (this.detection_quality[range]/this.quality_avg)*this.config.BD_QUALITY_STEP;
@@ -2259,7 +2259,7 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
                     qmp = 1.0;
                 }
 
-                this.ma_bpm_range[range] -= (this.ma_bpm_range[range]-trigger_gap) * qmp;
+                this.ma_bpm_range[range] -= (this.ma_bpm_range[range]-trigger_gap) * qmp;               
                 this.maa_bpm_range[range] -= (this.maa_bpm_range[range]-this.ma_bpm_range[range]) * qmp;
             }
             else if (trigger_gap >= bpm_floor && trigger_gap <= bpm_ceil)
@@ -2280,39 +2280,39 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
                 }
                 this.detection_quality[range]-= this.config.BD_QUALITY_STEP;
             }
-
+            
         }
-
-        if ((!rewarded && timestamp-this.last_detection[range] > bpm_ceil) || (det && Math.abs(this.ma_bpm_range[range]-this.current_bpm) > this.bpm_offset))
+                
+        if ((!rewarded && timestamp-this.last_detection[range] > bpm_ceil) || (det && Math.abs(this.ma_bpm_range[range]-this.current_bpm) > this.bpm_offset)) 
             this.detection_quality[range] -= this.detection_quality[range]*this.config.BD_QUALITY_STEP*this.config.BD_QUALITY_DECAY*this.last_update;
-
+        
         // quality bottomed out, set to 0
         if (this.detection_quality[range] < 0.001) this.detection_quality[range]=0.001;
-
-        this.detection[range] = det;
-
+                
+        this.detection[range] = det;        
+        
         range++;
     }
-
+        
     // total contribution weight
     this.quality_total = 0;
-
+    
     // total of bpm values
     var bpm_total = 0;
     // number of bpm ranges that contributed to this test
     var bpm_contributions = 0;
-
-
+    
+    
     // accumulate quality weight total
     for (var x=0; x<this.config.BD_DETECTION_RANGES; x++)
     {
         this.quality_total += this.detection_quality[x];
     }
-
-
+    
+    
     this.quality_avg = this.quality_total / this.config.BD_DETECTION_RANGES;
-
-
+    
+    
     if (this.quality_total)
     {
         // determine the average weight of each quality range
@@ -2330,14 +2330,14 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
 
     if (this.ma_quality_total <= 0) this.ma_quality_total = 0.001;
     if (this.ma_quality_avg <= 0) this.ma_quality_avg = 0.001;
-
+    
     var avg_bpm_offset = 0.0;
     var offset_test_bpm = this.current_bpm;
     var draft = new Array();
-
+    
     if (this.quality_avg) for (x=0; x<this.config.BD_DETECTION_RANGES; x++)
     {
-        // if this detection range weight*tolerance is higher than the average weight then add it's moving average contribution
+        // if this detection range weight*tolerance is higher than the average weight then add it's moving average contribution 
         if (this.detection_quality[x]*this.config.BD_QUALITY_TOLERANCE >= this.ma_quality_avg)
         {
             if (this.ma_bpm_range[x] < bpm_ceil && this.ma_bpm_range[x] > bpm_floor)
@@ -2345,32 +2345,32 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
                 bpm_total += this.maa_bpm_range[x];
 
                 var draft_float = Math.round((60.0/this.maa_bpm_range[x])*1000.0);
-
+                
                 draft_float = (Math.abs(Math.ceil(draft_float)-(60.0/this.current_bpm)*1000.0)<(Math.abs(Math.floor(draft_float)-(60.0/this.current_bpm)*1000.0)))?Math.ceil(draft_float/10.0):Math.floor(draft_float/10.0);
                 var draft_int = parseInt(draft_float/10.0);
             //  if (draft_int) console.log(draft_int);
                 if (typeof(draft[draft_int]=='undefined')) draft[draft_int] = 0;
-
+                
                 draft[draft_int]+=this.detection_quality[x]/this.quality_avg;
                 bpm_contributions++;
                 if (offset_test_bpm == 0.0) offset_test_bpm = this.maa_bpm_range[x];
-                else
+                else 
                 {
                     avg_bpm_offset += Math.abs(offset_test_bpm-this.maa_bpm_range[x]);
                 }
-
-
+                
+                
             }
         }
     }
-
+        
     // if we have one or more contributions that pass criteria then attempt to display a guess
     var has_prediction = (bpm_contributions>=this.config.BD_MINIMUM_CONTRIBUTIONS)?true:false;
 
     var draft_winner=0;
     var win_val = 0;
-
-    if (has_prediction)
+    
+    if (has_prediction) 
     {
         for (var draft_i in draft)
         {
@@ -2380,26 +2380,26 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
                 draft_winner = draft_i;
             }
         }
-
+        
         this.bpm_predict = 60.0/(draft_winner/10.0);
-
+        
         avg_bpm_offset /= bpm_contributions;
         this.bpm_offset = avg_bpm_offset;
-
-        if (!this.current_bpm)
+        
+        if (!this.current_bpm)  
         {
-            this.current_bpm = this.bpm_predict;
+            this.current_bpm = this.bpm_predict; 
         }
     }
-
-    if (this.current_bpm && this.bpm_predict) this.current_bpm -= (this.current_bpm-this.bpm_predict)*this.last_update;
-
+        
+    if (this.current_bpm && this.bpm_predict) this.current_bpm -= (this.current_bpm-this.bpm_predict)*this.last_update; 
+    
     // hold a contest for bpm to find the current mode
     var contest_max=0;
-
+    
     for (var contest_i in this.bpm_contest)
     {
-        if (contest_max < this.bpm_contest[contest_i]) contest_max = this.bpm_contest[contest_i];
+        if (contest_max < this.bpm_contest[contest_i]) contest_max = this.bpm_contest[contest_i]; 
         if (this.bpm_contest[contest_i] > this.config.BD_FINISH_LINE/2.0)
         {
             var draft_int_lo = parseInt(Math.round((contest_i)/10.0));
@@ -2407,9 +2407,9 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
             this.bpm_contest_lo[draft_int_lo]+= (this.bpm_contest[contest_i]/6.0)*this.last_update;
         }
     }
-
+        
     // normalize to a finish line
-    if (contest_max > this.config.BD_FINISH_LINE)
+    if (contest_max > this.config.BD_FINISH_LINE) 
     {
         for (var contest_i in this.bpm_contest)
         {
@@ -2420,11 +2420,11 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
     contest_max = 0;
     for (var contest_i in this.bpm_contest_lo)
     {
-        if (contest_max < this.bpm_contest_lo[contest_i]) contest_max = this.bpm_contest_lo[contest_i];
+        if (contest_max < this.bpm_contest_lo[contest_i]) contest_max = this.bpm_contest_lo[contest_i]; 
     }
 
     // normalize to a finish line
-    if (contest_max > this.config.BD_FINISH_LINE)
+    if (contest_max > this.config.BD_FINISH_LINE) 
     {
         for (var contest_i in this.bpm_contest_lo)
         {
@@ -2432,44 +2432,44 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
         }
     }
 
-
+    
     // decay contest values from last loop
     for (contest_i in this.bpm_contest)
     {
         this.bpm_contest[contest_i]-=this.bpm_contest[contest_i]*(this.last_update/this.config.BD_DETECTION_RATE);
     }
-
+    
     // decay contest values from last loop
     for (contest_i in this.bpm_contest_lo)
     {
         this.bpm_contest_lo[contest_i]-=this.bpm_contest_lo[contest_i]*(this.last_update/this.config.BD_DETECTION_RATE);
     }
-
+    
     this.bpm_timer+=this.last_update;
-
+    
     var winner = 0;
     var winner_lo = 0;
-
+    
     // attempt to display the beat at the beat interval ;)
     if (this.bpm_timer > this.winning_bpm/4.0 && this.current_bpm)
-    {
+    {       
         this.win_val = 0;
         this.win_val_lo = 0;
 
         if (this.winning_bpm) while (this.bpm_timer > this.winning_bpm/4.0) this.bpm_timer -= this.winning_bpm/4.0;
-
+        
         // increment beat counter
-
-        this.quarter_counter++;
+        
+        this.quarter_counter++;     
         this.half_counter= parseInt(this.quarter_counter/2);
         this.beat_counter = parseInt(this.quarter_counter/4);
-
+        
         // award the winner of this iteration
         var idx = parseInt(Math.round((60.0/this.current_bpm)*10.0));
         if (typeof(this.bpm_contest[idx])=='undefined') this.bpm_contest[idx] = 0;
         this.bpm_contest[idx]+=this.config.BD_QUALITY_REWARD;
-
-
+        
+        
         // find the overall winner so far
         for (var contest_i in this.bpm_contest)
         {
@@ -2479,13 +2479,13 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
                 this.win_val = this.bpm_contest[contest_i];
             }
         }
-
+        
         if (winner)
         {
             this.win_bpm_int = parseInt(winner);
             this.winning_bpm = (60.0/(winner/10.0));
         }
-
+        
         // find the overall winner so far
         for (var contest_i in this.bpm_contest_lo)
         {
@@ -2495,21 +2495,21 @@ BeatDetektor.prototype.process = function(timer_seconds, fft_data)
                 this.win_val_lo = this.bpm_contest_lo[contest_i];
             }
         }
-
+        
         if (winner_lo)
         {
             this.win_bpm_int_lo = parseInt(winner_lo);
             this.winning_bpm_lo = 60.0/winner_lo;
         }
-
-
+        
+        
         //if (typeof(console)!='undefined' && (this.beat_counter % 4) == 0) console.log("BeatDetektor("+this.BPM_MIN+","+this.BPM_MAX+"): [ Current Estimate: "+winner+" BPM ] [ Time: "+(parseInt(timer_seconds*1000.0)/1000.0)+"s, Quality: "+(parseInt(this.quality_total*1000.0)/1000.0)+", Rank: "+(parseInt(this.win_val*1000.0)/1000.0)+", Jitter: "+(parseInt(this.bpm_offset*1000000.0)/1000000.0)+" ]");
     }
 
 }
 
 // Sample Modules
-BeatDetektor.modules = new Object();
+BeatDetektor.modules = new Object(); 
 BeatDetektor.modules.vis = new Object();
 
 // simple bass kick visualizer assistant module
@@ -2532,7 +2532,7 @@ BeatDetektor.modules.vis.BassKick.prototype.isKick = function()
 // simple vu spectrum visualizer assistant module
 BeatDetektor.modules.vis.VU = function()
 {
-    this.vu_levels = new Array();
+    this.vu_levels = new Array();   
 }
 
 BeatDetektor.modules.vis.VU.prototype.process = function(det,lus)
@@ -2542,9 +2542,9 @@ BeatDetektor.modules.vis.VU.prototype.process = function(det,lus)
 
         for (i = 0; i < det.config.BD_DETECTION_RANGES; i++)
         {
-            det_val = (det.ma_freq_range[i]/det.maa_freq_range[i]);
+            det_val = (det.ma_freq_range[i]/det.maa_freq_range[i]); 
             if (det_val > det_max) det_max = det_val;
-        }
+        }       
 
         if (det_max <= 0) det_max = 1.0;
 
@@ -2560,11 +2560,11 @@ BeatDetektor.modules.vis.VU.prototype.process = function(det,lus)
                 det_val -= 1.0;
                 if (det_val>1.0) det_val = 1.0;
 
-                if (det_val > this.vu_levels[i])
+                if (det_val > this.vu_levels[i]) 
                     this.vu_levels[i] = det_val;
                 else if (det.current_bpm) this.vu_levels[i] -= (this.vu_levels[i]-det_val)*lus*(1.0/det.current_bpm)*3.0;
             }
-            else
+            else 
             {
                 if (det.current_bpm) this.vu_levels[i] -= (lus/det.current_bpm)*2.0;
             }

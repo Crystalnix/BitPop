@@ -4,7 +4,7 @@ described at:
   http://www.chromium.org/developers/design-documents/extensions/proposed-changes/apis-under-development
 
 Two approaches are available for writing your API specification. The original
-approach relies on JSON specification files. The more recent and simpler system
+approach relies on JSON specification files. The more recent and simpler system 
 uses Web IDL files, but does not yet support all the features of the JSON files.
 Discuss with a member of the extensions team (aa@chromium.org) before you decide
 which approach is better suited to your API.
@@ -15,7 +15,7 @@ The following steps suppose you're writing an experimental API called "Foo".
 APPROACH 1: JSON FILES
 
 1) Write your API specification.
-Create "chrome/common/extensions/api/experimental_foo.json". For inspiration
+Create "chrome/common/extensions/api/experimental_foo.json". For inspiration 
 look at the "app" API. Include descriptions fields to generate the
 documentation.
 
@@ -33,7 +33,7 @@ should use the JSON Schema Compiler. Look at the "permissions_api.cc" for
 details on how to do that.
 
 5) Register function handlers.
-In "chrome/browser/extensions/extension_function_registry.cc" include foo_api.h
+In "chrome/browser/extensions/extension_function_registry.cc" include foo_api.h 
 and instantiate a RegisterFunction for each function you created in (3).
 
 --------------------------------------------------------------------------------

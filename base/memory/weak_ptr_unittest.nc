@@ -73,7 +73,7 @@ void WontCompile() {
 #elif defined(NCTEST_UNSAFE_WRONG_INSANTIATED_HELPER_DOWNCAST)  // [r"invalid conversion from"]
 
 void WontCompile() {
-  Producer f;
+  Producer f; 
   WeakPtr<DerivedProducer> ptr = AsWeakPtr<Producer>(&f);
 }
 

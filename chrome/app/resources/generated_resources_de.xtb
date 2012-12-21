@@ -1928,7 +1928,7 @@ nicht auf unsichere Verbindungen zurück.</translation>
 <translation id="8235325155053717782">Fehler <ph name="ERROR_NUMBER"/> (<ph name="ERROR_NAME"/>): <ph name="ERROR_TEXT"/></translation>
 <translation id="6584878029876017575">Microsoft-Lebensdauersignatur</translation>
 <translation id="9088974878562569314">Mikrofon: <ph name="DEVICE_NAME"/></translation>
-<translation id="562901740552630300">Gehen Sie zu
+<translation id="562901740552630300">Gehen Sie zu 
           <ph name="BEGIN_BOLD"/>
           Start &gt; Systemsteuerung &gt; Netzwerk und Internet &gt; Netzwerk- und Freigabecenter &gt; Probleme beheben (unten) &gt; Internetverbindungen
           <ph name="END_BOLD"/>.</translation>
@@ -2390,7 +2390,7 @@ nicht auf unsichere Verbindungen zurück.</translation>
 <translation id="1681614449735360921">Inkompatibilitäten anzeigen</translation>
 <translation id="6227235786875481728">Diese Datei kann nicht wiedergegeben werden.</translation>
 <translation id="192465552172364263">Wenn Sie diese Option aktivieren, erstellen alle Elemente mit festen Positionen neue CSS-Stapelkontexte.</translation>
-<translation id="3121147067826817533"><ph name="BEGIN_BOLD"/>Sie befinden sich im Inkognito-Modus.<ph name="END_BOLD"/> Über dieses Fenster aufgerufene Seiten werden nicht in Ihrem Browser- oder Suchverlauf gespeichert und hinterlassen keine sonstigen Spuren wie Cookies auf Ihrem Computer, nachdem Sie  &lt;strong&gt;sämtliche&lt;/strong&gt; Inkognito-Fenster geschlossen haben. Heruntergeladene Dateien und erstellte Lesezeichen bleiben jedoch erhalten.
+<translation id="3121147067826817533"><ph name="BEGIN_BOLD"/>Sie befinden sich im Inkognito-Modus.<ph name="END_BOLD"/> Über dieses Fenster aufgerufene Seiten werden nicht in Ihrem Browser- oder Suchverlauf gespeichert und hinterlassen keine sonstigen Spuren wie Cookies auf Ihrem Computer, nachdem Sie  &lt;strong&gt;sämtliche&lt;/strong&gt; Inkognito-Fenster geschlossen haben. Heruntergeladene Dateien und erstellte Lesezeichen bleiben jedoch erhalten. 
           <ph name="LINE_BREAK"/>
           <ph name="BEGIN_BOLD"/>Der Inkognito-Modus wirkt sich nicht auf das Verhalten anderer Personen, Server oder Software aus. Vorsicht ist geboten bei:<ph name="END_BOLD"/>
           <ph name="BEGIN_LIST"/>
@@ -2555,7 +2555,7 @@ nicht auf unsichere Verbindungen zurück.</translation>
 <translation id="7026338066939101231">Verringern</translation>
 <translation id="5411472733320185105">Proxy-Einstellungen nicht für diese Hosts und Domains verwenden:</translation>
 <translation id="3685121001045880436">Wahrscheinlich ist der Server, der die Webseite hostet, überlastet oder es ist ein Fehler aufgetreten.
-        Damit nicht zu viele Zugriffe entstehen und die Situation verschärft wird,
+        Damit nicht zu viele Zugriffe entstehen und die Situation verschärft wird, 
         lässt <ph name="PRODUCT_NAME"/>
         vorübergehend keine Anfragen mehr von Erweiterungen an diese URL zu.
         <ph name="LINE_BREAK"/>
@@ -4245,7 +4245,7 @@ Drücken Sie eine beliebige Taste, um fortzufahren.</translation>
 <translation id="7322037929240387249">Tastatureinstellungen...</translation>
 <translation id="3709244229496787112">Der Browser wurde beendet, bevor der Download abgeschlossen war.</translation>
 <translation id="7999229196265990314">Folgende Dateien wurden erstellt:
-
+        
 Erweiterung: <ph name="EXTENSION_FILE"/>
 Schlüsseldatei: <ph name="KEY_FILE"/>
 

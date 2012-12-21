@@ -11,23 +11,23 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "integer",
-            "minimum": 0,
+            "type": "integer", 
+            "minimum": 0, 
             "description": "The ID of the offscreen tab. Tab IDs are unique within a browser session."
           },
           "url": {
-            "type":
-            "string",
+            "type": 
+            "string", 
             "description": "URL of the offscreen tab."
           },
           "width": {
-            "type": "integer",
-            "minimum": 0,
+            "type": "integer", 
+            "minimum": 0, 
             "description": "Width of the window."
           },
           "height": {
-            "type": "integer",
-            "minimum": 0,
+            "type": "integer", 
+            "minimum": 0, 
             "description": "Height of the window."
           }
         }
@@ -97,7 +97,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": true,
+            "optional": true,      
             "parameters": [
               {
                 "name": "offscreenTab",
@@ -144,10 +144,10 @@
             "parameters": [
               {
                 "name": "offscreenTabs",
-                "type": "array",
-                "items": {
-                  "$ref": "OffscreenTab"
-                }
+                "type": "array", 
+                "items": { 
+                  "$ref": "OffscreenTab" 
+                } 
               }
             ]
           }
@@ -225,7 +225,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": true,
+            "optional": true,  
             "parameters": []
           }
         ]
@@ -282,7 +282,7 @@
         "parameters": [
           {
             "name": "offscreenTabId",
-            "type": "integer",
+            "type": "integer", 
             "minimum": 0,
             "description": "The ID of the offscreen tab."
           },

@@ -90,10 +90,10 @@ function benchmarkStillRunning() {
 function findBenchmark(url) {
   for (var index = 0; index < benchmarks.length; ++index) {
     // One common redirection case: if the url ends without a slash and refers
-    // to a directory, it actually would be redirected to the correct one
+    // to a directory, it actually would be redirected to the correct one 
     // (with a slash). In this case, the url returned by the JS and the one
-    // stored locally do not match.
-    if ((benchmarks[index].url() == url) ||
+    // stored locally do not match. 
+    if ((benchmarks[index].url() == url) || 
         (benchmarks[index].url() + '/' == url)) {
       return benchmarks[index];
     }
@@ -113,11 +113,11 @@ function show_options() {
     }
     var tabs = chrome.extension.getExtensionTabs();
     if (tabs && tabs.length) {
-      // To avoid "Uncaught TypeError: Object Window has no method
+      // To avoid "Uncaught TypeError: Object Window has no method 
       // 'setUrl' ". Sometimes tabs are not the desired extension tabs.
       if (tabs[0].$suburl != undefined) {
         tabs[0].setUrl(testUrl);
-      }
+      } 
       var optionsUrl = chrome.extension.getURL("options.html");
       chrome.tabs.getAllInWindow(null, function(all) {
         for (var i = 0; i < all.length; i++) {
@@ -173,7 +173,7 @@ function Benchmark() {
     current_.KbytesRead = new Array();
     current_.KbytesWritten = new Array();
     current_.readbpsResults = new Array();
-    current_.writebpsResults = new Array();
+    current_.writebpsResults = new Array(); 
     current_.totalTime = 0;
     current_.iterations = 0;
     current_.requests = new Array();
@@ -221,7 +221,7 @@ function Benchmark() {
       chrome.browserAction.setBadgeBackgroundColor({"color": [0, 255, 0, 255]});
     }
 
-    // Reload the page after each run to show immediate results.
+    // Reload the page after each run to show immediate results. 
     var tabs = chrome.extension.getExtensionTabs();
     if (tabs && tabs.length) {
       tabs[0].location.reload(true);
@@ -283,13 +283,13 @@ function Benchmark() {
   this.runPage = function() {
     if (benchmarkWindow) {
       // To avoid the error "Error during tabs.remove: No tab with id xx"
-      // while debugging, due to user manually closing the benchmark tab.
+      // while debugging, due to user manually closing the benchmark tab.  
       chrome.tabs.getAllInWindow(null, function(all) {
         for (var i = 0; i < all.length; i++) {
           if (all[i].id == benchmarkWindow.id) {
             me_.closePage();
              return;
-          };
+          }; 
         };
         me_.prepareToOpenPage();
       });
@@ -300,7 +300,7 @@ function Benchmark() {
 
   // Called when a page finishes loading.
   this.pageFinished = function(load_times, domNum, depths) {
-
+   
      // Make sure the content can be fetched via spdy if it is enabled.
     if (window.enableSpdy && !load_times.wasFetchedViaSpdy) {
       alert("Can not fetch current url via spdy.\n" +
@@ -336,7 +336,7 @@ function Benchmark() {
       }
       return;
     }
-
+ 
     var requested = load_times.requestTime;
     var started = load_times.startLoadTime;
     var startLoadTime =
@@ -369,7 +369,7 @@ function Benchmark() {
     // Get the index of current benchmarked page in the result array.
     var currIndex;
     currIndex = window.results.data.indexOf(current_, 0);
-
+    
     // Record the result
     current_.viaSpdy = load_times.wasFetchedViaSpdy;
     current_.iterations++;
@@ -380,7 +380,7 @@ function Benchmark() {
     current_.totalResults.push(totalTime);
     var bytesRead = chrome.benchmarking.counter(kTCPReadBytes) -
                                               initialReadBytes_;
-    var bytesWrite = chrome.benchmarking.counter(kTCPWriteBytes) -
+    var bytesWrite = chrome.benchmarking.counter(kTCPWriteBytes) - 
                                                initialWriteBytes_;
     current_.KbytesRead.push(bytesRead / 1024);
     current_.KbytesWritten.push(bytesWrite / 1024);
@@ -397,7 +397,7 @@ function Benchmark() {
     current_.maxDepth = depths[0];
     current_.minDepth = depths[1];
     current_.avgDepth = depths[2];
-
+    
     // Insert or update the result data after each run.
     if (currIndex == -1) {
       window.results.data.push(current_);
@@ -454,17 +454,17 @@ function run() {
   benchmarks = [];
   var urls = testUrl.split(",");
   for (var i = 0; i < urls.length; i++) {
-
+    
     // Remove extra space at the beginning or end of a url.
     urls[i] = removeSpace(urls[i]);
 
-    // Alert about and ignore blank page which does not get loaded.
+    // Alert about and ignore blank page which does not get loaded. 
     if (urls[i] == "about:blank") {
       alert("blank page loaded!");
     } else if (!checkScheme(urls[i])) {
       // Alert about url that is not in scheme http:// or https://.
       alert(urls[i] + " does not start with http:// or https://.");
-    } else {
+    } else {  
       var benchmark = new Benchmark();
       benchmark.start(urls[i]);  // XXXMB - move to constructor
     }
@@ -490,11 +490,11 @@ function checkScheme(url) {
   var httpsStr = "https://";
   var urlSubStr1 = url.substring(0, httpStr.length);
   var urlSubStr2 = url.substring(0, httpsStr.length);
-
+  
   if ( (urlSubStr1 == httpStr) || (urlSubStr2 == httpsStr) ) {
     return true;
-  }
-  return false;
+  } 
+  return false; 
 }
 
 // Run at startup

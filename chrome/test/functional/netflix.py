@@ -14,7 +14,7 @@ import test_utils
 
 class NetflixTestHelper():
   """Helper functions for Netflix tests.
-
+     
   For sample usage, look at class NetflixTest.
   """
 
@@ -55,11 +55,11 @@ class NetflixTestHelper():
         msg='Login to Netflix failed. We think this is an authetication '
             'problem from the Netflix side. Sometimes we also see this while '
             'login in manually.')
-
+    
   def _GetVideoDroppedFrames(self, tab_index=0, windex=0):
     """Returns total Netflix video dropped frames."""
     js = """
-        var frames = nrdp.video.droppedFrames;
+        var frames = nrdp.video.droppedFrames; 
         window.domAutomationController.send(frames + '');
     """
     return int(self._pyauto.ExecuteJavascript(js, tab_index=tab_index,
@@ -68,7 +68,7 @@ class NetflixTestHelper():
   def _GetVideoFrames(self, tab_index=0, windex=0):
     """Returns Netflix video total frames."""
     js = """
-        var frames = nrdp.video.totalFrames;
+        var frames = nrdp.video.totalFrames; 
         window.domAutomationController.send(frames + '');
     """
     return int(self._pyauto.ExecuteJavascript(js, tab_index=tab_index,
@@ -92,7 +92,7 @@ class NetflixTestHelper():
       return False
     self._pyauto.assertTrue(self._pyauto.WaitUntil(_HandleNetflixInfobar),
                             msg='Netflix infobar did not show up')
-
+ 
   def CurrentPlaybackTime(self):
     """Returns the current playback time in seconds."""
     time = self._pyauto.ExecuteJavascript("""
@@ -107,7 +107,7 @@ class NetflixTestHelper():
 
   def LoginAndStartPlaying(self):
     """Login and start playing the video."""
-    self._pyauto.assertTrue(self._pyauto._IsNetflixPluginEnabled(),
+    self._pyauto.assertTrue(self._pyauto._IsNetflixPluginEnabled(), 
                             msg='Netflix plugin is disabled or not available.')
     self._pyauto._LoginToNetflix()
     self._pyauto.assertTrue(self._pyauto.WaitUntil(
@@ -192,7 +192,7 @@ class NetflixTest(pyauto.PyUITest, NetflixTestHelper):
           msg='Prev playing time %s is greater than current time %s.'
           % (prev_time, current_time))
       prev_time = current_time
-      # play video for some time
+      # play video for some time 
       time.sleep(1)
     # In case player doesn't start playing at all, above while loop may
     # still pass. So re-verifying and assuming that player did play something
@@ -231,7 +231,7 @@ class NetflixGuestModeTest(pyauto.PyUITest, NetflixTestHelper):
         'Netflix player did not return a Guest mode error.')
     self.assertTrue('Guest Mode Unsupported' in self.GetTabContents(),
                     msg='Guest Mode error is not found on the page.')
-
+    
 
 if __name__ == '__main__':
   pyauto_functional.Main()

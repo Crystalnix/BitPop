@@ -30,19 +30,19 @@
 			div#psPanel p.disclaimer {border: 1px solid #CCC; padding: 6px; margin-top: 4px;}
 			div#psPanel div#termsContainer { overflow: auto; background-color: #E1E1E1; height: 11em;}
 			div#psPanel div#terms {padding:14px 0px 14px 14px;  }
-
+ 
 			span#pushbutton1 .yui-skin-sam .yui-button {background:transparent url(/web20/assets/img/base/submitBTNbkg.png) repeat-x scroll 0 0;}
 			div.multipleSourcesLegalDisclaimer  { display: block; margin-bottom: 18px; clear: both;}
 			.clearFloats { clear: both; }
 			div.optins {margin-left:142px;}
-			#reg01 input { margin:0; }
+			#reg01 input { margin:0; }	
+			img.turnLeafSmallImg { vertical-align:-6px; }	
 			img.turnLeafSmallImg { vertical-align:-6px; }
-			img.turnLeafSmallImg { vertical-align:-6px; }
-			input#LOYALTY_NBR_TEXTFIELD { margin-left: 0px;margin-top: 9px;}
+			input#LOYALTY_NBR_TEXTFIELD { margin-left: 0px;margin-top: 9px;}	
 			#termsContainer:focus {
 				outline: dotted 1px #000;
 			}
-
+			
 		</style>
 </head>
 <body leftmargin="0" marginwidth="0" marginheight="0" topmargin="0" class="yui-skin-sam" bgcolor="#ffffff">
@@ -59,7 +59,7 @@
 
 <form action="/myinfo/register/index.ognc" method="POST" id="" name="register" >
 <div style="border:1px #cccccc solid;">
-
+		
 			<input type="hidden" name="Action" value=""><div style="padding:5px;;">
 <!-- BEGIN XML TABLE --><table cellpadding="2" cellspacing="5" width="100%" style="border-collapse: separate; border-spacing: 5pt;" border="0">
 <tr>
@@ -81,7 +81,7 @@
 										<span role="tooltip" id="myContextEl" style="border-bottom: 1px #ccc dashed; padding-bottom:2px; text-decoration: none;">what's this?</span>
 										<!-- hughdidit: this div tag is made invisible and listened for by Tooltip API by virtue of the id attribute -->
 										<div id="myTooltip" style="width:250px; text-align: left; margin-left: 4px;">We ask for your address to ensure we provide you with the most accurate regional information. We will not use it for any other marketing purposes and it will not be sold to third parties.</div>
-
+										
 </td>
 </tr>
 <tr>
@@ -331,7 +331,7 @@
 <!-- END XML TABLE -->
 </div>
 </div>
-<p style="margin: 30px 0 10px 20px ;"><img src="#" width="400" height="22" title="want to add your macy's card to your profile?" border="0" alt="want to add your macy's card to your profile?"><br>Pay your bill and view account details online, find out about special card-exclusive offers<br>and receive email updates about account activity.
+<p style="margin: 30px 0 10px 20px ;"><img src="#" width="400" height="22" title="want to add your macy's card to your profile?" border="0" alt="want to add your macy's card to your profile?"><br>Pay your bill and view account details online, find out about special card-exclusive offers<br>and receive email updates about account activity. 
 						<br><br style="line-height: 10px;"><input style="padding-left:10px;padding-top: 10px; vertical-align: middle;" type="radio" id="addacard" name="addacard" ><label for="addacard">Yes, I'd like to add my Macy's Card to my profile.</label>
 					</p>
 <div style="margin: 0 0 20px 20px; block: display;" id="addAnotherCard">
@@ -361,8 +361,8 @@
 <td valign="top" align="right" style="padding: 5px 13px 0 136px ;"><input type="checkbox" name="paperStatementDelivery" value="paperStatementDelivery" class="statementCheckbox" title="Select this checkbox if you wish to stop paper statement delivery. You can access your account statements in PDF format when you view your account online." id="PAPER_STATEMENT_DELIVERY_CHECKBOX"></td>
 <td valign="top" style="padding: 8px 84px 0 0 ;">
 <label for="PAPER_STATEMENT_DELIVERY_CHECKBOX">I want to turn off paper statement delivery and receive my statements online.</label><img class="turnLeafSmallImg" title="Turn Over a New Leaf Logo" src="#" width="20" height="20" alt="Turn Over a New Leaf Logo" border="0"><!-- hughdidit: see annotation on address tooltip --><span role="tooltip" id="paperStatementContext" style="border-bottom: 1px #ccc dashed; padding-bottom:2px; text-decoration: none;">what's this?</span>
-										<div id="statementTooltip" style="width:250px; text-align: left; margin-left: 4px;">Select this checkbox if you wish to stop paper statement delivery. You can access your account statements in PDF format when you view your account online.</div>
-
+										<div id="statementTooltip" style="width:250px; text-align: left; margin-left: 4px;">Select this checkbox if you wish to stop paper statement delivery. You can access your account statements in PDF format when you view your account online.</div> 
+										
 </td>
 </tr>
 </table>
@@ -375,7 +375,7 @@
 <a  id="clicktocall" class="checkout_subNav">click to call for additional assistance</a>
 </div>
 <div id="reg01" style="text-align:center; padding:10px 40px; margin-bottom:35px; border-left:1px solid #CCCCCC;border-right:1px solid #CCCCCC;border-bottom:1px solid #CCCCCC; background-color:#f1f1f1; float:right;"><input value="REGISTER_BUTTON" name="REGISTER_BUTTON" type="image" src="#" align="bottom" alt="Create Profile" class="buttonSubmitBorders"></div>
-
+					
 </form>
 
 
