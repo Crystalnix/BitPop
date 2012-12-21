@@ -26,26 +26,17 @@ FacebookChatManager::FacebookChatManager() :
 FacebookChatManager::~FacebookChatManager() {
 }
 
-void FacebookChatManager::ShutdownOnUIThread() {
+void FacebookChatManager::Shutdown() {
   if (!shutdown_needed_)
     return;
   shutdown_needed_ = false;
 
   FOR_EACH_OBSERVER(Observer, observers_, ManagerIsGoingDown());
 
-  // TODO: review the following piece of code
-  for (ChatSet::iterator it = chats_.begin(); it != chats_.end(); ) {
-    // Uncomment this :-@
-    // FacebookChatItem *item = *it;
-
-    it++;
-
-    // can do anything to destruct item
-  }
-
   STLDeleteElements(&chats_);
-
+  chats_.clear();
   jid_chats_map_.clear();
+  observers_.Clear();
 }
 
 bool FacebookChatManager::Init(Profile *profile) {

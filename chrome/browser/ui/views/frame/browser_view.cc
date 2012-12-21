@@ -18,8 +18,11 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/debugger/devtools_window.h"
 #include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification_service_factory.h"
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager_service_factory.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/facebook_chat/received_message_info.h"
 #include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
@@ -60,6 +63,7 @@
 #include "chrome/browser/ui/views/browser_actions_container.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
 #include "chrome/browser/ui/views/download/download_in_progress_dialog_view.h"
+#include "chrome/browser/ui/views/download/download_shelf_view.h"
 #include "chrome/browser/ui/views/facebook_chat/chatbar_view.h"
 #include "chrome/browser/ui/views/facebook_chat/facebook_bitpop_notification_win.h"
 #include "chrome/browser/ui/views/facebook_chat/friends_sidebar_view.h"
@@ -384,6 +388,11 @@ BrowserView::~BrowserView() {
   // downloads can be destroyed along with |browser_| and the observer
   // notifications will call back into deleted objects).
   download_shelf_.reset();
+
+  // or else we will have two scoped_ptr destructors deleting our fb_chatbar_
+  fb_chatbar_.reset();
+  // ... and fb_friend_list_sidebar_
+  fb_friend_list_sidebar_.reset();
 
   // The TabStrip attaches a listener to the model. Make sure we shut down the
   // TabStrip first so that it can cleanly remove the listener.
@@ -1443,35 +1452,39 @@ void BrowserView::Observe(int type,
   switch (type) {
     // TODO: remove code duplication (here and in cocoa/browser_window_cocoa.mm)
     case content::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT: {
-        if (browser_->is_type_tabbed()) {
+      if (browser_->is_type_tabbed() && !browser_->profile()->IsOffTheRecord()) {
           content::Details<FacebookChatCreateInfo> chat_info(details);
-          FacebookChatManager *mgr = browser_->profile()->GetFacebookChatManager();
-          // the next call returns the found element if jid's equal
-          FacebookChatItem *newItem = mgr->CreateFacebookChat(*(chat_info.ptr()));
-          if (IsActive())
-            newItem->set_needs_activation(true);
-          else
-            newItem->set_needs_activation(false);
-          GetChatbar()->AddChatItem(newItem);
-          //mgr->StartChat(newItem->jid());
+          FacebookChatManager *mgr = FacebookChatManagerServiceFactory::GetForProfile(browser_->profile());
+          if (mgr) {
+            // the next call returns the found element if jid's equal
+            FacebookChatItem *newItem = mgr->CreateFacebookChat(*(chat_info.ptr()));
+            if (IsActive())
+              newItem->set_needs_activation(true);
+            else
+              newItem->set_needs_activation(false);
+            GetChatbar()->AddChatItem(newItem);
+            //mgr->StartChat(newItem->jid());
+          }
         }
       }
       break;
 
     case content::NOTIFICATION_FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE: {
-        if (browser_->is_type_tabbed()) {
+        if (browser_->is_type_tabbed() && !browser_->profile()->IsOffTheRecord()) {
           content::Details<ReceivedMessageInfo> msg_info(details);
-          FacebookChatManager *mgr =
-              browser_->profile()->GetFacebookChatManager();
-          FacebookChatItem *item = mgr->GetItem(msg_info->chatCreateInfo->jid);
-          item->set_needs_activation(false);
-          GetChatbar()->AddChatItem(item);
+          FacebookChatManager *mgr = 
+              FacebookChatManagerServiceFactory::GetForProfile(browser_->profile());
+          if (mgr) {
+            FacebookChatItem *item = mgr->GetItem(msg_info->chatCreateInfo->jid);
+            item->set_needs_activation(false);
+            GetChatbar()->AddChatItem(item);
+          }
         }
       }
       break;
 
     case content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_OUT:
-      if (browser_->is_type_tabbed()) {
+      if (browser_->is_type_tabbed() && !browser_->profile()->IsOffTheRecord()) {
         GetChatbar()->RemoveAll();
       }
       if (toolbar_ && toolbar_->browser_actions()) {
@@ -1480,7 +1493,7 @@ void BrowserView::Observe(int type,
       break;
 
     case content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_IN:
-      if (toolbar_ && toolbar_->browser_actions()) {
+      if (toolbar_ && toolbar_->browser_actions() && !browser_->profile()->IsOffTheRecord()) {
         toolbar_->browser_actions()->ShowFacebookExtensions();
       }
       break;
@@ -1749,7 +1762,9 @@ void BrowserView::OnWidgetActivationChanged(views::Widget* widget,
 #endif
 
   if (active) {
-    browser_->profile()->GetFacebookBitpopNotification()->ClearNotification();
+    FacebookBitpopNotification *notif = FacebookBitpopNotificationServiceFactory::GetForProfile(browser_->profile());
+    if (notif)
+      notif->ClearNotification();
 
     BrowserList::SetLastActive(browser_.get());
     browser_->OnWindowActivated();
@@ -2679,50 +2694,26 @@ bool BrowserView::DoCutCopyPaste(void (content::RenderWidgetHost::*method)()) {
   return false;
 }
 
-// BitPop custom
-void BrowserView::UpdateFriendsSidebarForContents(WebContents *friends_contents) {
-  if (!fb_friend_list_sidebar_.get())
-    return;
-
-  bool should_show = friends_contents && !fb_friend_list_sidebar_->visible();
-  bool should_hide = !friends_contents && fb_friend_list_sidebar_->visible();
-
-//  if (friends_contents)
-//    friends_contents->set_delegate(fb_friend_list_sidebar_.get());
-
-  fb_friend_list_sidebar_->ChangeWebContents(friends_contents);
-
-  if (should_show) {
-    fb_friend_list_sidebar_->SetVisible(true);
-    contents_split_->InvalidateLayout();
-    Layout();
-  } else if (should_hide) {
-    fb_friend_list_sidebar_->SetVisible(false);
-    contents_split_->InvalidateLayout();
-    Layout();
-  }
-}
-
 void BrowserView::SetFriendsSidebarVisible(bool visible) {
-  if (browser_ == NULL)
+  if (browser_ == NULL || browser_->profile()->IsOffTheRecord())
     return;
 
-  if (visible && IsFriendsSidebarVisible() != visible) {
-    CreateFriendsSidebarIfNeeded();
+  if (visible && !IsFriendsSidebarVisible()) {
+    if (!fb_friend_list_sidebar_.get())
+      fb_friend_list_sidebar_.reset(new FriendsSidebarView(browser_.get(), this));
+    fb_friend_list_sidebar_->SetVisible(true);
   }
+  if (!visible && IsFriendsSidebarVisible())
+    fb_friend_list_sidebar_->SetVisible(false);
+  
+  contents_split_->InvalidateLayout();
+  Layout();
 
   ToolbarSizeChanged(false);
 }
 
 bool BrowserView::IsFriendsSidebarVisible() const {
   return fb_friend_list_sidebar_.get() && fb_friend_list_sidebar_->visible();
-}
-
-void BrowserView::CreateFriendsSidebarIfNeeded() {
-  if (!fb_friend_list_sidebar_.get()) {
-    fb_friend_list_sidebar_.reset(new FriendsSidebarView(browser_.get(), this));
-    fb_friend_list_sidebar_->set_parent_owned(false);
-  }
 }
 
 void BrowserView::SetChatbarVisible(bool visible) {
@@ -2744,7 +2735,6 @@ bool BrowserView::IsChatbarVisible() const {
 FacebookChatbar* BrowserView::GetChatbar() {
   if (!fb_chatbar_.get()) {
     fb_chatbar_.reset(new ChatbarView(browser_.get(), this));
-    fb_chatbar_->set_parent_owned(false);
   }
 
   return fb_chatbar_.get();

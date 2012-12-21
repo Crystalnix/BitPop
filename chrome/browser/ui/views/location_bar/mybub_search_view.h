@@ -24,7 +24,7 @@ class OmniboxView;
 class MybubSearchView : public views::View,
                         public views::ButtonListener {
  public:
-  MybubSearchView(OmniboxView *omnibox_view, Browser* browser);
+  MybubSearchView(OmniboxView *omnibox_view, Browser *browser);
   virtual ~MybubSearchView();
 
   // views::View overrides

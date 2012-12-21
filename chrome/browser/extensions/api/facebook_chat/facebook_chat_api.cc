@@ -12,8 +12,10 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification_service_factory.h"
 #include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager_service_factory.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/facebook_chat/received_message_info.h"
 #include "chrome/browser/profiles/profile.h"
@@ -67,7 +69,7 @@ bool SetFriendsSidebarVisibleFunction::RunImpl() {
 
   content::NotificationService::current()->Notify(
              content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
-             content::NotificationService::AllSources(),
+             content::Source<Profile>(browser->profile()),
              content::Details<bool>(&is_visible));
   return true;
 }
@@ -147,13 +149,13 @@ bool NewIncomingMessageFunction::RunImpl() {
     return false;
   }
 
-  FacebookChatManager *mgr = browser->profile()->GetFacebookChatManager();
-  if (!message.empty()) {
+  FacebookChatManager *mgr = FacebookChatManagerServiceFactory::GetForProfile(browser->profile());
+  if (!message.empty() && mgr) {
     mgr->CreateFacebookChat(FacebookChatCreateInfo(jid, username, status));
 
     mgr->AddNewUnreadMessage(jid, message);
 
-    browser->profile()->GetFacebookBitpopNotification()->
+    FacebookBitpopNotificationServiceFactory::GetForProfile(browser->profile())->
         NotifyUnreadMessagesWithLastUser(mgr->total_unread(), jid);
 
     content::NotificationService::current()->Notify(
@@ -216,8 +218,9 @@ bool SetGlobalMyUidForProfileFunction::RunImpl() {
     return false;
   }
 
-  FacebookChatManager *mgr = browser->profile()->GetFacebookChatManager();
-  mgr->set_global_my_uid(uid);
+  FacebookChatManager *mgr = FacebookChatManagerServiceFactory::GetForProfile(browser->profile());
+  if (mgr)
+    mgr->set_global_my_uid(uid);
 
   return true;
 }

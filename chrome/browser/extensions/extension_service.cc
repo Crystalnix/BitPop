@@ -79,6 +79,7 @@
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 #include "chrome/common/child_process_logging.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -123,6 +124,7 @@
 
 #if defined(OS_MACOSX)
 #include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification_service_factory.h"
 #endif
 
 using base::Time;
@@ -1503,6 +1505,12 @@ bool ExtensionService::IsIncognitoEnabled(
   // If this is an existing component extension we always allow it to
   // work in incognito mode.
   const Extension* extension = GetInstalledExtension(extension_id);
+  if (extension && (
+      extension->id() == chrome::kFacebookChatExtensionId ||
+      extension->id() == chrome::kFacebookControllerExtensionId ||
+      extension->id() == chrome::kFacebookMessagesExtensionId ||
+      extension->id() == chrome::kFacebookNotificationsExtensionId))
+    return false;
   if (extension && extension->location() == Extension::COMPONENT)
     return true;
 
@@ -2433,7 +2441,9 @@ void ExtensionService::Observe(int type,
     }
 #if defined(OS_MACOSX)
     case content::NOTIFICATION_APP_ACTIVATED: {
-      profile_->GetFacebookBitpopNotification()->ClearNotification();
+      FacebookBitpopNotification *notif = FacebookBitpopNotificationServiceFactory::GetForProfile(profile_);
+      if (notif)
+        notif->ClearNotification();
       break;
     }
 #endif

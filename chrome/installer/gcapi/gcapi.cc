@@ -48,7 +48,7 @@ using base::win::ScopedHandle;
 namespace {
 
 const wchar_t kChromeRegClientsKey[] =
-    L"Software\\HouseOfLife\\Update\\Clients\\"
+    L"Software\\HouseOfLife\\BitpopUpdate\\Clients\\"
     L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 const wchar_t kChromeRegClientStateKey[] =
     L"Software\\Google\\Update\\ClientState\\"

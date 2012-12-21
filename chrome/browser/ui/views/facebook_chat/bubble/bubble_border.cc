@@ -8,11 +8,10 @@
 
 #include "base/logging.h"
 #include "grit/ui_resources.h"
-#include "grit/ui_resources_standard.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/canvas_skia.h"
-#include "ui/gfx/path.h"
+#include "ui/gfx/canvas.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/skia_util.h"
 
 struct BitpopBubbleBorder::BorderImages {
   BorderImages()
@@ -329,7 +328,7 @@ void BitpopBubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) con
   }
 
   // Top left corner.
-  canvas->DrawBitmapInt(*images_->top_left, left, top);
+  canvas->DrawImageInt(*images_->top_left, left, top);
 
   // Top edge.
   if (arrow_location_ == TOP_LEFT || arrow_location_ == TOP_RIGHT) {
@@ -358,7 +357,7 @@ void BitpopBubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) con
   }
 
   // Top right corner.
-  canvas->DrawBitmapInt(*images_->top_right, right - tr_width, top);
+  canvas->DrawImageInt(*images_->top_right, right - tr_width, top);
 
   // Right edge.
   if (arrow_location_ == RIGHT_TOP || arrow_location_ == RIGHT_BOTTOM) {
@@ -389,7 +388,7 @@ void BitpopBubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) con
   }
 
   // Bottom right corner.
-  canvas->DrawBitmapInt(*images_->bottom_right,
+  canvas->DrawImageInt(*images_->bottom_right,
                         right - br_width,
                         bottom - br_height);
 
@@ -423,7 +422,7 @@ void BitpopBubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) con
   }
 
   // Bottom left corner.
-  canvas->DrawBitmapInt(*images_->bottom_left, left, bottom - bl_height);
+  canvas->DrawImageInt(*images_->bottom_left, left, bottom - bl_height);
 }
 
 void BitpopBubbleBorder::DrawEdgeWithArrow(gfx::Canvas* canvas,
@@ -452,7 +451,7 @@ void BitpopBubbleBorder::DrawEdgeWithArrow(gfx::Canvas* canvas,
         is_horizontal ? edge->height() : before_arrow);
   }
 
-  canvas->DrawBitmapInt(*arrow,
+  canvas->DrawImageInt(*arrow,
       start_x + (is_horizontal ? before_arrow : offset),
       start_y + (is_horizontal ? offset : before_arrow));
 
@@ -486,7 +485,7 @@ void BitpopBubbleBorder::DrawArrowInterior(gfx::Canvas* canvas,
   SkPaint paint;
   paint.setStyle(SkPaint::kFill_Style);
   paint.setColor(background_color_);
-  gfx::Path path;
+  SkPath path;
   path.incReserve(4);
   path.moveTo(SkIntToScalar(tip_x), SkIntToScalar(tip_y));
   path.lineTo(SkIntToScalar(tip_x + shift_x),
@@ -496,7 +495,7 @@ void BitpopBubbleBorder::DrawArrowInterior(gfx::Canvas* canvas,
   else
     path.lineTo(SkIntToScalar(tip_x + shift_x), SkIntToScalar(tip_y - shift_y));
   path.close();
-  canvas->GetSkCanvas()->drawPath(path, paint);
+  canvas->DrawPath(path, paint);
 }
 
 /////////////////////////
@@ -510,7 +509,7 @@ void BitpopBubbleBackground::Paint(gfx::Canvas* canvas, views::View* view) const
   paint.setAntiAlias(true);
   paint.setStyle(SkPaint::kFill_Style);
   paint.setColor(border_->background_color());
-  gfx::Path path;
+  SkPath path;
   gfx::Rect bounds(view->GetContentsBounds());
   SkRect rect;
   rect.set(SkIntToScalar(bounds.x()), SkIntToScalar(bounds.y()),
@@ -518,16 +517,16 @@ void BitpopBubbleBackground::Paint(gfx::Canvas* canvas, views::View* view) const
   rect.inset(-border_->border_thickness(), -border_->border_thickness());
   SkScalar radius = SkIntToScalar(BitpopBubbleBorder::GetCornerRadius());
   path.addRoundRect(rect, radius, radius);
-  canvas->GetSkCanvas()->drawPath(path, paint);
+  canvas->DrawPath(path, paint);
 
   // hack to draw a white highlight on chat notification windows
   if (border_->arrow_location() == BitpopBubbleBorder::BOTTOM_LEFT) {
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setColor(SK_ColorWHITE);
     paint.setStrokeWidth(1);
-    canvas->GetSkCanvas()->drawLine(bounds.x() + radius, bounds.y() + 0.5,
-                                    bounds.right() - radius, bounds.y() + 0.5,
-                                    paint);
+    canvas->DrawLine(gfx::Point(bounds.x() + radius, bounds.y() + 0.5),
+                     gfx::Point(bounds.right() - radius, bounds.y() + 0.5),
+                     paint);
   }
 }
 

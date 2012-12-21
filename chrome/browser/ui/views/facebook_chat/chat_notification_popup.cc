@@ -9,8 +9,8 @@
 #include "base/win/win_util.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/theme_resources_standard.h"
-#include "grit/ui_resources_standard.h"
+#include "grit/theme_resources.h"
+#include "grit/ui_resources.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/button/image_button.h"
@@ -67,8 +67,8 @@ public:
       if (i != (int)msgs.size() - 1)
         concat += "\n\n";
     }
-//    SetText(L"");
-//    owner_->SizeToContents();  // dirty hack to force the window redraw
+    //SetText(L"");
+    //owner_->SizeToContents();  // dirty hack to force the window redraw
     SetText(UTF8ToWide(concat));
     owner_->SizeToContents();
   }
@@ -92,11 +92,11 @@ public:
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
     close_button_->SetImage(views::CustomButton::BS_NORMAL,
-                            rb.GetBitmapNamed(IDR_CLOSE_BAR));
+                            rb.GetImageSkiaNamed(IDR_CLOSE_BAR));
     close_button_->SetImage(views::CustomButton::BS_HOT,
-                            rb.GetBitmapNamed(IDR_CLOSE_BAR_H));
+                            rb.GetImageSkiaNamed(IDR_CLOSE_BAR_H));
     close_button_->SetImage(views::CustomButton::BS_PUSHED,
-                            rb.GetBitmapNamed(IDR_CLOSE_BAR_P));
+                            rb.GetImageSkiaNamed(IDR_CLOSE_BAR_P));
 
     // Disable animation so that the red danger sign shows up immediately
     // to help avoid mis-clicks.
@@ -155,9 +155,7 @@ ChatNotificationPopup* ChatNotificationPopup::Show(views::View* anchor_view,
 
   BitpopBubbleDelegateView::CreateBubble(popup);
 
-  HWND foreground_window = ::GetForegroundWindow();
   popup->GetWidget()->Show();
-  ::SetForegroundWindow(foreground_window);
 
   return popup;
 }
@@ -177,6 +175,10 @@ void ChatNotificationPopup::PushMessage(const std::string& message) {
 
 std::string ChatNotificationPopup::PopMessage() {
   std::string res = messages_.front();
+  
+  //if (messages_.size() == 1)
+  //  return res;
+
   messages_.pop_front();
   if (messages_.size() == 0)
     GetWidget()->Close();

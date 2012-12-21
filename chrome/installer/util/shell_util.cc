@@ -935,8 +935,8 @@ const wchar_t* ShellUtil::kAppPathsRegistryPathName = L"Path";
 const wchar_t* ShellUtil::kChromeHTMLProgId = L"ChromeHTML";
 const wchar_t* ShellUtil::kChromeHTMLProgIdDesc = L"Chrome HTML Document";
 #else
-const wchar_t* ShellUtil::kChromeHTMLProgId = L"ChromiumHTML";
-const wchar_t* ShellUtil::kChromeHTMLProgIdDesc = L"Chromium HTML Document";
+const wchar_t* ShellUtil::kChromeHTMLProgId = L"BitPopHTML";
+const wchar_t* ShellUtil::kChromeHTMLProgIdDesc = L"BitPop HTML Document";
 #endif
 
 const wchar_t* ShellUtil::kFileAssociations[] = {L".htm", L".html", L".shtml",

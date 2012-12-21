@@ -51,7 +51,7 @@ std::wstring BitpopDistribution::GetAppGuid() {
   return product_guid();
 }
 
-std::wstring BitpopDistribution::GetApplicationName() {
+std::wstring BitpopDistribution::GetBaseAppName() {
   return L"BitPop";
 }
 
@@ -59,7 +59,7 @@ std::wstring BitpopDistribution::GetAlternateApplicationName() {
   return L"The Internet";
 }
 
-std::wstring BitpopDistribution::GetBrowserAppId() {
+std::wstring BitpopDistribution::GetBaseAppId() {
   return kBrowserAppId;
 }
 

@@ -40,7 +40,7 @@ class ChatPopup : public BitpopBubbleDelegateView,
       views::View* anchor_view,
       BitpopBubbleBorder::ArrowLocation arrow_location);
 
-  ExtensionHost* host() const { return extension_host_.get(); }
+  extensions::ExtensionHost* host() const { return extension_host_.get(); }
 
   // content::NotificationObserver overrides.
   virtual void Observe(int type,
@@ -48,7 +48,7 @@ class ChatPopup : public BitpopBubbleDelegateView,
                        const content::NotificationDetails& details) OVERRIDE;
 
   // ExtensionView::Container overrides.
-  virtual void OnExtensionPreferredSizeChanged(ExtensionView* view) OVERRIDE;
+  virtual void OnExtensionSizeChanged(ExtensionView* view) OVERRIDE;
 
   // views::View overrides.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
@@ -68,7 +68,7 @@ class ChatPopup : public BitpopBubbleDelegateView,
 
  private:
   ChatPopup(Browser* browser,
-            ExtensionHost* host,
+            extensions::ExtensionHost* host,
             views::View* anchor_view,
             BitpopBubbleBorder::ArrowLocation arrow_location);
 
@@ -76,7 +76,7 @@ class ChatPopup : public BitpopBubbleDelegateView,
   void ShowBubble();
 
   // The contained host for the view.
-  scoped_ptr<ExtensionHost> extension_host_;
+  scoped_ptr<extensions::ExtensionHost> extension_host_;
 
   content::NotificationRegistrar registrar_;
 

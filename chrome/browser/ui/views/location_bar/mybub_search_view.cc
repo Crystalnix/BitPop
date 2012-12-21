@@ -7,14 +7,14 @@
 
 #include "base/stl_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_edit.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources_standard.h"
-#include "grit/ui_resources_standard.h"
+#include "grit/theme_resources.h"
+#include "grit/ui_resources.h"
 #include "net/base/escape.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -150,15 +150,15 @@ void MybubSearchView::ButtonPressed(views::Button* button, const views::Event& e
 
   if (!omnibox_view_->model()->CurrentTextIsURL()) {
     const string16 userText = omnibox_view_->GetText();
-    string16 encodedTerms = net::EscapeQueryParamValueUTF8(userText, true);
+    std::string encodedTerms = net::EscapeQueryParamValue(UTF16ToUTF8(userText), true);
     std::string mybubURL = std::string("http://mybub.com/mod/") +
         uriSuffix + std::string("/");
-    std::string finalURL = mybubURL + UTF16ToUTF8(encodedTerms);
+    std::string finalURL = mybubURL + encodedTerms;
 
     GURL url(finalURL);
     OpenURLParams params(
         url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false);
-    browser_->GetSelectedWebContents()->OpenURL(params);
+    browser_->OpenURL(params);
   }
 
 }
@@ -168,11 +168,11 @@ MybubButton* MybubSearchView::CreateMybubButton(int normal_image_id, int hot_ima
                                         int view_id) {
   MybubButton* button = new MybubButton(this);
 
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  SkBitmap* normalImage = rb.GetBitmapNamed(normal_image_id);
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  gfx::ImageSkia *normalImage = rb.GetImageSkiaNamed(normal_image_id);
   button->SetImage(views::CustomButton::BS_NORMAL, normalImage);
-  button->SetImage(views::CustomButton::BS_HOT, rb.GetBitmapNamed(hot_image_id));
-  button->SetImage(views::CustomButton::BS_PUSHED, rb.GetBitmapNamed(pushed_image_id));
+  button->SetImage(views::CustomButton::BS_HOT, rb.GetImageSkiaNamed(hot_image_id));
+  button->SetImage(views::CustomButton::BS_PUSHED, rb.GetImageSkiaNamed(pushed_image_id));
 
   button->SetSize(gfx::Size(normalImage->width(), normalImage->height()));
 

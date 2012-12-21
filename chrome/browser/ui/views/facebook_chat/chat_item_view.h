@@ -17,6 +17,7 @@
 #include "ui/views/controls/button/button.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/widget/widget_observer.h"
 
 class ChatbarView;
 class ChatNotificationPopup;
@@ -38,7 +39,7 @@ class ImageButton;
 class ChatItemView : public views::ButtonListener,
                      public views::View,
                      public FacebookChatItem::Observer,
-                     public views::Widget::Observer,
+                     public views::WidgetObserver,
                      public ui::AnimationDelegate {
 public:
   ChatItemView(FacebookChatItem *model, ChatbarView *chatbar);

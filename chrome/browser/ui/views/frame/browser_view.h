@@ -259,7 +259,6 @@ class BrowserView : public BrowserWindow,
       BookmarkBar::AnimateChangeType change_type) OVERRIDE;
   virtual void UpdateDevTools() OVERRIDE;
   virtual void SetDevToolsDockSide(DevToolsDockSide side) OVERRIDE;
-  virtual void UpdateFriendsSidebarForContents(content::WebContents *friends_contents) OVERRIDE;
   virtual void UpdateLoadingAnimations(bool should_animate) OVERRIDE;
   virtual void SetStarredState(bool is_starred) OVERRIDE;
   virtual void SetZoomIconState(
@@ -322,9 +321,8 @@ class BrowserView : public BrowserWindow,
   void SetChatbarVisible(bool visible);
   virtual bool IsChatbarVisible() const OVERRIDE;
   virtual FacebookChatbar* GetChatbar() OVERRIDE;
-  void SetFriendsSidebarVisible(bool visible);
+  virtual void SetFriendsSidebarVisible(bool visible) OVERRIDE;
   virtual bool IsFriendsSidebarVisible() const OVERRIDE;
-  virtual void CreateFriendsSidebarIfNeeded() OVERRIDE;
 
   virtual void ConfirmBrowserCloseWithPendingDownloads() OVERRIDE;
   virtual void UserChangedTheme() OVERRIDE;
@@ -473,7 +471,9 @@ class BrowserView : public BrowserWindow,
   // Callback for the loading animation(s) associated with this view.
   virtual void LoadingAnimationCallback();
 
- private:
+  content::NotificationRegistrar registrar_;
+ 
+private:
   friend class BrowserViewLayout;
   FRIEND_TEST_ALL_PREFIXES(BrowserViewsAccessibilityTest,
                            TestAboutChromeViewAccObj);
@@ -728,8 +728,6 @@ class BrowserView : public BrowserWindow,
   base::RepeatingTimer<BrowserView> loading_animation_timer_;
 
   UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
-
-  content::NotificationRegistrar registrar_;
 
   // Used to measure the loading spinner animation rate.
   base::TimeTicks last_animation_time_;

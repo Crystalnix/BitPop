@@ -24,8 +24,7 @@ views::Widget* CreateBubbleWidget(BitpopBubbleDelegateView* bubble, views::Widge
   bubble_params.delegate = bubble;
   bubble_params.transparent = true;
   bubble_params.parent_widget = parent;
-  if (bubble->use_focusless())
-    bubble_params.can_activate = false;
+  bubble_params.can_activate = !bubble->use_focusless();
 #if defined(OS_WIN) && !defined(USE_AURA)
   bubble_params.type = views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
   bubble_params.transparent = false;
@@ -35,39 +34,78 @@ views::Widget* CreateBubbleWidget(BitpopBubbleDelegateView* bubble, views::Widge
 }
 
 #if defined(OS_WIN) && !defined(USE_AURA)
-// The border widget's delegate, needed for transparent Windows native controls.
-// TODO(msw): Remove this when Windows native controls are no longer needed.
-class BitpopBubbleBorderDelegateView : public views::WidgetDelegateView {
- public:
-  explicit BitpopBubbleBorderDelegateView(BitpopBubbleDelegateView* bubble)
-      : bubble_(bubble) {}
-  virtual ~BitpopBubbleBorderDelegateView() {}
+//// The border widget's delegate, needed for transparent Windows native controls.
+//// TODO(msw): Remove this when Windows native controls are no longer needed.
+//class BitpopBubbleBorderDelegateView : public views::WidgetDelegateView {
+// public:
+//  explicit BitpopBubbleBorderDelegateView(BitpopBubbleDelegateView* bubble)
+//      : bubble_(bubble) {}
+//  virtual ~BitpopBubbleBorderDelegateView() {}
+//
+//  // views::WidgetDelegateView overrides:
+//  virtual bool CanActivate() const OVERRIDE;
+//  virtual views::NonClientFrameView* CreateNonClientFrameView(views::Widget* widget) OVERRIDE;
+//
+// private:
+//  BitpopBubbleDelegateView* bubble_;
+//
+//  DISALLOW_COPY_AND_ASSIGN(BitpopBubbleBorderDelegateView);
+//};
+//
+//bool BitpopBubbleBorderDelegateView::CanActivate() const { return false; }
+//
+//views::NonClientFrameView* BitpopBubbleBorderDelegateView::CreateNonClientFrameView(views::Widget* widget) {
+//  return bubble_->CreateNonClientFrameView(widget);
+//}
 
-  // views::WidgetDelegateView overrides:
-  virtual bool CanActivate() const OVERRIDE;
-  virtual views::NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
+// Windows uses two widgets and some extra complexity to host partially
+// transparent native controls and use per-pixel HWND alpha on the border.
+// TODO(msw): Clean these up when Windows native controls are no longer needed.
+class BitpopBubbleBorderDelegate : public views::WidgetDelegate,
+                                   public views::WidgetObserver {
+ public:
+  BitpopBubbleBorderDelegate(BitpopBubbleDelegateView* bubble, views::Widget* widget)
+      : bubble_(bubble),
+        widget_(widget) {
+    bubble_->GetWidget()->AddObserver(this);
+  }
+
+  virtual ~BitpopBubbleBorderDelegate() {
+    if (bubble_ && bubble_->GetWidget())
+      bubble_->GetWidget()->RemoveObserver(this);
+  }
+
+  // WidgetDelegate overrides:
+  virtual bool CanActivate() const OVERRIDE { return false; }
+  virtual void DeleteDelegate() OVERRIDE { delete this; }
+  virtual views::Widget* GetWidget() OVERRIDE { return widget_; }
+  virtual const views::Widget* GetWidget() const OVERRIDE { return widget_; }
+  virtual views::NonClientFrameView* CreateNonClientFrameView(
+      views::Widget* widget) OVERRIDE {
+    return bubble_->CreateNonClientFrameView(widget);
+  }
+
+  // WidgetObserver overrides:
+  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE {
+    bubble_ = NULL;
+    widget_->Close();
+  }
 
  private:
   BitpopBubbleDelegateView* bubble_;
+  views::Widget* widget_;
 
-  DISALLOW_COPY_AND_ASSIGN(BitpopBubbleBorderDelegateView);
+  DISALLOW_COPY_AND_ASSIGN(BitpopBubbleBorderDelegate);
 };
-
-bool BitpopBubbleBorderDelegateView::CanActivate() const { return false; }
-
-views::NonClientFrameView* BitpopBubbleBorderDelegateView::CreateNonClientFrameView() {
-  return bubble_->CreateNonClientFrameView();
-}
 
 // Create a widget to host the bubble's border.
 views::Widget* CreateBorderWidget(BitpopBubbleDelegateView* bubble, views::Widget* parent) {
   views::Widget* border_widget = new views::Widget();
   views::Widget::InitParams border_params(views::Widget::InitParams::TYPE_BUBBLE);
-  border_params.delegate = new BitpopBubbleBorderDelegateView(bubble);
+  border_params.delegate = new BitpopBubbleBorderDelegate(bubble, border_widget);
   border_params.transparent = true;
+  border_params.can_activate = !bubble->use_focusless();
   border_params.parent_widget = parent;
-  if (!border_params.parent_widget)
-    border_params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   border_widget->Init(border_params);
   return border_widget;
 }
@@ -133,6 +171,10 @@ views::Widget* BitpopBubbleDelegateView::CreateBubble(BitpopBubbleDelegateView* 
   return bubble_widget;
 }
 
+bool BitpopBubbleDelegateView::CanActivate() const {
+  return !use_focusless_;
+}
+
 views::View* BitpopBubbleDelegateView::GetInitiallyFocusedView() {
   return this;
 }
@@ -145,7 +187,7 @@ views::View* BitpopBubbleDelegateView::GetContentsView() {
   return this;
 }
 
-views::NonClientFrameView* BitpopBubbleDelegateView::CreateNonClientFrameView() {
+views::NonClientFrameView* BitpopBubbleDelegateView::CreateNonClientFrameView(views::Widget* widget) {
   return new BitpopBubbleFrameView(arrow_location(), color(), margin());
 }
 
@@ -163,14 +205,21 @@ void BitpopBubbleDelegateView::OnWidgetVisibilityChanged(views::Widget* widget,
                                                    bool visible) {
   if (widget == GetWidget()) {
     if (visible) {
-      if (border_widget_)
-        border_widget_->Show();
-      GetFocusManager()->SetFocusedView(GetInitiallyFocusedView());
+      if (border_widget_) {
+        if (CanActivate())
+          border_widget_->Show();
+        else
+          border_widget_->ShowInactive();
+      }
+
+      if (CanActivate())
+        GetFocusManager()->SetFocusedView(GetInitiallyFocusedView());
       views::Widget* anchor_widget = anchor_view() ? anchor_view()->GetWidget() : NULL;
       if (anchor_widget && anchor_widget->GetTopLevelWidget())
         anchor_widget->GetTopLevelWidget()->DisableInactiveRendering();
-    } else if (border_widget_) {
-      border_widget_->Hide();
+    } else {
+      if (border_widget_)
+        border_widget_->Hide();
     }
   }
 }
@@ -182,7 +231,7 @@ void BitpopBubbleDelegateView::OnWidgetActivationChanged(views::Widget* widget,
 }
 
 gfx::Rect BitpopBubbleDelegateView::GetAnchorRect() {
-  return anchor_view() ? anchor_view()->GetScreenBounds() : gfx::Rect();
+  return anchor_view() ? anchor_view()->GetBoundsInScreen() : gfx::Rect();
 }
 
 void BitpopBubbleDelegateView::Show() {
@@ -287,7 +336,7 @@ gfx::Rect BitpopBubbleDelegateView::GetBubbleBounds() {
 #if defined(OS_WIN) && !defined(USE_AURA)
 gfx::Rect BitpopBubbleDelegateView::GetBubbleClientBounds() const {
   gfx::Rect client_bounds(GetBubbleFrameView()->GetBoundsForClientView());
-  client_bounds.Offset(border_widget_->GetWindowScreenBounds().origin());
+  client_bounds.Offset(border_widget_->GetWindowBoundsInScreen().origin());
   return client_bounds;
 }
 #endif

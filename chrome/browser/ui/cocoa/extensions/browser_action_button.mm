@@ -56,7 +56,8 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
                                     public ImageLoadingTracker::Observer {
  public:
   ExtensionImageTrackerBridge(BrowserActionButton* owner,
-                              const Extension* extension)
+                              const Extension* extension,
+                              Profile* profile)
       : owner_(owner),
         tracker_(this),
         browser_action_(extension->browser_action()) {
@@ -74,7 +75,7 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
         content::Source<ExtensionAction>(browser_action_));
     registrar_.Add(
         this, content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
-        content::NotificationService::AllSources());
+        content::Source<Profile>(profile));
   }
 
   ~ExtensionImageTrackerBridge() {}
@@ -202,7 +203,8 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
 
     tabId_ = tabId;
     extension_ = extension;
-    imageLoadingBridge_.reset(new ExtensionImageTrackerBridge(self, extension));
+    imageLoadingBridge_.reset(new ExtensionImageTrackerBridge(self, extension,
+                                                              browser->profile()));
 
     moveAnimation_.reset([[NSViewAnimation alloc] init]);
     [moveAnimation_ gtm_setDuration:kAnimationDuration

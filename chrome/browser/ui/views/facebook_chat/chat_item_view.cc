@@ -11,6 +11,7 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
@@ -24,7 +25,6 @@
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/theme_resources_standard.h"
 #include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -32,7 +32,6 @@
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/image_button.h"
@@ -159,11 +158,11 @@ ChatItemView::ChatItemView(FacebookChatItem *model, ChatbarView *chatbar)
   // Add the Close Button.
   close_button_ = new views::ImageButton(this);
   close_button_->SetImage(views::CustomButton::BS_NORMAL,
-                          rb.GetBitmapNamed(IDR_TAB_CLOSE));
+                          rb.GetImageSkiaNamed(IDR_TAB_CLOSE));
   close_button_->SetImage(views::CustomButton::BS_HOT,
-                          rb.GetBitmapNamed(IDR_TAB_CLOSE_H));
+                          rb.GetImageSkiaNamed(IDR_TAB_CLOSE_H));
   close_button_->SetImage(views::CustomButton::BS_PUSHED,
-                          rb.GetBitmapNamed(IDR_TAB_CLOSE_P));
+                          rb.GetImageSkiaNamed(IDR_TAB_CLOSE_P));
   //close_button_->SetTooltipText(
   //    UTF16ToWide(l10n_util::GetStringUTF16(IDS_TOOLTIP_CLOSE_TAB)));
   //close_button_->SetAccessibleName(
@@ -288,8 +287,8 @@ void ChatItemView::OnPaint(gfx::Canvas* canvas) {
   if (bgColor != close_button_bg_color_) {
     close_button_bg_color_ = bgColor;
     close_button_->SetBackground(close_button_bg_color_,
-        rb.GetBitmapNamed(IDR_TAB_CLOSE),
-        rb.GetBitmapNamed(IDR_TAB_CLOSE_MASK));
+        rb.GetImageSkiaNamed(IDR_TAB_CLOSE),
+        rb.GetImageSkiaNamed(IDR_TAB_CLOSE_MASK));
   }
 }
 
@@ -301,17 +300,20 @@ void ChatItemView::ActivateChat() {
   StatusChanged();  // restore status icon
   SchedulePaint();
 
-  // open popup
-  std::string urlString(chrome::kFacebookChatExtensionPrefixURL);
-  urlString += chrome::kFacebookChatExtensionChatPage;
-  urlString += "#";
-  urlString += model_->jid() + "&" +
-    chatbar_->browser()->profile()->GetFacebookChatManager()->global_my_uid();
+  FacebookChatManager* mgr = FacebookChatManagerServiceFactory::GetForProfile(chatbar_->browser()->profile());
 
-  chat_popup_ = ChatPopup::ShowPopup(GURL(urlString), chatbar_->browser(),
-                                this, BitpopBubbleBorder::BOTTOM_CENTER);
-  chat_popup_->GetWidget()->AddObserver(this);
-  openChatButton_->SetEnabled(false);
+  if (mgr) {
+    // open popup
+    std::string urlString(chrome::kFacebookChatExtensionPrefixURL);
+    urlString += chrome::kFacebookChatExtensionChatPage;
+    urlString += "#";
+    urlString += model_->jid() + "&" + mgr->global_my_uid();
+
+    chat_popup_ = ChatPopup::ShowPopup(GURL(urlString), chatbar_->browser(),
+                                  this, BitpopBubbleBorder::BOTTOM_CENTER);
+    chat_popup_->GetWidget()->AddObserver(this);
+    openChatButton_->SetEnabled(false);
+  }
 }
 
 const FacebookChatItem* ChatItemView::GetModel() const {

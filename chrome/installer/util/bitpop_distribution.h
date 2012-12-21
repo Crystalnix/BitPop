@@ -15,11 +15,11 @@ class BitpopDistribution : public BrowserDistribution {
  public:
   virtual std::wstring GetAppGuid() OVERRIDE;
 
-  virtual std::wstring GetApplicationName() OVERRIDE;
+  virtual std::wstring GetBaseAppName() OVERRIDE;
 
   virtual std::wstring GetAlternateApplicationName() OVERRIDE;
 
-  virtual std::wstring GetBrowserAppId() OVERRIDE;
+  virtual std::wstring GetBaseAppId() OVERRIDE;
 
   virtual std::wstring GetInstallSubDir() OVERRIDE;
 

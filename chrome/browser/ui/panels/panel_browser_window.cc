@@ -488,14 +488,6 @@ void PanelBrowserWindow::TabInsertedAt(TabContents* contents,
   }
 }
 
-void PanelBrowserWindow::UpdateFriendsSidebarForContents(content::WebContents *friends_contents) {
-  NOTIMPLEMENTED();
-}
-
-void PanelBrowserWindow::CreateFriendsSidebarIfNeeded() {
-  NOTIMPLEMENTED();
-}
-
 FacebookChatbar* PanelBrowserWindow::GetChatbar() {
   NOTIMPLEMENTED();
   return NULL;
@@ -503,6 +495,10 @@ FacebookChatbar* PanelBrowserWindow::GetChatbar() {
 
 bool PanelBrowserWindow::IsFriendsSidebarVisible() const {
   return false;
+}
+
+void PanelBrowserWindow::SetFriendsSidebarVisible(bool visible) {
+  NOTIMPLEMENTED();
 }
 
 bool PanelBrowserWindow::IsChatbarVisible() const {

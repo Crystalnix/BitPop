@@ -15,16 +15,16 @@
 #include "base/observer_list.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
-#include "chrome/browser/profiles/refcounted_profile_keyed_service.h"
+#include "chrome/browser/profiles/profile_keyed_service.h"
 
 class Browser;
 class Profile;
 
-class FacebookChatManager : public RefcountedProfileKeyedService {
+class FacebookChatManager : public ProfileKeyedService {
   public:
     FacebookChatManager();
 
-    virtual void ShutdownOnUIThread() OVERRIDE;
+    virtual void Shutdown();
 
     FacebookChatItem* GetItem(const std::string &jid);
 

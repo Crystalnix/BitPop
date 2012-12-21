@@ -7,6 +7,7 @@
 
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/badge_util.h"
 #include "grit/ui_resources.h"
@@ -16,7 +17,6 @@
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/skia_util.h"
 
 #if defined(OS_WIN)
@@ -94,6 +94,9 @@ FacebookBitpopNotificationWin::FacebookBitpopNotificationWin(Profile* profile)
 FacebookBitpopNotificationWin::~FacebookBitpopNotificationWin() {
 }
 
+void FacebookBitpopNotificationWin::Shutdown() {
+}
+
 void FacebookBitpopNotificationWin::ClearNotification() {
   if (base::win::GetVersion() < base::win::VERSION_WIN7)
     return;
@@ -114,11 +117,11 @@ void FacebookBitpopNotificationWin::ClearNotification() {
 void FacebookBitpopNotificationWin::NotifyUnreadMessagesWithLastUser(int num_unread,
                                                 const std::string& user_id) {
 
-  Browser* browser = Browser::GetTabbedBrowser(profile_, false);
+  Browser* browser = browser::FindTabbedBrowser(profile_, false);
   if (browser == NULL)
     return;
 
-  HWND hwnd = browser->window()->GetNativeHandle();
+  HWND hwnd = browser->window()->GetNativeWindow();
 
   FLASHWINFO fwInfo;
   ::ZeroMemory(&fwInfo, sizeof(FLASHWINFO));

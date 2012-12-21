@@ -15,8 +15,7 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/theme_resources_standard.h"
-#include "grit/ui_resources_standard.h"
+#include "grit/ui_resources.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -74,15 +73,15 @@ ChatbarView::ChatbarView(Browser* browser, BrowserView* parent)
   set_id(VIEW_ID_FACEBOOK_CHATBAR);
   parent->AddChildView(this);
 
-  ResourceBundle &rb = ResourceBundle::GetSharedInstance();
+  ResourceBundle &rb = ui::ResourceBundle::GetSharedInstance();
 
   close_button_ = new views::ImageButton(this);
   close_button_->SetImage(views::CustomButton::BS_NORMAL,
-                          rb.GetBitmapNamed(IDR_CLOSE_BAR));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_BAR));
   close_button_->SetImage(views::CustomButton::BS_HOT,
-                          rb.GetBitmapNamed(IDR_CLOSE_BAR_H));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_BAR_H));
   close_button_->SetImage(views::CustomButton::BS_PUSHED,
-                          rb.GetBitmapNamed(IDR_CLOSE_BAR_P));
+                          rb.GetImageSkiaNamed(IDR_CLOSE_BAR_P));
   close_button_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
   UpdateButtonColors();
@@ -199,7 +198,7 @@ void ChatbarView::Layout() {
 }
 
 void ChatbarView::OnPaintBorder(gfx::Canvas* canvas) {
-  canvas->DrawLineInt(kBorderColor, 0, 0, width(), 0);
+  canvas->DrawLine(gfx::Point(0, 0), gfx::Point(width(), 0), kBorderColor);
 }
 
 void ChatbarView::AddChatItem(FacebookChatItem *chat_item) {
@@ -331,8 +330,8 @@ void ChatbarView::UpdateButtonColors() {
   if (GetThemeProvider()) {
     close_button_->SetBackground(
         GetThemeProvider()->GetColor(ThemeService::COLOR_TAB_TEXT),
-        rb.GetBitmapNamed(IDR_CLOSE_BAR),
-        rb.GetBitmapNamed(IDR_CLOSE_BAR_MASK));
+        rb.GetImageSkiaNamed(IDR_CLOSE_BAR),
+        rb.GetImageSkiaNamed(IDR_CLOSE_BAR_MASK));
   }
 }
 

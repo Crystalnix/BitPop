@@ -95,7 +95,7 @@ gfx::Rect BitpopBubbleFrameView::GetUpdatedWindowBounds(const gfx::Rect& anchor_
 }
 
 gfx::Rect BitpopBubbleFrameView::GetMonitorBounds(const gfx::Rect& rect) {
-  return gfx::Screen::GetMonitorWorkAreaNearestPoint(rect.CenterPoint());
+  return gfx::Screen::GetDisplayNearestPoint(rect.CenterPoint()).work_area();
 }
 
 void BitpopBubbleFrameView::MirrorArrowIfOffScreen(

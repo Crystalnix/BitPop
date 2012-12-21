@@ -8,6 +8,7 @@
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/api/commands/command_service_factory.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/browser_actions_container.h"
 #include "chrome/browser/ui/views/toolbar_view.h"
@@ -15,6 +16,8 @@
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
+#include "chrome/common/pref_names.h"
+#include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/accessibility/accessible_view_state.h"
@@ -52,7 +55,9 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
       extension_(extension),
       ALLOW_THIS_IN_INITIALIZER_LIST(tracker_(this)),
       panel_(panel),
-      context_menu_(NULL) {
+      context_menu_(NULL),
+      is_custom_extension_(false),
+      should_draw_as_pushed_(false) {
   set_border(NULL);
   set_alignment(TextButton::ALIGN_CENTER);
   set_context_menu_controller(this);
@@ -76,7 +81,8 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
                  content::Source<Profile>(
                      panel_->profile()->GetOriginalProfile()));
   registrar_.Add(this, content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
-                 content::NotificationService::AllSources());
+                 content::Source<Profile>(
+                     panel_->profile()->GetOriginalProfile()));
 }
 
 void BrowserActionButton::Destroy() {
@@ -160,6 +166,9 @@ void BrowserActionButton::OnImageLoaded(const gfx::Image& image,
                                         int index) {
   browser_action_->CacheIcon(browser_action_->default_icon_path(), image);
 
+  if (extension_id != chrome::kFacebookChatExtensionId && is_custom_extension_)
+    is_custom_extension_ = false;
+
   // Call back to UpdateState() because a more specific icon might have been set
   // while the load was outstanding.
   UpdateState();
@@ -170,12 +179,14 @@ void BrowserActionButton::UpdateState() {
   if (tab_id < 0)
     return;
 
-  if (!IsEnabled(tab_id)) {
-    SetState(views::CustomButton::BS_DISABLED);
-  } else {
-    SetState(menu_visible_ ?
-             views::CustomButton::BS_PUSHED :
-             views::CustomButton::BS_NORMAL);
+  if (!is_custom_extension_) {
+    if (!IsEnabled(tab_id)) {
+      SetState(views::CustomButton::BS_DISABLED);
+    } else {
+      SetState(menu_visible_ ?
+               views::CustomButton::BS_PUSHED :
+               views::CustomButton::BS_NORMAL);
+    }
   }
 
   SkBitmap icon(*browser_action()->GetIcon(tab_id).ToSkBitmap());

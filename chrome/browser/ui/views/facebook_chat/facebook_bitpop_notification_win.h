@@ -22,6 +22,8 @@ public:
   virtual void ClearNotification() OVERRIDE;
   virtual void NotifyUnreadMessagesWithLastUser(int num_unread,
                                                 const std::string& user_id) OVERRIDE;
+
+  virtual void Shutdown();
 protected:
   Profile *profile_;
   HWND notified_hwnd_;

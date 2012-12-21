@@ -28,7 +28,7 @@ using installer::InstallationState;
 namespace {
 
 const wchar_t kGoogleUpdatePoliciesKey[] =
-    L"SOFTWARE\\Policies\\HouseOfLife\\Update";
+    L"SOFTWARE\\Policies\\HouseOfLife\\BitpopUpdate";
 const wchar_t kGoogleUpdateUpdatePolicyValue[] = L"UpdateDefault";
 const wchar_t kGoogleUpdateUpdateOverrideValuePrefix[] = L"Update";
 const GoogleUpdateSettings::UpdatePolicy kGoogleUpdateDefaultUpdatePolicy =

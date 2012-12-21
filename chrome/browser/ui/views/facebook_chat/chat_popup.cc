@@ -12,14 +12,13 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/renderer_host/render_widget_host_view.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/views/layout/fill_layout.h"
 
 using content::WebContents;
+using extensions::ExtensionHost;
 
 // The minimum/maximum dimensions of the popup.
 // The minimum is just a little larger than the size of the button itself.
@@ -81,7 +80,7 @@ void ChatPopup::Observe(int type,
   }
 }
 
-void ChatPopup::OnExtensionPreferredSizeChanged(ExtensionView* view) {
+void ChatPopup::OnExtensionSizeChanged(ExtensionView* view) {
   SizeToContents();
 }
 

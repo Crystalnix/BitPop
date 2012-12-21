@@ -5,17 +5,5 @@
 
 #include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
 
-#include "base/logging.h"
-
 FacebookBitpopNotification::~FacebookBitpopNotification() {
-  //NOTIMPLEMENTED();
-}
-
-void FacebookBitpopNotification::ClearNotification() {
-  //NOTIMPLEMENTED();
-}
-
-void FacebookBitpopNotification::NotifyUnreadMessagesWithLastUser(int num_unread,
-                                                const std::string& user_id) {
-  //NOTIMPLEMENTED();
 }

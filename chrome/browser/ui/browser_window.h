@@ -116,8 +116,6 @@ class BrowserWindow : public BaseWindow {
   // Requests that the docked dev tools window changes its dock mode.
   virtual void SetDevToolsDockSide(DevToolsDockSide side) = 0;
 
-  virtual void UpdateFriendsSidebarForContents(content::WebContents *friends_contents) = 0;
-
   // Update any loading animations running in the window. |should_animate| is
   // true if there are tabs loading and the animations should continue, false
   // if there are no active loads and the animations should end.
@@ -260,8 +258,8 @@ class BrowserWindow : public BaseWindow {
   // Whether or not the facebook friends sidebar is visible
   virtual bool IsFriendsSidebarVisible() const = 0;
 
-  // Creates the facebook friends sidebar
-  virtual void CreateFriendsSidebarIfNeeded() = 0;
+  // Shows/hide the sidebar
+  virtual void SetFriendsSidebarVisible(bool visible) = 0;
 
   // Shows the confirmation dialog box warning that the browser is closing with
   // in-progress downloads.

@@ -47,7 +47,7 @@ const wchar_t kUninstallRegistryKey[] =
     L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Google Chrome";
 const wchar_t kCleanupRegistryKey[] = L"Software\\Google";
 #else
-const wchar_t kApRegistryKeyBase[] = L"Software\\HouseOfLife\\Update\\ClientState\\";
+const wchar_t kApRegistryKeyBase[] = L"Software\\HouseOfLife\\BitpopUpdate\\ClientState\\";
 const wchar_t kUninstallRegistryKey[] =
     L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\BitPop";
 const wchar_t kCleanupRegistryKey[] = L"Software\\HouseOfLife";

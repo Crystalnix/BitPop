@@ -28,8 +28,6 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
-#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/plugin_prefs.h"
@@ -116,8 +114,6 @@ void OffTheRecordProfileImpl::Init() {
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&NotifyOTRProfileCreatedOnIOThread, profile_, this));
-
-  facebook_bitpop_notification_.reset(new FacebookBitpopNotification());
 }
 
 OffTheRecordProfileImpl::~OffTheRecordProfileImpl() {
@@ -455,25 +451,6 @@ void OffTheRecordProfileImpl::Observe(
       host_zoom_map->SetZoomLevel(host, level);
     }
   }
-}
-
-
-FacebookChatManager* OffTheRecordProfileImpl::GetFacebookChatManager() {
-  if (!facebook_chat_manager_.get()) {
-    scoped_refptr<FacebookChatManager> fbcm(
-        new FacebookChatManager());
-    fbcm->Init(this);
-    facebook_chat_manager_.swap(fbcm);
-  }
-  return facebook_chat_manager_.get();
-}
-
-bool OffTheRecordProfileImpl::HasCreatedFacebookChatManager() const {
-  return (facebook_chat_manager_.get() != NULL);
-}
-
-FacebookBitpopNotification* OffTheRecordProfileImpl::GetFacebookBitpopNotification() const {
-  return facebook_bitpop_notification_.get();
 }
 
 #if defined(OS_CHROMEOS)

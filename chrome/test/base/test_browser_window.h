@@ -146,11 +146,7 @@ class TestBrowserWindow : public BrowserWindow {
 
   // Whether or not the facebook friends sidebar is visible
   virtual bool IsFriendsSidebarVisible() const OVERRIDE;
-
-  // Creates the facebook friends sidebar
-  virtual void CreateFriendsSidebarIfNeeded() OVERRIDE {}
-
-  virtual void UpdateFriendsSidebarForContents(content::WebContents *friends_contents) OVERRIDE {}
+  virtual void SetFriendsSidebarVisible(bool visible) OVERRIDE;
 
  protected:
   virtual void DestroyBrowser() OVERRIDE {}

@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
+#include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -37,6 +38,7 @@
 #include "ui/views/widget/widget.h"
 
 using extensions::Extension;
+using extensions::ExtensionPrefs;
 
 namespace {
 
@@ -179,8 +181,8 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
       if (service)
         MessageLoopForUI::current()->PostTask(
           FROM_HERE,
-          base::Bind(&ExtensionService::SetBrowserActionVisibility,
-                     base::Unretained(service), *i, false));
+          base::Bind(&ExtensionPrefs::SetBrowserActionVisibility,
+              base::Unretained(service->extension_prefs()), *i, false));
     }
   }
 }
@@ -651,13 +653,21 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
     OnBrowserActionVisibilityChanged();
   }
 
+  if (!profile_->IsOffTheRecord() && 
+      extension->id() == chrome::kFacebookChatExtensionId && index != 0) {
+    MessageLoopForUI::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&BrowserActionsContainer::MoveBrowserAction,
+        base::Unretained(this), (const char *)chrome::kFacebookChatExtensionId, 0));
+  }
+
   if (!profile_->should_show_additional_extensions() &&
       (extension->id() == chrome::kFacebookMessagesExtensionId ||
        extension->id() == chrome::kFacebookNotificationsExtensionId)) {
 
     ExtensionService* service = profile_->GetExtensionService();
     if (service)
-      service->SetBrowserActionVisibility(extension, false);
+      service->extension_prefs()->SetBrowserActionVisibility(extension, false);
 
     OnBrowserActionVisibilityChanged();
   }
@@ -709,7 +719,8 @@ void BrowserActionsContainer::BrowserActionMoved(const Extension* extension,
 
   DCHECK(index >= 0 && index < static_cast<int>(browser_action_views_.size()));
 
-  if (index == 0 && !profile_->IsOffTheRecord())
+  if (index == 0 && !profile_->IsOffTheRecord() && 
+      extension->id() != chrome::kFacebookChatExtensionId)
     return;
 
   DeleteBrowserActionViews();
@@ -863,15 +874,15 @@ void BrowserActionsContainer::SetFacebookExtensionsVisibility(bool visible) {
   if (extension)
     MessageLoopForUI::current()->PostTask(
           FROM_HERE,
-          base::Bind(&ExtensionService::SetBrowserActionVisibility,
-                     base::Unretained(service), extension, visible));
+          base::Bind(&ExtensionPrefs::SetBrowserActionVisibility,
+                     base::Unretained(service->extension_prefs()), extension, visible));
 
   extension = service->GetExtensionById(chrome::kFacebookNotificationsExtensionId, false);
   if (extension)
     MessageLoopForUI::current()->PostTask(
           FROM_HERE,
-          base::Bind(&ExtensionService::SetBrowserActionVisibility,
-                     base::Unretained(service), extension, visible));
+          base::Bind(&ExtensionPrefs::SetBrowserActionVisibility,
+                     base::Unretained(service->extension_prefs()), extension, visible));
 
   if (visible) {
     MessageLoopForUI::current()->PostTask(

@@ -10,11 +10,11 @@ const wchar_t kChromeUpgradeCode[] = L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 const wchar_t kGoogleUpdateUpgradeCode[] =
     L"{430FD4D0-B729-4F61-AA34-91526481799D}";
 
-const wchar_t kRegPathClients[] = L"Software\\HouseOfLife\\Update\\Clients";
-const wchar_t kRegPathClientState[] = L"Software\\HouseOfLife\\Update\\ClientState";
+const wchar_t kRegPathClients[] = L"Software\\HouseOfLife\\BitpopUpdate\\Clients";
+const wchar_t kRegPathClientState[] = L"Software\\HouseOfLife\\BitpopUpdate\\ClientState";
 const wchar_t kRegPathClientStateMedium[]
-    = L"Software\\HouseOfLife\\Update\\ClientStateMedium";
-const wchar_t kRegPathGoogleUpdate[] = L"Software\\HouseOfLife\\Update";
+    = L"Software\\HouseOfLife\\BitpopUpdate\\ClientStateMedium";
+const wchar_t kRegPathGoogleUpdate[] = L"Software\\HouseOfLife\\BitpopUpdate";
 
 const wchar_t kRegCommandsKey[] = L"Commands";
 

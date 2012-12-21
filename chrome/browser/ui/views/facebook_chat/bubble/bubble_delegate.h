@@ -10,6 +10,7 @@
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/views/widget/widget_observer.h"
 
 namespace ui {
 class SlideAnimation;
@@ -27,7 +28,7 @@ class BubbleDelegateView;
 ///////////////////////////////////////////////////////////////////////////////
 class BitpopBubbleDelegateView : public views::WidgetDelegateView,
                                         public ui::AnimationDelegate,
-                                        public views::Widget::Observer {
+                                        public views::WidgetObserver {
  public:
   // The default bubble background color.
   static const SkColor kBackgroundColor;
@@ -44,7 +45,9 @@ class BitpopBubbleDelegateView : public views::WidgetDelegateView,
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
   virtual views::BubbleDelegateView* AsBubbleDelegate() OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
-  virtual views::NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
+  virtual views::NonClientFrameView* CreateNonClientFrameView(views::Widget* widget) OVERRIDE;
+
+  virtual bool CanActivate() const OVERRIDE;
 
   // Widget::Observer overrides:
   virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
