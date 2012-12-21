@@ -1,6 +1,0 @@
-include_rules = [
-  "+native_client/src/shared/imc",
-  "+native_client/src/shared/srpc",
-  "+native_client/src/trusted",
-  "+third_party/jsoncpp",
-]
