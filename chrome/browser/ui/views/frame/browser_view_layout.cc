@@ -9,6 +9,8 @@
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
 #include "chrome/browser/ui/views/download/download_shelf_view.h"
+#include "chrome/browser/ui/views/facebook_chat/chatbar_view.h"
+#include "chrome/browser/ui/views/facebook_chat/friends_sidebar_view.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/contents_container.h"
@@ -59,6 +61,8 @@ BrowserViewLayout::BrowserViewLayout()
       infobar_container_(NULL),
       download_shelf_(NULL),
       active_bookmark_bar_(NULL),
+      friends_sidebar_(NULL),
+      facebook_chatbar_(NULL),
       browser_view_(NULL),
       find_bar_y_(0) {
 }
@@ -212,6 +216,7 @@ void BrowserViewLayout::Installed(views::View* host) {
   infobar_container_ = NULL;
   download_shelf_ = NULL;
   active_bookmark_bar_ = NULL;
+  friends_sidebar_ = NULL;
   tabstrip_ = NULL;
   browser_view_ = static_cast<BrowserView*>(host);
 }
@@ -243,6 +248,12 @@ void BrowserViewLayout::ViewAdded(views::View* host, views::View* view) {
     case VIEW_ID_TAB_STRIP:
       tabstrip_ = static_cast<TabStrip*>(view);
       break;
+    case VIEW_ID_FACEBOOK_FRIENDS_SIDE_BAR_CONTAINER:
+      friends_sidebar_ = static_cast<FriendsSidebarView*>(view);
+      break;
+    case VIEW_ID_FACEBOOK_CHATBAR:
+      facebook_chatbar_ = static_cast<ChatbarView*>(view);
+      break;
   }
 }
 
@@ -264,12 +275,14 @@ void BrowserViewLayout::Layout(views::View* host) {
   }
   top = LayoutToolbar(top);
   top = LayoutBookmarkAndInfoBars(top);
-  int bottom = LayoutDownloadShelf(browser_view_->height());
+  int right = LayoutFriendsSidebar(top);
+  int bottom = LayoutDownloadShelf(browser_view_->height(), right);
+  bottom = LayoutChatbar(bottom, right);
   int active_top_margin = GetTopMarginForActiveContent();
   top -= active_top_margin;
   contents_container_->SetActiveTopMargin(active_top_margin);
-  LayoutTabContents(top, bottom);
-  // This must be done _after_ we lay out the WebContents since this
+  LayoutTabContents(top, bottom, right);
+  // This must be done _after_ we lay out the TabContents since this
   // code calls back into us to find the bounding box the find bar
   // must be laid out within, and that code depends on the
   // TabContentsContainer's bounds being up to date.
@@ -410,7 +423,7 @@ int BrowserViewLayout::LayoutInfoBar(int top) {
   return overlapped_top + height;
 }
 
-void BrowserViewLayout::LayoutTabContents(int top, int bottom) {
+void BrowserViewLayout::LayoutTabContents(int top, int bottom, int right) {
   // The ultimate idea is to calculate bounds and reserved areas for all
   // contents views first and then resize them all, so every view
   // (and its contents) is resized and laid out only once.
@@ -421,8 +434,9 @@ void BrowserViewLayout::LayoutTabContents(int top, int bottom) {
   gfx::Rect contents_bounds;
   gfx::Rect devtools_bounds;
 
+  int new_layout_width = std::max(0, right - vertical_layout_rect_.x());
   gfx::Rect contents_split_bounds(vertical_layout_rect_.x(), top,
-                                  vertical_layout_rect_.width(),
+                                  new_layout_width,
                                   std::max(0, bottom - top));
   gfx::Point contents_split_offset(
       contents_split_bounds.x() - contents_split_->bounds().x(),
@@ -463,7 +477,7 @@ int BrowserViewLayout::GetTopMarginForActiveContent() {
       views::NonClientFrameView::kClientEdgeThickness;
 }
 
-int BrowserViewLayout::LayoutDownloadShelf(int bottom) {
+int BrowserViewLayout::LayoutDownloadShelf(int bottom, int right) {
   // Re-layout the shelf either if it is visible or if its close animation
   // is currently running.
   if (browser_view_->IsDownloadShelfVisible() ||
@@ -474,11 +488,55 @@ int BrowserViewLayout::LayoutDownloadShelf(int bottom) {
     int height = visible ? download_shelf_->GetPreferredSize().height() : 0;
     download_shelf_->SetVisible(visible);
     download_shelf_->SetBounds(vertical_layout_rect_.x(), bottom - height,
-                               vertical_layout_rect_.width(), height);
+                               right - vertical_layout_rect_.x(), height);
     download_shelf_->Layout();
     bottom -= height;
   }
   return bottom;
+}
+
+int BrowserViewLayout::LayoutChatbar(int bottom, int right) {
+  if (browser_view_->IsChatbarVisible() ||
+      (facebook_chatbar_ && facebook_chatbar_->IsClosing())) {
+    int height = facebook_chatbar_->GetPreferredSize().height();
+    //facebook_chatbar_->SetVisible(true);
+    facebook_chatbar_->SetBounds(vertical_layout_rect_.x(), bottom - height,
+                                 right - vertical_layout_rect_.x(), height);
+    facebook_chatbar_->Layout();
+    bottom -= height;
+  }
+  return bottom;
+}
+
+int BrowserViewLayout::LayoutFriendsSidebar(int top) {
+  int right = vertical_layout_rect_.width() + vertical_layout_rect_.x();
+  if (browser_view_->IsFriendsSidebarVisible()) {
+    bool visible = true;
+    DCHECK(friends_sidebar_);
+    int width = visible ? friends_sidebar_->GetPreferredSize().width() : 0;
+    int height = vertical_layout_rect_.height() - top + vertical_layout_rect_.y();
+    friends_sidebar_->SetVisible(visible);
+
+    if (active_bookmark_bar_) {
+      if (active_bookmark_bar_->IsDetached()) {
+        gfx::Rect rc = active_bookmark_bar_->bounds();
+        if (rc.width() - width >= 0)
+          rc.set_width(rc.width() - width);
+        active_bookmark_bar_->SetBoundsRect(rc);
+        top -= rc.height();
+        height += rc.height();
+      }
+    }
+
+    friends_sidebar_->SetBounds(
+        right - width,
+        top,
+        width,
+        height);
+    friends_sidebar_->Layout();
+    right -= width;
+  }
+  return right;
 }
 
 bool BrowserViewLayout::InfobarVisible() const {

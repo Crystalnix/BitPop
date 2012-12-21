@@ -251,6 +251,9 @@ void ProfileImpl::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kClearSiteDataOnExit,
                              false,
                              PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kFacebookShowFriendsList,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
 }
 
 ProfileImpl::ProfileImpl(const FilePath& path,
@@ -265,7 +268,9 @@ ProfileImpl::ProfileImpl(const FilePath& path,
       start_time_(Time::Now()),
       delegate_(delegate),
       predictor_(NULL),
-      session_restore_enabled_(false) {
+      session_restore_enabled_(false),
+      should_show_additional_extensions_(false)
+  {
   DCHECK(!path.empty()) << "Using an empty path will attempt to write " <<
                             "profile files to the root directory!";
 
@@ -1092,3 +1097,12 @@ base::Callback<ChromeURLDataManagerBackend*(void)>
     ProfileImpl::GetChromeURLDataManagerBackendGetter() const {
   return io_data_.GetChromeURLDataManagerBackendGetter();
 }
+
+bool ProfileImpl::should_show_additional_extensions() const {
+  return should_show_additional_extensions_;
+}
+
+void ProfileImpl::set_should_show_additional_extensions(bool flag) {
+  should_show_additional_extensions_ = flag;
+}
+

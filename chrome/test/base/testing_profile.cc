@@ -732,3 +732,4 @@ base::Callback<ChromeURLDataManagerBackend*(void)>
     TestingProfile::GetChromeURLDataManagerBackendGetter() const {
   return base::Callback<ChromeURLDataManagerBackend*(void)>();
 }
+

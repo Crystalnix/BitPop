@@ -31,6 +31,7 @@ class EVBubbleDecoration;
 class KeywordHintDecoration;
 class LocationBarDecoration;
 class LocationIconDecoration;
+class MybubDummyDecoration;
 class PageActionDecoration;
 class PlusDecoration;
 class Profile;
@@ -158,6 +159,8 @@ class LocationBarViewMac : public LocationBar,
 
   AutocompleteTextField* GetAutocompleteTextField() { return field_; }
 
+  LocationBarDecoration* GetMybubDummyDecoration() const;
+  void SetMybubDummyWidth(CGFloat width);
 
   // content::NotificationObserver:
   virtual void Observe(int type,
@@ -237,6 +240,8 @@ class LocationBarViewMac : public LocationBar,
 
   // Keyword hint decoration displayed on the right-hand side.
   scoped_ptr<KeywordHintDecoration> keyword_hint_decoration_;
+
+  scoped_ptr<MybubDummyDecoration> mybub_dummy_decoration_;
 
   Profile* profile_;
 

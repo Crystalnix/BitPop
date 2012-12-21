@@ -686,7 +686,7 @@
 
     # Whether proprietary audio/video codecs are assumed to be included with
     # this build (only meaningful if branding!=Chrome).
-    'proprietary_codecs%': 0,
+    'proprietary_codecs%': 1,
 
     # TODO(bradnelson): eliminate this when possible.
     # To allow local gyp files to prevent release.vsprops from being included.
@@ -1026,18 +1026,18 @@
           ['branding=="Chrome"', {
             'mac_product_name%': 'Google Chrome',
           }, { # else: branding!="Chrome"
-            'mac_product_name%': 'Chromium',
+            'mac_product_name%': 'BitPop',
           }],
 
-          ['branding=="Chrome" and buildtype=="Official"', {
+          ['buildtype=="Official"', {
             'mac_sdk%': '10.6',
             # Enable uploading crash dumps.
             'mac_breakpad_uploads%': 1,
             # Enable dumping symbols at build time for use by Mac Breakpad.
             'mac_breakpad%': 1,
-            # Enable Keystone auto-update support.
-            'mac_keystone%': 1,
-          }, { # else: branding!="Chrome" or buildtype!="Official"
+            # Disable Keystone auto-update support.
+            'mac_keystone%': 0,
+          }, { # else: buildtype!="Official"
             'mac_sdk%': '<!(python <(DEPTH)/build/mac/find_sdk.py 10.6)',
             'mac_breakpad_uploads%': 0,
             'mac_breakpad%': 0,

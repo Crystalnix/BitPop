@@ -257,6 +257,8 @@
                 'app/nibs/ExtensionInstallPromptNoWarnings.xib',
                 'app/nibs/ExtensionInstalledBubble.xib',
                 'app/nibs/ExtensionInstalledBubbleBundle.xib',
+                'app/nibs/FacebookChatbar.xib',
+                'app/nibs/FacebookChatItem.xib',
                 'app/nibs/FindBar.xib',
                 'app/nibs/FirstRunBubble.xib',
                 'app/nibs/FirstRunDialog.xib',
@@ -341,6 +343,14 @@
                 'repack_path': '../tools/grit/grit/format/repack.py',
               },
               'postbuilds': [
+                {
+                  'postbuild_name': 'Copy Sparkle.framework',
+                  'action': [
+                    '../build/mac/copy_framework_unversioned.sh',
+                    '${BUILT_PRODUCTS_DIR}/Sparkle.framework',
+                    '${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks',
+                  ],
+                },
                 {
                   # This step causes an error to be raised if the .order file
                   # does not account for all global text symbols.  It

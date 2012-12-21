@@ -42,6 +42,7 @@ class GURL;
 class InstantController;
 class KeywordHintView;
 class LocationIconView;
+class MybubSearchView;
 class PageActionWithBadgeView;
 class PageActionImageView;
 class Profile;
@@ -525,6 +526,9 @@ class LocationBarView : public LocationBar,
 
   // The Chrome To Mobile page action icon view.
   ChromeToMobileView* chrome_to_mobile_view_;
+
+  // mybub search
+  MybubSearchView* mybub_search_view_;
 
   // The mode that dictates how the bar shows.
   Mode mode_;

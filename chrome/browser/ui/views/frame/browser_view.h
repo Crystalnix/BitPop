@@ -20,6 +20,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/unhandled_keyboard_event_handler.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/gfx/native_widget_types.h"
@@ -41,8 +42,11 @@
 class BookmarkBarView;
 class Browser;
 class BrowserViewLayout;
+class ChatbarView;
 class ContentsContainer;
 class DownloadShelfView;
+class FacebookChatbar;
+class FriendsSidebarView;
 class FullscreenExitBubbleViews;
 class InfoBarContainerView;
 class LocationBarView;
@@ -86,6 +90,7 @@ class WebView;
 //
 class BrowserView : public BrowserWindow,
                     public BrowserWindowTesting,
+                    public content::NotificationObserver,
                     public TabStripModelObserver,
                     public ui::AcceleratorProvider,
                     public views::WidgetDelegate,
@@ -312,6 +317,13 @@ class BrowserView : public BrowserWindow,
   void SetDownloadShelfVisible(bool visible);
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
   virtual DownloadShelf* GetDownloadShelf() OVERRIDE;
+
+  void SetChatbarVisible(bool visible);
+  virtual bool IsChatbarVisible() const OVERRIDE;
+  virtual FacebookChatbar* GetChatbar() OVERRIDE;
+  virtual void SetFriendsSidebarVisible(bool visible) OVERRIDE;
+  virtual bool IsFriendsSidebarVisible() const OVERRIDE;
+
   virtual void ConfirmBrowserCloseWithPendingDownloads() OVERRIDE;
   virtual void UserChangedTheme() OVERRIDE;
   virtual int GetExtraRenderViewHeight() const OVERRIDE;
@@ -423,6 +435,11 @@ class BrowserView : public BrowserWindow,
   int GetOTRIconResourceID() const;
 
  protected:
+   // content::NotificationObserver override
+   virtual void Observe(int type,
+                const content::NotificationSource& source,
+                const content::NotificationDetails& details) OVERRIDE;
+
   // Appends to |toolbars| a pointer to each AccessiblePaneView that
   // can be traversed using F6, in the order they should be traversed.
   // Abstracted here so that it can be extended for Chrome OS.
@@ -454,7 +471,9 @@ class BrowserView : public BrowserWindow,
   // Callback for the loading animation(s) associated with this view.
   virtual void LoadingAnimationCallback();
 
- private:
+  content::NotificationRegistrar registrar_;
+ 
+private:
   friend class BrowserViewLayout;
   FRIEND_TEST_ALL_PREFIXES(BrowserViewsAccessibilityTest,
                            TestAboutChromeViewAccObj);
@@ -653,6 +672,12 @@ class BrowserView : public BrowserWindow,
 
   // Split view containing the contents container and devtools container.
   views::SingleSplitView* contents_split_;
+
+  // The view that contains facebook friends list with names, photo and status
+  scoped_ptr<FriendsSidebarView> fb_friend_list_sidebar_;
+
+  // The view containing different chat buddies' buttons, laid out on bottom of browser view
+  scoped_ptr<ChatbarView> fb_chatbar_;
 
   // Side to dock devtools to
   DevToolsDockSide devtools_dock_side_;

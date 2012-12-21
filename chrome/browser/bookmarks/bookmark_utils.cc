@@ -590,7 +590,7 @@ void ToggleWhenVisible(Profile* profile) {
 
 void RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kShowBookmarkBar,
-                             false,
+                             true,
                              PrefService::SYNCABLE_PREF);
   prefs->RegisterBooleanPref(prefs::kEditBookmarksEnabled,
                              true,

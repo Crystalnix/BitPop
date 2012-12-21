@@ -386,6 +386,7 @@ Browser::Browser(const CreateParams& params)
   profile_pref_registrar_.Add(prefs::kDevToolsDisabled, this);
   profile_pref_registrar_.Add(prefs::kShowBookmarkBar, this);
   profile_pref_registrar_.Add(prefs::kHomePage, this);
+  profile_pref_registrar_.Add(prefs::kFacebookShowFriendsList, this);
 
   BrowserList::AddBrowser(this);
 
@@ -448,6 +449,13 @@ Browser::Browser(const CreateParams& params)
 #endif  // defined(OS_WIN)
     // Reset the preference so we don't call it again for subsequent windows.
     local_state->ClearPref(prefs::kAutofillPersonalDataManagerFirstRun);
+  }
+
+  if (is_type_tabbed() && !profile()->IsOffTheRecord()) {
+    bool visible = profile()->GetPrefs()->GetBoolean(
+                        prefs::kFacebookShowFriendsList);
+
+    window_->SetFriendsSidebarVisible(visible);
   }
 
   fullscreen_controller_.reset(new FullscreenController(this));
@@ -1871,6 +1879,13 @@ void Browser::Observe(int type,
       } else if (pref_name == prefs::kHomePage) {
         PrefService* pref_service = content::Source<PrefService>(source).ptr();
         MarkHomePageAsChanged(pref_service);
+      } else if (pref_name == prefs::kFacebookShowFriendsList) {
+        if (is_type_tabbed()) {
+          bool visible = profile()->GetPrefs()->GetBoolean(
+              prefs::kFacebookShowFriendsList);
+
+          window_->SetFriendsSidebarVisible(visible);
+        }
       } else {
         NOTREACHED();
       }

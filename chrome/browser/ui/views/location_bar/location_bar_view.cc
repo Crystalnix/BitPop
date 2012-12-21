@@ -42,6 +42,7 @@
 #include "chrome/browser/ui/views/location_bar/ev_bubble_view.h"
 #include "chrome/browser/ui/views/location_bar/keyword_hint_view.h"
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
+#include "chrome/browser/ui/views/location_bar/mybub_search_view.h"
 #include "chrome/browser/ui/views/location_bar/page_action_image_view.h"
 #include "chrome/browser/ui/views/location_bar/page_action_with_badge_view.h"
 #include "chrome/browser/ui/views/location_bar/selected_keyword_view.h"
@@ -301,6 +302,15 @@ void LocationBarView::Init(views::View* popup_parent_view) {
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED,
                  content::Source<Profile>(profile_));
+
+  Browser* browser = browser::FindBrowserWithProfile(profile_);
+  if (browser) {
+    mybub_search_view_ = new MybubSearchView(location_entry_.get(), browser);
+    AddChildView(mybub_search_view_);
+    mybub_search_view_->SetVisible(false);
+  }
+  else
+    mybub_search_view_ = NULL;
 
   // Initialize the location entry. We do this to avoid a black flash which is
   // visible when the location entry has just been initialized.
@@ -662,6 +672,8 @@ void LocationBarView::Layout() {
                     location_icon_width + kItemEditPadding);
   }
 
+  mybub_search_view_->SetVisible(!location_entry_->model()->CurrentTextIsURL());
+
   if (star_view_ && star_view_->visible())
     entry_width -= star_view_->GetPreferredSize().width() + GetItemPadding();
   if (chrome_to_mobile_view_ && chrome_to_mobile_view_->visible()) {
@@ -676,8 +688,12 @@ void LocationBarView::Layout() {
     if ((*i)->visible())
       entry_width -= ((*i)->GetPreferredSize().width() + GetItemPadding());
   }
+
   if (zoom_view_ && zoom_view_->visible())
     entry_width -= zoom_view_->GetPreferredSize().width() + GetItemPadding();
+  if (mybub_search_view_->visible())
+    entry_width -= mybub_search_view_->GetPreferredSize().width() + GetItemPadding();
+
   for (ContentSettingViews::const_iterator i(content_setting_views_.begin());
        i != content_setting_views_.end(); ++i) {
     if ((*i)->visible())
@@ -777,6 +793,14 @@ void LocationBarView::Layout() {
     int zoom_width = zoom_view_->GetPreferredSize().width();
     offset -= zoom_width;
     zoom_view_->SetBounds(offset, location_y, zoom_width, location_height);
+    offset -= GetItemPadding();
+  }
+
+  if (mybub_search_view_->visible()) {
+    int mybub_search_width = mybub_search_view_->GetPreferredSize().width();
+    int mybub_search_height = mybub_search_view_->GetPreferredSize().height();
+    offset -= mybub_search_width;
+    mybub_search_view_->SetPosition(gfx::Point(offset, location_y + (location_height - mybub_search_height) / 2));
     offset -= GetItemPadding();
   }
 

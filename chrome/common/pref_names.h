@@ -753,6 +753,9 @@ extern const char kNetworkProfileLastWarningTime[];
 extern const char kMacLeopardObsoleteInfobarLastShown[];
 #endif  // defined(OS_MACOSX)
 
+extern const char kAutomaticUpdatesEnabled[];
+extern const char kFacebookShowFriendsList[];
+
 }  // namespace prefs
 
 #endif  // CHROME_COMMON_PREF_NAMES_H_

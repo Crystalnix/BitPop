@@ -28,15 +28,15 @@ using installer::InstallationState;
 namespace {
 
 const wchar_t kGoogleUpdatePoliciesKey[] =
-    L"SOFTWARE\\Policies\\Google\\Update";
+    L"SOFTWARE\\Policies\\HouseOfLife\\BitpopUpdate";
 const wchar_t kGoogleUpdateUpdatePolicyValue[] = L"UpdateDefault";
 const wchar_t kGoogleUpdateUpdateOverrideValuePrefix[] = L"Update";
 const GoogleUpdateSettings::UpdatePolicy kGoogleUpdateDefaultUpdatePolicy =
-#if defined(GOOGLE_CHROME_BUILD)
+//#if defined(GOOGLE_CHROME_BUILD)
     GoogleUpdateSettings::AUTOMATIC_UPDATES;
-#else
-    GoogleUpdateSettings::UPDATES_DISABLED;
-#endif
+//#else
+//    GoogleUpdateSettings::UPDATES_DISABLED;
+//#endif
 
 // An list of search results in increasing order of desirability.
 enum EulaSearchResult {

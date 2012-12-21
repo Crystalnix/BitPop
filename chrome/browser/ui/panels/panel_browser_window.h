@@ -154,6 +154,11 @@ class PanelBrowserWindow : public BrowserWindow,
                              int index,
                              bool foreground) OVERRIDE;
 
+  virtual FacebookChatbar* GetChatbar() OVERRIDE;
+  virtual bool IsFriendsSidebarVisible() const OVERRIDE;
+  virtual void SetFriendsSidebarVisible(bool visible) OVERRIDE;
+  virtual bool IsChatbarVisible() const OVERRIDE;
+
  protected:
   virtual void DestroyBrowser() OVERRIDE;
 

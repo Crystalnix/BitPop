@@ -124,6 +124,9 @@ class ProfileImpl : public Profile,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  virtual bool should_show_additional_extensions() const OVERRIDE;
+  virtual void set_should_show_additional_extensions(bool flag) OVERRIDE;
+
  private:
   friend class Profile;
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest,
@@ -256,6 +259,8 @@ class ProfileImpl : public Profile,
   chrome_browser_net::Predictor* predictor_;
 
   bool session_restore_enabled_;
+
+  bool should_show_additional_extensions_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileImpl);
 };

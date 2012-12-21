@@ -935,8 +935,8 @@ const wchar_t* ShellUtil::kAppPathsRegistryPathName = L"Path";
 const wchar_t* ShellUtil::kChromeHTMLProgId = L"ChromeHTML";
 const wchar_t* ShellUtil::kChromeHTMLProgIdDesc = L"Chrome HTML Document";
 #else
-const wchar_t* ShellUtil::kChromeHTMLProgId = L"ChromiumHTML";
-const wchar_t* ShellUtil::kChromeHTMLProgIdDesc = L"Chromium HTML Document";
+const wchar_t* ShellUtil::kChromeHTMLProgId = L"BitPopHTML";
+const wchar_t* ShellUtil::kChromeHTMLProgIdDesc = L"BitPop HTML Document";
 #endif
 
 const wchar_t* ShellUtil::kFileAssociations[] = {L".htm", L".html", L".shtml",
@@ -1114,7 +1114,7 @@ bool ShellUtil::GetQuickLaunchPath(bool system_level, FilePath* path) {
   if (system_level) {
     wchar_t qlaunch[MAX_PATH];
     // We are accessing GetDefaultUserProfileDirectory this way so that we do
-    // not have to declare dependency to Userenv.lib for chrome.exe
+    // not have to declare dependency to Userenv.lib for bitpop.exe
     typedef BOOL (WINAPI *PROFILE_FUNC)(LPWSTR, LPDWORD);
     HMODULE module = LoadLibrary(L"Userenv.dll");
     PROFILE_FUNC p = reinterpret_cast<PROFILE_FUNC>(GetProcAddress(module,
