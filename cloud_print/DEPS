@@ -1,5 +1,0 @@
-include_rules = [
-  "+chrome/installer/launcher_support",
-  "+grit",  # For generated headers
-  "+net",
-]
