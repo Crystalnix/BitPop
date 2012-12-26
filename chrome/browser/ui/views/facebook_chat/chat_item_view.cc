@@ -181,9 +181,10 @@ ChatItemView::~ChatItemView() {
   if (openChatButton_)
     delete openChatButton_;
   if (chat_popup_) {
-    chat_popup_->GetWidget()->RemoveObserver(this);
+    //chat_popup_->GetWidget()->RemoveObserver(this);
+    //chat_popup_->GetWidget()->Close();
+    //delete chat_popup_;
     chat_popup_->GetWidget()->Close();
-    delete chat_popup_;
   }
   if (notification_popup_) {
     notification_popup_->GetWidget()->RemoveObserver(this);
@@ -309,7 +310,7 @@ void ChatItemView::ActivateChat() {
     urlString += "#";
     urlString += model_->jid() + "&" + mgr->global_my_uid();
 
-    chat_popup_ = ChatPopup::ShowPopup(GURL(urlString), chatbar_->browser(),
+    chat_popup_ = ExtensionChatPopup::ShowPopup(GURL(urlString), chatbar_->browser(),
                                   this, BitpopBubbleBorder::BOTTOM_CENTER);
     chat_popup_->GetWidget()->AddObserver(this);
     openChatButton_->SetEnabled(false);

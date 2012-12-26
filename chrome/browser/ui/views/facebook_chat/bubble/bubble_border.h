@@ -1,20 +1,24 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_BUBBLE_BUBBLE_BORDER_H_
 #define CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_BUBBLE_BUBBLE_BORDER_H_
-#pragma once
 
+#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
 
-class SkBitmap;
+namespace gfx {
+class ImageSkia;
+}
+
+namespace views {
 
 // Renders a border, with optional arrow, and a custom dropshadow.
 // This can be used to produce floating "bubble" objects with rounded corners.
-class BitpopBubbleBorder : public views::Border {
+class BitpopBubbleBorder : public Border {
  public:
   // Possible locations for the (optional) arrow.
   // 0 bit specifies left or right.
@@ -59,9 +63,7 @@ class BitpopBubbleBorder : public views::Border {
   }
 
   // Sets the location for the arrow.
-  void set_arrow_location(ArrowLocation arrow_location) {
-    arrow_location_ = arrow_location;
-  }
+  void set_arrow_location(ArrowLocation loc) { arrow_location_ = loc; }
   ArrowLocation arrow_location() const { return arrow_location_; }
 
   // Sets the alignment.
@@ -77,34 +79,43 @@ class BitpopBubbleBorder : public views::Border {
   }
 
   static bool has_arrow(ArrowLocation loc) {
-    return (loc >= NONE && loc != BOTTOM_CENTER) ? false : true;
+    if (loc == BOTTOM_CENTER)
+      return true;
+    return loc >= NONE ? false : true;
   }
 
   static bool is_arrow_on_left(ArrowLocation loc) {
+    if (loc == BOTTOM_CENTER)
+      return false;
     return loc >= NONE ? false : !(loc & 1);
   }
 
   static bool is_arrow_on_top(ArrowLocation loc) {
+    if (loc == BOTTOM_CENTER)
+      return false;
     return loc >= NONE ? false : !(loc & 2);
   }
 
   static bool is_arrow_on_horizontal(ArrowLocation loc) {
+    if (loc == BOTTOM_CENTER)
+      return true;
     return loc >= NONE ? false : !(loc & 4);
   }
 
   // Sets the background color for the arrow body.  This is irrelevant if you do
   // not also set the arrow location to something other than NONE.
-  void set_background_color(SkColor background_color) {
-    background_color_ = background_color;
-  }
+  void set_background_color(SkColor color) { background_color_ = color; }
   SkColor background_color() const { return background_color_; }
+
+  void set_client_bounds(const gfx::Rect& bounds) { client_bounds_ = bounds; }
+  const gfx::Rect& client_bounds() const { return client_bounds_; }
 
   // For borders with an arrow, gives the desired bounds (in screen coordinates)
   // given the rect to point to and the size of the contained contents.  This
   // depends on the arrow location, so if you change that, you should call this
   // again to find out the new coordinates.
-  gfx::Rect GetBounds(const gfx::Rect& position_relative_to,
-                      const gfx::Size& contents_size) const;
+  virtual gfx::Rect GetBounds(const gfx::Rect& position_relative_to,
+                              const gfx::Size& contents_size) const;
 
   // Sets a fixed offset for the arrow from the beginning of corresponding edge.
   // The arrow will still point to the same location but the bubble will shift
@@ -112,11 +123,20 @@ class BitpopBubbleBorder : public views::Border {
   // overflow it differ from desired.
   int SetArrowOffset(int offset, const gfx::Size& contents_size);
 
-  // Overridden from views::Border:
+  // Overridden from Border:
   virtual void GetInsets(gfx::Insets* insets) const OVERRIDE;
 
   // How many pixels the bubble border is from the edge of the images.
-  int border_thickness() const;
+  virtual int GetBorderThickness() const;
+
+ protected:
+  virtual ~BitpopBubbleBorder();
+
+  // Calculates the insets for a specific arrow location. Normally called from
+  // GetInsets(arrow_location()), but may be called by specialized BitpopBubbleBorder
+  // implementations.
+  virtual void GetInsetsForArrowLocation(gfx::Insets* insets,
+                                         ArrowLocation arrow_loc) const;
 
  private:
   struct BorderImages;
@@ -124,28 +144,21 @@ class BitpopBubbleBorder : public views::Border {
   // Loads images if necessary.
   static BorderImages* GetBorderImages(Shadow shadow);
 
-  virtual ~BitpopBubbleBorder();
-
-  // Overridden from views::Border:
-  virtual void Paint(const views::View& view,
+  // Overridden from Border:
+  virtual void Paint(const View& view,
                      gfx::Canvas* canvas) const OVERRIDE;
 
   void DrawEdgeWithArrow(gfx::Canvas* canvas,
                          bool is_horizontal,
-                         SkBitmap* edge,
-                         SkBitmap* arrow,
+                         gfx::ImageSkia* edge,
+                         gfx::ImageSkia* arrow,
                          int start_x,
                          int start_y,
                          int before_arrow,
                          int after_arrow,
                          int offset) const;
 
-  void DrawArrowInterior(gfx::Canvas* canvas,
-                         bool is_horizontal,
-                         int tip_x,
-                         int tip_y,
-                         int shift_x,
-                         int shift_y) const;
+  void DrawArrowInterior(gfx::Canvas* canvas, float tip_x, float tip_y) const;
 
   // Border graphics.
   struct BorderImages* images_;
@@ -164,22 +177,28 @@ class BitpopBubbleBorder : public views::Border {
   BubbleAlignment alignment_;
   SkColor background_color_;
 
+  // The client/content bounds; must be clipped from the background on Windows.
+  // TODO(msw): Clean this up when Windows native controls are no longer needed.
+  gfx::Rect client_bounds_;
+
   DISALLOW_COPY_AND_ASSIGN(BitpopBubbleBorder);
 };
 
-// A Background that clips itself to the specified BubbleBorder and uses
-// the background color of the BubbleBorder.
-class VIEWS_EXPORT BitpopBubbleBackground : public views::Background {
+// A Background that clips itself to the specified BitpopBubbleBorder and uses
+// the background color of the BitpopBubbleBorder.
+class BitpopBubbleBackground : public Background {
  public:
   explicit BitpopBubbleBackground(BitpopBubbleBorder* border) : border_(border) {}
 
-  // Background overrides.
-  virtual void Paint(gfx::Canvas* canvas, views::View* view) const OVERRIDE;
+  // Overridden from Background:
+  virtual void Paint(gfx::Canvas* canvas, View* view) const OVERRIDE;
 
  private:
   BitpopBubbleBorder* border_;
 
   DISALLOW_COPY_AND_ASSIGN(BitpopBubbleBackground);
 };
+
+}  // namespace views
 
 #endif  // CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_BUBBLE_BUBBLE_BORDER_H_

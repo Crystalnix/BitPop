@@ -1,11 +1,9 @@
-// Copyright (c) 2012 House of Life Property Ltd. All rights reserved.
-// Copyright (c) 2012 Crystalnix <vgachkaylo@crystalnix.com>
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_CHAT_POPUP_H_
-#define CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_CHAT_POPUP_H_
-#pragma once
+#ifndef CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_EXTENSION_CHAT_POPUP_H_
+#define CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_EXTENSION_CHAT_POPUP_H_
 
 #include "base/compiler_specific.h"
 #include "chrome/browser/extensions/extension_host.h"
@@ -17,15 +15,12 @@
 
 class Browser;
 
-using views::BitpopBubbleDelegateView;
-using views::BitpopBubbleBorder;
-
-class ChatPopup : public BitpopBubbleDelegateView,
-                  public ExtensionView::Container,
-                  public content::NotificationObserver,
-                  public views::WidgetFocusChangeListener {
+class ExtensionChatPopup : public views::BitpopBubbleDelegateView,
+                       public ExtensionView::Container,
+                       public content::NotificationObserver,
+                       public views::WidgetFocusChangeListener {
  public:
-  virtual ~ChatPopup();
+  virtual ~ExtensionChatPopup();
 
   // Create and show a popup with |url| positioned adjacent to |anchor_view|.
   // |browser| is the browser to which the pop-up will be attached.  NULL is a
@@ -37,11 +32,11 @@ class ChatPopup : public BitpopBubbleDelegateView,
   // the popup 'drops down'.
   // The actual display of the popup is delayed until the page contents
   // finish loading in order to minimize UI flashing and resizing.
-  static ChatPopup* ShowPopup(
+  static ExtensionChatPopup* ShowPopup(
       const GURL& url,
       Browser* browser,
       views::View* anchor_view,
-      BitpopBubbleBorder::ArrowLocation arrow_location);
+      views::BitpopBubbleBorder::ArrowLocation arrow_location);
 
   extensions::ExtensionHost* host() const { return extension_host_.get(); }
 
@@ -66,24 +61,29 @@ class ChatPopup : public BitpopBubbleDelegateView,
   static const int kMaxWidth;
   static const int kMaxHeight;
 
-  // WidgetDelegate overrides:
-  //virtual views::View* GetInitiallyFocusedView() OVERRIDE;
-
  private:
-  ChatPopup(Browser* browser,
-            extensions::ExtensionHost* host,
-            views::View* anchor_view,
-            BitpopBubbleBorder::ArrowLocation arrow_location);
+  ExtensionChatPopup(Browser* browser,
+                 extensions::ExtensionHost* host,
+                 views::View* anchor_view,
+                 views::BitpopBubbleBorder::ArrowLocation arrow_location);
 
   // Show the bubble, focus on its content, and register listeners.
   void ShowBubble();
-
+//public:
+  void CloseBubble();
+//private:
   // The contained host for the view.
   scoped_ptr<extensions::ExtensionHost> extension_host_;
 
+  // Flag used to indicate if the pop-up should open a devtools window once
+  // it is shown inspecting it.
+  bool inspect_with_devtools_;
+
   content::NotificationRegistrar registrar_;
 
-  DISALLOW_COPY_AND_ASSIGN(ChatPopup);
+  base::WeakPtrFactory<ExtensionChatPopup> close_bubble_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(ExtensionChatPopup);
 };
 
-#endif  // CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_CHAT_POPUP_H_
+#endif  // CHROME_BROWSER_UI_VIEWS_FACEBOOK_CHAT_EXTENSION_CHAT_POPUP_H_

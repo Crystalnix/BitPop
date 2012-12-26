@@ -4,6 +4,7 @@ var statuses = {};
 var inboxData = null;
 var inboxFetchInterval = null;
 var newMessageAudio = new Audio("mouth_pop.wav");
+var loggedIn = false;
 
 //chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
 //  { type: 'observe',
@@ -15,7 +16,7 @@ var newMessageAudio = new Audio("mouth_pop.wav");
     chrome.browserAction.onClicked.addListener(function (tab) {
       chrome.bitpop.facebookChat.getFriendsSidebarVisible(function(is_visible) {
         chrome.bitpop.facebookChat.setFriendsSidebarVisible(!is_visible);
-        onSuppressChatChanged();
+        //onSuppressChatChanged();
       });
     });
   else
@@ -28,7 +29,7 @@ setTimeout(
   function() {
     if (!myUid) {
       chrome.extension.sendRequest(
-        bitpop.CONTROLLER_EXTENSION_ID,
+        bitpop.CONTROLLER_EXTENSION_ID, 
         { type: 'getMyUid' },
         function(response) {
           myUid = response.id;
@@ -70,6 +71,8 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
       inboxFetchInterval = setInterval(function() {
         if (myUid && friendList) { sendInboxRequest(); }
        }, 1000 * 60 * 30);
+      loggedIn = true;
+      onSupressChatChanged();
   } else if (request.type == 'friendListReceived') {
     if (!friendList) {
       // send status notifications so that every visible chat button
@@ -88,6 +91,8 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
     if (inboxFetchInterval) { clearInterval(inboxFetchInterval); inboxFetchInterval = null; }
     statuses = {};
     friendList = null;
+    loggedIn = false;
+    onSupressChatChanged();
   } else if (request.type == 'wentOffline') {
     if (inboxFetchInterval) { clearInterval(inboxFetchInterval); inboxFetchInterval = null; }
     statuses = {};
@@ -155,7 +160,7 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
       chrome.bitpop.facebookChat.newIncomingMessage(request.uid.toString(), "",
           'active', "");
     }
-
+      
     if (friendList) {
       for (var i = 0; i < friendList.length; ++i) {
         if (friendList[i].uid == request.uid) {
@@ -212,7 +217,7 @@ function replaceLocalHistory(data) {
       continue;
 
     var jid = myUid + ':' + to_ids[0].toString();
-
+    
     localStorage[jid + '.thread_id'] = data[i].id;
 
     if (!data[i].comments || !data[i].comments.data)
@@ -309,9 +314,9 @@ function addFbFunctionality( )
                                 };
                             sendResponseToContentScript(sendResponse, data, "ok", response);
                         } else {
-                            chrome.bitpop.facebookChat.getFriendsSidebarVisible(function(is_visible) {
+                            //chrome.bitpop.facebookChat.getFriendsSidebarVisible(function(is_visible) {
                               var response = null;
-                              if (is_visible) {
+                              if (loggedIn) {
                                 response = {
                                   enableChat:   ffSettings.get('show_chat'),
                                   enableJewels: ffSettings.get('show_jewels')
@@ -323,7 +328,7 @@ function addFbFunctionality( )
 
                               sendResponseToContentScript(sendResponse, data,
                                                           "ok", response);
-                            });
+                            //});
                         }
                     }
                 } catch(e) {

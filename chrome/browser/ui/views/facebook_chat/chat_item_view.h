@@ -12,7 +12,7 @@
 
 #include "base/timer.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
-#include "chrome/browser/ui/views/facebook_chat/chat_popup.h"
+#include "chrome/browser/ui/views/facebook_chat/extension_chat_popup.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/view.h"
@@ -96,7 +96,7 @@ private:
 
   SkColor close_button_bg_color_;
 
-  ChatPopup *chat_popup_;
+  ExtensionChatPopup *chat_popup_;
   ChatNotificationPopup* notification_popup_;
 
   typedef base::OneShotTimer<ChatItemView> ChatTimer;

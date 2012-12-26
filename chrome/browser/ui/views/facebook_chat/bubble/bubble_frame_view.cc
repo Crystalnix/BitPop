@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,19 +37,13 @@ int GetOffScreenLength(const gfx::Rect& monitor_bounds,
 
 }  // namespace
 
-BitpopBubbleFrameView::BitpopBubbleFrameView(BitpopBubbleBorder::ArrowLocation arrow_location,
-                                 SkColor color,
-                                 int margin)
-    : bubble_border_(NULL),
-      content_margins_(margin, margin, margin, margin) {
-  if (base::i18n::IsRTL())
-    arrow_location = BitpopBubbleBorder::horizontal_mirror(arrow_location);
-  // TODO(alicet): Expose the shadow option in BorderContentsView when we make
-  // the fullscreen exit bubble use the new bubble code.
-  bubble_border_ = new BitpopBubbleBorder(arrow_location, BitpopBubbleBorder::NO_SHADOW);
+namespace views {
+
+BitpopBubbleFrameView::BitpopBubbleFrameView(const gfx::Insets& margins,
+                                 BitpopBubbleBorder* border)
+    : bubble_border_(border),
+      content_margins_(margins) {
   set_border(bubble_border_);
-  set_background(new BitpopBubbleBackground(bubble_border_));
-  bubble_border()->set_background_color(color);
 }
 
 BitpopBubbleFrameView::~BitpopBubbleFrameView() {}
@@ -94,6 +88,14 @@ gfx::Rect BitpopBubbleFrameView::GetUpdatedWindowBounds(const gfx::Rect& anchor_
   return bubble_border_->GetBounds(anchor_rect, client_size);
 }
 
+void BitpopBubbleFrameView::SetBubbleBorder(BitpopBubbleBorder* border) {
+  bubble_border_ = border;
+  set_border(bubble_border_);
+
+  // Update the background, which relies on the border.
+  set_background(new views::BitpopBubbleBackground(border));
+}
+
 gfx::Rect BitpopBubbleFrameView::GetMonitorBounds(const gfx::Rect& rect) {
   return gfx::Screen::GetDisplayNearestPoint(rect.CenterPoint()).work_area();
 }
@@ -115,9 +117,11 @@ void BitpopBubbleFrameView::MirrorArrowIfOffScreen(
         bubble_border_->GetBounds(anchor_rect, client_size);
     // Restore the original arrow if mirroring doesn't show more of the bubble.
     if (GetOffScreenLength(monitor_rect, mirror_bounds, vertical) >=
-        GetOffScreenLength(monitor_rect, window_bounds, vertical)) {
+        GetOffScreenLength(monitor_rect, window_bounds, vertical))
       bubble_border_->set_arrow_location(arrow);
-    }
+    else
+      SchedulePaint();
   }
 }
 
+}  // namespace views

@@ -207,7 +207,7 @@ bitpop.FacebookController = (function() {
     } else if (status == Strophe.Status.DISCONNECTED) {
       console.log('Strophe is disconnected.');
       connection.reset();
-      if (localStorage.myUid && localStorage.accessToken &&
+      if (localStorage.myUid && localStorage.accessToken && 
           !(prevIdleState == 'idle' || prevIdleState == 'locked'))
         connectToFacebookChat();
     } else if (status == Strophe.Status.CONNECTED) {
@@ -358,7 +358,7 @@ bitpop.FacebookController = (function() {
   }
 
   function idleStateUpdate(newState) {
-    if ((prevIdleState == "idle" || prevIdleState == "locked") &&
+    if ((prevIdleState == "idle" || prevIdleState == "locked") && 
         newState == "active") {
       clearInterval(query_idle_timer);
       query_idle_timer = null;
@@ -593,8 +593,16 @@ bitpop.FacebookController = (function() {
         if (found)
           break;
       }
-      if (!found)
-        window.open(url, "newwin", "height=580,width=400,toolbar=no,scrollbars=no,menubar=no,location=no");
+      if (!found) {
+        var w = 1000;
+        var h = 450;
+        var left = (screen.width/2)-(w/2);
+        var top = (screen.height/2)-(h/2); 
+
+        window.open(url, "newwin", "height=" + h + ",width=" + w + 
+            ",left=" + left + ",top=" + top + 
+            ",toolbar=no,scrollbars=no,menubar=no,location=no");
+      }
     });
 
     //chrome.windows.create({ url: url, type: "popup", width: 400, height: 580 });

@@ -19,6 +19,9 @@ namespace views {
   class ImageButton;
 }
 
+using views::BitpopBubbleDelegateView;
+using views::BitpopBubbleBorder;
+
 class ChatNotificationPopup : public BitpopBubbleDelegateView,
                               public views::ButtonListener /*,
                               public views::WidgetFocusChangeListener */ {

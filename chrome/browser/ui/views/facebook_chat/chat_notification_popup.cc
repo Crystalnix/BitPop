@@ -15,6 +15,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/layout/fill_layout.h"
+#include "ui/views/widget/widget.h"
 
 //#include "grit/theme_resources.h"
 //#include "ui/base/resource/resource_bundle.h"
@@ -139,6 +140,7 @@ ChatNotificationPopup* ChatNotificationPopup::Show(views::View* anchor_view,
   popup->set_color(kNotificationPopupBackgroundColor);
   popup->set_close_on_deactivate(false);
   popup->set_use_focusless(true);
+  popup->set_move_with_anchor(true);
 
   popup->SetLayoutManager(new views::FillLayout());
   //popup->AddChildView(popup->container_view());
@@ -155,7 +157,7 @@ ChatNotificationPopup* ChatNotificationPopup::Show(views::View* anchor_view,
 
   BitpopBubbleDelegateView::CreateBubble(popup);
 
-  popup->GetWidget()->Show();
+  popup->GetWidget()->ShowInactive();
 
   return popup;
 }

@@ -72,11 +72,7 @@ void SessionStartupPref::RegisterUserPrefs(PrefService* prefs) {
 
 // static
 SessionStartupPref::Type SessionStartupPref::GetDefaultStartupType() {
-#if defined(OS_CHROMEOS)
   return SessionStartupPref::LAST;
-#else
-  return SessionStartupPref::DEFAULT;
-#endif
 }
 
 // static

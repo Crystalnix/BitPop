@@ -16,6 +16,7 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/views/layout/fill_layout.h"
+#include "ui/views/widget/widget.h"
 
 using content::WebContents;
 using extensions::ExtensionHost;
@@ -36,7 +37,8 @@ ChatPopup::ChatPopup(
     : BitpopBubbleDelegateView(anchor_view, arrow_location),
       extension_host_(host) {
   // Adjust the margin so that contents fit better.
-  set_margin(BitpopBubbleBorder::GetCornerRadius() / 2);
+  int margin = BitpopBubbleBorder::GetCornerRadius() / 2;
+  set_margins(gfx::Insets(margin, margin, margin, margin));
   SetLayoutManager(new views::FillLayout());
   AddChildView(host->view());
   host->view()->SetContainer(this);

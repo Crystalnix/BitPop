@@ -188,7 +188,7 @@ bitpop.chat = (function() {
         var scrollTop = $(this).scrollTop();
         $(this).scrollTop(scrollTop-Math.round(ev.originalEvent.wheelDelta/40));
       });
-
+      
       $(window).unload(function () {
         localStorage.setItem('msg:' + myUid + ':' + friendUid, $('#msg').val());
       });
