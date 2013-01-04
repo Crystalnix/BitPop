@@ -1,9 +1,14 @@
 {
   "name": "Facebook Friends Sidebar",
-  "version": "1.9.3",
+  "version": "1.10.0",
   "description": "Shows a sidebar with a list of Facebook friends to the right of current web page.",
-  "background_page": "background.html",
-  "options_page": "fancy-settings/source/index.html",
+  "background": {
+    "scripts": [
+      "js/autolink-min.js",
+      "js/common.js",
+      "js/background.js"
+    ]
+  },
   "browser_action": {
     "default_title": "Facebook chat",
     "default_icon": "images/facebook_icon.png"
@@ -27,6 +32,7 @@
     "https://api.facebook.com/*",
     "https://graph.facebook.com/*"
   ],
-  "update_url": "http://tools.bitpop.com/ext/updates.xml"
+  "update_url": "http://tools.bitpop.com/ext/updates.xml",
+  "manifest_version": 2
 }
 

@@ -1,0 +1,1 @@
+bitpop.FacebookController.init();

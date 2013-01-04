@@ -1,6 +1,6 @@
 {
   "name": "Facebook Controller",
-  "version": "1.3.5",
+  "version": "1.4.0",
   "description": "Make calls to Facebook Graph API, FQL queries, XMPP chat service.",
   "icons": {
     "128": "icon128.png",
@@ -8,7 +8,15 @@
     "32": "icon32.png",
     "48": "icon48.png"
   },
-  "background_page": "background.html",
+  "background": {
+    "scripts": [
+      "js/jquery.min.js",
+      "js/strophe.min.js",
+      "js/strophe-facebook.js",
+      "js/facebook_controller.js",
+      "js/main.js"
+    ]
+  },
   "permissions": [
     "idle",
     "tabs",
@@ -18,5 +26,6 @@
     "https://api.facebook.com/*",
     "https://graph.facebook.com/*"
   ],
-  "update_url": "http://tools.bitpop.com/ext/updates.xml"
+  "update_url": "http://tools.bitpop.com/ext/updates.xml",
+  "manifest_version": 2
 }

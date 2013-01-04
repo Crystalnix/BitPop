@@ -1,6 +1,6 @@
 /* ======================================================
- * Copyright (C) 2011 House of Life Property Ltd. All rights reserved.
- * Copyright (C) 2001 Crystalnix <vgachkaylo@crystalnix.com>
+ * Copyright (C) 2011-2012 House of Life Property Ltd. All rights reserved.
+ * Copyright (C) 2011-2012 Crystalnix <vgachkaylo@crystalnix.com>
  *
  * @requires
  *   Strophe

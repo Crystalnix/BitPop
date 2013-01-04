@@ -16,6 +16,22 @@ var settings = new Store("settings", {
   "proxy_active_message": true
 });
 
+bitpop.prefs.blockedSitesList.onChange.addListener(function(details) {
+  var domains = JSON.parse(details.value);
+  settings.set('domains', domains);
+  chrome.extension.sendRequest({ reason: 'settingsChanged' });
+});
+
+bitpop.prefs.globalProxyControl.onChange.addListener(function(details) {
+  settings.set('proxy_control', details.value);
+  chrome.extension.sendRequest({ reason: 'settingsChanged' });
+});
+
+bitpop.prefs.showMessageForActiveProxy.onChange.addListener(function(details) {
+  settings.set('proxy_active_message', details.value);
+  chrome.extension.sendRequest({ reason: 'settingsChanged' });
+});
+
 function init() {
   (function() {
     if (Date.now() - settings.get('last_update_time') > DOMAINS_UPDATE_INTERVAL ||
@@ -36,6 +52,23 @@ function init() {
   );
 }
 
+function haveDomainsChanged(domains) {
+  var changed = false;
+  var old_domains = settings.get('domains');
+
+  if (domains.length != old_domains.length) {
+    changed = true;
+  } else {
+    for (var i = 0; i < domains.length; i++) {
+      if (changed = changed ||
+          domains[i] != old_domains[i].description)
+        break;
+    }
+  } 
+
+  return changed;
+}
+
 function updateProxifiedDomains() {
   var xhr = new XMLHttpRequest();
   xhr.onreadystatechange = function() {
@@ -43,24 +76,13 @@ function updateProxifiedDomains() {
       var response = JSON.parse(xhr.responseText);
       if (!response.domains)
         return;
+
       var domains = response.domains;
-      var changed = false;
-      var old_domains = settings.get('domains');
-
-      if (domains.length != old_domains.length) {
-        changed = true;
-      } else {
-        for (var i = 0; i < domains.length; i++) {
-          if (changed = changed ||
-              domains[i] != old_domains[i].description)
-            break;
-        }
-      }
-
-      if (changed) {
+      if (haveDomainsChanged(domains)) {
         setDomains(domains);
         settings.set('country_code', response.country_code);
         settings.set('country_name', response.country_name);
+        bitpop.prefs.ipRecognitionCountryName.set({ value: response.country_name });
 
         chrome.extension.sendRequest({ reason: 'settingsChanged' });
 
@@ -105,6 +127,7 @@ function setDomains(newDomains) {
     });
   }
   settings.set('domains', domains);
+  bitpop.prefs.blockedSitesList.set({ value: JSON.stringify(domains) });
 }
 
 function onBeforeRequestListener(details) {

@@ -6,9 +6,8 @@
   "background": {
     "scripts": ["js/parseuri.js", "js/main.js"]
   },
-  "options_page": "options.html",
-
   "permissions" : [
+    "bitpop",
     "tabs",
     "notifications",
     "http://tools.bitpop.com/*"

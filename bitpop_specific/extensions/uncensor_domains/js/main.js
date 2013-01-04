@@ -12,7 +12,11 @@ String.prototype.format = function() {
 };
 
 var prefsString = ("prefs" in localStorage) ? localStorage.prefs : "";
-var prefs = (prefsString != "") ? JSON.parse(prefsString) : {};
+var localPrefs = (prefsString != "") ? JSON.parse(prefsString) : {};
+var prefs = {};
+
+var inSetFilter = false;
+var inSetExceptions = false;
 
 function downloadFilterData() {
   var xhr = new XMLHttpRequest();
@@ -31,7 +35,7 @@ function downloadFilterData() {
         if (!x in od)
           changed = true;
 
-      if (changed) {
+      if (changed && prefs.notifyUpdate) {
         var notification = webkitNotifications.createNotification(
           '48uncensor.png',  // icon url - can be relative
           chrome.i18n.getMessage("extName"),  // notification title
@@ -44,31 +48,63 @@ function downloadFilterData() {
       }
 
       prefs.domainFilter = od;
+      inSetFilter = true;
+      chrome.bitpop.prefs.uncensorDomainFilter.set({ 
+          scope: "regular", 
+          value: JSON.stringify(prefs.domainFilter)
+        });
 
+      var exceptionsChanged = false;
       for (var excDomain in prefs.domainExceptions) {
         if (!(excDomain in prefs.domainFilter)) {
           delete prefs.domainExceptions[excDomain];
+          exceptionsChanged = true;
         }
       }
+      if (exceptionsChanged) {
+        inSetExceptions = true;
+        chrome.bitpop.prefs.uncensorDomainExceptions.set({ 
+            scope: "regular",
+            value: JSON.stringify(prefs.domainExceptions)
+          });
+      }
 
-      prefs.lastUpdate = Date.now();
-      localStorage.prefs = JSON.stringify(prefs);
+      localPrefs.lastUpdate = Date.now();
+      localStorage.prefs = JSON.stringify(localPrefs);
     }
   };
   xhr.open("GET", 'http://tools.bitpop.com/service/uncensor_domains', true);
   xhr.send();
 }
 
-function firstInitPrefs() {
-  prefs = {};
-  prefs.shouldRedirect = true;
-  prefs.showMessage = true;
-  prefs.notifyUpdate = true;
-  prefs.domainFilter = {};
-  prefs.domainExceptions = {};
-  prefs.lastUpdate = 0;
+function initPrefs() {
+  localPrefs = {};
+  localPrefs.lastUpdate = 0;
 
-  localStorage.prefs = JSON.stringify(prefs);
+  localStorage.prefs = JSON.stringify(localPrefs);
+
+  prefs = {};
+  chrome.bitpop.prefs.uncensorShouldRedirect.get({}, function(details) {
+    prefs.shouldRedirect = (details.value === 'ON');
+  });
+  chrome.bitpop.prefs.uncensorShowMessage.get({}, function(details) {
+    prefs.showMessage = details.value;
+  });
+  chrome.bitpop.prefs.uncensorNotifyUpdates.get({}, function(details) {
+    prefs.notifyUpdate = details.value;
+  });
+  chrome.bitpop.prefs.uncensorDomainFilter.get({}, function(details) {
+    prefs.domainFilter = JSON.parse(details.value);
+  });
+  chrome.bitpop.prefs.uncensorDomainExceptions.get({}, function(details) {
+    prefs.domainExceptions = JSON.parse(details.value);
+  });
+  //prefs.shouldRedirect = true;
+  //prefs.showMessage = true;
+  //prefs.notifyUpdate = true;
+  //prefs.domainFilter = {};
+  //prefs.domainExceptions = {};
+  
 }
 
 function checkAndUpdate() {
@@ -78,7 +114,7 @@ function checkAndUpdate() {
 }
 
 // Called when the url of a tab changes.
-      function redirectListener(tabId, changeInfo, tab) {
+function redirectListener(tabId, changeInfo, tab) {
   if (!prefs || !prefs.shouldRedirect)
     return;
 
@@ -103,19 +139,41 @@ function checkAndUpdate() {
       }, 5000);
     }
   }
-      };
+};
 
 (function() {
-  if (prefsString == "")
-    firstInitPrefs();
+  //if (prefsString == "")
+  initPrefs();
   checkAndUpdate();
 
-  window.addEventListener("storage", function(e) {
-    if (e.key == "prefs" && e.newValue != "") {
-      prefsString = e.newValue;
-      prefs = JSON.parse(e.newValue);
-    }
-  }, false);
+  //window.addEventListener("storage", function(e) {
+  //  if (e.key == "prefs" && e.newValue != "") {
+  //    prefsString = e.newValue;
+  //    prefs = JSON.parse(e.newValue);
+  //  }
+  //}, false);
+
+  chrome.bitpop.prefs.uncensorShouldRedirect.onChange.addListener(function(details) {
+    prefs.shouldRedirect = (details.value === 'ON');
+  });
+  chrome.bitpop.prefs.uncensorShowMessage.onChange.addListener(function(details) {
+    prefs.showMessage = details.value;
+  });
+  chrome.bitpop.prefs.uncensorNotifyUpdates.onChange.addListener(function(details) {
+    prefs.notifyUpdate = details.value;
+  });
+  chrome.bitpop.prefs.uncensorDomainFilter.onChange.addListener(function(details) {
+    if (!inSetFilter)
+      prefs.domainFilter = JSON.parse(detail.value);
+    else
+      inSetFilter = false;
+  });
+  chrome.bitpop.prefs.uncensorDomainExceptions.onChange.addListener(function(details) {
+    if (!inSetExceptions)
+      prefs.domainExceptions = JSON.parse(detail.value);
+    else
+      inSetExceptions = false;
+  });
 
   // Listen for any changes to the URL of any tab.
   chrome.tabs.onUpdated.addListener(redirectListener);

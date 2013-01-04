@@ -315,19 +315,25 @@ function addFbFunctionality( )
                             sendResponseToContentScript(sendResponse, data, "ok", response);
                         } else {
                             //chrome.bitpop.facebookChat.getFriendsSidebarVisible(function(is_visible) {
-                              var response = null;
-                              if (loggedIn) {
-                                response = {
-                                  enableChat:   ffSettings.get('show_chat'),
-                                  enableJewels: ffSettings.get('show_jewels')
-                                };
-                              }
-                              else {
-                                response = { enableChat:true, enableJewels:true };
-                              }
+                              chrome.bitpop.prefs.facebookShowChat.get({}, function(details) {
+                                var facebookShowChat = (details.value.toLowerCase() === 'true');
+                                chrome.bitpop.prefs.facebookShowJewels.get({}, function(details2) {
+                                  var facebookShowJewels = (details2.value.toLowerCase() === 'true');
+                                  var response = null;
+                                  if (loggedIn) {
+                                    response = {
+                                      enableChat:   facebookShowChat,
+                                      enableJewels: facebookShowJewels
+                                    };
+                                  }
+                                  else {
+                                    response = { enableChat:true, enableJewels:true };
+                                  }
 
-                              sendResponseToContentScript(sendResponse, data,
-                                                          "ok", response);
+                                  sendResponseToContentScript(sendResponse, data,
+                                                              "ok", response);
+                                });
+                              });
                             //});
                         }
                     }
@@ -338,7 +344,7 @@ function addFbFunctionality( )
         });
 }
 
-function onSuppressChatChanged() {
+function onSuppressChatChanged(details) {
   for(var i in fbTabs) {
     if(fbTabs[i].injected) {
         var id = parseInt(i);
@@ -352,7 +358,7 @@ function onSuppressChatChanged() {
   }
 }
 
-ffSettings.addEvent("show_chat", onSuppressChatChanged);
-ffSettings.addEvent("show_jewels", onSuppressChatChanged);
+chrome.bitpop.prefs.facebookShowChat.onChange.addListener(onSuppressChatChanged);
+chrome.bitpop.prefs.facebookShowJewels.onChange.addListener(onSuppressChatChanged);
 
 addFbFunctionality();
