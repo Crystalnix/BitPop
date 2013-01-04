@@ -419,6 +419,9 @@ extern const char kFacebookChatExtensionSidebarPage[];
 // Page which shows in a chat window popup
 extern const char kFacebookChatExtensionChatPage[];
 
+extern const char kChromeUIBitpopSettingsFrameURL[];
+extern const char kChromeUIBitpopSettingsFrameHost[];
+
 }  // namespace chrome
 
 #endif  // CHROME_COMMON_URL_CONSTANTS_H_

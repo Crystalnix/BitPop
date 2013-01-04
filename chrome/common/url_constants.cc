@@ -497,4 +497,7 @@ const char kFacebookChatExtensionPrefixURL[] =
 const char kFacebookChatExtensionSidebarPage[] = "friends_sidebar.html";
 
 const char kFacebookChatExtensionChatPage[] = "chat.html";
+
+const char kChromeUIBitpopSettingsFrameURL[] = "chrome://bitpop-settings-frame/";
+const char kChromeUIBitpopSettingsFrameHost[] = "bitpop-settings-frame";
 }  // namespace chrome

@@ -2064,6 +2064,47 @@ void ExtensionPrefs::RegisterUserPrefs(PrefService* prefs) {
                            PrefService::UNSYNCABLE_PREF);
   prefs->RegisterListPref(prefs::kExtensionAllowedInstallSites,
                           PrefService::UNSYNCABLE_PREF);
+  // ----------------------------------------------------------
+  // BitPop custom extensions preference registration:
+  //
+  // ----------------------------------------------------------
+  prefs->RegisterBooleanPref(prefs::kFacebookShowChat,
+                            false,
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kFacebookShowJewels,
+                            true,
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kUncensorShouldRedirect,
+                            "ON",
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kUncensorShowMessage,
+                            true,
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kUncensorNotifyUpdates,
+                            true,
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kUncensorDomainFilter,
+                            "{}", // JSON
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kUncensorDomainExceptions,
+                            "{}", // JSON
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kGlobalProxyControl,
+                            "ON",
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kShowMessageForActiveProxy,
+                            true,
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kIPRecognitionCountryName,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kBlockedSitesList,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
+  // ----------------------------------------------------------
+  // End of BitPop custom extensions preference registration
+  //
+  // ----------------------------------------------------------
 }
 
 }  // namespace extensions

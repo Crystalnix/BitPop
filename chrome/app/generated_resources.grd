@@ -17323,6 +17323,128 @@ Battery full
             desc="Title for notification displayed when a download request is completed">
       Download complete notification
     </message>
+
+    <!-- Strings for bitpop settings page -->
+    <message name="IDS_BITPOP_SETTINGS_TITLE"
+          desc="Title for main bitpop settings page">
+      BitPop Settings
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_SIDEBAR_SECTION_TITLE"
+          desc="Title for facebook chat settings section">
+      Facebook Chat
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_SHOW_CHAT_LABEL"
+          desc="Label for checkbox toggling the chat state on facebook.com">
+      Always show chat on facebook.com
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_SHOW_JEWELS_LABEL"
+          desc="Label for checkbox toggling the jewels state on facebook.com">
+      Always show Requests, Messages and Notifications on facebook.com
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_NOTIFICATIONS_SECTION_TITLE"
+          desc="Title for facebook notifications settings section">
+      Facebook Notifications
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_OPEN_NOTIFICATION_SETTINGS"
+          desc="Title for a button opening a facebook.com link with settings for notifications"
+      Open Notification Settings
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_FILTER_CONTROL"
+          desc="Title for first section of Uncensor Domains settings">
+      Filter Control
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_ALWAYS_REDIRECT"
+          desc="Label for user selection of redirecting every time domain matches">
+      Always redirect / ON
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_NEVER_REDIRECT"
+          desc="Label for user selection of not redirecting even if the domain matches">
+      Never redirect / OFF
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_NOTICES_TITLE"
+          desc="Title for notices setting for uncensor domains extensions">
+      Notices
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_SHOW_MESSAGE"
+          desc="Label for checkbox enabling webkit notifications when redirects happen">
+      Show message when redirected
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_NOTIFY_UPDATES"
+          desc="Label for checkbox enabling webkit notifications on redirect domains list update">
+      Be notified when domain list updates
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_OPEN_LIST_BUTTON_TITLE"
+          desc="Title for button activating settings overlay with domain filter and exceptions">
+      Domain list settings...
+    </message>
+    <message name="IDS_BITPOP_GLOBAL_PROXY_CONTROL_TITLE"
+          desc="Title for first section of uncensor proxy settings">
+      Global Proxy Control
+    </message>
+    <message name="IDS_BITPOP_WHEN_TO_USE_PROXY"
+          desc="Label for combo group of choosing the proxy usage scenario">
+      When to use proxy
+    </message>
+    <message name="IDS_BITPOP_USE_AUTO_PROXY"
+          desc="Label for combo choice of using proxy automatically">
+      Use auto proxy on blocked sites / ON
+    </message>
+    <message name="IDS_BITPOP_NEVER_USE_PROXY"
+          desc="Label for combo choice of never using proxy">
+      Never use proxy / OFF
+    </message>
+    <message name="IDS_BITPOP_ASK_BEFORE_USING_PROXY"
+          desc="Label for combo choice of asking before using proxy">
+      Ask me before using proxy / CUSTOM
+    </message>
+    <message name="IDS_BITPOP_OPEN_PROXY_DOMAIN_SETTINGS_BUTTON_TITLE"
+          desc="Title for button opening domain proxy settings">
+      Open proxy domains preferences...
+    </message>
+    <message name="IDS_BITPOP_SHOW_MESSAGE_FOR_ACTIVE_PROXY"
+          desc="Label for checkbox enabling messages about successful redirects in info bar">
+      Show message when proxy is active
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_FILTER_OVERLAY_TITLE"
+          desc="Title for settings overlay of the Uncensor Filter extension, containing two lists: domains which will be redirected and a list of exceptions (domains which won't be redirected)">
+      Customize Uncensor Filter Domain List Settings
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_THE_FILTER"
+          desc="Title for main redirections table of uncensor filter options overlay">
+      The Filter
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_EXCEPTION"
+          desc="Title for exceptions table of uncensor filter options overlay">
+      Exceptions
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_ORIGINAL_DOMAIN"
+          desc="Uncensor overlay table column header title for the column containing source domain string">
+      Original Domain
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_NEW_LOCATION"
+          desc="Uncensor overlay table column header title for the column containing destination domain string">
+      New Location
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_BLOCKED_SITES"
+          desc="Title of the Uncensor Proxy overlay for customizing settings for blocked sites">
+      Customize Blocked Sites Proxying Settings
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_LIST_BLOCKED_SITES_START"
+          desc="First part of string describing the following blocked sites table. This string will include the country name after the first part and before the last part"
+      A list of sites blocked in
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_LIST_BLOCKED_SITES_END"
+          desc="Last part of string describing the following blocked sites table. This string will include the country name after the first part and before the last part">
+      collected through IP recognition:
+    </message>
+    <message name="IDS_BITPOP_UPDATE_DOMAINS_BUTTON_LABEL"
+          desc="Title for button which starts the domain list update">
+      Update Domain List
+    </message>
+    <message name="IDS_BITPOP_USE_GLOBAL_SETTING"
+          desc="Contents of the default combo entry for choosing the global setting for domain proxy redirection">
+      Use Global setting
+    </message>
     </messages>
     <structures fallback_to_english="true">
       <!-- Make sure these stay in sync with the structures in generated_resources.grd. -->

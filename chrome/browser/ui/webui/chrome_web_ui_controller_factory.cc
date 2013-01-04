@@ -15,6 +15,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/about_ui.h"
+#include "chrome/browser/ui/webui/bitpop_options_ui.h"
 #include "chrome/browser/ui/webui/bookmarks_ui.h"
 #include "chrome/browser/ui/webui/crashes_ui.h"
 #include "chrome/browser/ui/webui/devtools_ui.h"
@@ -236,6 +237,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<HelpUI>;
   if (url.host() == chrome::kChromeUISettingsFrameHost)
     return &NewWebUI<options2::OptionsUI>;
+  if (url.host() == chrome::kChromeUIBitpopSettingsFrameHost)
+    return &NewWebUI<options2::BitpopOptionsUI>;
   if (url.host() == chrome::kChromeUISuggestionsInternalsHost)
     return &NewWebUI<SuggestionsInternalsUI>;
   // chrome://flags is currently unsupported on Android.
@@ -526,6 +529,9 @@ base::RefCountedMemory* ChromeWebUIControllerFactory::GetFaviconResourceBytes(
   // Android doesn't use the Options pages.
   if (page_url.host() == chrome::kChromeUISettingsFrameHost)
     return options2::OptionsUI::GetFaviconResourceBytes();
+
+  if (page_url.host() == chrome::kChromeUIBitpopSettingsFrameHost)
+    return options2::BitpopOptionsUI::GetFaviconResourceBytes();
 
   // Android doesn't use the plugins pages.
   if (page_url.host() == chrome::kChromeUIPluginsHost)

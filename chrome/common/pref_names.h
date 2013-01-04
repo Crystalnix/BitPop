@@ -756,6 +756,18 @@ extern const char kMacLeopardObsoleteInfobarLastShown[];
 extern const char kAutomaticUpdatesEnabled[];
 extern const char kFacebookShowFriendsList[];
 
+extern const char kFacebookShowChat[];
+extern const char kFacebookShowJewels[];
+extern const char kUncensorShouldRedirect[];
+extern const char kUncensorShowMessage[];
+extern const char kUncensorNotifyUpdates[];
+extern const char kUncensorDomainFilter[];
+extern const char kUncensorDomainExceptions[];
+extern const char kGlobalProxyControl[];
+extern const char kShowMessageForActiveProxy[];
+extern const char kIPRecognitionCountryName[];
+extern const char kBlockedSitesList[];
+
 }  // namespace prefs
 
 #endif  // CHROME_COMMON_PREF_NAMES_H_
