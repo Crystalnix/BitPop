@@ -57,43 +57,23 @@ void BitpopProxyDomainSettingsHandler::GetLocalizedValues(
     base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
-  RegisterTitle(localized_strings, "uncensorFilterOverlayTitle",
-                IDS_BITPOP_UNCENSOR_FILTER_OVERLAY_TITLE);
-  localized_strings->SetString("uncensorTheFilter",
-      l10n_util::GetStringUTF16(IDS_BITPOP_UNCENSOR_THE_FILTER));
-  localized_strings->SetString("uncensorExceptions",
-      l10n_util::GetStringUTF16(IDS_BITPOP_UNCENSOR_EXCEPTION));
-  localized_strings->SetString("uncensorOriginalDomainHeader",
-      l10n_util::GetStringUTF16(IDS_BITPOP_UNCENSOR_ORIGINAL_DOMAIN));
-  localized_strings->SetString("uncensorNewLocationHeader",
-      l10n_util::GetStringUTF16(IDS_BITPOP_UNCENSOR_NEW_LOCATION));
+  RegisterTitle(localized_strings, "uncensorBlockedSitesTitle",
+                IDS_BITPOP_UNCENSOR_BLOCKED_SITES);
+  localized_strings->SetString("aListOfSitesBlocked_start",
+      l10n_util::GetStringUTF16(IDS_BITPOP_UNCENSOR_LIST_BLOCKED_SITES_START));
+  localized_strings->SetString("aListOfSitesBlocked_end",
+      l10n_util::GetStringUTF16(IDS_BITPOP_UNCENSOR_LIST_BLOCKED_SITES_END));
+  localized_strings->SetString("updateDomainsButtonLabel",
+      l10n_util::GetStringUTF16(IDS_BITPOP_UPDATE_DOMAINS_BUTTON_LABEL));
+  localized_strings->SetString("useGlobalSettingDefaultOption",
+      l10n_util::GetStringUTF16(IDS_BITPOP_USE_GLOBAL_SETTING));
 }
 
 void BitpopProxyDomainSettingsHandler::RegisterMessages() {
-  web_ui()->RegisterMessageCallback(
-      "managerSetDefaultSearchEngine",
-      base::Bind(&BitpopProxyDomainSettingsHandler::SetDefaultSearchEngine,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "removeSearchEngine",
-      base::Bind(&BitpopProxyDomainSettingsHandler::RemoveSearchEngine,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "editSearchEngine",
-      base::Bind(&BitpopProxyDomainSettingsHandler::EditSearchEngine,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "checkSearchEngineInfoValidity",
-      base::Bind(&BitpopProxyDomainSettingsHandler::CheckSearchEngineInfoValidity,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "searchEngineEditCancelled",
-      base::Bind(&BitpopProxyDomainSettingsHandler::EditCancelled,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "searchEngineEditCompleted",
-      base::Bind(&BitpopProxyDomainSettingsHandler::EditCompleted,
-                 base::Unretained(this)));
+  // web_ui()->RegisterMessageCallback(
+  //     "managerSetDefaultSearchEngine",
+  //     base::Bind(&BitpopProxyDomainSettingsHandler::SetDefaultSearchEngine,
+  //                base::Unretained(this)));
 }
 
 void BitpopProxyDomainSettingsHandler::OnModelChanged() {

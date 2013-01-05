@@ -59,27 +59,14 @@ void BitpopUncensorFilterHandler::GetLocalizedValues(
 
   RegisterTitle(localized_strings, "uncensorFilterOverlayTitle",
                 IDS_BITPOP_UNCENSOR_FILTER_OVERLAY_TITLE);
-  localized_strings->SetString("defaultSearchEngineListTitle",
-      l10n_util::GetStringUTF16(IDS_SEARCH_ENGINES_EDITOR_MAIN_SEPARATOR));
-  localized_strings->SetString("otherSearchEngineListTitle",
-      l10n_util::GetStringUTF16(IDS_SEARCH_ENGINES_EDITOR_OTHER_SEPARATOR));
-  localized_strings->SetString("extensionKeywordsListTitle",
-      l10n_util::GetStringUTF16(
-          IDS_SEARCH_ENGINES_EDITOR_EXTENSIONS_SEPARATOR));
-  localized_strings->SetString("makeDefaultSearchEngineButton",
-      l10n_util::GetStringUTF16(IDS_SEARCH_ENGINES_EDITOR_MAKE_DEFAULT_BUTTON));
-  localized_strings->SetString("searchEngineTableNamePlaceholder",
-      l10n_util::GetStringUTF16(IDS_SEARCH_ENGINE_ADD_NEW_NAME_PLACEHOLDER));
-  localized_strings->SetString("searchEngineTableKeywordPlaceholder",
-      l10n_util::GetStringUTF16(IDS_SEARCH_ENGINE_ADD_NEW_KEYWORD_PLACEHOLDER));
-  localized_strings->SetString("searchEngineTableURLPlaceholder",
-      l10n_util::GetStringUTF16(IDS_SEARCH_ENGINE_ADD_NEW_URL_PLACEHOLDER));
-  localized_strings->SetString("editSearchEngineInvalidTitleToolTip",
-      l10n_util::GetStringUTF16(IDS_SEARCH_ENGINES_INVALID_TITLE_TT));
-  localized_strings->SetString("editSearchEngineInvalidKeywordToolTip",
-      l10n_util::GetStringUTF16(IDS_SEARCH_ENGINES_INVALID_KEYWORD_TT));
-  localized_strings->SetString("editSearchEngineInvalidURLToolTip",
-      l10n_util::GetStringUTF16(IDS_SEARCH_ENGINES_INVALID_URL_TT));
+  localized_strings->SetString("uncensorTheFilter",
+      l10n_util::GetStringUTF16(IDS_BITPOP_UNCENSOR_THE_FILTER));
+  localized_strings->SetString("uncensorExceptions",
+      l10n_util::GetStringUTF16(IDS_BITPOP_UNCENSOR_EXCEPTION));
+  localized_strings->SetString("uncensorOriginalDomainHeader",
+      l10n_util::GetStringUTF16(IDS_BITPOP_UNCENSOR_ORIGINAL_DOMAIN));
+  localized_strings->SetString("uncensorNewLocationHeader",
+      l10n_util::GetStringUTF16(IDS_BITPOP_UNCENSOR_NEW_LOCATION));
 }
 
 void BitpopUncensorFilterHandler::RegisterMessages() {

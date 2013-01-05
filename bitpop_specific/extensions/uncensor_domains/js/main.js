@@ -12,8 +12,8 @@ String.prototype.format = function() {
 };
 
 var prefsString = ("prefs" in localStorage) ? localStorage.prefs : "";
-var localPrefs = (prefsString != "") ? JSON.parse(prefsString) : {};
-var prefs = {};
+var localPrefs = (prefsString != "") ? JSON.parse(prefsString) : null;
+var prefs = null;
 
 var inSetFilter = false;
 var inSetExceptions = false;
@@ -78,10 +78,12 @@ function downloadFilterData() {
 }
 
 function initPrefs() {
-  localPrefs = {};
-  localPrefs.lastUpdate = 0;
+  if (prefsString === "") {
+    localPrefs = {};
+    localPrefs.lastUpdate = 0;
 
-  localStorage.prefs = JSON.stringify(localPrefs);
+    localStorage.prefs = JSON.stringify(localPrefs);
+  }
 
   prefs = {};
   chrome.bitpop.prefs.uncensorShouldRedirect.get({}, function(details) {
@@ -99,18 +101,12 @@ function initPrefs() {
   chrome.bitpop.prefs.uncensorDomainExceptions.get({}, function(details) {
     prefs.domainExceptions = JSON.parse(details.value);
   });
-  //prefs.shouldRedirect = true;
-  //prefs.showMessage = true;
-  //prefs.notifyUpdate = true;
-  //prefs.domainFilter = {};
-  //prefs.domainExceptions = {};
-  
 }
 
 function checkAndUpdate() {
-  if (Date.now() - prefs.lastUpdate > 1000 * 60 * 60 * 24)
+  if (Date.now() - localPrefs.lastUpdate > 1000 * 60 * 60 * 24)
     downloadFilterData();
-  setTimeout("checkAndUpdate()", 1000 * 60 * 60);
+  setTimeout(checkAndUpdate, 1000 * 60 * 60);
 }
 
 // Called when the url of a tab changes.

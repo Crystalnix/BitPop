@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/ui/webui/options2/options_ui.h"
+#include "chrome/browser/ui/webui/options2/bitpop_options_ui.h"
 
 #include <algorithm>
 #include <vector>
@@ -193,30 +193,30 @@ BitpopOptionsUI::BitpopOptionsUI(content::WebUI* web_ui)
   core_handler = new CoreOptionsHandler();
 
   core_handler->set_handlers_host(this);
-  AddBitpopOptionsPageUIHandler(localized_strings, core_handler);
+  AddOptionsPageUIHandler(localized_strings, core_handler);
 
-  AddBitpopOptionsPageUIHandler(localized_strings, new AutofillOptionsHandler());
+  AddOptionsPageUIHandler(localized_strings, new AutofillOptionsHandler());
 
   BrowserOptionsHandler* browser_options_handler = new BrowserOptionsHandler();
-  AddBitpopOptionsPageUIHandler(localized_strings, browser_options_handler);
+  AddOptionsPageUIHandler(localized_strings, browser_options_handler);
 
-  AddBitpopOptionsPageUIHandler(localized_strings, new ClearBrowserDataHandler());
-  AddBitpopOptionsPageUIHandler(localized_strings, new ContentSettingsHandler());
-  AddBitpopOptionsPageUIHandler(localized_strings, new CookiesViewHandler());
-  AddBitpopOptionsPageUIHandler(localized_strings, new FontSettingsHandler());
-  AddBitpopOptionsPageUIHandler(localized_strings, new HomePageOverlayHandler());
-  AddBitpopOptionsPageUIHandler(localized_strings, new MediaGalleriesHandler());
-  AddBitpopOptionsPageUIHandler(localized_strings, new WebIntentsSettingsHandler());
-  AddBitpopOptionsPageUIHandler(localized_strings, new LanguageOptionsHandler());
-  AddBitpopOptionsPageUIHandler(localized_strings, new ManageProfileHandler());
-  AddBitpopOptionsPageUIHandler(localized_strings, new PasswordManagerHandler());
-  AddBitpopOptionsPageUIHandler(localized_strings, new SearchEngineManagerHandler());
-  AddBitpopOptionsPageUIHandler(localized_strings, new ImportDataHandler());
-  AddBitpopOptionsPageUIHandler(localized_strings, new StartupPagesHandler());
-  AddBitpopOptionsPageUIHandler(localized_strings, new OptionsSyncSetupHandler(
+  AddOptionsPageUIHandler(localized_strings, new ClearBrowserDataHandler());
+  AddOptionsPageUIHandler(localized_strings, new ContentSettingsHandler());
+  AddOptionsPageUIHandler(localized_strings, new CookiesViewHandler());
+  AddOptionsPageUIHandler(localized_strings, new FontSettingsHandler());
+  AddOptionsPageUIHandler(localized_strings, new HomePageOverlayHandler());
+  AddOptionsPageUIHandler(localized_strings, new MediaGalleriesHandler());
+  AddOptionsPageUIHandler(localized_strings, new WebIntentsSettingsHandler());
+  AddOptionsPageUIHandler(localized_strings, new LanguageOptionsHandler());
+  AddOptionsPageUIHandler(localized_strings, new ManageProfileHandler());
+  AddOptionsPageUIHandler(localized_strings, new PasswordManagerHandler());
+  AddOptionsPageUIHandler(localized_strings, new SearchEngineManagerHandler());
+  AddOptionsPageUIHandler(localized_strings, new ImportDataHandler());
+  AddOptionsPageUIHandler(localized_strings, new StartupPagesHandler());
+  AddOptionsPageUIHandler(localized_strings, new OptionsSyncSetupHandler(
       g_browser_process->profile_manager()));
 
-  AddBitpopOptionsPageUIHandler(localized_strings, new HandlerOptionsHandler());
+  AddOptionsPageUIHandler(localized_strings, new HandlerOptionsHandler());
 
   // |localized_strings| ownership is taken over by this constructor.
   BitpopOptionsUIHTMLSource* html_source =
@@ -283,7 +283,7 @@ void BitpopOptionsUI::InitializeHandlers() {
     handlers_[i]->InitializePage();
 }
 
-void BitpopOptionsUI::AddBitpopOptionsPageUIHandler(DictionaryValue* localized_strings,
+void BitpopOptionsUI::AddOptionsPageUIHandler(DictionaryValue* localized_strings,
                                         BitpopOptionsPageUIHandler* handler_raw) {
   scoped_ptr<BitpopOptionsPageUIHandler> handler(handler_raw);
   DCHECK(handler.get());
