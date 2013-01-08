@@ -110,17 +110,17 @@ using content::UserMetricsAction;
 
 namespace options2 {
 
-BrowserOptionsHandler::BrowserOptionsHandler()
+BitpopOptionsHandler::BitpopOptionsHandler()
     : template_url_service_(NULL),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_for_file_(this)),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_for_ui_(this)) {
   multiprofile_ = ProfileManager::IsMultipleProfilesEnabled();
 }
 
-BrowserOptionsHandler::~BrowserOptionsHandler() {
+BitpopOptionsHandler::~BitpopOptionsHandler() {
 }
 
-void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
+void BitpopOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
   DCHECK(values);
 
   static OptionsStringResource resources[] = {
@@ -244,131 +244,136 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
     values->Set("profilesInfo", GetProfilesInfoList().release());
 }
 
-void BrowserOptionsHandler::RegisterMessages() {
+void BitpopOptionsHandler::RegisterMessages() {
+  web_ui()->RegisterMessageCallback(
+    "openFacebookNotificationsOptions",
+    base::Bind(&BitpopOptionsHandler::OpenFacebookNotificationsOptions,
+               base::Unretained(this)));
+
 //   web_ui()->RegisterMessageCallback(
 //       "becomeDefaultBrowser",
-//       base::Bind(&BrowserOptionsHandler::BecomeDefaultBrowser,
+//       base::Bind(&BitpopOptionsHandler::BecomeDefaultBrowser,
 //                  base::Unretained(this)));
 //   web_ui()->RegisterMessageCallback(
 //       "setDefaultSearchEngine",
-//       base::Bind(&BrowserOptionsHandler::SetDefaultSearchEngine,
+//       base::Bind(&BitpopOptionsHandler::SetDefaultSearchEngine,
 //                  base::Unretained(this)));
 //   web_ui()->RegisterMessageCallback(
 //       "enableInstant",
-//       base::Bind(&BrowserOptionsHandler::EnableInstant,
+//       base::Bind(&BitpopOptionsHandler::EnableInstant,
 //                  base::Unretained(this)));
 //   web_ui()->RegisterMessageCallback(
 //       "disableInstant",
-//       base::Bind(&BrowserOptionsHandler::DisableInstant,
+//       base::Bind(&BitpopOptionsHandler::DisableInstant,
 //                  base::Unretained(this)));
 //   web_ui()->RegisterMessageCallback(
 //       "createProfile",
-//       base::Bind(&BrowserOptionsHandler::CreateProfile,
+//       base::Bind(&BitpopOptionsHandler::CreateProfile,
 //                  base::Unretained(this)));
 //   web_ui()->RegisterMessageCallback(
 //       "createProfileInfo",
-//       base::Bind(&BrowserOptionsHandler::CreateProfileInfo,
+//       base::Bind(&BitpopOptionsHandler::CreateProfileInfo,
 //                  base::Unretained(this)));
 //   web_ui()->RegisterMessageCallback(
 //       "themesReset",
-//       base::Bind(&BrowserOptionsHandler::ThemesReset,
+//       base::Bind(&BitpopOptionsHandler::ThemesReset,
 //                  base::Unretained(this)));
 // #if defined(TOOLKIT_GTK)
 //   web_ui()->RegisterMessageCallback(
 //       "themesSetGTK",
-//       base::Bind(&BrowserOptionsHandler::ThemesSetGTK,
+//       base::Bind(&BitpopOptionsHandler::ThemesSetGTK,
 //                  base::Unretained(this)));
 // #endif
 //   web_ui()->RegisterMessageCallback(
 //       "selectDownloadLocation",
-//       base::Bind(&BrowserOptionsHandler::HandleSelectDownloadLocation,
+//       base::Bind(&BitpopOptionsHandler::HandleSelectDownloadLocation,
 //                  base::Unretained(this)));
 //   web_ui()->RegisterMessageCallback(
 //       "autoOpenFileTypesAction",
-//       base::Bind(&BrowserOptionsHandler::HandleAutoOpenButton,
+//       base::Bind(&BitpopOptionsHandler::HandleAutoOpenButton,
 //                  base::Unretained(this)));
 //   web_ui()->RegisterMessageCallback(
 //       "defaultFontSizeAction",
-//       base::Bind(&BrowserOptionsHandler::HandleDefaultFontSize,
+//       base::Bind(&BitpopOptionsHandler::HandleDefaultFontSize,
 //                  base::Unretained(this)));
 //   web_ui()->RegisterMessageCallback(
 //       "defaultZoomFactorAction",
-//       base::Bind(&BrowserOptionsHandler::HandleDefaultZoomFactor,
+//       base::Bind(&BitpopOptionsHandler::HandleDefaultZoomFactor,
 //                  base::Unretained(this)));
 // #if !defined(OS_CHROMEOS)
 //   web_ui()->RegisterMessageCallback(
 //       "metricsReportingCheckboxAction",
-//       base::Bind(&BrowserOptionsHandler::HandleMetricsReportingCheckbox,
+//       base::Bind(&BitpopOptionsHandler::HandleMetricsReportingCheckbox,
 //                  base::Unretained(this)));
 // #endif
 // #if !defined(USE_NSS) && !defined(USE_OPENSSL)
 //   web_ui()->RegisterMessageCallback(
 //       "showManageSSLCertificates",
-//       base::Bind(&BrowserOptionsHandler::ShowManageSSLCertificates,
+//       base::Bind(&BitpopOptionsHandler::ShowManageSSLCertificates,
 //                  base::Unretained(this)));
 // #endif
 //   web_ui()->RegisterMessageCallback(
 //       "showCloudPrintManagePage",
-//       base::Bind(&BrowserOptionsHandler::ShowCloudPrintManagePage,
+//       base::Bind(&BitpopOptionsHandler::ShowCloudPrintManagePage,
 //                  base::Unretained(this)));
 // #if !defined(OS_CHROMEOS)
 //   if (cloud_print_connector_ui_enabled_) {
 //     web_ui()->RegisterMessageCallback(
 //         "showCloudPrintSetupDialog",
-//         base::Bind(&BrowserOptionsHandler::ShowCloudPrintSetupDialog,
+//         base::Bind(&BitpopOptionsHandler::ShowCloudPrintSetupDialog,
 //                    base::Unretained(this)));
 //     web_ui()->RegisterMessageCallback(
 //         "disableCloudPrintConnector",
-//         base::Bind(&BrowserOptionsHandler::HandleDisableCloudPrintConnector,
+//         base::Bind(&BitpopOptionsHandler::HandleDisableCloudPrintConnector,
 //                    base::Unretained(this)));
 //   }
 //   web_ui()->RegisterMessageCallback(
 //       "showNetworkProxySettings",
-//       base::Bind(&BrowserOptionsHandler::ShowNetworkProxySettings,
+//       base::Bind(&BitpopOptionsHandler::ShowNetworkProxySettings,
 //                  base::Unretained(this)));
 // #endif
 //   web_ui()->RegisterMessageCallback(
 //       "checkRevocationCheckboxAction",
-//       base::Bind(&BrowserOptionsHandler::HandleCheckRevocationCheckbox,
+//       base::Bind(&BitpopOptionsHandler::HandleCheckRevocationCheckbox,
 //                  base::Unretained(this)));
 // #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
 //   web_ui()->RegisterMessageCallback(
 //       "backgroundModeAction",
-//       base::Bind(&BrowserOptionsHandler::HandleBackgroundModeCheckbox,
+//       base::Bind(&BitpopOptionsHandler::HandleBackgroundModeCheckbox,
 //                  base::Unretained(this)));
 // #endif
 // #if defined(OS_CHROMEOS)
 //   web_ui()->RegisterMessageCallback(
 //       "openWallpaperManager",
-//       base::Bind(&BrowserOptionsHandler::HandleOpenWallpaperManager,
+//       base::Bind(&BitpopOptionsHandler::HandleOpenWallpaperManager,
 //                  base::Unretained(this)));
 //   web_ui()->RegisterMessageCallback(
 //       "spokenFeedbackChange",
-//       base::Bind(&BrowserOptionsHandler::SpokenFeedbackChangeCallback,
+//       base::Bind(&BitpopOptionsHandler::SpokenFeedbackChangeCallback,
 //                  base::Unretained(this)));
 //   web_ui()->RegisterMessageCallback(
 //       "highContrastChange",
-//       base::Bind(&BrowserOptionsHandler::HighContrastChangeCallback,
+//       base::Bind(&BitpopOptionsHandler::HighContrastChangeCallback,
 //                  base::Unretained(this)));
 //   web_ui()->RegisterMessageCallback(
 //       "screenMagnifierChange",
-//       base::Bind(&BrowserOptionsHandler::ScreenMagnifierChangeCallback,
+//       base::Bind(&BitpopOptionsHandler::ScreenMagnifierChangeCallback,
 //                  base::Unretained(this)));
 //   web_ui()->RegisterMessageCallback(
 //       "virtualKeyboardChange",
-//       base::Bind(&BrowserOptionsHandler::VirtualKeyboardChangeCallback,
+//       base::Bind(&BitpopOptionsHandler::VirtualKeyboardChangeCallback,
 //                  base::Unretained(this)));
 // #endif
 // #if defined(OS_MACOSX)
 //   web_ui()->RegisterMessageCallback(
 //       "toggleAutomaticUpdates",
-//       base::Bind(&BrowserOptionsHandler::ToggleAutomaticUpdates,
+//       base::Bind(&BitpopOptionsHandler::ToggleAutomaticUpdates,
 //                  base::Unretained(this)));
 
 // #endif
 }
 
-void BrowserOptionsHandler::InitializeHandler() {
+void BitpopOptionsHandler::InitializeHandler() {
   Profile* profile = Profile::FromWebUI(web_ui());
   PrefService* prefs = profile->GetPrefs();
 
@@ -402,7 +407,7 @@ void BrowserOptionsHandler::InitializeHandler() {
 //   if (!command_line.HasSwitch(switches::kChromeFrame) &&
 //       !command_line.HasSwitch(switches::kUserDataDir)) {
 //     BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-//         base::Bind(&BrowserOptionsHandler::CheckAutoLaunch,
+//         base::Bind(&BitpopOptionsHandler::CheckAutoLaunch,
 //                    weak_ptr_factory_for_ui_.GetWeakPtr(),
 //                    weak_ptr_factory_for_file_.GetWeakPtr(),
 //                    profile->GetPath()));
@@ -435,7 +440,7 @@ void BrowserOptionsHandler::InitializeHandler() {
 // #endif  // !defined(OS_CHROMEOS)
 }
 
-void BrowserOptionsHandler::InitializePage() {
+void BitpopOptionsHandler::InitializePage() {
   // OnTemplateURLServiceChanged();
   // ObserveThemeChanged();
   // OnStateChanged();
@@ -451,11 +456,11 @@ void BrowserOptionsHandler::InitializePage() {
   // SetupSSLConfigSettings();
 }
 
-bool BrowserOptionsHandler::IsInteractiveSetDefaultPermitted() {
+bool BitpopOptionsHandler::IsInteractiveSetDefaultPermitted() {
   return true;  // This is UI so we can allow it.
 }
 
-void BrowserOptionsHandler::Observe(
+void BitpopOptionsHandler::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
@@ -500,5 +505,8 @@ void BrowserOptionsHandler::Observe(
   }
 }
 
+void BitpopOptionsHandler::OpenFacebookNotificationsOptions() {
+  web_ui()->
+}
 
 }  // namespace options2

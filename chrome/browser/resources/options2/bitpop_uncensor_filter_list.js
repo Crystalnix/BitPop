@@ -6,6 +6,9 @@
 cr.define('options.uncensor_filter', function() {
   /** @const */ var DeletableItemList = options.DeletableItemList;
   /** @const */ var DeletableItem = options.DeletableItem;
+
+  var updateFiltersList = options.BitpopUncensorFilterOverlay.updateFiltersList;
+  var listArrayToPref = options.BitpopUncensorFilterOverlay.listArrayToPref;
   ///** @const */ var ListSelectionController = cr.ui.ListSelectionController;
 
   function DomainRedirectionListItem(redirect) {
@@ -33,75 +36,26 @@ cr.define('options.uncensor_filter', function() {
       var redirect = this.redirect_;
       
       this.deletable = true;
+      this.editable = false;
 
       // Construct the src column.
-      var nameColEl = this.ownerDocument.createElement('div');
-      nameColEl.className = 'src-domain-column';
-      nameColEl.classList.add('weakrtl');
-      this.contentElement.appendChild(nameColEl);
+      var srcColEl = this.ownerDocument.createElement('div');
+      srcColEl.className = 'src-domain-column';
+      if (isHeader in redirect && redirect.isHeader)
+        srcColEl.className += ' header-column';
+      srcColEl.classList.add('weakrtl');
+      this.contentElement.appendChild(srcColEl);
 
       // Then the keyword column.
-      var keywordEl = this.createEditableTextCell(engine['keyword']);
-      keywordEl.className = 'keyword-column';
-      keywordEl.classList.add('weakrtl');
-      this.contentElement.appendChild(keywordEl);
+      var dstColEl = this.ownerDocument.createElement('div');
+      dstColEl.className = 'dst-domain-column';
+      if (isHeader in redirect && redirect.isHeader)
+        dstColEl.className += ' header-column';
+      dstColEl.classList.add('weakrtl');
+      this.contentElement.appendChild(dstColEl);
 
-      // And the URL column.
-      var urlEl = this.createEditableTextCell(engine['url']);
-      var urlWithButtonEl = this.ownerDocument.createElement('div');
-      urlWithButtonEl.appendChild(urlEl);
-      urlWithButtonEl.className = 'url-column';
-      urlWithButtonEl.classList.add('weakrtl');
-      this.contentElement.appendChild(urlWithButtonEl);
-      // Add the Make Default button. Temporary until drag-and-drop re-ordering
-      // is implemented. When this is removed, remove the extra div above.
-      if (engine['canBeDefault']) {
-        var makeDefaultButtonEl = this.ownerDocument.createElement('button');
-        makeDefaultButtonEl.className = 'custom-appearance list-inline-button';
-        makeDefaultButtonEl.textContent =
-            loadTimeData.getString('makeDefaultSearchEngineButton');
-        makeDefaultButtonEl.onclick = function(e) {
-          chrome.send('managerSetDefaultSearchEngine', [engine['modelIndex']]);
-        };
-        // Don't select the row when clicking the button.
-        makeDefaultButtonEl.onmousedown = function(e) {
-          e.stopPropagation();
-        };
-        urlWithButtonEl.appendChild(makeDefaultButtonEl);
-      }
-
-      // Do final adjustment to the input fields.
-      this.nameField_ = nameEl.querySelector('input');
-      // The editable field uses the raw name, not the display name.
-      this.nameField_.value = engine['name'];
-      this.keywordField_ = keywordEl.querySelector('input');
-      this.urlField_ = urlEl.querySelector('input');
-
-      if (engine['urlLocked'])
-        this.urlField_.disabled = true;
-
-      if (this.isPlaceholder) {
-        this.nameField_.placeholder =
-            loadTimeData.getString('searchEngineTableNamePlaceholder');
-        this.keywordField_.placeholder =
-            loadTimeData.getString('searchEngineTableKeywordPlaceholder');
-        this.urlField_.placeholder =
-            loadTimeData.getString('searchEngineTableURLPlaceholder');
-      }
-
-      var fields = [this.nameField_, this.keywordField_, this.urlField_];
-        for (var i = 0; i < fields.length; i++) {
-        fields[i].oninput = this.startFieldValidation_.bind(this);
-      }
-
-      // Listen for edit events.
-      if (engine['canBeEdited']) {
-        this.addEventListener('edit', this.onEditStarted_.bind(this));
-        this.addEventListener('canceledit', this.onEditCancelled_.bind(this));
-        this.addEventListener('commitedit', this.onEditCommitted_.bind(this));
-      } else {
-        this.editable = false;
-      }
+      srcColEl.textContent = redirect.src;
+      dstColEl.textContent = redirect.dst;
     },
   };
 
@@ -115,10 +69,27 @@ cr.define('options.uncensor_filter', function() {
       return new DomainRedirectionListItem(redirect);
     },
 
-    /** @inheritDoc */
+        /** @inheritDoc */
     deleteItemAtIndex: function(index) {
-      var modelIndex = this.dataModel.item(index)['modelIndex'];
+      var item = this.dataModel.item(index);
+      var delData = item.redirect_;
+
+      var selfDataArray = this.arraySrc.slice();
+      var companionDataArray = this.companion.arraySrc;
+      for (var i = 0; i < companionDataArray.length; i++)
+        console.assert(companionDataArray[i].src !== delData.src);
+      
+      if (selfDataArray[delData.modelIndex].src === delData.src)
+        selfDataArray.splice(delData.modelIndex, 1);
+      
+      if (this.isFilterList)
+        Preferences.setStringPref("bitpop.uncensor_domain_filter", 
+          listArrayToPref(selfDataArray), '');
+      else
+        Preferences.setStringPref("bitpop.uncensor_domain_exceptions",
+          listArrayToPref(selfDataArray), '');
     },
+
   };
 
   // Export
