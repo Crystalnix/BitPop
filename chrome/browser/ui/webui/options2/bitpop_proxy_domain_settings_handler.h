@@ -6,9 +6,7 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_OPTIONS2_BITPOP_PROXY_DOMAIN_SETTINGS_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_OPTIONS2_BITPOP_PROXY_DOMAIN_SETTINGS_HANDLER_H_
 
-#include "chrome/browser/ui/search_engines/edit_search_engine_controller.h"
-#include "chrome/browser/ui/webui/options2/options_ui.h"
-#include "ui/base/models/table_model_observer.h"
+#include "chrome/browser/ui/webui/options2/bitpop_options_ui.h"
 
 class KeywordEditorController;
 
@@ -18,9 +16,7 @@ class Extension;
 
 namespace options2 {
 
-class BitpopProxyDomainSettingsHandler : public BitpopOptionsPageUIHandler,
-                                   public ui::TableModelObserver,
-                                   public EditSearchEngineControllerDelegate {
+class BitpopProxyDomainSettingsHandler : public BitpopOptionsPageUIHandler {
  public:
   BitpopProxyDomainSettingsHandler();
   virtual ~BitpopProxyDomainSettingsHandler();
@@ -34,7 +30,8 @@ class BitpopProxyDomainSettingsHandler : public BitpopOptionsPageUIHandler,
   virtual void RegisterMessages() OVERRIDE;
 
  private:
-  void OnUpdateDomains();
+  void OnUpdateDomains(const base::ListValue* params);
+  void ChangeSiteList(const base::ListValue* params);
 
   DISALLOW_COPY_AND_ASSIGN(BitpopProxyDomainSettingsHandler);
 };

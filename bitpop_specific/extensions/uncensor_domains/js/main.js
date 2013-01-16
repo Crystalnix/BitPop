@@ -15,8 +15,8 @@ var prefsString = ("prefs" in localStorage) ? localStorage.prefs : "";
 var localPrefs = (prefsString != "") ? JSON.parse(prefsString) : null;
 var prefs = null;
 
-var inSetFilter = false;
-var inSetExceptions = false;
+//var inSetFilter = false;
+//var inSetExceptions = false;
 
 function downloadFilterData() {
   var xhr = new XMLHttpRequest();
@@ -27,12 +27,12 @@ function downloadFilterData() {
       var od = {};
       for (var x in d) {
         od[d[x]['srcDomain']] = d[x]['dstDomain'];
-        if (!(d[x]['srcDomain'] in prefs.domainFilter))
+        if (!(d[x]['srcDomain'] in prefs.domainFilter) || !prefs.domainFilter)
           changed = true;
       }
 
       for (var x in prefs.domainFilter)
-        if (!x in od)
+        if (!(x in od))
           changed = true;
 
       if (changed && prefs.notifyUpdate) {
@@ -48,9 +48,9 @@ function downloadFilterData() {
       }
 
       prefs.domainFilter = od;
-      inSetFilter = true;
-      chrome.bitpop.prefs.uncensorDomainFilter.set({ 
-          scope: "regular", 
+      //inSetFilter = true;
+      chrome.bitpop.prefs.uncensorDomainFilter.set({
+          scope: "regular",
           value: JSON.stringify(prefs.domainFilter)
         });
 
@@ -62,8 +62,8 @@ function downloadFilterData() {
         }
       }
       if (exceptionsChanged) {
-        inSetExceptions = true;
-        chrome.bitpop.prefs.uncensorDomainExceptions.set({ 
+        //inSetExceptions = true;
+        chrome.bitpop.prefs.uncensorDomainExceptions.set({
             scope: "regular",
             value: JSON.stringify(prefs.domainExceptions)
           });
@@ -87,7 +87,7 @@ function initPrefs() {
 
   prefs = {};
   chrome.bitpop.prefs.uncensorShouldRedirect.get({}, function(details) {
-    prefs.shouldRedirect = (details.value === 'ON');
+    prefs.shouldRedirect = (+details.value === 0);
   });
   chrome.bitpop.prefs.uncensorShowMessage.get({}, function(details) {
     prefs.showMessage = details.value;
@@ -150,7 +150,7 @@ function redirectListener(tabId, changeInfo, tab) {
   //}, false);
 
   chrome.bitpop.prefs.uncensorShouldRedirect.onChange.addListener(function(details) {
-    prefs.shouldRedirect = (details.value === 'ON');
+    prefs.shouldRedirect = (+details.value === 0);
   });
   chrome.bitpop.prefs.uncensorShowMessage.onChange.addListener(function(details) {
     prefs.showMessage = details.value;
@@ -159,16 +159,16 @@ function redirectListener(tabId, changeInfo, tab) {
     prefs.notifyUpdate = details.value;
   });
   chrome.bitpop.prefs.uncensorDomainFilter.onChange.addListener(function(details) {
-    if (!inSetFilter)
-      prefs.domainFilter = JSON.parse(detail.value);
-    else
-      inSetFilter = false;
+    //if (!inSetFilter)
+      prefs.domainFilter = JSON.parse(details.value);
+    //else
+    //  inSetFilter = false;
   });
   chrome.bitpop.prefs.uncensorDomainExceptions.onChange.addListener(function(details) {
-    if (!inSetExceptions)
-      prefs.domainExceptions = JSON.parse(detail.value);
-    else
-      inSetExceptions = false;
+    //if (!inSetExceptions)
+      prefs.domainExceptions = JSON.parse(details.value);
+    //else
+    //  inSetExceptions = false;
   });
 
   // Listen for any changes to the URL of any tab.

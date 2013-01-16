@@ -29,7 +29,7 @@ setTimeout(
   function() {
     if (!myUid) {
       chrome.extension.sendRequest(
-        bitpop.CONTROLLER_EXTENSION_ID, 
+        bitpop.CONTROLLER_EXTENSION_ID,
         { type: 'getMyUid' },
         function(response) {
           myUid = response.id;
@@ -72,7 +72,7 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
         if (myUid && friendList) { sendInboxRequest(); }
        }, 1000 * 60 * 30);
       loggedIn = true;
-      onSupressChatChanged();
+      onSuppressChatChanged();
   } else if (request.type == 'friendListReceived') {
     if (!friendList) {
       // send status notifications so that every visible chat button
@@ -160,7 +160,7 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
       chrome.bitpop.facebookChat.newIncomingMessage(request.uid.toString(), "",
           'active', "");
     }
-      
+
     if (friendList) {
       for (var i = 0; i < friendList.length; ++i) {
         if (friendList[i].uid == request.uid) {
@@ -217,7 +217,7 @@ function replaceLocalHistory(data) {
       continue;
 
     var jid = myUid + ':' + to_ids[0].toString();
-    
+
     localStorage[jid + '.thread_id'] = data[i].id;
 
     if (!data[i].comments || !data[i].comments.data)
@@ -316,9 +316,9 @@ function addFbFunctionality( )
                         } else {
                             //chrome.bitpop.facebookChat.getFriendsSidebarVisible(function(is_visible) {
                               chrome.bitpop.prefs.facebookShowChat.get({}, function(details) {
-                                var facebookShowChat = (details.value.toLowerCase() === 'true');
+                                var facebookShowChat = details.value;
                                 chrome.bitpop.prefs.facebookShowJewels.get({}, function(details2) {
-                                  var facebookShowJewels = (details2.value.toLowerCase() === 'true');
+                                  var facebookShowJewels = details2.value;
                                   var response = null;
                                   if (loggedIn) {
                                     response = {

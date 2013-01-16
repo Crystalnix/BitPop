@@ -1,14 +1,13 @@
-// Copyright (c) 2012 House of Life Property Ltd. All rights reserved.
-// Copyright (c) 2012 Crystalnix, Viatcheslav Gachkaylo <vgachkaylo@crystalnix.com>
+// Copyright (c) 2013 House of Life Property Ltd. All rights reserved.
+// Copyright (c) 2013 Crystalnix, Viatcheslav Gachkaylo <vgachkaylo@crystalnix.com>
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('options.uncensor_filter', function() {
   /** @const */ var DeletableItemList = options.DeletableItemList;
   /** @const */ var DeletableItem = options.DeletableItem;
+  var ListSingleSelectionModel = cr.ui.ListSingleSelectionModel;
 
-  var updateFiltersList = options.BitpopUncensorFilterOverlay.updateFiltersList;
-  var listArrayToPref = options.BitpopUncensorFilterOverlay.listArrayToPref;
   ///** @const */ var ListSelectionController = cr.ui.ListSelectionController;
 
   function DomainRedirectionListItem(redirect) {
@@ -18,12 +17,12 @@ cr.define('options.uncensor_filter', function() {
     return el;
   }
 
-  SearchEngineListItem.decorate = function(el) {
+  DomainRedirectionListItem.decorate = function(el) {
     el.__proto__ = DomainRedirectionListItem.prototype;
     el.decorate();
   };
 
-  SearchEngineListItem.prototype = {
+  DomainRedirectionListItem.prototype = {
     __proto__: DeletableItem.prototype,
 
     srcField_: null,
@@ -34,28 +33,30 @@ cr.define('options.uncensor_filter', function() {
       DeletableItem.prototype.decorate.call(this);
 
       var redirect = this.redirect_;
-      
-      this.deletable = true;
-      this.editable = false;
+
+      if (('isHeader' in redirect) && redirect.isHeader)
+        this.deletable = false;
+      else
+        this.deletable = true;
 
       // Construct the src column.
       var srcColEl = this.ownerDocument.createElement('div');
       srcColEl.className = 'src-domain-column';
-      if (isHeader in redirect && redirect.isHeader)
-        srcColEl.className += ' header-column';
+      if (('isHeader' in redirect) && redirect.isHeader)
+        srcColEl.classList.add('header-column');
       srcColEl.classList.add('weakrtl');
       this.contentElement.appendChild(srcColEl);
 
       // Then the keyword column.
       var dstColEl = this.ownerDocument.createElement('div');
       dstColEl.className = 'dst-domain-column';
-      if (isHeader in redirect && redirect.isHeader)
-        dstColEl.className += ' header-column';
+      if (('isHeader' in redirect) && redirect.isHeader)
+        dstColEl.classList.add('header-column');
       dstColEl.classList.add('weakrtl');
       this.contentElement.appendChild(dstColEl);
 
-      srcColEl.textContent = redirect.src;
-      dstColEl.textContent = redirect.dst;
+      srcColEl.textContent = redirect.srcDomain;
+      dstColEl.textContent = redirect.dstDomain;
     },
   };
 
@@ -64,30 +65,51 @@ cr.define('options.uncensor_filter', function() {
   DomainRedirectionList.prototype = {
     __proto__: DeletableItemList.prototype,
 
+    decorate: function() {
+      DeletableItemList.prototype.decorate.call(this);
+      this.selectionModel = new ListSingleSelectionModel();
+    },
+
     /** @inheritDoc */
     createItem: function(redirect) {
       return new DomainRedirectionListItem(redirect);
     },
 
-        /** @inheritDoc */
+    /** @inheritDoc */
     deleteItemAtIndex: function(index) {
-      var item = this.dataModel.item(index);
-      var delData = item.redirect_;
+      var item = this.items[index];
+      var delData = this.dataModel.item(index);
 
-      var selfDataArray = this.arraySrc.slice();
-      var companionDataArray = this.companion.arraySrc;
+      // A vaabshe-to:
+      // console.assert(this.arraySrc && this.arraySrc.length &&
+      //                  this.arraySrc.length !== 0)
+      var selfDataArray = (this.arraySrc && this.arraySrc.slice()) || [];
+      var companionDataArray = (this.companion.arraySrc &&
+          this.companion.arraySrc.slice()) || [];
+
       for (var i = 0; i < companionDataArray.length; i++)
-        console.assert(companionDataArray[i].src !== delData.src);
-      
-      if (selfDataArray[delData.modelIndex].src === delData.src)
+        console.assert(companionDataArray[i].srcDomain !== delData.srcDomain);
+
+      if (selfDataArray[delData.modelIndex].srcDomain === delData.srcDomain) {
+        companionDataArray.push(selfDataArray[delData.modelIndex]);
         selfDataArray.splice(delData.modelIndex, 1);
-      
+      }
+
+      function modelToPref(modelArray) {
+        var res = {};
+        for (var i = 0; i < modelArray.length; i++)
+          res[modelArray[i].srcDomain] = modelArray[i].dstDomain;
+        return JSON.stringify(res);
+      }
+
       if (this.isFilterList)
-        Preferences.setStringPref("bitpop.uncensor_domain_filter", 
-          listArrayToPref(selfDataArray), '');
+        //Preferences.setStringPref("bitpop.uncensor_domain_exceptions",
+        //    modelToPref(companionDataArray), '');
+        chrome.send("changeUncensorExceptions", [modelToPref(companionDataArray)]);
       else
-        Preferences.setStringPref("bitpop.uncensor_domain_exceptions",
-          listArrayToPref(selfDataArray), '');
+        //Preferences.setStringPref("bitpop.uncensor_domain_exceptions",
+        //    modelToPref(companionDataArray), '');
+        chrome.send("changeUncensorExceptions", [modelToPref(selfDataArray)]);
     },
 
   };

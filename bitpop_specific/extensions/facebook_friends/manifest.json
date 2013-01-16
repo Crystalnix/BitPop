@@ -32,6 +32,7 @@
     "https://api.facebook.com/*",
     "https://graph.facebook.com/*"
   ],
+  "content_security_policy": "script-src 'self' 'unsafe-eval'; object-src 'self'",
   "update_url": "http://tools.bitpop.com/ext/updates.xml",
   "manifest_version": 2
 }

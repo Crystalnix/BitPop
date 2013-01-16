@@ -500,4 +500,7 @@ const char kFacebookChatExtensionChatPage[] = "chat.html";
 
 const char kChromeUIBitpopSettingsFrameURL[] = "chrome://bitpop-settings-frame/";
 const char kChromeUIBitpopSettingsFrameHost[] = "bitpop-settings-frame";
+
+const char kChromeUIBitpopSettingsURL[] = "chrome://bitpop-settings";
+const char kChromeUIBitpopSettingsHost[] = "bitpop-settings";
 }  // namespace chrome

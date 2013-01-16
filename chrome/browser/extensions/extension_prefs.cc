@@ -2074,9 +2074,9 @@ void ExtensionPrefs::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kFacebookShowJewels,
                             true,
                             PrefService::SYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kUncensorShouldRedirect,
-                            "ON",
-                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterIntegerPref(prefs::kUncensorShouldRedirect,
+                             0,
+                             PrefService::SYNCABLE_PREF);
   prefs->RegisterBooleanPref(prefs::kUncensorShowMessage,
                             true,
                             PrefService::SYNCABLE_PREF);
@@ -2089,9 +2089,9 @@ void ExtensionPrefs::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterStringPref(prefs::kUncensorDomainExceptions,
                             "{}", // JSON
                             PrefService::SYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kGlobalProxyControl,
-                            "ON",
-                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterIntegerPref(prefs::kGlobalProxyControl,
+                             0,
+                             PrefService::SYNCABLE_PREF);
   prefs->RegisterBooleanPref(prefs::kShowMessageForActiveProxy,
                             true,
                             PrefService::SYNCABLE_PREF);
@@ -2099,8 +2099,8 @@ void ExtensionPrefs::RegisterUserPrefs(PrefService* prefs) {
                             std::string(),
                             PrefService::UNSYNCABLE_PREF);
   prefs->RegisterStringPref(prefs::kBlockedSitesList,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
+                            "[]",
+                            PrefService::SYNCABLE_PREF);
   // ----------------------------------------------------------
   // End of BitPop custom extensions preference registration
   //

@@ -6,14 +6,16 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_OPTIONS2_BITPOP_UNCENSOR_FILTER_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_OPTIONS2_BITPOP_UNCENSOR_FILTER_HANDLER_H_
 
-#include "chrome/browser/ui/search_engines/edit_search_engine_controller.h"
-#include "chrome/browser/ui/webui/options2/options_ui.h"
-#include "ui/base/models/table_model_observer.h"
+#include "chrome/browser/ui/webui/options2/bitpop_options_ui.h"
 
 class KeywordEditorController;
 
 namespace extensions {
 class Extension;
+}
+
+namespace base {
+	class ListValue;
 }
 
 namespace options2 {
@@ -32,6 +34,9 @@ class BitpopUncensorFilterHandler : public BitpopOptionsPageUIHandler {
   virtual void RegisterMessages() OVERRIDE;
 
  private:
+
+ 	void ChangeUncensorExceptions(const base::ListValue* params);
+
   DISALLOW_COPY_AND_ASSIGN(BitpopUncensorFilterHandler);
 };
 

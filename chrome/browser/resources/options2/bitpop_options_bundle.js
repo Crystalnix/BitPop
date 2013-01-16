@@ -1,5 +1,5 @@
-// Copyright (c) 2012 House of Life Property Ltd. All rights reserved.
-// Copyright (c) 2012 Crystalnix, Viatcheslav Gachkaylo <vgachkaylo@crystalnix.com>
+// Copyright (c) 2013 House of Life Property Ltd. All rights reserved.
+// Copyright (c) 2013 Crystalnix, Viatcheslav Gachkaylo <vgachkaylo@crystalnix.com>
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -15,6 +15,10 @@
 <include src="settings_dialog.js"></include>
 
 <include src="bitpop_options.js"></include>
+<include src="bitpop_proxy_domain_list.js"></include>
+<include src="bitpop_proxy_domain_settings_overlay.js"></include>
+<include src="bitpop_uncensor_filter_list.js"></include>
+<include src="bitpop_uncensor_filter_overlay.js"></include>
 <include src="options_focus_manager.js"></include>
 <include src="search_page.js"></include>
 <include src="../uber/uber_utils.js"></include>

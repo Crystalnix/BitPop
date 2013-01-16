@@ -1,5 +1,5 @@
-// Copyright (c) 2012 House of Life Property Ltd. All rights reserved.
-// Copyright (c) 2012 Crystalnix, Viatcheslav Gachkaylo <vgachkaylo@crystalnix.com>
+// Copyright (c) 2013 House of Life Property Ltd. All rights reserved.
+// Copyright (c) 2013 Crystalnix, Viatcheslav Gachkaylo <vgachkaylo@crystalnix.com>
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,7 +27,7 @@ cr.define('options', function() {
     initializePage: function() {
       OptionsPage.prototype.initializePage.call(this);
       var self = this;
-      
+
       // Ensure that navigation events are unblocked on uber page. A reload of
       // the settings page while an overlay is open would otherwise leave uber
       // page in a blocked state, where tab switching is not possible.
@@ -35,10 +35,17 @@ cr.define('options', function() {
 
       window.addEventListener('message', this.handleWindowMessage_.bind(this));
 
-      $('open-facebook-notification-options').onclick = function (event) {
-          chrome.send('openFacebookNotificationSettings');
-        };
+      $('open-facebook-notifications-options').onclick = function (event) {
+        chrome.send('openFacebookNotificationsOptions');
+      };
 
+      $('open-uncensor-filter-lists').onclick = function(event) {
+        OptionsPage.navigateToPage('uncensorFilter');
+      };
+
+      $('open-proxy-domain-settings').onclick = function(event) {
+        OptionsPage.navigateToPage('uncensorBlockedSites');
+      };
     },
 
     didShowPage: function() {
@@ -58,7 +65,7 @@ cr.define('options', function() {
 
 
   return {
-    SearchEngineManager: SearchEngineManager
+    BrowserOptions: BrowserOptions
   };
 
 });

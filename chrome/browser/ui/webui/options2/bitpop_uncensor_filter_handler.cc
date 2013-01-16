@@ -6,17 +6,15 @@
 #include "chrome/browser/ui/webui/options2/bitpop_uncensor_filter_handler.h"
 
 #include "base/bind.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_service.h"
-#include "chrome/browser/ui/search_engines/keyword_editor_controller.h"
-#include "chrome/browser/ui/search_engines/template_url_table_model.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/chrome_constants.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
@@ -38,7 +36,13 @@ void BitpopUncensorFilterHandler::InitializePage() {
   Profile* profile = Profile::FromWebUI(web_ui());
   PrefService* prefs = profile->GetPrefs();
 
-  prefs->
+  scoped_ptr<base::Value> filter(base::Value::CreateStringValue(
+      prefs->GetString(prefs::kUncensorDomainFilter)));
+  scoped_ptr<base::Value> exceptions(base::Value::CreateStringValue(
+      prefs->GetString(prefs::kUncensorDomainExceptions)));
+
+  web_ui()->CallJavascriptFunction("BitpopUncensorFilterOverlay.initLists",
+    *filter, *exceptions);
 }
 
 void BitpopUncensorFilterHandler::GetLocalizedValues(
@@ -58,55 +62,32 @@ void BitpopUncensorFilterHandler::GetLocalizedValues(
 }
 
 void BitpopUncensorFilterHandler::RegisterMessages() {
-  // web_ui()->RegisterMessageCallback(
-  //     "managerSetDefaultSearchEngine",
-  //     base::Bind(&BitpopUncensorFilterHandler::SetDefaultSearchEngine,
-  //                base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "changeUncensorExceptions",
+      base::Bind(&BitpopUncensorFilterHandler::ChangeUncensorExceptions,
+                 base::Unretained(this)));
 }
 
-void BitpopUncensorFilterHandler::OnModelChanged() {
-  // DCHECK(list_controller_.get());
-  // if (!list_controller_->loaded())
-  //   return;
+void BitpopUncensorFilterHandler::ChangeUncensorExceptions(
+      const base::ListValue* params) {
 
-  // // Find the default engine.
-  // const TemplateURL* default_engine =
-  //     list_controller_->url_model()->GetDefaultSearchProvider();
-  // int default_index = list_controller_->table_model()->IndexOfTemplateURL(
-  //     default_engine);
+  std::string strValue;
+  CHECK_EQ(params->GetSize(), 1U);
+  CHECK(params->GetString(0, &strValue));
 
-  // // Build the first list (default search engine options).
-  // ListValue defaults_list;
-  // int last_default_engine_index =
-  //     list_controller_->table_model()->last_search_engine_index();
-  // for (int i = 0; i < last_default_engine_index; ++i) {
-  //   defaults_list.Append(CreateDictionaryForEngine(i, i == default_index));
-  // }
-
-  // // Build the second list (other search templates).
-  // ListValue others_list;
-  // if (last_default_engine_index < 0)
-  //   last_default_engine_index = 0;
-  // int engine_count = list_controller_->table_model()->RowCount();
-  // for (int i = last_default_engine_index; i < engine_count; ++i) {
-  //   others_list.Append(CreateDictionaryForEngine(i, i == default_index));
-  // }
-
-  // // Build the extension keywords list.
-  // ListValue keyword_list;
-  // ExtensionService* extension_service =
-  //     Profile::FromWebUI(web_ui())->GetExtensionService();
-  // if (extension_service) {
-  //   const ExtensionSet* extensions = extension_service->extensions();
-  //   for (ExtensionSet::const_iterator it = extensions->begin();
-  //        it != extensions->end(); ++it) {
-  //     if ((*it)->omnibox_keyword().size() > 0)
-  //       keyword_list.Append(CreateDictionaryForExtension(*(*it)));
-  //   }
-  // }
-
-  // web_ui()->CallJavascriptFunction("SearchEngineManager.updateSearchEngineList",
-  //                                  defaults_list, others_list, keyword_list);
+  Profile* profile = Profile::FromWebUI(web_ui());
+  PrefService* pref_service = profile->GetPrefs();
+  if (pref_service->IsUserModifiablePreference(prefs::kUncensorDomainExceptions))
+    pref_service->SetString(prefs::kUncensorDomainExceptions, strValue);
+  else {
+    extensions::ExtensionPrefs* prefs =
+        profile->GetExtensionService()->extension_prefs();
+    prefs->SetExtensionControlledPref(
+        chrome::kUncensorFilterExtensionId,
+        prefs::kUncensorDomainExceptions,
+        extensions::kExtensionPrefsScopeRegular,
+        Value::CreateStringValue(strValue));
+  }
 }
 
 }  // namespace options2

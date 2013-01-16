@@ -422,6 +422,9 @@ extern const char kFacebookChatExtensionChatPage[];
 extern const char kChromeUIBitpopSettingsFrameURL[];
 extern const char kChromeUIBitpopSettingsFrameHost[];
 
+extern const char kChromeUIBitpopSettingsURL[];
+extern const char kChromeUIBitpopSettingsHost[];
+
 }  // namespace chrome
 
 #endif  // CHROME_COMMON_URL_CONSTANTS_H_

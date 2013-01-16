@@ -96,16 +96,10 @@ class BitpopOptionsPageUIHandlerHost {
 
 // The WebUI for chrome:settings-frame.
 class BitpopOptionsUI : public content::WebUIController,
-               			public OptionsPageUIHandlerHost {
+               			public BitpopOptionsPageUIHandlerHost {
  public:
   explicit BitpopOptionsUI(content::WebUI* web_ui);
   virtual ~BitpopOptionsUI();
-
-  // Takes the suggestions from |result| and adds them to |suggestions| so that
-  // they can be passed to a JavaScript function.
-  static void ProcessAutocompleteSuggestions(
-      const AutocompleteResult& result,
-      base::ListValue* const suggestions);
 
   static base::RefCountedMemory* GetFaviconResourceBytes();
 

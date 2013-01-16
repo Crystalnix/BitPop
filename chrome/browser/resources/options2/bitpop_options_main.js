@@ -1,10 +1,14 @@
-// Copyright (c) 2012 House of Life Property Ltd. All rights reserved.
-// Copyright (c) 2012 Crystalnix, Viatcheslav Gachkaylo <vgachkaylo@crystalnix.com>
+// Copyright (c) 2013 House of Life Property Ltd. All rights reserved.
+// Copyright (c) 2013 Crystalnix, Viatcheslav Gachkaylo <vgachkaylo@crystalnix.com>
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-var BitpopOptions = options.BitpopOptions;
+var BrowserOptions = options.BrowserOptions;
+var BitpopProxyDomainSettingsOverlay = options.BitpopProxyDomainSettingsOverlay;
+var BitpopUncensorFilterOverlay = options.BitpopUncensorFilterOverlay;
+var OptionsFocusManager = options.OptionsFocusManager;
 var OptionsPage = options.OptionsPage;
+var Preferences = options.Preferences;
 var SearchPage = options.SearchPage;
 
 /**
@@ -20,21 +24,21 @@ function load() {
   cr.ui.decorate('input[pref][type=text]', options.PrefTextField);
   cr.ui.decorate('input[pref][type=url]', options.PrefTextField);
   cr.ui.decorate('button[pref]', options.PrefButton);
-  cr.ui.decorate('#content-settings-page input[type=radio]:not(.handler-radio)',
-      options.ContentSettingsRadio);
-  cr.ui.decorate('#content-settings-page input[type=radio].handler-radio',
-      options.HandlersEnabledRadio);
-  cr.ui.decorate('span.controlled-setting-indicator',
-      options.ControlledSettingIndicator);
 
   // Top level pages.
   OptionsPage.register(SearchPage.getInstance());
-  OptionsPage.register(BitpopOptions.getInstance());
+  OptionsPage.register(BrowserOptions.getInstance());
 
   // Overlays.
   // OptionsPage.registerOverlay(AutofillOptions.getInstance(),
   //                             BitpopOptions.getInstance(),
   //                             [$('autofill-settings')]);
+  OptionsPage.registerOverlay(BitpopProxyDomainSettingsOverlay.getInstance(),
+                              BrowserOptions.getInstance(),
+                              [$('open-proxy-domain-settings')]);
+  OptionsPage.registerOverlay(BitpopUncensorFilterOverlay.getInstance(),
+                              BrowserOptions.getInstance(),
+                              [$('open-uncensor-filter-lists')])
 
 
   OptionsFocusManager.getInstance().initialize();

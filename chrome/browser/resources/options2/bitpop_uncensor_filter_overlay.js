@@ -1,5 +1,5 @@
-// Copyright (c) 2012 House of Life Property Ltd. All rights reserved.
-// Copyright (c) 2012 Crystalnix, Viatcheslav Gachkaylo <vgachkaylo@crystalnix.com>
+// Copyright (c) 2013 House of Life Property Ltd. All rights reserved.
+// Copyright (c) 2013 Crystalnix, Viatcheslav Gachkaylo <vgachkaylo@crystalnix.com>
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,13 +7,7 @@ cr.define('options', function() {
   /** @const */ var OptionsPage = options.OptionsPage;
   /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
 
-  function fromPrefListToActual(prefList) {
-  	var res = {};
-  	for (var i = 0; i < prefList.length; i++) {
-  		res[prefList[i]['srcDomain']] = prefList[i]['dstDomain'];
-  	}
-  	return res;
-  }
+  var lconst = { PREPROCESS_FILTER: 1, PREPROCESS_EXCEPTIONS: 2 }; // bit flags
 
   function BitpopUncensorFilterOverlay() {
     this.activeNavTab = null;
@@ -36,17 +30,19 @@ cr.define('options', function() {
       OptionsPage.prototype.initializePage.call(this);
 
       this.filterList_ = $('domain-filter-table');
-      this.setUpList_(this.filterList_);
-
       this.exceptionList_ = $('domain-exceptions-table');
-      this.setUpList_(this.exceptionList_);
 
       this.filterList_.companion = this.exceptionList_;
       this.exceptionList_.companion = this.filterList_;
 
-      Preferences.getInstance().addEventListener("bitpop.uncensor_domain_filter",
+      this.setUpList_(this.filterList_);
+      this.setUpList_(this.exceptionList_);
+
+      Preferences.getInstance().addEventListener(
+        "bitpop.uncensor_domain_filter",
       	this.onFilterChange_.bind(this));
-      Preferences.getInstance().addEventListener("bitpop.uncensor_domain_exceptions",
+      Preferences.getInstance().addEventListener(
+        "bitpop.uncensor_domain_exceptions",
       	this.onExceptionsChange_.bind(this));
     },
 
@@ -55,118 +51,102 @@ cr.define('options', function() {
       list.autoExpands = true;
     },
 
-    updateFiltersList_: function(filter, exceptions) {
-    	this.filterSrc_ = filter;
-    	this.exceptionsSrc_ = exceptions;
-
+    updateFiltersList_: function(filter, exceptions, flags) {
       var newFilter = [];
+      var newExceptions = [];
+
+      if (flags & lconst.PREPROCESS_FILTER)
+        this.filter = filter;
+      else
+        filter = this.filter;
+
+      if (flags & lconst.PREPROCESS_EXCEPTIONS)
+        this.exceptions = exceptions;
+      else
+        exceptions = this.exceptions;
+
       for (var i in filter) {
-      	if (filter.hasOwnProperty(i) && !(i in exceptions))
-      	  newFilter.push({ src: i, dst: filter[i] });
+        if (filter.hasOwnProperty(i) && !(exceptions.hasOwnProperty(i)))
+          newFilter.push({ srcDomain: i, dstDomain: filter[i] });
       }
 
-      var newExceptions = [];
-      for (var i in exceptions) {
-      	if (exceptions.hasOwnProperty(i))
-      		newExceptions.push({ src: i, dst: exceptions[i] });
+      if (flags & lconst.PREPROCESS_EXCEPTIONS) {
+        for (var i in exceptions) {
+          if (exceptions.hasOwnProperty(i))
+            newExceptions.push({ srcDomain: i, dstDomain: exceptions[i] });
+        }
       }
 
       this.initListDiv_('filter-list-div', 'filterList_', newFilter);
       this.initListDiv_('exception-list-div', 'exceptionList_', newExceptions);
     },
 
-		function initListDiv_(divId, dataMemberName, listData) {
-			function sortFilterList(fList) {
-      	return fList.map(function(x) {
-	      	return [x, x.src.toLocaleLowerCase()];
-	      }).sort(function(a, b) {
-	      	return a[1].localeCompare(b[1]);
-	      }).map(function(x) {
-	      	return x[0];
-	      });
-      };
-
+		initListDiv_: function(divId, dataMemberName, listData) {
     	if (listData.length > 0) {
     		$(divId).hidden = false;
-    		listData = sortFilterList(listData);
+
+        listData.sort(function(a, b) {
+          return a.srcDomain.localeCompare(b.srcDomain);
+        });
+
     		for (var i = 0; i < listData.length; i++) {
     			listData[i].modelIndex = i;
+          listData[i].isHeader = false;
     		}
 
-    		var modelData = listData.slice().unshift(
+    		var modelData = listData.slice();
+        modelData.unshift(
 	    		{
-	    			src: loadTimeData.getString('uncensorOriginalDomainHeader'), 
-	    			dst: loadTimeData.getString('uncensorNewLocationHeader'),
+	    			srcDomain: loadTimeData.getString('uncensorOriginalDomainHeader'),
+	    			dstDomain: loadTimeData.getString('uncensorNewLocationHeader'),
 	    			isHeader: true
 	    		}
     		);
 
-    		this[dataMemberName].dataModel = new ArrayDataModel(listData);
-    		this[dataMemberName].arraySrc = listData;
-    		this[dataMemberName].isFilterList = (dataMemberName === "filterList_");
+        this[dataMemberName].arraySrc = listData.slice();
+        this[dataMemberName].isFilterList = (dataMemberName == "filterList_");
+    		this[dataMemberName].dataModel = new ArrayDataModel(modelData);
+
     	} else {
     		$(divId).hidden = true;
+        this[dataMemberName].arraySrc = [];
     	}
     },
 
     onFilterChange_: function(event) {
     	var filter = JSON.parse(event.value['value']);
-    	var actFilter = fromPrefListToActual(filter);
 
-    	this.updateFiltersList_(actFilter, this.exceptionsSrc_);
+    	this.updateFiltersList_(filter, null, //TODO: refactor: remove 3rd param
+          lconst.PREPROCESS_FILTER);
     },
 
     onExceptionsChange_: function(event) {
     	var exceptions = JSON.parse(event.value['value']);
-    	var actExceptions = fromPrefListToActual(exceptions);
 
-    	this.updateFiltersList_(this.filterSrc_, actExceptions);
+    	this.updateFiltersList_(null, exceptions,
+          lconst.PREPROCESS_EXCEPTIONS);
     },
 
-    initLists_: function(filterPref, extensionsPref) {
-    	function prefValueToObj(prefValue) {
-    		var res = {};
-    		var val = JSON.parse(prefValue);
-    		for (var i = 0; i < val.length; i++) {
-    			res[val[i]['srcDomain']] = val[i]['dstDomain'];
-    		}
-    		return res;
-    	};
+    initLists_: function(filterPref, exceptionsPref) {
+    	var filter = JSON.parse(filterPref);
+    	var exceptions = JSON.parse(exceptionsPref);
 
-    	var filter = prefValueToObj(filterPref);
-    	var exceptions = prefValueToObj(extensionsPref);
-
-    	this.updateFiltersList_(filter, exceptions);
+    	this.updateFiltersList_(filter, exceptions,
+          lconst.PREPROCESS_FILTER | lconst.PREPROCESS_EXCEPTIONS);
     },
 
   };
 
-  BitpopUncensorFilterOverlay.updateFiltersList = function(filter,
-                                                        	 exceptions) {
-    BitpopUncensorFilterOverlay.getInstance().updateFiltersList_(filter,
-                                                         				 exceptions);
-  };
+  //BitpopUncensorFilterOverlay.updateFiltersList = function(filter,
+  //                                                      	 exceptions) {
+  //  BitpopUncensorFilterOverlay.getInstance().updateFiltersList_(filter,
+  //                                                       				 exceptions);
+  //};
 
 	BitpopUncensorFilterOverlay.initLists = function(filterPref,
                                                    exceptionsPref) {
     BitpopUncensorFilterOverlay.getInstance().initLists_(filterPref,
                                                          exceptionsPref);
-  };
-
-  BitpopUncensorFilterOverlay.listArrayToObj = function (listArray) {
-    var res = {};
-    for (var i = 0; i < listArray.length; i++)
-      res[listArray[i].src] = listArray[i].dst;
-
-    return res;
-  };
-
-  BitpopUncensorFilterOverlay.listArrayToPref = function (listArray) {
-  	var res = [];
-  	for (var i = 0; i < listArray.length; i++)
-  		res.push({ srcDomain: listArray[i].src, dstDomain: listArray[i].dst });
-
-  	return res;
   };
 
   // Export

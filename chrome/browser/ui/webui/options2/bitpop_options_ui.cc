@@ -24,24 +24,10 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/options2/autofill_options_handler.h"
-#include "chrome/browser/ui/webui/options2/browser_options_handler.h"
-#include "chrome/browser/ui/webui/options2/clear_browser_data_handler.h"
-#include "chrome/browser/ui/webui/options2/content_settings_handler.h"
-#include "chrome/browser/ui/webui/options2/cookies_view_handler.h"
-#include "chrome/browser/ui/webui/options2/core_options_handler.h"
-#include "chrome/browser/ui/webui/options2/font_settings_handler.h"
-#include "chrome/browser/ui/webui/options2/handler_options_handler.h"
-#include "chrome/browser/ui/webui/options2/home_page_overlay_handler.h"
-#include "chrome/browser/ui/webui/options2/import_data_handler.h"
-#include "chrome/browser/ui/webui/options2/language_options_handler.h"
-#include "chrome/browser/ui/webui/options2/manage_profile_handler.h"
-#include "chrome/browser/ui/webui/options2/media_galleries_handler.h"
-#include "chrome/browser/ui/webui/options2/options_sync_setup_handler.h"
-#include "chrome/browser/ui/webui/options2/password_manager_handler.h"
-#include "chrome/browser/ui/webui/options2/search_engine_manager_handler.h"
-#include "chrome/browser/ui/webui/options2/startup_pages_handler.h"
-#include "chrome/browser/ui/webui/options2/web_intents_settings_handler.h"
+#include "chrome/browser/ui/webui/options2/bitpop_core_options_handler.h"
+#include "chrome/browser/ui/webui/options2/bitpop_options_handler.h"
+#include "chrome/browser/ui/webui/options2/bitpop_proxy_domain_settings_handler.h"
+#include "chrome/browser/ui/webui/options2/bitpop_uncensor_filter_handler.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/time_format.h"
@@ -58,6 +44,7 @@
 #include "grit/options2_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/escape.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -188,35 +175,20 @@ BitpopOptionsUI::BitpopOptionsUI(content::WebUI* web_ui)
       initialized_handlers_(false) {
   DictionaryValue* localized_strings = new DictionaryValue();
 
-  CoreOptionsHandler* core_handler;
+  BitpopCoreOptionsHandler* core_handler;
 
-  core_handler = new CoreOptionsHandler();
+  core_handler = new BitpopCoreOptionsHandler();
 
   core_handler->set_handlers_host(this);
   AddOptionsPageUIHandler(localized_strings, core_handler);
 
-  AddOptionsPageUIHandler(localized_strings, new AutofillOptionsHandler());
+  BitpopOptionsHandler* bitpop_options_handler = new BitpopOptionsHandler();
+  AddOptionsPageUIHandler(localized_strings, bitpop_options_handler);
 
-  BrowserOptionsHandler* browser_options_handler = new BrowserOptionsHandler();
-  AddOptionsPageUIHandler(localized_strings, browser_options_handler);
-
-  AddOptionsPageUIHandler(localized_strings, new ClearBrowserDataHandler());
-  AddOptionsPageUIHandler(localized_strings, new ContentSettingsHandler());
-  AddOptionsPageUIHandler(localized_strings, new CookiesViewHandler());
-  AddOptionsPageUIHandler(localized_strings, new FontSettingsHandler());
-  AddOptionsPageUIHandler(localized_strings, new HomePageOverlayHandler());
-  AddOptionsPageUIHandler(localized_strings, new MediaGalleriesHandler());
-  AddOptionsPageUIHandler(localized_strings, new WebIntentsSettingsHandler());
-  AddOptionsPageUIHandler(localized_strings, new LanguageOptionsHandler());
-  AddOptionsPageUIHandler(localized_strings, new ManageProfileHandler());
-  AddOptionsPageUIHandler(localized_strings, new PasswordManagerHandler());
-  AddOptionsPageUIHandler(localized_strings, new SearchEngineManagerHandler());
-  AddOptionsPageUIHandler(localized_strings, new ImportDataHandler());
-  AddOptionsPageUIHandler(localized_strings, new StartupPagesHandler());
-  AddOptionsPageUIHandler(localized_strings, new OptionsSyncSetupHandler(
-      g_browser_process->profile_manager()));
-
-  AddOptionsPageUIHandler(localized_strings, new HandlerOptionsHandler());
+  AddOptionsPageUIHandler(localized_strings,
+      new BitpopProxyDomainSettingsHandler());
+  AddOptionsPageUIHandler(localized_strings,
+      new BitpopUncensorFilterHandler());
 
   // |localized_strings| ownership is taken over by this constructor.
   BitpopOptionsUIHTMLSource* html_source =
@@ -235,27 +207,6 @@ BitpopOptionsUI::~BitpopOptionsUI() {
   // Uninitialize all registered handlers. Deleted by WebUIImpl.
   for (size_t i = 0; i < handlers_.size(); ++i)
     handlers_[i]->Uninitialize();
-}
-
-// static
-void BitpopOptionsUI::ProcessAutocompleteSuggestions(
-    const AutocompleteResult& result,
-    base::ListValue* const suggestions) {
-  for (size_t i = 0; i < result.size(); ++i) {
-    const AutocompleteMatch& match = result.match_at(i);
-    AutocompleteMatch::Type type = match.type;
-    if (type != AutocompleteMatch::HISTORY_URL &&
-        type != AutocompleteMatch::HISTORY_TITLE &&
-        type != AutocompleteMatch::HISTORY_BODY &&
-        type != AutocompleteMatch::HISTORY_KEYWORD &&
-        type != AutocompleteMatch::NAVSUGGEST)
-      continue;
-    base::DictionaryValue* entry = new base::DictionaryValue();
-    entry->SetString("title", match.description);
-    entry->SetString("displayURL", match.contents);
-    entry->SetString("url", match.destination_url.spec());
-    suggestions->Append(entry);
-  }
 }
 
 // static

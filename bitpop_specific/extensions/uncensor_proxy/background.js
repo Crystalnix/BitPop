@@ -1,6 +1,6 @@
-var DOMAINS_UPDATE_INTERVAL = 24 /*hours*/ * 60 /*minutes*/ * 60 /*seconds*/ *
-                              1000 /*milliseconds*/;
-var UPDATED_NOTIFICATION_SHOW_TIME = 10 * 1000; /* 5 seconds */
+var DOMAINS_UPDATE_INTERVAL = 24 /*hours*/ * 60 /*minutes factor*/ * 60 /*seconds factor*/ *
+                              1000 /*milliseconds factor*/;
+var UPDATED_NOTIFICATION_SHOW_TIME = 10 * 1000; /* 10 seconds */
 
 String.prototype.endsWith = function(suffix) {
     return this.indexOf(suffix, this.length - suffix.length) !== -1;
@@ -16,25 +16,45 @@ var settings = new Store("settings", {
   "proxy_active_message": true
 });
 
-bitpop.prefs.blockedSitesList.onChange.addListener(function(details) {
+var globalControlTransform = [ 'use_auto', 'never_use', 'ask_me'];
+
+chrome.bitpop.prefs.blockedSitesList.onChange.addListener(function(details) {
   var domains = JSON.parse(details.value);
   settings.set('domains', domains);
   chrome.extension.sendRequest({ reason: 'settingsChanged' });
 });
 
-bitpop.prefs.globalProxyControl.onChange.addListener(function(details) {
-  settings.set('proxy_control', details.value);
+chrome.bitpop.prefs.globalProxyControl.onChange.addListener(function(details) {
+  settings.set('proxy_control', globalControlTransform[+details.value])
   chrome.extension.sendRequest({ reason: 'settingsChanged' });
 });
 
-bitpop.prefs.showMessageForActiveProxy.onChange.addListener(function(details) {
+chrome.bitpop.prefs.showMessageForActiveProxy.onChange.addListener(function(details) {
   settings.set('proxy_active_message', details.value);
   chrome.extension.sendRequest({ reason: 'settingsChanged' });
 });
 
 function init() {
+  chrome.bitpop.prefs.globalProxyControl.get({}, function(details) {
+    settings.set('proxy_control', globalControlTransform[+details.value]);
+    chrome.extension.sendRequest({ reason: 'settingsChanged' });
+  });
+  chrome.bitpop.prefs.showMessageForActiveProxy.get({}, function(details) {
+    settings.set('proxy_active_message', details.value);
+    chrome.extension.sendRequest({ reason: 'settingsChanged' });
+  });
+  chrome.bitpop.prefs.blockedSitesList.get({}, function(details) {
+    if (details.value) {
+      var domains = JSON.parse(details.value);
+      settings.set('domains', domains);
+      chrome.extension.sendRequest({ reason: 'settingsChanged' });
+    }
+  });
+
+
   (function() {
-    if (Date.now() - settings.get('last_update_time') > DOMAINS_UPDATE_INTERVAL ||
+    if (Date.now() -
+        settings.get('last_update_time') > DOMAINS_UPDATE_INTERVAL ||
         settings.get('domains').length == 0) {
       updateProxifiedDomains();
     }
@@ -50,6 +70,7 @@ function init() {
     },
     []
   );
+  chrome.bitpop.onProxyDomainsUpdate.addListener(updateProxifiedDomains);
 }
 
 function haveDomainsChanged(domains) {
@@ -64,7 +85,7 @@ function haveDomainsChanged(domains) {
           domains[i] != old_domains[i].description)
         break;
     }
-  } 
+  }
 
   return changed;
 }
@@ -82,14 +103,17 @@ function updateProxifiedDomains() {
         setDomains(domains);
         settings.set('country_code', response.country_code);
         settings.set('country_name', response.country_name);
-        bitpop.prefs.ipRecognitionCountryName.set({ value: response.country_name });
+        chrome.bitpop.prefs.ipRecognitionCountryName.set({ value: response.country_name });
 
         chrome.extension.sendRequest({ reason: 'settingsChanged' });
 
         var notification = webkitNotifications.createNotification(
-          '48uncensorp.png',  // icon url - can be relative
-          'Uncensor ISP',  // notification title
-          'The list of domains to use proxy for, was updated successfully.' + // notification body text
+          // icon url - can be relative
+          '48uncensorp.png',
+          // notification title
+          'Uncensor ISP',
+          // notification body text
+          'The list of domains to use proxy for, was updated successfully.' +
           ' Country detected is ' + response.country_name + '.'
         );
         notification.show();
@@ -127,7 +151,7 @@ function setDomains(newDomains) {
     });
   }
   settings.set('domains', domains);
-  bitpop.prefs.blockedSitesList.set({ value: JSON.stringify(domains) });
+  chrome.bitpop.prefs.blockedSitesList.set({ value: JSON.stringify(domains) });
 }
 
 function onBeforeRequestListener(details) {
@@ -158,7 +182,8 @@ function onBeforeRequestListener(details) {
                 code: 'var bitpop_uncensor_proxy_options = {' +
                 '  reason: "setJippi", url: "' + details.url + '" };'
               }, function() {
-                chrome.tabs.executeScript(tab.id, { file: 'infobar_script.js' });
+                chrome.tabs.executeScript(tab.id,
+                                          { file: 'infobar_script.js' });
               });
               chrome.tabs.onUpdated.removeListener(arguments.callee);
             }
@@ -190,7 +215,8 @@ function onBeforeRequestListener(details) {
                       '  country_name: "' + settings.get('country_name') +
                       '" };'
                 }, function () {
-                  chrome.tabs.executeScript(tab.id, { file: 'infobar_script.js' });
+                  chrome.tabs.executeScript(tab.id,
+                                            { file: 'infobar_script.js' });
                 }
               );
               chrome.tabs.onUpdated.removeListener(arguments.callee);
@@ -198,7 +224,11 @@ function onBeforeRequestListener(details) {
           };
 
           var siteLoadTimeout = setTimeout(function() {
-              updatedListener(details.tabId, { status: 'complete' }, { id: details.tabId });
+              updatedListener(
+                details.tabId,
+                { status: 'complete' },
+                { id: details.tabId }
+              );
             },
             5000);
 

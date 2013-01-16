@@ -1,4 +1,5 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012-2013 House of Life Property Ltd. All rights reserved.
+// Copyright (c) 2012-2013 Crystalnix <vgachkaylo@crystalnix.com>
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,11 +37,7 @@ class BitpopOptionsHandler
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-
-  // Used to get |weak_ptr_| to self for use on the File thread.
-  base::WeakPtrFactory<BitpopOptionsHandler> weak_ptr_factory_for_file_;
-  // Used to post update tasks to the UI thread.
-  base::WeakPtrFactory<BitpopOptionsHandler> weak_ptr_factory_for_ui_;
+  void OpenFacebookNotificationsOptions(const base::ListValue * params);
 
   DISALLOW_COPY_AND_ASSIGN(BitpopOptionsHandler);
 };

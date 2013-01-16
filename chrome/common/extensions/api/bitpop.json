@@ -1,5 +1,5 @@
 [
-  { 
+  {
     "namespace": "bitpop",
     "dependencies": [ "types" ],
     "nodoc": true,
@@ -21,7 +21,7 @@
           },
           "uncensorShouldRedirect": {
             "$ref": "types.ChromeSetting",
-            "value": ["uncensorShouldRedirect", {"type":"string"}],
+            "value": ["uncensorShouldRedirect", {"type":"number"}],
             "description": "uncensorShouldRedirect"
           },
           "uncensorShowMessage": {
@@ -37,7 +37,7 @@
           "uncensorDomainFilter": {
             "$ref": "types.ChromeSetting",
             "value": ["uncensorDomainFilter", {"type":"string"}],
-            "description": "uncensorDomainFilter",
+            "description": "uncensorDomainFilter"
           },
           "uncensorDomainExceptions": {
             "$ref": "types.ChromeSetting",
@@ -46,7 +46,7 @@
           },
           "globalProxyControl": {
             "$ref": "types.ChromeSetting",
-            "value": ["globalProxyControl", {"type":"string"}],
+            "value": ["globalProxyControl", {"type":"number"}],
             "description": "globalProxyControl"
           },
           "showMessageForActiveProxy": {
@@ -66,7 +66,22 @@
           }
         }
       }
-    }
+    },
+    "events": [
+      {
+        "name": "onProxyDomainsUpdate",
+        "type": "function",
+        "description": "Fired when the app is launched.",
+        "parameters": [
+          {
+            "type": "object",
+            "name": "params",
+            "description": "Optional params.",
+            "optional": true
+          }
+        ]
+      }
+    ]
   }
 ]
 

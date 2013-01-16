@@ -160,6 +160,7 @@ class ChromeURLXFrameOptionsExceptionSet
     insert(chrome::kChromeUIHelpFrameHost);
     insert(chrome::kChromeUIHistoryFrameHost);
     insert(chrome::kChromeUISettingsFrameHost);
+    insert(chrome::kChromeUIBitpopSettingsFrameHost);
     insert(chrome::kChromeUIUberFrameHost);
   }
 };
