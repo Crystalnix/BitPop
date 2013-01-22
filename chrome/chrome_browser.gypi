@@ -4155,6 +4155,8 @@
         'browser/ui/webui/options2/advanced_options_utils_x11.cc',
         'browser/ui/webui/options2/autofill_options_handler.cc',
         'browser/ui/webui/options2/autofill_options_handler.h',
+        'browser/ui/webui/options2/bitpop_core_options_handler.cc',
+        'browser/ui/webui/options2/bitpop_core_options_handler.h',
         'browser/ui/webui/options2/bitpop_options_handler.cc',
         'browser/ui/webui/options2/bitpop_options_handler.h',
         'browser/ui/webui/options2/bitpop_options_ui.cc',

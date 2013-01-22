@@ -207,7 +207,7 @@ bitpop.FacebookController = (function() {
     } else if (status == Strophe.Status.DISCONNECTED) {
       console.log('Strophe is disconnected.');
       connection.reset();
-      if (localStorage.myUid && localStorage.accessToken && 
+      if (localStorage.myUid && localStorage.accessToken &&
           !(prevIdleState == 'idle' || prevIdleState == 'locked'))
         connectToFacebookChat();
     } else if (status == Strophe.Status.CONNECTED) {
@@ -358,7 +358,7 @@ bitpop.FacebookController = (function() {
   }
 
   function idleStateUpdate(newState) {
-    if ((prevIdleState == "idle" || prevIdleState == "locked") && 
+    if ((prevIdleState == "idle" || prevIdleState == "locked") &&
         newState == "active") {
       clearInterval(query_idle_timer);
       query_idle_timer = null;
@@ -597,10 +597,10 @@ bitpop.FacebookController = (function() {
         var w = 1000;
         var h = 450;
         var left = (screen.width/2)-(w/2);
-        var top = (screen.height/2)-(h/2); 
+        var top = (screen.height/2)-(h/2);
 
-        window.open(url, "newwin", "height=" + h + ",width=" + w + 
-            ",left=" + left + ",top=" + top + 
+        window.open(url, "newwin", "height=" + h + ",width=" + w +
+            ",left=" + left + ",top=" + top +
             ",toolbar=no,scrollbars=no,menubar=no,location=no");
       }
     });
@@ -664,7 +664,7 @@ bitpop.FacebookController = (function() {
 
   function onSendChatMessage(request, sendResponse) {
     if (!connection.connected)
-      sendResponse({ error: 'Not connected to facebook chat.' });
+      sendResponse({ error: 'You are now in "Offline" mode. To be able to send messages, switch back to "Online" in the facebook sidebar.' });
 
     if ((request.message || request.state) && request.uidTo) {
       sendMessage(request.message, request.uidTo, request.state);

@@ -1,5 +1,11 @@
 {
-   "background_page": "background.html",
+   "background": {
+      "scripts": [
+         "js/options.js",
+         "js/desktop_notifications.js",
+         "js/main.js"
+      ]
+   },
    "browser_action": {
       "default_icon": "images/icon19.png",
       "default_popup": "popup.html",
@@ -15,6 +21,7 @@
    "name": "Facebook Notifications",
    "options_page": "options.html",
    "permissions": [ "notifications", "chrome://favicon/" ],
-   "version": "2.2",
-   "update_url": "http://tools.bitpop.com/ext/updates.xml"
+   "version": "2.3",
+   "update_url": "http://tools.bitpop.com/ext/updates.xml",
+   "manifest_version": 2
 }
