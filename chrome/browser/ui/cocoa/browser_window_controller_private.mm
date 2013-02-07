@@ -483,7 +483,8 @@ willPositionSheet:(NSWindow*)sheet
     sidebarFrame.origin.y = minY;
     sidebarFrame.size.height = maxY - minY;
     [sidebarView setFrame:sidebarFrame];
-    [facebookSidebarController_ sizeUpdated];
+
+    //[facebookSidebarController_ sizeUpdated];
     maxX -= sidebarFrame.size.width;
   }
   return maxX;

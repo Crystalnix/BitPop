@@ -92,7 +92,6 @@ function showMessages(data) {
 
   var newDom = '';
 
-  var footerGoToOnClick = "onclick='chrome.tabs.create({ url: \"http://www.facebook.com/messages\" })'";
   if (threads.length == 0) {
     newDom =
       "<div class='empty-feed'>" +
@@ -116,6 +115,16 @@ function showMessages(data) {
 
   $('#feed .message').each(function() {
     $(this).click(function() {
+      var otherUserId = 0;
+      var index = $(this).index();
+      var thread = threads[index];
+      for (var i = 0; i < thread.recipients.length; ++i) {
+        if (thread.recipients[i] != thread.viewer_id) {
+          otherUserId = thread.recipients[i];
+          break;
+        }
+      }
+
       var curData = ($(this).index() < threads.length) ?
                         messagesByThread[$(this).index()] :
                         null;
@@ -125,6 +134,8 @@ function showMessages(data) {
 
         $('#thread .loading').removeClass('loading');
         $('#thread-feed').empty();
+        $('#thread-feed').attr('href',
+            'https://www.facebook.com/messages/' + otherUserId);
         $('#thread-feed').append(formatThreadItems(curData, users));
         $('.box-wrap').data('antiscroll').rebuild();
       }
@@ -305,13 +316,19 @@ window.onload = function() {
     chrome.tabs.create({ url: "http://www.facebook.com/messages" });
   });
 
+  $('#thread-feed .thread-item').live('click', function (e) {
+    var href = $('#thread-feed').attr('href');
+    if (href)
+      chrome.tabs.create({ url: href });
+  });
+
   $('.box-wrap').antiscroll();
 
   $(function(){setTimeout(function(){$('#slide-wrap').scrollLeft(0);},100)});
 
-  $('.thread-item').live('click', function() {
-      chrome.tabs.create({ url: 'http://www.facebook.com/messages' });
-  });
+  // $('.thread-item').live('click', function() {
+  //     chrome.tabs.create({ url: 'http://www.facebook.com/messages' });
+  // });
 
   var queryObj = {
     threads: "SELECT thread_id, subject, snippet, snippet_author, " +

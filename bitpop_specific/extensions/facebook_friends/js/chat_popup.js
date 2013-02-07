@@ -178,8 +178,14 @@ bitpop.chat = (function() {
             $('#msg').val(msgValue + tab.url);
           else
             $('#msg').val(msgValue + ' ' + tab.url);
+
           // Set the cursor at the end of input:
-          $('#msg').focus().val($('#msg').val());
+          $('#msg').focus();
+
+          var len = $('#msg').val().length;
+          var msgEl = document.getElementById('msg');
+          msgEl.setSelectionRange(len, len);
+          msgEl.scrollTop = 999999;
         });
       });
 

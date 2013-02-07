@@ -77,6 +77,5 @@ bitpop.preprocessMessageText = function(msgText) {
   return msgText.replace(/&/g, "&amp;")
                 .replace(/</g, "&lt;")
                 .replace(/>/g, "&gt;")
-                .autoLink({ 'onclick':
-                               'chrome.tabs.create({ \'url\': this.href })'});
-}
+                .autoLink({ 'target': '_blank' });
+};

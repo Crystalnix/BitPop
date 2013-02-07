@@ -12,6 +12,7 @@
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -143,6 +144,9 @@ void TileImageInt(SkCanvas& canvas, const SkBitmap& bitmap,
     composingImage = rb.GetNativeImageNamed(IDR_FACEBOOK_COMPOSING_ICON_14);
   }
 
+  NSFont* font = [NSFont controlContentFontOfSize:11];
+  [button_ setFont:font];
+
   [button_ setTitle:
         [NSString stringWithUTF8String:bridge_->chat()->username().c_str()]];
   [button_ setImagePosition:NSImageLeft];
@@ -235,13 +239,15 @@ if (!button_)
 }
 
 - (GURL)getPopupURL {
+  Profile *profile = [chatbarController_ bridge]->browser()->profile();
+  FacebookChatManager *mgr =
+      FacebookChatManagerServiceFactory::GetForProfile(profile);
   std::string urlString(chrome::kFacebookChatExtensionPrefixURL);
   urlString += chrome::kFacebookChatExtensionChatPage;
   urlString += "#";
   urlString += bridge_->chat()->jid();
   urlString += "&";
-  urlString += [chatbarController_ bridge]->browser()->profile()->
-    GetFacebookChatManager()->global_my_uid();
+  urlString += mgr->global_my_uid();
   return GURL(urlString);
 }
 

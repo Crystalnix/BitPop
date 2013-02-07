@@ -38,9 +38,10 @@ namespace {
                                                        green: 0.6
                                                         blue: 1.0
                                                        alpha: 1.0]];
-      NSBezierPath *shadowPath = [NSBezierPath bezierPathWithRoundedRect:hlBounds2
-                                                                 xRadius:kDefaultCornerRadius
-                                                                 yRadius:kDefaultCornerRadius];
+      NSBezierPath *shadowPath =
+          [NSBezierPath bezierPathWithRoundedRect:hlBounds2
+                                          xRadius:kDefaultCornerRadius
+                                          yRadius:kDefaultCornerRadius];
       [[NSColor whiteColor] set];
 
       [shadow set];
@@ -61,29 +62,6 @@ namespace {
 + (Class)cellClass {
   return [FacebookChatItemCell class];
 }
-
-// - (void)drawRect:(NSRect)rect {
-//   [super drawRect:rect];
-//
-//   if ([controller_ chatItem]->num_notifications() != 0) {
-//     NSRect buttonBounds = [self bounds];
-//     buttonBounds.origin.x += 1;
-//     buttonBounds.origin.y += 2;
-//     buttonBounds.size.width -= 2;
-//     buttonBounds.size.height -= 6;
-//
-//     NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:buttonBounds
-//                                                          xRadius:3.0
-//                                                          yRadius:3.0];
-//     NSColor* strokeColor = [NSColor colorWithCalibratedRed:0
-//                                                      green:0.7
-//                                                       blue:0.7
-//                                                      alpha:1.0];
-//     [strokeColor set];
-//     [path setLineWidth:2.0];
-//     [path stroke];
-//   }
-// }
 
 @end
 

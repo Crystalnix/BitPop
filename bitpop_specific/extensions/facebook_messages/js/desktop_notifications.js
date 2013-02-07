@@ -388,17 +388,17 @@ DesktopNotifications = {
 
         // var uri = self.protocol + self.domain + self.getEndpoint +
         //   '?type=' + (type || '');
-        var notification =
-          window.webkitNotifications.createNotification(
-              'http://graph.facebook.com/' + fromUid + '/picture?type=square',
-              'New message from ' + name + '.', body);
-        notification.clickHref =
-          "https://www.facebook.com/messages";
-        // In case the user has multiple windows or tabs open, replace
-        // any existing windows for this alert with this one.
-        notification.replaceId = 'com.facebook.alert.' + thread_id;
+        // var notification =
+        //   window.webkitNotifications.createNotification(
+        //       'http://graph.facebook.com/' + fromUid + '/picture?type=square',
+        //       'New message from ' + name + '.', body);
+        // notification.clickHref =
+        //   "https://www.facebook.com/messages";
+        // // In case the user has multiple windows or tabs open, replace
+        // // any existing windows for this alert with this one.
+        // notification.replaceId = 'com.facebook.alert.' + thread_id;
 
-        self.showNotification(notification, self.DEFAULT_FADEOUT_DELAY);
+        // self.showNotification(notification, self.DEFAULT_FADEOUT_DELAY);
       }
     }
   },
@@ -408,26 +408,26 @@ DesktopNotifications = {
    * After an expiration period, it is closed.
    */
   addNotification: function(alert_id, delay) {
-    var self = DesktopNotifications;
-    if (!window.webkitNotifications) {
-      return;
-    }
+    //var self = DesktopNotifications;
+    //if (!window.webkitNotifications) {
+    //  return;
+    //}
 
-    if (typeof delay == 'undefined') {
-      delay = self.DEFAULT_FADEOUT_DELAY;
-    }
-    var uri = self.protocol + self.domain + self.getEndpoint +
-      '?alert_id=' + (alert_id || '') +
-      '&latest=' + self._latest_notif +
-      '&latest_read=' + self._latest_read_notif;
-    var notification =
-      window.webkitNotifications.createHTMLNotification(uri);
+    //if (typeof delay == 'undefined') {
+    //  delay = self.DEFAULT_FADEOUT_DELAY;
+    //}
+    //var uri = self.protocol + self.domain + self.getEndpoint +
+    //  '?alert_id=' + (alert_id || '') +
+    //  '&latest=' + self._latest_notif +
+    //  '&latest_read=' + self._latest_read_notif;
+    // var notification =
+    //   window.webkitNotifications.createHTMLNotification(uri);
 
-    // In case the user has multiple windows or tabs open, replace
-    //// any existing windows for this alert with this one.
-    notification.replaceId = 'com.facebook.alert.' + alert_id;
+    // // In case the user has multiple windows or tabs open, replace
+    // //// any existing windows for this alert with this one.
+    // notification.replaceId = 'com.facebook.alert.' + alert_id;
 
-    self.showNotification(notification, delay);
+    // self.showNotification(notification, delay);
   },
 
   showNotification: function(notification, delay) {

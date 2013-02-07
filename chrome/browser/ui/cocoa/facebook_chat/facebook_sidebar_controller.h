@@ -9,33 +9,41 @@
 
 #import <Cocoa/Cocoa.h>
 
-namespace content {
-  class WebContents;
+#include "base/memory/scoped_ptr.h"
+#include "content/public/browser/notification_registrar.h"
+
+namespace extensions {
+  class ExtensionHost;
 }
+
+class Browser;
+class SidebarExtensionContainer;
+class SidebarExtensionNotificationBridge;
 
 // A class that handles updates of the sidebar view within a browser window.
 // It swaps in the relevant sidebar contents for a given TabContents or removes
 // the vew, if there's no sidebar contents to show.
 @interface FacebookSidebarController : NSViewController {
  @private
-  content::WebContents* web_contents_;
-
   BOOL sidebarVisible_;
+  content::NotificationRegistrar registrar_;
+  scoped_ptr<extensions::ExtensionHost> extension_host_;
+  scoped_ptr<SidebarExtensionNotificationBridge> notification_bridge_;
+  scoped_ptr<SidebarExtensionContainer> extension_container_;
+  Browser* browser_;
 }
 
-- (id)initWithContents:(content::WebContents*)contents;
+@property(nonatomic, assign) BOOL visible;
 
-// Depending on |contents|'s state, decides whether the sidebar
-// should be shown or hidden and adjusts its width (|delegate_| handles
-// the actual resize).
-- (void)updateFriendsForTabContents:(content::WebContents*)contents;
-// - (void)showSidebarContents:(TabContents*)sidebarContents;
-
-- (void)sizeUpdated;
-
-- (BOOL)isSidebarVisible;
+- (id)initWithBrowser:(Browser*)browser;
 
 - (CGFloat)maxWidth;
+
+- (void)initializeExtensionHost;
+
+- (void)removeAllChildViews;
+
+- (extensions::ExtensionHost*)extension_host;
 @end
 
 #endif  // CHROME_BROWSER_UI_COCOA_FACEBOOK_SIDEBAR_CONTROLLER_H_
