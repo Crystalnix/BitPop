@@ -24,7 +24,7 @@ class FacebookChatManager : public ProfileKeyedService {
   public:
     FacebookChatManager();
 
-    virtual void Shutdown();
+    virtual void Shutdown() OVERRIDE;
 
     FacebookChatItem* GetItem(const std::string &jid);
 

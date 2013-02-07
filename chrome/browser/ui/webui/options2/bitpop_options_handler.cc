@@ -164,7 +164,6 @@ void BitpopOptionsHandler::Observe(
 
 void BitpopOptionsHandler::OpenFacebookNotificationsOptions(const base::ListValue* param) {
   // Open a new tab in the current window for the notifications page.
-  Profile* profile = Profile::FromWebUI(web_ui());
   OpenURLParams params(
       GURL("http://www.facebook.com/settings?tab=notifications"), Referrer(),
       NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_LINK, false);

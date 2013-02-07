@@ -15,6 +15,7 @@
 #include "chrome/browser/download/download_shelf.h"
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager_service_factory.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/facebook_chat/received_message_info.h"
 #include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
@@ -257,10 +258,6 @@ void BrowserWindowCocoa::SetDevToolsDockSide(DevToolsDockSide side) {
   [controller_ setDevToolsDockToRight:side == DEVTOOLS_DOCK_SIDE_RIGHT];
 }
 
-void BrowserWindowCocoa::UpdateFriendsSidebarForContents(WebContents *contents) {
-  [controller_ updateFriendsForContents: contents];
-}
-
 void BrowserWindowCocoa::UpdateLoadingAnimations(bool should_animate) {
   // Do nothing on Mac.
 }
@@ -489,8 +486,8 @@ bool BrowserWindowCocoa::IsFriendsSidebarVisible() const {
   return [controller_ isFriendsSidebarVisible] != NO;
 }
 
-void BrowserWindowCocoa::CreateFriendsSidebarIfNeeded() {
-  //[controller_ createFriendsSidebarIfNeeded];
+void BrowserWindowCocoa::SetFriendsSidebarVisible(bool visible) {
+  [controller_ setFriendsSidebarVisible:(visible ? YES : NO)];
 }
 
 // We allow closing the window here since the real quit decision on Mac is made
@@ -649,7 +646,9 @@ void BrowserWindowCocoa::Observe(int type,
     case content::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT: {
         if (browser_->is_type_tabbed()) {
           content::Details<FacebookChatCreateInfo> chat_info(details);
-          FacebookChatManager *mgr = browser_->profile()->GetFacebookChatManager();
+          FacebookChatManager *mgr =
+              FacebookChatManagerServiceFactory::GetForProfile(
+                  browser_->profile());
           // the next call returns the found element if jid's equal
           FacebookChatItem *newItem = mgr->CreateFacebookChat(*(chat_info.ptr()));
           if (IsActive())
@@ -665,7 +664,8 @@ void BrowserWindowCocoa::Observe(int type,
         if (browser_->is_type_tabbed()) {
           content::Details<ReceivedMessageInfo> msg_info(details);
           FacebookChatManager *mgr =
-              browser_->profile()->GetFacebookChatManager();
+              FacebookChatManagerServiceFactory::GetForProfile(
+                  browser_->profile());
           FacebookChatItem *item = mgr->GetItem(msg_info->chatCreateInfo->jid);
           item->set_needs_activation(false);
           GetChatbar()->AddChatItem(item);

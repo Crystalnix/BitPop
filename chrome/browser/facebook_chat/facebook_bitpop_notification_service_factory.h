@@ -28,3 +28,4 @@ class FacebookBitpopNotificationServiceFactory : public ProfileKeyedServiceFacto
 
   DISALLOW_COPY_AND_ASSIGN(FacebookBitpopNotificationServiceFactory);
 };
+

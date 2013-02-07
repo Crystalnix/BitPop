@@ -28,3 +28,4 @@ class FacebookChatManagerServiceFactory : public ProfileKeyedServiceFactory {
 
   DISALLOW_COPY_AND_ASSIGN(FacebookChatManagerServiceFactory);
 };
+

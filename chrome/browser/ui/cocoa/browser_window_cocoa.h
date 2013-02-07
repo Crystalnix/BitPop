@@ -54,7 +54,6 @@ class BrowserWindowCocoa : public BrowserWindow,
       BookmarkBar::AnimateChangeType change_type) OVERRIDE;
   virtual void UpdateDevTools() OVERRIDE;
   virtual void SetDevToolsDockSide(DevToolsDockSide side) OVERRIDE;
-  virtual void UpdateFriendsSidebarForContents(content::WebContents *contents) OVERRIDE;
   virtual void UpdateLoadingAnimations(bool should_animate) OVERRIDE;
   virtual void SetStarredState(bool is_starred) OVERRIDE;
   virtual void SetZoomIconState(ZoomController::ZoomIconState state) OVERRIDE;
@@ -108,7 +107,7 @@ class BrowserWindowCocoa : public BrowserWindow,
   virtual bool IsChatbarVisible() const OVERRIDE;
   virtual FacebookChatbar* GetChatbar() OVERRIDE;
   virtual bool IsFriendsSidebarVisible() const OVERRIDE;
-  virtual void CreateFriendsSidebarIfNeeded() OVERRIDE;
+  virtual void SetFriendsSidebarVisible(bool visible) OVERRIDE;
   virtual void ConfirmBrowserCloseWithPendingDownloads() OVERRIDE;
   virtual void UserChangedTheme() OVERRIDE;
   virtual int GetExtraRenderViewHeight() const OVERRIDE;

@@ -219,7 +219,7 @@
               # common.gypi, "Dump Symbols" needs to be in an (always true)
               # target_conditions block.
               'target_conditions': [
-                ['1 == 1', {
+                ['1 == 0', {
                   'postbuilds': [
                     {
                       'postbuild_name': 'Dump Symbols',

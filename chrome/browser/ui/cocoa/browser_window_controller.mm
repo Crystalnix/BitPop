@@ -545,23 +545,6 @@ enum {
                           withProfile:browser_->profile()];
 }
 
-- (void)updateFriendsForContents:(WebContents*)contents {
-  //bool initialized = facebookSidebarController_.get() != NULL;
-  FacebookSidebarController *fsController = [self friendsSidebar];
-  //BOOL hadTabContents = (fsController.tabContents != NULL);
-  [fsController updateFriendsForTabContents:contents];
-//  if (((contents && !hadTabContents) || (!contents && hadTabContents)) &&
-//      initialized) {
-//    [self adjustWindowWidthBy: (hadTabContents ? -1 : 1) *
-//        // + 1 is needed to change size of tabContentsArea_ slightly so that
-//        // the resize corner is taken into account
-//        ([fsController maxWidth] + 1)];
-//  }
-
-  //[fsController ensureContentsVisible];
-  [self layoutSubviews];
-}
-
 // Called when the user wants to close a window or from the shutdown process.
 // The Browser object is in control of whether or not we're allowed to close. It
 // may defer closing due to several states, such as onUnload handlers needing to
@@ -1619,19 +1602,31 @@ enum {
 }
 
 - (BOOL)isFriendsSidebarVisible {
-  return facebookSidebarController_ != nil &&
-      [facebookSidebarController_ isSidebarVisible];
+  return facebookSidebarController_.get() &&
+      [facebookSidebarController_ visible];
+}
+
+- (void)setFriendsSidebarVisible:(BOOL)visible {
+  if (browser_ == NULL || browser_->profile()->IsOffTheRecord())
+    return;
+
+  if (visible && ![self isFriendsSidebarVisible]) {
+    [[self friendsSidebar] setVisible:YES];
+  }
+  if (!visible && [self isFriendsSidebarVisible])
+    [[self friendsSidebar] setVisible:NO];
+
+  [self layoutSubviews];
 }
 
 - (FacebookSidebarController*)friendsSidebar {
   if (!facebookSidebarController_.get()) {
     facebookSidebarController_.reset([[FacebookSidebarController alloc]
-      initWithContents:NULL]);
+      initWithBrowser:browser_.get()]);
     [[[self window] contentView]
         addSubview:[facebookSidebarController_ view]
         positioned:NSWindowBelow
         relativeTo:[bookmarkBarController_ view]];
-    // TODO: [facebookSidebarController_ show] maybe
   }
   return facebookSidebarController_;
 }
@@ -1969,10 +1964,10 @@ enum {
   if (facebookChatbarController_.get())
     [facebookChatbarController_ layoutItemsChildWindows];
 
-  if (facebookSidebarController_.get() &&
-      [facebookSidebarController_ isSidebarVisible]) {
-    [facebookSidebarController_ sizeUpdated];
-  }
+  // if (facebookSidebarController_.get() &&
+  //     [facebookSidebarController_ visible]) {
+  //   [facebookSidebarController_ sizeUpdated];
+  // }
 }
 
 // Handle the openLearnMoreAboutCrashLink: action from SadTabController when

@@ -30,3 +30,4 @@ ProfileKeyedService* FacebookChatManagerServiceFactory::BuildServiceInstanceFor(
     Profile* profile) const {
   return new FacebookChatManager();
 }
+

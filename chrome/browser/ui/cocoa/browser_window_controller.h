@@ -272,6 +272,8 @@ class WebContents;
 
 - (BOOL)isFriendsSidebarVisible;
 
+- (void)setFriendsSidebarVisible:(BOOL)visible;
+
 - (FacebookSidebarController*)friendsSidebar;
 
 // Retains the given FindBarCocoaController and adds its view to this
@@ -314,10 +316,6 @@ class WebContents;
 
 // Specifies whether devtools should dock to right.
 - (void)setDevToolsDockToRight:(bool)dock_to_right;
-
-// Displays the facebook friends sidebar with |contents| being the extension
-// tab contents.
-- (void)updateFriendsForContents:(content::WebContents*)contents;
 
 // Gets the current theme provider.
 - (ui::ThemeProvider*)themeProvider;

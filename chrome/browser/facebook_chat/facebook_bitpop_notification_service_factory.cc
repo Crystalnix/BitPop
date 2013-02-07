@@ -42,3 +42,4 @@ ProfileKeyedService* FacebookBitpopNotificationServiceFactory::BuildServiceInsta
   return NULL;
 #endif
 }
+
