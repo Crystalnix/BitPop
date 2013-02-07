@@ -2164,6 +2164,9 @@ willAnimateFromState:(bookmarks::VisualState)oldState
     if ([[self window] isKindOfClass:[FramedBrowserWindow class]])
       [static_cast<FramedBrowserWindow*>([self window]) toggleSystemFullScreen];
   } else {
+    // Avoid bugs with chat windows
+    [[self facebookChatbar] closeAllChildrenPopups];
+
     if (fullscreen)
       [self enterFullscreenForSnowLeopardOrEarlier];
     else

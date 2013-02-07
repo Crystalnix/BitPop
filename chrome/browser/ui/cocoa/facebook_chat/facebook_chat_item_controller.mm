@@ -256,10 +256,7 @@ if (!button_)
 }
 
 - (void)remove {
-  if ([self active])
-    [[FacebookPopupController popup] close];
-  if (notificationController_.get())
-    [notificationController_ close];
+  [self closeAllPopups];
 
   [chatbarController_ remove:self];
 }
@@ -503,6 +500,13 @@ if (!button_)
   }
 
   [self layoutChildWindows];
+}
+
+- (void)closeAllPopups {
+  if ([self active])
+    [[FacebookPopupController popup] close];
+  if (notificationController_.get())
+    [notificationController_ close];
 }
 
 @end

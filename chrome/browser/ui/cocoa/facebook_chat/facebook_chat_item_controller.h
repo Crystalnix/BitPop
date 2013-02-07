@@ -69,6 +69,8 @@ class GURL;
 
 - (void)switchParentWindow:(NSWindow*)window;
 - (void)layoutChildWindows;
+
+- (void)closeAllPopups;
 @end
 
 #endif    // CHROME_BROWSER_UI_COCOA_FACEBOOK_CHAT_FACEBOOK_CHAT_ITEM_CONTROLLER_H_

@@ -71,6 +71,7 @@ class FacebookChatItem;
 - (void)switchParentWindow:(NSWindow*)window;
 
 - (void)layoutItemsChildWindows;
+- (void)closeAllChildrenPopups;
 @end
 
 #endif  // CHROME_BROWSER_UI_COCOA_FACEBOOK_CHATBAR_CONTROLLER_H_

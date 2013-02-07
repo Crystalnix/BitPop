@@ -392,4 +392,9 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
     [controller layoutChildWindows];
 }
 
+- (void)closeAllChildrenPopups {
+  for (FacebookChatItemController* controller in chatItemControllers_.get())
+    [controller closeAllPopups];
+}
+
 @end
