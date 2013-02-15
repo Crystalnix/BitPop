@@ -168,6 +168,9 @@ DesktopNotifications = {
           query: query
         },
         function (response) {
+          if (!response)
+            return;
+
           if (response.error)
             errback(response.error, query);
           else

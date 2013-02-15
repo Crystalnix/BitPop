@@ -573,6 +573,7 @@ bitpop.FacebookController = (function() {
         "&response_type=token" +
         "&redirect_uri=" + SUCCESS_URL +
         '&display=popup' +
+        '&state=bitpop' +
         '&scope=' + permissions.join(',');
     var loginUrlStart = 'https://www.facebook.com/login.php?api_key=' +
         FB_APPLICATION_ID;
@@ -594,14 +595,14 @@ bitpop.FacebookController = (function() {
           break;
       }
       if (!found) {
-        var w = 1000;
-        var h = 450;
+        var w = 620;
+        var h = 400;
         var left = (screen.width/2)-(w/2);
         var top = (screen.height/2)-(h/2);
 
         window.open(url, "newwin", "height=" + h + ",width=" + w +
             ",left=" + left + ",top=" + top +
-            ",toolbar=no,scrollbars=no,menubar=no,location=no");
+            ",toolbar=no,scrollbars=no,menubar=no,location=no,resizable=yes");
       }
     });
 
@@ -615,7 +616,8 @@ bitpop.FacebookController = (function() {
     if (localStorage.accessToken) {
       var url = FB_LOGOUT_URL + '?next=' +
         escape(LOGOUT_NEXT_URL) +
-        '&access_token=' + localStorage.accessToken;
+        '&access_token=' + localStorage.accessToken +
+        '&app_id=' + FB_APPLICATION_ID;
 
       chrome.windows.create({ url: url, type: "popup",
                               top: 0, left: 0, width: 50, height: 50 });
