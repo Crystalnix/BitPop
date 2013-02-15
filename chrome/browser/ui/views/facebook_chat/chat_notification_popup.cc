@@ -29,6 +29,8 @@ namespace {
 
   static const int kNotificationLabelMaxHeight = 600;
 
+  static const int kLabelPaddingRight = 18;
+
   static const SkColor kNotificationPopupBackgroundColor = SkColorSetRGB(0xc2, 0xec, 0xfc);
 
   static const int kNotificationBubbleAlpha = 200;
@@ -108,7 +110,9 @@ public:
   }
 
   virtual gfx::Size GetPreferredSize() {
-    return label_->GetPreferredSize();
+    gfx::Size s = label_->GetPreferredSize();
+    s.Enlarge(kLabelPaddingRight, 0);
+    return s;
   }
 
   virtual void Layout() {
@@ -116,7 +120,7 @@ public:
     ourBounds.set_x(0);
     ourBounds.set_y(0);
 
-    label_->SetBounds(ourBounds.x(), ourBounds.y(), ourBounds.width(), ourBounds.height());
+    label_->SetBounds(ourBounds.x(), ourBounds.y(), ourBounds.width() - kLabelPaddingRight, ourBounds.height());
 
     gfx::Size prefsize = close_button_->GetPreferredSize();
     close_button_->SetBounds(ourBounds.width() - prefsize.width(), 0, prefsize.width(), prefsize.height());

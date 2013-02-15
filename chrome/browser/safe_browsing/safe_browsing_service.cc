@@ -661,16 +661,16 @@ void SafeBrowsingService::StartOnIOThread() {
   // On Windows, get the safe browsing client name from the browser
   // distribution classes in installer util. These classes don't yet have
   // an analog on non-Windows builds so just keep the name specified here.
-#if defined(OS_WIN)
-  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  std::string client_name(dist->GetSafeBrowsingName());
-#else
+//#if defined(OS_WIN)
+//  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+//  std::string client_name(dist->GetSafeBrowsingName());
+//#else
 #if defined(GOOGLE_CHROME_BUILD)
   std::string client_name("googlechrome");
 #else
   std::string client_name("chromium");
 #endif
-#endif
+//#endif
   CommandLine* cmdline = CommandLine::ForCurrentProcess();
   bool disable_auto_update =
       cmdline->HasSwitch(switches::kSbDisableAutoUpdate) ||

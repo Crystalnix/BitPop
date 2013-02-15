@@ -19,12 +19,12 @@ namespace {
 // TODO(erikwright): These constants are duplicated all over the place.
 // Consolidate them somehow.
 const wchar_t kChromeRegClientStateKey[] =
-    L"Software\\Google\\Update\\ClientState\\"
-    L"{8A69D345-D564-463c-AFF1-A69D9E530F96}";
+    L"Software\\HouseOfLife\\BitpopUpdate\\ClientState\\"
+    L"{{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}}";
 
 const wchar_t kUninstallStringField[] = L"UninstallString";
 
-const wchar_t kChromeExe[] = L"chrome.exe";
+const wchar_t kChromeExe[] = L"bitpop.exe";
 
 #ifndef OFFICIAL_BUILD
 FilePath GetDevelopmentChrome() {
