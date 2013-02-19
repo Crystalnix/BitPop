@@ -24,6 +24,30 @@ cr.define('options', function() {
   // True if the synced account uses 'encrypt everything'.
   var useEncryptEverything_ = false;
 
+  // Using this to determine whether our login pages on bitpop.com
+  // are reachable
+  function serverReachable(urlToCheck) {
+    var x = new XMLHttpRequest(), s;
+    x.open(
+      // requesting the headers is faster, and just enough
+      "HEAD",
+      // append a random string to the current hostname,
+      // to make sure we're not hitting the cache
+      urlToCheck + "/?rand=" + Math.random(),
+      // make a synchronous request
+      false
+    );
+    try {
+      x.send();
+      s = x.status;
+      // Make sure the server is reachable
+      return ( s >= 200 && s < 300 || s === 304 );
+      // catch network & other problems
+    } catch (e) {
+      return false;
+    }
+  }
+
   /**
    * SyncSetupOverlay class
    * Encapsulated handling of the 'Sync Setup' overlay page.
@@ -47,19 +71,30 @@ cr.define('options', function() {
       OptionsPage.prototype.initializePage.call(this);
 
       var self = this;
-      $('gaia-login-form').onsubmit = function() {
-        self.sendCredentialsAndClose_();
-        return false;
-      };
+      //$('gaia-login-form').onsubmit = function() {
+      //  self.sendCredentialsAndClose_();
+      //  return false;
+      //};
       $('google-option').onchange = $('explicit-option').onchange = function() {
         self.onPassphraseRadioChanged_();
       };
       $('choose-datatypes-cancel').onclick =
+          // \/- BitPop connection check overlay cancel button
+          $('check-cancel').onclick =
           $('sync-setup-cancel').onclick =
           $('confirm-everything-cancel').onclick =
           $('stop-syncing-cancel').onclick =
           $('sync-spinner-cancel').onclick = function() {
         self.closeOverlay_();
+      };
+
+      // \/- BitPop auth iframe overlay close button
+      $('iframe-close-button').onclick = function() {
+        $('iframe-container').hidden = true;
+      };
+
+      $('check-try-again').onclick = function() {
+        self.connectionMakeTry_();
       };
       $('confirm-everything-ok').onclick = function() {
         self.sendConfiguration_();
@@ -572,90 +607,90 @@ cr.define('options', function() {
      * Set the appropriate focus on the GAIA login section of the overlay.
      * @private
      */
-    loginSetFocus_: function() {
-      var email = this.getLoginEmail_();
-      if (email && !email.value) {
-        email.focus();
-        return;
-      }
+    // loginSetFocus_: function() {
+    //   var email = this.getLoginEmail_();
+    //   if (email && !email.value) {
+    //     email.focus();
+    //     return;
+    //   }
 
-      var passwd = this.getLoginPasswd_();
-      if (passwd)
-        passwd.focus();
-    },
+    //   var passwd = this.getLoginPasswd_();
+    //   if (passwd)
+    //     passwd.focus();
+    // },
 
     /**
      * Get the login email text input DOM element.
      * @return {DOMElement} The login email text input.
      * @private
      */
-    getLoginEmail_: function() {
-      return $('gaia-email');
-    },
+    // getLoginEmail_: function() {
+    //   return $('gaia-email');
+    // },
 
     /**
      * Get the login password text input DOM element.
      * @return {DOMElement} The login password text input.
      * @private
      */
-    getLoginPasswd_: function() {
-      return $('gaia-passwd');
-    },
+    // getLoginPasswd_: function() {
+    //   return $('gaia-passwd');
+    // },
 
     /**
      * Get the sign in button DOM element.
      * @return {DOMElement} The sign in button.
      * @private
      */
-    getSignInButton_: function() {
-      return $('sign-in');
-    },
+    // getSignInButton_: function() {
+    //   return $('sign-in');
+    // },
 
-    showAccessCodeRequired_: function() {
-      this.allowEmptyPassword_ = true;
+    // showAccessCodeRequired_: function() {
+    //   this.allowEmptyPassword_ = true;
 
-      $('password-row').hidden = true;
-      $('email-row').hidden = true;
-      $('otp-input-row').hidden = true;
+    //   $('password-row').hidden = true;
+    //   $('email-row').hidden = true;
+    //   $('otp-input-row').hidden = true;
 
-      $('access-code-input-row').hidden = false;
-      $('access-code').disabled = false;
-      $('access-code').focus();
-    },
+    //   $('access-code-input-row').hidden = false;
+    //   $('access-code').disabled = false;
+    //   $('access-code').focus();
+    // },
 
-    showOtpRequired_: function() {
-      this.allowEmptyPassword_ = true;
+    // showOtpRequired_: function() {
+    //   this.allowEmptyPassword_ = true;
 
-      $('password-row').hidden = true;
-      $('email-row').hidden = true;
-      $('access-code-input-row').hidden = true;
+    //   $('password-row').hidden = true;
+    //   $('email-row').hidden = true;
+    //   $('access-code-input-row').hidden = true;
 
-      $('otp-input-row').hidden = false;
-      $('otp').disabled = false;
-      $('otp').focus();
-    },
+    //   $('otp-input-row').hidden = false;
+    //   $('otp').disabled = false;
+    //   $('otp').focus();
+    // },
 
-    showCaptcha_: function(args) {
-      this.allowEmptyPassword_ = args.hideEmailAndPassword;
-      this.captchaChallengeActive_ = true;
+    // showCaptcha_: function(args) {
+    //   this.allowEmptyPassword_ = args.hideEmailAndPassword;
+    //   this.captchaChallengeActive_ = true;
 
-      if (args.hideEmailAndPassword) {
-        $('password-row').hidden = true;
-        $('email-row').hidden = true;
-        $('create-account-div').hidden = true;
-      } else {
-        // The captcha takes up lots of space, so make room.
-        $('top-blurb-error').hidden = true;
-        $('create-account-div').hidden = true;
-        $('gaia-email').disabled = true;
-        $('gaia-passwd').disabled = false;
-      }
+    //   if (args.hideEmailAndPassword) {
+    //     $('password-row').hidden = true;
+    //     $('email-row').hidden = true;
+    //     $('create-account-div').hidden = true;
+    //   } else {
+    //     // The captcha takes up lots of space, so make room.
+    //     $('top-blurb-error').hidden = true;
+    //     $('create-account-div').hidden = true;
+    //     $('gaia-email').disabled = true;
+    //     $('gaia-passwd').disabled = false;
+    //   }
 
-      // It's showtime for the captcha now.
-      $('captcha-div').hidden = false;
-      $('captcha-value').disabled = false;
-      $('captcha-wrapper').style.backgroundImage = url(args.captchaUrl);
-    },
+    //   // It's showtime for the captcha now.
+    //   $('captcha-div').hidden = false;
+    //   $('captcha-value').disabled = false;
+    //   $('captcha-wrapper').style.backgroundImage = url(args.captchaUrl);
+    // },
 
     /**
      * Reset the state of all descendant elements of a root element to their
@@ -688,86 +723,107 @@ cr.define('options', function() {
           function(elt) { elt.classList.remove('transparent'); });
     },
 
+    connectionMakeTry_: function() {
+      // $('loading-indicator').style.display = '';
+      $('offline-indicator').className = 'check';
+      $('checking-text').hidden = false;
+      $('connection-error-text').hidden = true;
+
+      if (serverReachable()) {
+        $('iframe-container').src = "https://www.bitpop.com/welcome.html";
+        $('iframe-container').hidden = false;
+      } else {
+        // $('loading-indicator').style.display = 'none';
+        $('offline-indicator').className = 'offline';
+        $('checking-text').hidden = true;
+        $('connection-error-text').hidden = false;
+      }
+    },
+
     showGaiaLogin_: function(args) {
-      var oldAccessCodeValue = $('access-code').value;
-      this.resetPage_('sync-setup-login');
-      $('sync-setup-login').hidden = false;
-      this.allowEmptyPassword_ = false;
-      this.captchaChallengeActive_ = false;
+      $('sync-setup-connection-check').hidden = false;
+      this.connectionMakeTry_();
 
-      var f = $('gaia-login-form');
-      var email = $('gaia-email');
-      var passwd = $('gaia-passwd');
-      if (f) {
-        if (args.user != undefined) {
-          if (email.value != args.user)
-            passwd.value = ''; // Reset the password field
-          email.value = args.user;
-        }
+      // var oldAccessCodeValue = $('access-code').value;
+      // this.resetPage_('sync-setup-login');
+      // $('sync-setup-login').hidden = false;
+      // this.allowEmptyPassword_ = false;
+      // this.captchaChallengeActive_ = false;
 
-        if (!args.editableUser) {
-          $('email-row').hidden = true;
-          var span = $('email-readonly');
-          span.textContent = email.value;
-          $('email-readonly-row').hidden = false;
-          $('create-account-div').hidden = true;
-        }
+      // var f = $('gaia-login-form');
+      // var email = $('gaia-email');
+      // var passwd = $('gaia-passwd');
+      // if (f) {
+      //   if (args.user != undefined) {
+      //     if (email.value != args.user)
+      //       passwd.value = ''; // Reset the password field
+      //     email.value = args.user;
+      //   }
 
-        f.accessCode.disabled = true;
-        f.otp.disabled = true;
-      }
+      //   if (!args.editableUser) {
+      //     $('email-row').hidden = true;
+      //     var span = $('email-readonly');
+      //     span.textContent = email.value;
+      //     $('email-readonly-row').hidden = false;
+      //     $('create-account-div').hidden = true;
+      //   }
 
-      if (1 == args.error) {
-        if (oldAccessCodeValue) {
-          $('errormsg-0-access-code').hidden = false;
-          this.showAccessCodeRequired_();
-        } else {
-          $('errormsg-1-password').hidden = (args.errorMessage != undefined);
-        }
-        this.setBlurbError_(args.errorMessage);
-      } else if (3 == args.error) {
-        $('errormsg-0-connection').hidden = false;
-        this.setBlurbError_(args.errorMessage);
-      } else if (4 == args.error) {
-        this.showCaptcha_(args);
-      } else if (7 == args.error) {
-        this.setBlurbError_(loadTimeData.getString('serviceUnavailableError'));
-      } else if (8 == args.error) {
-        if (args.askForOtp) {
-          this.showOtpRequired_();
-        } else {
-          if (oldAccessCodeValue)
-            $('errormsg-0-access-code').hidden = false;
-          this.showAccessCodeRequired_();
-        }
-      } else if (args.errorMessage) {
-        this.setBlurbError_(args.errorMessage);
-      }
+      //   f.accessCode.disabled = true;
+      //   f.otp.disabled = true;
+      // }
 
-      if (args.fatalError) {
-        $('errormsg-fatal').hidden = false;
-        $('sign-in').disabled = true;
-        return;
-      }
+      // if (1 == args.error) {
+      //   if (oldAccessCodeValue) {
+      //     $('errormsg-0-access-code').hidden = false;
+      //     this.showAccessCodeRequired_();
+      //   } else {
+      //     $('errormsg-1-password').hidden = (args.errorMessage != undefined);
+      //   }
+      //   this.setBlurbError_(args.errorMessage);
+      // } else if (3 == args.error) {
+      //   $('errormsg-0-connection').hidden = false;
+      //   this.setBlurbError_(args.errorMessage);
+      // } else if (4 == args.error) {
+      //   this.showCaptcha_(args);
+      // } else if (7 == args.error) {
+      //   this.setBlurbError_(loadTimeData.getString('serviceUnavailableError'));
+      // } else if (8 == args.error) {
+      //   if (args.askForOtp) {
+      //     this.showOtpRequired_();
+      //   } else {
+      //     if (oldAccessCodeValue)
+      //       $('errormsg-0-access-code').hidden = false;
+      //     this.showAccessCodeRequired_();
+      //   }
+      // } else if (args.errorMessage) {
+      //   this.setBlurbError_(args.errorMessage);
+      // }
 
-      $('sign-in').disabled = false;
-      $('sign-in').value = loadTimeData.getString('signin');
-      this.loginSetFocus_();
+      // if (args.fatalError) {
+      //   $('errormsg-fatal').hidden = false;
+      //   $('sign-in').disabled = true;
+      //   return;
+      // }
+
+      // $('sign-in').disabled = false;
+      // $('sign-in').value = loadTimeData.getString('signin');
+      // this.loginSetFocus_();
     },
 
     resetErrorVisibility_: function() {
-      $('errormsg-0-email').hidden = true;
-      $('errormsg-0-password').hidden = true;
-      $('errormsg-1-password').hidden = true;
+      // $('errormsg-0-email').hidden = true;
+      // $('errormsg-0-password').hidden = true;
+      // $('errormsg-1-password').hidden = true;
       $('errormsg-0-connection').hidden = true;
-      $('errormsg-0-access-code').hidden = true;
-      $('errormsg-0-otp').hidden = true;
+      // $('errormsg-0-access-code').hidden = true;
+      // $('errormsg-0-otp').hidden = true;
     },
 
     setBlurbError_: function(errorMessage) {
-      if (this.captchaChallengeActive_)
-        return;  // No blurb in captcha challenge mode.
+      // if (this.captchaChallengeActive_)
+      //   return;  // No blurb in captcha challenge mode.
 
+      $('offline-indicator').className = 'error';
       if (errorMessage) {
         $('error-signing-in').hidden = true;
         $('error-custom').hidden = false;
@@ -778,8 +834,8 @@ cr.define('options', function() {
       }
 
       $('top-blurb-error').hidden = false;
-      $('gaia-email').disabled = false;
-      $('gaia-passwd').disabled = false;
+      // $('gaia-email').disabled = false;
+      // $('gaia-passwd').disabled = false;
     },
 
     matchesASPRegex_: function(toMatch) {
@@ -790,80 +846,80 @@ cr.define('options', function() {
       return false;
     },
 
-    setErrorVisibility_: function() {
-      this.resetErrorVisibility_();
-      var f = $('gaia-login-form');
-      var email = $('gaia-email');
-      var passwd = $('gaia-passwd');
-      if (!email.value) {
-        $('errormsg-0-email').hidden = false;
-        this.setBlurbError_();
-        return false;
-      }
-      // Don't enforce password being non-blank when checking access code (it
-      // will have been cleared when the page was displayed).
-      if (!this.allowEmptyPassword_ && !passwd.value) {
-        $('errormsg-0-password').hidden = false;
-        this.setBlurbError_();
-        return false;
-      }
+    // setErrorVisibility_: function() {
+    //   this.resetErrorVisibility_();
+    //   var f = $('gaia-login-form');
+    //   var email = $('gaia-email');
+    //   var passwd = $('gaia-passwd');
+    //   if (!email.value) {
+    //     $('errormsg-0-email').hidden = false;
+    //     this.setBlurbError_();
+    //     return false;
+    //   }
+    //   // Don't enforce password being non-blank when checking access code (it
+    //   // will have been cleared when the page was displayed).
+    //   if (!this.allowEmptyPassword_ && !passwd.value) {
+    //     $('errormsg-0-password').hidden = false;
+    //     this.setBlurbError_();
+    //     return false;
+    //   }
 
-      if (!f.accessCode.disabled && !f.accessCode.value) {
-        $('errormsg-0-access-code').hidden = false;
-        return false;
-      }
+    //   if (!f.accessCode.disabled && !f.accessCode.value) {
+    //     $('errormsg-0-access-code').hidden = false;
+    //     return false;
+    //   }
 
-      if (f.accessCode.disabled && this.matchesASPRegex_(passwd.value) &&
-          $('asp-warning-div').hidden) {
-        $('asp-warning-div').hidden = false;
-        $('gaia-passwd').value = '';
-        return false;
-      }
+    //   if (f.accessCode.disabled && this.matchesASPRegex_(passwd.value) &&
+    //       $('asp-warning-div').hidden) {
+    //     $('asp-warning-div').hidden = false;
+    //     $('gaia-passwd').value = '';
+    //     return false;
+    //   }
 
-      if (!f.otp.disabled && !f.otp.value) {
-        $('errormsg-0-otp').hidden = false;
-        return false;
-      }
+    //   if (!f.otp.disabled && !f.otp.value) {
+    //     $('errormsg-0-otp').hidden = false;
+    //     return false;
+    //   }
 
-      return true;
-    },
+    //   return true;
+    // },
 
     sendCredentialsAndClose_: function() {
       if (!this.setErrorVisibility_()) {
         return false;
       }
 
-      $('gaia-email').disabled = true;
-      $('gaia-passwd').disabled = true;
-      $('captcha-value').disabled = true;
-      $('access-code').disabled = true;
-      $('otp').disabled = true;
+      // $('gaia-email').disabled = true;
+      // $('gaia-passwd').disabled = true;
+      // $('captcha-value').disabled = true;
+      // $('access-code').disabled = true;
+      // $('otp').disabled = true;
 
-      this.setThrobbersVisible_(true);
+      // this.setThrobbersVisible_(true);
 
-      var f = $('gaia-login-form');
-      var email = $('gaia-email');
-      var passwd = $('gaia-passwd');
-      var result = JSON.stringify({'user': email.value,
-        'pass': passwd.value,
-        'captcha': f.captchaValue.value,
-        'otp': f.otp.value,
-        'accessCode': f.accessCode.value
-      });
-      $('sign-in').disabled = true;
-      chrome.send('SyncSetupSubmitAuth', [result]);
+      // var f = $('gaia-login-form');
+      // var email = $('gaia-email');
+      // var passwd = $('gaia-passwd');
+      // var result = JSON.stringify({'user': email.value,
+      //   'pass': passwd.value,
+      //   'captcha': f.captchaValue.value,
+      //   'otp': f.otp.value,
+      //   'accessCode': f.accessCode.value
+      // });
+      // $('sign-in').disabled = true;
+      // chrome.send('SyncSetupSubmitAuth', [result]);
     },
 
-    showSuccessAndClose_: function() {
-      $('sign-in').value = loadTimeData.getString('loginSuccess');
-      setTimeout(this.closeOverlay_, 1600);
-    },
+    // showSuccessAndClose_: function() {
+    //   $('sign-in').value = loadTimeData.getString('loginSuccess');
+    //   setTimeout(this.closeOverlay_, 1600);
+    // },
 
-    showSuccessAndSettingUp_: function() {
-      $('sign-in').value = loadTimeData.getString('settingUp');
-      this.setThrobbersVisible_(true);
-      $('top-blurb-error').hidden = true;
-    },
+    // showSuccessAndSettingUp_: function() {
+    //   $('sign-in').value = loadTimeData.getString('settingUp');
+    //   this.setThrobbersVisible_(true);
+    //   $('top-blurb-error').hidden = true;
+    // },
 
     /**
      * Displays the stop syncing dialog.
@@ -927,17 +983,17 @@ cr.define('options', function() {
   };
 
   // These get methods should only be called by the WebUI tests.
-  SyncSetupOverlay.getLoginEmail = function() {
-    return SyncSetupOverlay.getInstance().getLoginEmail_();
-  };
+  //SyncSetupOverlay.getLoginEmail = function() {
+  //  return SyncSetupOverlay.getInstance().getLoginEmail_();
+  //};
 
-  SyncSetupOverlay.getLoginPasswd = function() {
-    return SyncSetupOverlay.getInstance().getLoginPasswd_();
-  };
+  //SyncSetupOverlay.getLoginPasswd = function() {
+  //  return SyncSetupOverlay.getInstance().getLoginPasswd_();
+  //};
 
-  SyncSetupOverlay.getSignInButton = function() {
-    return SyncSetupOverlay.getInstance().getSignInButton_();
-  };
+  //SyncSetupOverlay.getSignInButton = function() {
+  //  return SyncSetupOverlay.getInstance().getSignInButton_();
+  //};
 
   // These methods are for general consumption.
   SyncSetupOverlay.showErrorUI = function() {

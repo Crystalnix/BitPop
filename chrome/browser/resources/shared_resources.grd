@@ -35,6 +35,12 @@ without changes to the corresponding grd file. -->
                file="shared/images/x.png" type="BINDATA" />
       <include name="IDR_SHARED_IMAGES_X_HOVER"
                file="shared/images/x-hover.png" type="BINDATA" />
+      <!-- BITPOP mod includes -->
+      <include name="IDR_SHARED_IMAGES_CHECK_ICON"
+               file="shared/images/check_icon.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_OFFLINE_ICON"
+               file="shared/images/offline_icon.png" type="BINDATA" />
+
     </includes>
     <structures>
       <structure name="IDR_SHARED_CSS_ABOUT"

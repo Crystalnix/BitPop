@@ -1,5 +1,41 @@
 <div id="sync-setup-overlay" class="page" hidden>
+<div id="wrapper">
   <div class="close-button"></div>
+  <div id="sync-setup-connection-check">
+    <div id="connection-check-header">
+      <h2 i18n-content="checkConnectionHead"></h2>
+    </div>
+    <div>
+      <div id="offline-indicator" class="check"></div>
+      <div id="info">
+        <div id="status-text">
+          <span id="checking-text" hidden>
+            <span i18n-content="checkingConnection"></span>
+            <span class="throbber" style="visibility: visible"></span>
+          </span>
+          <span id="connection-error-text"
+                i18n-content="connectionError" hidden></span>
+        </div>
+        <div id="errormsg-0-connection" class="errormsg reset-hidden"
+             i18n-content="couldNotConnect" hidden>
+        </div>
+        <div id="top-blurb-error" class="reset-hidden" hidden>
+          <span id="error-signing-in" i18n-content="errorSigningIn">Error signing in.</span>
+          <span id="error-custom" hidden></span>
+        </div>
+      </div>
+      <div id="connection-check-buttons">
+        <button id="check-try-again" i18n-content="checkTryAgain"
+                class=""></button>
+        <button id="check-cancel" i18n-content="checkCancel"
+                class=""></button>
+      </div>
+    </div>
+  </div>
+  <div id="iframe-container" hidden>
+    <div id="iframe-close-button"></div>
+    <iframe id="login-iframe" src="http://www.bitpop.com/" seamless></iframe>
+  </div>
   <div id="sync-setup-login" hidden>
     <div id="promo-title-container" hidden>
       <h1 i18n-content="promoTitle"></h1>
@@ -380,4 +416,9 @@
           i18n-values="value:stopSyncingConfirm">
     </div>
   </div>
+</div><!-- #wrapper -->
+<div id="iframe-container" hidden>
+  <div class="iframe-close-button"></div>
+  <iframe id="login-iframe" seamless></iframe>
+</div>
 </div>

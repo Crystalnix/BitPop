@@ -96,20 +96,14 @@ static const char kDefaultSigninDomain[] = "gmail.com";
 
 bool GetAuthData(const std::string& json,
                  std::string* username,
-                 std::string* password,
-                 std::string* captcha,
-                 std::string* otp,
-                 std::string* access_code) {
+                 std::string* access_token) {
   scoped_ptr<Value> parsed_value(base::JSONReader::Read(json));
   if (!parsed_value.get() || !parsed_value->IsType(Value::TYPE_DICTIONARY))
     return false;
 
   DictionaryValue* result = static_cast<DictionaryValue*>(parsed_value.get());
   if (!result->GetString("user", username) ||
-      !result->GetString("pass", password) ||
-      !result->GetString("captcha", captcha) ||
-      !result->GetString("otp", otp) ||
-      !result->GetString("accessCode", access_code)) {
+      !result->GetString("accessToken", access_token)) {
       return false;
   }
   return true;
@@ -651,13 +645,20 @@ void SyncSetupHandler::HandleSubmitAuth(const ListValue* args) {
   if (json.empty())
     return;
 
-  std::string username, password, captcha, otp, access_code;
-  if (!GetAuthData(json, &username, &password, &captcha, &otp, &access_code)) {
-    // The page sent us something that we didn't understand.
-    // This probably indicates a programming error.
+  std::string username, access_token;
+  if (!GetAuthData(json, &username, &access_token)) {
     NOTREACHED();
     return;
   }
+
+
+  // std::string username, password, captcha, otp, access_code;
+  // if (!GetAuthData(json, &username, &password, &captcha, &otp, &access_code)) {
+  //   // The page sent us something that we didn't understand.
+  //   // This probably indicates a programming error.
+  //   NOTREACHED();
+  //   return;
+  // }
 
   string16 error_message;
   if (!IsLoginAuthDataValid(username, &error_message)) {
@@ -665,37 +666,38 @@ void SyncSetupHandler::HandleSubmitAuth(const ListValue* args) {
     return;
   }
 
-  // If one of password, captcha, otp and access_code is non-empty, then the
-  // others must be empty.  At least one should be non-empty.
-  DCHECK(password.empty() ||
-         (captcha.empty() && otp.empty() && access_code.empty()));
-  DCHECK(captcha.empty() ||
-         (password.empty() && otp.empty() && access_code.empty()));
-  DCHECK(otp.empty() ||
-         (captcha.empty() && password.empty() && access_code.empty()));
-  DCHECK(access_code.empty() ||
-         (captcha.empty() && password.empty() && otp.empty()));
-  DCHECK(!otp.empty() || !captcha.empty() || !password.empty() ||
-         !access_code.empty());
+  DCHECK(!access_token.empty());
 
-  if (IsClientOAuthEnabled()) {
-    // Last error is two-factor implies otp should not be empty.
-    DCHECK((last_signin_error_.state() != GoogleServiceAuthError::TWO_FACTOR) ||
-        !otp.empty());
-    // Last error is captcha-required implies captcha should not be empty.
-    DCHECK((last_signin_error_.state() !=
-        GoogleServiceAuthError::CAPTCHA_REQUIRED) || !captcha.empty());
-  }
+  // // If one of password, captcha, otp and access_code is non-empty, then the
+  // // others must be empty.  At least one should be non-empty.
+  // DCHECK(password.empty() ||
+  //        (captcha.empty() && otp.empty() && access_code.empty()));
+  // DCHECK(captcha.empty() ||
+  //        (password.empty() && otp.empty() && access_code.empty()));
+  // DCHECK(otp.empty() ||
+  //        (captcha.empty() && password.empty() && access_code.empty()));
+  // DCHECK(access_code.empty() ||
+  //        (captcha.empty() && password.empty() && otp.empty()));
+  // DCHECK(!otp.empty() || !captcha.empty() || !password.empty() ||
+  //        !access_code.empty());
 
-  const std::string& solution = captcha.empty() ?
-      (otp.empty() ? EmptyString() : otp) : captcha;
-  TryLogin(username, password, solution, access_code);
+  // if (IsClientOAuthEnabled()) {
+  //   // Last error is two-factor implies otp should not be empty.
+  //   DCHECK((last_signin_error_.state() != GoogleServiceAuthError::TWO_FACTOR) ||
+  //       !otp.empty());
+  //   // Last error is captcha-required implies captcha should not be empty.
+  //   DCHECK((last_signin_error_.state() !=
+  //       GoogleServiceAuthError::CAPTCHA_REQUIRED) || !captcha.empty());
+  // }
+
+  // const std::string& solution = captcha.empty() ?
+  //     (otp.empty() ? EmptyString() : otp) : captcha;
+  // TryLogin(username, password, solution, access_code);
+  TryLogin(username, access_token);
 }
 
 void SyncSetupHandler::TryLogin(const std::string& username,
-                                const std::string& password,
-                                const std::string& solution,
-                                const std::string& access_code) {
+                                const std::string& access_token) {
   DCHECK(IsActiveLogin());
   // Make sure we are listening for signin traffic.
   if (!signin_tracker_.get())
@@ -708,34 +710,62 @@ void SyncSetupHandler::TryLogin(const std::string& username,
   last_signin_error_ = GoogleServiceAuthError::None();
 
   SigninManager* signin = GetSignin();
-  if (IsClientOAuthEnabled()) {
-    if (!solution.empty()) {
-      signin->ProvideOAuthChallengeResponse(current_error.state(),
-                                            current_error.token(), solution);
-      return;
-    }
-  } else {
-    // If we're just being called to provide an ASP, then pass it to the
-    // SigninManager and wait for the next step.
-    if (!access_code.empty()) {
-      signin->ProvideSecondFactorAccessCode(access_code);
-      return;
-    }
-  }
+  signin->PrepareForSignin(SIGNIN_TYPE_CLIENT_LOGIN, username, "");
 
-  // The user has submitted credentials, which indicates they don't want to
-  // suppress start up anymore. We do this before starting the signin process,
-  // so the ProfileSyncService knows to listen to the cached password.
-  GetSyncService()->UnsuppressAndStart();
 
-  // Kick off a sign-in through the signin manager.
-  if (IsClientOAuthEnabled()) {
-    signin->StartSignInWithOAuth(username, password);
-  } else {
-    signin->StartSignIn(username, password, current_error.captcha().token,
-                        solution);
-  }
+  UserInfoMap info_map;
+  info_map['email'] = username;
+  signin->OnGetUserInfoSuccess(info_map);
+
+  GetSyncService()->OnIssueAuthTokenSuccess(
+      GaiaConstants::kSyncService,
+      access_token);
 }
+
+// void SyncSetupHandler::TryLogin(const std::string& username,
+//                                 const std::string& password,
+//                                 const std::string& solution,
+//                                 const std::string& access_code) {
+//   DCHECK(IsActiveLogin());
+//   // Make sure we are listening for signin traffic.
+//   if (!signin_tracker_.get())
+//     signin_tracker_.reset(new SigninTracker(GetProfile(), this));
+
+//   last_attempted_user_email_ = username;
+
+//   // User is trying to log in again so reset the cached error.
+//   GoogleServiceAuthError current_error = last_signin_error_;
+//   last_signin_error_ = GoogleServiceAuthError::None();
+
+//   SigninManager* signin = GetSignin();
+//   if (IsClientOAuthEnabled()) {
+//     if (!solution.empty()) {
+//       signin->ProvideOAuthChallengeResponse(current_error.state(),
+//                                             current_error.token(), solution);
+//       return;
+//     }
+//   } else {
+//     // If we're just being called to provide an ASP, then pass it to the
+//     // SigninManager and wait for the next step.
+//     if (!access_code.empty()) {
+//       signin->ProvideSecondFactorAccessCode(access_code);
+//       return;
+//     }
+//   }
+
+//   // The user has submitted credentials, which indicates they don't want to
+//   // suppress start up anymore. We do this before starting the signin process,
+//   // so the ProfileSyncService knows to listen to the cached password.
+//   GetSyncService()->UnsuppressAndStart();
+
+//   // Kick off a sign-in through the signin manager.
+//   if (IsClientOAuthEnabled()) {
+//     signin->StartSignInWithOAuth(username, password);
+//   } else {
+//     signin->StartSignIn(username, password, current_error.captcha().token,
+//                         solution);
+//   }
+// }
 
 void SyncSetupHandler::GaiaCredentialsValid() {
   DCHECK(IsActiveLogin());
