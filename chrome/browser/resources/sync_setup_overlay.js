@@ -730,8 +730,10 @@ cr.define('options', function() {
       $('connection-error-text').hidden = true;
 
       if (serverReachable()) {
-        $('iframe-container').src = "https://www.bitpop.com/welcome.html";
-        $('iframe-container').hidden = false;
+        chrome::send('OpenWelcomePage');
+
+        //$('iframe-container').src = "https://www.bitpop.com/welcome.html";
+        //$('iframe-container').hidden = false;
       } else {
         // $('loading-indicator').style.display = 'none';
         $('offline-indicator').className = 'offline';

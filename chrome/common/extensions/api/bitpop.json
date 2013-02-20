@@ -81,6 +81,20 @@
           }
         ]
       }
+    ],
+    "functions": [
+      {
+        "name": "syncLoginResultReady",
+        "description": "callback for browser that the token is fetched successfully or there was an error which occured in process of login",
+        "parameters": [
+          {
+            "type": "object",
+            "name": "result",
+            "description": "login result",
+            "optional": false
+          }
+        ]
+      }
     ]
   }
 ]

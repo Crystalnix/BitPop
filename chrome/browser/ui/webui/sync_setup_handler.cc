@@ -24,12 +24,15 @@
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/net/gaia/gaia_constants.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -488,6 +491,9 @@ void SyncSetupHandler::RegisterMessages() {
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback("SyncSetupStopSyncing",
       base::Bind(&SyncSetupHandler::HandleStopSyncing,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("OpenWelcomePage",
+      base::Bind(&SyncSetupHandler::HandleOpenWelcomePage),
                  base::Unretained(this)));
 }
 
@@ -966,6 +972,18 @@ void SyncSetupHandler::HandleStopSyncing(const ListValue* args) {
 
 void SyncSetupHandler::HandleCloseTimeout(const ListValue* args) {
   CloseSyncSetup();
+}
+
+void SyncSetupHandler::HandleOpenWelcomePage(const base::ListValue* args) {
+  Browser* = browser::FindBrowserWithWebContents(web_ui()->GetWebContents());
+  chrome::NavigateParams params(browser, GURL("http://dev.bitpop.com:8000/login/facebook"),
+                                content::PAGE_TRANSITION_LINK);
+  params.disposition = SINGLETON_TAB;
+  chrome::Navigate(&params);
+
+  if (params.target_contents) {
+    WebContents* contents = params.target_contents->web_contents();
+  }
 }
 
 void SyncSetupHandler::CloseSyncSetup() {

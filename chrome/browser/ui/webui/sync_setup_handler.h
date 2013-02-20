@@ -11,6 +11,7 @@
 #include "chrome/browser/signin/signin_tracker.h"
 #include "chrome/browser/ui/webui/options2/options_ui.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
+#include "content/public/browser/web_contents_observer.h"
 
 class LoginUIService;
 class ProfileManager;
