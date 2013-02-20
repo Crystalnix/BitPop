@@ -39,7 +39,7 @@ bitpop.FacebookController = (function() {
   var FRIEND_LIST_UPDATE_INTERVAL = 1000 * 60; // in milliseconds
   var MACHINE_IDLE_INTERVAL = 60 * 10;  // in seconds
 
-  var FB_PERMISSIONS = ['xmpp_login', 'offline_access',
+  var FB_PERMISSIONS = ['xmpp_login',
           'user_online_presence', 'friends_online_presence',
           'manage_notifications', 'read_mailbox', 'user_status',
           'publish_stream' ];
@@ -382,7 +382,7 @@ bitpop.FacebookController = (function() {
   }
 
   function onTabUpdated(tabId, changeInfo, tab) {
-    if (changeInfo.url && changeInfo.url.indexOf(SUCCESS_URL) == 0) {
+    if (changeInfo.url && (changeInfo.url.indexOf(SUCCESS_URL) == 0)) {
       if (changeInfo.url == LOGOUT_NEXT_URL) {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('myUid');
@@ -391,11 +391,12 @@ bitpop.FacebookController = (function() {
         chrome.bitpop.facebookChat.loggedOutFacebookSession();
       } else if (!localStorage.accessToken || need_more_permissions) {
         var accessToken = accessTokenFromSuccessURL(changeInfo.url);
-        if (!accessToken)
+        if (!accessToken) {
+          localStorage.removeItem('accessToken');
           console.warn('Could not get an access token from url %s',
               changeInfo.url);
-        else {
-          localStorage.accessToken = accessToken;
+        } else {
+          localStorage.setItem('accessToken', accessToken);
           checkForPermissions(function() {
               notifyObservingExtensions({ type: 'accessTokenAvailable',
                                         accessToken: accessToken });
@@ -423,6 +424,7 @@ bitpop.FacebookController = (function() {
 
         if (permsToPrompt.length > 0) {
           console.warn('Insufficient permissions. Requesting for more.');
+          console.warn('Need permissions: ' + permsToPrompt.join(','));
           need_more_permissions = true;
           login(permsToPrompt);
         } else if (callbackAfter) {
