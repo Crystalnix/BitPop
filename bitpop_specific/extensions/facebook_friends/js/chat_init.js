@@ -17,7 +17,7 @@ $(function() {
       $('#head').click(function() { chrome.tabs.create({ url: profile_url }); });
     }
 
-    chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+    chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
       { type: 'getFBUserNameByUid',
         uid: window.location.hash.substr(1).split('&')[0] },
       function (response) {

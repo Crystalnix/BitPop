@@ -344,7 +344,7 @@ window.onload = function() {
   };
   var query = JSON.stringify(queryObj);
 
-  chrome.extension.sendRequest(current.controllerExtensionId,
+  chrome.extension.sendMessage(current.controllerExtensionId,
       {
         //type: 'graphApiCall',
         //path: '/me/inbox',
