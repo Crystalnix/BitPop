@@ -28,15 +28,17 @@ var loggedIn = false;
 setTimeout(
   function() {
     if (!myUid) {
-      chrome.extension.sendRequest(
+      chrome.extension.sendMessage(
         bitpop.CONTROLLER_EXTENSION_ID,
         { type: 'getMyUid' },
         function(response) {
-          myUid = response.id;
-          chrome.extension.sendRequest(
-            bitpop.CONTROLLER_EXTENSION_ID,
-            { type: 'forceFriendListSend' }
-          );
+          if (response && response.id) {
+            myUid = response.id;
+            chrome.extension.sendMessage(
+              bitpop.CONTROLLER_EXTENSION_ID,
+              { type: 'forceFriendListSend' }
+            );
+          }
         }
       );
     }
@@ -48,7 +50,7 @@ chrome.extension.onRequest.addListener(function (request, sender, sendResponse) 
     return;
 
   if (request.type == 'setStatusMessage') {
-    chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+    chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
       { type: 'setFacebookStatusMessage',
         msg: request.msg
       },
@@ -59,7 +61,7 @@ chrome.extension.onRequest.addListener(function (request, sender, sendResponse) 
   }
 });
 
-chrome.extension.onRequestExternal.addListener(function (request, sender, sendResponse) {
+chrome.extension.onMessageExternal.addListener(function (request, sender, sendResponse) {
   if (!request.type)
     return;
 
@@ -173,7 +175,7 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
 });
 
 function sendInboxRequest() {
-  chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+  chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
     { type: 'graphApiCall',
       path: '/me/inbox',
       params: {}
@@ -181,13 +183,13 @@ function sendInboxRequest() {
     function (response) {
       inboxData = response.data;
       replaceLocalHistory(inboxData);
-      chrome.extension.sendRequest({ type: 'inboxDataAvailable' });
+      chrome.extension.sendMessage({ type: 'inboxDataAvailable' });
     }
   );
 }
 
 function sendStatusesRequest() {
-  chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+  chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
     { type: 'graphApiCall',
       path: '/me/statuses',
       params: { 'limit': '1' }
@@ -195,7 +197,7 @@ function sendStatusesRequest() {
     function (response) {
       if (!response.data || !response.data.length || !response.data[0].message)
         return;
-      chrome.extension.sendRequest({ type: 'statusMessageUpdate',
+      chrome.extension.sendMessage({ type: 'statusMessageUpdate',
                                      msg: response.data[0].message });
     }
   );
@@ -287,7 +289,7 @@ function getDomain(url) {
 function addFbFunctionality( )
 {
     // add a listener to events coming from contentscript
-    chrome.extension.onRequest.addListener(
+    chrome.extension.onMessage.addListener(
         function(request, sender, sendResponse) {
             if (typeof request != 'string')
               return;
@@ -348,7 +350,7 @@ function onSuppressChatChanged(details) {
   for(var i in fbTabs) {
     if(fbTabs[i].injected) {
         var id = parseInt(i);
-        chrome.tabs.sendRequest(
+        chrome.tabs.sendMessage(
             id,
             {},
             function(responseData) {

@@ -18,23 +18,31 @@
 	  }
 	}
 
-  if (argsParsed.token && argsParsed.email && argsParsed.type)
-		chrome.extension.sendMessage({
+  function callback() {
+  	window.close();
+  }
+
+  var dict = { "type": "sync_login_result" };
+
+  if (argsParsed.token && argsParsed.email && argsParsed.type) {
+  	dict["result"] = "SUCCESS";
+  	dict["token"] = argsParsed.token;
+  	dict["email"] = argsParsed.email;
+  	dict["backend"] = argsParsed.type;
+  } else if (argsParsed.message && argsParsed.backend) {
+  	dict["result"] = "ERROR";
+  	dict["error_msg"] = argsParsed.message;
+  	dict["backend"] = argsParsed.backend;
+  } else
+  	return;
+
+	chrome.extension.sendMessage({
 			"type": "sync_login_result",
 			"result": "SUCCESS",
 			"token": argsParsed.token,
 			"email": argsParsed.email,
 			"backend": argsParsed.type
 		}, function(response) {
-			window.close();
-		});
-	else if (argsParsed.message && argsParsed.backend)
-		chrome.extension.sendMessage({
-			"type": "sync_login_result",
-			"result": "ERROR",
-			"error_msg": argsParsed.message,
-			"backend": argsParsed.backend
-		}, function(response) {
-			window.close();
+			callback();
 		});
 })();

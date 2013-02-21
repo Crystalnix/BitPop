@@ -60,7 +60,7 @@ bitpop.FacebookController = (function() {
   var public = {
     init: function() {
       chrome.tabs.onUpdated.addListener(onTabUpdated);
-      chrome.extension.onRequestExternal.addListener(onRequest);
+      chrome.extension.onMessageExternal.addListener(onRequest);
 
       setupAjaxErrorHandler();
 
@@ -80,11 +80,11 @@ bitpop.FacebookController = (function() {
   // Private methods
   function notifyObservingExtensions(notificationObject) {
     for (var i = 0; i < observingExtensionIds.length; i++)
-      chrome.extension.sendRequest(observingExtensionIds[i], notificationObject);
+      chrome.extension.sendMessage(observingExtensionIds[i], notificationObject);
   }
 
   function notifyFriendsExtension(notificationObject) {
-    chrome.extension.sendRequest(IDS.friends, notificationObject);
+    chrome.extension.sendMessage(IDS.friends, notificationObject);
   }
 
   function hadAccessTokenCallback() {

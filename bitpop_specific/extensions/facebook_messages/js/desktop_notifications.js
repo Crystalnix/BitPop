@@ -144,7 +144,7 @@ DesktopNotifications = {
     var self = DesktopNotifications;
 
     var query = "SELECT thread_id, unread, unseen, updated_time FROM thread WHERE folder_id=0 AND unseen > 0";
-    chrome.extension.sendRequest(self.controllerExtensionId,
+    chrome.extension.sendMessage(self.controllerExtensionId,
         { type: 'fqlQuery',
           query: query
         },
@@ -253,7 +253,7 @@ DesktopNotifications = {
 
         var query = JSON.stringify(query_obj);
 
-        chrome.extension.sendRequest(self.controllerExtensionId,
+        chrome.extension.sendMessage(self.controllerExtensionId,
           {
             type: 'fqlQuery',
             query: query
