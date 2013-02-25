@@ -11,12 +11,17 @@
 #include "chrome/browser/signin/signin_tracker.h"
 #include "chrome/browser/ui/webui/options2/options_ui.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
-#include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/notification_observer.h"
 
 class LoginUIService;
 class ProfileManager;
 class ProfileSyncService;
 class SigninManager;
+
+namespace content {
+  class NotificationRegistrar;
+  class WebContents;
+}
 
 class SyncSetupHandler : public options2::OptionsPageUIHandler,
                          public SigninTracker::Observer,
@@ -39,6 +44,11 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
   // LoginUIService::LoginUI implementation.
   virtual void FocusUI() OVERRIDE;
   virtual void CloseUI() OVERRIDE;
+
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   static void GetStaticLocalizedValues(
       base::DictionaryValue* localized_strings,
@@ -115,6 +125,8 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
   void HandleDoSignOutOnAuthError(const base::ListValue* args);
   void HandleStopSyncing(const base::ListValue* args);
   void HandleCloseTimeout(const base::ListValue* args);
+  void HandleSyncSetupError(const base::ListValue* args);
+  void HandleOpenSigninPage(const base::ListValue* args);
 
   // Helper routine that gets the Profile associated with this object (virtual
   // so tests can override).
@@ -155,9 +167,7 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
 
   // Initiates a login via the signin manager.
   void TryLogin(const std::string& username,
-                const std::string& password,
-                const std::string& captcha,
-                const std::string& access_code);
+                const std::string& access_token);
 
   // If a wizard already exists, focus it and return true.
   bool FocusExistingWizardIfPresent();
@@ -173,6 +183,9 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
 
   // Returns the SigninManager for the parent profile.
   SigninManager* GetSignin() const;
+
+  void RegisterForTabNotifications(content::WebContents* contents);
+  void UnregisterForTabNotifications(content::WebContents* contents);
 
   // The SigninTracker object used to determine when the user has fully signed
   // in (this requires waiting for various services to initialize and tracking
@@ -201,6 +214,10 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
   // The OneShotTimer object used to timeout of starting the sync backend
   // service.
   scoped_ptr<base::OneShotTimer<SyncSetupHandler> > backend_start_timer_;
+
+  content::WebContents* tracked_contents_;
+
+  std::string tracked_state_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncSetupHandler);
 };

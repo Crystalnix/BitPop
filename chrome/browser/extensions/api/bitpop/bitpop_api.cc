@@ -8,13 +8,14 @@
 #include "base/values.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/signin/token_service.h"
+#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
+#include "chrome/common/net/gaia/gaia_constants.h"
 
 namespace {
 // Errors.
@@ -64,14 +65,19 @@ bool SyncLoginResultReadyFunction::RunImpl() {
   std::string username, access_token;
   GetAuthData(value, &username, &access_token);
 
-	SigninManager* signin = SigninManagerFactory::GetForProfile(profile_;;
-  signin->PrepareForSignin(SIGNIN_TYPE_CLIENT_LOGIN, username, "");
+	SigninManager* signin = SigninManagerFactory::GetForProfile(profile_);
+  if (!signin->IsInitialized())
+    signin->Initialize(profile_);
+  signin->PrepareForSignin(SigninManager::SIGNIN_TYPE_CLIENT_LOGIN, username, "");
 
   UserInfoMap info_map;
-  info_map['email'] = username;
+  info_map["email"] = username;
   signin->OnGetUserInfoSuccess(info_map);
 
-  ProfileSyncServiceFactory::GetForProfile(profile_)->OnIssueAuthTokenSuccess(
+  TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
+  //if (!token_service->Initialized())
+  //  token_service->Initialize(
+  token_service->OnIssueAuthTokenSuccess(
       GaiaConstants::kSyncService,
       access_token);
 
@@ -81,6 +87,7 @@ bool SyncLoginResultReadyFunction::RunImpl() {
     browser->window()->Show();
   }
 
+  LoginUIService* login = LoginUIServiceFactory::GetForProfile(profile_);
   login->ShowLoginUI(browser);
 
   browser->window()->Activate();

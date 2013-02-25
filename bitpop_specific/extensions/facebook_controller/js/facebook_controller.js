@@ -622,6 +622,7 @@ bitpop.FacebookController = (function() {
       chrome.windows.create({ url: url, type: "popup",
                               top: 0, left: 0, width: 50, height: 50 });
     }
+    return false;
   }
 
   function onRequest(request, sender, sendResponse) {
@@ -629,7 +630,7 @@ bitpop.FacebookController = (function() {
       console.warn('Invalid request received');
       return;
     }
-    handlers[request.type](request, sendResponse);
+    return handlers[request.type](request, sendResponse);
   }
 
   function onFriendListReceived(data) {
@@ -659,21 +660,32 @@ bitpop.FacebookController = (function() {
       login(FB_PERMISSIONS);
       if (callback)
         callback({ canLogin: true });
+      else
+        return false;
+      return true;
     }
-    else if (callback)
+    else if (callback) {
       callback({ canLogin: false });
+      return true;
+    }
   }
 
   function onSendChatMessage(request, sendResponse) {
-    if (!connection.connected)
+    if (!connection.connected) {
       sendResponse({ error: 'You are now in "Offline" mode. To be able to send messages, switch back to "Online" in the facebook sidebar.' });
+      return true;
+    }
 
     if ((request.message || request.state) && request.uidTo) {
       sendMessage(request.message, request.uidTo, request.state);
       sendResponse({});
+      return true;
     }
-    else
+    else {
       sendResponse({ error: 'Invalid request.' });
+      return true;
+    }
+    return false;
   }
 
   function onGotUid() {
@@ -712,9 +724,11 @@ bitpop.FacebookController = (function() {
             "Thank you.";
           sendMessage(msg, request.uidTo, 'active');
           sendResponse({msg: msg});
+          return true;
         }
       }
     }
+    return false;
   }
 
   function onGraphApiCall(request, sendResponse) {
@@ -722,6 +736,7 @@ bitpop.FacebookController = (function() {
       graphApiRequest(request.path, request.params, sendResponse, sendResponse);
     else
       sendNotLoggedInResponse(sendResponse);
+    return true;
   }
 
   function onFqlQuery(request, sendResponse) {
@@ -729,6 +744,8 @@ bitpop.FacebookController = (function() {
       fqlRequest(request.query, sendResponse, sendResponse);
     else
       sendNotLoggedInResponse(sendResponse);
+
+    return true;
   }
 
   function onRestApiCall(request, sendResponse) {
@@ -736,6 +753,7 @@ bitpop.FacebookController = (function() {
       restApiCall(request.method, request.params, sendResponse, sendResponse);
     else
       sendNotLoggedInResponse(sendResponse);
+    return true;
   }
 
   function onGetFBUserNameByUid(request, sendResponse) {
@@ -751,10 +769,11 @@ bitpop.FacebookController = (function() {
       }
     }
     sendResponse({ uname: uname, profile_url: profile_url });
+    return true;
   }
 
   function onGetMyUidForExternal(request, sendResponse) {
-    onGraphApiCall({ path: '/me', params: { fields: 'id' } },
+    return onGraphApiCall({ path: '/me', params: { fields: 'id' } },
                    function (response) {
                      sendResponse({ id: response.id });
                    });
@@ -766,6 +785,7 @@ bitpop.FacebookController = (function() {
     } else if (request.status == 'available') {
       startChatAgain();
     }
+    return false;
   }
 
   function sendNotLoggedInResponse(sendResponse) {
@@ -818,10 +838,13 @@ bitpop.FacebookController = (function() {
     function callOnError() {
       sendResponse({ error: 'yes' });
     }
+
+    return true;
   }
 
   function onRequestFriendList(request) {
     getFriendList();
+    return false;
   }
 
   // -------------------------------------------------------------------------------

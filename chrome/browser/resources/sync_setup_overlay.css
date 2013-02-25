@@ -65,11 +65,6 @@
 }
 
 #sync-setup-overlay {
-  width: 100%;
-}
-
-/* BITPOP: transfer CSS from #sync-setup-overlay to #wrapper */
-#wrapper {
   -webkit-user-select: none;
   background-color: white;
   margin-bottom: 6px;
@@ -484,7 +479,7 @@ html[dir='rtl'] .signin-box .throbber {
   display: inline-block;
 }
 
-.errormsg {
+.signin-box .errormsg {
   color: rgb(221, 75, 57) !important;
   font-size: 13px !important;
   line-height: 17px;
@@ -513,120 +508,7 @@ html[dir='rtl'] .signin-box .throbber {
   opacity: .7;
 }
 
-/* BITPOP mod ------------------- */
-#iframe-container {
-  position: absolute;
-  left: 21px;
-  right: 21px;
-  top: 6px;
-  bottom: 6px;
-
-  -webkit-user-select: none;
-  background-color: white;
-  border: 1px solid #ddd;
-  padding: 6px;
+#sync-passphrase-ui-toggler {
+  margin: 0;
+  padding: 0;
 }
-
-#login-iframe {
-  min-width: 100%;
-  min-height: 100%;
-}
-
-#iframe-close-button {
-  background-color: whiteSmoke;
-  background-image: url('chrome://resources/images/x.png');
-  background-position: center;
-  background-repeat: no-repeat;
-  height: 24px;
-  position: absolute;
-  right: 10px;
-  top: 10px;
-  width: 24px;
-}
-
-html[dir='rtl'] #iframe-close-button {
-  left: 10px;
-  right: auto;
-}
-
-#iframe-close-button:hover {
-  background-image: url('chrome://resources/images/x-hover.png');
-}
-
-#sync-setup-connection-check {
-  margin: 20px auto;
-  width: 400px;
-  position: relative;
-  padding: 6px;
-  background-color: whiteSmoke;
-  border: 1px solid #e5e5e5;
-}
-
-#iframe-container {
-  position: absolute;
-
-  top: 20px;
-  bottom: 20px;
-  left: 23px;
-  right: 23px;
-
-  padding: 6px;
-  background-color: whiteSmoke;
-  border: 1px solid #e5e5e5;
-}
-
-#login-iframe {
-  width: 100%;
-  min-height: 100%;
-}
-
-#offline-indicator {
-  width: 48px;
-  height: 48px;
-  float: left;
-  clear: none;
-}
-
-#offline-indicator.offline {
-  background-image: url('chrome://resources/images/offline-icon.png');
-}
-
-#offline-indicator.check {
-  background-image: url('chrome://resources/images/check-icon.png');
-}
-
-#info {
-  margin-left: 58px;
-}
-
-#loading-indicator {
-  height: 15px;
-  background-image: url('chrome://resources/images/loading-indicator.gif');
-  background-repeat: no-repeat;
-  background-position: center;
-  margin: 5px 0;
-}
-
-#connection-check-buttons {
-  margin: 20px auto 5px;
-  text-align: center;
-}
-
-#sync-setup-overlay #sync-setup-connection-check .throbber {
-  visibility: visible;
-  text-align: center;
-}
-
-#status-text {
-  text-align: center;
-}
-
-#connection-check-header h2 {
-  color: #222;
-  font-size: 16px;
-  font-weight: normal;
-  height: 16px;
-  line-height: 16px;
-  margin-top: 0;
-}
-/* END BITPOP mod ------------ */

@@ -12305,6 +12305,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_SYNC_ENCRYPTION_DATA_TYPES_TITLE" desc="Title of the section containing the data types to encrypt.">
         Encrypted data types
       </message>
+      <message name="IDS_SYNC_DO_NOT_ENCRYPT" desc="Text of the radio that when selected causes sync to not store sensitive data on server. No encryption is provided in this case.">
+        Do not encrypt. Passwords can not be synced.
+      </message>
       <message name="IDS_SYNC_ENCRYPT_SENSITIVE_DATA" desc="Text of the radio that when selected causes sync to encrypt sensitive data.">
         Encrypt passwords
       </message>

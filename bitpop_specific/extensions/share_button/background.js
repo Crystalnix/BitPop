@@ -16,7 +16,7 @@ if (typeof(SHR.TweetButton)=="undefined") SHR.TweetButton = {};
         },fallback_ms);
     }
 
-    chrome.extension.onRequest.addListener(function(req,sender,response) {
+    chrome.extension.onMessage.addListener(function(req,sender,response) {
         if (req.type == 'pageInfo' && pageInfoCallback) {
             pageInfoCallback(req.info);
             if (fallback) clearTimeout(fallback);

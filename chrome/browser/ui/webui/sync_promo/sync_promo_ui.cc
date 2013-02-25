@@ -183,11 +183,11 @@ bool SyncPromoUI::ShouldShowSyncPromoAtStartup(Profile* profile,
     return false;
 
   // Default to show the promo for Google Chrome builds.
-#if defined(GOOGLE_CHROME_BUILD)
+//#if defined(GOOGLE_CHROME_BUILD)
   return true;
-#else
-  return false;
-#endif
+//#else
+//  return false;
+//#endif
 }
 
 void SyncPromoUI::DidShowSyncPromoAtStartup(Profile* profile) {

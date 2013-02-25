@@ -45,7 +45,7 @@ setTimeout(
   },
   5000);
 
-chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {
+chrome.extension.onMessage.addListener(function (request, sender, sendResponse) {
   if (!request.type)
     return;
 
@@ -58,6 +58,17 @@ chrome.extension.onRequest.addListener(function (request, sender, sendResponse) 
         sendResponse(response);
       }
     );
+    return true;
+  } else if (request.type == "sync_login_result") {
+    var id = sender.tab.id;
+    var args = request.args;
+    setTimeout(function () {
+      chrome.tabs.update(id, {
+        "url": "chrome://signin?" + args,
+        "active": true
+      });
+    }, 10);
+    return false;
   }
 });
 

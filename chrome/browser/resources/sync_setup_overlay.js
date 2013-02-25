@@ -24,29 +24,8 @@ cr.define('options', function() {
   // True if the synced account uses 'encrypt everything'.
   var useEncryptEverything_ = false;
 
-  // Using this to determine whether our login pages on bitpop.com
-  // are reachable
-  function serverReachable(urlToCheck) {
-    var x = new XMLHttpRequest(), s;
-    x.open(
-      // requesting the headers is faster, and just enough
-      "HEAD",
-      // append a random string to the current hostname,
-      // to make sure we're not hitting the cache
-      urlToCheck + "/?rand=" + Math.random(),
-      // make a synchronous request
-      false
-    );
-    try {
-      x.send();
-      s = x.status;
-      // Make sure the server is reachable
-      return ( s >= 200 && s < 300 || s === 304 );
-      // catch network & other problems
-    } catch (e) {
-      return false;
-    }
-  }
+  // Do not encrypt without setting the master password by default
+  var shouldNotEncrypt_ = true;
 
   /**
    * SyncSetupOverlay class
@@ -71,30 +50,21 @@ cr.define('options', function() {
       OptionsPage.prototype.initializePage.call(this);
 
       var self = this;
-      //$('gaia-login-form').onsubmit = function() {
-      //  self.sendCredentialsAndClose_();
-      //  return false;
-      //};
-      $('google-option').onchange = $('explicit-option').onchange = function() {
-        self.onPassphraseRadioChanged_();
+      $('gaia-login-form').onsubmit = function() {
+        //var popup = window.open('chrome://signin/', 'myPopup');
+        return false;
+      };
+      $('do-not-encrypt-option').onchange =
+          $('encrypt-sensitive-option').onchange =
+          $('encrypt-all-option').onchange = function() {
+        self.onEncryptionRadioChanged_();
       };
       $('choose-datatypes-cancel').onclick =
-          // \/- BitPop connection check overlay cancel button
-          $('check-cancel').onclick =
           $('sync-setup-cancel').onclick =
           $('confirm-everything-cancel').onclick =
           $('stop-syncing-cancel').onclick =
           $('sync-spinner-cancel').onclick = function() {
         self.closeOverlay_();
-      };
-
-      // \/- BitPop auth iframe overlay close button
-      $('iframe-close-button').onclick = function() {
-        $('iframe-container').hidden = true;
-      };
-
-      $('check-try-again').onclick = function() {
-        self.connectionMakeTry_();
       };
       $('confirm-everything-ok').onclick = function() {
         self.sendConfiguration_();
@@ -140,14 +110,14 @@ cr.define('options', function() {
     },
 
     getPassphraseRadioCheckedValue_: function() {
-      var f = $('choose-data-types-form');
-      for (var i = 0; i < f.option.length; ++i) {
-        if (f.option[i].checked) {
-          return f.option[i].value;
-        }
-      }
+      // var f = $('choose-data-types-form');
+      // for (var i = 0; i < f.option.length; ++i) {
+      //   if (f.option[i].checked) {
+      //     return f.option[i].value;
+      //   }
+      // }
 
-      return undefined;
+      return 'explicit';
     },
 
     disableEncryptionRadioGroup_: function() {
@@ -156,9 +126,16 @@ cr.define('options', function() {
         f.encrypt[i].disabled = true;
     },
 
-    onPassphraseRadioChanged_: function() {
-      var visible = this.getPassphraseRadioCheckedValue_() == 'explicit';
-      $('sync-custom-passphrase').hidden = !visible;
+    //onPassphraseRadioChanged_: function() {
+      //var visible = this.getPassphraseRadioCheckedValue_() == 'explicit';
+      //$('sync-custom-passphrase').hidden = !visible;
+    //},
+    onEncryptionRadioChanged_: function() {
+      var hidden = this.getEncryptionRadioCheckedValue_() == 'none';
+      $('sync-passphrase-ui-toggler').hidden = hidden;
+      if (!hidden)
+        $('sync-custom-passphrase').hidden = false;
+      this.updatePasswordsCheckbox_();
     },
 
     checkAllDataTypeCheckboxes_: function() {
@@ -188,7 +165,7 @@ cr.define('options', function() {
     noDataTypesChecked_: function() {
       var query = '.sync-type-checkbox:not([hidden]) input:checked';
       var checkboxes = $('choose-data-types-body').querySelectorAll(query);
-      return checkboxes.length == 0;
+      return checkboxes.length === 0;
     },
 
     checkPassphraseMatch_: function() {
@@ -198,13 +175,13 @@ cr.define('options', function() {
       mismatchError.hidden = true;
 
       var f = $('choose-data-types-form');
-      if (this.getPassphraseRadioCheckedValue_() != 'explicit' ||
-          $('google-option').disabled) {
-        return true;
-      }
+      // if (this.getPassphraseRadioCheckedValue_() != 'explicit' ||
+      //     $('google-option').disabled) {
+      //   return true;
+      // }
 
       var customPassphrase = $('custom-passphrase');
-      if (customPassphrase.value.length == 0) {
+      if (customPassphrase.value.length === 0) {
         emptyError.hidden = false;
         return false;
       }
@@ -222,13 +199,15 @@ cr.define('options', function() {
       // Trying to submit, so hide previous errors.
       $('error-text').hidden = true;
 
-      var syncAll = $('sync-select-datatypes').selectedIndex == 0;
+      var syncAll = $('sync-select-datatypes').selectedIndex === 0;
       if (!syncAll && this.noDataTypesChecked_()) {
         $('error-text').hidden = false;
         return;
       }
 
-      var encryptAllData = this.getEncryptionRadioCheckedValue_() == 'all';
+      var shouldNotEncrypt = this.getEncryptionRadioCheckedValue_() == 'none';
+      var encryptAllData = !shouldNotEncrypt &&
+                            this.getEncryptionRadioCheckedValue_() == 'all';
 
       var usePassphrase;
       var customPassphrase;
@@ -245,8 +224,7 @@ cr.define('options', function() {
         // the passphrase and finish configuration. If the user has enabled
         // encrypted datatypes, the PSS will prompt again specifying that the
         // passphrase failed.
-      } else if (!$('google-option').disabled &&
-                 this.getPassphraseRadioCheckedValue_() == 'explicit') {
+      } else if (!shouldNotEncrypt) {
         // The user is setting a custom passphrase for the first time.
         if (!this.checkPassphraseMatch_())
           return;
@@ -275,6 +253,7 @@ cr.define('options', function() {
         'typedUrlsSynced': syncAll || $('typed-urls-checkbox').checked,
         'appsSynced': syncAll || $('apps-checkbox').checked,
         'sessionsSynced': syncAll || $('sessions-checkbox').checked,
+        'shouldNotEncrypt': shouldNotEncrypt,
         'encryptAllData': encryptAllData,
         'usePassphrase': usePassphrase,
         'isGooglePassphrase': googlePassphrase,
@@ -386,39 +365,42 @@ cr.define('options', function() {
     },
 
     setEncryptionRadios_: function(args) {
-      if (args.encryptAllData) {
+      if (args.shouldNotEncrypt) {
+        $('do-not-encrypt-option').checked = true;
+      } else if (args.encryptAllData) {
         $('encrypt-all-option').checked = true;
         this.disableEncryptionRadioGroup_();
       } else {
         $('encrypt-sensitive-option').checked = true;
       }
+      this.updatePasswordsCheckbox_();
     },
 
-    setPassphraseRadios_: function(args) {
-      if (args.usePassphrase) {
-        $('explicit-option').checked = true;
-
-        // The passphrase, once set, cannot be unset, but we show a reset link.
-        $('explicit-option').disabled = true;
-        $('google-option').disabled = true;
-        $('sync-custom-passphrase').hidden = true;
+    updatePasswordsCheckbox_: function() {
+      if ($('do-not-encrypt-option').checked === true) {
+        $('passwords-checkbox').checked = false;
+        $('passwords-checkbox').disabled = true;
       } else {
-        $('google-option').checked = true;
+        var datatypeSelect = $('sync-select-datatypes');
+        if (datatypeSelect.selectedIndex === 0)
+          $('passwords-checkbox').checked = true;
+        else if ($('passwords-checkbox').disabled === true)
+          $('passwords-checkbox').disabled = false;
       }
     },
 
     setCheckboxesAndErrors_: function(args) {
       this.setChooseDataTypesCheckboxes_(args);
       this.setEncryptionRadios_(args);
-      this.setPassphraseRadios_(args);
     },
 
     showConfigure_: function(args) {
       var datatypeSelect = $('sync-select-datatypes');
       var self = this;
       datatypeSelect.onchange = function() {
-        var syncAll = this.selectedIndex == 0;
+        var syncAll = this.selectedIndex === 0;
         self.setCheckboxesToKeepEverythingSynced_(syncAll);
+        self.updatePasswordsCheckbox_();
       };
 
       this.resetPage_('sync-setup-configure');
@@ -434,14 +416,15 @@ cr.define('options', function() {
       if (args) {
         this.setCheckboxesAndErrors_(args);
 
+        this.shouldNotEncrypt_ = args.shouldNotEncrypt;
         this.useEncryptEverything_ = args.encryptAllData;
 
         // Whether to display the 'Sync everything' confirmation page or the
         // customize data types page.
         var syncAllDataTypes = args.syncAllDataTypes;
         this.usePassphrase_ = args.usePassphrase;
-        if (args.showSyncEverythingPage == false || this.usePassphrase_ ||
-            syncAllDataTypes == false || args.showPassphrase) {
+        if (args.showSyncEverythingPage === false || this.usePassphrase_ ||
+            syncAllDataTypes === false || args.showPassphrase) {
           this.showCustomizePage_(args, syncAllDataTypes);
         } else {
           this.showSyncEverythingPage_();
@@ -470,17 +453,20 @@ cr.define('options', function() {
       // The default state is to sync everything.
       this.setCheckboxesToKeepEverythingSynced_(true);
 
+      if (this.shouldNotEncrypt_)
+        $('do-not-encrypt-option').checked = true;
+
       // Encrypt passwords is the default, but don't set it if the previously
       // synced account is already set to encrypt everything.
-      if (!this.useEncryptEverything_)
+      if (!this.useEncryptEverything_ && !this.shouldNotEncrypt_)
         $('encrypt-sensitive-option').checked = true;
 
       // If the account is not synced with a custom passphrase, reset the
       // passphrase radio when switching to the 'Sync everything' page.
-      if (!this.usePassphrase_) {
-        $('google-option').checked = true;
-        $('sync-custom-passphrase').hidden = true;
-      }
+      // if (!this.usePassphrase_) {
+      //   $('google-option').checked = true;
+      //   $('sync-custom-passphrase').hidden = this.shouldNotEncrypt_;
+      // }
 
       $('confirm-everything-ok').focus();
     },
@@ -572,6 +558,7 @@ cr.define('options', function() {
         children[i].hidden = true;
 
       this.setInputElementsDisabledState_(false);
+      this.updatePasswordsCheckbox_();
 
       // NOTE: Because both showGaiaLogin_() and showConfigure_() change the
       // focus, we need to ensure that the overlay container and dialog aren't
@@ -604,93 +591,13 @@ cr.define('options', function() {
     },
 
     /**
-     * Set the appropriate focus on the GAIA login section of the overlay.
-     * @private
-     */
-    // loginSetFocus_: function() {
-    //   var email = this.getLoginEmail_();
-    //   if (email && !email.value) {
-    //     email.focus();
-    //     return;
-    //   }
-
-    //   var passwd = this.getLoginPasswd_();
-    //   if (passwd)
-    //     passwd.focus();
-    // },
-
-    /**
-     * Get the login email text input DOM element.
-     * @return {DOMElement} The login email text input.
-     * @private
-     */
-    // getLoginEmail_: function() {
-    //   return $('gaia-email');
-    // },
-
-    /**
-     * Get the login password text input DOM element.
-     * @return {DOMElement} The login password text input.
-     * @private
-     */
-    // getLoginPasswd_: function() {
-    //   return $('gaia-passwd');
-    // },
-
-    /**
      * Get the sign in button DOM element.
      * @return {DOMElement} The sign in button.
      * @private
      */
-    // getSignInButton_: function() {
-    //   return $('sign-in');
-    // },
-
-    // showAccessCodeRequired_: function() {
-    //   this.allowEmptyPassword_ = true;
-
-    //   $('password-row').hidden = true;
-    //   $('email-row').hidden = true;
-    //   $('otp-input-row').hidden = true;
-
-    //   $('access-code-input-row').hidden = false;
-    //   $('access-code').disabled = false;
-    //   $('access-code').focus();
-    // },
-
-    // showOtpRequired_: function() {
-    //   this.allowEmptyPassword_ = true;
-
-    //   $('password-row').hidden = true;
-    //   $('email-row').hidden = true;
-    //   $('access-code-input-row').hidden = true;
-
-    //   $('otp-input-row').hidden = false;
-    //   $('otp').disabled = false;
-    //   $('otp').focus();
-    // },
-
-    // showCaptcha_: function(args) {
-    //   this.allowEmptyPassword_ = args.hideEmailAndPassword;
-    //   this.captchaChallengeActive_ = true;
-
-    //   if (args.hideEmailAndPassword) {
-    //     $('password-row').hidden = true;
-    //     $('email-row').hidden = true;
-    //     $('create-account-div').hidden = true;
-    //   } else {
-    //     // The captcha takes up lots of space, so make room.
-    //     $('top-blurb-error').hidden = true;
-    //     $('create-account-div').hidden = true;
-    //     $('gaia-email').disabled = true;
-    //     $('gaia-passwd').disabled = false;
-    //   }
-
-    //   // It's showtime for the captcha now.
-    //   $('captcha-div').hidden = false;
-    //   $('captcha-value').disabled = false;
-    //   $('captcha-wrapper').style.backgroundImage = url(args.captchaUrl);
-    // },
+    getSignInButton_: function() {
+      return $('sign-in');
+    },
 
     /**
      * Reset the state of all descendant elements of a root element to their
@@ -723,93 +630,39 @@ cr.define('options', function() {
           function(elt) { elt.classList.remove('transparent'); });
     },
 
-    connectionMakeTry_: function() {
-      // $('loading-indicator').style.display = '';
-      $('offline-indicator').className = 'check';
-      $('checking-text').hidden = false;
-      $('connection-error-text').hidden = true;
-
-      if (serverReachable()) {
-        chrome::send('OpenWelcomePage');
-
-        //$('iframe-container').src = "https://www.bitpop.com/welcome.html";
-        //$('iframe-container').hidden = false;
-      } else {
-        // $('loading-indicator').style.display = 'none';
-        $('offline-indicator').className = 'offline';
-        $('checking-text').hidden = true;
-        $('connection-error-text').hidden = false;
-      }
-    },
-
     showGaiaLogin_: function(args) {
-      $('sync-setup-connection-check').hidden = false;
-      this.connectionMakeTry_();
+      this.resetPage_('sync-setup-login');
+      $('sync-setup-login').hidden = false;
 
-      // var oldAccessCodeValue = $('access-code').value;
-      // this.resetPage_('sync-setup-login');
-      // $('sync-setup-login').hidden = false;
-      // this.allowEmptyPassword_ = false;
-      // this.captchaChallengeActive_ = false;
+      if (1 == args.error) {
+        // if (oldAccessCodeValue) {
+        //   $('errormsg-0-access-code').hidden = false;
+        //   this.showAccessCodeRequired_();
+        // } else {
+        //   $('errormsg-1-password').hidden = (args.errorMessage != undefined);
+        // }
+        this.setBlurbError_(args.errorMessage);
+      } else if (3 == args.error) {
+        $('errormsg-0-connection').hidden = false;
+        this.setBlurbError_(args.errorMessage);
+      } else if (4 == args.error) {
+        // this.showCaptcha_(args);
+      } else if (7 == args.error) {
+        this.setBlurbError_(loadTimeData.getString('serviceUnavailableError'));
+      } else if (8 == args.error) {
+        // if (args.askForOtp) {
+        //   this.showOtpRequired_();
+        // } else {
+        //   if (oldAccessCodeValue)
+        //     $('errormsg-0-access-code').hidden = false;
+        //   this.showAccessCodeRequired_();
+        // }
+      } else if (args.errorMessage) {
+        this.setBlurbError_(args.errorMessage);
+      }
 
-      // var f = $('gaia-login-form');
-      // var email = $('gaia-email');
-      // var passwd = $('gaia-passwd');
-      // if (f) {
-      //   if (args.user != undefined) {
-      //     if (email.value != args.user)
-      //       passwd.value = ''; // Reset the password field
-      //     email.value = args.user;
-      //   }
-
-      //   if (!args.editableUser) {
-      //     $('email-row').hidden = true;
-      //     var span = $('email-readonly');
-      //     span.textContent = email.value;
-      //     $('email-readonly-row').hidden = false;
-      //     $('create-account-div').hidden = true;
-      //   }
-
-      //   f.accessCode.disabled = true;
-      //   f.otp.disabled = true;
-      // }
-
-      // if (1 == args.error) {
-      //   if (oldAccessCodeValue) {
-      //     $('errormsg-0-access-code').hidden = false;
-      //     this.showAccessCodeRequired_();
-      //   } else {
-      //     $('errormsg-1-password').hidden = (args.errorMessage != undefined);
-      //   }
-      //   this.setBlurbError_(args.errorMessage);
-      // } else if (3 == args.error) {
-      //   $('errormsg-0-connection').hidden = false;
-      //   this.setBlurbError_(args.errorMessage);
-      // } else if (4 == args.error) {
-      //   this.showCaptcha_(args);
-      // } else if (7 == args.error) {
-      //   this.setBlurbError_(loadTimeData.getString('serviceUnavailableError'));
-      // } else if (8 == args.error) {
-      //   if (args.askForOtp) {
-      //     this.showOtpRequired_();
-      //   } else {
-      //     if (oldAccessCodeValue)
-      //       $('errormsg-0-access-code').hidden = false;
-      //     this.showAccessCodeRequired_();
-      //   }
-      // } else if (args.errorMessage) {
-      //   this.setBlurbError_(args.errorMessage);
-      // }
-
-      // if (args.fatalError) {
-      //   $('errormsg-fatal').hidden = false;
-      //   $('sign-in').disabled = true;
-      //   return;
-      // }
-
-      // $('sign-in').disabled = false;
-      // $('sign-in').value = loadTimeData.getString('signin');
-      // this.loginSetFocus_();
+      $('sign-in').disabled = false;
+      $('sign-in').value = loadTimeData.getString('signin');
     },
 
     resetErrorVisibility_: function() {
@@ -825,7 +678,6 @@ cr.define('options', function() {
       // if (this.captchaChallengeActive_)
       //   return;  // No blurb in captcha challenge mode.
 
-      $('offline-indicator').className = 'error';
       if (errorMessage) {
         $('error-signing-in').hidden = true;
         $('error-custom').hidden = false;
@@ -848,80 +700,23 @@ cr.define('options', function() {
       return false;
     },
 
-    // setErrorVisibility_: function() {
-    //   this.resetErrorVisibility_();
-    //   var f = $('gaia-login-form');
-    //   var email = $('gaia-email');
-    //   var passwd = $('gaia-passwd');
-    //   if (!email.value) {
-    //     $('errormsg-0-email').hidden = false;
-    //     this.setBlurbError_();
-    //     return false;
-    //   }
-    //   // Don't enforce password being non-blank when checking access code (it
-    //   // will have been cleared when the page was displayed).
-    //   if (!this.allowEmptyPassword_ && !passwd.value) {
-    //     $('errormsg-0-password').hidden = false;
-    //     this.setBlurbError_();
-    //     return false;
-    //   }
+    sendCredentialsAndClose_: function(result) {
+      this.setThrobbersVisible_(true);
 
-    //   if (!f.accessCode.disabled && !f.accessCode.value) {
-    //     $('errormsg-0-access-code').hidden = false;
-    //     return false;
-    //   }
-
-    //   if (f.accessCode.disabled && this.matchesASPRegex_(passwd.value) &&
-    //       $('asp-warning-div').hidden) {
-    //     $('asp-warning-div').hidden = false;
-    //     $('gaia-passwd').value = '';
-    //     return false;
-    //   }
-
-    //   if (!f.otp.disabled && !f.otp.value) {
-    //     $('errormsg-0-otp').hidden = false;
-    //     return false;
-    //   }
-
-    //   return true;
-    // },
-
-    sendCredentialsAndClose_: function() {
-      if (!this.setErrorVisibility_()) {
-        return false;
-      }
-
-      // $('gaia-email').disabled = true;
-      // $('gaia-passwd').disabled = true;
-      // $('captcha-value').disabled = true;
-      // $('access-code').disabled = true;
-      // $('otp').disabled = true;
-
-      // this.setThrobbersVisible_(true);
-
-      // var f = $('gaia-login-form');
-      // var email = $('gaia-email');
-      // var passwd = $('gaia-passwd');
-      // var result = JSON.stringify({'user': email.value,
-      //   'pass': passwd.value,
-      //   'captcha': f.captchaValue.value,
-      //   'otp': f.otp.value,
-      //   'accessCode': f.accessCode.value
-      // });
-      // $('sign-in').disabled = true;
-      // chrome.send('SyncSetupSubmitAuth', [result]);
+      $('sign-in').disabled = true;
+      chrome.send('SyncSetupSubmitAuth', [result]);
     },
 
-    // showSuccessAndClose_: function() {
-    //   $('sign-in').value = loadTimeData.getString('loginSuccess');
-    //   setTimeout(this.closeOverlay_, 1600);
-    // },
+    showSuccessAndClose_: function() {
+       $('sign-in').value = loadTimeData.getString('loginSuccess');
+       setTimeout(this.closeOverlay_, 1600);
+    },
 
-    // showSuccessAndSettingUp_: function() {
-    //   $('sign-in').value = loadTimeData.getString('settingUp');
-    //   this.setThrobbersVisible_(true);
-    //   $('top-blurb-error').hidden = true;
-    // },
+    showSuccessAndSettingUp_: function() {
+      $('sign-in').value = loadTimeData.getString('settingUp');
+      this.setThrobbersVisible_(true);
+      $('top-blurb-error').hidden = true;
+    },
 
     /**
      * Displays the stop syncing dialog.
@@ -981,21 +776,12 @@ cr.define('options', function() {
     hideOuterLoginUI_: function() {
       $('sync-setup-overlay-title').hidden = true;
       $('sync-setup-cancel').hidden = true;
-    }
+    },
+
+    openSigninPage_: function(source) {
+      chrome.send('SyncSetupOpenSigninPage', [ source ]);
+    },
   };
-
-  // These get methods should only be called by the WebUI tests.
-  //SyncSetupOverlay.getLoginEmail = function() {
-  //  return SyncSetupOverlay.getInstance().getLoginEmail_();
-  //};
-
-  //SyncSetupOverlay.getLoginPasswd = function() {
-  //  return SyncSetupOverlay.getInstance().getLoginPasswd_();
-  //};
-
-  //SyncSetupOverlay.getSignInButton = function() {
-  //  return SyncSetupOverlay.getInstance().getSignInButton_();
-  //};
 
   // These methods are for general consumption.
   SyncSetupOverlay.showErrorUI = function() {
@@ -1028,6 +814,10 @@ cr.define('options', function() {
 
   SyncSetupOverlay.showStopSyncingUI = function() {
     SyncSetupOverlay.getInstance().showStopSyncingUI_();
+  };
+
+  SyncSetupOverlay.openSigninPageFromStartSyncSettings = function() {
+    SyncSetupOverlay.getInstance().openSigninPage_("settingsPage");
   };
 
   // Export
