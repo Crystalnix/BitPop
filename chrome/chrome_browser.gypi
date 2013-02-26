@@ -2151,6 +2151,10 @@
         'browser/signin/signin_manager.h',
         'browser/signin/signin_manager_factory.cc',
         'browser/signin/signin_manager_factory.h',
+        'browser/signin/signin_result_page_tracker.cc',
+        'browser/signin/signin_result_page_tracker.h',
+        'browser/signin/signin_result_page_tracker_factory.cc',
+        'browser/signin/signin_result_page_tracker_factory.h',
         'browser/signin/signin_tracker.cc',
         'browser/signin/signin_tracker.h',
         'browser/signin/token_service.cc',
@@ -5149,7 +5153,7 @@
             '../third_party/GTM/AppKit',
             '../third_party/GTM/DebugUtils',
             '../third_party/GTM/Foundation',
-            '<(PRODUCT_DIR)/Sparkle.framework/Headers',
+            '<(PRODUCT_DIR)/Sparkle.framework',
           ],
           'link_settings': {
             'libraries': [

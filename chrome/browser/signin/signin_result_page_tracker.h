@@ -36,6 +36,7 @@ class SigninResultPageTracker : public LoginUIService::LoginUI,
 		SigninResultPageTracker();
 		virtual ~SigninResultPageTracker();
 
+		Observer* GetCurrentObserver() const { return observer_; }
 		void Initialize(Profile* profile);
 
 		void Track(content::WebContents* contents,

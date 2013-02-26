@@ -11,6 +11,7 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/signin_result_page_tracker.h"
+#include "chrome/browser/signin/signin_result_page_tracker_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -276,7 +277,12 @@ void SyncPromoHandler::HandleStateSet(const base::ListValue* args) {
   std::string state;
   CHECK(args->GetString(0, &state));
 
-  (void)new SigninResultPageTracker(web_ui()-GetWebContents(), state, NULL);
+
+  SigninResultPageTracker* tracker =
+      SigninResultPageTrackerFactory::GetForProfile(
+          Profile::FromWebUI(web_ui()));
+  if (tracker)
+    tracker->Track(web_ui()->GetWebContents(), state, NULL);
 }
 
 int SyncPromoHandler::GetViewCount() const {

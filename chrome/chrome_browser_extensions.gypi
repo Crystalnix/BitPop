@@ -76,8 +76,6 @@
         'browser/extensions/api/app/app_api.h',
         'browser/extensions/api/app_window/app_window_api.cc',
         'browser/extensions/api/app_window/app_window_api.h',
-        'browser/extensions/api/bitpop/bitpop_api.cc',
-        'browser/extensions/api/bitpop/bitpop_api.h',
         'browser/extensions/api/bluetooth/bluetooth_api.cc',
         'browser/extensions/api/bluetooth/bluetooth_api.h',
         'browser/extensions/api/bluetooth/bluetooth_api_utils.cc',

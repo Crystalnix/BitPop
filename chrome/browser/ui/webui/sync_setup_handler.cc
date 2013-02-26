@@ -58,14 +58,6 @@ using l10n_util::GetStringUTF16;
 
 namespace {
 
-typedef std::map<std::string, std::string> Parameters;
-
-enum ParseQueryState {
-  START_STATE,
-  KEYWORD_STATE,
-  VALUE_STATE,
-};
-
 // A structure which contains all the configuration information for sync.
 struct SyncConfigInfo {
   SyncConfigInfo();
@@ -117,79 +109,6 @@ COMPILE_ASSERT(arraysize(kDataTypeNames) == arraysize(kDataTypes),
                kDataTypes_does_not_match_kDataTypeNames);
 
 static const char kDefaultSigninDomain[] = "gmail.com";
-
-// Creates a string-to-string, keyword-value map from a parameter/query string
-// that uses ampersand (&) to seperate paris and equals (=) to seperate
-// keyword from value.
-bool ParseQuery(const std::string& query,
-                Parameters* parameters_result) {
-  std::string::const_iterator cursor;
-  std::string keyword;
-  std::string::const_iterator limit;
-  Parameters parameters;
-  ParseQueryState state;
-  std::string value;
-
-  state = START_STATE;
-  for (cursor = query.begin(), limit = query.end();
-       cursor != limit;
-       ++cursor) {
-    char character = *cursor;
-    switch (state) {
-      case KEYWORD_STATE:
-        switch (character) {
-          case '&':
-            parameters[keyword] = value;
-            keyword = "";
-            value = "";
-            state = START_STATE;
-            break;
-          case '=':
-            state = VALUE_STATE;
-            break;
-          default:
-            keyword += character;
-        }
-        break;
-      case START_STATE:
-        switch (character) {
-          case '&':  // Intentionally falling through
-          case '=':
-            return false;
-          default:
-            keyword += character;
-            state = KEYWORD_STATE;
-        }
-        break;
-      case VALUE_STATE:
-        switch (character) {
-          case '=':
-            return false;
-          case '&':
-            parameters[keyword] = value;
-            keyword = "";
-            value = "";
-            state = START_STATE;
-            break;
-          default:
-            value += character;
-        }
-        break;
-    }
-  }
-  switch (state) {
-    case START_STATE:
-      break;
-    case KEYWORD_STATE:  // Intentionally falling through
-    case VALUE_STATE:
-      parameters[keyword] = value;
-      break;
-    default:
-      NOTREACHED();
-  }
-  *parameters_result = parameters;
-  return true;
-}
 
 bool GetAuthData(const std::string& json,
                  std::string* username,
@@ -307,8 +226,7 @@ SyncSetupHandler::SyncSetupHandler(ProfileManager* profile_manager)
     : configuring_sync_(false),
       profile_manager_(profile_manager),
       last_signin_error_(GoogleServiceAuthError::NONE),
-      retry_on_signin_failure_(true),
-      tracked_contents_(NULL) {
+      retry_on_signin_failure_(true) {
 }
 
 SyncSetupHandler::~SyncSetupHandler() {
@@ -1071,11 +989,7 @@ void SyncSetupHandler::HandleOpenSigninPage(const base::ListValue* args) {
 
     if (params.target_contents) {
       WebContents* contents = params.target_contents->web_contents();
-      if (tracked_contents_)
-        UnregisterForTabNotifications(tracked_contents_);
-      RegisterForTabNotifications(contents);
-      tracked_contents_ = contents;
-      tracked_state_ = state;
+      GetPageTracker()->Track(contents, state, this);
     }
   }
 }
@@ -1113,6 +1027,11 @@ void SyncSetupHandler::CloseSyncSetup() {
       browser_sync::SyncPrefs sync_prefs(GetProfile()->GetPrefs());
       sync_prefs.SetStartSuppressed(true);
     }
+  }
+
+  SigninResultPageTracker* tracker = GetPageTracker();
+  if (tracker->GetObserver() == this) {
+    tracker->Untrack();
   }
 
   // Reset the attempted email address and error, otherwise the sync setup
@@ -1238,102 +1157,29 @@ bool SyncSetupHandler::IsLoginAuthDataValid(const std::string& username,
   return true;
 }
 
-void SyncSetupHandler::Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) {
-  switch (type) {
-  case content::NOTIFICATION_NAV_ENTRY_COMMITTED: {
-      NavigationController* source_controller =
-        content::Source<NavigationController>(source).ptr();
-      DCHECK(source_controller->GetWebContents() == tracked_contents_);
+void SyncSetupHandler::OnSigninCredentialsReady(const std::string& username,
+                                                const std::string& token,
+                                                const std::string& type) {
+  OpenSyncSetup(false);
 
-      GURL url(source_controller->GetLastCommittedEntry()->GetURL());
-
-      if (url.host() == "dev.bitpop.com" &&
-          url.has_path() && url.has_query() &&
-          (url.path() == "/authentication_success/" ||
-           url.path() == "/login-error/")) {
-
-        Parameters params;
-        ParseQuery(url.query(), &params);
-        for (Parameters::iterator it = params.begin();
-             it != params.end(); it++) {
-          it->second = net::UnescapeURLComponent(it->second,
-                                                 net::UnescapeRule::SPACES);
-        }
-
-        if (!tracked_state_.empty() && params["state"] == tracked_state_) {
-          if (params.count("token") && params.count("email") &&
-              params.count("type") && params.count("state")) {
-
-            if(!params["state"].empty()) {
-              if (params["state"][0] == '1') {
-                MessageLoopForUI::current()->PostTask(
-                  FROM_HERE,
-                  base::Bind(&WebContents::Close,
-                             base::Unretained(tracked_contents_));
-
-                OpenSyncSetup(false);
-
-                string16 error_message;
-                if (!IsLoginAuthDataValid(params["email"], &error_message)) {
-                  DisplayGaiaLoginWithErrorMessage(error_message, false);
-                  return;
-                }
-
-                TryLogin(params["email"],
-                         ( (params["type"] == "bitpop") ?
-                            params["type"] + "_" : "" ) + params["token"]);
-
-              } else if (params["state"][0] == '2') {
-                t
-              } else {
-
-              }
-            }
-
-          } else if (params.count("message") && params.count("backend")) {
-            OpenSyncSetup(false);
-
-            DisplayGaiaLoginWithErrorMessage(UTF8ToUTF16(params["message"]),
-                                             false);
-          }
-        } else {
-
-        }
-      }
-    }
-    break;
-
-  case content::NOTIFICATION_WEB_CONTENTS_DESTROYED: {
-      WebContents* contents = content::Source<WebContents>(source).ptr();
-      DCHECK(contents == tracked_contents_);
-
-      registrar_.Remove(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-          content::Source<NavigationController>(&contents->GetController()));
-      registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-          content::Source<WebContents>(contents));
-      tracked_contents_ = NULL;
-      tracked_state_ = "";
-    }
-    break;
-
-  default:
-    options2::OptionsPageUIHandler::Observe(type, source, details);
+  string16 error_message;
+  if (!IsLoginAuthDataValid(username, &error_message)) {
+    DisplayGaiaLoginWithErrorMessage(error_message, false);
+    return;
   }
+
+  TryLogin(username,
+           ((type == "bitpop") ? type + "_" : "") + params["token"]);
 }
 
-void SyncSetupHandler::RegisterForTabNotifications(WebContents* contents) {
-  registrar_.Add(
-      this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-      content::Source<NavigationController>(&contents->GetController()));
-  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                 content::Source<WebContents>(contents));
+void SyncSetupHandler::OnSigninErrorOccurred(
+    const std::string& error_message) {
+
+    OpenSyncSetup(false);
+
+    DisplayGaiaLoginWithErrorMessage(UTF8ToUTF16(message), false);
 }
 
-void SyncSetupHandler::UnregisterForTabNotifications(WebContents* contents) {
-  registrar_.Remove(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-      content::Source<NavigationController>(&contents->GetController()));
-  registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-      content::Source<WebContents>(contents));
+SigninResultPageTracker* SyncSetupHandler::GetPageTracker() const {
+  return SigninResultPageTrackerFactory::GetForProfile(GetProfile());
 }

@@ -8,6 +8,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
+#include "chrome/browser/signin/signin_result_page_tracker.h"
 #include "chrome/browser/signin/signin_tracker.h"
 #include "chrome/browser/ui/webui/options2/options_ui.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
@@ -25,7 +26,8 @@ namespace content {
 
 class SyncSetupHandler : public options2::OptionsPageUIHandler,
                          public SigninTracker::Observer,
-                         public LoginUIService::LoginUI {
+                         public LoginUIService::LoginUI,
+                         public SigninResultPageTracker::Observer {
  public:
   // Constructs a new SyncSetupHandler. |profile_manager| may be NULL.
   explicit SyncSetupHandler(ProfileManager* profile_manager);
@@ -45,10 +47,11 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
   virtual void FocusUI() OVERRIDE;
   virtual void CloseUI() OVERRIDE;
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // SigninResultPageTracker::Observer implementation.
+  virtual void OnSigninCredentialsReady(const std::string& username,
+                                      const std::string& token,
+                                      const std::string& type) OVERRIDE;
+  virtual void OnSigninErrorOccurred(const std::string& error_message) OVERRIDE;
 
   static void GetStaticLocalizedValues(
       base::DictionaryValue* localized_strings,
@@ -110,6 +113,8 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
 
   // Returns the LoginUIService for the parent profile.
   LoginUIService* GetLoginUIService() const;
+
+  SigninResultPageTracker* GetPageTracker() const;
 
  private:
   // Callbacks from the page.
@@ -214,10 +219,6 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
   // The OneShotTimer object used to timeout of starting the sync backend
   // service.
   scoped_ptr<base::OneShotTimer<SyncSetupHandler> > backend_start_timer_;
-
-  content::WebContents* tracked_contents_;
-
-  std::string tracked_state_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncSetupHandler);
 };
