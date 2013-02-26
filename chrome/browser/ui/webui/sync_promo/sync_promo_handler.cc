@@ -10,6 +10,7 @@
 #include "base/time.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_result_page_tracker.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -127,6 +128,10 @@ void SyncPromoHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "SyncPromo:UserSkipped",
       base::Bind(&SyncPromoHandler::HandleUserSkipped,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "SyncPromo:StateSet",
+      base::Bind(&SyncPromoHandler::HandleStateSet,
                  base::Unretained(this)));
   SyncSetupHandler::RegisterMessages();
 }
@@ -265,6 +270,13 @@ void SyncPromoHandler::HandleUserFlowAction(const base::ListValue* args) {
 void SyncPromoHandler::HandleUserSkipped(const base::ListValue* args) {
   SyncPromoUI::SetUserSkippedSyncPromo(Profile::FromWebUI(web_ui()));
   RecordUserFlowAction(SYNC_PROMO_SKIP_CLICKED);
+}
+
+void SyncPromoHandler::HandleStateSet(const base::ListValue* args) {
+  std::string state;
+  CHECK(args->GetString(0, &state));
+
+  (void)new SigninResultPageTracker(web_ui()-GetWebContents(), state, NULL);
 }
 
 int SyncPromoHandler::GetViewCount() const {

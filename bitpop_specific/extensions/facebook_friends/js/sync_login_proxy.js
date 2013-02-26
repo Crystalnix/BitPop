@@ -1,5 +1,3 @@
-(function() {
-	var args = document.location.search.substring(1);
-  var dict = { "type": "sync_login_result", "args": args };
-	chrome.extension.sendMessage(dict);
-})();
+setTimeout(function() { chrome.extension.sendMessage(
+	{ "type": "closeTabRequest" }
+) }, 1600);

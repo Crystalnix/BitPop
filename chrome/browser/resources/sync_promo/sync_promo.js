@@ -47,7 +47,7 @@ cr.define('sync_promo', function() {
     __proto__: options.SyncSetupOverlay.prototype,
 
     showOverlay_: function() {
-      $('sync-setup-overlay').hidden = false;
+      $('sync-setup-overlay').style.display = 'table';
     },
 
     closeOverlay_: function() {
@@ -239,7 +239,7 @@ cr.define('sync_promo', function() {
   };
 
   SyncPromo.getPageArgumentsDictionary = function() {
-    var allowedArgs = [ 'token', 'type', 'email', 'backend', 'message' ];
+    var allowedArgs = [ 'state', 'token', 'type', 'email', 'backend', 'message' ];
     var args = parseQueryParams(document.location);
     for (var arg in args) {
       if (args.hasOwnProperty(arg) && allowedArgs.indexOf(arg) == -1) {
@@ -265,5 +265,27 @@ var SyncSetupOverlay = sync_promo.SyncPromo;
                             sync_promo.SyncPromo.initialize);
     window.addEventListener('beforeunload',
        sync_promo.SyncPromo.recordPageViewActions.bind(sync_promo.SyncPromo));
+  } else if (argsDict.state) {
+    window.addEventListener('DOMContentLoaded',
+      function() {
+        $('facebooklogin').href += argsDict.state;
+        $('bitpoplogin').href += argsDict.state;
+      });
+  } else {
+    var state = "2";
+    var chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    var numChars = 32;
+    for (var i = 0; i < numChars-1; i++) {
+      state += chars[Math.round(Math.random() * (chars.length - 1))];
+    }
+    localStorage.setItem('state', state);
+
+    chrome.send('SyncPromo:StateSet', [ state ]);
+
+    window.addEventListener('DOMContentLoaded',
+      function() {
+        $('facebooklogin').href += state;
+        $('bitpoplogin').href += state;
+      });
   }
 })();

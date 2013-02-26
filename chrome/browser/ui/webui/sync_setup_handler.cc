@@ -29,6 +29,7 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
@@ -294,7 +295,7 @@ void GenerateState(std::string* state, const std::string& source) {
   const size_t num_chars = sizeof(allowed_chars) / sizeof(char) - 1;
   *state = "";
   for (int i = 0; i < (int)state_len; i++) {
-    *state += allowed_chars[base::RandInt(0, num_chars)];
+    *state += allowed_chars[base::RandInt(0, num_chars-1)];
   }
   if (source == "settingsPage")
     *state = "1" + *state;
@@ -1247,10 +1248,6 @@ void SyncSetupHandler::Observe(int type,
       DCHECK(source_controller->GetWebContents() == tracked_contents_);
 
       GURL url(source_controller->GetLastCommittedEntry()->GetURL());
-      DLOG(INFO) << "Nav entry committed: " << url.spec();
-      DLOG(INFO) << url.host();
-      DLOG(INFO) << url.path();
-      DLOG(INFO) << url.query();
 
       if (url.host() == "dev.bitpop.com" &&
           url.has_path() && url.has_query() &&
@@ -1269,25 +1266,34 @@ void SyncSetupHandler::Observe(int type,
           if (params.count("token") && params.count("email") &&
               params.count("type") && params.count("state")) {
 
-            tracked_contents_->Close();
+            if(!params["state"].empty()) {
+              if (params["state"][0] == '1') {
+                MessageLoopForUI::current()->PostTask(
+                  FROM_HERE,
+                  base::Bind(&WebContents::Close,
+                             base::Unretained(tracked_contents_));
 
-            OpenSyncSetup(false);
-            FocusUI();
+                OpenSyncSetup(false);
 
-            string16 error_message;
-            if (!IsLoginAuthDataValid(params["email"], &error_message)) {
-              DisplayGaiaLoginWithErrorMessage(error_message, false);
-              return;
+                string16 error_message;
+                if (!IsLoginAuthDataValid(params["email"], &error_message)) {
+                  DisplayGaiaLoginWithErrorMessage(error_message, false);
+                  return;
+                }
+
+                TryLogin(params["email"],
+                         ( (params["type"] == "bitpop") ?
+                            params["type"] + "_" : "" ) + params["token"]);
+
+              } else if (params["state"][0] == '2') {
+                t
+              } else {
+
+              }
             }
 
-            TryLogin(params["email"],
-                     ( (params["type"] == "bitpop") ?
-                        params["type"] + "_" : "" ) + params["token"]);
           } else if (params.count("message") && params.count("backend")) {
-            tracked_contents_->Close();
-
             OpenSyncSetup(false);
-            this->FocusUI();
 
             DisplayGaiaLoginWithErrorMessage(UTF8ToUTF16(params["message"]),
                                              false);

@@ -25,7 +25,6 @@ body {
   position: absolute;
   text-align: left;
   height: 100%;
-  display: table;
   background-color: rgba(0,0,0,0.6);
 }
 

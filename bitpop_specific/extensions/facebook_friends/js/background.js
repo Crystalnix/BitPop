@@ -47,7 +47,7 @@ setTimeout(
 
 chrome.extension.onMessage.addListener(function (request, sender, sendResponse) {
   if (!request.type)
-    return;
+    return false;
 
   if (request.type == 'setStatusMessage') {
     chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
@@ -59,15 +59,8 @@ chrome.extension.onMessage.addListener(function (request, sender, sendResponse) 
       }
     );
     return true;
-  } else if (request.type == "sync_login_result") {
-    var id = sender.tab.id;
-    var args = request.args;
-    setTimeout(function () {
-      chrome.tabs.update(id, {
-        "url": "chrome://signin?" + args,
-        "active": true
-      });
-    }, 10);
+  } else if (request.type == "closeTabRequest") {
+    chrome.tabs.remove(sender.tab.id);
     return false;
   }
 });
