@@ -59,9 +59,6 @@ chrome.extension.onMessage.addListener(function (request, sender, sendResponse) 
       }
     );
     return true;
-  } else if (request.type == "closeTabRequest") {
-    chrome.tabs.remove(sender.tab.id);
-    return false;
   }
 });
 

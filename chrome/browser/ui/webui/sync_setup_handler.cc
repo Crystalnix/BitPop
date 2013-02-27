@@ -23,6 +23,8 @@
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/signin_result_page_tracker.h"
+#include "chrome/browser/signin/signin_result_page_tracker_factory.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -321,7 +323,7 @@ void SyncSetupHandler::GetStaticLocalizedValues(
     { "emailLabel", IDS_SYNC_LOGIN_EMAIL_NEW_LINE },
     { "passwordLabel", IDS_SYNC_LOGIN_PASSWORD_NEW_LINE },
     { "invalidCredentials", IDS_SYNC_INVALID_USER_CREDENTIALS },
-    { "signin", IDS_SYNC_SIGNIN },
+    { "signin", IDS_CLOSE },
     { "couldNotConnect", IDS_SYNC_LOGIN_COULD_NOT_CONNECT },
     { "unrecoverableError", IDS_SYNC_UNRECOVERABLE_ERROR },
     { "errorLearnMore", IDS_LEARN_MORE },
@@ -1030,8 +1032,8 @@ void SyncSetupHandler::CloseSyncSetup() {
   }
 
   SigninResultPageTracker* tracker = GetPageTracker();
-  if (tracker->GetObserver() == this) {
-    tracker->Untrack();
+  if (tracker->GetCurrentObserver() == this) {
+    tracker->UntrackCurrent();
   }
 
   // Reset the attempted email address and error, otherwise the sync setup
@@ -1169,7 +1171,7 @@ void SyncSetupHandler::OnSigninCredentialsReady(const std::string& username,
   }
 
   TryLogin(username,
-           ((type == "bitpop") ? type + "_" : "") + params["token"]);
+           ((type == "bitpop") ? type + "_" : "") + token);
 }
 
 void SyncSetupHandler::OnSigninErrorOccurred(
@@ -1177,7 +1179,7 @@ void SyncSetupHandler::OnSigninErrorOccurred(
 
     OpenSyncSetup(false);
 
-    DisplayGaiaLoginWithErrorMessage(UTF8ToUTF16(message), false);
+    DisplayGaiaLoginWithErrorMessage(UTF8ToUTF16(error_message), false);
 }
 
 SigninResultPageTracker* SyncSetupHandler::GetPageTracker() const {

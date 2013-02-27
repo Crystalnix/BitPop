@@ -5,20 +5,25 @@
 
 #include "chrome/browser/signin/signin_result_page_tracker.h"
 
+#include "base/message_loop.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/escape.h"
 
 #include <string>
 
+using content::OpenURLParams;
 using content::WebContents;
+using content::NavigationController;
 
 namespace {
 
@@ -112,16 +117,6 @@ SigninResultPageTracker::SigninResultPageTracker()
 	: tracked_contents_(NULL),
 		tracked_state_(),
 		observer_(NULL) {
-
-	browser_ = browser::FindBrowserWithWebContents(contents);
-	if (browser_)
-		profile_ = browser_->profile();
-
-	registrar_.Add(
-      this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-      content::Source<NavigationController>(&contents->GetController()));
-  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                 content::Source<WebContents>(contents));
 }
 
 SigninResultPageTracker::~SigninResultPageTracker() {
@@ -136,14 +131,14 @@ void SigninResultPageTracker::Track(WebContents *contents,
 																		const std::string& state,
 																		Observer* observer) {
 	if (tracked_contents_)
-		Untrack();
+		UntrackCurrent();
 
 	tracked_contents_ = contents;
 	tracked_state_ = state;
 	observer_ = observer;
 
 	browser_ = browser::FindBrowserWithWebContents(contents);
-	if (browser_ && profile_ == browser_->profile()) {}
+	if (browser_ && profile_ == browser_->profile()) {
 		registrar_.Add(
 	      this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
 	      content::Source<NavigationController>(&contents->GetController()));
@@ -152,13 +147,12 @@ void SigninResultPageTracker::Track(WebContents *contents,
 	}
 }
 
-void SigninResultPageTracker::Untrack() {
+void SigninResultPageTracker::UntrackCurrent() {
 	if (!tracked_contents_)
 		return;
 
   registrar_.Remove(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-      content::Source<NavigationController>(
-      		tracked_contents_->GetController()));
+      content::Source<NavigationController>(&tracked_contents_->GetController()));
   registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
       content::Source<WebContents>(tracked_contents_));
 
@@ -212,7 +206,7 @@ void SigninResultPageTracker::Observe(int type,
         	GURL url(std::string(chrome::kChromeUISyncPromoURL) +
         					 std::string("?") + url.query());
 					OpenURLParams url_params(
-          	url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_LINK, false);
+          	url, content::Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_LINK, false);
       		tracked_contents_->OpenURL(url_params);
         } else if (state[0] == kStateSetBySettingsPageIndicator &&
         					 observer_ != NULL) {
@@ -235,12 +229,12 @@ void SigninResultPageTracker::Observe(int type,
 			WebContents* contents = content::Source<WebContents>(source).ptr();
       DCHECK(contents == tracked_contents_);
 
-      Untrack();
+      UntrackCurrent();
     }
     break;
 
   default:
-  	NOTREACHED() << "Invalid notification received."
+  	NOTREACHED() << "Invalid notification received.";
 	}
 }
 
@@ -265,6 +259,6 @@ void SigninResultPageTracker::PostCloseContents() {
 	MessageLoopForUI::current()->PostTask(
             FROM_HERE,
             base::Bind(&WebContents::Close,
-                       base::Unretained(tracked_contents_)
+                       base::Unretained(tracked_contents_))
           	);
 }

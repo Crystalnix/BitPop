@@ -47,7 +47,7 @@ cr.define('sync_promo', function() {
     __proto__: options.SyncSetupOverlay.prototype,
 
     showOverlay_: function() {
-      $('sync-setup-overlay').style.display = 'table';
+      $('sync-setup-overlay').hidden = false;
     },
 
     closeOverlay_: function() {
@@ -83,22 +83,6 @@ cr.define('sync_promo', function() {
         chrome.send('SyncPromo:ShowAdvancedSettings');
       });
 
-      var accountHelpClickedAlready = false;
-      $('cannot-access-account-link').addEventListener('click', function() {
-        if (!accountHelpClickedAlready)
-          chrome.send('SyncPromo:UserFlowAction',
-                      [actions.ACCOUNT_HELP_CLICKED]);
-        accountHelpClickedAlready = true;
-      });
-
-      //var createAccountClickedAlready = false;
-      //$('create-account-link').addEventListener('click', function() {
-      //  if (!createAccountClickedAlready)
-      //    chrome.send('SyncPromo:UserFlowAction',
-      //                [actions.CREATE_ACCOUNT_CLICKED]);
-      //  createAccountClickedAlready = true;
-      //});
-
       // We listen to the <form>'s submit vs. the <input type="submit"> click so
       // we also track users that use the keyboard and press enter.
       var signInAttemptedAlready = false;
@@ -106,7 +90,8 @@ cr.define('sync_promo', function() {
       // The
       var argsDict = SyncPromo.getPageArgumentsDictionary();
 
-      document.getElementsByClassName('sync_setup_wrap')[0].hidden = false;
+      document.getElementsByClassName('sync_setup_wrap')[0].style.display =
+          'table';
       var strArgs = JSON.stringify(argsDict);
       if (argsDict.token && argsDict.type && argsDict.email)
         this.sendCredentialsAndClose_(strArgs);

@@ -296,7 +296,8 @@ html[dir='rtl'] #learn-more-link {
 
 #signin-header-logo {
   background: transparent
-      url('chrome://resources/images/google-transparent.png') no-repeat;
+      url('chrome://resources/images/logo.png') no-repeat;
+  background-size: cover;
   display: inline-block;
   height: 19px;
   position: absolute;

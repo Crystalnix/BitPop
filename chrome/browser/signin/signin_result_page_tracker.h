@@ -13,6 +13,8 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
 
+#include <map>
+
 namespace content {
 	class WebContents;
 }
@@ -21,15 +23,15 @@ class Profile;
 class Browser;
 
 class SigninResultPageTracker : public LoginUIService::LoginUI,
-																public content::NotficiationObserver,
+																public content::NotificationObserver,
 																public ProfileKeyedService {
 	public:
 		class Observer {
 		public:
 			virtual void OnSigninCredentialsReady(const std::string& username,
 																			const std::string& token,
-																			const std::string& type) {}
-			virtual void OnSigninErrorOccurred(const std::string& error_message) {}
+																			const std::string& type) {};
+			virtual void OnSigninErrorOccurred(const std::string& error_message) {};
 
 		};
 

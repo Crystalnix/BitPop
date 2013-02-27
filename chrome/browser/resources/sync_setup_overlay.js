@@ -51,7 +51,7 @@ cr.define('options', function() {
 
       var self = this;
       $('gaia-login-form').onsubmit = function() {
-        //var popup = window.open('chrome://signin/', 'myPopup');
+        self.closeOverlay_();
         return false;
       };
       $('do-not-encrypt-option').onchange =

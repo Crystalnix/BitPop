@@ -28,7 +28,7 @@ bitpop.FacebookController = (function() {
   // -------------------------------------------------------------------------------
   // Constants
   var BOSH_SERVER_URL = "http://tools.bitpop.com:5280";
-  var FB_APPLICATION_ID = "190635611002798";
+  var FB_APPLICATION_ID = "234959376616529";
   var SUCCESS_URL = 'https://www.facebook.com/connect/login_success.html';
   var FB_LOGOUT_URL = 'https://www.facebook.com/logout.php';
   var LOGOUT_NEXT_URL = SUCCESS_URL + '#logout';

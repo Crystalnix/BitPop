@@ -28,12 +28,7 @@
     "matches": [ "http://docs.google.com/*", "https://docs.google.com/*" ],
     "js": [ "suppression/google_drive.js" ],
     "run_at": "document_end"
-  }, {
-    "matches": [ "http://dev.bitpop.com:8000/authentication_success/*",
-                 "http://dev.bitpop.com:8000/login-error/*" ],
-    "js": [ "js/sync_login_proxy.js" ],
-    "run_at": "document_end"
-  } ],
+  }],
   "permissions": [
     "tabs",
     "bitpop",

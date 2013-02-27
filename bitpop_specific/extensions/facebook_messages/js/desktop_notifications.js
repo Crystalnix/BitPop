@@ -149,10 +149,12 @@ DesktopNotifications = {
           query: query
         },
         function (response) {
-          if (response.error)
-            errback(response.error, 'fqlQuery: ' + query);
-          else
-            callback(response);
+          if (response) {
+            if (response.error)
+              errback(response.error, 'fqlQuery: ' + query);
+            else
+              callback(response);
+          }
         }
      );
   },
