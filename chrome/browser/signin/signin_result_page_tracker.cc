@@ -33,7 +33,7 @@ enum ParseQueryState {
   VALUE_STATE,
 };
 
-const char kHostToTrack[] = "dev.bitpop.com";
+const char kHostToTrack[] = "sync.bitpop.com";
 const char kAuthenticationSuccessPagePath[] = "/authentication_success/";
 const char kAuthenticationErrorPagePath[] = "/login-error/";
 const char kStateSetBySettingsPageIndicator = '1';
