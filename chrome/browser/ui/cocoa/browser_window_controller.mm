@@ -1617,7 +1617,6 @@ enum {
     [[self friendsSidebar] setVisible:NO];
 
   [self layoutSubviews];
-  [[self friendsSidebar];
 }
 
 - (FacebookSidebarController*)friendsSidebar {

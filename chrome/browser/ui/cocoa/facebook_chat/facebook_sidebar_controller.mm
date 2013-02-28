@@ -65,7 +65,7 @@ class SidebarExtensionContainer : public ExtensionViewMac::Container {
   virtual void OnExtensionSizeChanged(
       ExtensionViewMac* view,
       const gfx::Size& new_size) OVERRIDE {
-   [controller_ onSizeChanged:nil];
+   [controller_ sizeChanged:nil];
  }
 
   virtual void OnExtensionViewDidShow(ExtensionViewMac* view) OVERRIDE {
