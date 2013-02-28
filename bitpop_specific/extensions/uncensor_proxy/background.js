@@ -22,17 +22,37 @@ chrome.bitpop.prefs.blockedSitesList.onChange.addListener(function(details) {
   var domains = JSON.parse(details.value);
   settings.set('domains', domains);
   //chrome.extension.sendMessage({ reason: 'settingsChanged' });
+  setProxyConfig(getAutoEntries() + getEntriesForAsk());
 });
 
 chrome.bitpop.prefs.globalProxyControl.onChange.addListener(function(details) {
   settings.set('proxy_control', globalControlTransform[+details.value])
   //chrome.extension.sendMessage({ reason: 'settingsChanged' });
+  setProxyConfig(getAutoEntries() + getEntriesForAsk());
 });
 
 chrome.bitpop.prefs.showMessageForActiveProxy.onChange.addListener(function(details) {
   settings.set('proxy_active_message', details.value);
   //chrome.extension.sendMessage({ reason: 'settingsChanged' });
 });
+
+var domainsAsk = [];
+
+function getEntriesForAsk()
+{
+  var entries = "";
+  for (var i = 0; i < domainsAsk.length; i++)
+    if (domainsAsk[i].domain)
+      entries += getEntryForDomain(domainsAsk[i].domain);
+  return entries;
+}
+
+function hasAskEntryForTab(domain, tab_id) {
+  for (var i = 0; i < domainsAsk.length; i++)
+    if (domainsAsk[i].domain == domain && domainsAsk[i].tab_id == tab_id)
+      return true;
+  return false;
+}
 
 function init() {
   chrome.bitpop.prefs.globalProxyControl.get({}, function(details) {
@@ -72,14 +92,6 @@ function init() {
   );
   chrome.bitpop.onProxyDomainsUpdate.addListener(updateProxifiedDomains);
 
-  var domainsAsk = [];
-  function getEntriesForAsk()
-  {
-    var entries = "";
-    for (var i = 0; i < domainsAsk.length; i++)
-      entries += getEntryForDomain(domainsAsk[i].domain);
-    return entries;
-  }
   chrome.extension.onMessage.addListener(function(request, sender, sendResponse) {
     if (request && request.type && request.type == 'enableProxyForDomain') {
       if (request.domain) {
@@ -99,9 +111,11 @@ function init() {
       }
     }
     if (removed) {
-      setProxyConfig(getAutoEntries() + getEntriesForAsk(request.domain));
+      setProxyConfig(getAutoEntries() + getEntriesForAsk());
     }
   });
+
+  setProxyConfig(getAutoEntries());
 }
 
 function haveDomainsChanged(domains) {
@@ -162,14 +176,16 @@ function updateProxifiedDomains() {
 }
 
 function getAutoEntries() {
+  var proxyControl = settings.get('proxy_control');
   var domains = settings.get('domains');
   var allowedDomainsLines = "";
   for (var i = 0; i < domains.length; i++) {
     if (domains[i].value == 'use_auto' ||
         (domains[i].value == 'use_global' && proxyControl == 'use_auto')) {
-      allowedDomainsLines = getEntryForDomain(domains[i].description);
+      allowedDomainsLines += getEntryForDomain(domains[i].description);
     }
   }
+  return allowedDomainsLines;
 }
 
 function getEntryForDomain(domain_name) {
@@ -264,7 +280,13 @@ function onBeforeRequestListener(details) {
           return;  // do nothing
 
         case 'ask_me': {
+          var domain = domains[i];
           var updatedListener = function(tabId, changeInfo, tab) {
+            if (hasAskEntryForTab(domain.description, tab.id)) {
+              chrome.tabs.onUpdated.removeListener(arguments.callee);
+              return;
+            }
+
             if (changeInfo.status == 'complete' && tabId == details.tabId) {
               clearTimeout(siteLoadTimeout);
 
@@ -273,7 +295,7 @@ function onBeforeRequestListener(details) {
                 code: 'var bitpop_uncensor_proxy_options = {' +
                       '  reason: "setAsk",' +
                       '  url: "' + details.url + '",' +
-                      '  domain: "' + domains[i].description + '",' +
+                      '  domain: "' + domain.description + '",' +
                       '  country_name: "' + settings.get('country_name') +
                       '" };'
                 }, function () {
@@ -328,11 +350,6 @@ function onTabUpdated(tabId, changeInfo, tab) {
       switch (proxyControl) {
         case 'use_auto':
           if (changeInfo.status == 'loading') {
-            chrome.tabs.update(tab.id, {
-                url: navigate(tab, tab.url)
-              }, function(tab) {
-                if (!tab) { return; }
-
                 setTimeout(function() {
                   chrome.tabs.get(tab.id, function(tab) {
                     if (!tab) { return; }
@@ -346,8 +363,6 @@ function onTabUpdated(tabId, changeInfo, tab) {
                     });
                   });
                 }, 5000);
-              }
-            );
           }
           break;
 
@@ -355,13 +370,16 @@ function onTabUpdated(tabId, changeInfo, tab) {
           return;  // do nothing
 
         case 'ask_me':
+          var domain = domains[i];
+          if (hasAskEntryForTab(domain.description, tab.id))
+            return;
           if (changeInfo.status == 'loading') {
             chrome.tabs.insertCSS(tab.id, { file: 'infobar.css' });
             chrome.tabs.executeScript(tab.id, {
               code: 'var bitpop_uncensor_proxy_options = {' +
                     '  reason: "setAsk",' +
-                    '  url: "' + navigate(tab, changeInfo.url || tab.url) + '",' +
-                    '  domain: "' + domains[i].description + '",' +
+                    '  url: "' + (changeInfo.url || tab.url) + '",' +
+                    '  domain: "' + domain.description + '",' +
                     '  country_name: "' + settings.get('country_name') +
                     '" };'
               }, function () {
