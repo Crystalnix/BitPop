@@ -38,7 +38,8 @@ const int kFriendsSidebarWidth = 186;
 //- (void)resizeSidebarToNewWidth:(CGFloat)width;
 - (void)showSidebarContents:(WebContents*)sidebarContents;
 - (void)initializeExtensionHost;
-- (void)sizeChanged;
+- (void)sizeChanged:(NSNotification*)notification;
+- (void)onViewDidShow;
 @end
 
 @interface BackgroundSidebarView : NSView {}
@@ -57,23 +58,22 @@ const int kFriendsSidebarWidth = 186;
 // NOTE: this class does nothing for now
 class SidebarExtensionContainer : public ExtensionViewMac::Container {
  public:
-  // explicit SidebarExtensionContainer(FacebookSidebarController* controller)
-  //     : controller_(controller) {
-  // }
+  explicit SidebarExtensionContainer(FacebookSidebarController* controller)
+       : controller_(controller) {
+  }
 
   virtual void OnExtensionSizeChanged(
       ExtensionViewMac* view,
       const gfx::Size& new_size) OVERRIDE {
-    // [controller_ onSizeChanged:
-    //     NSMakeSize(new_size.width(), new_size.height())];
-  }
+   [controller_ onSizeChanged:nil];
+ }
 
   virtual void OnExtensionViewDidShow(ExtensionViewMac* view) OVERRIDE {
-    // [controller_ onViewDidShow];
+    [controller_ onViewDidShow];
   }
 
  private:
-  //FacebookSidebarController* controller_; // Weak; owns this.
+  FacebookSidebarController* controller_; // Weak; owns this.
 };
 
 class SidebarExtensionNotificationBridge : public content::NotificationObserver {
@@ -134,7 +134,7 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
         [self view],
         VIEW_ID_FACEBOOK_FRIENDS_SIDE_BAR_CONTAINER);
 
-    extension_container_.reset(new SidebarExtensionContainer(/*self*/));
+    extension_container_.reset(new SidebarExtensionContainer(self));
     notification_bridge_.reset(new SidebarExtensionNotificationBridge(self));
 
     [[NSNotificationCenter defaultCenter]
@@ -229,6 +229,10 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
   [native_view setFrame:container_bounds];
 
   [native_view setNeedsDisplay:YES];
+}
+
+- (void)onViewDidShow {
+  [self sizeChanged:nil];
 }
 
 @end

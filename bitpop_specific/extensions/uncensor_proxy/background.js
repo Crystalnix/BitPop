@@ -71,6 +71,37 @@ function init() {
     []
   );
   chrome.bitpop.onProxyDomainsUpdate.addListener(updateProxifiedDomains);
+
+  var domainsAsk = [];
+  function getEntriesForAsk()
+  {
+    var entries = "";
+    for (var i = 0; i < domainsAsk.length; i++)
+      entries += getEntryForDomain(domainsAsk[i].domain);
+    return entries;
+  }
+  chrome.extension.onMessage.addListener(function(request, sender, sendResponse) {
+    if (request && request.type && request.type == 'enableProxyForDomain') {
+      if (request.domain) {
+        domainsAsk.push({ tab_id: sender.tab.id, domain: request.domain });
+        setProxyConfig(getAutoEntries() + getEntriesForAsk());
+        sendResponse({});
+        return true;
+      }
+    }
+  });
+  chrome.tabs.onRemoved.addListener(function (tab_id, remove_info) {
+    var removed = false;
+    for (var i = 0; i < domainsAsk.length; i++) {
+      if (domainsAsk[i].tab_id == tab_id) {
+        domainsAsk.splice(i, 1);
+        removed = true;
+      }
+    }
+    if (removed) {
+      setProxyConfig(getAutoEntries() + getEntriesForAsk(request.domain));
+    }
+  });
 }
 
 function haveDomainsChanged(domains) {
@@ -205,10 +236,6 @@ function onBeforeRequestListener(details) {
 
       switch (proxyControl) {
         case 'use_auto': {
-          //chrome.tabs.update(details.tabId, {
-          //    url: navigate(details.url)
-          //    });
-
           var updatedListener = function(tabId, changeInfo, tab) {
             if (changeInfo.status == 'complete' && tabId == details.tabId) {
               chrome.tabs.insertCSS(tab.id, { file: 'infobar.css' });
@@ -246,6 +273,7 @@ function onBeforeRequestListener(details) {
                 code: 'var bitpop_uncensor_proxy_options = {' +
                       '  reason: "setAsk",' +
                       '  url: "' + details.url + '",' +
+                      '  domain: "' + domains[i].description + '",' +
                       '  country_name: "' + settings.get('country_name') +
                       '" };'
                 }, function () {
@@ -333,6 +361,7 @@ function onTabUpdated(tabId, changeInfo, tab) {
               code: 'var bitpop_uncensor_proxy_options = {' +
                     '  reason: "setAsk",' +
                     '  url: "' + navigate(tab, changeInfo.url || tab.url) + '",' +
+                    '  domain: "' + domains[i].description + '",' +
                     '  country_name: "' + settings.get('country_name') +
                     '" };'
               }, function () {
@@ -345,93 +374,6 @@ function onTabUpdated(tabId, changeInfo, tab) {
       break;
     }
   }
-}
-
-// Copyrights to the following code are going to the authors of the
-// HideMyAss Chrome extension
-var proxy_sites = {
-  'random' : 'Random site',
-  'hidemyass.com' : 'HideMyAss.com',
-  'anon.me' : 'Anon.me',
-  'anonr.com' : 'Anonr.com',
-  'armyproxy.com' : 'ArmyProxy.com',
-  'boratproxy.com' : 'BoratProxy.com',
-  'browse.ms' : 'Browse.ms',
-  'hidemy.info' : 'HideMy.info',
-  'invisiblesurfing.com' : 'InvisibleSurfing.com',
-  'kroxy.net' : 'Kroxy.net',
-  'limitkiller.com' : 'Limitkiller.com',
-  'nuip.net' : 'Nuip.net',
-  'ourproxy.com' : 'Ourproxy.com',
-  'proxrio.com' : 'Proxrio.com',
-  'proxybuddy.com' : 'Proxybuddy.com',
-  'proxymafia.net' : 'Proxymafia.net',
-  'sitesurf.net' : 'Sitesurf.net',
-  'texasproxy.com' : 'Texasproxy.com',
-  'unblocked.org' : 'Unblocked.org',
-  'unblock.biz' : 'Unblock.biz'
-}
-
-var svc_url_path = '/includes/process.php?action=update&idx=0&u=%url&obfuscation=%hash';
-var proxy_sites_count = getSitesCount();
-
-function navigate(url_to_hide) {
-  var encoded_url,
-      proxy_site,
-      svc_url;
-
-  if (!checkURLCredibility(url_to_hide)) {
-    return;
-  }
-  encoded_url = encodeURIComponent(url_to_hide); //window.btoa(url_to_hide.substr(4)).replace(/=+$/, '');
-  //proxy_site = getRandomSite();
-  proxy_site = 'hidemyass.com';
-  if (proxy_site == 'hidemyass.com') {
-    var server = Math.ceil(5 * Math.random());
-    svc_url = 'http://' + server + '.' + proxy_site;
-  } else {
-    svc_url = 'http://' + proxy_site;
-  }
-  svc_url += svc_url_path.replace('%url', encoded_url).replace('%hash', 2);
-
-  return svc_url;
-}
-
-function checkURLCredibility(url) {
-  var i, reg;
-  if (!/^https?:/.test(url)) {
-    return false;
-  }
-  for (i in proxy_sites) {
-    if (i == 'random') {
-      continue;
-    }
-    reg = RegExp('^https?:\/\/([^\/\.]+\.)?' + i);
-    if (reg.test(url)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function getSitesCount() {
-  var i, j;
-  for (i in proxy_sites) {
-    if (i != 'random') {
-      j++;
-    }
-  }
-  return j;
-}
-
-function getRandomSite() {
-  var i, j, sites = [];
-  for (i in proxy_sites) {
-    if (i != 'random') {
-      sites.push(i);
-    }
-  }
-  return sites[Math.floor(sites.length * Math.random())];
 }
 
 init();
