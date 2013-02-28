@@ -21,33 +21,33 @@ var globalControlTransform = [ 'use_auto', 'never_use', 'ask_me'];
 chrome.bitpop.prefs.blockedSitesList.onChange.addListener(function(details) {
   var domains = JSON.parse(details.value);
   settings.set('domains', domains);
-  chrome.extension.sendRequest({ reason: 'settingsChanged' });
+  //chrome.extension.sendMessage({ reason: 'settingsChanged' });
 });
 
 chrome.bitpop.prefs.globalProxyControl.onChange.addListener(function(details) {
   settings.set('proxy_control', globalControlTransform[+details.value])
-  chrome.extension.sendRequest({ reason: 'settingsChanged' });
+  //chrome.extension.sendMessage({ reason: 'settingsChanged' });
 });
 
 chrome.bitpop.prefs.showMessageForActiveProxy.onChange.addListener(function(details) {
   settings.set('proxy_active_message', details.value);
-  chrome.extension.sendRequest({ reason: 'settingsChanged' });
+  //chrome.extension.sendMessage({ reason: 'settingsChanged' });
 });
 
 function init() {
   chrome.bitpop.prefs.globalProxyControl.get({}, function(details) {
     settings.set('proxy_control', globalControlTransform[+details.value]);
-    chrome.extension.sendRequest({ reason: 'settingsChanged' });
+    //chrome.extension.sendMessage({ reason: 'settingsChanged' });
   });
   chrome.bitpop.prefs.showMessageForActiveProxy.get({}, function(details) {
     settings.set('proxy_active_message', details.value);
-    chrome.extension.sendRequest({ reason: 'settingsChanged' });
+    //chrome.extension.sendMessage({ reason: 'settingsChanged' });
   });
   chrome.bitpop.prefs.blockedSitesList.get({}, function(details) {
     if (details.value) {
       var domains = JSON.parse(details.value);
       settings.set('domains', domains);
-      chrome.extension.sendRequest({ reason: 'settingsChanged' });
+      //chrome.extension.sendMessage({ reason: 'settingsChanged' });
     }
   });
 
@@ -105,7 +105,7 @@ function updateProxifiedDomains() {
         settings.set('country_name', response.country_name);
         chrome.bitpop.prefs.ipRecognitionCountryName.set({ value: response.country_name });
 
-        chrome.extension.sendRequest({ reason: 'settingsChanged' });
+        //chrome.extension.sendMessage({ reason: 'settingsChanged' });
 
         var notification = webkitNotifications.createNotification(
           // icon url - can be relative
@@ -130,6 +130,38 @@ function updateProxifiedDomains() {
   xhr.send();
 }
 
+function getAutoEntries() {
+  var domains = settings.get('domains');
+  var allowedDomainsLines = "";
+  for (var i = 0; i < domains.length; i++) {
+    if (domains[i].value == 'use_auto' ||
+        (domains[i].value == 'use_global' && proxyControl == 'use_auto')) {
+      allowedDomainsLines = getEntryForDomain(domains[i].description);
+    }
+  }
+}
+
+function getEntryForDomain(domain_name) {
+  return "  if (host == '" + domain_name + "' || shExpMatch(host, '*." + domain_name + "'))\n" +
+         "  {\n" +
+         "    return 'PROXY 31.192.228.61:8228';\n" +
+         "  }\n";
+}
+
+function setProxyConfig(domainEntriesPacString) {
+  var config = {
+    mode: "pac_script",
+    pacScript: {
+      data: "function FindProxyForURL(url, host) {\n" +
+            domainEntriesPacString +
+            "  return 'DIRECT';\n" +
+            "}"
+    }
+  };
+  chrome.proxy.settings.set({ value: config, scope: "regular" },
+                            function() {});
+}
+
 function setDomains(newDomains) {
   var i;
   var oldDomains = settings.get('domains');
@@ -152,6 +184,8 @@ function setDomains(newDomains) {
   }
   settings.set('domains', domains);
   chrome.bitpop.prefs.blockedSitesList.set({ value: JSON.stringify(domains) });
+
+  setProxyConfig(getAutoEntries());
 }
 
 function onBeforeRequestListener(details) {
@@ -171,9 +205,9 @@ function onBeforeRequestListener(details) {
 
       switch (proxyControl) {
         case 'use_auto': {
-          chrome.tabs.update(details.tabId, {
-              url: navigate(details.url)
-              });
+          //chrome.tabs.update(details.tabId, {
+          //    url: navigate(details.url)
+          //    });
 
           var updatedListener = function(tabId, changeInfo, tab) {
             if (changeInfo.status == 'complete' && tabId == details.tabId) {
@@ -211,7 +245,7 @@ function onBeforeRequestListener(details) {
               chrome.tabs.executeScript(tab.id, {
                 code: 'var bitpop_uncensor_proxy_options = {' +
                       '  reason: "setAsk",' +
-                      '  url: "' + navigate(details.url) + '",' +
+                      '  url: "' + details.url + '",' +
                       '  country_name: "' + settings.get('country_name') +
                       '" };'
                 }, function () {

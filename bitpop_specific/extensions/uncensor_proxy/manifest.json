@@ -11,6 +11,7 @@
     "webRequest",
     "tabs",
     "notifications",
+    "proxy",
     "http://tools.bitpop.com/*",
     "http://*/*",
     "https://*/*"
