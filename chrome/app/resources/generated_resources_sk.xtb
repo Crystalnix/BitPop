@@ -34,7 +34,7 @@
 <translation id="3581034179710640788">Skončila sa platnosť bezpečnostného certifikátu stránky!</translation>
 <translation id="2825758591930162672">Verejný kľúč subjektu</translation>
 <translation id="8306243285620593545">Prejsť na ikonu stavu</translation>
-<translation id="1130622745736410868">vyžaduje potvrdenie o tom, že prehliadate prostredníctvom zariadenia so systémom Chrome OS. Uskutoční to tak, že požiada spoločnosť Google o verifikáciu vášho kódu kupónu.</translation>
+<translation id="1130622745736410868">vyžaduje potvrdenie o tom, že prehliadate prostredníctvom zariadenia so systémom Chrome OS. Uskutoční to tak, že požiada spoločnosť Bitpop o verifikáciu vášho kódu kupónu.</translation>
 <translation id="8176382683266548737">Povoliť upozornenia</translation>
 <translation id="8275038454117074363">Importovať</translation>
 <translation id="8418445294933751433">&amp;Zobraziť ako kartu</translation>
@@ -57,7 +57,7 @@ Nabudúce by sa vám mohol hodiť režim inkognito (<ph name="SHORTCUT_KEY"/>).<
 <translation id="4940047036413029306">Úvodzovky</translation>
 <translation id="1497897566809397301">Povoliť nastavenie miestnych údajov (odporúča sa)</translation>
 <translation id="3275778913554317645">Otvoriť ako okno</translation>
-<translation id="4553117311324416101">Systém Google zistil, že ak budete pokračovať, môže byť do vášho počítača nainštalovaný škodlivý softvér. Ak ste tieto stránky navštívili v minulosti alebo im dôverujete, je možné, že boli nedávno cieľom hackerského útoku. Nemali by ste pokračovať. Môžete to znova skúsiť zajtra alebo prejdite na iné stránky.</translation>
+<translation id="4553117311324416101">Systém Bitpop zistil, že ak budete pokračovať, môže byť do vášho počítača nainštalovaný škodlivý softvér. Ak ste tieto stránky navštívili v minulosti alebo im dôverujete, je možné, že boli nedávno cieľom hackerského útoku. Nemali by ste pokračovať. Môžete to znova skúsiť zajtra alebo prejdite na iné stránky.</translation>
 <translation id="5085514918439894988">Pre túto akciu nie sú nainštalované žiadne služby a v Internetovom obchode Chrome sa nenachádzajú žiadne odporúčania.</translation>
 <translation id="8867568208303837180">Odosiela sa...</translation>
 <translation id="509988127256758334">Ná&amp;jsť:</translation>
@@ -91,7 +91,7 @@ Nabudúce by sa vám mohol hodiť režim inkognito (<ph name="SHORTCUT_KEY"/>).<
 <translation id="21426568240411732"><ph name="TITLE"/> používa vašu kameru.</translation>
 <translation id="6156863943908443225">Vyrovnávacia pamäť skriptov</translation>
 <translation id="4274187853770964845">Chyba synchronizácie: Zastavte a reštartujte synchronizáciu.</translation>
-<translation id="4610656722473172270">Panel s nástrojmi Google</translation>
+<translation id="4610656722473172270">Panel s nástrojmi Bitpop</translation>
 <translation id="656293578423618167">Názov súboru alebo cesta má veľa znakov. Uložte súbor pod kratším názvom alebo inde.</translation>
 <translation id="3484869148456018791">Získať nový certifikát</translation>
 <translation id="151501797353681931">Importované z prehliadača Safari</translation>
@@ -139,13 +139,13 @@ Nabudúce by sa vám mohol hodiť režim inkognito (<ph name="SHORTCUT_KEY"/>).<
 <translation id="7600965453749440009">Nikdy neprekladať jazyk <ph name="LANGUAGE"/></translation>
 <translation id="3208703785962634733">Nepotvrdené</translation>
 <translation id="620329680124578183">Nenačítať (odporúčané)</translation>
-<translation id="6300924177400055566">V službe Disk Google nemáte dostatok miesta na uloženie súboru „<ph name="FILE_NAME"/>“. Odstráňte súbory alebo si <ph name="BEGIN_LINK"/>zakúpte ďalší ukladací priestor<ph name="END_LINK"/>.</translation>
+<translation id="6300924177400055566">V službe Disk Bitpop nemáte dostatok miesta na uloženie súboru „<ph name="FILE_NAME"/>“. Odstráňte súbory alebo si <ph name="BEGIN_LINK"/>zakúpte ďalší ukladací priestor<ph name="END_LINK"/>.</translation>
 <translation id="9074739597929991885">Bluetooth</translation>
 <translation id="2653266418988778031">Ak odstránite certifikát Certifikačnej autority (CA), váš prehliadač prestane dôverovať akýmkoľvek certifikátom vydaným príslušnou certifikačnou autoritou.</translation>
 <translation id="5341849548509163798"><ph name="NUMBER_MANY"/> hours ago</translation>
 <translation id="4422428420715047158">Doména:</translation>
 <translation id="7788444488075094252">Jazyky a vstup</translation>
-<translation id="6723354935081862304">Tlačte do služby Dokumenty Google a ďalších cieľov v cloude. Ak chcete tlačiť do služby Google Cloud Print, <ph name="BEGIN_LINK"/>prihláste sa<ph name="END_LINK"/>.</translation>
+<translation id="6723354935081862304">Tlačte do služby Dokumenty Bitpop a ďalších cieľov v cloude. Ak chcete tlačiť do služby Google Cloud Print, <ph name="BEGIN_LINK"/>prihláste sa<ph name="END_LINK"/>.</translation>
 <translation id="3602290021589620013">Ukážka</translation>
 <translation id="6257035105556579916">V režime správcu nie je možné upravovať rozšírenia.</translation>
 <translation id="800602641363855389"><ph name="TITLE"/> používa váš mikrofón.</translation>
@@ -214,7 +214,7 @@ Nabudúce by sa vám mohol hodiť režim inkognito (<ph name="SHORTCUT_KEY"/>).<
 <translation id="1818606096021558659">Stránka</translation>
 <translation id="1549045574060481141">Potvrdenie preberania</translation>
 <translation id="5388588172257446328">Používateľské meno:</translation>
-<translation id="1657406563541664238">Pomôžte zlepšiť aplikáciu <ph name="PRODUCT_NAME"/> aktivovaním automatického odosielania štatistických údajov o používaní prehliadača a správ o chybách spoločnosti Google.</translation>
+<translation id="1657406563541664238">Pomôžte zlepšiť aplikáciu <ph name="PRODUCT_NAME"/> aktivovaním automatického odosielania štatistických údajov o používaní prehliadača a správ o chybách spoločnosti Bitpop.</translation>
 <translation id="7982789257301363584">Sieť</translation>
 <translation id="2271281383664374369">Žiadosti rozšírenia na túto adresu URL boli dočasne pozastavené.</translation>
 <translation id="8528962588711550376">Prebieha prihlásenie.</translation>
@@ -231,8 +231,8 @@ Nabudúce by sa vám mohol hodiť režim inkognito (<ph name="SHORTCUT_KEY"/>).<
 <translation id="9151034842884433218">Vyberte obrázok a názov pre svoj nový profil prehliadača Chrome.</translation>
 <translation id="1510030919967934016">Sledovanie vašej polohy touto stránkou bolo zablokované.</translation>
 <translation id="8848519885565996859">Používateľom definovaný rámec odkazu adresy URL</translation>
-<translation id="4640525840053037973">Prihláste sa pomocou svojho účtu Google</translation>
-<translation id="6315526595991863271">Ste prihlásený/-á do prehliadača <ph name="SHORT_PRODUCT_NAME"/>. Vaše záložky, história a ďalšie nastavenia sa synchronizujú s účtom Google pomocou predvolených nastavení.</translation>
+<translation id="4640525840053037973">Prihláste sa pomocou svojho účtu Bitpop</translation>
+<translation id="6315526595991863271">Ste prihlásený/-á do prehliadača <ph name="SHORT_PRODUCT_NAME"/>. Vaše záložky, história a ďalšie nastavenia sa synchronizujú s účtom Bitpop pomocou predvolených nastavení.</translation>
 <translation id="5255315797444241226">Zadaná prístupová fráza je nesprávna.</translation>
 <translation id="762917759028004464">Predvolený prehliadač je momentálne <ph name="BROWSER_NAME"/></translation>
 <translation id="8289982954746764694">Povoliť prvok sledovania (zatiaľ nie je plne funkčný) pre titulky, kapitoly a zvukové popisy prvkov videa.</translation>
@@ -277,7 +277,7 @@ Nabudúce by sa vám mohol hodiť režim inkognito (<ph name="SHORTCUT_KEY"/>).<
           a následne kliknite na tlačidlo
           <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Pridať vyhľadávací mechanizmus</translation>
-<translation id="6868050610674841964">Po prihlásení sa vaše údaje zosynchronizujú s účtom Google, takže budete mať prístup k záložkám, histórii a ďalším nastaveniam v ktoromkoľvek zariadení.</translation>
+<translation id="6868050610674841964">Po prihlásení sa vaše údaje zosynchronizujú s účtom Bitpop, takže budete mať prístup k záložkám, histórii a ďalším nastaveniam v ktoromkoľvek zariadení.</translation>
 <translation id="5498951625591520696">Nepodarilo sa pripojiť k serveru.</translation>
 <translation id="1621207256975573490">Uložiť &amp;rám ako...</translation>
 <translation id="4681260323810445443">Nemáte oprávnenie na prístup k webovej stránke na adrese <ph name="URL"/>. Možno sa budete musieť prihlásiť.</translation>
@@ -311,7 +311,7 @@ Nabudúce by sa vám mohol hodiť režim inkognito (<ph name="SHORTCUT_KEY"/>).<
 <translation id="6845180713465955339">Vydavateľ certifikátu „<ph name="CERTIFICATE_NAME"/>“:</translation>
 <translation id="5364525511170219879">Povoliť rozhranie UI pre aktivitu rozšírenia</translation>
 <translation id="3088325635286126843">&amp;Premenovať...</translation>
-<translation id="6979158407327259162">Disk Google</translation>
+<translation id="6979158407327259162">Disk Bitpop</translation>
 <translation id="6853700448789925482">Povoliť prvok sledovania <ph name="TRACK_HTML"/></translation>
 <translation id="3150927491400159470">Vynútiť opätovné načítanie</translation>
 <translation id="7531238562312180404">Vzhľadom na to, že služba <ph name="PRODUCT_NAME"/> nemá kontrolu nad spôsobom, akým zaobchádzajú rozšírenia s vašimi osobnými údajmi, boli všetky rozšírenia pre okná inkognito zakázané. V individuálnych prípadoch ich môžete povoliť v 
@@ -376,7 +376,7 @@ Nabudúce by sa vám mohol hodiť režim inkognito (<ph name="SHORTCUT_KEY"/>).<
 <translation id="8194465509832052438">Konfigurovať príkazy</translation>
 <translation id="4422347585044846479">Upraviť záložku pre túto stránku</translation>
 <translation id="2452539774207938933">Prepnúť na používateľa: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">Google Chrome vám ponúka inteligentnejšiu kontrolu pravopisu tým, že text zadaný do prehliadača odošle serverom spoločnosti Google. Umožňuje vám tak využiť rovnakú technológiu kontroly pravopisu, aká sa používa vo Vyhľadávaní Google.</translation>
+<translation id="4700157086864140907">Bitpop Chrome vám ponúka inteligentnejšiu kontrolu pravopisu tým, že text zadaný do prehliadača odošle serverom spoločnosti Google. Umožňuje vám tak využiť rovnakú technológiu kontroly pravopisu, aká sa používa vo Vyhľadávaní Google.</translation>
 <translation id="7632357940961158759">Niektoré nastavenia sú spravované pomocou rozšírenia.</translation>
 <translation id="1880905663253319515">Odstrániť certifikát „<ph name="CERTIFICATE_NAME"/>“?</translation>
 <translation id="8546306075665861288">Vyrovnávacia pamäť obrázkov</translation>
@@ -433,7 +433,7 @@ podpis formulára: <ph name="FORM_SIGNATURE"/>
 ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="8656768832129462377">Nekontrolovať</translation>
 <translation id="715487527529576698">Úvodný režim čínštiny: zjednodušená čínština</translation>
-<translation id="6896830120821965585">Povoľuje službu na pozadí, pomocou ktorej sa služba Google Cloud Print pripojí na tlačiarne nainštalované v tomto počítači. Ak je táto experimentálna funkcia povolená, môžete konektor služby Google Cloud Print zapnúť tak, že sa pomocou svojho účtu Google prihlásite v sekcii Pod kapotou v časti Nastavenia.</translation>
+<translation id="6896830120821965585">Povoľuje službu na pozadí, pomocou ktorej sa služba Bitpop Cloud Print pripojí na tlačiarne nainštalované v tomto počítači. Ak je táto experimentálna funkcia povolená, môžete konektor služby Google Cloud Print zapnúť tak, že sa pomocou svojho účtu Google prihlásite v sekcii Pod kapotou v časti Nastavenia.</translation>
 <translation id="3999508690854143454">Opýtať sa, keď stránky požadujú prístup k mojej kamere a mikrofónu (odporúčané)</translation>
 <translation id="1674989413181946727">Nastavenia protokolu SSL na úrovni počítača:</translation>
 <translation id="1531285811424589182">Chyba odstránenia certifikátu</translation>
@@ -450,7 +450,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="3874070094967379652">Použiť prístupovú frázu synchronizácie na šifrovanie mojich údajov</translation>
 <translation id="6500116422101723010">Server momentálne nemôže spracovať žiadosť. Tento kód označuje, že ide o dočasný stav a server bude za nejaký čas opäť funkčný.</translation>
 <translation id="1644574205037202324">História</translation>
-<translation id="4206944295053515692">Žiadať návrhy od spoločnosti Google</translation>
+<translation id="4206944295053515692">Žiadať návrhy od spoločnosti Bitpop</translation>
 <translation id="1297175357211070620">Cieľ</translation>
 <translation id="479280082949089240">Súbory cookie nastavené touto stránkou</translation>
 <translation id="4198861010405014042">Zdieľaný prístup</translation>
@@ -463,8 +463,8 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="3887847548716051874">Vždy povoliť týmto stránkam používať tento mikrofón a túto kameru</translation>
 <translation id="2886862922374605295">Hardvér:</translation>
 <translation id="4497097279402334319">Nepodarilo sa pripojiť k sieti.</translation>
-<translation id="7342729285348293164">Ak chcete uložiť svoje prispôsobené funkcie prehliadača na web a získať k nim prístup z prehliadača <ph name="PRODUCT_NAME"/> na ľubovoľnom počítači, prihláste sa do prehliadača <ph name="PRODUCT_NAME"/>. Budete tiež automaticky prihlásený/-á do svojich obľúbených služieb Google.</translation>
-<translation id="2542049655219295786">Tabuľka Google</translation>
+<translation id="7342729285348293164">Ak chcete uložiť svoje prispôsobené funkcie prehliadača na web a získať k nim prístup z prehliadača <ph name="PRODUCT_NAME"/> na ľubovoľnom počítači, prihláste sa do prehliadača <ph name="PRODUCT_NAME"/>. Budete tiež automaticky prihlásený/-á do svojich obľúbených služieb Bitpop.</translation>
+<translation id="2542049655219295786">Tabuľka Bitpop</translation>
 <translation id="3899879303189199559">Offline viac ako rok</translation>
 <translation id="5303618139271450299">Táto webová stránka sa nenašla</translation>
 <translation id="4256316378292851214">Uložiť &amp;video ako...</translation>
@@ -473,7 +473,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="6518014396551869914">&amp;Kopírovať obrázok</translation>
 <translation id="3236997602556743698">Súprava 3 (390)</translation>
 <translation id="542155483965056918"><ph name="NUMBER_ZERO"/> mins ago</translation>
-<translation id="4928351909437667303">Zakázať v tomto zariadení službu Disk Google.</translation>
+<translation id="4928351909437667303">Zakázať v tomto zariadení službu Disk Bitpop.</translation>
 <translation id="6315723398663634808">Certifikát servera obsahuje slabý kryptografický kľúč.</translation>
 <translation id="2887525882758501333">Dokument PDF</translation>
 <translation id="289426338439836048">Iná mobilná sieť...</translation>
@@ -545,7 +545,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="6431347207794742960">Prehliadač <ph name="PRODUCT_NAME"/> nastaví automatické aktualizácie pre všetkých používateľov tohto počítača.</translation>
 <translation id="4973698491777102067">Vymazať nasledujúce položky z:</translation>
 <translation id="6074963268421707432">Nepovoliť žiadnym stránkam zobrazovať upozornenia na pracovnej ploche</translation>
-<translation id="4944952004685780325">Umožňuje použiť rozhranie Drive V2 API na prístup do priečinka Disk Google.</translation>
+<translation id="4944952004685780325">Umožňuje použiť rozhranie Drive V2 API na prístup do priečinka Disk Bitpop.</translation>
 <translation id="1995173078718234136">Prebieha skenovanie obsahu...</translation>
 <translation id="7920521481309889533">Povoliť protokol SPDY/3</translation>
 <translation id="5979681173469464041">Prejsť na ďalší panel</translation>
@@ -554,7 +554,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="1491151370853475546">Znova načítať stránku</translation>
 <translation id="5374359983950678924">Zmeniť obrázok</translation>
 <translation id="2859738163554174612">Nikdy neponúkať prihlásenie</translation>
-<translation id="1378727793141957596">Vitajte v službe Disk Google!</translation>
+<translation id="1378727793141957596">Vitajte v službe Disk Bitpop!</translation>
 <translation id="5158548125608505876">Nesynchronizovať moje heslá</translation>
 <translation id="3717485073527618485">Opýtať sa, keď sa webová stránka pokúsi zakázať kurzor myši (odporúčané)</translation>
 <translation id="3273410961255278341">Odoslať na:</translation>
@@ -587,7 +587,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="773426152488311044">Momentálne ste jediným používateľom prehliadača <ph name="PRODUCT_NAME"/>.</translation>
 <translation id="2042078858148122628">Server <ph name="HOST_NAME"/> sa nepodarilo nájsť, pretože vyhľadanie DNS zlyhalo. DNS je webová služba, ktorá prevádza názov webových stránok na ich internetovú adresu. Táto chyba je najčastejšie spôsobená tým, že neexistuje pripojenie k Internetu alebo je nesprávna konfigurácia siete. Môže byť tiež spôsobená nereagujúcim serverom DNS alebo bránou firewall, ktorá programu <ph name="PRODUCT_NAME"/> bráni v prístupe ku sieti.</translation>
 <translation id="2159087636560291862">V tomto prípade nebol certifikát overený treťou stranou, ktorá je pre počítač dôveryhodná. Certifikát môže vytvoriť ktokoľvek. Tak isto ho môže vydávať za akékoľvek webové stránky. Práve z tohto dôvodu musí byť verifikovaný dôveryhodnou treťou stranou. Bez overenia sú informácie o identite v certifikáte bezcenné. Preto nie je možné overiť, že komunikujete s webom <ph name="DOMAIN"/> a nie s útočníkom s vlastným certifikátom, ktorý prehlasuje, že patrí webu <ph name="DOMAIN2"/>. Nemali by ste pokračovať.</translation>
-<translation id="58625595078799656">Prehliadač <ph name="PRODUCT_NAME"/> vyžaduje šifrovanie údajov pomocou hesla Google alebo vlastnej prístupovej frázy.</translation>
+<translation id="58625595078799656">Prehliadač <ph name="PRODUCT_NAME"/> vyžaduje šifrovanie údajov pomocou hesla Bitpop alebo vlastnej prístupovej frázy.</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">Nie je certifikačnou autoritou</translation>
 <translation id="6099520380851856040">Výskyt <ph name="CRASH_TIME"/></translation>
@@ -743,7 +743,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="8943805475239098364">Hľadať pomocou novej stránky <ph name="NEW_GOOGLE_HOST"/> namiesto súčasnej stránky <ph name="CURRENT_GOOGLE_HOST"/>?</translation>
 <translation id="3813510441224209252">Čaká sa na formátovanie</translation>
 <translation id="8912793549644936705">Roztiahnuť</translation>
-<translation id="8026684114486203427">Ak chcete používať službu Chrome Web Store, musíte sa prihlásiť pomocou účtu Google.</translation>
+<translation id="8026684114486203427">Ak chcete používať službu Chrome Web Store, musíte sa prihlásiť pomocou účtu Bitpop.</translation>
 <translation id="1486096554574027028">Vyhľadávanie hesiel</translation>
 <translation id="4631887759990505102">Interpret</translation>
 <translation id="1836938920852968258">Zakázať ponuku „Ďalšie zariadenia“ na stránke Nová karta.</translation>
@@ -759,12 +759,12 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="89217462949994770">Príliš mnohokrát ste zadali nesprávny kód PIN. Ak chcete získať nový 8-ciferný kľuč na odomknutie kódu PIN, kontaktujte <ph name="CARRIER_ID"/>.</translation>
 <translation id="5920618722884262402">Blokovať urážlivé slová</translation>
 <translation id="242006861730551700">Zakazuje policu prevzatých súborov. Používateľské rozhranie nových prevzatých súborov sa zobrazí tak, ako je implementované.</translation>
-<translation id="7782102568078991263">Žiadne ďalšie návrhy od spoločnosti Google</translation>
+<translation id="7782102568078991263">Žiadne ďalšie návrhy od spoločnosti Bitpop</translation>
 <translation id="8038111231936746805">(predvolená)</translation>
 <translation id="5120247199412907247">Rozšírená konfigurácia</translation>
 <translation id="567881659373499783">Verzia <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">Pravidlá ochrany osobných údajov služby Bezpečné prehliadanie</translation>
-<translation id="5105859138906591953">Ak chcete do prehliadača Chrome importovať záložky z Panela s nástrojmi, musíte byť prihlásení do svojho účtu Google. Prihláste sa a skúste import znova.</translation>
+<translation id="5105859138906591953">Ak chcete do prehliadača Chrome importovať záložky z Panela s nástrojmi, musíte byť prihlásení do svojho účtu Bitpop. Prihláste sa a skúste import znova.</translation>
 <translation id="8899851313684471736">Otvoriť odkaz v novom &amp;okne</translation>
 <translation id="4110342520124362335">Boli zablokované súbory cookie zo stránok <ph name="DOMAIN"/>.</translation>
 <translation id="3303818374450886607">Kópie</translation>
@@ -813,7 +813,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="1871208020102129563">Proxy je nastavené na použitie pevne daných serverov proxy, nie skriptov PAC adresy URL.</translation>
 <translation id="1634788685286903402">Dôverovať tomuto certifikátu na identifikáciu e-mailových používateľov.</translation>
 <translation id="3154015489111064513">Použiť protokol DHCP</translation>
-<translation id="8642489171979176277">Importované z Panela s nástrojmi Google</translation>
+<translation id="8642489171979176277">Importované z Panela s nástrojmi Bitpop</translation>
 <translation id="4142744419835627535">Instant Autocomplete Immediately</translation>
 <translation id="4684427112815847243">Synchronizovať všetko</translation>
 <translation id="1125520545229165057">Dvorak (Hsu)</translation>
@@ -824,7 +824,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="2441392884867482684">Táto stránka je teraz zobrazená na celú obrazovku a chce zakázať kurzor myši.</translation>
 <translation id="1422780722984745882">Bolo prijatých viacero hlavičiek typu Poloha. Je to zakázané z dôvodu
         ochrany proti útokom rozdeľujúcim odpoveď HTTP.</translation>
-<translation id="7787129790495067395">Momentálne používate prístupovú frázu. Ak ste svoju prístupovú frázu zabudli, môžete pomocou Informačného panela Google obnoviť synchronizáciu a odstrániť tak svoje údaje zo serverov Google.</translation>
+<translation id="7787129790495067395">Momentálne používate prístupovú frázu. Ak ste svoju prístupovú frázu zabudli, môžete pomocou Informačného panela Bitpop obnoviť synchronizáciu a odstrániť tak svoje údaje zo serverov Google.</translation>
 <translation id="3380365263193509176">Neznáma chyba</translation>
 <translation id="1273135602584709125">Zrušiť registráciu podniku</translation>
 <translation id="2686759344028411998">Nenašli sa žiadne načítané moduly.</translation>
@@ -892,7 +892,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="6204994989617056362">Pri zabezpečenom „podaní rúk“ chýbalo rozšírenie opätovného vyjednávania SSL. Pri niektorých webových stránkach, ktoré podporujú takéto rozšírenie, vyžaduje prehliadač Chrome bezpečnejšie „podanie rúk“, aby tak zabránil skupine známych útokov. Vynechanie tohto rozšírenia naznačuje, že do vášho pripojenia niekto počas prenosu zasiahol a bolo zmanipulované.</translation>
 <translation id="1238150413700645698">Chránený obsah</translation>
 <translation id="6679492495854441399">Hops! Pri registrácii tohto zariadenia sa vyskytla chyba sieťovej komunikácie. Skontrolujte svoje internetové pripojenie a skúste to znova.</translation>
-<translation id="5270547718570958938">Kalendár Google</translation>
+<translation id="5270547718570958938">Kalendár Bitpop</translation>
 <translation id="5823933238730612365">PPAPI (neuložené v karanténe)</translation>
 <translation id="2879755071890315043">Počkajte, kým nastavíme mobilnú sieť.</translation>
 <translation id="5301751748813680278">Vstupujete ako hosť.</translation>
@@ -947,7 +947,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="3909791450649380159">&amp;Vystrihnúť</translation>
 <translation id="2955913368246107853">Zatvoriť panel pre vyhľadávanie</translation>
 <translation id="8864170386249720785">Nastavenia protokolu SSL v mobilnom zariadení:</translation>
-<translation id="3914942725612686145">Ste prihlásený/-á do prehliadača Chrome. Otvorené karty, záložky a údaje všeobecného poľa sa synchronizujú s vaším účtom Google.</translation>
+<translation id="3914942725612686145">Ste prihlásený/-á do prehliadača Chrome. Otvorené karty, záložky a údaje všeobecného poľa sa synchronizujú s vaším účtom Bitpop.</translation>
 <translation id="5642508497713047">Podpisovateľ CRL</translation>
 <translation id="7612302739128412469">Toto rozšírenie aktivujete kliknutím na túto ikonu.</translation>
 <translation id="813082847718468539">Zobraziť informácie o stránkach</translation>
@@ -995,7 +995,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="1637259088766071440">Webové stránky na adrese <ph name="HOST_NAME"/> obsahujú prvky z webových stránok, ktoré zrejme obsahujú škodlivý softvér. Takýto softvér môže poškodiť vaše mobilné zariadenie alebo vykonávať rôzne operácie bez vášho vedomia. Mobilné zariadenie sa môže infikovať už pri návšteve webových stránok, ktoré tento škodlivý softvér obsahujú. Dané webové stránky môžu obsahovať aj obsah z tzv. „phishingových“ stránok, ktoré neoprávnene získavajú údaje. „Phishingové“ webové stránky predstierajú, že reprezentujú dôveryhodné inštitúcie (napr. banky), a navádzajú používateľov, aby zadali svoje osobné alebo finančné údaje.</translation>
 <translation id="855081842937141170">Pripnúť kartu</translation>
 <translation id="6263541650532042179">obnoviť synchronizáciu</translation>
-<translation id="6513247462497316522">Ak nebudete mať pripojenie k inej sieti, prehliadač Google Chrome použije mobilné dáta.</translation>
+<translation id="6513247462497316522">Ak nebudete mať pripojenie k inej sieti, prehliadač Bitpop Chrome použije mobilné dáta.</translation>
 <translation id="6055392876709372977">Štandard PKCS #1 SHA-256 so šifrovaním RSA</translation>
 <translation id="7903984238293908205">Katakana</translation>
 <translation id="268053382412112343">Hi&amp;stória</translation>
@@ -1135,8 +1135,8 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="7632380866023782514">Vpravo hore</translation>
 <translation id="4693789964669838452">snímky/s</translation>
 <translation id="4925520021222027859">Zadajte svoje heslo pre konkrétnu aplikáciu:</translation>
-<translation id="3494768541638400973">Japonská metóda vstupu Google (pre japonskú klávesnicu)</translation>
-<translation id="4679639996443646335">Systém Google zistil, že ak budete pokračovať, môže byť do vášho mobilného zariadenia nainštalovaný škodlivý softvér. Ak ste tieto stránky navštívili v minulosti alebo im dôverujete, je možné, že boli nedávno cieľom hackerského útoku. Nemali by ste pokračovať. Skúste to znova napríklad zajtra alebo prejdite na iné stránky.</translation>
+<translation id="3494768541638400973">Japonská metóda vstupu Bitpop (pre japonskú klávesnicu)</translation>
+<translation id="4679639996443646335">Systém Bitpop zistil, že ak budete pokračovať, môže byť do vášho mobilného zariadenia nainštalovaný škodlivý softvér. Ak ste tieto stránky navštívili v minulosti alebo im dôverujete, je možné, že boli nedávno cieľom hackerského útoku. Nemali by ste pokračovať. Skúste to znova napríklad zajtra alebo prejdite na iné stránky.</translation>
 <translation id="7223775956298141902">Hm... Nemáte žiadne rozšírenia :-(</translation>
 <translation id="3118046075435288765">Server neočakávane ukončil spojenie.</translation>
 <translation id="1725068750138367834">&amp;Správca súborov</translation>
@@ -1162,7 +1162,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="3706919628594312718">Nastavenia myši</translation>
 <translation id="8326478304147373412">Štandard PKCS #7, certifikačná reťaz</translation>
 <translation id="3242765319725186192">Predzdieľaný kľúč:</translation>
-<translation id="8089798106823170468">Zdieľajte svoje tlačiarne a ovládajte prístup k nim z akéhokoľvek účtu Google.</translation>
+<translation id="8089798106823170468">Zdieľajte svoje tlačiarne a ovládajte prístup k nim z akéhokoľvek účtu Bitpop.</translation>
 <translation id="5426597273899159431">Rozšírené nastavenie...</translation>
 <translation id="1105608846356399385">Navštíviť webové stránky</translation>
 <translation id="7218608093942361839"><ph name="PRODUCT_NAME"/> <ph name="PRODUCT_VERSION"/> (Platforma <ph name="PLATFORM_VERSION"/>)</translation>
@@ -1228,7 +1228,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="81686154743329117">ZRM</translation>
 <translation id="2150139952286079145">Hľadať ciele</translation>
 <translation id="4713309396072794887">Nainštalovať tieto rozšírenia?</translation>
-<translation id="5637940320504994319">Nedostatok miesta v službe Disk Google</translation>
+<translation id="5637940320504994319">Nedostatok miesta v službe Disk Bitpop</translation>
 <translation id="6458467102616083041">Ignorované, pretože predvolený vyhľadávací nástroj je podľa pravidla zakázaný.</translation>
 <translation id="2266011376676382776">Stránka/-y nereaguje</translation>
 <translation id="3100609564180505575">Moduly (<ph name="TOTAL_COUNT"/>) – Známe konflikty: <ph name="BAD_COUNT"/>, podozrivé: <ph name="SUSPICIOUS_COUNT"/></translation>
@@ -1290,7 +1290,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="7092106376816104">Výnimky kontextových okien</translation>
 <translation id="4830475881783902092">ID klienta:</translation>
 <translation id="4600958291864306415">prebieha generovanie...</translation>
-<translation id="8594787581355215556">Prihlásený/-á ako používateľ <ph name="USER_EMAIL_ADDRESS"/>. Synchronizované údaje môžete spravovať pomocou služby <ph name="BEGIN_LINK"/>Panel Google<ph name="END_LINK"/>.</translation>
+<translation id="8594787581355215556">Prihlásený/-á ako používateľ <ph name="USER_EMAIL_ADDRESS"/>. Synchronizované údaje môžete spravovať pomocou služby <ph name="BEGIN_LINK"/>Panel Bitpop<ph name="END_LINK"/>.</translation>
 <translation id="4338600611020922010">Pridať na plochu</translation>
 <translation id="263325223718984101">Inštaláciu prehliadača <ph name="PRODUCT_NAME"/> sa nepodarilo dokončiť, ale bude sa naďalej spúšťať z jeho obrazu disku.</translation>
 <translation id="6186893483313227582">Ikona <ph name="VALUE"/></translation>
@@ -1307,7 +1307,7 @@ ID experimentu: „<ph name="EXPERIMENT_ID"/>“</translation>
 <translation id="4250680216510889253">Nie</translation>
 <translation id="5109044022078737958">Mia</translation>
 <translation id="6291953229176937411">&amp;Zobraziť v aplikácii Finder</translation>
-<translation id="8598687241883907630">Odpojiť účet Google...</translation>
+<translation id="8598687241883907630">Odpojiť účet Bitpop...</translation>
 <translation id="6410894982725961573">Sprístupniť v režime offline</translation>
 <translation id="2556718757702023317">Ak chcete súbor <ph name="FILE_NAME"/> uložiť offline, musíte uvoľniť ďalších <ph name="TOTAL_FILE_SIZE"/> miesta:<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>zrušte pripnutie súborov, ku ktorým už nepotrebujete pristupovať v režime offline<ph name="MARKUP_3"/>
@@ -1397,7 +1397,7 @@ Chcete spustiť aplet <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="2629089419211541119">Pred <ph name="NUMBER_ONE"/> hod</translation>
 <translation id="1691063574428301566">Váš počítač sa po dokončení aktualizácie reštartuje.</translation>
 <translation id="4697551882387947560">Pri ukončení relácie prehliadania</translation>
-<translation id="5900302528761731119">Fotografia profilu Google</translation>
+<translation id="5900302528761731119">Fotografia profilu Bitpop</translation>
 <translation id="131364520783682672">Caps Lock</translation>
 <translation id="2066999550761485762"><ph name="BEGIN_BOLD"/>Ste v režime inkognito.<ph name="END_BOLD"/>
           <ph name="LINE_BREAK"/>
@@ -1421,7 +1421,7 @@ Chcete spustiť aplet <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="1478897831827830200">Sledovanie</translation>
 <translation id="5714678912774000384">Aktivovať poslednú kartu</translation>
 <translation id="8466234950814670489">Archív vo formáte Tar</translation>
-<translation id="5902572236435740554">Najprv zadajte svoje heslo účtu Google, <ph name="LINE_BREAK"/> nie heslo pre konkrétnu aplikáciu.</translation>
+<translation id="5902572236435740554">Najprv zadajte svoje heslo účtu Bitpop, <ph name="LINE_BREAK"/> nie heslo pre konkrétnu aplikáciu.</translation>
 <translation id="8813811964357448561">list papiera</translation>
 <translation id="2125314715136825419">Pokračovať bez aktualizácie programu Adobe Reader (neodporúčané)</translation>
 <translation id="5034510593013625357">Vzor názvu hostiteľa</translation>
@@ -1442,7 +1442,7 @@ Chcete spustiť aplet <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="8337399713761067085">Momentálne ste v režime offline.</translation>
 <translation id="5199729219167945352">Experimenty</translation>
 <translation id="6499143127267478107">Určenie hostiteľa v skripte servera proxy...</translation>
-<translation id="8069615408251337349">Google Cloud Print</translation>
+<translation id="8069615408251337349">Bitpop Cloud Print</translation>
 <translation id="5055518462594137986">Pamätať si moju voľbu pre všetky odkazy tohto typu.</translation>
 <translation id="246059062092993255">Doplnky boli na tejto stránke zablokované.</translation>
 <translation id="2870560284913253234">Webová stránka</translation>
@@ -1487,7 +1487,7 @@ Chcete spustiť aplet <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="3273951168350045122">Klávesnica (<ph name="ADDRESS"/>)</translation>
 <translation id="8221729492052686226">Ak ste túto žiadosť neinicializovali, môže predstavovať pokus o útok na váš systém. Pokiaľ ste výslovne nepodnikli akciu za účelom inicializácie tejto žiadosti, mali by ste stlačiť tlačidlo Neurobiť nič.</translation>
 <translation id="894360074127026135">Netscape – medzinárodný prestup na vyššiu edíciu</translation>
-<translation id="8420060421540670057">Zobraziť súbory služby Dokumenty Google</translation>
+<translation id="8420060421540670057">Zobraziť súbory služby Dokumenty Bitpop</translation>
 <translation id="1201402288615127009">Ďalej</translation>
 <translation id="1335588927966684346">Pomocný program:</translation>
 <translation id="2710582058364740604">Prepíše rozlíšenie obrazovky a vynúti použitie režimu vysokej hodnoty DPI a zodpovedajúcich prostriedkov.</translation>
@@ -1576,7 +1576,7 @@ Chcete spustiť aplet <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="7434823369735508263">americká klávesnica s rozložením klávesov dvorak</translation>
 <translation id="1572103024875503863">Počet dní: <ph name="NUMBER_MANY"/></translation>
 <translation id="5308845175611284862">Synchronizácia prehliadača <ph name="PRODUCT_NAME"/> vám uľahčuje zdieľanie údajov (ako sú napríklad záložky alebo nastavenia) medzi vašimi počítačmi.
-          Prehliadač <ph name="PRODUCT_NAME"/> vaše údaje synchronizuje tak, že ich po prihlásení do účtu Google uloží online v systéme Google.</translation>
+          Prehliadač <ph name="PRODUCT_NAME"/> vaše údaje synchronizuje tak, že ich po prihlásení do účtu Bitpop uloží online v systéme Google.</translation>
 <translation id="1707463636381878959">Zdieľať túto sieť s ďalšími používateľmi</translation>
 <translation id="2084978867795361905">MS-IME</translation>
 <translation id="7227669995306390694"><ph name="NETWORK"/> – žiadny dátový program</translation>
@@ -1584,7 +1584,7 @@ Chcete spustiť aplet <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="7163503212501929773">Počet zvyšných hodín: <ph name="NUMBER_MANY"/></translation>
 <translation id="7705276765467986571">Nepodarilo sa načítať model záložiek.</translation>
 <translation id="750413812607578381">Prehliadač <ph name="PRODUCT_NAME"/> by ste mali teraz reštartovať.</translation>
-<translation id="8034305971714560781">Ak zrušíte prepojenie svojho účtu Google s prehliadačom <ph name="PRODUCT_NAME"/>, zmeny vašich údajov v tomto zariadení sa už nebudú synchronizovať s vaším účtom Google. Údaje, ktoré už sú uložené v účte Google v  ostanú zachované, dokým ich neodstránite pomocou služby <ph name="BEGIN_LINK"/>Panel Google<ph name="END_LINK"/>.</translation>
+<translation id="8034305971714560781">Ak zrušíte prepojenie svojho účtu Bitpop s prehliadačom <ph name="PRODUCT_NAME"/>, zmeny vašich údajov v tomto zariadení sa už nebudú synchronizovať s vaším účtom Google. Údaje, ktoré už sú uložené v účte Google v  ostanú zachované, dokým ich neodstránite pomocou služby <ph name="BEGIN_LINK"/>Panel Google<ph name="END_LINK"/>.</translation>
 <translation id="2638286699381354126">Aktualizovať...</translation>
 <translation id="1196338895211115272">Exportovanie súkromného kľúča zlyhalo.</translation>
 <translation id="1459967076783105826">Vyhľadávacie nástroje pridané rozšíreniami</translation>
@@ -1622,10 +1622,10 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="1789424019568293108">Povolí experimentálne rozhranie UI, ktoré zobrazuje denník o aktivite rozšírenia.</translation>
 <translation id="2090876986345970080">Nastavenie zabezpečenia systému</translation>
 <translation id="3728067901555601989">Jednorazové heslo:</translation>
-<translation id="3475447146579922140">Tabuľka Google</translation>
+<translation id="3475447146579922140">Tabuľka Bitpop</translation>
 <translation id="6856526171412069413">Povoliť zmenu veľkosti roztiahnutím.</translation>
 <translation id="9219103736887031265">Obrázky</translation>
-<translation id="7415834062450491574">Poslať spoločnosti Google spätnú väzbu</translation>
+<translation id="7415834062450491574">Poslať spoločnosti Bitpop spätnú väzbu</translation>
 <translation id="4480995875255084924">Povolí v paneli Ash nástroj na stromové zobrazenie Oak. Povolí inšpekciu okna a vrstvy a zobrazenie hierarchií a ich vlastností. Pristúpite k nemu stlačením klávesov Ctrl+Shift+F1.</translation>
 <translation id="6975147921678461939">Nabíjanie batérie: <ph name="PRECENTAGE"/> %</translation>
 <translation id="5453632173748266363">Cyrilika</translation>
@@ -1636,7 +1636,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="5329858601952122676">&amp;Odstrániť</translation>
 <translation id="6100736666660498114">Ponuka Štart</translation>
 <translation id="2706131822305474920">Prepínajte medzi otvorenými kartami</translation>
-<translation id="4402766404187539019">Google.com Mail</translation>
+<translation id="4402766404187539019">Bitpop.com Mail</translation>
 <translation id="6275297011664564181">Momentálne nie sú aktívne žiadne pravidlá.</translation>
 <translation id="3994878504415702912">&amp;Lupa</translation>
 <translation id="9009369504041480176">Odovzdávanie (<ph name="PROGRESS_PERCENT"/>%)...</translation>
@@ -1674,7 +1674,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="6059764114876442286">Obnovenie tlačiarne</translation>
 <translation id="6406506848690869874">Synchronizácia</translation>
 <translation id="5288678174502918605">Znova o&amp;tvoriť zatvorenú kartu</translation>
-<translation id="7238461040709361198">Od vášho posledného prihlásenia z tohto počítača došlo k zmene hesla vášho účtu Google.</translation>
+<translation id="7238461040709361198">Od vášho posledného prihlásenia z tohto počítača došlo k zmene hesla vášho účtu Bitpop.</translation>
 <translation id="1956050014111002555">Súbor obsahoval viacero certifikátov a žiadny z nich nebol importovaný:</translation>
 <translation id="302620147503052030">Tlačidlo Zobraziť</translation>
 <translation id="1895658205118569222">Vypnúť</translation>
@@ -1684,7 +1684,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="6624687053722465643">Sladkosť</translation>
 <translation id="8420296388012619424">Zariadenie USB nie je naformátované.</translation>
 <translation id="3021256392995617989">Opýtať sa, keď sa webové stránky pokúšajú sledovať moju fyzickú polohu (odporúčané)</translation>
-<translation id="8083739373364455075">Získajte zadarmo 100 GB v službe Disk Google</translation>
+<translation id="8083739373364455075">Získajte zadarmo 100 GB v službe Disk Bitpop</translation>
 <translation id="271083069174183365">Nastavenia japonského vstupu</translation>
 <translation id="1257595095755619623">Ak používate server proxy, skontrolujte jeho nastavenia alebo
         kontaktujte správcu siete a uistite sa,
@@ -1890,7 +1890,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="3967885517199024316">Prihláste sa a získajte záložky, históriu a nastavenia do všetkých svojich zariadení.</translation>
 <translation id="5463856536939868464">Ponuka obsahujúca skryté záložky</translation>
 <translation id="8286227656784970313">Použiť systémový slovník</translation>
-<translation id="5431084084184068621">Vybrali ste si šifrovanie údajov pomocou hesla Google. Túto voľbu môžete neskôr kedykoľvek zmeniť pomocou nastavení synchronizácie.</translation>
+<translation id="5431084084184068621">Vybrali ste si šifrovanie údajov pomocou hesla Bitpop. Túto voľbu môžete neskôr kedykoľvek zmeniť pomocou nastavení synchronizácie.</translation>
 <translation id="1493263392339817010">Prispôsobiť písma...</translation>
 <translation id="5352033265844765294">Časová pečiatka</translation>
 <translation id="1493892686965953381">Čakanie na <ph name="LOAD_STATE_PARAMETER"/>...</translation>
@@ -1900,7 +1900,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="748138892655239008">Základné obmedzenia certifikátu</translation>
 <translation id="457386861538956877">Viac...</translation>
 <translation id="9210991923655648139">Prístupné pre skript:</translation>
-<translation id="1950295184970569138">* Profilová fotografia Google (prebieha načítavanie)</translation>
+<translation id="1950295184970569138">* Profilová fotografia Bitpop (prebieha načítavanie)</translation>
 <translation id="8063491445163840780">Aktivovať kartu 4</translation>
 <translation id="5473544328731861874">Odstrániť prvok intent</translation>
 <translation id="2322193970951063277">Hlavičky a päty</translation>
@@ -1950,7 +1950,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="5010043101506446253">Certifikačná autorita</translation>
 <translation id="2050524657923939561">Webové zámery</translation>
 <translation id="8487693399751278191">Importovať záložky...</translation>
-<translation id="7615602087246926389">Už máte údaje, ktoré sú šifrované pomocou inej verzie vášho hesla účtu Google. Zadajte ho nižšie.</translation>
+<translation id="7615602087246926389">Už máte údaje, ktoré sú šifrované pomocou inej verzie vášho hesla účtu Bitpop. Zadajte ho nižšie.</translation>
 <translation id="7484580869648358686">Upozornenie: Niečo tu nesedí!</translation>
 <translation id="4474155171896946103">Všetky karty uložiť ako záložky...</translation>
 <translation id="5895187275912066135">Vydané dňa</translation>
@@ -2039,14 +2039,14 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="2065985942032347596">Vyžaduje sa autentifikácia</translation>
 <translation id="2563185590376525700">Žaba</translation>
 <translation id="2553340429761841190">Systém <ph name="PRODUCT_NAME"/> sa nemohol pripojiť k sieti <ph name="NETWORK_ID"/>. Vyberte inú sieť alebo to skúste znova.</translation>
-<translation id="2086712242472027775">Váš účet v službe <ph name="PRODUCT_NAME"/> nefunguje. Kontaktujte správcu domény alebo sa prihláste pomocou bežného účtu Google.</translation>
-<translation id="1373074393717692190">Prihláste sa do prehliadača <ph name="PRODUCT_NAME"/> pomocou vášho účtu Google a uložte si prispôsobené funkcie prehliadača na webe, aby ste k nim mali prístup z prehliadača <ph name="PRODUCT_NAME"/> v ktoromkoľvek mobilnom zariadení. Automaticky tiež dôjde k prihláseniu do vašich obľúbených služieb Google.</translation>
+<translation id="2086712242472027775">Váš účet v službe <ph name="PRODUCT_NAME"/> nefunguje. Kontaktujte správcu domény alebo sa prihláste pomocou bežného účtu Bitpop.</translation>
+<translation id="1373074393717692190">Prihláste sa do prehliadača <ph name="PRODUCT_NAME"/> pomocou vášho účtu Bitpop a uložte si prispôsobené funkcie prehliadača na webe, aby ste k nim mali prístup z prehliadača <ph name="PRODUCT_NAME"/> v ktoromkoľvek mobilnom zariadení. Automaticky tiež dôjde k prihláseniu do vašich obľúbených služieb Google.</translation>
 <translation id="7222232353993864120">E-mailová adresa</translation>
 <translation id="2128531968068887769">Native Client</translation>
 <translation id="2749720227918911728">Ikona sa zobrazí, keď bude možné rozšírenie použiť na aktuálnej stránke. Rozšírenie aktivujete kliknutím na ikonu alebo klávesovú skratku <ph name="EXTENSION_SHORTCUT"/>.</translation>
 <translation id="7175353351958621980">Načítané z:</translation>
 <translation id="7186367841673660872">Táto stránka bola preložená z jazyka<ph name="ORIGINAL_LANGUAGE"/>do jazyka<ph name="LANGUAGE_LANGUAGE"/></translation>
-<translation id="8448695406146523553">Vaše šifrované údaje si môže prečítať len osoba, ktorá pozná vašu prístupovú frázu. Prístupová fráza sa spoločnosti Google neodosiela ani ju spoločnosť Google neuchováva. Ak prístupovú frázu zabudnete, budete musieť</translation>
+<translation id="8448695406146523553">Vaše šifrované údaje si môže prečítať len osoba, ktorá pozná vašu prístupovú frázu. Prístupová fráza sa spoločnosti Bitpop neodosiela ani ju spoločnosť Google neuchováva. Ak prístupovú frázu zabudnete, budete musieť</translation>
 <translation id="8248050856337841185">&amp;Vložiť</translation>
 <translation id="6052976518993719690">Certifikačná autorita SSL</translation>
 <translation id="2925935892230812200">Používa jednotku GPU na akceleráciu vykresľovania filtrov SVG.</translation>
@@ -2160,7 +2160,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="6374830905869502056">Zakódované používateľom</translation>
 <translation id="2230062665678605299">Priečinok <ph name="FOLDER_NAME"/> sa nepodarilo vytvoriť. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="2526590354069164005">Pracovná plocha</translation>
-<translation id="2059205526855036527">Ak chcete prvýkrát použiť službu Disk Google, musíte byť online.</translation>
+<translation id="2059205526855036527">Ak chcete prvýkrát použiť službu Disk Bitpop, musíte byť online.</translation>
 <translation id="4165738236481494247">Spustiť tento doplnok</translation>
 <translation id="7983301409776629893">Vždy preložiť jazyk <ph name="ORIGINAL_LANGUAGE"/> do jazyka <ph name="TARGET_LANGUAGE"/></translation>
 <translation id="4890284164788142455">Thajčina</translation>
@@ -2190,7 +2190,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="3479552764303398839">Teraz nie</translation>
 <translation id="3714633008798122362">webový kalendár</translation>
 <translation id="6445051938772793705">Krajina</translation>
-<translation id="3430309973417890444">Ak nemáte účet Google, vytvoríte si ho kliknutím na položku <ph name="LINK_START"/>Vytvoriť účet Google<ph name="LINK_END"/>.</translation>
+<translation id="3430309973417890444">Ak nemáte účet Bitpop, vytvoríte si ho kliknutím na položku <ph name="LINK_START"/>Vytvoriť účet Google<ph name="LINK_END"/>.</translation>
 <translation id="3251759466064201842">&lt;Nie je súčasťou certifikátu&gt;</translation>
 <translation id="4229495110203539533">Pred <ph name="NUMBER_ONE"/> s</translation>
 <translation id="3399068503715460757">Použiť statickú adresu IP</translation>
@@ -2216,7 +2216,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="1800987794509850828">Doplnok Broker: <ph name="PLUGIN_NAME"/></translation>
 <translation id="8871696467337989339">Používate nepodporovaný príznak príkazového riadku: <ph name="BAD_FLAG"/>. Prejaví sa to na nižšej stabilite a horšom zabezpečení.</translation>
 <translation id="4767443964295394154">Umiestnenie preberaných súborov</translation>
-<translation id="5031870354684148875">O službe Google Translate</translation>
+<translation id="5031870354684148875">O službe Bitpop Translate</translation>
 <translation id="4266565660628359579">Na displejoch s vysokým rozlíšením povolí v zobrazovači PDF v prehliadači Chrome režim vysokej hodnoty DPI.</translation>
 <translation id="5702389759209837579">Pristupujte k otvoreným kartám na všetkých svojich zariadeniach.</translation>
 <translation id="3828747136564826513">Prístup ku všetkým známym mediálnym súborom v zariadení</translation>
@@ -2272,7 +2272,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="1752977958630076881">Uchovávať miestne údaje len kým neukončím reláciu prehliadača</translation>
 <translation id="7853202427316060426">Aktivita</translation>
 <translation id="8550022383519221471">Služba synchronizácie nie je pre vašu doménu k dispozícii.</translation>
-<translation id="1436238710092600782">Vytvoriť účet Google</translation>
+<translation id="1436238710092600782">Vytvoriť účet Bitpop</translation>
 <translation id="3355823806454867987">Zmeniť nastavenia proxy...</translation>
 <translation id="4780374166989101364">Povolí experimentálne rozhrania API rozšírení. Upozorňujeme, že do galérie rozšírení nie je povolené odovzdávať rozšírenia, ktoré používajú experimentálne rozhrania API.</translation>
 <translation id="7117247127439884114">Znova prihlásiť...</translation>
@@ -2285,7 +2285,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="3007574127824276972">Do aplikácie ste <ph name="PRODUCT_NAME"/> prihlásený/-á ako používateľ <ph name="USER_NAME"/></translation>
 <translation id="6840155730904976091">Aplikácia <ph name="PRODUCT_NAME"/> používa na pripojenie k sieti systémové nastavenia servera proxy v mobilnom zariadení.</translation>
 <translation id="2541913031883863396">môžete napriek tomu pokračovať</translation>
-<translation id="6884284539803678768">Povoliť rámy dialógových okien v štýle Google.</translation>
+<translation id="6884284539803678768">Povoliť rámy dialógových okien v štýle Bitpop.</translation>
 <translation id="2367499218636570208">Meno</translation>
 <translation id="4436689501885286563">Po odhlásení vymazať súbory cookie a ďalšie údaje webových stránok</translation>
 <translation id="1520137456044207237">Ktorá služba sa má používať na zobrazenie?</translation>
@@ -2352,7 +2352,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="8053390638574070785">Obnoviť túto stránku</translation>
 <translation id="5507756662695126555">Zrušenie zamietnutia</translation>
 <translation id="3678156199662914018">Rozšírenie: <ph name="EXTENSION_NAME"/></translation>
-<translation id="2620090360073999360">Služba Disk Google nie je momentálne k dispozícii.</translation>
+<translation id="2620090360073999360">Služba Disk Bitpop nie je momentálne k dispozícii.</translation>
 <translation id="3531250013160506608">Textové pole hesla</translation>
 <translation id="506228266759207354">Zakáže ponuku na stránke Nová karta, ktorá umožňuje pristupovať k ostatným zariadeniam.</translation>
 <translation id="1781502536226964113">Otvoriť stránku Nová karta</translation>
@@ -2369,7 +2369,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="8401363965527883709">Nezačiarknuté začiarkavacie políčko</translation>
 <translation id="7771452384635174008">Rozloženie</translation>
 <translation id="6188939051578398125">Zadajte mená alebo adresy.</translation>
-<translation id="2851981350712094353">Konektor služby Google Cloud Print</translation>
+<translation id="2851981350712094353">Konektor služby Bitpop Cloud Print</translation>
 <translation id="8443621894987748190">Vyberte obrázok pre svoj účet</translation>
 <translation id="10122177803156699">Zobraziť</translation>
 <translation id="935099558325596666">&quot;https://support.google.com/chrome/?p=win8_directories&quot;</translation>
@@ -2501,7 +2501,7 @@ Verejný exponent (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bitov):
 <translation id="1358735829858566124">Súbor alebo adresár nie je možné použiť.</translation>
 <translation id="3144135466825225871">Súbor crx sa nepodarilo nahradiť. Skontrolujte, či je súbor používaný.</translation>
 <translation id="2744221223678373668">Zdieľané</translation>
-<translation id="9064142312330104323">Profilová fotografia Google (prebieha načítavanie)</translation>
+<translation id="9064142312330104323">Profilová fotografia Bitpop (prebieha načítavanie)</translation>
 <translation id="4708849949179781599">Ukončiť aplikáciu <ph name="PRODUCT_NAME"/></translation>
 <translation id="2505402373176859469"><ph name="RECEIVED_AMOUNT"/> z <ph name="TOTAL_SIZE"/></translation>
 <translation id="6937559152970966646">Ak chcete prejsť na úvodnú obrazovku, zadajte kód PIN</translation>
@@ -2599,12 +2599,12 @@ Keďže sa výsledky vyhľadávania vyžadujú už počas zadávania dopytu, vá
 <translation id="305803244554250778">Vytvoriť odkazy na aplikácie na nasledujúcich miestach:</translation>
 <translation id="574392208103952083">Stredné</translation>
 <translation id="3661117620327489194">Zmeniť na obnovenie otvorených stránok</translation>
-<translation id="3937609171782005782">Pomôžte nám zlepšiť zisťovanie škodlivého softvéru tým, že spoločnosti Google pošlete dodatočné údaje o stránkach, na ktorých sa zobrazí toto upozornenie. S týmito údajmi budeme zaobchádzať v súlade so <ph name="PRIVACY_PAGE_LINK"/>.</translation>
+<translation id="3937609171782005782">Pomôžte nám zlepšiť zisťovanie škodlivého softvéru tým, že spoločnosti Bitpop pošlete dodatočné údaje o stránkach, na ktorých sa zobrazí toto upozornenie. S týmito údajmi budeme zaobchádzať v súlade so <ph name="PRIVACY_PAGE_LINK"/>.</translation>
 <translation id="8877448029301136595">[rodičovský adresár]</translation>
 <translation id="3816844797124379499">Nepodarilo sa pridať aplikáciu, pretože je v konflikte s aplikáciou „<ph name="APP_NAME"/>“.</translation>
 <translation id="7301360164412453905">Klávesy výberu na klávesnici Hsu</translation>
 <translation id="8631271110654520730">Kopíruje sa obraz na obnovenie...</translation>
-<translation id="7779140087128114262">Vaše šifrované údaje si môže prečítať len osoba, ktorá pozná vašu prístupovú frázu. Prístupová fráza sa spoločnosti Google neodosiela ani ju spoločnosť Google neuchováva. Ak prístupovú frázu zabudnete, budete musieť obnoviť synchronizáciu.</translation>
+<translation id="7779140087128114262">Vaše šifrované údaje si môže prečítať len osoba, ktorá pozná vašu prístupovú frázu. Prístupová fráza sa spoločnosti Bitpop neodosiela ani ju spoločnosť Google neuchováva. Ak prístupovú frázu zabudnete, budete musieť obnoviť synchronizáciu.</translation>
 <translation id="13356285923490863">Názov pravidla</translation>
 <translation id="8241040075392580210">Polojasný</translation>
 <translation id="8690155203172212841">Spravovať nastavenia povolení</translation>
@@ -2626,7 +2626,7 @@ Keďže sa výsledky vyhľadávania vyžadujú už počas zadávania dopytu, vá
         adresu <ph name="URL_FOR_MORE_INFO"/>,
         na ktorej nájdete viac informácií vrátane návodu na zakázanie tejto funkcie.</translation>
 <translation id="8218008331535230597">Zrušiť autorizáciu licencií obsahu</translation>
-<translation id="4744728308552504807">Povolí službu na pozadí, pomocou ktorej sa služba Google Cloud Print pripojí k tlačiarňam nainštalovaným v tomto mobilnom zariadení. Keď túto experimentálnu funkciu povolíte, môžete konektor služby Google Cloud Print zapnúť tak, že sa v sekcii Pod kapotou v Nastaveniach prihlásite do svojho účtu Google.</translation>
+<translation id="4744728308552504807">Povolí službu na pozadí, pomocou ktorej sa služba Bitpop Cloud Print pripojí k tlačiarňam nainštalovaným v tomto mobilnom zariadení. Keď túto experimentálnu funkciu povolíte, môžete konektor služby Google Cloud Print zapnúť tak, že sa v sekcii Pod kapotou v Nastaveniach prihlásite do svojho účtu Google.</translation>
 <translation id="6691936601825168937">&amp;Dopredu</translation>
 <translation id="6566142449942033617">Cestu „<ph name="PLUGIN_PATH"/>“ sa pre doplnok nepodarilo načítať.</translation>
 <translation id="7065534935986314333">O systéme</translation>
@@ -2637,7 +2637,7 @@ Keďže sa výsledky vyhľadávania vyžadujú už počas zadávania dopytu, vá
 <translation id="2128691215891724419">Chyba synchronizácie: Aktualizujte prístupovú frázu pre synchronizáciu...</translation>
 <translation id="2148716181193084225">Dnes</translation>
 <translation id="1002064594444093641">&amp;Tlačiť rámec...</translation>
-<translation id="7234674978021619913">Hostiteľa domény <ph name="HOST_NAME"/> sme už informovali, že na stránkach sa našiel škodlivý softvér. Viac informácií o problémoch nájdených na stránkach <ph name="HOST_NAME2"/> nájdete na stránke <ph name="DIAGNOSTIC_PAGE"/> Google.</translation>
+<translation id="7234674978021619913">Hostiteľa domény <ph name="HOST_NAME"/> sme už informovali, že na stránkach sa našiel škodlivý softvér. Viac informácií o problémoch nájdených na stránkach <ph name="HOST_NAME2"/> nájdete na stránke <ph name="DIAGNOSTIC_PAGE"/> Bitpop.</translation>
 <translation id="4608500690299898628">&amp;Nájsť...</translation>
 <translation id="7582582252461552277">Preferovať túto sieť</translation>
 <translation id="3574305903863751447"><ph name="CITY"/>, <ph name="STATE"/> <ph name="COUNTRY"/></translation>
@@ -2739,7 +2739,7 @@ Keďže sa výsledky vyhľadávania vyžadujú už počas zadávania dopytu, vá
 <translation id="6322726279947003371">Spúšťať chránený obsah (môže sa vyžadovať reštart počítača)</translation>
 <translation id="3093473105505681231">Nastavenia jazykov a kontroly pravopisu...</translation>
 <translation id="152482086482215392">Zostáva <ph name="NUMBER_ONE"/> sekunda</translation>
-<translation id="4261901459838235729">Prezentácia Google</translation>
+<translation id="4261901459838235729">Prezentácia Bitpop</translation>
 <translation id="8678698760965522072">Stav online</translation>
 <translation id="529172024324796256">Používateľské meno:</translation>
 <translation id="3308116878371095290">Tejto stránke bolo zabránené nastaviť súbory cookie.</translation>
@@ -2817,7 +2817,7 @@ Keďže sa výsledky vyhľadávania vyžadujú už počas zadávania dopytu, vá
 <translation id="2444609190341826949">Ak nezadáte prístupovú frázu, vaše heslá ani údaje nebudú na tomto počítači synchronizované.</translation>
 <translation id="2984337792991268709">Dnes o <ph name="TODAY_DAYTIME"/></translation>
 <translation id="5227808808023563348">Nájsť predchádzajúci text</translation>
-<translation id="6650142020817594541">Na týchto stránkach je odporúčaný doplnok Google Chrome Frame (už je nainštalovaný).</translation>
+<translation id="6650142020817594541">Na týchto stránkach je odporúčaný doplnok Bitpop Chrome Frame (už je nainštalovaný).</translation>
 <translation id="3862763658360970896">Povoliť rozšírenie Chrome To Mobile.</translation>
 <translation id="902638246363752736">Nastavenia klávesnice</translation>
 <translation id="7925686952655276919">Nepoužívať mobilné dátové prenosy na synchronizáciu</translation>
@@ -2838,7 +2838,7 @@ Do úplného nabitia zostáva: <ph name="HOUR"/>:<ph name="MINUTE"/></translatio
 <translation id="6007237601604674381">Presun zlyhal. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">Vytvorenie dočasného súboru zip počas balenia zlyhalo.</translation>
 <translation id="1881456419707551346">Podrobnosti pripojenia</translation>
-<translation id="1064912851688322329">Odpojenie účtu Google</translation>
+<translation id="1064912851688322329">Odpojenie účtu Bitpop</translation>
 <translation id="1294298200424241932">Upraviť nastavenia dôveryhodnosti:</translation>
 <translation id="1407135791313364759">Otvoriť všetko</translation>
 <translation id="1434928358870966081">Zakázať akcelerované prvky canvas 2D</translation>
@@ -2861,9 +2861,9 @@ Do úplného nabitia zostáva: <ph name="HOUR"/>:<ph name="MINUTE"/></translatio
 <translation id="267285457822962309">Zmení nastavenia špecifické pre vaše zariadenie a periférne zariadenia.</translation>
 <translation id="1154228249304313899">Otvoriť túto stránku:</translation>
 <translation id="6084074203170335305"><ph name="MARKUP_1"/>Pristupujte k súborom odkiaľkoľvek, dokonca aj v režime offline.<ph name="MARKUP_2"/>
-Súbory v službe Disk Google sú aktuálne a môžete k nim pristupovať z akéhokoľvek zariadenia.<ph name="MARKUP_3"/>
+Súbory v službe Disk Bitpop sú aktuálne a môžete k nim pristupovať z akéhokoľvek zariadenia.<ph name="MARKUP_3"/>
 <ph name="MARKUP_4"/>Uchovávajte súbory v bezpečí.<ph name="MARKUP_5"/>
-Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, čo sa stane s vaším zariadením.<ph name="MARKUP_6"/>
+Vaše súbory sú bezpečne uložené v službe Disk Bitpop bez ohľadu na to, čo sa stane s vaším zariadením.<ph name="MARKUP_6"/>
 <ph name="MARKUP_7"/>Zdieľajte, vytvárajte a spolupracujte<ph name="MARKUP_8"/> v rámci súborov s ostatnými a to všetko na jednom mieste.<ph name="MARKUP_9"/></translation>
 <translation id="9074348188580488499">Naozaj chcete odstrániť všetky heslá?</translation>
 <translation id="6635491740861629599">Vybrať podľa domény</translation>
@@ -2997,7 +2997,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="8725066075913043281">Skúsiť znova</translation>
 <translation id="387784661603993584">Import nie je možné vykonať. Vyskytla sa chyba.</translation>
 <translation id="4637968436031842307">Povoliť premenné CSS.</translation>
-<translation id="1887908730460853602">Dialógové okná v štýle Google</translation>
+<translation id="1887908730460853602">Dialógové okná v štýle Bitpop</translation>
 <translation id="8502249598105294518">Prispôsobiť a spravovať prehliadač <ph name="PRODUCT_NAME"/></translation>
 <translation id="3797008485206955964">Zobraziť stránky na pozadí (<ph name="NUM_BACKGROUND_APPS"/>)</translation>
 <translation id="8590375307970699841">Nastaviť automatické aktualizácie</translation>
@@ -3017,8 +3017,8 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="5293659407874396561"><ph name="SUBJECT"/> ( <ph name="ISSUER"/> )</translation>
 <translation id="2115926821277323019">Musíte zadať platnú adresu URL</translation>
 <translation id="3464726836683998962">Zakázať roaming pre mobilné dátové prenosy</translation>
-<translation id="8986494364107987395">Automaticky odosielať štatistiky o používaní a správy o zlyhaní spoločnosti Google</translation>
-<translation id="7070714457904110559">Povolí experimentálne rozšírenia funkcie určovania polohy. Zahŕňa to rozhrania API určovania polohy v operačnom systéme (ak sú k dispozícii) a odosielanie dodatočných údajov o konfigurácii miestnej siete do služieb Google na určovanie polohy s cieľom zvýšiť presnosť určovania polohy.</translation>
+<translation id="8986494364107987395">Automaticky odosielať štatistiky o používaní a správy o zlyhaní spoločnosti Bitpop</translation>
+<translation id="7070714457904110559">Povolí experimentálne rozšírenia funkcie určovania polohy. Zahŕňa to rozhrania API určovania polohy v operačnom systéme (ak sú k dispozícii) a odosielanie dodatočných údajov o konfigurácii miestnej siete do služieb Bitpop na určovanie polohy s cieľom zvýšiť presnosť určovania polohy.</translation>
 <translation id="6701535245008341853">Nepodarilo sa získať profil.</translation>
 <translation id="8303655282093186569">Nastavenia vstupu Pinyin</translation>
 <translation id="992779717417561630">Tlačiť pomocou dialógového okna služby <ph name="CLOUD_PRINT_NAME"/>... <ph name="SHORTCUT_KEY"/></translation>
@@ -3032,7 +3032,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="580571955903695899">Zoradiť podľa názvu</translation>
 <translation id="5230516054153933099">Okno</translation>
 <translation id="921740547845455014">Zapisovanie do súborov, ktoré ste v aplikácii otvorili</translation>
-<translation id="1799497982892676838">Spravujte svoje synchronizované údaje v Paneli Google</translation>
+<translation id="1799497982892676838">Spravujte svoje synchronizované údaje v Paneli Bitpop</translation>
 <translation id="951981865514037445">Stránky <ph name="URL"/> chcú použiť polohu vášho zariadenia.</translation>
 <translation id="7554791636758816595">Nová karta</translation>
 <translation id="3026557130425686673">Prihlásenie bola zrušené, pretože niektoré nastavenia zariadenia boli poškodené.</translation>
@@ -3048,7 +3048,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="1103966635949043187">Prejsť na domovskú stránku lokality:</translation>
 <translation id="4762295713053835808">Osobné položky...</translation>
 <translation id="6374100501221763867">Zakázať hardvérovo akcelerované dekódovanie videa.</translation>
-<translation id="7477347901712410606">Ak ste zabudli svoju prístupovú frázu, zastavte a obnovte synchronizáciu pomocou služby <ph name="BEGIN_LINK"/>Informačný panel Google<ph name="END_LINK"/> .</translation>
+<translation id="7477347901712410606">Ak ste zabudli svoju prístupovú frázu, zastavte a obnovte synchronizáciu pomocou služby <ph name="BEGIN_LINK"/>Informačný panel Bitpop<ph name="END_LINK"/> .</translation>
 <translation id="6139474630617772623">Povolí rozšírenú pracovnú plochu, ktorá vám umožňuje otvoriť prehliadač na sekundárnych obrazovkách.</translation>
 <translation id="2645575947416143543">Ak však pracujete v organizácii, ktorá vytvára svoje vlastné certifikáty, a snažíte sa pomocou daného certifikátu pripojiť k vnútorným webovým stránkam dotyčnej organizácie, možno budete môcť tento problém bezpečne vyriešiť. Koreňový certifikát svojej organizácie môžete importovať ako „koreňový certifikát“ a certifikáty vydané alebo overené vašou organizáciou sa následne stanú dôveryhodnými a pri budúcom pripojení k vnútorným webovým stránkam sa táto chyba už nezobrazí. Ak potrebujete pomoc s pridaním nového koreňového certifikátu do počítača, obráťte sa na pomocný personál svojej organizácie.</translation>
 <translation id="1056898198331236512">Upozornenie</translation>
@@ -3328,7 +3328,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="7063412606254013905">Získajte viac informácií o podvodoch typu phishing.</translation>
 <translation id="7253521419891527137">&amp;Viac informácií</translation>
 <translation id="3170312251071695679"><ph name="PERMISSION_VALUE"/> v predvolenom nastavení</translation>
-<translation id="8698464937041809063">Kresba Google</translation>
+<translation id="8698464937041809063">Kresba Bitpop</translation>
 <translation id="7053053706723613360">Zakázať lepšie obnovenie relácie</translation>
 <translation id="5233930340889611108">WebKit</translation>
 <translation id="8260864402787962391">Myš</translation>
@@ -3357,7 +3357,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="6873213799448839504">Automaticky odoslať reťazec</translation>
 <translation id="7238585580608191973">Odtlačok SHA-256</translation>
 <translation id="2501278716633472235">Prejsť späť</translation>
-<translation id="3588662957555259973">* Profilová fotografia Google</translation>
+<translation id="3588662957555259973">* Profilová fotografia Bitpop</translation>
 <translation id="131461803491198646">Domáca sieť, bez roamingu</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/> – <ph name="FULL_DATE"/></translation>
 <translation id="1285320974508926690">Nikdy neprekladať tieto webové stránky</translation>
@@ -3427,7 +3427,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="461656879692943278">Stránky <ph name="HOST_NAME"/> obsahujú obsah zo stránok <ph name="ELEMENTS_HOST_NAME"/>, ktoré sú známe šírením škodlivého softvéru. Ak túto stránku navštívite, váš počítač môže byť infikovaný vírusom.</translation>
 <translation id="8962198349065195967">Táto sieť je nakonfigurovaná správcom.</translation>
 <translation id="2143778271340628265">Ručná konfigurácia servera proxy</translation>
-<translation id="2441192698565541088">Po odpojení účtu Google z prehliadača <ph name="PRODUCT_NAME"/> sa zmeny vašich údajov v tomto počítači nebudú naďalej synchronizovať s účtom Google. Údaje, ktoré sú už uložené v účte Google, v ňom zostanú, pokým ich neodstránite pomocou <ph name="BEGIN_LINK"/>Informačného panela Google<ph name="END_LINK"/>.</translation>
+<translation id="2441192698565541088">Po odpojení účtu Bitpop z prehliadača <ph name="PRODUCT_NAME"/> sa zmeny vašich údajov v tomto počítači nebudú naďalej synchronizovať s účtom Google. Údaje, ktoré sú už uložené v účte Google, v ňom zostanú, pokým ich neodstránite pomocou <ph name="BEGIN_LINK"/>Informačného panela Google<ph name="END_LINK"/>.</translation>
 <translation id="8888432776533519951">Farba:</translation>
 <translation id="5294529402252479912">Aktualizovať program Adobe Reader</translation>
 <translation id="5263972071113911534"><ph name="NUMBER_MANY"/> days ago</translation>
@@ -3456,7 +3456,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="8885905466771744233">Pre určené rozšírenie už existuje súkromný kľúč. Použite ho znova, alebo ho najprv odstráňte.</translation>
 <translation id="1196944142850240972">Pristupovať k údajom na všetkých webových stránkach</translation>
 <translation id="7369056754288047856">Používateľ nemôže meniť niektoré nastavenia.</translation>
-<translation id="4100843820583867709">Žiadosť o zdieľanie obrazovky v službe Google Talk</translation>
+<translation id="4100843820583867709">Žiadosť o zdieľanie obrazovky v službe Bitpop Talk</translation>
 <translation id="8109246889182548008">Úložisko certifikátu</translation>
 <translation id="5030338702439866405">Vydavateľ</translation>
 <translation id="2728127805433021124">Certifikát servera je podpísaný pomocou slabého podpisového algoritmu.</translation>
@@ -3647,7 +3647,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="1049926623896334335">Dokument aplikácie Word</translation>
 <translation id="8412145213513410671">Zlyhania (<ph name="CRASH_COUNT"/>)</translation>
 <translation id="7003257528951459794">Frekvencia:</translation>
-<translation id="3467267818798281173">Žiadať návrhy od spoločnosti Google</translation>
+<translation id="3467267818798281173">Žiadať návrhy od spoločnosti Bitpop</translation>
 <translation id="560602183358579978">Prebieha počítanie výberu...</translation>
 <translation id="7649070708921625228">Pomocník</translation>
 <translation id="858637041960032120">Pridať telefónne číslo</translation>
@@ -3683,7 +3683,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="8000020256436988724">Panel s nástrojmi</translation>
 <translation id="7507930499305566459">Certifikát stavového odpovedajúceho zariadenia</translation>
 <translation id="3958088479270651626">Importovať záložky a nastavenia</translation>
-<translation id="2689915906323125315">Použiť heslo môjho účtu Google</translation>
+<translation id="2689915906323125315">Použiť heslo môjho účtu Bitpop</translation>
 <translation id="8518865679229538285">Metóda vstupu tamilčiny (písací stroj)</translation>
 <translation id="5257456363153333584">Vážka</translation>
 <translation id="4557136421275541763">Upozornenie:</translation>
@@ -3695,7 +3695,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="2489918096470125693">Pridať &amp;priečinok...</translation>
 <translation id="7353651168734309780">Rozšírenie <ph name="EXTENSION_NAME"/> vyžaduje nové povolenia</translation>
 <translation id="6420812616858267777">Synchronizácia prehliadača <ph name="PRODUCT_NAME"/> vám uľahčuje zdieľanie údajov (ako sú napríklad záložky alebo nastavenia) medzi vašimi počítačmi a mobilnými zariadeniami.
-          Prehliadač <ph name="PRODUCT_NAME"/> vaše údaje synchronizuje tak, že ich po prihlásení do účtu Google uloží online v systéme Google.</translation>
+          Prehliadač <ph name="PRODUCT_NAME"/> vaše údaje synchronizuje tak, že ich po prihlásení do účtu Bitpop uloží online v systéme Google.</translation>
 <translation id="7484964289312150019">Otvoriť všetky záložky v &amp;novom okne</translation>
 <translation id="1731346223650886555">Bodkočiarka</translation>
 <translation id="158849752021629804">Je potrebná domáca sieť</translation>
@@ -3711,7 +3711,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="3021678814754966447">&amp;Zobraziť zdrojový kód rámca</translation>
 <translation id="8601206103050338563">Overenie WWW klienta protokolom TLS</translation>
 <translation id="1692799361700686467">Boli povolené súbory cookie z viacerých webových stránok.</translation>
-<translation id="5187295959347858724">Ste prihlásený/-á do prehliadača <ph name="SHORT_PRODUCT_NAME"/>. Vaše záložky, história a ďalšie nastavenia sa synchronizujú s účtom Google.</translation>
+<translation id="5187295959347858724">Ste prihlásený/-á do prehliadača <ph name="SHORT_PRODUCT_NAME"/>. Vaše záložky, história a ďalšie nastavenia sa synchronizujú s účtom Bitpop.</translation>
 <translation id="3719415759165722358">Povolí používateľské rozhranie Nastavení webových stránok. Používateľské rozhranie Nastavení webových stránok nahrádza informačnú bublinu o stránke a umožňuje jednoduchú konfiguráciu nastavení konkrétnych stránok.</translation>
 <translation id="2717190143245689317">Povolí experimentálne textové pole pre UI aplikácie. Nemá vplyv na obsah webu.</translation>
 <translation id="529232389703829405">Dňa <ph name="DATE"/> ste si zakúpili <ph name="DATA_AMOUNT"/> údajov</translation>
@@ -3754,7 +3754,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="2927657246008729253">Zmeniť...</translation>
 <translation id="7586781939132793422">Zakázať hlasovú odozvu</translation>
 <translation id="7978412674231730200">Súkromný kľúč</translation>
-<translation id="7056011739864317578">Keď je toto nastavenie povolené, na pripojenie profilu k účtu Google sa použije protokol ClientOAuth.  V opačnom prípade sa použije protokol ClientLogin.
+<translation id="7056011739864317578">Keď je toto nastavenie povolené, na pripojenie profilu k účtu Bitpop sa použije protokol ClientOAuth.  V opačnom prípade sa použije protokol ClientLogin.
       Protokol ClientOAuth povoľuje pri overovaní totožnosti používanie verifikačných kódov namiesto protokolov ASP.</translation>
 <translation id="5308380583665731573">Pripojiť</translation>
 <translation id="9111395131601239814"><ph name="NETWORKDEVICE"/>: <ph name="STATUS"/></translation>
@@ -3776,7 +3776,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="6692173217867674490">Zlá prístupová fráza</translation>
 <translation id="5550431144454300634">Automaticky opraviť vstup</translation>
 <translation id="3308006649705061278">Organizačná jednotka (OU)</translation>
-<translation id="8912362522468806198">účtu Google</translation>
+<translation id="8912362522468806198">účtu Bitpop</translation>
 <translation id="4443536555189480885">&amp;Pomocník</translation>
 <translation id="340485819826776184">Na automatické dokončovanie zadávaných vyhľadávaní a adries URL na paneli s adresou používať službu predpovedí.</translation>
 <translation id="4207762215349123040">Doplnok <ph name="PEPPER_PLUGIN_NAME"/> na stránkach <ph name="PEPPER_PLUGIN_DOMAIN"/> chce získať prístup k vášmu mobilnému zariadeniu.“</translation>
@@ -3795,7 +3795,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="4745438305783437565">Počet minút: <ph name="NUMBER_FEW"/></translation>
 <translation id="2649911884196340328">Bezpečnostný certifikát servera obsahuje chyby!</translation>
-<translation id="6666647326143344290">pomocou účtu Google</translation>
+<translation id="6666647326143344290">pomocou účtu Bitpop</translation>
 <translation id="4980112683975062744">Zo servera boli prijaté duplicitné hlavičky</translation>
 <translation id="3828029223314399057">Prehľadať záložky</translation>
 <translation id="4885705234041587624">MSCHAPv2</translation>
@@ -3804,7 +3804,7 @@ Vaše súbory sú bezpečne uložené v službe Disk Google bez ohľadu na to, �
 <translation id="3551117997325569860">Ak chcete zmeniť server proxy, povoľte nastavenie „<ph name="USE_SHARED_PROXIES"/>“.</translation>
 <translation id="8906421963862390172">&amp;Možnosti kontroly pravopisu</translation>
 <translation id="9046895021617826162">Zlyhanie pripojenia</translation>
-<translation id="4061733942661196912">Ak je táto funkcia povolená, pri navštívení prihlasovacej stránky Google sa zobrazí informačný panel, ktorý umožňuje jednoduché prihlásenie pomocou účtu Google prepojeného s daným profilom. Ak profil nie je prepojený s účtom, automatické prihlasovanie je bez ohľadu na tento príznak vždy zakázané.</translation>
+<translation id="4061733942661196912">Ak je táto funkcia povolená, pri navštívení prihlasovacej stránky Bitpop sa zobrazí informačný panel, ktorý umožňuje jednoduché prihlásenie pomocou účtu Google prepojeného s daným profilom. Ak profil nie je prepojený s účtom, automatické prihlasovanie je bez ohľadu na tento príznak vždy zakázané.</translation>
 <translation id="1492188167929010410">ID zlyhania: <ph name="CRASH_ID"/></translation>
 <translation id="1963692530539281474">Počet zvyšných dní: <ph name="NUMBER_DEFAULT"/></translation>
 <translation id="4470270245053809099">Vydavateľ: <ph name="NAME"/></translation>
@@ -3855,7 +3855,7 @@ Prebieha výpočet času do úplného nabitia</translation>
 <translation id="5869522115854928033">Uložené heslá</translation>
 <translation id="3436440123324878555">Kúpiť program...</translation>
 <translation id="5748266869826978907">Skontrolujte nastavenia DNS. Ak si nie ste istí, čo to znamená, kontaktujte správcu siete.</translation>
-<translation id="4193154014135846272">Dokument Google</translation>
+<translation id="4193154014135846272">Dokument Bitpop</translation>
 <translation id="4771973620359291008">Vyskytla sa neznáma chyba.</translation>
 <translation id="5509914365760201064">Vydavateľ: <ph name="CERTIFICATE_AUTHORITY"/></translation>
 <translation id="6446356484127229069">Aplikácia <ph name="PRODUCT_NAME"/> má ťažkosti s prístupom k sieti. <ph name="LINE_BREAK"/> Príčinou môže byť brána firewall alebo antivírusový softvér, ktoré nesprávne identifikoval aplikáciu <ph name="PRODUCT_NAME"/> ako útočníka a zablokovali jej pripojenie k internetu.</translation>
@@ -3953,7 +3953,7 @@ Prebieha výpočet času do úplného nabitia</translation>
 <translation id="899403249577094719">Netscape – základná adresa URL certifikátu</translation>
 <translation id="2737363922397526254">Zbaliť...</translation>
 <translation id="8605428685123651449">Pamäť nástroja SQLite</translation>
-<translation id="5469175127151858022">Verzie prehliadača Chrome a operačného systému sa odošlú spolu so všetkými informáciami, ktoré sa rozhodnete zahrnúť vyššie. Táto spätná väzba sa používa na diagnostikovanie problémov a pomôže vylepšiť prehliadač Chrome. Všetky osobné údaje, ktoré nám poskytnete (či už výslovne alebo náhodou), budú chránené v súlade s našimi pravidlami ochrany osobných údajov.<ph name="BEGIN_BOLD"/> Odoslaním tejto spätnej väzby súhlasíte s tým, že spoločnosť Google môže poskytnutú spätnú väzbu použiť na zlepšenie akéhokoľvek produktu alebo služby Google. <ph name="END_BOLD"/></translation>
+<translation id="5469175127151858022">Verzie prehliadača Chrome a operačného systému sa odošlú spolu so všetkými informáciami, ktoré sa rozhodnete zahrnúť vyššie. Táto spätná väzba sa používa na diagnostikovanie problémov a pomôže vylepšiť prehliadač Chrome. Všetky osobné údaje, ktoré nám poskytnete (či už výslovne alebo náhodou), budú chránené v súlade s našimi pravidlami ochrany osobných údajov.<ph name="BEGIN_BOLD"/> Odoslaním tejto spätnej väzby súhlasíte s tým, že spoločnosť Bitpop môže poskytnutú spätnú väzbu použiť na zlepšenie akéhokoľvek produktu alebo služby Google. <ph name="END_BOLD"/></translation>
 <translation id="2841013758207633010">Čas</translation>
 <translation id="4880827082731008257">História hľadania</translation>
 <translation id="8661290697478713397">Otvoriť odkaz v okne inko&amp;gnito</translation>
@@ -3985,10 +3985,10 @@ Prebieha výpočet času do úplného nabitia</translation>
 <translation id="8828933418460119530">Názov DNS</translation>
 <translation id="988159990683914416">Zostavenie pre vývojárov</translation>
 <translation id="1097658378307015415">Ak chcete aktivovať sieť <ph name="NETWORK_ID"/>, vstúpte pred prihlásením ako hosť</translation>
-<translation id="5170477580121653719">Voľné miesto v službe Disk Google: <ph name="SPACE_AVAILABLE"/></translation>
+<translation id="5170477580121653719">Voľné miesto v službe Disk Bitpop: <ph name="SPACE_AVAILABLE"/></translation>
 <translation id="4114470632216071239">Uzamknúť kartu SIM (vyžadovať kód PIN pri použití mobilných dát)</translation>
 <translation id="5184584788669813359">Časť tohto súboru PDF sa nepodarilo zobraziť. Chcete ho otvoriť v programe Adobe Reader?</translation>
-<translation id="6581162200855843583">Odkaz na službu Disk Google</translation>
+<translation id="6581162200855843583">Odkaz na službu Disk Bitpop</translation>
 <translation id="340771324714262530">Ukončiť zrkadlenie</translation>
 <translation id="3303260552072730022">Rozšírenie spustilo režim celej obrazovky.</translation>
 <translation id="2183426022964444701">Vybrať koreňový adresár rozšírenia.</translation>
@@ -4089,7 +4089,7 @@ Ak chcete pokračovať v práci, stlačte ľubovoľný kláves.</translation>
 <translation id="1177437665183591855">Neznáma chyba spôsobená certifikátom servera</translation>
 <translation id="3394150261239285340">Stránka <ph name="HOST"/> chce použiť váš fotoaparát a mikrofón.</translation>
 <translation id="8467473010914675605">Kórejská metóda vstupu</translation>
-<translation id="8102535138653976669">Prehliadač <ph name="PRODUCT_NAME"/> zabezpečene synchronizuje údaje s vaším účtom Google. Udržujte všetko synchronizované alebo upravte typy synchronizovaných údajov a nastavenia šifrovania.</translation>
+<translation id="8102535138653976669">Prehliadač <ph name="PRODUCT_NAME"/> zabezpečene synchronizuje údaje s vaším účtom Bitpop. Udržujte všetko synchronizované alebo upravte typy synchronizovaných údajov a nastavenia šifrovania.</translation>
 <translation id="2639739919103226564">Stav:</translation>
 <translation id="6923900367903210484">Autorské práva</translation>
 <translation id="3819800052061700452">&amp;Celá obrazovka</translation>
@@ -4113,7 +4113,7 @@ Ak chcete pokračovať v práci, stlačte ľubovoľný kláves.</translation>
 <translation id="614998064310228828">Model zariadenia:</translation>
 <translation id="1581962803218266616">Zobraziť v aplikácii Finder</translation>
 <translation id="9100765901046053179">Rozšírené nastavenia</translation>
-<translation id="203168018648013061">Chyba synchronizácie: Obnovte synchronizáciu pomocou služby Google Dashboard.</translation>
+<translation id="203168018648013061">Chyba synchronizácie: Obnovte synchronizáciu pomocou služby Bitpop Dashboard.</translation>
 <translation id="1405126334425076373">Kurzor myši</translation>
 <translation id="6096326118418049043">Názov X.500</translation>
 <translation id="6086259540486894113">Musíte vybrať aspoň jeden typ údajov, ktoré sa majú synchronizovať.</translation>
@@ -4162,14 +4162,14 @@ Ak chcete pokračovať v práci, stlačte ľubovoľný kláves.</translation>
 <translation id="2960316970329790041">Zastaviť import</translation>
 <translation id="3835522725882634757">Tento server odosiela údaje, ktoré sú pre prehliadač <ph name="PRODUCT_NAME"/> nezrozumiteľné. <ph name="BEGIN_LINK"/>Nahláste chybu<ph name="END_LINK"/> a priložte <ph name="BEGIN2_LINK"/>nespracovaný záznam<ph name="END2_LINK"/>.</translation>
 <translation id="6586451623538375658">Zameniť primárne tlačidlo myši</translation>
-<translation id="6937152069980083337">Japonská metóda vstupu Google (pre americkú klávesnicu)</translation>
+<translation id="6937152069980083337">Japonská metóda vstupu Bitpop (pre americkú klávesnicu)</translation>
 <translation id="475088594373173692">Prvý používateľ</translation>
 <translation id="1731911755844941020">Posielanie požiadavky...</translation>
 <translation id="8371695176452482769">Začnite hovoriť</translation>
 <translation id="7622116780510618781">Karty v stohu</translation>
 <translation id="2988488679308982380">Nepodarilo sa nainštalovať balík: <ph name="ERROR_CODE"/></translation>
 <translation id="2904079386864173492">Model:</translation>
-<translation id="728836202927797241">Ponúkať možnosť automatického prihlásenia na stránky Google pomocou tohto účtu</translation>
+<translation id="728836202927797241">Ponúkať možnosť automatického prihlásenia na stránky Bitpop pomocou tohto účtu</translation>
 <translation id="6129953537138746214">Medzera</translation>
 <translation id="5041795084235183432">Myš:</translation>
 <translation id="3704331259350077894">Zastavenie operácie</translation>
@@ -4243,7 +4243,7 @@ Ak chcete pokračovať v práci, stlačte ľubovoľný kláves.</translation>
 <translation id="3325146402434751578">Nastaviť alebo spravovať tlačiarne v službe <ph name="CLOUD_PRINT_NAME"/></translation>
 <translation id="253434972992662860">&amp;Pozastaviť</translation>
 <translation id="335985608243443814">Prehliadať...</translation>
-<translation id="7802488492289385605">Japonská metóda vstupu Google (pre americkú klávesnicu s rozložením Dvorak)</translation>
+<translation id="7802488492289385605">Japonská metóda vstupu Bitpop (pre americkú klávesnicu s rozložením Dvorak)</translation>
 <translation id="3876481682997626897">Podpisy sa nezhodujú</translation>
 <translation id="8892992092192084762">Bol nainštalovaný motív „<ph name="THEME_NAME"/>“</translation>
 <translation id="7427348830195639090">Stránka na pozadí: <ph name="BACKGROUND_PAGE_URL"/></translation>
@@ -4278,7 +4278,7 @@ Ak chcete pokračovať v práci, stlačte ľubovoľný kláves.</translation>
 <translation id="1131850611586448366">Webové stránky na adrese <ph name="HOST_NAME"/> boli nahlásené ako stránky neoprávnene získavajúce údaje. Stránky neoprávnene získavajúce údaje sa snažia od používateľov vylákať informácie týkajúce sa ich osoby alebo financií. Často to robia tak, že sa vydávajú za dôveryhodnú osobu alebo organizáciu, napríklad za banku.</translation>
 <translation id="2669198762040460457">Zadané používateľské meno alebo heslo je nesprávne.</translation>
 <translation id="1161575384898972166">Ak chcete exportovať certifikát klienta, prihláste sa do <ph name="TOKEN_NAME"/>.</translation>
-<translation id="1718559768876751602">Vytvoriť účet Google</translation>
+<translation id="1718559768876751602">Vytvoriť účet Bitpop</translation>
 <translation id="5503480894407718969">Pristupovať k všetkým údajom v mobilnom zariadení a navštíveným webovým stránkam</translation>
 <translation id="1884319566525838835">Stav karantény</translation>
 <translation id="2770465223704140727">Odstrániť zo zoznamu</translation>

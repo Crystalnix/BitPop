@@ -34,7 +34,7 @@
 <translation id="3581034179710640788">Chứng chỉ an toàn của trang web đã hết hạn!</translation>
 <translation id="2825758591930162672">Khoá Công cộng của Đối tượng</translation>
 <translation id="8306243285620593545">Lấy tiêu điểm biểu tượng trạng thái</translation>
-<translation id="1130622745736410868">muốn xác nhận bạn đang duyệt trên thiết bị Chrome OS bằng cách yêu cầu Google xác minh mã phiếu giảm giá của bạn.</translation>
+<translation id="1130622745736410868">muốn xác nhận bạn đang duyệt trên thiết bị Chrome OS bằng cách yêu cầu Bitpop xác minh mã phiếu giảm giá của bạn.</translation>
 <translation id="8176382683266548737">Bật thông báo</translation>
 <translation id="8275038454117074363">Nhập</translation>
 <translation id="8418445294933751433">&amp;Hiển thị dưới dạng tab</translation>
@@ -57,7 +57,7 @@ Lưu ý! Chế độ ẩn danh <ph name="SHORTCUT_KEY"/> có thể hữu ích v�
 <translation id="4940047036413029306">Dấu ngoặc kép</translation>
 <translation id="1497897566809397301">Cho phép thiết lập dữ liệu cục bộ (nên chọn)</translation>
 <translation id="3275778913554317645">Mở dưới dạng cửa sổ</translation>
-<translation id="4553117311324416101">Google đã tìm thấy phần mềm độc hại có thể được cài đặt trên máy tính của bạn nếu bạn tiến hành. Nếu bạn đã truy cập trang này trước đây hoặc bạn tin tưởng trang web này, có thể gần đây trang web này đã bị tin tặc xâm phạm. Bạn không nên tiếp tục và có thể thử lại vào ngày mai hoặc đến nơi nào khác.</translation>
+<translation id="4553117311324416101">Bitpop đã tìm thấy phần mềm độc hại có thể được cài đặt trên máy tính của bạn nếu bạn tiến hành. Nếu bạn đã truy cập trang này trước đây hoặc bạn tin tưởng trang web này, có thể gần đây trang web này đã bị tin tặc xâm phạm. Bạn không nên tiếp tục và có thể thử lại vào ngày mai hoặc đến nơi nào khác.</translation>
 <translation id="5085514918439894988">Không có dịch vụ nào cho tác vụ này được cài đặt và cũng không có đề xuất dịch vụ nào cho tác vụ này trong Cửa hàng Chrome trực tuyến.</translation>
 <translation id="8867568208303837180">Đang gửi...</translation>
 <translation id="509988127256758334">Tì&amp;m:</translation>
@@ -91,7 +91,7 @@ Lưu ý! Chế độ ẩn danh <ph name="SHORTCUT_KEY"/> có thể hữu ích v�
 <translation id="21426568240411732"><ph name="TITLE"/> đang sử dụng máy ảnh của bạn.</translation>
 <translation id="6156863943908443225">Bộ nhớ cache tập lệnh</translation>
 <translation id="4274187853770964845">Lỗi đồng bộ hóa: Hãy dừng lại và khởi động lại đồng bộ hóa.</translation>
-<translation id="4610656722473172270">Thanh công cụ của Google</translation>
+<translation id="4610656722473172270">Thanh công cụ của Bitpop</translation>
 <translation id="656293578423618167">Tên hoặc đường dẫn của tệp quá dài.  Hãy lưu với tên ngắn hơn hoặc lưu vào một vị trí khác.</translation>
 <translation id="3484869148456018791">Nhận chứng chỉ mới</translation>
 <translation id="151501797353681931">Đã nhập Từ Safari</translation>
@@ -139,13 +139,13 @@ Lưu ý! Chế độ ẩn danh <ph name="SHORTCUT_KEY"/> có thể hữu ích v�
 <translation id="7600965453749440009">Không bao giờ dịch <ph name="LANGUAGE"/></translation>
 <translation id="3208703785962634733">Không được xác nhận</translation>
 <translation id="620329680124578183">Không tải (Được khuyến nghị)</translation>
-<translation id="6300924177400055566">Bạn không có đủ dung lượng lưu trữ trong Google Drive để lưu &quot;<ph name="FILE_NAME"/>&quot;. Vui lòng xóa các tệp hoặc <ph name="BEGIN_LINK"/>mua thêm dung lượng lưu trữ<ph name="END_LINK"/>.</translation>
+<translation id="6300924177400055566">Bạn không có đủ dung lượng lưu trữ trong Bitpop Drive để lưu &quot;<ph name="FILE_NAME"/>&quot;. Vui lòng xóa các tệp hoặc <ph name="BEGIN_LINK"/>mua thêm dung lượng lưu trữ<ph name="END_LINK"/>.</translation>
 <translation id="9074739597929991885">Bluetooth</translation>
 <translation id="2653266418988778031">Nếu bạn xóa chứng chỉ của Tổ chức phát hành chứng chỉ (CA), trình duyệt của bạn sẽ không còn tin vào bất kỳ chứng chỉ nào do CA cấp nữa.</translation>
 <translation id="5341849548509163798"><ph name="NUMBER_MANY"/> hours ago</translation>
 <translation id="4422428420715047158">Tên miền:</translation>
 <translation id="7788444488075094252">Ngôn ngữ và nhập liệu</translation>
-<translation id="6723354935081862304">In tới Google Documents và các điểm đến khác trên đám mây. <ph name="BEGIN_LINK"/>Đăng nhập<ph name="END_LINK"/> để in tới Google Cloud Print.</translation>
+<translation id="6723354935081862304">In tới Bitpop Documents và các điểm đến khác trên đám mây. <ph name="BEGIN_LINK"/>Đăng nhập<ph name="END_LINK"/> để in tới Google Cloud Print.</translation>
 <translation id="3602290021589620013">Xem trước</translation>
 <translation id="6257035105556579916">Không thể sửa đổi các tiện ích mở rộng trong chế độ được quản lý.</translation>
 <translation id="800602641363855389"><ph name="TITLE"/> đang sử dụng micrô của bạn.</translation>
@@ -214,7 +214,7 @@ Lưu ý! Chế độ ẩn danh <ph name="SHORTCUT_KEY"/> có thể hữu ích v�
 <translation id="1818606096021558659">Trang</translation>
 <translation id="1549045574060481141">Xác nhận tải xuống</translation>
 <translation id="5388588172257446328">Tên người dùng:</translation>
-<translation id="1657406563541664238">Trợ giúp cải thiện <ph name="PRODUCT_NAME"/> bằng cách tự động gửi cho Google thống kê sử dụng và báo cáo sự cố</translation>
+<translation id="1657406563541664238">Trợ giúp cải thiện <ph name="PRODUCT_NAME"/> bằng cách tự động gửi cho Bitpop thống kê sử dụng và báo cáo sự cố</translation>
 <translation id="7982789257301363584">Mạng</translation>
 <translation id="2271281383664374369">Yêu cầu của tiện ích mở rộng đến URL này tạm thời bị chặn.</translation>
 <translation id="8528962588711550376">Đang đăng nhập.</translation>
@@ -231,8 +231,8 @@ Lưu ý! Chế độ ẩn danh <ph name="SHORTCUT_KEY"/> có thể hữu ích v�
 <translation id="9151034842884433218">Chọn ảnh và tên cho tiểu sử mới trên Chrome của bạn.</translation>
 <translation id="1510030919967934016">Trang này đã bị chặn theo dõi vị trí của bạn.</translation>
 <translation id="8848519885565996859">Khung liên kết URL do người dùng xác định</translation>
-<translation id="4640525840053037973">Đăng nhập bằng Tài khoản Google của bạn</translation>
-<translation id="6315526595991863271">Bạn hiện đã đăng nhập vào <ph name="SHORT_PRODUCT_NAME"/>. Dấu trang, lịch sử và các cài đặt khác của bạn đang được đồng bộ hóa với Tài khoản Google bằng cách sử dụng các cài đặt mặc định.</translation>
+<translation id="4640525840053037973">Đăng nhập bằng Tài khoản Bitpop của bạn</translation>
+<translation id="6315526595991863271">Bạn hiện đã đăng nhập vào <ph name="SHORT_PRODUCT_NAME"/>. Dấu trang, lịch sử và các cài đặt khác của bạn đang được đồng bộ hóa với Tài khoản Bitpop bằng cách sử dụng các cài đặt mặc định.</translation>
 <translation id="5255315797444241226">Cụm mật khẩu bạn đã nhập không chính xác.</translation>
 <translation id="762917759028004464">Trình duyệt mặc định hiện tại là <ph name="BROWSER_NAME"/>.</translation>
 <translation id="8289982954746764694">Bật phần tử theo dõi (chưa có đầy đủ chức năng) cho chú thích, phụ đề, chương và mô tả âm thanh trên các phần tử video.</translation>
@@ -277,7 +277,7 @@ Lưu ý! Chế độ ẩn danh <ph name="SHORTCUT_KEY"/> có thể hữu ích v�
           sau đó nhấp
           <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Thêm Công cụ Tìm kiếm</translation>
-<translation id="6868050610674841964">Việc đăng nhập sẽ đồng bộ hóa dữ liệu của bạn với tài khoản Google để bạn có thể truy cập vào dấu trang, lịch sử và các cài đặt khác trên bất kỳ thiết bị nào.</translation>
+<translation id="6868050610674841964">Việc đăng nhập sẽ đồng bộ hóa dữ liệu của bạn với tài khoản Bitpop để bạn có thể truy cập vào dấu trang, lịch sử và các cài đặt khác trên bất kỳ thiết bị nào.</translation>
 <translation id="5498951625591520696">Không thể truy cập máy chủ.</translation>
 <translation id="1621207256975573490">Lưu khun&amp;g thành...</translation>
 <translation id="4681260323810445443">Bạn không có quyền truy cập vào trang web tại <ph name="URL"/>.  Bạn cần đăng nhập.</translation>
@@ -311,7 +311,7 @@ Lưu ý! Chế độ ẩn danh <ph name="SHORTCUT_KEY"/> có thể hữu ích v�
 <translation id="6845180713465955339">Chứng chỉ &quot;<ph name="CERTIFICATE_NAME"/>&quot; được cấp bởi:</translation>
 <translation id="5364525511170219879">Bật UI hoạt động của tiện ích mở rộng</translation>
 <translation id="3088325635286126843">Đổ&amp;i tên...</translation>
-<translation id="6979158407327259162">Google Drive</translation>
+<translation id="6979158407327259162">Bitpop Drive</translation>
 <translation id="6853700448789925482">Bật phần tử <ph name="TRACK_HTML"/></translation>
 <translation id="3150927491400159470">Tải lại cứng</translation>
 <translation id="7531238562312180404">Do <ph name="PRODUCT_NAME"/> không kiểm soát cách tiện ích mở rộng xử lý dữ liệu cá nhân của bạn, tất cả tiện ích mở rộng đã được vô hiệu hóa cho cửa sổ ẩn danh. Bạn có thể kích hoạt lại các tiện ích mở rộng này một cách riêng lẻ trong
@@ -378,7 +378,7 @@ Lưu ý! Chế độ ẩn danh <ph name="SHORTCUT_KEY"/> có thể hữu ích v�
 <translation id="8194465509832052438">Định cấu hình lệnh</translation>
 <translation id="4422347585044846479">Chỉnh sửa dấu trang của trang này</translation>
 <translation id="2452539774207938933">Chuyển sang người dùng: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">Google Chrome có thể cung cấp tính năng kiểm tra chính tả thông minh hơn bằng cách gửi những gì bạn nhập vào trình duyệt tới máy chủ Google, cho phép bạn sử dụng cùng một công nghệ kiểm tra chính tả mà tìm kiếm của Google sử dụng.</translation>
+<translation id="4700157086864140907">Bitpop Chrome có thể cung cấp tính năng kiểm tra chính tả thông minh hơn bằng cách gửi những gì bạn nhập vào trình duyệt tới máy chủ Google, cho phép bạn sử dụng cùng một công nghệ kiểm tra chính tả mà tìm kiếm của Google sử dụng.</translation>
 <translation id="7632357940961158759">Một số cài đặt được tiện ích mở rộng quản lý.</translation>
 <translation id="1880905663253319515">Xóa chứng chỉ &quot;<ph name="CERTIFICATE_NAME"/>&quot;?</translation>
 <translation id="8546306075665861288">Bộ nhớ cache hình ảnh</translation>
@@ -438,7 +438,7 @@ chữ ký biểu mẫu: <ph name="FORM_SIGNATURE"/>
 id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8656768832129462377">Không kiểm tra</translation>
 <translation id="715487527529576698">Chế độ tiếng Trung ban đầu là tiếng Trung Giản thể</translation>
-<translation id="6896830120821965585">Kích hoạt dịch vụ dưới nền kết nối dịch vụ Google Cloud Print tới bất kỳ máy in nào đã được cài đặt trên máy tính này. Sau khi lab này được kích hoạt, bạn có thể bật Trình kết nối Google Cloud Print bằng cách đăng nhập bằng tài khoản Google của mình trong mục Nâng cao của Cài đặt.</translation>
+<translation id="6896830120821965585">Kích hoạt dịch vụ dưới nền kết nối dịch vụ Bitpop Cloud Print tới bất kỳ máy in nào đã được cài đặt trên máy tính này. Sau khi lab này được kích hoạt, bạn có thể bật Trình kết nối Google Cloud Print bằng cách đăng nhập bằng tài khoản Google của mình trong mục Nâng cao của Cài đặt.</translation>
 <translation id="3999508690854143454">Hỏi tôi khi trang web yêu cầu quyền truy cập vào máy ảnh và micrô của tôi (được khuyến nghị)</translation>
 <translation id="1674989413181946727">Cài đặt SSL cho toàn bộ máy vi tính:</translation>
 <translation id="1531285811424589182">Lỗi xóa chứng chỉ</translation>
@@ -455,7 +455,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="3874070094967379652">Sử dụng cụm mật khẩu đồng bộ hóa để mã hóa dữ liệu của tôi</translation>
 <translation id="6500116422101723010">Hiện tại, máy chủ không thể xử lý yêu cầu này. Mã này cho thấy đây là tình trạng tạm thời và máy chủ sẽ hoạt động trở lại sau khi hết gián đoạn.</translation>
 <translation id="1644574205037202324">Lịch sử</translation>
-<translation id="4206944295053515692">Yêu cầu Google cung cấp đề xuất</translation>
+<translation id="4206944295053515692">Yêu cầu Bitpop cung cấp đề xuất</translation>
 <translation id="1297175357211070620">Máy in đích</translation>
 <translation id="479280082949089240">Các cookie được đặt bởi trang này</translation>
 <translation id="4198861010405014042">Quyền truy cập được chia sẻ</translation>
@@ -469,8 +469,8 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="3887847548716051874">Luôn cho phép trang web này sử dụng micrô và máy ảnh này</translation>
 <translation id="2886862922374605295">Phần cứng:</translation>
 <translation id="4497097279402334319">Không thể kết nối với mạng.</translation>
-<translation id="7342729285348293164">Đăng nhập vào <ph name="PRODUCT_NAME"/> bằng Tài khoản Google của bạn để lưu các tính năng trình duyệt được cá nhân hóa lên web và truy cập vào các tính năng này từ <ph name="PRODUCT_NAME"/> trên bất kỳ máy tính nào. Bạn cũng sẽ tự động được đăng nhập vào các dịch vụ Google yêu thích của bạn.</translation>
-<translation id="2542049655219295786">Bảng Google</translation>
+<translation id="7342729285348293164">Đăng nhập vào <ph name="PRODUCT_NAME"/> bằng Tài khoản Bitpop của bạn để lưu các tính năng trình duyệt được cá nhân hóa lên web và truy cập vào các tính năng này từ <ph name="PRODUCT_NAME"/> trên bất kỳ máy tính nào. Bạn cũng sẽ tự động được đăng nhập vào các dịch vụ Google yêu thích của bạn.</translation>
+<translation id="2542049655219295786">Bảng Bitpop</translation>
 <translation id="3899879303189199559">Ngoại tuyến hơn một năm</translation>
 <translation id="5303618139271450299">Không tìm thấy trang web này</translation>
 <translation id="4256316378292851214">Lưu &amp;Video Dưới dạng...</translation>
@@ -479,7 +479,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="6518014396551869914">Sao ché&amp;p hình ảnh</translation>
 <translation id="3236997602556743698">Bộ 3 (390)</translation>
 <translation id="542155483965056918"><ph name="NUMBER_ZERO"/> mins ago</translation>
-<translation id="4928351909437667303">Tắt Google Drive trên thiết bị này.</translation>
+<translation id="4928351909437667303">Tắt Bitpop Drive trên thiết bị này.</translation>
 <translation id="6315723398663634808">Chứng chỉ máy chủ chứa khóa mật mã yếu!</translation>
 <translation id="2887525882758501333">Tài liệu PDF</translation>
 <translation id="289426338439836048">Mạng di động khác...</translation>
@@ -552,7 +552,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="6431347207794742960"><ph name="PRODUCT_NAME"/> sẽ thiết lập cập nhật tự động cho tất cả người dùng của máy tính này.</translation>
 <translation id="4973698491777102067">Xóa các mục sau khỏi:</translation>
 <translation id="6074963268421707432">Không cho phép bất kỳ trang web nào hiển thị thông báo trên màn hình</translation>
-<translation id="4944952004685780325">Bật để sử dụng API Drive V2 API để truy cập thư mục Google Drive.</translation>
+<translation id="4944952004685780325">Bật để sử dụng API Drive V2 API để truy cập thư mục Bitpop Drive.</translation>
 <translation id="1995173078718234136">Đang quét nội dung...</translation>
 <translation id="7920521481309889533">Bật SPDY/3</translation>
 <translation id="5979681173469464041">Lấy tiêu điểm ngăn tiếp theo</translation>
@@ -561,7 +561,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="1491151370853475546">Tải lại trang này</translation>
 <translation id="5374359983950678924">Thay đổi hình ảnh</translation>
 <translation id="2859738163554174612">Không được yêu cầu tôi đăng nhập</translation>
-<translation id="1378727793141957596">Chào mừng bạn đến với Google Drive!</translation>
+<translation id="1378727793141957596">Chào mừng bạn đến với Bitpop Drive!</translation>
 <translation id="5158548125608505876">Đừng đồng bộ hóa mật khẩu của tôi</translation>
 <translation id="3717485073527618485">Hỏi tôi khi trang web cố tắt con trỏ chuột (khuyến nghị)</translation>
 <translation id="3273410961255278341">Gửi cho:</translation>
@@ -594,7 +594,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="773426152488311044">Bạn hiện là người dùng <ph name="PRODUCT_NAME"/> duy nhất.</translation>
 <translation id="2042078858148122628">Không tìm thấy máy chủ tại <ph name="HOST_NAME"/>, vì tìm kiếm DNS không thành công. DNS là dịch vụ web có chức năng dịch tên trang web sang địa chỉ Internet của nó. Nguyên nhân phổ biến nhất của lỗi này là do không có kết nối với Internet hoặc mạng bị định cấu hình sai. Cũng có thể do máy chủ DNS không phản hồi hoặc tường lửa chặn <ph name="PRODUCT_NAME"/> truy cập vào mạng.</translation>
 <translation id="2159087636560291862">Trong trường hợp này, chứng chỉ chưa được xác minh bởi bên thứ ba mà máy tính của bạn tin cậy. Bất kỳ ai tạo được chứng chỉ đều có thể giả danh bất kỳ trang web nào họ chọn và đó là lý do tại sao chứng chỉ phải được bên thứ ba đáng tin cậy xác minh. Không có sự xác minh này, thông tin nhận dạng trong chứng chỉ sẽ vô nghĩa. Do đó không thể xác minh rằng bạn đang liên lạc với <ph name="DOMAIN"/> thay vì một kẻ tấn công tự tạo chứng chỉ riêng và mạo nhận là <ph name="DOMAIN2"/>. Bạn không nên tiếp tục duyệt trang web.</translation>
-<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> yêu cầu bạn mã hóa dữ liệu của mình sử dụng mật khẩu vào Google hoặc cụm mật khẩu của riêng bạn.</translation>
+<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> yêu cầu bạn mã hóa dữ liệu của mình sử dụng mật khẩu vào Bitpop hoặc cụm mật khẩu của riêng bạn.</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">Không phải là Tổ chức phát hành chứng chỉ</translation>
 <translation id="6099520380851856040">Xảy ra vào <ph name="CRASH_TIME"/></translation>
@@ -751,7 +751,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8943805475239098364">Bạn có muốn tìm kiếm bằng <ph name="NEW_GOOGLE_HOST"/> thay vì <ph name="CURRENT_GOOGLE_HOST"/>?</translation>
 <translation id="3813510441224209252">Định dạng đang chờ xử lý</translation>
 <translation id="8912793549644936705">Kéo dãn</translation>
-<translation id="8026684114486203427">Để sử dụng chức năng Lưu trữ trang web của Chrome, bạn phải đăng nhập bằng một Tài khoản Google.</translation>
+<translation id="8026684114486203427">Để sử dụng chức năng Lưu trữ trang web của Chrome, bạn phải đăng nhập bằng một Tài khoản Bitpop.</translation>
 <translation id="1486096554574027028">Tìm kiếm mật khẩu</translation>
 <translation id="4631887759990505102">Nghệ sĩ</translation>
 <translation id="1836938920852968258">Tắt trình đơn 'Thiết bị khác' trên NTP.</translation>
@@ -767,12 +767,12 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="89217462949994770">Bạn đã nhập mã PIN không chính xác quá nhiều lần. Vui lòng liên hệ với <ph name="CARRIER_ID"/> để lấy Khóa mở mã PIN gồm 8 chữ số mới.</translation>
 <translation id="5920618722884262402">Chặn các từ xúc phạm</translation>
 <translation id="242006861730551700">Tắt giá tải xuống. Sẽ hiển thị UI tải xuống mới khi được thực thi.</translation>
-<translation id="7782102568078991263">Không có đề xuất nào khác từ Google</translation>
+<translation id="7782102568078991263">Không có đề xuất nào khác từ Bitpop</translation>
 <translation id="8038111231936746805">(mặc định)</translation>
 <translation id="5120247199412907247">Cấu hình nâng cao</translation>
 <translation id="567881659373499783">Phiên bản <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">Chính sách bảo mật duyệt web an toàn</translation>
-<translation id="5105859138906591953">Để nhập dấu trang của Thanh công cụ vào Chrome, bạn phải đăng nhập vào tài khoản Google. Vui lòng đăng nhập và thử nhập lại.</translation>
+<translation id="5105859138906591953">Để nhập dấu trang của Thanh công cụ vào Chrome, bạn phải đăng nhập vào tài khoản Bitpop. Vui lòng đăng nhập và thử nhập lại.</translation>
 <translation id="8899851313684471736">Mở liên kết bằng cửa sổ &amp;mới</translation>
 <translation id="4110342520124362335">Đã chặn cookie từ <ph name="DOMAIN"/>.</translation>
 <translation id="3303818374450886607">Bản sao</translation>
@@ -821,7 +821,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="1871208020102129563">Proxy được đặt để sử dụng máy chủ proxy cố định chứ không phải URL tập lệnh .pac.</translation>
 <translation id="1634788685286903402">Tin tưởng vào chứng chỉ này khi xác nhận người dùng email.</translation>
 <translation id="3154015489111064513">Sử dụng DHCP</translation>
-<translation id="8642489171979176277">Được nhập Từ Thanh công cụ của Google</translation>
+<translation id="8642489171979176277">Được nhập Từ Thanh công cụ của Bitpop</translation>
 <translation id="4142744419835627535">Instant Autocomplete Immediately</translation>
 <translation id="4684427112815847243">Đồng bộ hóa tất cả</translation>
 <translation id="1125520545229165057">Dvorak (Hsu)</translation>
@@ -832,7 +832,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="2441392884867482684">Trang này hiện ở chế độ toàn màn hình và muốn ẩn con trỏ chuột của bạn.</translation>
 <translation id="1422780722984745882">Đã nhận được nhiều tiêu đề Vị trí khác nhau.  Điều này không được phép nhằm bảo vệ
          chống lại các cuộc tấn công phân nhỏ phản hồi HTTP.</translation>
-<translation id="7787129790495067395">Bạn hiện đang dùng cụm mật khẩu.  Nếu bạn quên cụm mật khẩu của mình, bạn có thể đặt lại đồng bộ hóa để xóa dữ liệu của mình khỏi máy chủ của Google sử dụng Trang tổng quan của Google.</translation>
+<translation id="7787129790495067395">Bạn hiện đang dùng cụm mật khẩu.  Nếu bạn quên cụm mật khẩu của mình, bạn có thể đặt lại đồng bộ hóa để xóa dữ liệu của mình khỏi máy chủ của Bitpop sử dụng Trang tổng quan của Google.</translation>
 <translation id="3380365263193509176">Lỗi không xác định</translation>
 <translation id="1273135602584709125">Hủy đăng ký doanh nghiệp</translation>
 <translation id="2686759344028411998">Không thể phát hiện bất kỳ mô-đun đã tải nào.</translation>
@@ -900,7 +900,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="6204994989617056362">Thiếu tiện ích mở rộng đàm phán lại SSL từ cái bắt tay an toàn. Đối với một số trang web, có hỗ trợ tiện ích mở rộng đàm phán lại, Chrome yêu cầu nhiều bắt tay an toàn hơn để ngăn các cuộc tấn công đã xác định. Thiếu tiện ích mở rộng này cho thấy kết nối của bạn bị chặn và bị sửa đổi khi gửi.</translation>
 <translation id="1238150413700645698">Nội dung được bảo vệ</translation>
 <translation id="6679492495854441399">Rất tiếc! Đã xảy ra sự cố kết nối mạng khi tìm cách đăng ký thiết bị này. Vui lòng kiểm tra kết nối mạng của bạn và thử lại.</translation>
-<translation id="5270547718570958938">Lịch Google</translation>
+<translation id="5270547718570958938">Lịch Bitpop</translation>
 <translation id="5823933238730612365">PPAPI (không có hộp cát)</translation>
 <translation id="2879755071890315043">Vui lòng chờ trong khi chúng tôi thiết lập mạng di động của bạn.</translation>
 <translation id="5301751748813680278">Đăng nhập với tư cách khách.</translation>
@@ -955,7 +955,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="3909791450649380159">Cắ&amp;t</translation>
 <translation id="2955913368246107853">Đóng thanh tìm</translation>
 <translation id="8864170386249720785">Cài đặt SSL cho toàn bộ thiết bị di động:</translation>
-<translation id="3914942725612686145">Bạn hiện đã đăng nhập vào Chrome. Dữ liệu tab đang mở, dấu trang và thanh địa chỉ đang được đồng bộ hóa với tài khoản Google của bạn.</translation>
+<translation id="3914942725612686145">Bạn hiện đã đăng nhập vào Chrome. Dữ liệu tab đang mở, dấu trang và thanh địa chỉ đang được đồng bộ hóa với tài khoản Bitpop của bạn.</translation>
 <translation id="5642508497713047">Trình ký CRL</translation>
 <translation id="7612302739128412469">Kích hoạt tiện ích mở rộng này bằng cách nhấp vào biểu tượng này.</translation>
 <translation id="813082847718468539">Xem thông tin trang web</translation>
@@ -1004,7 +1004,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="1637259088766071440">Trang web tại <ph name="HOST_NAME"/> chứa các yếu tố từ trang web bị lưu trữ phần mềm độc hại – phần mềm có thể làm hỏng thiết bị di động của bạn hoặc hoạt động mà không cần bạn cho phép. Chỉ cần truy cập trang web lưu trữ phần mềm độc hại là có thể lây vi-rút cho thiết bị di động của bạn. Trang web cũng lưu trữ nội dung từ các trang web đã được báo cáo là trang web &quot;lừa đảo&quot;. Trang web lừa đảo lừa người dùng tiết lộ thông tin cá nhân hoặc thông tin tài chính thường bằng cách giả làm đại diện cho các tổ chức đáng tin cậy như ngân hàng.</translation>
 <translation id="855081842937141170">Ghim tab</translation>
 <translation id="6263541650532042179">đặt lại đồng bộ hóa</translation>
-<translation id="6513247462497316522">Google Chrome sẽ sử dụng dữ liệu di động nếu bạn không được kết nối với mạng khác.</translation>
+<translation id="6513247462497316522">Bitpop Chrome sẽ sử dụng dữ liệu di động nếu bạn không được kết nối với mạng khác.</translation>
 <translation id="6055392876709372977">PKCS #1 SHA-256 Với Mã hóa RSA</translation>
 <translation id="7903984238293908205">Katakana</translation>
 <translation id="268053382412112343">Lị&amp;ch sử</translation>
@@ -1147,8 +1147,8 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="7632380866023782514">Phía trên bên phải</translation>
 <translation id="4693789964669838452">FPS</translation>
 <translation id="4925520021222027859">Nhập mật khẩu cụ thể theo ứng dụng của bạn:</translation>
-<translation id="3494768541638400973">Phương pháp Nhập tiếng Nhật của Google (dành cho bàn phím Nhật)</translation>
-<translation id="4679639996443646335">Google đã phát hiện thấy phần mềm độc hại có thể được cài đặt trên thiết bị di động của bạn nếu bạn tiếp tục. Nếu trước đây bạn đã truy cập trang web này hoặc bạn tin tưởng trang web này, có thể gần đây, trang web này đã bị kẻ tấn công xâm nhập. Bạn không nên tiếp tục và có thể thử lại vào ngày mai hoặc truy cập trang khác.</translation>
+<translation id="3494768541638400973">Phương pháp Nhập tiếng Nhật của Bitpop (dành cho bàn phím Nhật)</translation>
+<translation id="4679639996443646335">Bitpop đã phát hiện thấy phần mềm độc hại có thể được cài đặt trên thiết bị di động của bạn nếu bạn tiếp tục. Nếu trước đây bạn đã truy cập trang web này hoặc bạn tin tưởng trang web này, có thể gần đây, trang web này đã bị kẻ tấn công xâm nhập. Bạn không nên tiếp tục và có thể thử lại vào ngày mai hoặc truy cập trang khác.</translation>
 <translation id="7223775956298141902">Này... Bạn không có tiện ích mở rộng nào :-(</translation>
 <translation id="3118046075435288765">Máy chủ đã bất ngờ đóng kết nối.</translation>
 <translation id="1725068750138367834">&amp;Quản lý tệp</translation>
@@ -1174,7 +1174,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="3706919628594312718">Cài đặt chuột</translation>
 <translation id="8326478304147373412">PKCS #7, chuỗi chứng chỉ</translation>
 <translation id="3242765319725186192">Khóa chia sẻ trước:</translation>
-<translation id="8089798106823170468">Chia sẻ và kiểm soát quyền truy cập vào máy in của bạn bằng bất kỳ tài khoản Google nào.</translation>
+<translation id="8089798106823170468">Chia sẻ và kiểm soát quyền truy cập vào máy in của bạn bằng bất kỳ tài khoản Bitpop nào.</translation>
 <translation id="5426597273899159431">Thiết lập nâng cao...</translation>
 <translation id="1105608846356399385">Truy cập trang web</translation>
 <translation id="7218608093942361839"><ph name="PRODUCT_NAME"/> <ph name="PRODUCT_VERSION"/> (Nền tảng <ph name="PLATFORM_VERSION"/>)</translation>
@@ -1240,7 +1240,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="81686154743329117">ZRM</translation>
 <translation id="2150139952286079145">Tìm kiếm điểm đến</translation>
 <translation id="4713309396072794887">Cài đặt các tiện ích mở rộng này?</translation>
-<translation id="5637940320504994319">Bạn đã hết dung lượng lưu trữ trong Google Drive</translation>
+<translation id="5637940320504994319">Bạn đã hết dung lượng lưu trữ trong Bitpop Drive</translation>
 <translation id="6458467102616083041">Bị bỏ qua vì chính sách đã tắt tìm kiếm mặc định.</translation>
 <translation id="2266011376676382776">(Các) Trang không Hồi đáp</translation>
 <translation id="3100609564180505575">Mô-đun (<ph name="TOTAL_COUNT"/>) - Các xung đột đã biết: <ph name="BAD_COUNT"/>, bị nghi ngờ: <ph name="SUSPICIOUS_COUNT"/></translation>
@@ -1303,7 +1303,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="7092106376816104">Ngoại lệ cho cửa sổ bật lên</translation>
 <translation id="4830475881783902092">Id ứng dụng khách:</translation>
 <translation id="4600958291864306415">đang tạo...</translation>
-<translation id="8594787581355215556">Đăng nhập với địa chỉ <ph name="USER_EMAIL_ADDRESS"/>. Quản lý dữ liệu đã đồng bộ hóa của bạn trên <ph name="BEGIN_LINK"/>Trang tổng quan của Google<ph name="END_LINK"/>.</translation>
+<translation id="8594787581355215556">Đăng nhập với địa chỉ <ph name="USER_EMAIL_ADDRESS"/>. Quản lý dữ liệu đã đồng bộ hóa của bạn trên <ph name="BEGIN_LINK"/>Trang tổng quan của Bitpop<ph name="END_LINK"/>.</translation>
 <translation id="4338600611020922010">Thêm vào màn hình chính</translation>
 <translation id="263325223718984101"><ph name="PRODUCT_NAME"/> không thể hoàn tất cài đặt nhưng sẽ tiếp tục chạy từ hình ảnh đĩa của trình duyệt này.</translation>
 <translation id="6186893483313227582">Biểu tượng <ph name="VALUE"/></translation>
@@ -1320,7 +1320,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="4250680216510889253">Không</translation>
 <translation id="5109044022078737958">Nữ cầu thủ Mia</translation>
 <translation id="6291953229176937411">&amp;Hiển thị trong Trình tìm kiếm</translation>
-<translation id="8598687241883907630">Ngắt kết nối Tài khoản Google của bạn...</translation>
+<translation id="8598687241883907630">Ngắt kết nối Tài khoản Bitpop của bạn...</translation>
 <translation id="6410894982725961573">Đặt ở chế độ ngoại tuyến</translation>
 <translation id="2556718757702023317">Để lưu &quot;<ph name="FILE_NAME"/>&quot; ngoại tuyến, bạn phải tạo thêm <ph name="TOTAL_FILE_SIZE"/> dung lượng lưu trữ:<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>bỏ ghim các tệp mà bạn không cần truy cập ngoại tuyến nữa<ph name="MARKUP_3"/>
@@ -1408,7 +1408,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="2629089419211541119"><ph name="NUMBER_ONE"/> hour ago</translation>
 <translation id="1691063574428301566">Máy tính của bạn sẽ khởi động lại khi cập nhật hoàn tất.</translation>
 <translation id="4697551882387947560">Khi phiên duyệt kết thúc</translation>
-<translation id="5900302528761731119">Ảnh tiểu sử trên Google</translation>
+<translation id="5900302528761731119">Ảnh tiểu sử trên Bitpop</translation>
 <translation id="131364520783682672">Caps Lock</translation>
 <translation id="2066999550761485762"><ph name="BEGIN_BOLD"/>Bạn đã chuyển sang chế độ ẩn danh.<ph name="END_BOLD"/>
           <ph name="LINE_BREAK"/>
@@ -1432,7 +1432,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="1478897831827830200">Theo dõi</translation>
 <translation id="5714678912774000384">Kích hoạt tab sau cùng</translation>
 <translation id="8466234950814670489">Lưu trữ tar</translation>
-<translation id="5902572236435740554">Trước hết, hãy nhập mật khẩu Tài khoản Google của bạn,
+<translation id="5902572236435740554">Trước hết, hãy nhập mật khẩu Tài khoản Bitpop của bạn,
         <ph name="LINE_BREAK"/>
         không phải mật khẩu dành riêng cho ứng dụng.</translation>
 <translation id="8813811964357448561">trang giấy</translation>
@@ -1455,7 +1455,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8337399713761067085">Bạn hiện đang ngoại tuyến</translation>
 <translation id="5199729219167945352">Thử nghiệm</translation>
 <translation id="6499143127267478107">Đang khắc phục máy chủ trong tập lệnh proxy...</translation>
-<translation id="8069615408251337349">Google Cloud Print</translation>
+<translation id="8069615408251337349">Bitpop Cloud Print</translation>
 <translation id="5055518462594137986">Hãy nhớ lựa chọn tất cả liên kết loại này của tôi.</translation>
 <translation id="246059062092993255">Trình cắm đã bị chặn trên trang này.</translation>
 <translation id="2870560284913253234">Trang web</translation>
@@ -1501,7 +1501,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="3273951168350045122">Bàn phím (<ph name="ADDRESS"/>)</translation>
 <translation id="8221729492052686226">Nếu bạn không thể thực hiện yêu cầu này, tác vụ này có thể là một sự tấn công có chủ định vào hệ thống của bạn. Trừ khi bạn có hành động rõ ràng để thực hiện yêu cầu này, bạn nên bấm Không Làm gì.</translation>
 <translation id="894360074127026135">Netscape International Step-Up</translation>
-<translation id="8420060421540670057">Hiển thị các tệp được lưu trữ trong Google Documents</translation>
+<translation id="8420060421540670057">Hiển thị các tệp được lưu trữ trong Bitpop Documents</translation>
 <translation id="1201402288615127009">Tiếp theo</translation>
 <translation id="1335588927966684346">Tiện ích:</translation>
 <translation id="2710582058364740604">Ghi đè mật độ màn hình thiết bị để buộc sử dụng nội dung và chế độ DPI cao.</translation>
@@ -1590,7 +1590,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="7434823369735508263">Bàn phím Dvorak Vương quốc Anh</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> ngày</translation>
 <translation id="5308845175611284862">Đồng bộ hóa <ph name="PRODUCT_NAME"/>  làm cho việc chia sẻ dữ liệu của bạn (như dấu trang và cài đặt) giữa các máy tính của bạn trở nên dễ dàng.
-        <ph name="PRODUCT_NAME"/> đồng bộ hóa dữ liệu của bạn bằng cách lưu trữ dữ liệu đó trực tuyến bằng Google khi bạn đăng nhập bằng Tài khoản Google của mình.</translation>
+        <ph name="PRODUCT_NAME"/> đồng bộ hóa dữ liệu của bạn bằng cách lưu trữ dữ liệu đó trực tuyến bằng Bitpop khi bạn đăng nhập bằng Tài khoản Google của mình.</translation>
 <translation id="1707463636381878959">Chia sẻ mạng này với những người dùng khác</translation>
 <translation id="2084978867795361905">MS-IME</translation>
 <translation id="7227669995306390694"><ph name="NETWORK"/> không có dữ liệu về gói</translation>
@@ -1598,7 +1598,7 @@ id thử nghiệm: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="7163503212501929773"><ph name="NUMBER_MANY"/> giờ còn lại</translation>
 <translation id="7705276765467986571">Không thể tải mô hình dấu trang.</translation>
 <translation id="750413812607578381">Bạn phải khởi động lại <ph name="PRODUCT_NAME"/> ngay bây giờ.</translation>
-<translation id="8034305971714560781">Bằng cách ngắt kết nối Tài khoản Google khỏi <ph name="PRODUCT_NAME"/>, những thay đổi đối với dữ liệu của bạn trên thiết bị di động này sẽ không còn được đồng bộ hóa với Tài khoản Google của bạn. Dữ liệu đã được lưu trữ trong Tài khoản Google của bạn sẽ vẫn ở đó cho tới khi bạn xóa dữ liệu bằng <ph name="BEGIN_LINK"/>Trang tổng quan của Google<ph name="END_LINK"/>.</translation>
+<translation id="8034305971714560781">Bằng cách ngắt kết nối Tài khoản Bitpop khỏi <ph name="PRODUCT_NAME"/>, những thay đổi đối với dữ liệu của bạn trên thiết bị di động này sẽ không còn được đồng bộ hóa với Tài khoản Google của bạn. Dữ liệu đã được lưu trữ trong Tài khoản Google của bạn sẽ vẫn ở đó cho tới khi bạn xóa dữ liệu bằng <ph name="BEGIN_LINK"/>Trang tổng quan của Google<ph name="END_LINK"/>.</translation>
 <translation id="2638286699381354126">Cập nhật...</translation>
 <translation id="1196338895211115272">Không thể xuất khóa cá nhân.</translation>
 <translation id="1459967076783105826">Công cụ tìm kiếm được thêm bởi tiện ích mở rộng</translation>
@@ -1636,10 +1636,10 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="1789424019568293108">Bật UI thử nghiệm hiển thị nhật ký hoạt động của tiện ích mở rộng.</translation>
 <translation id="2090876986345970080">Cài đặt bảo mật hệ thống</translation>
 <translation id="3728067901555601989">OTP:</translation>
-<translation id="3475447146579922140">Bảng tính Google</translation>
+<translation id="3475447146579922140">Bảng tính Bitpop</translation>
 <translation id="6856526171412069413">Bật thu hẹp phạm vi.</translation>
 <translation id="9219103736887031265">Hình ảnh</translation>
-<translation id="7415834062450491574">Gửi phản hồi tới Google.</translation>
+<translation id="7415834062450491574">Gửi phản hồi tới Bitpop.</translation>
 <translation id="4480995875255084924">Bật trình xem Oak tree trong ash. Cho phép điều tra cửa sổ, lớp và các phân cấp chế độ xem cũng như các thuộc tính của chúng. Nhấn Ctrl+Shift+F1 để truy cập.</translation>
 <translation id="6975147921678461939">Đang sạc pin: <ph name="PRECENTAGE"/>%</translation>
 <translation id="5453632173748266363">Cyrillic</translation>
@@ -1650,7 +1650,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="5329858601952122676">&amp;Xoá</translation>
 <translation id="6100736666660498114">Menu Start</translation>
 <translation id="2706131822305474920">Chuyển đổi giữa các tab đang mở</translation>
-<translation id="4402766404187539019">Thư trên Google.com</translation>
+<translation id="4402766404187539019">Thư trên Bitpop.com</translation>
 <translation id="6275297011664564181">Hiện không có chính sách nào hoạt động!</translation>
 <translation id="3994878504415702912">Thu &amp;phóng</translation>
 <translation id="9009369504041480176">Đang tải lên (<ph name="PROGRESS_PERCENT"/>%)...</translation>
@@ -1688,7 +1688,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="6059764114876442286">Đặt lại máy in</translation>
 <translation id="6406506848690869874">Đồng bộ hóa</translation>
 <translation id="5288678174502918605">&amp;Mở lại Tab đã Đóng</translation>
-<translation id="7238461040709361198">Mật khẩu Tài khoản Google của bạn đã thay đổi kể từ lần đăng nhập cuối trên máy tính này.</translation>
+<translation id="7238461040709361198">Mật khẩu Tài khoản Bitpop của bạn đã thay đổi kể từ lần đăng nhập cuối trên máy tính này.</translation>
 <translation id="1956050014111002555">Tệp chứa nhiều chứng chỉ, chưa có chứng chỉ nào trong số đó được nhập:</translation>
 <translation id="302620147503052030">Nút hiển thị</translation>
 <translation id="1895658205118569222">Tắt</translation>
@@ -1698,7 +1698,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="6624687053722465643">Ngọt ngào</translation>
 <translation id="8420296388012619424">Thiết bị USB của bạn chưa được định dạng.</translation>
 <translation id="3021256392995617989">Hỏi tôi khi một trang web cố gắng theo dõi vị trí thực của tôi (được khuyến nghị)</translation>
-<translation id="8083739373364455075">Nhận 100 GB miễn phí với Google Drive</translation>
+<translation id="8083739373364455075">Nhận 100 GB miễn phí với Bitpop Drive</translation>
 <translation id="271083069174183365">Cài đặt phương thức nhập tiếng Nhật</translation>
 <translation id="1257595095755619623">Nếu bạn sử dụng máy chủ proxy, hãy kiểm tra cài đặt proxy của bạn hoặc
         liên hệ với quản trị viên mạng của bạn để đảm bảo máy chủ
@@ -1908,7 +1908,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="3967885517199024316">Đăng nhập để nhận dấu trang, lịch sử và cài đặt trên tất cả các thiết bị của bạn.</translation>
 <translation id="5463856536939868464">Trình đơn chứa các dấu trang bị ẩn</translation>
 <translation id="8286227656784970313">Sử dụng từ điển của hệ thống</translation>
-<translation id="5431084084184068621">Bạn đã chọn mã hóa dữ liệu sử dụng mật khẩu vào Google; bạn luôn có thể đổi ý sau này bằng cách thay đổi cài đặt đồng bộ hóa của mình.</translation>
+<translation id="5431084084184068621">Bạn đã chọn mã hóa dữ liệu sử dụng mật khẩu vào Bitpop; bạn luôn có thể đổi ý sau này bằng cách thay đổi cài đặt đồng bộ hóa của mình.</translation>
 <translation id="1493263392339817010">Tùy chỉnh phông chữ...</translation>
 <translation id="5352033265844765294">Dấu Thời gian</translation>
 <translation id="1493892686965953381">Đang đợi <ph name="LOAD_STATE_PARAMETER"/>...</translation>
@@ -1918,7 +1918,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="748138892655239008">Giới hạn Cơ bản của Chứng chỉ</translation>
 <translation id="457386861538956877">Thêm...</translation>
 <translation id="9210991923655648139">Có thể truy cập vào tập lệnh:</translation>
-<translation id="1950295184970569138">* Ảnh tiểu sử trên Google (đang tải)</translation>
+<translation id="1950295184970569138">* Ảnh tiểu sử trên Bitpop (đang tải)</translation>
 <translation id="8063491445163840780">Kích hoạt tab 4</translation>
 <translation id="5473544328731861874">Xóa dự định</translation>
 <translation id="2322193970951063277">Đầu trang và chân trang</translation>
@@ -1968,7 +1968,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="5010043101506446253">Tổ chức cấp chứng chỉ</translation>
 <translation id="2050524657923939561">Ý định web</translation>
 <translation id="8487693399751278191">Nhập dấu trang ngay bây giờ...</translation>
-<translation id="7615602087246926389">Bạn đã có dữ liệu được mã hóa bằng mật khẩu khác của Tài khoản Google. Vui lòng nhập mật khẩu đó bên dưới.</translation>
+<translation id="7615602087246926389">Bạn đã có dữ liệu được mã hóa bằng mật khẩu khác của Tài khoản Bitpop. Vui lòng nhập mật khẩu đó bên dưới.</translation>
 <translation id="7484580869648358686">Cảnh báo: Phần mềm độc hại có thể không có ngay ở đây!</translation>
 <translation id="4474155171896946103">Đánh dấu trang tất cả các tab...</translation>
 <translation id="5895187275912066135">Cấp vào</translation>
@@ -2062,14 +2062,14 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="2065985942032347596">Yêu cầu Xác thực</translation>
 <translation id="2563185590376525700">Ếch</translation>
 <translation id="2553340429761841190"><ph name="PRODUCT_NAME"/> không thể kết nối đến <ph name="NETWORK_ID"/>. Vui lòng chọn một mạng khác hoặc thử lại.</translation>
-<translation id="2086712242472027775">Tài khoản của bạn không hoạt động trên <ph name="PRODUCT_NAME"/>. Vui lòng liên hệ với quản trị viên tên miền của bạn hoặc sử dụng Tài khoản Google thông thường để đăng nhập.</translation>
-<translation id="1373074393717692190">Đăng nhập vào <ph name="PRODUCT_NAME"/> bằng Tài khoản Google của bạn để lưu các tính năng của trình duyệt được cá nhân hóa vào web và truy cập các tính năng này từ <ph name="PRODUCT_NAME"/> trên bất kỳ thiết bị di động nào. Bạn cũng sẽ tự động đăng nhập vào dịch vụ của Google mà bạn ưa thích.</translation>
+<translation id="2086712242472027775">Tài khoản của bạn không hoạt động trên <ph name="PRODUCT_NAME"/>. Vui lòng liên hệ với quản trị viên tên miền của bạn hoặc sử dụng Tài khoản Bitpop thông thường để đăng nhập.</translation>
+<translation id="1373074393717692190">Đăng nhập vào <ph name="PRODUCT_NAME"/> bằng Tài khoản Bitpop của bạn để lưu các tính năng của trình duyệt được cá nhân hóa vào web và truy cập các tính năng này từ <ph name="PRODUCT_NAME"/> trên bất kỳ thiết bị di động nào. Bạn cũng sẽ tự động đăng nhập vào dịch vụ của Google mà bạn ưa thích.</translation>
 <translation id="7222232353993864120">Địa chỉ Email</translation>
 <translation id="2128531968068887769">Native Client</translation>
 <translation id="2749720227918911728">Biểu tượng này sẽ hiển thị khi tiện ích mở rộng có thể hoạt động trên trang hiện tại. Kích hoạt tiện ích mở rộng này bằng cách nhấp vào biểu tượng hoặc bằng cách nhấn <ph name="EXTENSION_SHORTCUT"/>.</translation>
 <translation id="7175353351958621980">Được tải từ:</translation>
 <translation id="7186367841673660872">Trang này đã được dịch từ<ph name="ORIGINAL_LANGUAGE"/>sang<ph name="LANGUAGE_LANGUAGE"/></translation>
-<translation id="8448695406146523553">Chỉ những người có cụm mật khẩu của bạn mới có thể đọc được dữ liệu được mã hóa của bạn -- cụm mật khẩu không được gửi tới hoặc được lưu trữ bởi Google. Nếu bạn quên cụm mật khẩu của mình, bạn cần</translation>
+<translation id="8448695406146523553">Chỉ những người có cụm mật khẩu của bạn mới có thể đọc được dữ liệu được mã hóa của bạn -- cụm mật khẩu không được gửi tới hoặc được lưu trữ bởi Bitpop. Nếu bạn quên cụm mật khẩu của mình, bạn cần</translation>
 <translation id="8248050856337841185">&amp;Dán</translation>
 <translation id="6052976518993719690">Tổ chức Cấp Chứng chỉ SSK</translation>
 <translation id="2925935892230812200">Sử dụng GPU để tăng tốc kết xuất các bộ lọc SVG.</translation>
@@ -2202,7 +2202,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="6374830905869502056">Mã hóa bởi</translation>
 <translation id="2230062665678605299">Không thể tạo thư mục &quot;<ph name="FOLDER_NAME"/>&quot;. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="2526590354069164005">Màn hình nền</translation>
-<translation id="2059205526855036527">Bạn phải trực tuyến để truy cập vào Google Drive trong lần đầu tiên.</translation>
+<translation id="2059205526855036527">Bạn phải trực tuyến để truy cập vào Bitpop Drive trong lần đầu tiên.</translation>
 <translation id="4165738236481494247">Chạy trình cắm này</translation>
 <translation id="7983301409776629893">Luôn dịch <ph name="ORIGINAL_LANGUAGE"/> sang <ph name="TARGET_LANGUAGE"/></translation>
 <translation id="4890284164788142455">Tiếng Thái</translation>
@@ -2232,7 +2232,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="3479552764303398839">Không phải bây giờ</translation>
 <translation id="3714633008798122362">lịch trên web</translation>
 <translation id="6445051938772793705">Quốc gia</translation>
-<translation id="3430309973417890444">Nếu bạn chưa có Tài khoản Google, bạn có thể <ph name="LINK_START"/>Tạo tài khoản Google<ph name="LINK_END"/> ngay bây giờ.</translation>
+<translation id="3430309973417890444">Nếu bạn chưa có Tài khoản Bitpop, bạn có thể <ph name="LINK_START"/>Tạo tài khoản Google<ph name="LINK_END"/> ngay bây giờ.</translation>
 <translation id="3251759466064201842">&lt;Không Thuộc Chứng chỉ&gt;</translation>
 <translation id="4229495110203539533"><ph name="NUMBER_ONE"/> sec ago</translation>
 <translation id="3399068503715460757">Sử dụng IP tĩnh</translation>
@@ -2258,7 +2258,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="1800987794509850828">Trình môi giới trình cắm: <ph name="PLUGIN_NAME"/></translation>
 <translation id="8871696467337989339">Bạn đang sử dụng một cờ dòng lệnh không được hỗ trợ: <ph name="BAD_FLAG"/>. Tính ổn định và tính bảo mật sẽ bị ảnh hưởng.</translation>
 <translation id="4767443964295394154">Vị trí Tải xuống</translation>
-<translation id="5031870354684148875">Giới thiệu về Google Dịch</translation>
+<translation id="5031870354684148875">Giới thiệu về Bitpop Dịch</translation>
 <translation id="4266565660628359579">Bật chế độ DPI cao cho Trình xem PDF trên Chrome với hiển thị DPI cao.</translation>
 <translation id="5702389759209837579">Truy cập vào các tab đang mở trên tất cả các thiết bị của bạn.</translation>
 <translation id="3828747136564826513">Truy cập vào tất cả các tệp truyền thông đã biết trên thiết bị của bạn</translation>
@@ -2314,7 +2314,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="1752977958630076881">Chỉ giữ dữ liệu cục bộ cho đến khi tôi thoát trình duyệt của mình</translation>
 <translation id="7853202427316060426">Hoạt động</translation>
 <translation id="8550022383519221471">Dịch vụ đồng bộ hóa không khả dụng cho tên miền của bạn.</translation>
-<translation id="1436238710092600782">Tạo Tài khoản Google</translation>
+<translation id="1436238710092600782">Tạo Tài khoản Bitpop</translation>
 <translation id="3355823806454867987">Thay đổi thiết lập proxy...</translation>
 <translation id="4780374166989101364">Bật API tiện ích mở rộng thử nghiệm. Xin lưu ý rằng thư viện tiện ích mở rộng không cho phép bạn tải lên tiện ích mở rộng sử dụng API thử nghiệm.</translation>
 <translation id="7117247127439884114">Đăng nhập lại...</translation>
@@ -2327,7 +2327,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="3007574127824276972">Đã đăng nhập vào <ph name="PRODUCT_NAME"/> với tên <ph name="USER_NAME"/></translation>
 <translation id="6840155730904976091"><ph name="PRODUCT_NAME"/> đang sử dụng cài đặt proxy hệ thống của thiết bị di động của bạn để kết nối với mạng.</translation>
 <translation id="2541913031883863396">vẫn tiếp tục</translation>
-<translation id="6884284539803678768">Bật khung hộp thoại kiểu Google.</translation>
+<translation id="6884284539803678768">Bật khung hộp thoại kiểu Bitpop.</translation>
 <translation id="2367499218636570208">Tên</translation>
 <translation id="4436689501885286563">Xóa cookie và dữ liệu trang web khác khi tôi đăng xuất</translation>
 <translation id="1520137456044207237">Dịch vụ nào sẽ được sử dụng để xem?</translation>
@@ -2394,7 +2394,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="8053390638574070785">Tải lại Trang Này</translation>
 <translation id="5507756662695126555">Không tuân thủ</translation>
 <translation id="3678156199662914018">Tiện ích mở rộng: <ph name="EXTENSION_NAME"/></translation>
-<translation id="2620090360073999360">Không thể kết nối với Google Drive tại thời điểm này.</translation>
+<translation id="2620090360073999360">Không thể kết nối với Bitpop Drive tại thời điểm này.</translation>
 <translation id="3531250013160506608">Hộp văn bản nhập mật khẩu</translation>
 <translation id="506228266759207354">Tắt trình đơn trang tab mới để truy cập vào các tab trên thiết bị khác.</translation>
 <translation id="1781502536226964113">Mở trang tab mới</translation>
@@ -2547,7 +2547,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="1358735829858566124">Không thể sử dụng được tệp hoặc thư mục.</translation>
 <translation id="3144135466825225871">Không thể thay thế tệp crx. Kiểm tra để xem tệp có đang được sử dụng hay không.</translation>
 <translation id="2744221223678373668">Được chia sẻ</translation>
-<translation id="9064142312330104323">Ảnh tiểu sử trên Google (đang tải)</translation>
+<translation id="9064142312330104323">Ảnh tiểu sử trên Bitpop (đang tải)</translation>
 <translation id="4708849949179781599">Thoát <ph name="PRODUCT_NAME"/></translation>
 <translation id="2505402373176859469"><ph name="RECEIVED_AMOUNT"/> của <ph name="TOTAL_SIZE"/></translation>
 <translation id="6937559152970966646">Ghim vào màn hình khởi động</translation>
@@ -2645,12 +2645,12 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="305803244554250778">Tạo phím tắt cho ứng dụng ở những vị trí sau:</translation>
 <translation id="574392208103952083">Trung bình</translation>
 <translation id="3661117620327489194">Thay đổi để khôi phục trang đã mở</translation>
-<translation id="3937609171782005782">Giúp cải thiện khả năng phát hiện phần mềm độc hại bằng cách gửi thêm dữ liệu cho Google về tất cả các trang web mà bạn thấy có cảnh báo này. Dữ liệu này sẽ được xử lý theo <ph name="PRIVACY_PAGE_LINK"/>.</translation>
+<translation id="3937609171782005782">Giúp cải thiện khả năng phát hiện phần mềm độc hại bằng cách gửi thêm dữ liệu cho Bitpop về tất cả các trang web mà bạn thấy có cảnh báo này. Dữ liệu này sẽ được xử lý theo <ph name="PRIVACY_PAGE_LINK"/>.</translation>
 <translation id="8877448029301136595">[thư mục cha]</translation>
 <translation id="3816844797124379499">Không thể thêm ứng dụng vì ứng dụng này xung đột với &quot;<ph name="APP_NAME"/>&quot;.</translation>
 <translation id="7301360164412453905">Phím chọn của bàn phím Hsu</translation>
 <translation id="8631271110654520730">Đang sao chép hình ảnh khôi phục...</translation>
-<translation id="7779140087128114262">Chỉ những người có cụm mật khẩu mới có thể đọc được dữ liệu được mã hóa của bạn -- cụm mật khẩu không được gửi tới hoặc được lưu trữ bởi Google. Nếu bạn quên cụm từ mật khẩu của mình, bạn cần đặt lại đồng bộ hóa.</translation>
+<translation id="7779140087128114262">Chỉ những người có cụm mật khẩu mới có thể đọc được dữ liệu được mã hóa của bạn -- cụm mật khẩu không được gửi tới hoặc được lưu trữ bởi Bitpop. Nếu bạn quên cụm từ mật khẩu của mình, bạn cần đặt lại đồng bộ hóa.</translation>
 <translation id="13356285923490863">Tên chính sách</translation>
 <translation id="8241040075392580210">Bóng mát</translation>
 <translation id="8690155203172212841">Quản lý cài đặt giấy phép</translation>
@@ -2671,7 +2671,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
         Nếu bạn cho rằng điều này là ngoài mong muốn, chẳng hạn như bạn đang gỡ lỗi trang web của riêng mình, vui lòng truy cập <ph name="URL_FOR_MORE_INFO"/>,
         nơi bạn có thể tìm thêm thông tin bao gồm cách tắt tính năng này.</translation>
 <translation id="8218008331535230597">Hủy cấp phép nội dung</translation>
-<translation id="4744728308552504807">Bật dịch vụ nền kết nối dịch vụ Google Cloud Print với bất kỳ máy in nào được cài đặt trên thiết bị di động này. Khi lab này được bật, bạn có thể bật Trình kết nối Google Cloud Print  bằng cách đăng nhập bằng tài khoản Google trong phần Cài đặt nâng cao.</translation>
+<translation id="4744728308552504807">Bật dịch vụ nền kết nối dịch vụ Bitpop Cloud Print với bất kỳ máy in nào được cài đặt trên thiết bị di động này. Khi lab này được bật, bạn có thể bật Trình kết nối Google Cloud Print  bằng cách đăng nhập bằng tài khoản Google trong phần Cài đặt nâng cao.</translation>
 <translation id="6691936601825168937">Chuyển &amp;tiếp</translation>
 <translation id="6566142449942033617">Không thể tải '<ph name="PLUGIN_PATH"/>' cho trình cắm.</translation>
 <translation id="7065534935986314333">Giới thiệu về Hệ thống</translation>
@@ -2682,7 +2682,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="2128691215891724419">Lỗi đồng bộ hóa: Cập nhật cụm mật khẩu đồng bộ hóa...</translation>
 <translation id="2148716181193084225">Hôm nay</translation>
 <translation id="1002064594444093641">&amp;In Khung...</translation>
-<translation id="7234674978021619913">Chúng tôi đã thông báo cho <ph name="HOST_NAME"/> rằng chúng tôi phát hiện thấy phần mềm độc hại trên trang web. Để biết thêm về các vấn đề được phát hiện trên <ph name="HOST_NAME2"/>, hãy truy cập <ph name="DIAGNOSTIC_PAGE"/> của Google.</translation>
+<translation id="7234674978021619913">Chúng tôi đã thông báo cho <ph name="HOST_NAME"/> rằng chúng tôi phát hiện thấy phần mềm độc hại trên trang web. Để biết thêm về các vấn đề được phát hiện trên <ph name="HOST_NAME2"/>, hãy truy cập <ph name="DIAGNOSTIC_PAGE"/> của Bitpop.</translation>
 <translation id="4608500690299898628">&amp;Tìm...</translation>
 <translation id="7582582252461552277">Thích mạng này</translation>
 <translation id="3574305903863751447"><ph name="CITY"/>, <ph name="STATE"/> <ph name="COUNTRY"/></translation>
@@ -2784,7 +2784,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="6322726279947003371">Chạy nội dung được bảo vệ (có thể yêu cầu khởi động lại máy tính)</translation>
 <translation id="3093473105505681231">Cài đặt ngôn ngữ và trình kiểm tra chính tả...</translation>
 <translation id="152482086482215392"><ph name="NUMBER_ONE"/> giây còn lại</translation>
-<translation id="4261901459838235729">Bản trình bày Google</translation>
+<translation id="4261901459838235729">Bản trình bày Bitpop</translation>
 <translation id="8678698760965522072">Trạng thái trực tuyến</translation>
 <translation id="529172024324796256">Tên người dùng:</translation>
 <translation id="3308116878371095290">Trang này đã bị chặn cài đặt cookie.</translation>
@@ -2862,7 +2862,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="2444609190341826949">Không có cụm mật khẩu, mật khẩu của bạn và dữ liệu đã mã hóa khác sẽ không được đồng bộ hóa trên máy tính này.</translation>
 <translation id="2984337792991268709">Hôm nay <ph name="TODAY_DAYTIME"/></translation>
 <translation id="5227808808023563348">Tìm văn bản trước đó</translation>
-<translation id="6650142020817594541">Trang web này khuyến nghị Google Chrome Frame (đã được cài đặt).</translation>
+<translation id="6650142020817594541">Trang web này khuyến nghị Bitpop Chrome Frame (đã được cài đặt).</translation>
 <translation id="3862763658360970896">Bật Chrome to Mobile.</translation>
 <translation id="902638246363752736">Cài đặt bàn phím</translation>
 <translation id="7925686952655276919">Không sử dụng dữ liệu di động để đồng bộ hóa</translation>
@@ -2883,7 +2883,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="6007237601604674381">Di chuyển không thành công. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">Không thể tạo tệp nén tạm thời khi đóng gói.</translation>
 <translation id="1881456419707551346">Chi tiết kết nối</translation>
-<translation id="1064912851688322329">Ngắt kết nối Tài khoản Google của bạn</translation>
+<translation id="1064912851688322329">Ngắt kết nối Tài khoản Bitpop của bạn</translation>
 <translation id="1294298200424241932">Chỉnh sửa cài đặt tin cậy:</translation>
 <translation id="1407135791313364759">Mở tất cả</translation>
 <translation id="1434928358870966081">Tắt canvas 2D đã tăng tốc</translation>
@@ -2906,9 +2906,9 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="267285457822962309">Thay đổi các cài đặt dành riêng cho thiết bị và thiết bị ngoại vi của bạn.</translation>
 <translation id="1154228249304313899">Mở trang này:</translation>
 <translation id="6084074203170335305"><ph name="MARKUP_1"/>Truy cập tệp từ mọi nơi, ngay cả khi ngoại tuyến.<ph name="MARKUP_2"/>
-        Tệp trong Google Drive luôn cập nhật và có trên mọi thiết bị.<ph name="MARKUP_3"/>
+        Tệp trong Bitpop Drive luôn cập nhật và có trên mọi thiết bị.<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>Giữ tệp của bạn an toàn.<ph name="MARKUP_5"/>
-        Dù có điều gì xảy ra với thiết bị, tệp của bạn vẫn được lưu trữ an toàn trong Google Drive.<ph name="MARKUP_6"/>
+        Dù có điều gì xảy ra với thiết bị, tệp của bạn vẫn được lưu trữ an toàn trong Bitpop Drive.<ph name="MARKUP_6"/>
         <ph name="MARKUP_7"/>Chia sẻ, tạo và cộng tác<ph name="MARKUP_8"/>
         trên các tệp với người khác, tất cả tại cùng một địa điểm.<ph name="MARKUP_9"/></translation>
 <translation id="9074348188580488499">Bạn có chắc chắn muốn xóa tất cả mật khẩu không?</translation>
@@ -3043,7 +3043,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="8725066075913043281">Thử lại</translation>
 <translation id="387784661603993584">Không thể nhập. Đã xảy ra lỗi.</translation>
 <translation id="4637968436031842307">Bật các biến CSS.</translation>
-<translation id="1887908730460853602">Hộp thoại kiểu Google</translation>
+<translation id="1887908730460853602">Hộp thoại kiểu Bitpop</translation>
 <translation id="8502249598105294518">Tùy chỉnh và điều khiển <ph name="PRODUCT_NAME"/></translation>
 <translation id="3797008485206955964">Xem trang nền (<ph name="NUM_BACKGROUND_APPS"/>)</translation>
 <translation id="8590375307970699841">Thiết lập cập nhật tự động</translation>
@@ -3063,8 +3063,8 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="5293659407874396561"><ph name="SUBJECT"/> (<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">Phải là URL hợp lệ</translation>
 <translation id="3464726836683998962">Tắt chuyển vùng dữ liệu di động</translation>
-<translation id="8986494364107987395">Tự động gửi số liệu thống kê về việc sử dụng và báo cáo sự cố cho Google</translation>
-<translation id="7070714457904110559">Bật tiện ích mở rộng thử nghiệm cho tính năng vị trí địa lý. Bao gồm việc sử dụng API vị trí hệ điều hành (nếu có) và gửi dữ liệu bổ sung về cấu hình mạng cục bộ cho dịch vụ định vị của Google nhằm mang lại khả năng định vị chính xác hơn.</translation>
+<translation id="8986494364107987395">Tự động gửi số liệu thống kê về việc sử dụng và báo cáo sự cố cho Bitpop</translation>
+<translation id="7070714457904110559">Bật tiện ích mở rộng thử nghiệm cho tính năng vị trí địa lý. Bao gồm việc sử dụng API vị trí hệ điều hành (nếu có) và gửi dữ liệu bổ sung về cấu hình mạng cục bộ cho dịch vụ định vị của Bitpop nhằm mang lại khả năng định vị chính xác hơn.</translation>
 <translation id="6701535245008341853">Không thể tải tiểu sử.</translation>
 <translation id="8303655282093186569">Cài đặt phương thức nhập Pinyin</translation>
 <translation id="992779717417561630">In bằng cách sử dụng hộp thoại <ph name="CLOUD_PRINT_NAME"/>... <ph name="SHORTCUT_KEY"/></translation>
@@ -3078,7 +3078,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="580571955903695899">Sắp xếp lại theo Tiêu đề</translation>
 <translation id="5230516054153933099">Cửa sổ</translation>
 <translation id="921740547845455014">Ghi vào các tệp bạn đã mở trong ứng dụng</translation>
-<translation id="1799497982892676838">Quản lý dữ liệu được đồng bộ hóa của bạn trên Trang tổng quan của Google</translation>
+<translation id="1799497982892676838">Quản lý dữ liệu được đồng bộ hóa của bạn trên Trang tổng quan của Bitpop</translation>
 <translation id="951981865514037445"><ph name="URL"/> muốn sử dụng thông tin vị trí thiết bị của bạn.</translation>
 <translation id="7554791636758816595">Tab Mới</translation>
 <translation id="3026557130425686673">Đăng nhập đã bị hủy vì một số cài đặt của thiết bị đã bị hỏng.</translation>
@@ -3093,7 +3093,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="1103966635949043187">Đi đến trang chủ của trang web:</translation>
 <translation id="4762295713053835808">Nội dung cá nhân</translation>
 <translation id="6374100501221763867">Tắt giải mã video được tăng tốc phần cứng.</translation>
-<translation id="7477347901712410606">Nếu bạn đã quên cụm mật khẩu của mình, hãy dừng lại và đặt lại Đồng bộ hóa qua <ph name="BEGIN_LINK"/>Trang tổng quan của Google<ph name="END_LINK"/>.</translation>
+<translation id="7477347901712410606">Nếu bạn đã quên cụm mật khẩu của mình, hãy dừng lại và đặt lại Đồng bộ hóa qua <ph name="BEGIN_LINK"/>Trang tổng quan của Bitpop<ph name="END_LINK"/>.</translation>
 <translation id="6139474630617772623">Bật tính năng màn hình mở rộng, cho phép bạn mở trình duyệt trong màn hình phụ.</translation>
 <translation id="2645575947416143543">Tuy nhiên, nếu bạn làm việc trong một tổ chức tự tạo chứng chỉ riêng và bạn đang cố kết nối với trang web nội bộ của tổ chức đó bằng cách sử dụng chứng chỉ, bạn có thể giải quyết vấn đề này một cách an toàn. Bạn có thể nhập chứng chỉ gốc của tổ chức làm &quot;chứng chỉ gốc&quot;, khi đó chứng chỉ do tổ chức của bạn cung cấp hoặc xác minh sẽ đáng tin cậy và bạn sẽ không thấy lỗi này vào lần kế tiếp khi truy cập trang web nội bộ nữa. Liên hệ với nhân viên trợ giúp của tổ chức để được hỗ trợ thêm chứng chỉ gốc mới vào máy tính của bạn.</translation>
 <translation id="1056898198331236512">Cảnh báo</translation>
@@ -3376,7 +3376,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="7063412606254013905">Tìm hiểu thêm về các âm mưu lừa đảo trực tuyến.</translation>
 <translation id="7253521419891527137">&amp;Tìm hiểu thêm</translation>
 <translation id="3170312251071695679"><ph name="PERMISSION_VALUE"/> theo mặc định</translation>
-<translation id="8698464937041809063">Bản vẽ Google</translation>
+<translation id="8698464937041809063">Bản vẽ Bitpop</translation>
 <translation id="7053053706723613360">Tắt tính năng khôi phục phiên cao cấp hơn</translation>
 <translation id="5233930340889611108">WebKit</translation>
 <translation id="8260864402787962391">Chuột</translation>
@@ -3405,7 +3405,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="6873213799448839504">Tự động xác nhận chuỗi</translation>
 <translation id="7238585580608191973">SHA-256 Fingerprint</translation>
 <translation id="2501278716633472235">Quay lại</translation>
-<translation id="3588662957555259973">* Ảnh tiểu sử trên Google</translation>
+<translation id="3588662957555259973">* Ảnh tiểu sử trên Bitpop</translation>
 <translation id="131461803491198646">Mạng chủ, không chuyển vùng</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/> - <ph name="FULL_DATE"/></translation>
 <translation id="1285320974508926690">Không bao giờ dịch trang web này</translation>
@@ -3476,7 +3476,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="461656879692943278"><ph name="HOST_NAME"/> chứa nội dung từ <ph name="ELEMENTS_HOST_NAME"/>, một trang web được xác định là phân phối phần mềm độc hại. Máy tính của bạn có thể bị nhiễm vi-rút nếu bạn truy cập trang này.</translation>
 <translation id="8962198349065195967">Mạng này được quản trị viên của bạn định cấu hình.</translation>
 <translation id="2143778271340628265">Cấu hình proxy thủ công</translation>
-<translation id="2441192698565541088">Bằng cách ngắt kết nối Tài khoản Google của bạn khỏi <ph name="PRODUCT_NAME"/>, các thay đổi đối với dữ liệu của bạn trên máy tính này sẽ không còn được đồng bộ hóa với Tài khoản Google của bạn. Dữ liệu đã được lưu trữ trong Tài khoản Google của bạn sẽ vẫn ở đó cho đến khi bạn xóa bằng cách sử dụng <ph name="BEGIN_LINK"/>Trang tổng quan của Google<ph name="END_LINK"/>.</translation>
+<translation id="2441192698565541088">Bằng cách ngắt kết nối Tài khoản Bitpop của bạn khỏi <ph name="PRODUCT_NAME"/>, các thay đổi đối với dữ liệu của bạn trên máy tính này sẽ không còn được đồng bộ hóa với Tài khoản Google của bạn. Dữ liệu đã được lưu trữ trong Tài khoản Google của bạn sẽ vẫn ở đó cho đến khi bạn xóa bằng cách sử dụng <ph name="BEGIN_LINK"/>Trang tổng quan của Google<ph name="END_LINK"/>.</translation>
 <translation id="8888432776533519951">Màu:</translation>
 <translation id="5294529402252479912">Cập nhật Adobe Reader bây giờ</translation>
 <translation id="5263972071113911534"><ph name="NUMBER_MANY"/> days ago</translation>
@@ -3505,7 +3505,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="8885905466771744233">Khoá cá nhân cho tiện ích mở rộng chỉ định đã tồn tại. Hãy sử dụng lại hoặc xóa khóa đó trước tiên.</translation>
 <translation id="1196944142850240972">Truy cập dữ liệu của bạn trên tất cả các trang web</translation>
 <translation id="7369056754288047856">Người dùng không thể sửa đổi một số cài đặt.</translation>
-<translation id="4100843820583867709">Yêu cầu chia sẻ màn hình Google Talk</translation>
+<translation id="4100843820583867709">Yêu cầu chia sẻ màn hình Bitpop Talk</translation>
 <translation id="8109246889182548008">Kho lưu trữ chứng chỉ</translation>
 <translation id="5030338702439866405">Cấp bởi</translation>
 <translation id="2728127805433021124">Chứng chỉ của máy chủ đã được ký bằng thuật toán chữ ký yếu.</translation>
@@ -3694,7 +3694,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="1049926623896334335">Tài liệu Word</translation>
 <translation id="8412145213513410671">Sự cố (<ph name="CRASH_COUNT"/>)</translation>
 <translation id="7003257528951459794">Tần suất:</translation>
-<translation id="3467267818798281173">Yêu cầu Google cung cấp đề xuất</translation>
+<translation id="3467267818798281173">Yêu cầu Bitpop cung cấp đề xuất</translation>
 <translation id="560602183358579978">Đang tính toán lựa chọn...</translation>
 <translation id="7649070708921625228">Trợ giúp</translation>
 <translation id="858637041960032120">Thêm số điện thoại</translation>
@@ -3730,7 +3730,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="8000020256436988724">Thanh công cụ</translation>
 <translation id="7507930499305566459">Chứng chỉ Trả lời Trạng thái</translation>
 <translation id="3958088479270651626">Nhập dấu trang và cài đặt</translation>
-<translation id="2689915906323125315">Sử dụng mật khẩu tài khoản Google của tôi</translation>
+<translation id="2689915906323125315">Sử dụng mật khẩu tài khoản Bitpop của tôi</translation>
 <translation id="8518865679229538285">Phương thức nhập Tamil (máy đánh chữ)</translation>
 <translation id="5257456363153333584">Chuồn chuồn</translation>
 <translation id="4557136421275541763">Cảnh báo:</translation>
@@ -3742,7 +3742,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="2489918096470125693">Thêm &amp;thư mục...</translation>
 <translation id="7353651168734309780"><ph name="EXTENSION_NAME"/> yêu cầu giấy phép mới</translation>
 <translation id="6420812616858267777">Đồng bộ hóa <ph name="PRODUCT_NAME"/> làm cho việc chia sẻ dữ liệu của bạn (như dấu trang và cài đặt) giữa máy tính và thiết bị di động của bạn trở nên dễ dàng.
-          <ph name="PRODUCT_NAME"/> đồng bộ hóa dữ liệu của bạn bằng cách lưu trữ dữ liệu đó trực tuyến bằng Google khi bạn đăng nhập bằng Tài khoản Google của bạn.</translation>
+          <ph name="PRODUCT_NAME"/> đồng bộ hóa dữ liệu của bạn bằng cách lưu trữ dữ liệu đó trực tuyến bằng Bitpop khi bạn đăng nhập bằng Tài khoản Google của bạn.</translation>
 <translation id="7484964289312150019">Mở tất cả dấu trang trong &amp;cửa sổ mới</translation>
 <translation id="1731346223650886555">Dấu chấm phẩy</translation>
 <translation id="158849752021629804">Cần mạng gia đình</translation>
@@ -3758,7 +3758,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="3021678814754966447">&amp;Xem Nguồn Khung</translation>
 <translation id="8601206103050338563">Xác thực Ứng dụng khách TLS WWW</translation>
 <translation id="1692799361700686467">Đã cho phép cookie từ nhiều trang web.</translation>
-<translation id="5187295959347858724">Bạn hiện đã đăng nhập vào <ph name="SHORT_PRODUCT_NAME"/>. Dấu trang, lịch sử và các cài đặt khác của bạn đang được đồng bộ hóa với Tài khoản Google.</translation>
+<translation id="5187295959347858724">Bạn hiện đã đăng nhập vào <ph name="SHORT_PRODUCT_NAME"/>. Dấu trang, lịch sử và các cài đặt khác của bạn đang được đồng bộ hóa với Tài khoản Bitpop.</translation>
 <translation id="3719415759165722358">Bật Giao diện người dùng cài đặt trang web. Giao diện người dùng cài đặt trang web thay thế bong bóng thông tin trang và cung cấp cách đơn giản để định cấu hình cài đặt dành riêng cho trang web.</translation>
 <translation id="2717190143245689317">Bật trường văn bản thử nghiệm cho giao diện người dùng ứng dụng; không ảnh hưởng đến nội dung web.</translation>
 <translation id="529232389703829405">Bạn đã mua <ph name="DATA_AMOUNT"/> dữ liệu vào <ph name="DATE"/></translation>
@@ -3801,7 +3801,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="2927657246008729253">Thay đổi...</translation>
 <translation id="7586781939132793422">Vô hiệu tính năng phản hồi bằng giọng nói</translation>
 <translation id="7978412674231730200">Khoá cá nhân</translation>
-<translation id="7056011739864317578">Khi được bật, sẽ sử dụng ClientOAuth để kết nối tiểu sử với tài khoản Google.  Nếu không thì ClientLogin được sử dụng.
+<translation id="7056011739864317578">Khi được bật, sẽ sử dụng ClientOAuth để kết nối tiểu sử với tài khoản Bitpop.  Nếu không thì ClientLogin được sử dụng.
       ClientOAuth cho phép sử dụng các mã xác minh thay vì ASP trong khi xác thực.</translation>
 <translation id="5308380583665731573">Kết nối</translation>
 <translation id="9111395131601239814"><ph name="NETWORKDEVICE"/>: <ph name="STATUS"/></translation>
@@ -3823,7 +3823,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="6692173217867674490">Cụm mật khẩu sai</translation>
 <translation id="5550431144454300634">Tự động sửa lỗi nhập</translation>
 <translation id="3308006649705061278">Đơn vị Tổ chức (OU)</translation>
-<translation id="8912362522468806198">Tài khoản Google</translation>
+<translation id="8912362522468806198">Tài khoản Bitpop</translation>
 <translation id="4443536555189480885">&amp;Trợ giúp</translation>
 <translation id="340485819826776184">Sử dụng dịch vụ đề xuất để giúp hoàn thành các tìm kiếm và URL được nhập trong thanh địa chỉ</translation>
 <translation id="4207762215349123040">Trình cắm <ph name="PEPPER_PLUGIN_NAME"/> trên <ph name="PEPPER_PLUGIN_DOMAIN"/> muốn truy cập thiết bị di động của bạn.&quot;</translation>
@@ -3842,7 +3842,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="4745438305783437565"><ph name="NUMBER_FEW"/> phút</translation>
 <translation id="2649911884196340328">Chứng chỉ an toàn của máy chủ có lỗi!</translation>
-<translation id="6666647326143344290">với Tài khoản Google của bạn</translation>
+<translation id="6666647326143344290">với Tài khoản Bitpop của bạn</translation>
 <translation id="4980112683975062744">Đã nhận được các tiêu đề trùng lặp từ máy chủ</translation>
 <translation id="3828029223314399057">Tìm kiếm dấu trang</translation>
 <translation id="4885705234041587624">MSCHAPv2</translation>
@@ -3851,7 +3851,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="3551117997325569860">Để thay đổi proxy, hãy bật cài đặt &quot;<ph name="USE_SHARED_PROXIES"/>&quot;.</translation>
 <translation id="8906421963862390172">&amp;Tuỳ chọn Trình kiểm tra Chính tả</translation>
 <translation id="9046895021617826162">Kết nối không thành công</translation>
-<translation id="4061733942661196912">Khi được bật, truy cập vào trang đăng nhập tài khoản Google sẽ kích hoạt thanh thông tin cho phép đăng nhập dễ dàng bằng tài khoản Google được kết nối với tiểu sử.
+<translation id="4061733942661196912">Khi được bật, truy cập vào trang đăng nhập tài khoản Bitpop sẽ kích hoạt thanh thông tin cho phép đăng nhập dễ dàng bằng tài khoản Google được kết nối với tiểu sử.
         Tự động đăng nhập sẽ luôn bị tắt nếu tiểu sử không được kết nối với tài khoản, kể cả trường hợp có cờ này.</translation>
 <translation id="1492188167929010410">ID sự cố <ph name="CRASH_ID"/></translation>
 <translation id="1963692530539281474"><ph name="NUMBER_DEFAULT"/> ngày còn lại</translation>
@@ -3902,7 +3902,7 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="5869522115854928033">Mật khẩu đã lưu</translation>
 <translation id="3436440123324878555">Mua gói...</translation>
 <translation id="5748266869826978907">Kiểm tra cài đặt DNS của bạn. Liên hệ với quản trị viên mạng của bạn nếu bạn không chắc chắn điều này có nghĩa là gì.</translation>
-<translation id="4193154014135846272">Tài liệu Google</translation>
+<translation id="4193154014135846272">Tài liệu Bitpop</translation>
 <translation id="4771973620359291008">Xảy ra lỗi chưa biết.</translation>
 <translation id="5509914365760201064">Nhà cung cấp: <ph name="CERTIFICATE_AUTHORITY"/></translation>
 <translation id="6446356484127229069"><ph name="PRODUCT_NAME"/>
@@ -4009,8 +4009,8 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
         bất kỳ thông tin nào bạn chọn để đưa vào phía trên. Phản hồi này được sử dụng để
         chẩn đoán các sự cố và giúp cải tiến Chrome. Bật kỳ thông tin cá nhân nào bạn
         gửi, cho dù rõ ràng hay vô tình, sẽ được bảo vệ
-        theo các chính sách bảo mật của chúng tôi.<ph name="BEGIN_BOLD"/> Bằng cách gửi phản hồi này, bạn đồng ý rằng Google có thể sử dụng phản hồi
-        bạn cung cấp để cải tiến bất kỳ sản phẩm hoặc dịch vụ nào của Google.
+        theo các chính sách bảo mật của chúng tôi.<ph name="BEGIN_BOLD"/> Bằng cách gửi phản hồi này, bạn đồng ý rằng Bitpop có thể sử dụng phản hồi
+        bạn cung cấp để cải tiến bất kỳ sản phẩm hoặc dịch vụ nào của Bitpop.
         <ph name="END_BOLD"/></translation>
 <translation id="2841013758207633010">Thời gian</translation>
 <translation id="4880827082731008257">Tìm kiếm lịch sử</translation>
@@ -4043,10 +4043,10 @@ Số mũ công khai (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bit):
 <translation id="8828933418460119530">Tên DNS</translation>
 <translation id="988159990683914416">Phiên bản dành cho Nhà phát triển</translation>
 <translation id="1097658378307015415">Trước khi đăng nhập, vui lòng đăng nhập với tư cách khách để kích hoạt mạng <ph name="NETWORK_ID"/></translation>
-<translation id="5170477580121653719">Dung lượng Google Drive còn lại: <ph name="SPACE_AVAILABLE"/>.</translation>
+<translation id="5170477580121653719">Dung lượng Bitpop Drive còn lại: <ph name="SPACE_AVAILABLE"/>.</translation>
 <translation id="4114470632216071239">Khóa thẻ SIM (yêu cầu mã PIN để sử dụng dữ liệu di động)</translation>
 <translation id="5184584788669813359">Không thể hiển thị một số phần của tài liệu PDF này. Bạn có muốn mở trong Adobe Reader không?</translation>
-<translation id="6581162200855843583">Liên kết Google Drive</translation>
+<translation id="6581162200855843583">Liên kết Bitpop Drive</translation>
 <translation id="340771324714262530">Dừng phản chiếu</translation>
 <translation id="3303260552072730022">Một tiện ích mở rộng đã kích hoạt chế độ toàn màn hình.</translation>
 <translation id="2183426022964444701">Chọn thư mục gốc của tiện ích mở rộng.</translation>
@@ -4147,7 +4147,7 @@ Nhấn phím bất kỳ để tiếp tục khám phá.</translation>
 <translation id="1177437665183591855">Lỗi chứng chỉ máy chủ chưa biết</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> muốn sử dụng máy ảnh và micrô của bạn.</translation>
 <translation id="8467473010914675605">Phương pháp nhập tiếng Hàn</translation>
-<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> đồng bộ hóa dữ liệu một cách an toàn bằng tài khoản Google của bạn. Luôn giữ mọi thứ được đồng bộ hóa hoặc tùy chỉnh loại dữ liệu được đồng bộ hóa và cài đặt mã hóa.</translation>
+<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> đồng bộ hóa dữ liệu một cách an toàn bằng tài khoản Bitpop của bạn. Luôn giữ mọi thứ được đồng bộ hóa hoặc tùy chỉnh loại dữ liệu được đồng bộ hóa và cài đặt mã hóa.</translation>
 <translation id="2639739919103226564">Trạng thái:</translation>
 <translation id="6923900367903210484">Bản quyền</translation>
 <translation id="3819800052061700452">&amp;Toàn màn hình</translation>
@@ -4171,7 +4171,7 @@ Nhấn phím bất kỳ để tiếp tục khám phá.</translation>
 <translation id="614998064310228828">Mẫu thiết bị:</translation>
 <translation id="1581962803218266616">Hiển thị trong Trình tìm kiếm</translation>
 <translation id="9100765901046053179">Cài đặt nâng cao</translation>
-<translation id="203168018648013061">Lỗi đồng bộ hóa: Vui lòng đặt lại Đồng bộ hóa thông qua Trang tổng quan của Google.</translation>
+<translation id="203168018648013061">Lỗi đồng bộ hóa: Vui lòng đặt lại Đồng bộ hóa thông qua Trang tổng quan của Bitpop.</translation>
 <translation id="1405126334425076373">Con trỏ chuột</translation>
 <translation id="6096326118418049043">Tên X.500</translation>
 <translation id="6086259540486894113">Bạn phải chọn ít nhất một loại dữ liệu để đồng bộ hóa.</translation>
@@ -4220,14 +4220,14 @@ Nhấn phím bất kỳ để tiếp tục khám phá.</translation>
 <translation id="2960316970329790041">Ngừng nhập</translation>
 <translation id="3835522725882634757">Ồ, không! Máy chủ này đang gửi dữ liệu <ph name="PRODUCT_NAME"/> không thể hiểu được. Vui lòng <ph name="BEGIN_LINK"/>báo cáo lỗi<ph name="END_LINK"/> và đưa vào <ph name="BEGIN2_LINK"/>danh sách mới<ph name="END2_LINK"/>.</translation>
 <translation id="6586451623538375658">Hoán đổi nút chuột chính</translation>
-<translation id="6937152069980083337">Phương pháp Nhập tiếng Nhật của Google (dành cho bàn phím Hoa Kỳ)</translation>
+<translation id="6937152069980083337">Phương pháp Nhập tiếng Nhật của Bitpop (dành cho bàn phím Hoa Kỳ)</translation>
 <translation id="475088594373173692">Người dùng đầu tiên</translation>
 <translation id="1731911755844941020">Đang gửi yêu cầu…</translation>
 <translation id="8371695176452482769">Nói ngay bây giờ</translation>
 <translation id="7622116780510618781">Tab xếp chồng</translation>
 <translation id="2988488679308982380">Không thể cài đặt gói: '<ph name="ERROR_CODE"/>'</translation>
 <translation id="2904079386864173492">Mẫu:</translation>
-<translation id="728836202927797241">Cung cấp khả năng đăng nhập tự động vào các trang web của Google bằng tài khoản này</translation>
+<translation id="728836202927797241">Cung cấp khả năng đăng nhập tự động vào các trang web của Bitpop bằng tài khoản này</translation>
 <translation id="6129953537138746214">Dấu cách</translation>
 <translation id="5041795084235183432">Chuột:</translation>
 <translation id="3704331259350077894">Dừng Hoạt động</translation>
@@ -4301,7 +4301,7 @@ Nhấn phím bất kỳ để tiếp tục khám phá.</translation>
 <translation id="3325146402434751578">Thiết lập hoặc quản lý máy in trong <ph name="CLOUD_PRINT_NAME"/></translation>
 <translation id="253434972992662860">&amp;Tạm dừng</translation>
 <translation id="335985608243443814">Duyệt qua...</translation>
-<translation id="7802488492289385605">Phương pháp Nhập tiếng Nhật của Google (dành cho bàn phím Dvorak Hoa Kỳ)</translation>
+<translation id="7802488492289385605">Phương pháp Nhập tiếng Nhật của Bitpop (dành cho bàn phím Dvorak Hoa Kỳ)</translation>
 <translation id="3876481682997626897">Chữ ký không khớp</translation>
 <translation id="8892992092192084762">Đã cài đặt chủ đề &quot;<ph name="THEME_NAME"/>&quot;.</translation>
 <translation id="7427348830195639090">Trang nền: <ph name="BACKGROUND_PAGE_URL"/></translation>
@@ -4336,7 +4336,7 @@ Nhấn phím bất kỳ để tiếp tục khám phá.</translation>
 <translation id="1131850611586448366">Trang web tại <ph name="HOST_NAME"/> đã được báo cáo là trang web “lừa đảo”.  Trang web lừa đảo lừa người dùng tiết lộ thông tin cá nhân hoặc tài chính, thường bằng cách giả làm đại diện của các tổ chức đáng tin cậy, chẳng hạn như ngân hàng.</translation>
 <translation id="2669198762040460457">Tên người dùng hoặc mật khẩu bạn đã nhập không chính xác.</translation>
 <translation id="1161575384898972166">Vui lòng đăng nhập vào <ph name="TOKEN_NAME"/> để xuất chứng chỉ ứng dụng khách.</translation>
-<translation id="1718559768876751602">Tạo Tài khoản Google ngay bây giờ</translation>
+<translation id="1718559768876751602">Tạo Tài khoản Bitpop ngay bây giờ</translation>
 <translation id="5503480894407718969">Truy cập tất cả dữ liệu trên thiết bị di động của bạn và trang web bạn truy cập</translation>
 <translation id="1884319566525838835">Trạng thái Hộp cát</translation>
 <translation id="2770465223704140727">Xóa khỏi danh sách</translation>

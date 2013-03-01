@@ -18,7 +18,7 @@
 <translation id="561349411957324076">Imekamilika</translation>
 <translation id="4764776831041365478">Ukurasa wa wavuti ulio <ph name="URL"/> unaweza kuwa haupatikani kwa muda au unaweza kuwa umehamishwa kabisa hadi anwani mpya ya wavuti.</translation>
 <translation id="6156863943908443225">Kache ya hati</translation>
-<translation id="4610656722473172270">Google Toolbar</translation>
+<translation id="4610656722473172270">Bitpop Toolbar</translation>
 <translation id="151501797353681931">Zilizoingizwa Kutoka Safari</translation>
 <translation id="3775432569830822555">Cheti cha Seva cha SSL</translation>
 <translation id="5704565838965461712">Chagua cheti cha kuwasilisha kama utambulisho:</translation>
@@ -51,7 +51,7 @@
 <translation id="8974161578568356045">Gundua Atomatiki</translation>
 <translation id="1818606096021558659">Ukurasa</translation>
 <translation id="5388588172257446328">Jina la mtumiaji:</translation>
-<translation id="1657406563541664238">Saidia kuboresha <ph name="PRODUCT_NAME"/> kwa kutuma takwimu za utumiaji na ripoti za kuzimika kwa Google kiatomatiki</translation>
+<translation id="1657406563541664238">Saidia kuboresha <ph name="PRODUCT_NAME"/> kwa kutuma takwimu za utumiaji na ripoti za kuzimika kwa Bitpop kiatomatiki</translation>
 <translation id="7982789257301363584">Mtandao</translation>
 <translation id="2336228925368920074">Alamisha Vichupo Vyote...</translation>
 <translation id="7481475534986701730">Tovuti zilizotembelewa hivi karibuni</translation>
@@ -205,7 +205,7 @@
 <translation id="2423578206845792524">Hifadhi picha kama...</translation>
 <translation id="9068931793451030927">Njia:</translation>
 <translation id="1407050882688520094">Una vyeti vilivyorekodiwa vinavyotambulisha mamlaka haya ya vyeti:</translation>
-<translation id="8642489171979176277">Zilizoingizwa Kutoka Google Toolbar</translation>
+<translation id="8642489171979176277">Zilizoingizwa Kutoka Bitpop Toolbar</translation>
 <translation id="2011110593081822050">Web Worker: <ph name="WORKER_NAME"/></translation>
 <translation id="8494979374722910010">Jaribio la kufikia seva limeshindwa.</translation>
 <translation id="7810202088502699111">Viibukizi vilizuiwa kwenye ukurasa huu.</translation>
@@ -568,7 +568,7 @@
 <translation id="2544782972264605588">zimesalia sekunde <ph name="NUMBER_DEFAULT"/></translation>
 <translation id="8871696467337989339">Unatumia alama ya mbinu ya amri isiyoauniwa:<ph name="BAD_FLAG"/>. Umathubiti na usalama utaathiriki.</translation>
 <translation id="4767443964295394154">Mahali pa Vipakuzi</translation>
-<translation id="5031870354684148875">Kuhusu Google Translate</translation>
+<translation id="5031870354684148875">Kuhusu Bitpop Translate</translation>
 <translation id="720658115504386855">Haijalishi ikiwa herufi ni kubwa au ndogo</translation>
 <translation id="2454247629720664989">Neno muhimu</translation>
 <translation id="3950820424414687140">Ingia</translation>
@@ -586,7 +586,7 @@
 <translation id="6463795194797719782">&amp;Hariri</translation>
 <translation id="4188026131102273494">Neno muhimu:</translation>
 <translation id="1720318856472900922">Uthibitishaji wa Seva ya TLS WWW</translation>
-<translation id="1436238710092600782">Fungua Akaunti ya Google</translation>
+<translation id="1436238710092600782">Fungua Akaunti ya Bitpop</translation>
 <translation id="7227780179130368205">Programu hasidi zimetambuliwa!</translation>
 <translation id="5149131957118398098">yamesalia masaa <ph name="NUMBER_ZERO"/></translation>
 <translation id="2367499218636570208">Jina la kwanza</translation>
@@ -1009,7 +1009,7 @@
 <translation id="7278870042769914968">Tumia mandhari ya GTK+</translation>
 <translation id="1902576642799138955">Kipindi cha Uhalali</translation>
 <translation id="3308006649705061278">Sehemu ya Shirika (OU)</translation>
-<translation id="8912362522468806198">Akaunti ya Google</translation>
+<translation id="8912362522468806198">Akaunti ya Bitpop</translation>
 <translation id="4074900173531346617">Cheti cha Anayetia Vyeti Sahihi</translation>
 <translation id="6165508094623778733">Pata maelezo zaidi</translation>
 <translation id="822618367988303761">siku <ph name="NUMBER_TWO"/> zilizopita</translation>
@@ -1152,7 +1152,7 @@
 <translation id="122082903575839559">Kanuni ya Sahihi ya Cheti</translation>
 <translation id="7240120331469437312">Jina Mbadala la Kichwa cha Cheti</translation>
 <translation id="1131850611586448366">Tovuti iliyo <ph name="HOST_NAME"/> imeripotiwa kuwa ni tovuti ya 'hadaa'. Tovuti za hadaa huwadanganya watumiaji wafichue maelezo ya kibinafsi au ya kifedha, mara nyingi kwa kujidai kuwa zinawakilisha taasisi zinazoaminika, kama vile benki.</translation>
-<translation id="1718559768876751602">Fungua akaunti ya Google sasa</translation>
+<translation id="1718559768876751602">Fungua akaunti ya Bitpop sasa</translation>
 <translation id="2770465223704140727">Ondoa kwenye orodha</translation>
 <translation id="6053401458108962351">&amp;Futa data ya kuvinjari...</translation>
 <translation id="2339641773402824483">Inatafuta visasishi...</translation>
