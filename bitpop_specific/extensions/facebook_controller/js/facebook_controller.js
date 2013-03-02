@@ -596,8 +596,8 @@ bitpop.FacebookController = (function() {
           break;
       }
       if (!found) {
-        var w = 1000;
-        var h = 450;
+        var w = 640;
+        var h = 400;
         var left = (screen.width/2)-(w/2);
         var top = (screen.height/2)-(h/2);
 

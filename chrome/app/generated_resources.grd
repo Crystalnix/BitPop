@@ -11973,12 +11973,12 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <if expr="pp_ifdef('android')">
         <message name="IDS_SYNC_OVERVIEW" desc="Mobile: The message that appears in the options dialog when sync has not been set up by the user.">
-          Sign in to <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> with your Google Account to save your personalized browser features to the web and access them from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> on any mobile device. You'll also be automatically signed in to your favorite Google services.
+          Sign in to <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> with your BitPop Account to save your personalized browser features to the web and access them from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> on any computer.
         </message>
       </if>
       <if expr="not pp_ifdef('android') and not pp_ifdef('chromeos')">
         <message name="IDS_SYNC_OVERVIEW" desc="The message that appears in the options dialog when sync has not been set up by the user.">
-          Sign in to <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> with your Google Account to save your personalized browser features to the web and access them from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> on any computer. You'll also be automatically signed in to your favorite Google services.
+          Sign in to <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> with your Facebook/BitPop Account to save your personalized browser features to the web and access them from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> on any computer.
         </message>
       </if>
       <message name="IDS_SYNC_START_SYNC_BUTTON_LABEL" desc="The label that appears on the sync button in the options dialog when sync has not been set up by the user.">
@@ -12076,10 +12076,10 @@ Some features may be unavailable.  Please check that the profile exists and you 
         You have chosen to encrypt data using your Google password; you can always change your mind later by changing your sync settings.
       </message>
       <message name="IDS_SYNC_PASSPHRASE_MSG_EXPLICIT" desc="Message when explicit passphrase is selected.">
-        Only someone with your passphrase can read your encrypted data -- the passphrase is not sent to or stored by Google. If you forget your passphrase, you will need to reset sync.
+        Only someone with your passphrase can read your encrypted data -- the passphrase is not sent to or stored by BitPop developers. If you forget your passphrase, you will need to reset sync.
       </message>
       <message name="IDS_SYNC_PASSPHRASE_MSG_EXPLICIT_PREFIX" desc="Message when explicit passphrase is selected.">
-        Only someone with your passphrase can read your encrypted data -- the passphrase is not sent to or stored by Google. If you forget your passphrase, you will need to
+        Only someone with your passphrase can read your encrypted data -- the passphrase is not sent to or stored by BitPop developers. If you forget your passphrase, you will need to
       </message>
       <message name="IDS_SYNC_PASSPHRASE_MSG_EXPLICIT_POSTFIX" desc="Postfix of the message show when explicit passphrase is selected.">
         reset sync
@@ -12113,22 +12113,22 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Advanced sync settings...
       </message>
       <message name="IDS_SYNC_STOP_SYNCING_BUTTON_LABEL" desc="The text to display on the button to indicate stop syncing functionality.">
-        Disconnect your Google Account...
+        Disconnect your Facebook/BitPop Account...
       </message>
       <message name="IDS_SYNC_STOP_SYNCING_CONFIRM_BUTTON_LABEL" desc="The text to display on the button to confirm the user wishes to stop syncing.">
         Disconnect account
       </message>
       <message name="IDS_SYNC_STOP_SYNCING_DIALOG_TITLE" desc="The title of the dialog that explains what 'stop syncing' means.">
-        Disconnect your Google Account
+        Disconnect your Facebook/BitPop Account
       </message>
       <if expr="pp_ifdef('android')">
         <message name="IDS_SYNC_STOP_SYNCING_EXPLANATION_LABEL" desc="Mobile: The text to display below the 'Stop syncing this account' button on the options pane, explaining what the button does.">
-          By disconnecting your Google Account from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph>, changes to your data on this mobile device will no longer be synced to your Google Account. Data already stored in your Google Account will remain there until you remove it using <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
+          By disconnecting your BitPop Account from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph>, changes to your data on this mobile device will no longer be synced to your BitPop Account. Data already stored in your BitPop Account will remain there until you remove it.
         </message>
       </if>
       <if expr="not pp_ifdef('android')">
         <message name="IDS_SYNC_STOP_SYNCING_EXPLANATION_LABEL" desc="The text to display below the 'Stop syncing this account' button on the options pane, explaining what the button does.">
-          By disconnecting your Google Account from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph>, changes to your data on this computer will no longer be synced to your Google Account. Data already stored in your Google Account will remain there until you remove it using <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
+          By disconnecting your BitPop Account from <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph>, changes to your data on this computer will no longer be synced to your BitPop Account. Data already stored in your BitPop Account will remain there until you remove it using <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>BitPop Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
         </message>
       </if>
       <!-- Sync time strings -->
@@ -12180,10 +12180,10 @@ Some features may be unavailable.  Please check that the profile exists and you 
 
       <!-- Sync Promo New Tab Page bubble strings -->
       <message name="IDS_SYNC_PROMO_NTP_BUBBLE_MESSAGE" desc="The body of the sync promo NTP bubble.">
-        You're now signed in to <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>. Your bookmarks, history, and other settings are being synced with your Google Account.
+        You're now signed in to <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>. Your bookmarks, history, and other settings are being synced with your BitPop Account.
       </message>
       <message name="IDS_SYNC_PROMO_NTP_BUBBLE_MESSAGE_ALT1" desc="And alternate string for the body of the sync promo NTP bubble.">
-        You're now signed in to <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>. Your bookmarks, history, and other settings are being synced with your Google Account using default settings.
+        You're now signed in to <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>. Your bookmarks, history, and other settings are being synced with your BitPop Account using default settings.
       </message>
       <message name="IDS_SYNC_PROMO_NTP_BUBBLE_LEARN_MORE" desc="The learn more link in the sync promo NTP bubble. Clicking the link will take users to a page explaining what sync is.">
         Learn more
@@ -12259,7 +12259,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Sync the following items automatically:
       </message>
       <message name="IDS_SYNC_CHOOSE_DATATYPES_INSTRUCTIONS" desc="Text explaining the 'Choose Datatypes' dialog.">
-        <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> securely syncs your data with your Google account. Keep everything synced or customize synced data types and encryption settings.
+        <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> securely syncs your data with your BitPop account. Keep everything synced or customize synced data types and encryption settings.
       </message>
       <message name="IDS_SYNC_EVERYTHING" desc="A radio button for users who want to sync all data types.">
         Sync everything
@@ -12334,7 +12334,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Use a sync passphrase to encrypt my data
       </message>
       <message name="IDS_SYNC_PASSPHRASE_WARNING" desc="Warning message about using a passphrase for sync.">
-        You are currently using a passphrase.  If you have forgotten your passphrase, you can reset sync to clear your data from Google's servers using the Google Dashboard.
+        You are currently using a passphrase.  If you have forgotten your passphrase, you can reset sync to clear your data.
       </message>
       <message name="IDS_SYNC_STATUS_NOT_CONNECTED" desc="Status shown in the new tab page when the user is not signed into sync">
         not signed in
@@ -12402,17 +12402,17 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <if expr="not pp_ifdef('android')">
         <message name="IDS_SYNC_LOGIN_INTRODUCTION" desc="The message to display at the top of the login dialog">
           <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> sync makes it easy to share your data (such as bookmarks and settings) between your computers.
-          <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> synchronizes your data by storing it online with Google when you sign in with your Google Account.
+          <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> synchronizes your data by storing it online with BitPop when you sign in with your BitPop Account.
         </message>
       </if>
       <message name="IDS_SYNC_SETUP_TITLE" desc="The title of the Sync Setup overlay.">
-        Sign in with your Google Account
+        Sign in with your BitPop Account
       </message>
       <message name="IDS_SYNC_LOGIN_SIGNIN_PREFIX" desc="The first part of the sentence that is displayed after the login info">
         Sign in with your
       </message>
       <message name="IDS_SYNC_LOGIN_SIGNIN_SUFFIX" desc="The second part of the sentence. Google will be replaced by the Google logo. The translation of 'Account' will be display in bold">
-        Google Account
+        BitPop Account
       </message>
       <message name="IDS_SYNC_LOGIN_EMAIL_NEW_LINE" desc="The user Email address of the Google account. This label appears on a separate line from the text field.">
         Email
@@ -12436,7 +12436,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
         or <ph name="IDS_SYNC_CREATE_ACCOUNT">$1<ex>Create a Google Account</ex></ph>
       </message>
       <message name="IDS_SYNC_CREATE_ACCOUNT" desc="The text of a hyperlink to create a Google account">
-        Create a Google Account
+        Create a BitPop Account
       </message>
       <message name="IDS_SYNC_CANNOT_BE_BLANK" desc="The input error message when the user hasn't entered a username or password">
         Required field cannot be left blank

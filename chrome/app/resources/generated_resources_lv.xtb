@@ -34,7 +34,7 @@
 <translation id="3581034179710640788">Šīs vietnes drošības sertifikātam ir beidzies derīguma termiņš!</translation>
 <translation id="2825758591930162672">Subjekta publiskā atslēga</translation>
 <translation id="8306243285620593545">Izcelt statusa ikonu</translation>
-<translation id="1130622745736410868">vēlas apstiprināt, ka pārlūkošanu veicat Chrome OS ierīcē, pieprasot Google verificēt jūsu kupona kodu.</translation>
+<translation id="1130622745736410868">vēlas apstiprināt, ka pārlūkošanu veicat Chrome OS ierīcē, pieprasot Bitpop verificēt jūsu kupona kodu.</translation>
 <translation id="8176382683266548737">Iespējot paziņojumus</translation>
 <translation id="8275038454117074363">Importēt</translation>
 <translation id="8418445294933751433">Rādīt kā cilni</translation>
@@ -57,7 +57,7 @@ Jums var noderēt inkognito režīms (<ph name="SHORTCUT_KEY"/>).</translation>
 <translation id="4940047036413029306">Jaut.z.</translation>
 <translation id="1497897566809397301">Atļaut saglabāt lokālos datus (ieteicams)</translation>
 <translation id="3275778913554317645">Atvērt kā logu</translation>
-<translation id="4553117311324416101">Google ir atklājis, ka jūsu datorā, iespējams, tiks instalēta ļaunprātīga programmatūra, ja turpināsiet. Ja esat apmeklējis šo vietni iepriekš vai arī uzticaties tai, iespējams, vietni nesen ir apdraudējis kāds urķis. Jums nevajadzētu turpināt; varbūt mēģiniet vēlreiz rīt vai arī atveriet citu vietni.</translation>
+<translation id="4553117311324416101">Bitpop ir atklājis, ka jūsu datorā, iespējams, tiks instalēta ļaunprātīga programmatūra, ja turpināsiet. Ja esat apmeklējis šo vietni iepriekš vai arī uzticaties tai, iespējams, vietni nesen ir apdraudējis kāds urķis. Jums nevajadzētu turpināt; varbūt mēģiniet vēlreiz rīt vai arī atveriet citu vietni.</translation>
 <translation id="5085514918439894988">Nav instalēts neviens pakalpojums, lai varētu veikt šo darbību, turklāt arī Chrome interneta veikalā netiek ieteikts neviens pakalpojums šim nolūkam.</translation>
 <translation id="8867568208303837180">Notiek sūtīšana...</translation>
 <translation id="509988127256758334">K&amp;o atrast:</translation>
@@ -91,7 +91,7 @@ Jums var noderēt inkognito režīms (<ph name="SHORTCUT_KEY"/>).</translation>
 <translation id="21426568240411732"><ph name="TITLE"/> izmanto jūsu kameru.</translation>
 <translation id="6156863943908443225">Skriptu kešatmiņa</translation>
 <translation id="4274187853770964845">Sinhronizācijas kļūda: pārtrauciet un restartējiet sinhronizāciju.</translation>
-<translation id="4610656722473172270">Google rīkjosla</translation>
+<translation id="4610656722473172270">Bitpop rīkjosla</translation>
 <translation id="656293578423618167">Faila ceļš vai nosaukums ir pārāk garš. Saglabājiet ar īsāku nosaukumu vai citā atrašanās vietā.</translation>
 <translation id="3484869148456018791">Iegūt jaunu sertifikātu</translation>
 <translation id="151501797353681931">Importēts no Safari</translation>
@@ -139,13 +139,13 @@ Jums var noderēt inkognito režīms (<ph name="SHORTCUT_KEY"/>).</translation>
 <translation id="7600965453749440009">Nekad netulkot saturu, kas rakstīts <ph name="LANGUAGE"/> valodā</translation>
 <translation id="3208703785962634733">Neapstiprināts</translation>
 <translation id="620329680124578183">Nelādēt (ieteicams)</translation>
-<translation id="6300924177400055566">Google diskā nepietiek vietas, lai saglabātu šo failu: <ph name="FILE_NAME"/>. Lūdzu, noņemiet failus vai <ph name="BEGIN_LINK"/>iegādājieties papildu vietu<ph name="END_LINK"/>.</translation>
+<translation id="6300924177400055566">Bitpop diskā nepietiek vietas, lai saglabātu šo failu: <ph name="FILE_NAME"/>. Lūdzu, noņemiet failus vai <ph name="BEGIN_LINK"/>iegādājieties papildu vietu<ph name="END_LINK"/>.</translation>
 <translation id="9074739597929991885">Bluetooth</translation>
 <translation id="2653266418988778031">Ja dzēsīsiet sertifikāta izdevējiestādes (SI) sertifikātu, pārlūkprogramma vairs nevarēs uzticēties nevienam šīs SI izsniegtajam sertifikātam.</translation>
 <translation id="5341849548509163798"><ph name="NUMBER_MANY"/> hours ago</translation>
 <translation id="4422428420715047158">Domēns:</translation>
 <translation id="7788444488075094252">Valodas un ievade</translation>
-<translation id="6723354935081862304">Drukāt pakalpojumā Google dokumenti un citos mākoņa galamērķos. <ph name="BEGIN_LINK"/>Pierakstieties<ph name="END_LINK"/>, lai drukātu, izmantojot Google mākoņdruku.</translation>
+<translation id="6723354935081862304">Drukāt pakalpojumā Bitpop dokumenti un citos mākoņa galamērķos. <ph name="BEGIN_LINK"/>Pierakstieties<ph name="END_LINK"/>, lai drukātu, izmantojot Google mākoņdruku.</translation>
 <translation id="3602290021589620013">Priekšskatīt</translation>
 <translation id="6257035105556579916">Paplašinājumus nevar modificēt pārvaldītajā režīmā.</translation>
 <translation id="800602641363855389"><ph name="TITLE"/> izmanto jūsu mikrofonu.</translation>
@@ -214,7 +214,7 @@ Jums var noderēt inkognito režīms (<ph name="SHORTCUT_KEY"/>).</translation>
 <translation id="1818606096021558659">Lapa</translation>
 <translation id="1549045574060481141">Lejupielādes apstiprināšana</translation>
 <translation id="5388588172257446328">Lietotājvārds:</translation>
-<translation id="1657406563541664238">Palīdziet uzlabot programmu <ph name="PRODUCT_NAME"/>, automātiski nosūtot lietošanas statistiku un avārijas pārskatus uzņēmumam Google</translation>
+<translation id="1657406563541664238">Palīdziet uzlabot programmu <ph name="PRODUCT_NAME"/>, automātiski nosūtot lietošanas statistiku un avārijas pārskatus uzņēmumam Bitpop</translation>
 <translation id="7982789257301363584">Tīkls</translation>
 <translation id="2271281383664374369">Šajā URL uz laiku ir aizliegti paplašinājumu pieprasījumi.</translation>
 <translation id="8528962588711550376">Pierakstīšanās.</translation>
@@ -231,8 +231,8 @@ Jums var noderēt inkognito režīms (<ph name="SHORTCUT_KEY"/>).</translation>
 <translation id="9151034842884433218">Izvēlieties sava jaunā Chrome profila attēlu un nosaukumu.</translation>
 <translation id="1510030919967934016">Šī lapa ir bloķēta un nevar izsekot jūsu atrašanās vietu.</translation>
 <translation id="8848519885565996859">Lietotāja definēts URL saites ietvars</translation>
-<translation id="4640525840053037973">Pierakstīšanās jūsu Google kontā</translation>
-<translation id="6315526595991863271">Šobrīd esat pierakstījies pakalpojumā <ph name="SHORT_PRODUCT_NAME"/>. Jūsu grāmatzīmes, vēsture un citi iestatījumi tiek sinhronizēti ar jūsu Google kontu, izmantojot noklusējuma iestatījumus.</translation>
+<translation id="4640525840053037973">Pierakstīšanās jūsu Bitpop kontā</translation>
+<translation id="6315526595991863271">Šobrīd esat pierakstījies pakalpojumā <ph name="SHORT_PRODUCT_NAME"/>. Jūsu grāmatzīmes, vēsture un citi iestatījumi tiek sinhronizēti ar jūsu Bitpop kontu, izmantojot noklusējuma iestatījumus.</translation>
 <translation id="5255315797444241226">Ievadītā ieejas frāze ir nepareiza.</translation>
 <translation id="762917759028004464">Noklusējuma pārlūks šobrīd ir <ph name="BROWSER_NAME"/>.</translation>
 <translation id="8289982954746764694">Iespējot ieraksta elementu (šobrīd vēl nefunkcionē pilnībā) parakstiem, subtitriem, sērijām un audio aprakstiem video elementos.</translation>
@@ -273,7 +273,7 @@ Jums var noderēt inkognito režīms (<ph name="SHORTCUT_KEY"/>).</translation>
           un pēc tam noklikšķiniet uz
           <ph name="BEGIN_BOLD"/>Labi<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Pievienot meklējumprogrammu</translation>
-<translation id="6868050610674841964">Ja pierakstīsieties, jūsu dati tiks sinhronizēti ar jūsu Google kontu, tādējādi varēsiet piekļūt savām grāmatzīmēm, vēsturei un citiem iestatījumiem jebkurā ierīcē.</translation>
+<translation id="6868050610674841964">Ja pierakstīsieties, jūsu dati tiks sinhronizēti ar jūsu Bitpop kontu, tādējādi varēsiet piekļūt savām grāmatzīmēm, vēsturei un citiem iestatījumiem jebkurā ierīcē.</translation>
 <translation id="5498951625591520696">Nevar sasniegt serveri.</translation>
 <translation id="1621207256975573490">Saglabāt rāmi kā...</translation>
 <translation id="4681260323810445443">Jums nav atļaujas piekļūt tīmekļa lapai vietnē <ph name="URL"/>. Iespējams, jums jāpierakstās.</translation>
@@ -307,7 +307,7 @@ Jums var noderēt inkognito režīms (<ph name="SHORTCUT_KEY"/>).</translation>
 <translation id="6845180713465955339">Sertifikātu “<ph name="CERTIFICATE_NAME"/>” izsniedza:</translation>
 <translation id="5364525511170219879">Iespējot paplašinājuma aktivitātes lietotāja interfeisu</translation>
 <translation id="3088325635286126843">&amp;Pārdēvēt...</translation>
-<translation id="6979158407327259162">Google disks</translation>
+<translation id="6979158407327259162">Bitpop disks</translation>
 <translation id="6853700448789925482">Iespējot <ph name="TRACK_HTML"/> elementu</translation>
 <translation id="3150927491400159470">Veikt stingro atkārtoto ielādi</translation>
 <translation id="7531238562312180404">Tā kā <ph name="PRODUCT_NAME"/> nekontrolē to, kā paplašinājumi rīkojas ar jūsu personīgajiem datiem, inkognito logos visi paplašinājumi ir atspējoti. Jūs varat tos individuāli atkal iespējot
@@ -372,7 +372,7 @@ Jums var noderēt inkognito režīms (<ph name="SHORTCUT_KEY"/>).</translation>
 <translation id="8194465509832052438">Konfigurēt komandas</translation>
 <translation id="4422347585044846479">Rediģēt šīs lapas grāmatzīmes</translation>
 <translation id="2452539774207938933">Pārslēgt uz lietotāju: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">Google Chrome var efektīvāk labot pareizrakstības kļūdas, nosūtot pārlūkā rakstīto uz Google serveriem un tādējādi ļaujot izmantot to pašu pareizrakstības pārbaudes tehnoloģiju, kas tiek izmantota Google meklēšanā.</translation>
+<translation id="4700157086864140907">Bitpop Chrome var efektīvāk labot pareizrakstības kļūdas, nosūtot pārlūkā rakstīto uz Google serveriem un tādējādi ļaujot izmantot to pašu pareizrakstības pārbaudes tehnoloģiju, kas tiek izmantota Google meklēšanā.</translation>
 <translation id="7632357940961158759">Dažus iestatījumus pārvalda paplašinājums.</translation>
 <translation id="1880905663253319515">Vai dzēst sertifikātu “<ph name="CERTIFICATE_NAME"/>”?</translation>
 <translation id="8546306075665861288">Attēlu kešatmiņa</translation>
@@ -430,7 +430,7 @@ veidlapas paraksts: <ph name="FORM_SIGNATURE"/>
 eksperimenta ID: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8656768832129462377">Nepārbaudīt</translation>
 <translation id="715487527529576698">Sākotnējais ķīniešu valodas režīms ir vienkāršotā ķīniešu valoda</translation>
-<translation id="6896830120821965585">Iespējo fona pakalpojumu, kas savieno Google mākoņdrukas pakalpojumu ar jebkuru printeri, kas instalēts šajā datorā. Pēc šīs laboratorijas iespējošanas varat ieslēgt Google mākoņdrukas savienotāju, pierakstoties ar savu Google kontu iestatījumu sadaļā Zem pārsega.</translation>
+<translation id="6896830120821965585">Iespējo fona pakalpojumu, kas savieno Bitpop mākoņdrukas pakalpojumu ar jebkuru printeri, kas instalēts šajā datorā. Pēc šīs laboratorijas iespējošanas varat ieslēgt Google mākoņdrukas savienotāju, pierakstoties ar savu Google kontu iestatījumu sadaļā Zem pārsega.</translation>
 <translation id="3999508690854143454">Vaicāt man, ja vietne pieprasa piekļuvi manai kamerai un mikrofonam (ieteicams)</translation>
 <translation id="1674989413181946727">Datora SSL iestatījumi:</translation>
 <translation id="1531285811424589182">Sertifikāta dzēšanas kļūda</translation>
@@ -447,7 +447,7 @@ eksperimenta ID: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="3874070094967379652">Izmantot sinhronizācijas ieejas frāzi, lai šifrētu manus datus</translation>
 <translation id="6500116422101723010">Serveris pašlaik nevar apstrādāt pieprasījumu.  Šis kods norāda, ka tas ir uz laiku, un serveris atkal darbosies pēc aizkaves.</translation>
 <translation id="1644574205037202324">Vēsture</translation>
-<translation id="4206944295053515692">Vaicāt ieteikumus no Google</translation>
+<translation id="4206944295053515692">Vaicāt ieteikumus no Bitpop</translation>
 <translation id="1297175357211070620">Galamērķis</translation>
 <translation id="479280082949089240">Šīs lapas iestatītie sīkfaili</translation>
 <translation id="4198861010405014042">Kopīgotā piekļuve</translation>
@@ -460,8 +460,8 @@ eksperimenta ID: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="3887847548716051874">Vienmēr ļaut šai vietnei izmantot šo mikrofonu un šo kameru</translation>
 <translation id="2886862922374605295">Aparatūra:</translation>
 <translation id="4497097279402334319">Neizdevās pievienoties tīklam.</translation>
-<translation id="7342729285348293164">Pierakstieties pakalpojumā <ph name="PRODUCT_NAME"/>, izmantojot savu Google kontu, lai saglabātu savas personalizētās pārlūka funkcijas tīmeklī un piekļūtu tām no <ph name="PRODUCT_NAME"/> jebkurā datorā. Jūs tiksiet arī automātiski pierakstīts savos iecienītākajos Google pakalpojumos.</translation>
-<translation id="2542049655219295786">Google tabula</translation>
+<translation id="7342729285348293164">Pierakstieties pakalpojumā <ph name="PRODUCT_NAME"/>, izmantojot savu Bitpop kontu, lai saglabātu savas personalizētās pārlūka funkcijas tīmeklī un piekļūtu tām no <ph name="PRODUCT_NAME"/> jebkurā datorā. Jūs tiksiet arī automātiski pierakstīts savos iecienītākajos Google pakalpojumos.</translation>
+<translation id="2542049655219295786">Bitpop tabula</translation>
 <translation id="3899879303189199559">Bezsaistē ilgāk par gadu</translation>
 <translation id="5303618139271450299">Tīmekļa lapa nav atrasta</translation>
 <translation id="4256316378292851214">Saglabāt &amp;video kā...</translation>
@@ -470,7 +470,7 @@ eksperimenta ID: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="6518014396551869914">Kopēt attēlu</translation>
 <translation id="3236997602556743698">3 Set (390)</translation>
 <translation id="542155483965056918"><ph name="NUMBER_ZERO"/> mins ago</translation>
-<translation id="4928351909437667303">Atspējot Google disku šajā ierīcē.</translation>
+<translation id="4928351909437667303">Atspējot Bitpop disku šajā ierīcē.</translation>
 <translation id="6315723398663634808">Servera sertifikāts ietver vāju kriptogrāfisko atslēgu!</translation>
 <translation id="2887525882758501333">PDF dokuments</translation>
 <translation id="289426338439836048">Cits mobilais tīkls...</translation>
@@ -542,7 +542,7 @@ eksperimenta ID: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="6431347207794742960">Izmantojot pārlūkprogrammu <ph name="PRODUCT_NAME"/>, datorā tiks iestatīti automātiskie atjauninājumi, kas būs pieejami visiem šī datora lietotājiem.</translation>
 <translation id="4973698491777102067">Neatgriezeniski dzēst šādus vienumus no:</translation>
 <translation id="6074963268421707432">Neatļauj nevienai vietnei rādīt paziņojumus darbvirsmā</translation>
-<translation id="4944952004685780325">Ļauj izmantot Diska 2. versijas API, lai piekļūtu Google diska mapei.</translation>
+<translation id="4944952004685780325">Ļauj izmantot Diska 2. versijas API, lai piekļūtu Bitpop diska mapei.</translation>
 <translation id="1995173078718234136">Notiek satura skenēšana...</translation>
 <translation id="7920521481309889533">Iespējot SPDY/3</translation>
 <translation id="5979681173469464041">Izcelt nākamo rūti</translation>
@@ -551,7 +551,7 @@ eksperimenta ID: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="1491151370853475546">Atkārtoti ielādēt šo lapu</translation>
 <translation id="5374359983950678924">Mainīt attēlu</translation>
 <translation id="2859738163554174612">Nekad nepiedāvāt pierakstīties</translation>
-<translation id="1378727793141957596">Laipni lūdzam pakalpojumā Google disks!</translation>
+<translation id="1378727793141957596">Laipni lūdzam pakalpojumā Bitpop disks!</translation>
 <translation id="5158548125608505876">Nesinhronizēt manas paroles</translation>
 <translation id="3717485073527618485">Vaicāt man, ja vietne mēģina atspējot peles kursoru (ieteicams)</translation>
 <translation id="3273410961255278341">Sūtīt:</translation>
@@ -584,7 +584,7 @@ eksperimenta ID: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="773426152488311044">Šobrīd esat pakalpojuma <ph name="PRODUCT_NAME"/> vienīgais lietotājs.</translation>
 <translation id="2042078858148122628">Serveris vietnē <ph name="HOST_NAME"/> nav atrodams, jo DNS uzmeklēšana neizdevās. DNS ir tīkla pakalpojums, kas pārveido vietnes nosaukumu interneta adresē. Visbiežāk šī kļūda tiek izraisīta, ja nav savienojuma ar internetu vai tīkls nav pareizi konfigurēts. To var izraisīt arī nereaģējošs DNS serveris vai ugunsmūris, kas neļauj <ph name="PRODUCT_NAME"/> piekļūt tīklam.</translation>
 <translation id="2159087636560291862">Šajā gadījumā sertifikātu nav verificējusi trešā puse, kurai jūsu dators uzticas. Ikviens var izveidot sertifikātu un uzdoties par kādu citu vietni, tādēļ to jāverificē uzticamai trešai pusei. Bez šīs verifikācijas sertifikāta identifikācijas datiem nav nekādas jēgas. Tādējādi nav iespējams pārbaudīt, vai jūs sazināties ar <ph name="DOMAIN"/>, nevis uzbrucēju, kas izveidojis pats savu sertifikātu un uzdodas par <ph name="DOMAIN2"/>. Jums nevajadzētu veikt tālākas darbības.</translation>
-<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> pieprasa jūsu datu šifrēšanu, izmantojot jūsu Google paroli vai jūsu personīgo ieejas frāzi.</translation>
+<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> pieprasa jūsu datu šifrēšanu, izmantojot jūsu Bitpop paroli vai jūsu personīgo ieejas frāzi.</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">Nav sertifikāta izdevējiestāde</translation>
 <translation id="6099520380851856040">Kad notika: <ph name="CRASH_TIME"/></translation>
@@ -739,7 +739,7 @@ Atlicis: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="8943805475239098364">Vai vēlaties meklēt ar <ph name="NEW_GOOGLE_HOST"/>, nevis ar <ph name="CURRENT_GOOGLE_HOST"/>?</translation>
 <translation id="3813510441224209252">Formatēšana gaida</translation>
 <translation id="8912793549644936705">Izstiept</translation>
-<translation id="8026684114486203427">Lai izmantotu Chrome Web Store, jums ir jāpierakstās Google kontā.</translation>
+<translation id="8026684114486203427">Lai izmantotu Chrome Web Store, jums ir jāpierakstās Bitpop kontā.</translation>
 <translation id="1486096554574027028">Meklēt paroles</translation>
 <translation id="4631887759990505102">Izpildītājs</translation>
 <translation id="1836938920852968258">Atspējot NTP izvēlni Citas ierīces.</translation>
@@ -755,12 +755,12 @@ Atlicis: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="89217462949994770">Pārāk daudz reižu esat ievadījis nepareizu PIN. Lūdzu, sazinieties ar <ph name="CARRIER_ID"/>, lai iegūtu jaunu 8 ciparu PIN atguves kombināciju.</translation>
 <translation id="5920618722884262402">Bloķēt aizskarošus vārdus</translation>
 <translation id="242006861730551700">Atspējo lejupielāžu plauktu. Tiks rādīts jaunais lejupielāžu UI, kamēr tas tiek ieviests.</translation>
-<translation id="7782102568078991263">Vairāk ieteikumu no Google nav pieejams</translation>
+<translation id="7782102568078991263">Vairāk ieteikumu no Bitpop nav pieejams</translation>
 <translation id="8038111231936746805">(noklusējums)</translation>
 <translation id="5120247199412907247">Uzlabotā konfigurācija</translation>
 <translation id="567881659373499783">Versija <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">Drošas pārlūkošanas konfidencialitātes politikas</translation>
-<translation id="5105859138906591953">Lai importētu Rīkjoslas grāmatzīmes pārlūkā Chrome, jums jāpierakstās savā Google kontā. Pierakstieties un mēģiniet importēt vēlreiz.</translation>
+<translation id="5105859138906591953">Lai importētu Rīkjoslas grāmatzīmes pārlūkā Chrome, jums jāpierakstās savā Bitpop kontā. Pierakstieties un mēģiniet importēt vēlreiz.</translation>
 <translation id="8899851313684471736">Atvērt saiti jaunā logā</translation>
 <translation id="4110342520124362335"><ph name="DOMAIN"/> sīkfaili ir bloķēti.</translation>
 <translation id="3303818374450886607">Kopijas</translation>
@@ -809,7 +809,7 @@ Atlicis: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="1871208020102129563">Starpniekserveris ir iestatīts, lai tas lietotu fiksētus starpniekserverus, nevis .pac skripta URL.</translation>
 <translation id="1634788685286903402">Uzticēties šim sertifikātam, lai identificētu e-pasta lietotājus.</translation>
 <translation id="3154015489111064513">Izmantot DHCP</translation>
-<translation id="8642489171979176277">Importētas no Google rīkjoslas</translation>
+<translation id="8642489171979176277">Importētas no Bitpop rīkjoslas</translation>
 <translation id="4142744419835627535">Uzreiz automātiski ievadīt Dinamiskās meklēšanas ieteikumus</translation>
 <translation id="4684427112815847243">Sinhronizēt visu</translation>
 <translation id="1125520545229165057">Dvorak (Hsu)</translation>
@@ -819,7 +819,7 @@ Atlicis: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="8071086933245711894">Kopēšanas darbība ir atcelta.</translation>
 <translation id="2441392884867482684">Šī lapa tagad ir redzama pilnekrāna režīmā un vēlas atspējot jūsu peles kursoru.</translation>
 <translation id="1422780722984745882">Saņemti vairāki atrašanās vietas virsraksti. Tas nav atļauts, lai nodrošinātu aizsardzību pret HTTP atbilžu sadalīšanas uzbrukumiem.</translation>
-<translation id="7787129790495067395">Šobrīd jūs izmantojat ieejas frāzi. Ja esat aizmirsis savu ieejas frāzi, varat atiestatīt sinhronizāciju, izmantojot Google informācijas paneli, lai dzēstu datus no Google serveriem.</translation>
+<translation id="7787129790495067395">Šobrīd jūs izmantojat ieejas frāzi. Ja esat aizmirsis savu ieejas frāzi, varat atiestatīt sinhronizāciju, izmantojot Bitpop informācijas paneli, lai dzēstu datus no Google serveriem.</translation>
 <translation id="3380365263193509176">Nezināma kļūda</translation>
 <translation id="1273135602584709125">Atcelt uzņēmuma reģistrāciju</translation>
 <translation id="2686759344028411998">Nespēj atklāt nevienu ielādētu moduli.</translation>
@@ -888,7 +888,7 @@ Tiek rēķināts atlikušais laiks</translation>
 <translation id="6204994989617056362">Drošajā rokasspiedienā nav atrasts standarta SSL atkārtotās saskaņošanas paplašinājums. Dažās vietnēs, kuras atbalsta atkārtotās saskaņošanas paplašinājumu, Chrome pieprasa vēl drošāku rokasspiedienu, lai novērstu jau zināmo uzbrukumu klasi. Šī paplašinājuma izlaišana liecina, ka jūsu savienojums pārraides laikā tika pārķerts un modificēts.</translation>
 <translation id="1238150413700645698">Aizsargāts saturs</translation>
 <translation id="6679492495854441399">Vai! Mēģinot palaist šo ierīci, notika tīkla sakaru problēma. Lūdzu, pārbaudiet tīkla savienojumu un mēģiniet vēlreiz!</translation>
-<translation id="5270547718570958938">Google kalendārs</translation>
+<translation id="5270547718570958938">Bitpop kalendārs</translation>
 <translation id="5823933238730612365">PPAPI (nav ievietots smilšukastē)</translation>
 <translation id="2879755071890315043">Uzgaidiet, kamēr mēs iestatīsim jūsu mobilo tīklu.</translation>
 <translation id="5301751748813680278">Ieiešana viesa statusā.</translation>
@@ -943,7 +943,7 @@ Tiek rēķināts atlikušais laiks</translation>
 <translation id="3909791450649380159">Izgrie&amp;zt</translation>
 <translation id="2955913368246107853">Aizvērt atrašanas joslu</translation>
 <translation id="8864170386249720785">Mobilās ierīces SSL iestatījumi:</translation>
-<translation id="3914942725612686145">Šobrīd esat pierakstījies pārlūkā Chrome. Atvērtās cilnes, grāmatzīmes un universālā lodziņa dati tiek sinhronizēti ar jūsu Google kontu.</translation>
+<translation id="3914942725612686145">Šobrīd esat pierakstījies pārlūkā Chrome. Atvērtās cilnes, grāmatzīmes un universālā lodziņa dati tiek sinhronizēti ar jūsu Bitpop kontu.</translation>
 <translation id="5642508497713047">CRL parakstītājs</translation>
 <translation id="7612302739128412469">Aktivizējiet šo paplašinājumu, noklikšķinot uz šīs ikonas.</translation>
 <translation id="813082847718468539">Skatīt informāciju par vietni.</translation>
@@ -991,7 +991,7 @@ Tiek rēķināts atlikušais laiks</translation>
 <translation id="1637259088766071440">Tīmekļa lapa vietnē <ph name="HOST_NAME"/> ietver elementus no vietnēm, kurās, domājams, tiek mitināta ļaunprātīga programmatūra — programmatūra, kas var kaitēt jūsu mobilajai ierīcei vai citādi darboties bez jūsu piekrišanas. Pat tikai apmeklējot vietni, kas satur ļaunprātīgu programmatūru, var tikt inficēta jūsu mobilā ierīce. Vietnē tiek mitināts arī saturs no vietnēm, par kurām ziņots kā par pikšķerēšanas vietnēm. Pikšķerēšanas vietnes apmāna lietotājus, lai tie izpaustu personas vai finanšu informāciju, bieži izliekoties par drošu iestāžu, piemēram, banku, pārstāvjiem.</translation>
 <translation id="855081842937141170">Piespraust cilni</translation>
 <translation id="6263541650532042179">Atiestatīt sinhronizāciju</translation>
-<translation id="6513247462497316522">Ja jums nebūs pieejams savienojums ar tīklu, Google Chrome izmantos mobilos datus.</translation>
+<translation id="6513247462497316522">Ja jums nebūs pieejams savienojums ar tīklu, Bitpop Chrome izmantos mobilos datus.</translation>
 <translation id="6055392876709372977">PKCS #1 SHA-256 ar RSA šifrējumu</translation>
 <translation id="7903984238293908205">Katakana</translation>
 <translation id="268053382412112343">Vēsture</translation>
@@ -1117,8 +1117,8 @@ Tiek rēķināts atlikušais laiks</translation>
 <translation id="7632380866023782514">Augšā pa labi</translation>
 <translation id="4693789964669838452">Kadri sekundē</translation>
 <translation id="4925520021222027859">Ievadiet savu lietojumprogrammas paroli:</translation>
-<translation id="3494768541638400973">Google japāņu valodas ievade (japāņu valodas tastatūrai)</translation>
-<translation id="4679639996443646335">Uzņēmums Google ir atradis ļaunprātīgu programmatūru, kas var tikt instalēta jūsu mobilajā ierīcē, ja tupināsiet. Ja jau iepriekš esat apmeklējis šo vietni vai uzticaties tai, iespējams, ka nesen to ir sabojājis urķis. Jums nevajadzētu turpināt un, iespējams, rīt mēģināt vēlreiz vai doties kaut kur citur.</translation>
+<translation id="3494768541638400973">Bitpop japāņu valodas ievade (japāņu valodas tastatūrai)</translation>
+<translation id="4679639996443646335">Uzņēmums Bitpop ir atradis ļaunprātīgu programmatūru, kas var tikt instalēta jūsu mobilajā ierīcē, ja tupināsiet. Ja jau iepriekš esat apmeklējis šo vietni vai uzticaties tai, iespējams, ka nesen to ir sabojājis urķis. Jums nevajadzētu turpināt un, iespējams, rīt mēģināt vēlreiz vai doties kaut kur citur.</translation>
 <translation id="7223775956298141902">Diemžēl neviens paplašinājums nav instalēts :(</translation>
 <translation id="3118046075435288765">Serveris negaidīti pārtrauca savienojumu.</translation>
 <translation id="1725068750138367834">&amp;Failu pārvaldnieks</translation>
@@ -1144,7 +1144,7 @@ Tiek rēķināts atlikušais laiks</translation>
 <translation id="3706919628594312718">Peles iestatījumi</translation>
 <translation id="8326478304147373412">PKCS #7, sertificēšanas ķēde</translation>
 <translation id="3242765319725186192">Iepriekš koplietots kods:</translation>
-<translation id="8089798106823170468">Kopīgojiet savus printerus un kontrolējiet pie tiem piekļuvi no jebkura Google konta.</translation>
+<translation id="8089798106823170468">Kopīgojiet savus printerus un kontrolējiet pie tiem piekļuvi no jebkura Bitpop konta.</translation>
 <translation id="5426597273899159431">Papildu iestatīšana...</translation>
 <translation id="1105608846356399385">Apmeklēt vietni</translation>
 <translation id="7218608093942361839"><ph name="PRODUCT_NAME"/> <ph name="PRODUCT_VERSION"/> (Platforma <ph name="PLATFORM_VERSION"/>)</translation>
@@ -1210,7 +1210,7 @@ Tiek rēķināts atlikušais laiks</translation>
 <translation id="81686154743329117">ZRM</translation>
 <translation id="2150139952286079145">Meklēt galamērķus</translation>
 <translation id="4713309396072794887">Vai instalēt šos paplašinājumus?</translation>
-<translation id="5637940320504994319">Google diskā vairs nepietiek vietas.</translation>
+<translation id="5637940320504994319">Bitpop diskā vairs nepietiek vietas.</translation>
 <translation id="6458467102616083041">Ignorēta, jo ar politiku ir atspējota noklusējuma meklēšana.</translation>
 <translation id="2266011376676382776">Lapa(s) neatbild</translation>
 <translation id="3100609564180505575">Moduļi (<ph name="TOTAL_COUNT"/>) — zināmie konflikti: <ph name="BAD_COUNT"/>; aizdomīgie: <ph name="SUSPICIOUS_COUNT"/></translation>
@@ -1272,7 +1272,7 @@ Tiek rēķināts atlikušais laiks</translation>
 <translation id="7092106376816104">Uznirstošo logu izņēmumi</translation>
 <translation id="4830475881783902092">Klienta ID:</translation>
 <translation id="4600958291864306415">notiek ģenerēšana...</translation>
-<translation id="8594787581355215556">Esat pierakstījies kā <ph name="USER_EMAIL_ADDRESS"/>. Pārvaldiet savus sinhronizētos datus <ph name="BEGIN_LINK"/>Google vadības panelī<ph name="END_LINK"/>.</translation>
+<translation id="8594787581355215556">Esat pierakstījies kā <ph name="USER_EMAIL_ADDRESS"/>. Pārvaldiet savus sinhronizētos datus <ph name="BEGIN_LINK"/>Bitpop vadības panelī<ph name="END_LINK"/>.</translation>
 <translation id="4338600611020922010">Pievienot sākuma ekrānam</translation>
 <translation id="263325223718984101"><ph name="PRODUCT_NAME"/> nevarēja pabeigt instalēšanu, tomēr turpinās izpildīties no diska attēla.</translation>
 <translation id="6186893483313227582">Ikona <ph name="VALUE"/></translation>
@@ -1289,7 +1289,7 @@ Tiek rēķināts atlikušais laiks</translation>
 <translation id="4250680216510889253">Nē</translation>
 <translation id="5109044022078737958">Atlēte</translation>
 <translation id="6291953229176937411">Rādīt lietojumprogrammā &amp;Finder</translation>
-<translation id="8598687241883907630">Atvienot savu Google kontu...</translation>
+<translation id="8598687241883907630">Atvienot savu Bitpop kontu...</translation>
 <translation id="6410894982725961573">Padarīt pieejamu bezsaistē</translation>
 <translation id="2556718757702023317">Lai failu <ph name="FILE_NAME"/> saglabātu bezsaistē, jums ir jāatbrīvo <ph name="TOTAL_FILE_SIZE"/> vietas.<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>Atspraudiet failus, kuriem vairs nav jāpiekļūst bezsaistē.<ph name="MARKUP_3"/>
@@ -1380,7 +1380,7 @@ Vai vēlaties palaist rīku <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation
 <translation id="2629089419211541119">Pirms <ph name="NUMBER_ONE"/> stundas</translation>
 <translation id="1691063574428301566">Pēc atjaunināšanas dators tiks restartēts.</translation>
 <translation id="4697551882387947560">Beidzot pārlūkošanas sesiju</translation>
-<translation id="5900302528761731119">Google profila fotoattēls</translation>
+<translation id="5900302528761731119">Bitpop profila fotoattēls</translation>
 <translation id="131364520783682672">Caps Lock</translation>
 <translation id="2066999550761485762"><ph name="BEGIN_BOLD"/>Jūs esat aktivizējis inkognito režīmu.<ph name="END_BOLD"/>
           <ph name="LINE_BREAK"/>
@@ -1404,7 +1404,7 @@ Vai vēlaties palaist rīku <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation
 <translation id="1478897831827830200">Izsekošana</translation>
 <translation id="5714678912774000384">Aktivizēt pēdējo cilni</translation>
 <translation id="8466234950814670489">Tar arhīvs</translation>
-<translation id="5902572236435740554">Vispirms ievadiet sava Google konta paroli, <ph name="LINE_BREAK"/>nevis lietojumprogrammas paroli.</translation>
+<translation id="5902572236435740554">Vispirms ievadiet sava Bitpop konta paroli, <ph name="LINE_BREAK"/>nevis lietojumprogrammas paroli.</translation>
 <translation id="8813811964357448561">papīra loksne</translation>
 <translation id="2125314715136825419">Turpināt, neatjaunojot Adobe Reader (nav ieteicams)</translation>
 <translation id="5034510593013625357">Saimniekdatora nosaukuma struktūra</translation>
@@ -1425,7 +1425,7 @@ Vai vēlaties palaist rīku <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation
 <translation id="8337399713761067085">Šobrīd esat bezsaistē</translation>
 <translation id="5199729219167945352">Eksperimenti</translation>
 <translation id="6499143127267478107">No starpniekservera skripta tiek noteikts saimniekdators...</translation>
-<translation id="8069615408251337349">Google mākoņdruka</translation>
+<translation id="8069615408251337349">Bitpop mākoņdruka</translation>
 <translation id="5055518462594137986">Atcerēties manu izvēli visām šāda veida saitēm.</translation>
 <translation id="246059062092993255">Spraudņi šajā lapā tika bloķēti.</translation>
 <translation id="2870560284913253234">Vietne</translation>
@@ -1470,7 +1470,7 @@ Vai vēlaties palaist rīku <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation
 <translation id="3273951168350045122">Tastatūra (<ph name="ADDRESS"/>)</translation>
 <translation id="8221729492052686226">Ja nenosūtījāt šo pieprasījumu, tas var norādīt uz uzbrukuma mēģinājumu jūsu vietnei. Ja vien neveicāt tiešu darbību, lai nosūtītu šo pieprasījumu, spiediet Neko nedarīt.</translation>
 <translation id="894360074127026135">Netscape starptautiskā palielināšana</translation>
-<translation id="8420060421540670057">Rādīt Google dokumentu failus</translation>
+<translation id="8420060421540670057">Rādīt Bitpop dokumentu failus</translation>
 <translation id="1201402288615127009">Nākamais</translation>
 <translation id="1335588927966684346">Utilītprogramma:</translation>
 <translation id="2710582058364740604">Ignorē ierīces ekrāna blīvumu, lai izmantotu augsta DPI režīmu un līdzekļus.</translation>
@@ -1558,7 +1558,7 @@ Vai vēlaties palaist rīku <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation
 <translation id="5669267381087807207">Notiek aktivizācija</translation>
 <translation id="7434823369735508263">AK Dvoraka tastatūra</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> dienas</translation>
-<translation id="5308845175611284862">Pakalpojuma <ph name="PRODUCT_NAME"/> sinhronizācija atvieglo jūsu datu (piem., grāmatzīmju un iestatījumu) kopīgošanu jūsu datoros. Pakalpojums <ph name="PRODUCT_NAME"/> sinhronizē datus, tos saglabājot tiešsaistē Google tīklā, kad pierakstāties savā Google kontā.</translation>
+<translation id="5308845175611284862">Pakalpojuma <ph name="PRODUCT_NAME"/> sinhronizācija atvieglo jūsu datu (piem., grāmatzīmju un iestatījumu) kopīgošanu jūsu datoros. Pakalpojums <ph name="PRODUCT_NAME"/> sinhronizē datus, tos saglabājot tiešsaistē Bitpop tīklā, kad pierakstāties savā Google kontā.</translation>
 <translation id="1707463636381878959">Kopīgot šo tīklu ar citiem lietotājiem</translation>
 <translation id="2084978867795361905">MS-IME</translation>
 <translation id="7227669995306390694"><ph name="NETWORK"/> nav datu plāna</translation>
@@ -1566,7 +1566,7 @@ Vai vēlaties palaist rīku <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation
 <translation id="7163503212501929773"><ph name="NUMBER_MANY"/>stundas atlikušas</translation>
 <translation id="7705276765467986571">Nevarēja ielādēt grāmatzīmju modeli.</translation>
 <translation id="750413812607578381">Restartējiet <ph name="PRODUCT_NAME"/> tūlīt.</translation>
-<translation id="8034305971714560781">Atvienojot savu Google kontu no pakalpojuma <ph name="PRODUCT_NAME"/>, jūsu datu izmaiņas šajā mobilajā ierīcē vairs netiks sinhronizētas ar jūsu Google kontu. Dati, kas jau saglabāti jūsu Google kontā, tur arī paliks, līdz noņemsiet tos, izmantojot <ph name="BEGIN_LINK"/>Google vadības paneli<ph name="END_LINK"/>.</translation>
+<translation id="8034305971714560781">Atvienojot savu Bitpop kontu no pakalpojuma <ph name="PRODUCT_NAME"/>, jūsu datu izmaiņas šajā mobilajā ierīcē vairs netiks sinhronizētas ar jūsu Google kontu. Dati, kas jau saglabāti jūsu Google kontā, tur arī paliks, līdz noņemsiet tos, izmantojot <ph name="BEGIN_LINK"/>Google vadības paneli<ph name="END_LINK"/>.</translation>
 <translation id="2638286699381354126">Atjaunināt...</translation>
 <translation id="1196338895211115272">Neizdevās eksportēt privāto atslēgu.</translation>
 <translation id="1459967076783105826">Paplašinājumu pievienotās meklētājprogrammas</translation>
@@ -1605,10 +1605,10 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="1789424019568293108">Iespējo eksperimentālu lietotāja interfeisu, kas uzrāda paplašinājuma aktivitātes žurnālu.</translation>
 <translation id="2090876986345970080">Sistēmas drošības iestatījumi</translation>
 <translation id="3728067901555601989">OTP:</translation>
-<translation id="3475447146579922140">Google izklājlapa</translation>
+<translation id="3475447146579922140">Bitpop izklājlapa</translation>
 <translation id="6856526171412069413">Savilkšanas mēroga iespējošana</translation>
 <translation id="9219103736887031265">Attēli</translation>
-<translation id="7415834062450491574">Sūtīt atsauksmes uzņēmumam Google.</translation>
+<translation id="7415834062450491574">Sūtīt atsauksmes uzņēmumam Bitpop.</translation>
 <translation id="4480995875255084924">Iespējo ozolkoka skatītāju oša koka skatā. Ļauj pārbaudīt loga, slāņa un skata hierarhijas un to rekvizītus. Lai piekļūtu, nospiediet Crtl+Shift+F1.</translation>
 <translation id="6975147921678461939">Notiek akumulatora uzlāde: <ph name="PRECENTAGE"/>%</translation>
 <translation id="5453632173748266363">Kiriliska</translation>
@@ -1619,7 +1619,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="5329858601952122676">Dzēst</translation>
 <translation id="6100736666660498114">Starta izvēlne</translation>
 <translation id="2706131822305474920">Pārslēdzieties starp atvērtām cilnēm</translation>
-<translation id="4402766404187539019">Google.com pasts</translation>
+<translation id="4402766404187539019">Bitpop.com pasts</translation>
 <translation id="6275297011664564181">Šobrīd neviena politika nav aktīva!</translation>
 <translation id="3994878504415702912">Tālummaiņa</translation>
 <translation id="9009369504041480176">Notiek augšupielāde (<ph name="PROGRESS_PERCENT"/>%)...</translation>
@@ -1657,7 +1657,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="6059764114876442286">Printera atiestatīšana</translation>
 <translation id="6406506848690869874">Sinhronizācija</translation>
 <translation id="5288678174502918605">Vēlr&amp;eiz atvērt aizvērto cilni</translation>
-<translation id="7238461040709361198">Jūsu Google konta parole ir mainījusies, kopš pēdējo reizi pierakstījāties šajā datorā.</translation>
+<translation id="7238461040709361198">Jūsu Bitpop konta parole ir mainījusies, kopš pēdējo reizi pierakstījāties šajā datorā.</translation>
 <translation id="1956050014111002555">Failā bija iekļauti vairāki sertifikāti, no kuriem neviens netika importēts:</translation>
 <translation id="302620147503052030">Rādīt pogu</translation>
 <translation id="1895658205118569222">Izslēgšana</translation>
@@ -1667,7 +1667,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="6624687053722465643">Kārums</translation>
 <translation id="8420296388012619424">Jūsu USB ierīce nav formatēta.</translation>
 <translation id="3021256392995617989">Vaicāt man, ja vietne mēģina izsekot manu fizisko atrašanās vietu (ieteicams)</translation>
-<translation id="8083739373364455075">Iegūt bezmaksas 100 GB pakalpojumā Google disks</translation>
+<translation id="8083739373364455075">Iegūt bezmaksas 100 GB pakalpojumā Bitpop disks</translation>
 <translation id="271083069174183365">Japāņu valodas ievades iestatījumi</translation>
 <translation id="1257595095755619623">Ja izmantojat starpniekserveri, skatiet starpniekservera iestatījumus vai
         sazinieties ar tīkla administratoru, lai pārbaudītu starpniekservera
@@ -1873,7 +1873,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="3967885517199024316">Pierakstieties, lai iegūtu savas grāmatzīmes, vēsturi un iestatījumus visās jūsu ierīcēs.</translation>
 <translation id="5463856536939868464">Izvēlne ar paslēptām grāmatzīmēm</translation>
 <translation id="8286227656784970313">Lietot sistēmas vārdnīcu</translation>
-<translation id="5431084084184068621">Jūs esat izvēlējies šifrēt datus, izmantojot savu Google paroli, bet jūs varat vēlāk jebkurā brīdī pārdomāt un izmainīt savus sinhronizācijas iestatījumus.</translation>
+<translation id="5431084084184068621">Jūs esat izvēlējies šifrēt datus, izmantojot savu Bitpop paroli, bet jūs varat vēlāk jebkurā brīdī pārdomāt un izmainīt savus sinhronizācijas iestatījumus.</translation>
 <translation id="1493263392339817010">Pielāgot fontus...</translation>
 <translation id="5352033265844765294">Laikspiedola uzlikšana</translation>
 <translation id="1493892686965953381">Gaida <ph name="LOAD_STATE_PARAMETER"/>...</translation>
@@ -1883,7 +1883,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="748138892655239008">Sertifikāta pamatierobežojumi</translation>
 <translation id="457386861538956877">Vēl...</translation>
 <translation id="9210991923655648139">Pieejams skriptam:</translation>
-<translation id="1950295184970569138">* Google profila fotoattēls (notiek ielāde)</translation>
+<translation id="1950295184970569138">* Bitpop profila fotoattēls (notiek ielāde)</translation>
 <translation id="8063491445163840780">Aktivizēt 4. cilni</translation>
 <translation id="5473544328731861874">Noņemt nolūku</translation>
 <translation id="2322193970951063277">Galvenes un kājenes</translation>
@@ -1933,7 +1933,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="5010043101506446253">Sertificēšanas institūcija</translation>
 <translation id="2050524657923939561">Tīmekļa nolūki</translation>
 <translation id="8487693399751278191">Importēt grāmatzīmes tūlīt...</translation>
-<translation id="7615602087246926389">Jums jau ir dati, kas šifrēti, izmantojot citu Google konta paroles versiju. Ievadiet to šeit.</translation>
+<translation id="7615602087246926389">Jums jau ir dati, kas šifrēti, izmantojot citu Bitpop konta paroles versiju. Ievadiet to šeit.</translation>
 <translation id="7484580869648358686">Brīdinājums! Šeit kaut kas nav kārtībā.</translation>
 <translation id="4474155171896946103">Saglabāt visas cilnes kā grāmatzīmes...</translation>
 <translation id="5895187275912066135">Izsniegšanas datums</translation>
@@ -2022,14 +2022,14 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="2065985942032347596">Nepieciešama autentiskuma noteikšana</translation>
 <translation id="2563185590376525700">Varde</translation>
 <translation id="2553340429761841190"><ph name="PRODUCT_NAME"/> nevarēja pievienoties tīklam <ph name="NETWORK_ID"/>. Lūdzu, izvēlieties citu tīklu vai mēģiniet vēlreiz.</translation>
-<translation id="2086712242472027775">Jūsu konts operētājsistēmā <ph name="PRODUCT_NAME"/> nedarbojas. Sazinieties ar savu domēna administratoru vai pierakstieties ar savu personīgo Google kontu.</translation>
-<translation id="1373074393717692190">Pierakstieties pakalpojumā <ph name="PRODUCT_NAME"/> ar savu Google kontu, lai saglabātu savas personalizētās pārlūka funkcijas tīmeklī un piekļūtu tām no pakalpojuma <ph name="PRODUCT_NAME"/> jebkurā mobilajā ierīcē. Jūs tiksiet arī automātiski pierakstīts savos iecienītākajos Google pakalpojumos.</translation>
+<translation id="2086712242472027775">Jūsu konts operētājsistēmā <ph name="PRODUCT_NAME"/> nedarbojas. Sazinieties ar savu domēna administratoru vai pierakstieties ar savu personīgo Bitpop kontu.</translation>
+<translation id="1373074393717692190">Pierakstieties pakalpojumā <ph name="PRODUCT_NAME"/> ar savu Bitpop kontu, lai saglabātu savas personalizētās pārlūka funkcijas tīmeklī un piekļūtu tām no pakalpojuma <ph name="PRODUCT_NAME"/> jebkurā mobilajā ierīcē. Jūs tiksiet arī automātiski pierakstīts savos iecienītākajos Google pakalpojumos.</translation>
 <translation id="7222232353993864120">E-pasta adrese</translation>
 <translation id="2128531968068887769">Native Client</translation>
 <translation id="2749720227918911728">Šī ikona būs redzama, ja paplašinājums varēs darboties pašreizējā lapā. Aktivizējiet šo paplašinājumu, noklikšķinot uz ikonas vai nospiežot taustiņus <ph name="EXTENSION_SHORTCUT"/>.</translation>
 <translation id="7175353351958621980">Ielādēts no:</translation>
 <translation id="7186367841673660872">Šī lapa ir tulkota no<ph name="ORIGINAL_LANGUAGE"/>valodas<ph name="LANGUAGE_LANGUAGE"/>valodā</translation>
-<translation id="8448695406146523553">Tikai kāds, kuram ir jūsu ieejas frāze, var lasīt jūsu šifrētos datus – Google nesūta vai neglabā ieejas frāzI. Ja esat aizmirsis savu ieejas frāzi, jums ir .</translation>
+<translation id="8448695406146523553">Tikai kāds, kuram ir jūsu ieejas frāze, var lasīt jūsu šifrētos datus – Bitpop nesūta vai neglabā ieejas frāzI. Ja esat aizmirsis savu ieejas frāzi, jums ir .</translation>
 <translation id="8248050856337841185">&amp;Ielīmēt</translation>
 <translation id="6052976518993719690">SSL sertifikāta izdevējiestāde</translation>
 <translation id="2925935892230812200">Izmantot GPU, lai paātrinātu SVG filtru atveidošanu.</translation>
@@ -2143,7 +2143,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="6374830905869502056">Kodēts ar</translation>
 <translation id="2230062665678605299">Mapi “<ph name="FOLDER_NAME"/>” nevar izveidot. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="2526590354069164005">Darbvirsma</translation>
-<translation id="2059205526855036527">Lai pirmo reizi piekļūtu pakalpojumam Google disks, jums ir jābūt tiešsaistē.</translation>
+<translation id="2059205526855036527">Lai pirmo reizi piekļūtu pakalpojumam Bitpop disks, jums ir jābūt tiešsaistē.</translation>
 <translation id="4165738236481494247">Izpildīt šo spraudni</translation>
 <translation id="7983301409776629893">Vienmēr tulkot no <ph name="ORIGINAL_LANGUAGE"/> valodas <ph name="TARGET_LANGUAGE"/> valodā</translation>
 <translation id="4890284164788142455">Thai</translation>
@@ -2173,7 +2173,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="3479552764303398839">Vēlāk</translation>
 <translation id="3714633008798122362">tīmekļa kalendārs</translation>
 <translation id="6445051938772793705">Valsts</translation>
-<translation id="3430309973417890444">Ja jums nav Google konta, varat tūlīt <ph name="LINK_START"/>izveidot Google kontu<ph name="LINK_END"/>.</translation>
+<translation id="3430309973417890444">Ja jums nav Bitpop konta, varat tūlīt <ph name="LINK_START"/>izveidot Google kontu<ph name="LINK_END"/>.</translation>
 <translation id="3251759466064201842">&lt;Nav daļa no sertifikāta&gt;</translation>
 <translation id="4229495110203539533">Pirms <ph name="NUMBER_ONE"/> sekundes</translation>
 <translation id="3399068503715460757">Izmantot statisku IP</translation>
@@ -2199,7 +2199,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="1800987794509850828">Spraudņa starpnieks: <ph name="PLUGIN_NAME"/></translation>
 <translation id="8871696467337989339">Jūs izmantojat neatbalstītu komandrindas karogu: <ph name="BAD_FLAG"/>. Tas nelabvēlīgi ietekmēs stabilitāti un drošību.</translation>
 <translation id="4767443964295394154">Lejupielādes atrašanās vieta</translation>
-<translation id="5031870354684148875">Par Google tulkotāju</translation>
+<translation id="5031870354684148875">Par Bitpop tulkotāju</translation>
 <translation id="4266565660628359579">Iespējo augstas izšķirtspējas režīmu Chrome PDF failu skatītājam, kad tiek lietots ekrāns ar augstu izšķirtspēju.</translation>
 <translation id="5702389759209837579">Piekļūstiet atvērtajām cilnēm visas savās ierīcēs.</translation>
 <translation id="3828747136564826513">Piekļūt visiem zināmajiem jūsu ierīcē saglabātajiem multivides failiem</translation>
@@ -2255,7 +2255,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="1752977958630076881">Saglabāt vietējos datus, līdz tiek aizvērta pārlūkprogramma</translation>
 <translation id="7853202427316060426">Aktivitāte</translation>
 <translation id="8550022383519221471">Sinhronizācijas ierīce jūsu domēnam nav pieejama.</translation>
-<translation id="1436238710092600782">Izveidot Google kontu</translation>
+<translation id="1436238710092600782">Izveidot Bitpop kontu</translation>
 <translation id="3355823806454867987">Mainīt starpniekservera iestatījumus...</translation>
 <translation id="4780374166989101364">Iespējo eksperimentālo paplašinājumu API. Ņemiet vērā, ka paplašinājumu galerija neļauj augšupielādēt paplašinājumus, kas izmanto eksperimentālos API.</translation>
 <translation id="7117247127439884114">Pierakstīties vēlreiz...</translation>
@@ -2268,7 +2268,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="3007574127824276972">Pierakstījies pakalpojumā <ph name="PRODUCT_NAME"/> kā <ph name="USER_NAME"/></translation>
 <translation id="6840155730904976091">Pakalpojums <ph name="PRODUCT_NAME"/> izmanto jūsu mobilās ierīces sistēmas starpniekservera iestatījumus, lai izveidotu savienojumu ar tīklu.</translation>
 <translation id="2541913031883863396">turpināt jebkurā gadījumā</translation>
-<translation id="6884284539803678768">Iespējot Google stila dialoglodziņu rāmjus.</translation>
+<translation id="6884284539803678768">Iespējot Bitpop stila dialoglodziņu rāmjus.</translation>
 <translation id="2367499218636570208">Vārds</translation>
 <translation id="4436689501885286563">Notīrīt sīkfailus un citus vietņu datus, kad atsakos</translation>
 <translation id="1520137456044207237">Kurš pakalpojums jāizmanto skatīšanai?</translation>
@@ -2335,7 +2335,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="8053390638574070785">Atkārtoti ielādēt šo lapu</translation>
 <translation id="5507756662695126555">Neatteikšanās</translation>
 <translation id="3678156199662914018">Paplašinājums: <ph name="EXTENSION_NAME"/></translation>
-<translation id="2620090360073999360">Šobrīd Google disku nevar sasniegt.</translation>
+<translation id="2620090360073999360">Šobrīd Bitpop disku nevar sasniegt.</translation>
 <translation id="3531250013160506608">Paroles tekstlodziņš</translation>
 <translation id="506228266759207354">Atspējo Jaunas cilnes lapas izvēlni ciļņu piekļuvei citās ierīcēs.</translation>
 <translation id="1781502536226964113">Atvērt Jaunas cilnes lapu</translation>
@@ -2352,7 +2352,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="8401363965527883709">Izvēles rūtiņa ar noņemtu atzīmi</translation>
 <translation id="7771452384635174008">Izkārtojums</translation>
 <translation id="6188939051578398125">Ievadiet vārdus vai adreses.</translation>
-<translation id="2851981350712094353">Google mākoņdrukas savienotājs</translation>
+<translation id="2851981350712094353">Bitpop mākoņdrukas savienotājs</translation>
 <translation id="8443621894987748190">Izvēlieties sava konta attēlu</translation>
 <translation id="10122177803156699">Parādīt man</translation>
 <translation id="935099558325596666">&quot;https://support.google.com/chrome/?p=win8_directories&quot;</translation>
@@ -2484,7 +2484,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="1358735829858566124">Fails vai katalogs nav izmantojams.</translation>
 <translation id="3144135466825225871">Neizdevās aizstāt crx failu. Pārbaudiet, vai fails tiek izmantots.</translation>
 <translation id="2744221223678373668">Koplietojamie</translation>
-<translation id="9064142312330104323">Google profila fotoattēls (notiek ielāde)</translation>
+<translation id="9064142312330104323">Bitpop profila fotoattēls (notiek ielāde)</translation>
 <translation id="4708849949179781599">Aizvērt programmu <ph name="PRODUCT_NAME"/></translation>
 <translation id="2505402373176859469"><ph name="RECEIVED_AMOUNT"/> no <ph name="TOTAL_SIZE"/></translation>
 <translation id="6937559152970966646">Piespraust sākuma ekrānā</translation>
@@ -2582,12 +2582,12 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="305803244554250778">Izveidot lietojumprogrammu saīsnes šādās vietās:</translation>
 <translation id="574392208103952083">Vidējs</translation>
 <translation id="3661117620327489194">Mainīt, lai atjaunotu atvērtās lapas</translation>
-<translation id="3937609171782005782">Palīdziet uzlabot ļaunprātīgas programmatūras atklāšanas iespējas, sūtot uzņēmumam Google papildu datus par vietnēm, kurās tiek parādīti šie brīdinājumi. Šie dati tiks izmantoti saskaņā ar <ph name="PRIVACY_PAGE_LINK"/>.</translation>
+<translation id="3937609171782005782">Palīdziet uzlabot ļaunprātīgas programmatūras atklāšanas iespējas, sūtot uzņēmumam Bitpop papildu datus par vietnēm, kurās tiek parādīti šie brīdinājumi. Šie dati tiks izmantoti saskaņā ar <ph name="PRIVACY_PAGE_LINK"/>.</translation>
 <translation id="8877448029301136595">[vecāku direktorija]</translation>
 <translation id="3816844797124379499">Nevarēja pievienot lietojumprogrammu, jo tā ir pretrunā ar <ph name="APP_NAME"/>.</translation>
 <translation id="7301360164412453905">Hsu tastatūras atlases taustiņi</translation>
 <translation id="8631271110654520730">Notiek atkopšanas attēla kopēšana...</translation>
-<translation id="7779140087128114262">Tikai kāds, kuram ir jūsu ieejas frāze, var lasīt jūsu šifrētos datus – Google nesūta vai neglabā ieejas frāzi. Ja esat aizmirsis savu ieejas frāzi, jums ir jāatiestata sinhronizācija.</translation>
+<translation id="7779140087128114262">Tikai kāds, kuram ir jūsu ieejas frāze, var lasīt jūsu šifrētos datus – Bitpop nesūta vai neglabā ieejas frāzi. Ja esat aizmirsis savu ieejas frāzi, jums ir jāatiestata sinhronizācija.</translation>
 <translation id="13356285923490863">Politikas nosaukums</translation>
 <translation id="8241040075392580210">Mākonis</translation>
 <translation id="8690155203172212841">Pārvaldīt atļauju iestatījumus</translation>
@@ -2609,7 +2609,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
         apmeklējiet vietni <ph name="URL_FOR_MORE_INFO"/>,
         lai iegūtu plašāku informāciju, tostarp norādījumus par to, kā atspējot šo funkciju.</translation>
 <translation id="8218008331535230597">Atsaukt satura licenču pilnvaras</translation>
-<translation id="4744728308552504807">Iespējo fona pakalpojumu, kas izveido savienojumu starp pakalpojumu Google mākoņdruka un jebkuru printeri, kas instalēts jūsu mobilajā ierīcē. Ja šī laboratorija ir iespējota, varat ieslēgt Google mākoņdrukas savienotāju, izvēlnes Iestatījumi sadaļā Zem pārsega piesakoties savā Google kontā.</translation>
+<translation id="4744728308552504807">Iespējo fona pakalpojumu, kas izveido savienojumu starp pakalpojumu Bitpop mākoņdruka un jebkuru printeri, kas instalēts jūsu mobilajā ierīcē. Ja šī laboratorija ir iespējota, varat ieslēgt Google mākoņdrukas savienotāju, izvēlnes Iestatījumi sadaļā Zem pārsega piesakoties savā Google kontā.</translation>
 <translation id="6691936601825168937">Pārsūtīt</translation>
 <translation id="6566142449942033617">Nevarēja ielādēt spraudņa ceļu “<ph name="PLUGIN_PATH"/>”.</translation>
 <translation id="7065534935986314333">Par sistēmu</translation>
@@ -2620,7 +2620,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="2128691215891724419">Sinhronizācijas kļūda: atjauniniet sinhronizācijas ieejas frāzi...</translation>
 <translation id="2148716181193084225">Šodien</translation>
 <translation id="1002064594444093641">Drukāt rāmi...</translation>
-<translation id="7234674978021619913">Mēs jau esam informējuši vietni <ph name="HOST_NAME"/> par to, ka atradām vietnē ļaunprātīgu programmatūru. Lai uzzinātu vairāk par to, kādas problēmas atklājām vietnē <ph name="HOST_NAME2"/>, apmeklējiet Google lapu <ph name="DIAGNOSTIC_PAGE"/>.</translation>
+<translation id="7234674978021619913">Mēs jau esam informējuši vietni <ph name="HOST_NAME"/> par to, ka atradām vietnē ļaunprātīgu programmatūru. Lai uzzinātu vairāk par to, kādas problēmas atklājām vietnē <ph name="HOST_NAME2"/>, apmeklējiet Bitpop lapu <ph name="DIAGNOSTIC_PAGE"/>.</translation>
 <translation id="4608500690299898628">&amp;Atrast...</translation>
 <translation id="7582582252461552277">Dot priekšroku šim tīklam</translation>
 <translation id="3574305903863751447"><ph name="CITY"/>, <ph name="STATE"/> <ph name="COUNTRY"/></translation>
@@ -2722,7 +2722,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="6322726279947003371">Izpildīt aizsargātu saturu (iespējams, būs jārestartē dators)</translation>
 <translation id="3093473105505681231">Valodu un pareizrakstības pārbaudītāja iestatījumi...</translation>
 <translation id="152482086482215392"><ph name="NUMBER_ONE"/> sekundes atlikušas</translation>
-<translation id="4261901459838235729">Google prezentācija</translation>
+<translation id="4261901459838235729">Bitpop prezentācija</translation>
 <translation id="8678698760965522072">Tiešsaistes statuss</translation>
 <translation id="529172024324796256">Lietotājvārds:</translation>
 <translation id="3308116878371095290">Šai lapai netika atļauts saglabāt sīkfailus.</translation>
@@ -2800,7 +2800,7 @@ Publiskais eksponents (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> biti):
 <translation id="2444609190341826949">Jūsu paroles un citi šifrētie dati, neievadot ieejas frāzi, šajā datorā netiks sinhronizēti.</translation>
 <translation id="2984337792991268709">Šodien plkst. <ph name="TODAY_DAYTIME"/></translation>
 <translation id="5227808808023563348">Atrast iepriekšējo tekstu</translation>
-<translation id="6650142020817594541">Šī vietne iesaka Google Chrome Frame (jau instalēta).</translation>
+<translation id="6650142020817594541">Šī vietne iesaka Bitpop Chrome Frame (jau instalēta).</translation>
 <translation id="3862763658360970896">Iespējot Chrome to Mobile.</translation>
 <translation id="902638246363752736">Tastatūras iestatījumi</translation>
 <translation id="7925686952655276919">Nelietot mobilos datus sinhronizācijai</translation>
@@ -2821,7 +2821,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="6007237601604674381">Pārvietošana neizdevās. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">Pakošanas laikā neizdevās izveidot pagaidu zip failu.</translation>
 <translation id="1881456419707551346">Sīkāka informācija par savienojumu</translation>
-<translation id="1064912851688322329">Atvienot savu Google kontu</translation>
+<translation id="1064912851688322329">Atvienot savu Bitpop kontu</translation>
 <translation id="1294298200424241932">Rediģēt uzticēšanās iestatījumus:</translation>
 <translation id="1407135791313364759">Atvērt visas</translation>
 <translation id="1434928358870966081">Atspējot paātrinātu 2D audeklu</translation>
@@ -2844,9 +2844,9 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="267285457822962309">Mainiet savai ierīcei un perifērajām ierīcēm raksturīgos iestatījumus.</translation>
 <translation id="1154228249304313899">Atvērt šo lapu:</translation>
 <translation id="6084074203170335305"><ph name="MARKUP_1"/>Piekļūstiet saviem failiem, atrodoties jebkurā vietā, pat bezsaistē.<ph name="MARKUP_2"/>
-        Google diskā esošie faili ir atjaunināti, un tie ir pieejami no jebkuras ierīces.<ph name="MARKUP_3"/>
+        Bitpop diskā esošie faili ir atjaunināti, un tie ir pieejami no jebkuras ierīces.<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>Glabājiet savus failus drošā vietā.<ph name="MARKUP_5"/>
-        Neatkarīgi no tā, kas notiek ar jūsu ierīci, jūsu faili tiek droši glabāti Google diskā.<ph name="MARKUP_6"/>
+        Neatkarīgi no tā, kas notiek ar jūsu ierīci, jūsu faili tiek droši glabāti Bitpop diskā.<ph name="MARKUP_6"/>
         <ph name="MARKUP_7"/>Koplietojiet un veidojiet failus, kā arī sadarbojieties,<ph name="MARKUP_8"/>
         izmantojot failus kopā ar citiem vienuviet.<ph name="MARKUP_9"/></translation>
 <translation id="9074348188580488499">Vai esat pārliecināts, ka vēlaties noņemt visas paroles?</translation>
@@ -2981,7 +2981,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="8725066075913043281">Mēģināt vēlreiz</translation>
 <translation id="387784661603993584">Nevar importēt. Radās kļūda.</translation>
 <translation id="4637968436031842307">CSS mainīgo iespējošana.</translation>
-<translation id="1887908730460853602">Google stila dialoglodziņi</translation>
+<translation id="1887908730460853602">Bitpop stila dialoglodziņi</translation>
 <translation id="8502249598105294518">Pielāgot un kontrolēt <ph name="PRODUCT_NAME"/></translation>
 <translation id="3797008485206955964">Skatīt fona lapas (<ph name="NUM_BACKGROUND_APPS"/>)</translation>
 <translation id="8590375307970699841">Iestatīt automātiskos atjauninājumus</translation>
@@ -3001,8 +3001,8 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="5293659407874396561"><ph name="SUBJECT"/>(<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">Jābūt derīgam URL</translation>
 <translation id="3464726836683998962">Atspējot mobilo datu viesabonēšanu</translation>
-<translation id="8986494364107987395">Automātiski sūtīt lietošanas statistiku un avāriju pārskatus uzņēmumam Google</translation>
-<translation id="7070714457904110559">Iespējo ģeolokācijas funkcijas eksperimentālos paplašinājumus. Ietver operētājsistēmas atrašanās vietas API interfeisu (ja pieejami) izmantošanu un vietējā tīkla konfigurācijas papildu datu nosūtīšanu Google atrašanās vietu pakalpojumam, lai nodrošinātu precīzāku pozicionēšanu.</translation>
+<translation id="8986494364107987395">Automātiski sūtīt lietošanas statistiku un avāriju pārskatus uzņēmumam Bitpop</translation>
+<translation id="7070714457904110559">Iespējo ģeolokācijas funkcijas eksperimentālos paplašinājumus. Ietver operētājsistēmas atrašanās vietas API interfeisu (ja pieejami) izmantošanu un vietējā tīkla konfigurācijas papildu datu nosūtīšanu Bitpop atrašanās vietu pakalpojumam, lai nodrošinātu precīzāku pozicionēšanu.</translation>
 <translation id="6701535245008341853">Nevarēja ielādēt profilu.</translation>
 <translation id="8303655282093186569">Pinyin ievades iestatījumi</translation>
 <translation id="992779717417561630">Drukāt, izmantojot dialoglodziņu <ph name="CLOUD_PRINT_NAME"/>... <ph name="SHORTCUT_KEY"/></translation>
@@ -3016,7 +3016,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="580571955903695899">Pārkārtot pēc nosaukuma</translation>
 <translation id="5230516054153933099">Logs</translation>
 <translation id="921740547845455014">Rakstīt failos, kurus esat atvēris lietojumprogrammā</translation>
-<translation id="1799497982892676838">Pārvaldīt sinhronizētos datus Google vadības panelī</translation>
+<translation id="1799497982892676838">Pārvaldīt sinhronizētos datus Bitpop vadības panelī</translation>
 <translation id="951981865514037445"><ph name="URL"/> vēlas izmantot jūsu ierīces atrašanās vietu.</translation>
 <translation id="7554791636758816595">Jauna cilne</translation>
 <translation id="3026557130425686673">Pieteikšanās ir atcelta, jo daži ierīces iestatījumi ir bojāti.</translation>
@@ -3030,7 +3030,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="1103966635949043187">Dodieties uz vietnes mājaslapu:</translation>
 <translation id="4762295713053835808">Personiskā informācija</translation>
 <translation id="6374100501221763867">Ar aparatūru paātrinātas video dekodēšanas atspējošana.</translation>
-<translation id="7477347901712410606">Ja esat aizmirsis savu ieejas frāzi, apturiet un atiestatiet sinhronizāciju, izmantojot <ph name="BEGIN_LINK"/>Google vadības paneli<ph name="END_LINK"/>.</translation>
+<translation id="7477347901712410606">Ja esat aizmirsis savu ieejas frāzi, apturiet un atiestatiet sinhronizāciju, izmantojot <ph name="BEGIN_LINK"/>Bitpop vadības paneli<ph name="END_LINK"/>.</translation>
 <translation id="6139474630617772623">Iespējo paplašinātās darbvirsmas atbalstu, kas ļauj atvērt pārlūkprogrammu sekundārajos displejos.</translation>
 <translation id="2645575947416143543">Tomēr, ja strādājat uzņēmumā, kas ģenerē savus sertifikātus, un mēģināt izveidot savienojumu ar šī uzņēmuma iekšēju vietni, izmantojot šādu sertifikātu, iespējams, varēsiet šo problēmu atrisināt drošā veidā. Varat importēt uzņēmuma saknes sertifikātu kā &quot;saknes sertifikātu&quot;, pēc tam uzņēmuma izdotie vai verificētie sertifikāti tiks uzskatīti par uzticamiem, un jūs neredzēsiet šo kļūdu nākamajā reizē, kad mēģināsiet izveidot savienojumu ar iekšēju vietni. Sazinieties ar uzņēmuma tehniskā atbalsta personālu, lai saņemtu palīdzību, pievienojot jaunu saknes sertifikātu datoram.</translation>
 <translation id="1056898198331236512">Brīdinājums</translation>
@@ -3310,7 +3310,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="7063412606254013905">Uzziniet vairāk par pikšķerēšanas maldiem.</translation>
 <translation id="7253521419891527137">&amp;Uzziniet vairāk</translation>
 <translation id="3170312251071695679">Iestatījums pēc noklusējuma: <ph name="PERMISSION_VALUE"/></translation>
-<translation id="8698464937041809063">Google zīmējums</translation>
+<translation id="8698464937041809063">Bitpop zīmējums</translation>
 <translation id="7053053706723613360">Atspējot funkciju Labāka sesijas atjaunošana</translation>
 <translation id="5233930340889611108">WebKit</translation>
 <translation id="8260864402787962391">Pele</translation>
@@ -3339,7 +3339,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="6873213799448839504">Automātiski fiksēt rindu</translation>
 <translation id="7238585580608191973">SHA-256 pirkstu nospiedums</translation>
 <translation id="2501278716633472235">Doties atpakaļ</translation>
-<translation id="3588662957555259973">* Google profila fotoattēls</translation>
+<translation id="3588662957555259973">* Bitpop profila fotoattēls</translation>
 <translation id="131461803491198646">Mājas tīkls bez viesabonēšanas</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/> - <ph name="FULL_DATE"/></translation>
 <translation id="1285320974508926690">Nekad netulkot šo vietni</translation>
@@ -3409,7 +3409,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="461656879692943278">Vietnē <ph name="HOST_NAME"/> atrodas saturs no vietnes <ph name="ELEMENTS_HOST_NAME"/>, kas ir zināma kā ļaunprātīgas programmatūras izplatīšanas vietne. Apmeklējot šo vietni, jūsu dators var tikt inficēts.</translation>
 <translation id="8962198349065195967">Šo tīklu konfigurē jūsu administrators.</translation>
 <translation id="2143778271340628265">Manuāla starpniekservera konfigurācija</translation>
-<translation id="2441192698565541088">Atvienojot savu Google kontu no <ph name="PRODUCT_NAME"/>, izmaiņas jūsu datiem šajā datorā vairs netiks sinhronizētas ar jūsu Google kontu. Datus, kuri jau saglabāti jūsu Google kontā, tiks saglabāti tajā līdz brīdim, kad noņemsiet to, izmantojot <ph name="BEGIN_LINK"/>Google vadības paneli<ph name="END_LINK"/>.</translation>
+<translation id="2441192698565541088">Atvienojot savu Bitpop kontu no <ph name="PRODUCT_NAME"/>, izmaiņas jūsu datiem šajā datorā vairs netiks sinhronizētas ar jūsu Google kontu. Datus, kuri jau saglabāti jūsu Google kontā, tiks saglabāti tajā līdz brīdim, kad noņemsiet to, izmantojot <ph name="BEGIN_LINK"/>Google vadības paneli<ph name="END_LINK"/>.</translation>
 <translation id="8888432776533519951">Krāsa:</translation>
 <translation id="5294529402252479912">Atjaunināt Adobe Reader tūlīt</translation>
 <translation id="5263972071113911534"><ph name="NUMBER_MANY"/> days ago</translation>
@@ -3438,7 +3438,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="8885905466771744233">Norādītajam paplašinājumam jau eksistē privāta atslēga. Atkārtoti izmantojiet šo atslēgu vai vispirms to izdzēsiet.</translation>
 <translation id="1196944142850240972">Piekļūt jūsu datiem visās vietnēs</translation>
 <translation id="7369056754288047856">Dažus iestatījumus nevar modificēt lietotājs.</translation>
-<translation id="4100843820583867709">Google Talk ekrāna kopīgošanas pieprasījums</translation>
+<translation id="4100843820583867709">Bitpop Talk ekrāna kopīgošanas pieprasījums</translation>
 <translation id="8109246889182548008">Sertifikātu krātuve</translation>
 <translation id="5030338702439866405">Izsniedzis</translation>
 <translation id="2728127805433021124">Servera sertifikāts ir parakstīts, izmantojot vāju paraksta algoritmu.</translation>
@@ -3629,7 +3629,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="1049926623896334335">Word dokuments</translation>
 <translation id="8412145213513410671">Avārijas (<ph name="CRASH_COUNT"/>)</translation>
 <translation id="7003257528951459794">Frekvence:</translation>
-<translation id="3467267818798281173">Vaicāt ieteikumus no Google</translation>
+<translation id="3467267818798281173">Vaicāt ieteikumus no Bitpop</translation>
 <translation id="560602183358579978">Skaitlošanas atlase...</translation>
 <translation id="7649070708921625228">Palīdzība</translation>
 <translation id="858637041960032120">Pievienot tālruņa numuru</translation>
@@ -3665,7 +3665,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="8000020256436988724">Rīkjosla</translation>
 <translation id="7507930499305566459">Statusa atbildētāja sertifikāts</translation>
 <translation id="3958088479270651626">Grāmatzīmju un iestatījumu importēšana</translation>
-<translation id="2689915906323125315">Izmantot manu Google konta paroli</translation>
+<translation id="2689915906323125315">Izmantot manu Bitpop konta paroli</translation>
 <translation id="8518865679229538285">Tamilu ievades metode (rakstāmmašīna)</translation>
 <translation id="5257456363153333584">Spāre</translation>
 <translation id="4557136421275541763">Brīdinājums:</translation>
@@ -3676,7 +3676,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="7681202901521675750">SIM karte ir bloķēta, lūdzu, ievadiet PIN. Palikušie mēģinājumi: <ph name="TRIES_COUNT"/></translation>
 <translation id="2489918096470125693">Pievienot &amp;mapi...</translation>
 <translation id="7353651168734309780">Paplašinājumam <ph name="EXTENSION_NAME"/> nepieciešamas jaunas atļaujas</translation>
-<translation id="6420812616858267777">Pakalpojuma <ph name="PRODUCT_NAME"/> sinhronizācija atvieglo jūsu datu (piem., grāmatzīmju un iestatījumu) kopīgošanu jūsu datoros un mobilajās ierīcēs. Pakalpojums <ph name="PRODUCT_NAME"/> sinhronizē datus, tos saglabājot tiešsaistē Google tīklā, kad pierakstāties savā Google kontā.</translation>
+<translation id="6420812616858267777">Pakalpojuma <ph name="PRODUCT_NAME"/> sinhronizācija atvieglo jūsu datu (piem., grāmatzīmju un iestatījumu) kopīgošanu jūsu datoros un mobilajās ierīcēs. Pakalpojums <ph name="PRODUCT_NAME"/> sinhronizē datus, tos saglabājot tiešsaistē Bitpop tīklā, kad pierakstāties savā Google kontā.</translation>
 <translation id="7484964289312150019">Atvērt visas grāmatzīmes &amp;jaunā logā</translation>
 <translation id="1731346223650886555">Semikols</translation>
 <translation id="158849752021629804">Nepieciešams mājas tīkls</translation>
@@ -3692,7 +3692,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="3021678814754966447">Skatīt rāmja a&amp;votu</translation>
 <translation id="8601206103050338563">TLS WWW klienta autentifikācija</translation>
 <translation id="1692799361700686467">Ir atļauti vairāku vietņu sīkfaili.</translation>
-<translation id="5187295959347858724">Šobrīd esat pierakstījies pakalpojumā <ph name="SHORT_PRODUCT_NAME"/>. Jūsu grāmatzīmes, vēsture un citi iestatījumi tiek sinhronizēti ar jūsu Google kontu.</translation>
+<translation id="5187295959347858724">Šobrīd esat pierakstījies pakalpojumā <ph name="SHORT_PRODUCT_NAME"/>. Jūsu grāmatzīmes, vēsture un citi iestatījumi tiek sinhronizēti ar jūsu Bitpop kontu.</translation>
 <translation id="3719415759165722358">Iespējo vietnes iestatījumu UI. Vietnes iestatījumu UI aizstāj lapas informācijas burbuli un ļauj ērti konfigurēt vietnes iestatījumus.</translation>
 <translation id="2717190143245689317">Iespējo izmēģinājuma teksta lauku lietojumprogrammas lietotāja saskarnei, neietekmējot tīmekļa saturu.</translation>
 <translation id="529232389703829405">Jūs iegādājāties <ph name="DATA_AMOUNT"/> datu datumā: <ph name="DATE"/></translation>
@@ -3735,7 +3735,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="2927657246008729253">Mainīt...</translation>
 <translation id="7586781939132793422">Atspējot izrunu</translation>
 <translation id="7978412674231730200">Privātā atslēga</translation>
-<translation id="7056011739864317578">Kad šis iestatījums ir iespējots, tiek izmantots ClientOAuth, lai profilu saistītu ar Google kontu. Pretējā gadījumā tiek izmantots ClientLogin.
+<translation id="7056011739864317578">Kad šis iestatījums ir iespējots, tiek izmantots ClientOAuth, lai profilu saistītu ar Bitpop kontu. Pretējā gadījumā tiek izmantots ClientLogin.
       ClientOAuth aktīvo servera lapu vietā autentifikācijas laikā ļauj izmantot verifikācijas kodus.</translation>
 <translation id="5308380583665731573">Savienot</translation>
 <translation id="9111395131601239814"><ph name="NETWORKDEVICE"/>: <ph name="STATUS"/></translation>
@@ -3757,7 +3757,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="6692173217867674490">Neatbilstoša ieejas frāze</translation>
 <translation id="5550431144454300634">Automātiski labot ievadi</translation>
 <translation id="3308006649705061278">Organizacionālā vienība (OV)</translation>
-<translation id="8912362522468806198">Google Konts</translation>
+<translation id="8912362522468806198">Bitpop Konts</translation>
 <translation id="4443536555189480885">&amp;Palīdzība</translation>
 <translation id="340485819826776184">Izmantot ieteikumus, lai ātrāk ievadītu meklēšanas frāzes un vietrāžus URL adreses joslā</translation>
 <translation id="4207762215349123040">Spraudnis <ph name="PEPPER_PLUGIN_NAME"/> domēnā <ph name="PEPPER_PLUGIN_DOMAIN"/> vēlas piekļūt jūsu mobilajai ierīcei.</translation>
@@ -3776,7 +3776,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="4745438305783437565"><ph name="NUMBER_FEW"/> minūtes</translation>
 <translation id="2649911884196340328">Servera drošības sertifikātā ir kļūdas!</translation>
-<translation id="6666647326143344290">Google kontā</translation>
+<translation id="6666647326143344290">Bitpop kontā</translation>
 <translation id="4980112683975062744">No servera saņemti dublēti virsraksti</translation>
 <translation id="3828029223314399057">Meklēt grāmatzīmes</translation>
 <translation id="4885705234041587624">MSCHAPv2</translation>
@@ -3785,7 +3785,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="3551117997325569860">Lai varētu mainīt starpniekserveri, iespējojiet iestatījumu <ph name="USE_SHARED_PROXIES"/>.</translation>
 <translation id="8906421963862390172">Pareizrakstība&amp;s pārbaudītāja opcijas</translation>
 <translation id="9046895021617826162">Savienojums neizdevās</translation>
-<translation id="4061733942661196912">Ja iespējots, Google konta pieteikšanās lapas apmeklēšanas laikā tiek inicializēta informācijas josla, kas ļauj pierakstīties profilam pievienotā Google kontā. Ja profils nav pievienots kontam, automātiskā pieteikšanās neatkarīgi no karoga statusa vienmēr ir atspējota.</translation>
+<translation id="4061733942661196912">Ja iespējots, Bitpop konta pieteikšanās lapas apmeklēšanas laikā tiek inicializēta informācijas josla, kas ļauj pierakstīties profilam pievienotā Google kontā. Ja profils nav pievienots kontam, automātiskā pieteikšanās neatkarīgi no karoga statusa vienmēr ir atspējota.</translation>
 <translation id="1492188167929010410">Avārijas ID <ph name="CRASH_ID"/></translation>
 <translation id="1963692530539281474"><ph name="NUMBER_DEFAULT"/> dienas atlikušas</translation>
 <translation id="4470270245053809099">Izsniedzējs: <ph name="NAME"/></translation>
@@ -3836,7 +3836,7 @@ Tiek rēķināts atlikušais uzlādes laiks</translation>
 <translation id="5869522115854928033">Saglabātās paroles</translation>
 <translation id="3436440123324878555">Iegādāties plānu...</translation>
 <translation id="5748266869826978907">Pārbaudiet sistēmas DNS iestatījumus. Sazinieties ar tīkla administratoru, ja neesat pārliecināts, ko tas nozīmē.</translation>
-<translation id="4193154014135846272">Google dokuments</translation>
+<translation id="4193154014135846272">Bitpop dokuments</translation>
 <translation id="4771973620359291008">Radās nezināma kļūda.</translation>
 <translation id="5509914365760201064">Izdevējs: <ph name="CERTIFICATE_AUTHORITY"/></translation>
 <translation id="6446356484127229069">Pakalpojumam <ph name="PRODUCT_NAME"/> neizdodas piekļūt tīklam. <ph name="LINE_BREAK"/> Tas var būt tādēļ, ka ugunsmūris vai antivīrusa programmatūra ir kļūdaini noteikusi, ka pakalpojums <ph name="PRODUCT_NAME"/> jūsu mobilajā ierīcē ir iebrucējs, un bloķē tā savienojumu ar internetu.</translation>
@@ -3934,7 +3934,7 @@ Tiek rēķināts atlikušais uzlādes laiks</translation>
 <translation id="899403249577094719">Netscape sertifikāta Base URL</translation>
 <translation id="2737363922397526254">Sakļaut...</translation>
 <translation id="8605428685123651449">SQLite atmiņa</translation>
-<translation id="5469175127151858022">Jūsu pārlūka Chrome un operētājsistēmas versija tiks iesniegta papildus informācijai, kuru izvēlaties norādīt iepriekš. Šī informācija tiek izmantota problēmas noteikšanai un pārlūka Chrome uzlabošanai. Visa personīgā informācija, kuru iesniedzat tieši vai netieši, tiks aizsargāta saskaņā ar mūsu konfidencialitātes politikām.<ph name="BEGIN_BOLD"/>Iesniedzot šo informāciju, jūs piekrītat, ka Google var izmantot iesniegto informāciju, lai uzlabotu Google produktu vai pakalpojumu.<ph name="END_BOLD"/></translation>
+<translation id="5469175127151858022">Jūsu pārlūka Chrome un operētājsistēmas versija tiks iesniegta papildus informācijai, kuru izvēlaties norādīt iepriekš. Šī informācija tiek izmantota problēmas noteikšanai un pārlūka Chrome uzlabošanai. Visa personīgā informācija, kuru iesniedzat tieši vai netieši, tiks aizsargāta saskaņā ar mūsu konfidencialitātes politikām.<ph name="BEGIN_BOLD"/>Iesniedzot šo informāciju, jūs piekrītat, ka Bitpop var izmantot iesniegto informāciju, lai uzlabotu Google produktu vai pakalpojumu.<ph name="END_BOLD"/></translation>
 <translation id="2841013758207633010">Laiks</translation>
 <translation id="4880827082731008257">Meklēšanas vēsture</translation>
 <translation id="8661290697478713397">Atvērt saiti inko&amp;gnito režīma logā</translation>
@@ -3966,10 +3966,10 @@ Tiek rēķināts atlikušais uzlādes laiks</translation>
 <translation id="8828933418460119530">DNS nosaukums</translation>
 <translation id="988159990683914416">Attīstītāja konstrukcija</translation>
 <translation id="1097658378307015415">Pirms pierakstāties, uzsāciet viesa sesiju, lai aktivizētu tīklu <ph name="NETWORK_ID"/>.</translation>
-<translation id="5170477580121653719">Pakalpojumā Google disks atlikušās brīvās vietas apjoms: <ph name="SPACE_AVAILABLE"/>.</translation>
+<translation id="5170477580121653719">Pakalpojumā Bitpop disks atlikušās brīvās vietas apjoms: <ph name="SPACE_AVAILABLE"/>.</translation>
 <translation id="4114470632216071239">Slēgt SIM karti (nepieciešams PIN mobilo datu izmantošanai)</translation>
 <translation id="5184584788669813359">Nevarēja parādīt šī PDF dokumenta daļas. Vai atvērt to programmā Adobe Reader?</translation>
-<translation id="6581162200855843583">Google diska saite</translation>
+<translation id="6581162200855843583">Bitpop diska saite</translation>
 <translation id="340771324714262530">Apturēt spoguļošanu</translation>
 <translation id="3303260552072730022">Paplašinājums aktivizēja pilnekrāna režīmu.</translation>
 <translation id="2183426022964444701">Atlasiet paplašinājuma saknes direktoriju.</translation>
@@ -4070,7 +4070,7 @@ Lai turpinātu skatīšanu, nospiediet jebkuru taustiņu.</translation>
 <translation id="1177437665183591855">Nezināma servera sertifikāta kļūda</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> vēlas lietot jūsu kameru un mikrofonu.</translation>
 <translation id="8467473010914675605">Korejiešu valodas ievades metode</translation>
-<translation id="8102535138653976669">Pakalpojums <ph name="PRODUCT_NAME"/> droši sinhronizē jūsu datus ar jūsu Google kontu. Sinhronizējiet visu vai pielāgojiet sinhronizētos datu veidus un šifrēšanas iestatījumus.</translation>
+<translation id="8102535138653976669">Pakalpojums <ph name="PRODUCT_NAME"/> droši sinhronizē jūsu datus ar jūsu Bitpop kontu. Sinhronizējiet visu vai pielāgojiet sinhronizētos datu veidus un šifrēšanas iestatījumus.</translation>
 <translation id="2639739919103226564">Statuss:</translation>
 <translation id="6923900367903210484">Autortiesības</translation>
 <translation id="3819800052061700452">&amp;Pilnekrāna režīms</translation>
@@ -4094,7 +4094,7 @@ Lai turpinātu skatīšanu, nospiediet jebkuru taustiņu.</translation>
 <translation id="614998064310228828">Ierīces modelis:</translation>
 <translation id="1581962803218266616">Rādīt lietojumprogrammā Finder</translation>
 <translation id="9100765901046053179">Papildu iestatījumi</translation>
-<translation id="203168018648013061">Sinhronizācijas kļūda: atiestatiet sinhronizāciju, izmantojot Google vadības paneli.</translation>
+<translation id="203168018648013061">Sinhronizācijas kļūda: atiestatiet sinhronizāciju, izmantojot Bitpop vadības paneli.</translation>
 <translation id="1405126334425076373">Peles kursors</translation>
 <translation id="6096326118418049043">X.500 nosaukums</translation>
 <translation id="6086259540486894113">Jāatlasa vismaz viens sinhronizējamo datu veids.</translation>
@@ -4143,14 +4143,14 @@ Lai turpinātu skatīšanu, nospiediet jebkuru taustiņu.</translation>
 <translation id="2960316970329790041">Pārtraukt importu</translation>
 <translation id="3835522725882634757">Ak, nē! Šis serveris nosūta datus, ko <ph name="PRODUCT_NAME"/> nesaprot. Lūdzu, <ph name="BEGIN_LINK"/>ziņojiet par blusu<ph name="END_LINK"/> un pievienojiet <ph name="BEGIN2_LINK"/>neapstrādātu satura sarakstu<ph name="END2_LINK"/>.</translation>
 <translation id="6586451623538375658">Apmainīt galveno peles pogu</translation>
-<translation id="6937152069980083337">Google japāņu valodas ievade (ASV tastatūrai)</translation>
+<translation id="6937152069980083337">Bitpop japāņu valodas ievade (ASV tastatūrai)</translation>
 <translation id="475088594373173692">Pirmais lietotājs</translation>
 <translation id="1731911755844941020">Notiek pieprasījuma sūtīšana...</translation>
 <translation id="8371695176452482769">Runājiet tūlīt</translation>
 <translation id="7622116780510618781">Grupētās cilnes</translation>
 <translation id="2988488679308982380">Nevarēja instalēt pakotni: <ph name="ERROR_CODE"/>.</translation>
 <translation id="2904079386864173492">Modelis:</translation>
-<translation id="728836202927797241">Piedāvāt automātiski pierakstīties Google vietnēs, izmantojot šo kontu</translation>
+<translation id="728836202927797241">Piedāvāt automātiski pierakstīties Bitpop vietnēs, izmantojot šo kontu</translation>
 <translation id="6129953537138746214">Atstarpe</translation>
 <translation id="5041795084235183432">Pele:</translation>
 <translation id="3704331259350077894">Darbības pārtraukšana</translation>
@@ -4224,7 +4224,7 @@ Lai turpinātu skatīšanu, nospiediet jebkuru taustiņu.</translation>
 <translation id="3325146402434751578">Iestatīt vai pārvaldīt printerus mākoņdrukā <ph name="CLOUD_PRINT_NAME"/></translation>
 <translation id="253434972992662860">&amp;Pauzēt</translation>
 <translation id="335985608243443814">Pārlūkot...</translation>
-<translation id="7802488492289385605">Google japāņu valodas ievade (ASV Dvorak tastatūrai)</translation>
+<translation id="7802488492289385605">Bitpop japāņu valodas ievade (ASV Dvorak tastatūrai)</translation>
 <translation id="3876481682997626897">Paraksta neatbilstība</translation>
 <translation id="8892992092192084762">Instalēts motīvs <ph name="THEME_NAME"/>.</translation>
 <translation id="7427348830195639090">Fona lapa: <ph name="BACKGROUND_PAGE_URL"/></translation>
@@ -4259,7 +4259,7 @@ Lai turpinātu skatīšanu, nospiediet jebkuru taustiņu.</translation>
 <translation id="1131850611586448366">Par tīmekļa lapu vietnē <ph name="HOST_NAME"/> ziņots kā par “pikšķerēšanas” vietni.  Bieži vien, izliekoties pārstāvam uzticamas iestādes (piemēram, bankas), pikšķerēšanas vietnēs notiek lietotāju maldināšana un personas vai finanšu informācijas izvilināšana.</translation>
 <translation id="2669198762040460457">Ievadītais lietotājvārds vai parole nav pareiza.</translation>
 <translation id="1161575384898972166">Pierakstieties ierīcē <ph name="TOKEN_NAME"/>, lai eksportētu klienta sertifikātu.</translation>
-<translation id="1718559768876751602">Izveidot tagad Google kontu</translation>
+<translation id="1718559768876751602">Izveidot tagad Bitpop kontu</translation>
 <translation id="5503480894407718969">Piekļūt visiem datiem jūsu mobilajā ierīcē, kā arī jūsu apmeklētajām vietnēm</translation>
 <translation id="1884319566525838835">Smilškastes statuss</translation>
 <translation id="2770465223704140727">Noņemt no saraksta</translation>

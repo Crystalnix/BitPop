@@ -29,7 +29,7 @@
 <translation id="3581034179710640788">ใบรับรองความปลอดภัยของเว็บไซต์หมดอายุ!</translation>
 <translation id="2825758591930162672">คีย์สาธารณะของหัวเรื่อง</translation>
 <translation id="8306243285620593545">โฟกัสไอคอนสถานะ</translation>
-<translation id="1130622745736410868">ต้องการยืนยันว่าคุณกำลังเรียกดูบนอุปกรณ์ที่ใช้ Chrome OS โดยขอให้ Google ยืนยันรหัสคูปองของคุณ</translation>
+<translation id="1130622745736410868">ต้องการยืนยันว่าคุณกำลังเรียกดูบนอุปกรณ์ที่ใช้ Chrome OS โดยขอให้ Bitpop ยืนยันรหัสคูปองของคุณ</translation>
 <translation id="8176382683266548737">เปิดใช้งานการแจ้งเตือน</translation>
 <translation id="8275038454117074363">การนำเข้า</translation>
 <translation id="8418445294933751433">แ&amp;สดงเป็นแถบ</translation>
@@ -52,7 +52,7 @@
 <translation id="4940047036413029306">อัญประกาศ</translation>
 <translation id="1497897566809397301">อนุญาตให้วางข้อมูลภายในเครื่อง (แนะนำ)</translation>
 <translation id="3275778913554317645">เปิดเป็นหน้าต่าง</translation>
-<translation id="4553117311324416101">Google พบว่าซอฟต์แวร์ที่เป็นอันตรายอาจติดตั้งในคอมพิวเตอร์ของคุณหากคุณดำเนินการต่อ หากคุณเคยไปที่ไซต์มาก่อนหน้านี้หรือคุณไว้ใจไซต์นี้ เป็นไปได้ว่าไซต์เพิ่งถูกโจมตีโดยแฮกเกอร์ คุณไม่ควรดำเนินการต่อ และอาจลองอีกครั้งในวันพรุ่งนี้ หรือไปที่อื่นแทน</translation>
+<translation id="4553117311324416101">Bitpop พบว่าซอฟต์แวร์ที่เป็นอันตรายอาจติดตั้งในคอมพิวเตอร์ของคุณหากคุณดำเนินการต่อ หากคุณเคยไปที่ไซต์มาก่อนหน้านี้หรือคุณไว้ใจไซต์นี้ เป็นไปได้ว่าไซต์เพิ่งถูกโจมตีโดยแฮกเกอร์ คุณไม่ควรดำเนินการต่อ และอาจลองอีกครั้งในวันพรุ่งนี้ หรือไปที่อื่นแทน</translation>
 <translation id="5085514918439894988">ไม่มีบริการใดที่ติดตั้งไว้สำหรับการทำงานนี้ และไม่มีคำแนะนำบริการใดๆ สำหรับการทำงานนี้ใน Chrome เว็บสโตร์เช่นกัน</translation>
 <translation id="8867568208303837180">กำลังส่ง...</translation>
 <translation id="509988127256758334">สิ่งที่&amp;ค้นหา:</translation>
@@ -86,7 +86,7 @@
 <translation id="21426568240411732"><ph name="TITLE"/> กำลังใช้กล้องถ่ายรูปของคุณ</translation>
 <translation id="6156863943908443225">แคชของสคริปต์</translation>
 <translation id="4274187853770964845">การซิงค์มีข้อผิดพลาด: โปรดหยุดและเริ่มการซิงค์ใหม่</translation>
-<translation id="4610656722473172270">Google Toolbar</translation>
+<translation id="4610656722473172270">Bitpop Toolbar</translation>
 <translation id="656293578423618167">เส้นทางหรือชื่อของไฟล์ยาวเกินไป โปรดบันทึกด้วยชื่อที่สั้นกว่านี้หรือบันทึกลงในตำแหน่งอื่น</translation>
 <translation id="3484869148456018791">รับใบรับรองใหม่</translation>
 <translation id="151501797353681931">นำเข้าจาก Safari</translation>
@@ -134,13 +134,13 @@
 <translation id="7600965453749440009">ไม่ต้องแปล<ph name="LANGUAGE"/></translation>
 <translation id="3208703785962634733">ยังไม่ยืนยัน</translation>
 <translation id="620329680124578183">ไม่โหลด (แนะนำ)</translation>
-<translation id="6300924177400055566">คุณมีพื้นที่ใน Google ไดรฟ์ไม่เพียงพอสำหรับบันทึก &quot;<ph name="FILE_NAME"/>&quot; โปรดนำไฟล์ออกหรือ<ph name="BEGIN_LINK"/>ซื้อพื้นที่จัดเก็บข้อมูลเพิ่มเติม<ph name="END_LINK"/></translation>
+<translation id="6300924177400055566">คุณมีพื้นที่ใน Bitpop ไดรฟ์ไม่เพียงพอสำหรับบันทึก &quot;<ph name="FILE_NAME"/>&quot; โปรดนำไฟล์ออกหรือ<ph name="BEGIN_LINK"/>ซื้อพื้นที่จัดเก็บข้อมูลเพิ่มเติม<ph name="END_LINK"/></translation>
 <translation id="9074739597929991885">บลูทูธ</translation>
 <translation id="2653266418988778031">หากคุณลบใบรับรองของผู้ออกใบรับรอง (CA) เบราว์เซอร์ของคุณจะไม่เชื่อถือใบรับรองใดที่ออกโดย CA นั้นอีกต่อไป</translation>
 <translation id="5341849548509163798"><ph name="NUMBER_MANY"/> ชั่วโมงที่ผ่านมา</translation>
 <translation id="4422428420715047158">โดเมน:</translation>
 <translation id="7788444488075094252">ภาษาและการป้อนข้อมูล</translation>
-<translation id="6723354935081862304">พิมพ์ไปยัง Google เอกสารและปลายทางในระบบคลาวด์อื่นๆ <ph name="BEGIN_LINK"/>ลงชื่อเข้าใช้<ph name="END_LINK"/>เพื่อพิมพ์ไปยัง Google Cloud Print</translation>
+<translation id="6723354935081862304">พิมพ์ไปยัง Bitpop เอกสารและปลายทางในระบบคลาวด์อื่นๆ <ph name="BEGIN_LINK"/>ลงชื่อเข้าใช้<ph name="END_LINK"/>เพื่อพิมพ์ไปยัง Google Cloud Print</translation>
 <translation id="3602290021589620013">ดูตัวอย่าง</translation>
 <translation id="6257035105556579916">ไม่สามารถแก้ไขส่วนขยายได้ในโหมดที่มีการจัดการ</translation>
 <translation id="800602641363855389"><ph name="TITLE"/> กำลังใช้ไมโครโฟนของคุณ</translation>
@@ -209,7 +209,7 @@
 <translation id="1818606096021558659">หน้าเว็บ</translation>
 <translation id="1549045574060481141">ยืนยันการดาวน์โหลด</translation>
 <translation id="5388588172257446328">ชื่อผู้ใช้:</translation>
-<translation id="1657406563541664238">ช่วยปรับปรุง <ph name="PRODUCT_NAME"/> ให้ดีขึ้นโดยการส่งสถิติการใช้งานและรายงานปัญหาไปยัง Google โดยอัตโนมัติ</translation>
+<translation id="1657406563541664238">ช่วยปรับปรุง <ph name="PRODUCT_NAME"/> ให้ดีขึ้นโดยการส่งสถิติการใช้งานและรายงานปัญหาไปยัง Bitpop โดยอัตโนมัติ</translation>
 <translation id="7982789257301363584">เครือข่าย</translation>
 <translation id="2271281383664374369">หยุดส่งคำขอส่วนขยายไปยัง URL นี้ชั่วคราว</translation>
 <translation id="8528962588711550376">กำลังลงชื่อเข้าใช้</translation>
@@ -226,8 +226,8 @@
 <translation id="9151034842884433218">เลือกภาพและชื่อสำหรับโปรไฟล์ Chrome ใหม่ของคุณ</translation>
 <translation id="1510030919967934016">หน้านี้ถูกปิดกั้นไม่ให้ติดตามตำแหน่งของคุณ</translation>
 <translation id="8848519885565996859">เฟรมลิงก์ URL ที่กำหนดโดยผู้ใช้</translation>
-<translation id="4640525840053037973">ลงชื่อเข้าใช้ด้วยบัญชี Google ของคุณ</translation>
-<translation id="6315526595991863271">คุณได้ลงชื่อเข้าใช้ <ph name="SHORT_PRODUCT_NAME"/> แล้ว บุ๊กมาร์ก ประวัติการเข้าชม และการตั้งค่าอื่นๆ ของคุณจะได้รับการซิงค์กับบัญชี Google โดยใช้การตั้งค่าเริ่มต้น</translation>
+<translation id="4640525840053037973">ลงชื่อเข้าใช้ด้วยบัญชี Bitpop ของคุณ</translation>
+<translation id="6315526595991863271">คุณได้ลงชื่อเข้าใช้ <ph name="SHORT_PRODUCT_NAME"/> แล้ว บุ๊กมาร์ก ประวัติการเข้าชม และการตั้งค่าอื่นๆ ของคุณจะได้รับการซิงค์กับบัญชี Bitpop โดยใช้การตั้งค่าเริ่มต้น</translation>
 <translation id="5255315797444241226">ข้อความรหัสผ่านที่คุณป้อนไม่ถูกต้อง</translation>
 <translation id="762917759028004464">เบราว์เซอร์เริ่มต้น <ph name="BROWSER_NAME"/> ในขณะนี้</translation>
 <translation id="8289982954746764694">เปิดใช้งานการติดตามองค์ประกอบ (ยังทำงานได้ไม่สมบูรณ์) สำหรับคำอธิบาย คำบรรยาย บท และคำอธิบายเสียงในองค์ประกอบวิดีโอ</translation>
@@ -261,7 +261,7 @@
 <translation id="1801827354178857021">มหัพภาค</translation>
 <translation id="4560332071395409256">คลิก <ph name="BEGIN_BOLD"/>Start<ph name="END_BOLD"/> คลิก <ph name="BEGIN_BOLD"/>Run<ph name="END_BOLD"/> พิมพ์ <ph name="BEGIN_BOLD"/>%windir%\network diagnostic\xpnetdiag.exe<ph name="END_BOLD"/> แล้วคลิก <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/></translation>
 <translation id="2179052183774520942">เพิ่มเครื่องมือค้นหา</translation>
-<translation id="6868050610674841964">การลงชื่อเข้าใช้จะซิงค์ข้อมูลของคุณกับบัญชี Google เพื่อให้คุณสามารถเข้าถึงบุ๊กมาร์ก ประวัติการเข้าชม และการตั้งค่าอื่นๆ บนทุกอุปกรณ์ได้</translation>
+<translation id="6868050610674841964">การลงชื่อเข้าใช้จะซิงค์ข้อมูลของคุณกับบัญชี Bitpop เพื่อให้คุณสามารถเข้าถึงบุ๊กมาร์ก ประวัติการเข้าชม และการตั้งค่าอื่นๆ บนทุกอุปกรณ์ได้</translation>
 <translation id="5498951625591520696">ไม่สามารถเข้าถึงเซิร์ฟเวอร์</translation>
 <translation id="1621207256975573490">บันทึกเ&amp;ฟรมเป็น...</translation>
 <translation id="4681260323810445443">คุณไม่ได้รับอนุญาตให้เข้าถึงหน้าเว็บที่ <ph name="URL"/> คุณอาจต้องลงชื่อเข้าใช้</translation>
@@ -295,7 +295,7 @@
 <translation id="6845180713465955339">ใบรับรอง &quot;<ph name="CERTIFICATE_NAME"/>&quot; ออกโดย:</translation>
 <translation id="5364525511170219879">เปิดใช้งาน UI กิจกรรมของส่วนขยาย</translation>
 <translation id="3088325635286126843">&amp;เปลี่ยนชื่อ...</translation>
-<translation id="6979158407327259162">Google ไดรฟ์</translation>
+<translation id="6979158407327259162">Bitpop ไดรฟ์</translation>
 <translation id="6853700448789925482">เปิดใช้งานเอลิเมนต์ <ph name="TRACK_HTML"/></translation>
 <translation id="3150927491400159470">โหลดซ้ำแบบดึงข้อมูลใหม่ทั้งหมด</translation>
 <translation id="7531238562312180404">เนื่องจาก <ph name="PRODUCT_NAME"/> ไม่ได้ควบคุมวิธีที่ส่วนขยายจัดการข้อมูลส่วนตัวของคุณ ส่วนขยายทั้งหมดจึงถูกปิดการใช้งานสำหรับหน้าต่างที่ไม่ระบุตัวตน คุณสามารถเปิดใช้งานส่วนขยายทีละอย่างใน<ph name="BEGIN_LINK"/>ตัวจัดการส่วนขยาย<ph name="END_LINK"/>ได้</translation>
@@ -359,7 +359,7 @@
 <translation id="8194465509832052438">การกำหนดค่าคำสั่ง</translation>
 <translation id="4422347585044846479">แก้ไขบุ๊คมาร์คสำหรับหน้านี้</translation>
 <translation id="2452539774207938933">เปลี่ยนไปเป็นผู้ใช้: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">Google Chrome สามารถให้บริการตรวจสอบการสะกดที่ชาญฉลาดมากขึ้นโดยการส่งสิ่งที่คุณพิมพ์ในเบราว์เซอร์ไปยังเซิร์ฟเวอร์ของ Google ซึ่งจะช่วยให้คุณสามารถใช้เทคโนโลยีตรวจสอบการสะกดแบบเดียวกันกับที่การค้นหาของ Google ใช้</translation>
+<translation id="4700157086864140907">Bitpop Chrome สามารถให้บริการตรวจสอบการสะกดที่ชาญฉลาดมากขึ้นโดยการส่งสิ่งที่คุณพิมพ์ในเบราว์เซอร์ไปยังเซิร์ฟเวอร์ของ Google ซึ่งจะช่วยให้คุณสามารถใช้เทคโนโลยีตรวจสอบการสะกดแบบเดียวกันกับที่การค้นหาของ Google ใช้</translation>
 <translation id="7632357940961158759">การตั้งค่าบางอย่างถูกจัดการโดยส่วนขยาย</translation>
 <translation id="1880905663253319515">ลบใบรับรอง &quot;<ph name="CERTIFICATE_NAME"/>&quot; หรือไม่</translation>
 <translation id="8546306075665861288">แคชของภาพ</translation>
@@ -414,7 +414,7 @@
 รหัสการทดลอง: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8656768832129462377">ไม่ต้องตรวจสอบ</translation>
 <translation id="715487527529576698">โหมดภาษาจีนเบื้องต้นคือจีนตัวย่อ</translation>
-<translation id="6896830120821965585">เปิดใช้งานบริการพื้นหลังที่เชื่อมต่อบริการของ Google Cloud Print กับเครื่องพิมพ์ใดๆ ที่ติดตั้งบนคอมพิวเตอร์เครื่องนี้ เมื่อห้องทดลองนี้ถูกเปิดใช้งาน คุณสามารถเปิดโปรแกรมเชื่อมต่อ Google Cloud Print ได้โดยลงชื่อเข้าใช้บัญชี Google ของคุณในส่วน &quot;ขั้นสูง&quot; ของการตั้งค่า</translation>
+<translation id="6896830120821965585">เปิดใช้งานบริการพื้นหลังที่เชื่อมต่อบริการของ Bitpop Cloud Print กับเครื่องพิมพ์ใดๆ ที่ติดตั้งบนคอมพิวเตอร์เครื่องนี้ เมื่อห้องทดลองนี้ถูกเปิดใช้งาน คุณสามารถเปิดโปรแกรมเชื่อมต่อ Google Cloud Print ได้โดยลงชื่อเข้าใช้บัญชี Google ของคุณในส่วน &quot;ขั้นสูง&quot; ของการตั้งค่า</translation>
 <translation id="3999508690854143454">ถามฉันเมื่อไซต์ต้องการเข้าถึงกล้องและไมโครโฟนของฉัน (แนะนำ)</translation>
 <translation id="1674989413181946727">การตั้งค่า SSL ทั่วทั้งคอมพิวเตอร์:</translation>
 <translation id="1531285811424589182">ข้อผิดพลาดในการลบใบรับรอง</translation>
@@ -431,7 +431,7 @@
 <translation id="3874070094967379652">ใช้ข้อความรหัสผ่านสำหรับการซิงค์ข้อมูลในการเข้ารหัสข้อมูลของฉัน</translation>
 <translation id="6500116422101723010">เซิร์ฟเวอร์ไม่สามารถจัดการคำขอได้ในขณะนี้ รหัสนี้แสดงว่านี่เป็นสภาวะชั่วคราว และเซิร์ฟเวอร์จะกลับมาทำงานอีกครั้งหลังจากที่งานล่าช้าไป</translation>
 <translation id="1644574205037202324">ประวัติการเข้าชม</translation>
-<translation id="4206944295053515692">ขอคำแนะนำจาก Google</translation>
+<translation id="4206944295053515692">ขอคำแนะนำจาก Bitpop</translation>
 <translation id="1297175357211070620">ปลายทาง</translation>
 <translation id="479280082949089240">คุกกี้ที่บันทึกโดยหน้าเว็บนี้</translation>
 <translation id="4198861010405014042">มีการแบ่งปันการเข้าถึง</translation>
@@ -444,8 +444,8 @@
 <translation id="3887847548716051874">อนุญาตให้ไซต์นี้ใช้ไมโครโฟนและกล้องนี้เสมอ</translation>
 <translation id="2886862922374605295">ฮาร์ดแวร์:</translation>
 <translation id="4497097279402334319">ไม่สามารถเชื่อมต่อกับเครือข่าย</translation>
-<translation id="7342729285348293164">ลงชื่อเข้าใช้ <ph name="PRODUCT_NAME"/> ด้วยบัญชี Google ของคุณเพื่อบันทึกคุณลักษณะเบราว์เซอร์ที่ปรับเปลี่ยนในแบบของคุณลงในเว็บและเข้าถึงได้จาก <ph name="PRODUCT_NAME"/> ในทุกคอมพิวเตอร์ คุณยังสามารถลงชื่อเข้าใช้บริการโปรดต่างๆ ของ Google ได้โดยอัตโนมัติด้วย</translation>
-<translation id="2542049655219295786">ตารางของ Google</translation>
+<translation id="7342729285348293164">ลงชื่อเข้าใช้ <ph name="PRODUCT_NAME"/> ด้วยบัญชี Bitpop ของคุณเพื่อบันทึกคุณลักษณะเบราว์เซอร์ที่ปรับเปลี่ยนในแบบของคุณลงในเว็บและเข้าถึงได้จาก <ph name="PRODUCT_NAME"/> ในทุกคอมพิวเตอร์ คุณยังสามารถลงชื่อเข้าใช้บริการโปรดต่างๆ ของ Google ได้โดยอัตโนมัติด้วย</translation>
+<translation id="2542049655219295786">ตารางของ Bitpop</translation>
 <translation id="3899879303189199559">ออฟไลน์นานกว่าหนึ่งปี</translation>
 <translation id="5303618139271450299">ไม่พบหน้าเว็บนี้</translation>
 <translation id="4256316378292851214">บั&amp;นทึกวิดีโอเป็น...</translation>
@@ -454,7 +454,7 @@
 <translation id="6518014396551869914">&amp;คัดลอกรูปภาพ</translation>
 <translation id="3236997602556743698">3 Set (390)</translation>
 <translation id="542155483965056918"><ph name="NUMBER_ZERO"/> mins ago</translation>
-<translation id="4928351909437667303">ปิดการใช้งาน Google ไดรฟ์บนอุปกรณ์นี้</translation>
+<translation id="4928351909437667303">ปิดการใช้งาน Bitpop ไดรฟ์บนอุปกรณ์นี้</translation>
 <translation id="6315723398663634808">ใบรับรองของเซิร์ฟเวอร์มีคีย์การเข้ารหัสที่ไม่รัดกุม!</translation>
 <translation id="2887525882758501333">เอกสาร PDF</translation>
 <translation id="289426338439836048">เครือข่ายมือถืออื่น...</translation>
@@ -522,7 +522,7 @@
 <translation id="6431347207794742960"><ph name="PRODUCT_NAME"/> จะติดตั้งการอัปเดตอัตโนมัติสำหรับผู้ใช้ทั้งหมดที่ใช้เครื่องคอมพิวเตอร์นี้</translation>
 <translation id="4973698491777102067">ลบรายการต่อไปนี้จาก:</translation>
 <translation id="6074963268421707432">ไม่อนุญาตให้ไซต์ใดๆ แสดงการแจ้งเตือนของเดสก์ท็อป</translation>
-<translation id="4944952004685780325">เปิดใช้งานเพื่อใช้ API ไดรฟ์ V2 ในการเข้าถึงโฟลเดอร์ Google ไดรฟ์</translation>
+<translation id="4944952004685780325">เปิดใช้งานเพื่อใช้ API ไดรฟ์ V2 ในการเข้าถึงโฟลเดอร์ Bitpop ไดรฟ์</translation>
 <translation id="1995173078718234136">กำลังสแกนเนื้อหา...</translation>
 <translation id="7920521481309889533">เปิดใช้งาน SPDY/3</translation>
 <translation id="5979681173469464041">โฟกัสหน้าต่างถัดไป</translation>
@@ -531,7 +531,7 @@
 <translation id="1491151370853475546">โหลดหน้าเว็บนี้ซ้ำ</translation>
 <translation id="5374359983950678924">เปลี่ยนรูปภาพ</translation>
 <translation id="2859738163554174612">ไม่ต้องเสนอการลงชื่อเข้าใช้อีก</translation>
-<translation id="1378727793141957596">ยินดีต้อนรับสู่ Google ไดรฟ์!</translation>
+<translation id="1378727793141957596">ยินดีต้อนรับสู่ Bitpop ไดรฟ์!</translation>
 <translation id="5158548125608505876">ไม่ต้องซิงค์รหัสผ่านของฉัน</translation>
 <translation id="3717485073527618485">ถามฉันเมื่อไซต์พยายามที่จะปิดใช้งานเคอร์เซอร์ของเมาส์ (แนะนำ)</translation>
 <translation id="3273410961255278341">ส่งสำหรับ:</translation>
@@ -564,7 +564,7 @@
 <translation id="773426152488311044">ขณะนี้ คุณเป็นผู้ใช้ <ph name="PRODUCT_NAME"/> เพียงคนเดียว</translation>
 <translation id="2042078858148122628">เนื่องจากการค้นหา DNS ล้มเหลวจึงไม่พบเซิร์ฟเวอร์ที่ <ph name="HOST_NAME"/> DNS เป็นบริการเครือข่ายที่แปลงชื่อเว็บไซต์ให้เป็นที่อยู่อินเทอร์เน็ต ข้อผิดพลาดนี้มักเกิดจากการไม่ได้เชื่อมต่ออินเทอร์เน็ตหรือการกำหนดค่าเครือข่ายไม่ถูกต้อง นอกจากนี้ยังอาจเกิดจากเซิร์ฟเวอร์ DNS ไม่ตอบสนองหรือไฟร์วอลล์ขัดขวาง <ph name="PRODUCT_NAME"/> ไม่ให้เข้าถึงเครือข่าย</translation>
 <translation id="2159087636560291862">ในกรณีนี้ ใบรับรองไม่ได้รับการยืนยันโดยบุคคลที่สามที่คอมพิวเตอร์ของคุณเชื่อถือ ใครก็สามารถสร้างใบรับรองที่อ้างว่าเป็นของเว็บไซต์ใดก็ได้ที่ต้องการ ดังนั้นจึงต้องมีการยืนยันโดยบุคคลที่สามที่เชื่อถือได้ หากไม่มีการยืนยัน ข้อมูลระบุตัวตนในใบรับรองดังกล่าวก็ไม่มีความหมาย คุณจึงไม่สามารถตรวจสอบได้ว่ากำลังติดต่อกับ <ph name="DOMAIN"/> หรือผู้โจมตีที่สร้างใบรับรองขึ้นเองแล้วอ้างว่าตนคือ <ph name="DOMAIN2"/> กันแน่ ดังนั้นคุณไม่ควรดำเนินการต่อจากจุดนี้</translation>
-<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> ต้องการให้คุณเข้ารหัสข้อมูลของคุณโดยใช้รหัสผ่าน Google หรือข้อความรหัสผ่านของคุณเอง</translation>
+<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> ต้องการให้คุณเข้ารหัสข้อมูลของคุณโดยใช้รหัสผ่าน Bitpop หรือข้อความรหัสผ่านของคุณเอง</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">ไม่ได้เป็นผู้ออกใบรับรอง</translation>
 <translation id="6099520380851856040">เกิดขึ้นเมื่อ <ph name="CRASH_TIME"/></translation>
@@ -718,7 +718,7 @@
 <translation id="8943805475239098364">คุณต้องการที่จะค้นหาด้วย <ph name="NEW_GOOGLE_HOST"/> แทน <ph name="CURRENT_GOOGLE_HOST"/> หรือไม่</translation>
 <translation id="3813510441224209252">รอดำเนินการฟอร์แมต</translation>
 <translation id="8912793549644936705">ยืด</translation>
-<translation id="8026684114486203427">หากคุณต้องการใช้ Chrome Web Store คุณต้องลงชื่อเข้าใช้ด้วยบัญชี Google</translation>
+<translation id="8026684114486203427">หากคุณต้องการใช้ Chrome Web Store คุณต้องลงชื่อเข้าใช้ด้วยบัญชี Bitpop</translation>
 <translation id="1486096554574027028">ค้นหารหัสผ่าน</translation>
 <translation id="4631887759990505102">ศิลปิน</translation>
 <translation id="1836938920852968258">ปิดใช้งานเมนู &quot;อุปกรณ์อื่นๆ&quot; ของ NTP</translation>
@@ -734,12 +734,12 @@
 <translation id="89217462949994770">คุณได้ป้อน PIN ที่ไม่ถูกต้องหลายครั้งแล้ว โปรดติดต่อ <ph name="CARRIER_ID"/> เพื่อรับคีย์การปลดล็อก PIN 8 หลักใหม่</translation>
 <translation id="5920618722884262402">ปิดกั้นคำที่ไม่เหมาะสม</translation>
 <translation id="242006861730551700">ปิดใช้งานชั้นวางการดาวน์โหลด จะแสดง UI การดาวน์โหลดใหม่ๆ เมื่อมีการนำมาใช้งาน</translation>
-<translation id="7782102568078991263">ไม่มีคำแนะนำเพิ่มเติมจาก Google</translation>
+<translation id="7782102568078991263">ไม่มีคำแนะนำเพิ่มเติมจาก Bitpop</translation>
 <translation id="8038111231936746805">(ค่าเริ่มต้น)</translation>
 <translation id="5120247199412907247">การกำหนดค่าขั้นสูง</translation>
 <translation id="567881659373499783">รุ่น <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">นโยบายส่วนบุคคลของการเรียกดูอย่างปลอดภัย</translation>
-<translation id="5105859138906591953">ในการนำเข้าบุ๊กมาร์ก Toolbar ลงใน Chrome คุณต้องลงชื่อเข้าใช้บัญชี Google ของคุณ โปรดลงชื่อเข้าใช้และลองนำเข้าอีกครั้ง</translation>
+<translation id="5105859138906591953">ในการนำเข้าบุ๊กมาร์ก Toolbar ลงใน Chrome คุณต้องลงชื่อเข้าใช้บัญชี Bitpop ของคุณ โปรดลงชื่อเข้าใช้และลองนำเข้าอีกครั้ง</translation>
 <translation id="8899851313684471736">เปิดลิงก์ใน&amp;หน้าต่างใหม่</translation>
 <translation id="4110342520124362335">ปิดกั้นคุกกี้จาก <ph name="DOMAIN"/></translation>
 <translation id="3303818374450886607">คัดลอก</translation>
@@ -788,7 +788,7 @@
 <translation id="1871208020102129563">พร็อกซีถูกตั้งค่าให้ใช้พร็อกซีเซิร์ฟเวอร์แบบคงที่ ไม่ใช่ URL สคริปต์ .pac</translation>
 <translation id="1634788685286903402">เชื่อถือใบรับรองนี้ในการระบุตัวตนของผู้ใช้อีเมล</translation>
 <translation id="3154015489111064513">ใช้ DHCP</translation>
-<translation id="8642489171979176277">นำเข้าจาก Google Toolbar</translation>
+<translation id="8642489171979176277">นำเข้าจาก Bitpop Toolbar</translation>
 <translation id="4142744419835627535">เติมข้อความค้นหาทันใจโดยอัตโนมัติในทันที</translation>
 <translation id="4684427112815847243">ซิงค์ทุกอย่าง</translation>
 <translation id="1125520545229165057">Dvorak (Hsu)</translation>
@@ -799,7 +799,7 @@
 <translation id="2441392884867482684">หน้าเว็บนี้แสดงแบบเต็มหน้าจออยู่และต้องการปิดใช้งานเคอร์เซอร์เมาส์</translation>
 <translation id="1422780722984745882">ได้รับส่วนหัวหลายส่วนที่เกี่ยวกับตำแหน่งซึ่งต่างจากส่วนหัวอื่น ซึ่งไม่อนุญาต เพื่อป้องกัน
         การจู่โจมเพื่อแยกส่วนการตอบสนองของ HTTP</translation>
-<translation id="7787129790495067395">คุณกำลังใช้งานข้อความรหัสผ่านอยู่ หากคุณลืมข้อความรหัสผ่านของคุณ คุณสามารถรีเซ็ตการซิงค์เพื่อล้างข้อมูลจากเซิร์ฟเวอร์ของ Google โดยใช้หน้าแดชบอร์ดของ Google ได้</translation>
+<translation id="7787129790495067395">คุณกำลังใช้งานข้อความรหัสผ่านอยู่ หากคุณลืมข้อความรหัสผ่านของคุณ คุณสามารถรีเซ็ตการซิงค์เพื่อล้างข้อมูลจากเซิร์ฟเวอร์ของ Bitpop โดยใช้หน้าแดชบอร์ดของ Google ได้</translation>
 <translation id="3380365263193509176">ข้อผิดพลาดที่ไม่รู้จัก</translation>
 <translation id="1273135602584709125">ยกเลิกการลงทะเบียนองค์กร</translation>
 <translation id="2686759344028411998">ตรวจไม่พบโมดูลที่โหลด</translation>
@@ -867,7 +867,7 @@
 <translation id="6204994989617056362">ส่วนขยาย SSL Renegotiation ขาดหายไปจากแฮนด์เชคที่ปลอดภัย สำหรับบางไซต์ ซึ่งทราบกันดีว่าสนับสนุนส่วนขยาย Renegotiation ทาง Chrome จะกำหนดให้แฮนด์เชคที่ปลอดภัยยิ่งขึ้นจะต้องป้องกันประเภทการโจมตีที่เป็นที่รู้จัก การละเลยส่วนขยายนี้แสดงว่า การเชื่อมต่อของคุณได้ถูกดักข้อมูลและถูกควบคุมในระหว่างทาง</translation>
 <translation id="1238150413700645698">เนื้อหาที่ได้รับความคุ้มครอง</translation>
 <translation id="6679492495854441399">อ๊ะ! เกิดปัญหาในการติดต่อกับเครือข่ายในขณะพยายามลงทะเบียนอุปกรณ์นี้ โปรดตรวจสอบการเชื่อมต่อเครือข่ายของคุณและลองอีกครั้ง</translation>
-<translation id="5270547718570958938">Google ปฏิทิน</translation>
+<translation id="5270547718570958938">Bitpop ปฏิทิน</translation>
 <translation id="5823933238730612365">PPAPI (ไม่ใช่แซนด์บ็อกซ์)</translation>
 <translation id="2879755071890315043">โปรดรอสักครู่ในขณะที่เราตั้งค่าเครือข่ายมือถือของคุณ</translation>
 <translation id="5301751748813680278">เข้าสู่ระบบในฐานะผู้มาเยือน</translation>
@@ -922,7 +922,7 @@
 <translation id="3909791450649380159">&amp;ตัด</translation>
 <translation id="2955913368246107853">ปิดแถบค้นหา</translation>
 <translation id="8864170386249720785">การตั้งค่า SSL ระดับอุปกรณ์ของมือถือ:</translation>
-<translation id="3914942725612686145">คุณลงชื่อเข้าใช้ Chrome แล้ว แท็บที่เปิด บุ๊กมาร์ก และข้อมูลแถบอเนกประสงค์จะถูกซิงค์กับบัญชี Google ของคุณ</translation>
+<translation id="3914942725612686145">คุณลงชื่อเข้าใช้ Chrome แล้ว แท็บที่เปิด บุ๊กมาร์ก และข้อมูลแถบอเนกประสงค์จะถูกซิงค์กับบัญชี Bitpop ของคุณ</translation>
 <translation id="5642508497713047">ผู้เซ็นชื่อ CRL</translation>
 <translation id="7612302739128412469">เปิดใช้งานส่วนขยายนี้โดยคลิกที่ไอคอนนี้</translation>
 <translation id="813082847718468539">ดูข้อมูลเว็บไซต์</translation>
@@ -970,7 +970,7 @@
 <translation id="1637259088766071440">เว็บไซต์ที่ <ph name="HOST_NAME"/> มีส่วนประกอบจากไซต์ที่ดูเหมือนว่าจะโฮสต์มัลแวร์ ซึ่งหมายถึงซอฟต์แวร์ที่อาจเป็นอันตรายต่อโทรศัพท์มือถือของคุณหรืออาจทำงานโดยที่คุณไม่ยินยอม เพียงแค่เข้าชมไซต์ที่โฮสต์มัลแวร์ก็สามารถทำให้โทรศัพท์มือถือของคุณเป็นอันตรายได้ เว็บไซต์นี้ยังมีเนื้อหาจากไซต์ที่มีรายงานว่าเป็นไซต์ &quot;ฟิชชิง&quot; อีกด้วย ไซต์ฟิชชิงจะหลอกให้ผู้ใช้เปิดเผยข้อมูลส่วนตัวหรือข้อมูลทางการเงิน โดยมักหลอกลวงว่าตนเป็นตัวแทนของสถาบันที่เชื่อถือได้ เช่น ธนาคาร</translation>
 <translation id="855081842937141170">ตรึงแท็บ</translation>
 <translation id="6263541650532042179">รีเซ็ตการซิงค์</translation>
-<translation id="6513247462497316522">Google Chrome จะใช้ข้อมูลมือถือหากคุณไม่ได้เชื่อมต่อกับเครือข่ายอื่น</translation>
+<translation id="6513247462497316522">Bitpop Chrome จะใช้ข้อมูลมือถือหากคุณไม่ได้เชื่อมต่อกับเครือข่ายอื่น</translation>
 <translation id="6055392876709372977">PKCS #1 SHA-256 พร้อมการเข้ารหัส RSA</translation>
 <translation id="7903984238293908205">คะตะคะนะ</translation>
 <translation id="268053382412112343">ประวั&amp;ติ</translation>
@@ -1086,8 +1086,8 @@
 <translation id="7632380866023782514">ด้านขวาบน</translation>
 <translation id="4693789964669838452">FPS</translation>
 <translation id="4925520021222027859">ป้อนรหัสผ่านเฉพาะแอปพลิเคชันของคุณ:</translation>
-<translation id="3494768541638400973">การป้อนข้อมูลภาษาญี่ปุ่นของ Google (สำหรับแป้นพิมพ์ภาษาญี่ปุ่น)</translation>
-<translation id="4679639996443646335">Google พบว่าอาจมีการติดตั้งซอฟต์แวร์ที่เป็นอันตรายลงในโทรศัพท์มือถือของคุณถ้าคุณดำเนินการต่อ หากคุณเคยเข้าชมไซต์นี้ในอดีตหรือคุณเชื่อถือไซต์นี้ เป็นไปได้ที่แฮกเกอร์อาจเจาะข้อมูลได้เมื่อเร็วๆ นี้ คุณไม่ควรดำเนินการต่อ และอาจลองอีกครั้งในวันรุ่งขึ้นหรือไปที่ไซต์อื่น</translation>
+<translation id="3494768541638400973">การป้อนข้อมูลภาษาญี่ปุ่นของ Bitpop (สำหรับแป้นพิมพ์ภาษาญี่ปุ่น)</translation>
+<translation id="4679639996443646335">Bitpop พบว่าอาจมีการติดตั้งซอฟต์แวร์ที่เป็นอันตรายลงในโทรศัพท์มือถือของคุณถ้าคุณดำเนินการต่อ หากคุณเคยเข้าชมไซต์นี้ในอดีตหรือคุณเชื่อถือไซต์นี้ เป็นไปได้ที่แฮกเกอร์อาจเจาะข้อมูลได้เมื่อเร็วๆ นี้ คุณไม่ควรดำเนินการต่อ และอาจลองอีกครั้งในวันรุ่งขึ้นหรือไปที่ไซต์อื่น</translation>
 <translation id="7223775956298141902">แย่จัง... คุณไม่มีส่วนขยาย :-(</translation>
 <translation id="3118046075435288765">เซิร์ฟเวอร์ปิดการเชื่อมต่อโดยไม่คาดคิด</translation>
 <translation id="1725068750138367834">&amp;ตัวจัดการไฟล์</translation>
@@ -1113,7 +1113,7 @@
 <translation id="3706919628594312718">การตั้งค่าเมาส์</translation>
 <translation id="8326478304147373412">PKCS #7, กลุ่มใบรับรอง (Certificate Chain)</translation>
 <translation id="3242765319725186192">Pre-shared key:</translation>
-<translation id="8089798106823170468">แบ่งปันและควบคุมการเข้าถึงเครื่องพิมพ์ของคุณด้วยบัญชี Google</translation>
+<translation id="8089798106823170468">แบ่งปันและควบคุมการเข้าถึงเครื่องพิมพ์ของคุณด้วยบัญชี Bitpop</translation>
 <translation id="5426597273899159431">การตั้งค่าขั้นสูง...</translation>
 <translation id="1105608846356399385">ไปที่เว็บไซต์</translation>
 <translation id="7218608093942361839"><ph name="PRODUCT_NAME"/> <ph name="PRODUCT_VERSION"/> (แพลตฟอร์ม <ph name="PLATFORM_VERSION"/>)</translation>
@@ -1179,7 +1179,7 @@
 <translation id="81686154743329117">ZRM</translation>
 <translation id="2150139952286079145">ค้นหาปลายทาง</translation>
 <translation id="4713309396072794887">ติดตั้งส่วนขยายเหล่านี้หรือไม่</translation>
-<translation id="5637940320504994319">คุณไม่มีพื้นที่ใน Google ไดรฟ์เหลือแล้ว</translation>
+<translation id="5637940320504994319">คุณไม่มีพื้นที่ใน Bitpop ไดรฟ์เหลือแล้ว</translation>
 <translation id="6458467102616083041">ไม่ใช้งานเนื่องจากการค้นหาเริ่มต้นถูกปิดใช้งานตามนโยบาย</translation>
 <translation id="2266011376676382776">หน้าที่ไม่ตอบสนอง</translation>
 <translation id="3100609564180505575">โมดูล (<ph name="TOTAL_COUNT"/>) - ความขัดแย้งที่ทราบ: <ph name="BAD_COUNT"/>, ที่สงสัย: <ph name="SUSPICIOUS_COUNT"/></translation>
@@ -1241,7 +1241,7 @@
 <translation id="7092106376816104">ข้อยกเว้นป๊อปอัป</translation>
 <translation id="4830475881783902092">รหัสลูกค้า:</translation>
 <translation id="4600958291864306415">กำลังสร้าง...</translation>
-<translation id="8594787581355215556">ลงชื่อเข้าใช้ด้วย <ph name="USER_EMAIL_ADDRESS"/> จัดการข้อมูลที่ซิงค์ของคุณใน <ph name="BEGIN_LINK"/>Google แดชบอร์ด<ph name="END_LINK"/></translation>
+<translation id="8594787581355215556">ลงชื่อเข้าใช้ด้วย <ph name="USER_EMAIL_ADDRESS"/> จัดการข้อมูลที่ซิงค์ของคุณใน <ph name="BEGIN_LINK"/>Bitpop แดชบอร์ด<ph name="END_LINK"/></translation>
 <translation id="4338600611020922010">เพิ่มลงในหน้าแรก</translation>
 <translation id="263325223718984101"><ph name="PRODUCT_NAME"/> ไม่สามารถติดตั้งให้เสร็จสมบูรณ์ แต่จะเรียกใช้จากดิสก์อิมเมจต่อไป</translation>
 <translation id="6186893483313227582">ไอคอน <ph name="VALUE"/></translation>
@@ -1258,7 +1258,7 @@
 <translation id="4250680216510889253">ไม่มี</translation>
 <translation id="5109044022078737958">มีอา</translation>
 <translation id="6291953229176937411">&amp;แสดงในตัวค้นหา</translation>
-<translation id="8598687241883907630">หยุดเชื่อมต่อบัญชี Google ของคุณ...</translation>
+<translation id="8598687241883907630">หยุดเชื่อมต่อบัญชี Bitpop ของคุณ...</translation>
 <translation id="6410894982725961573">ทำให้ใช้งานแบบออฟไลน์ได้</translation>
 <translation id="2556718757702023317">หากต้องการบันทึก &quot;<ph name="FILE_NAME"/>&quot; เป็นแบบออฟไลน์ คุณจะต้องเพิ่มพื้นที่ว่างเพิ่มเติมอีก <ph name="TOTAL_FILE_SIZE"/> :<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>เลิกตรึงไฟล์ที่คุณไม่ต้องการเข้าถึงแบบออฟไลน์อีกต่อไป<ph name="MARKUP_3"/>
@@ -1346,7 +1346,7 @@
 <translation id="2629089419211541119"><ph name="NUMBER_ONE"/> ชั่วโมงที่ผ่านมา</translation>
 <translation id="1691063574428301566">คอมพิวเตอร์ของคุณจะรีสตาร์ทหลังจากการอัปเดตเสร็จสมบูรณ์</translation>
 <translation id="4697551882387947560">เมื่อเซสชันการเรียกดูสิ้นสุดลง</translation>
-<translation id="5900302528761731119">รูปภาพ Google โปรไฟล์</translation>
+<translation id="5900302528761731119">รูปภาพ Bitpop โปรไฟล์</translation>
 <translation id="131364520783682672">Caps Lock</translation>
 <translation id="2066999550761485762"><ph name="BEGIN_BOLD"/>คุณอยู่ในโหมดไม่ระบุตัวตน<ph name="END_BOLD"/><ph name="LINE_BREAK"/> หน้าเว็บที่คุณดูในแท็บนี้จะไม่ปรากฏในประวัติการเข้าชมหรือประวัติการค้นหาของคุณ และจะไม่มีการทิ้งร่องรอยอื่นๆ เช่น คุกกี้  เอาไว้บนโทรศัพท์มือถือของคุณหลังจากที่คุณปิดแท็บที่ไม่ระบุตัวตน <ph name="BEGIN_BOLD"/>ทั้งหมด<ph name="END_BOLD"/> แต่ไฟล์ทุกไฟล์ที่คุณดาวน์โหลดหรือบุ๊กมาร์กที่คุณสร้างไว้จะถูกบันทึกเก็บเอาไว้ <ph name="LINE_BREAK"/> <ph name="BEGIN_BOLD"/>การใช้งานโหมดที่ไม่ระบุตัวตนไม่ส่งผลต่อพฤติกรรมของคนอื่น เซิร์ฟเวอร์อื่น หรือซอฟต์แวร์อื่น<ph name="END_BOLD"/> ให้ระมัดระวังสายลับที่คอยแอบดู หรือคนที่ยืนอยู่ข้างหลังคุณ<ph name="LINE_BREAK"/> <ph name="BEGIN_LINK"/>เรียนรู้เพิ่มเติม<ph name="END_LINK"/> เกี่ยวกับการเรียกดูที่ไม่ระบุตัวตน</translation>
 <translation id="2335122562899522968">หน้าเว็บนี้ได้บันทึกคุกกี้แล้ว</translation>
@@ -1363,7 +1363,7 @@
 <translation id="1478897831827830200">การติดตาม</translation>
 <translation id="5714678912774000384">เปิดใช้งานแท็บสุดท้าย</translation>
 <translation id="8466234950814670489">ไฟล์ Tar</translation>
-<translation id="5902572236435740554">ป้อนรหัสผ่านบัญชี Google ของคุณก่อน<ph name="LINE_BREAK"/>ไม่ใช่รหัสผ่านเฉพาะแอปพลิเคชัน</translation>
+<translation id="5902572236435740554">ป้อนรหัสผ่านบัญชี Bitpop ของคุณก่อน<ph name="LINE_BREAK"/>ไม่ใช่รหัสผ่านเฉพาะแอปพลิเคชัน</translation>
 <translation id="8813811964357448561">หน้ากระดาษ</translation>
 <translation id="2125314715136825419">ดำเนินการต่อโดยไม่อัปเดต Adobe Reader (ไม่แนะนำ)</translation>
 <translation id="5034510593013625357">รูปแบบชื่อโฮสต์</translation>
@@ -1384,7 +1384,7 @@
 <translation id="8337399713761067085">ขณะนี้คุณอยู่ในสถานะออฟไลน์</translation>
 <translation id="5199729219167945352">การทดลอง</translation>
 <translation id="6499143127267478107">กำลังแก้ไขปัญหาโฮสต์ในสคริปต์พร็อกซี...</translation>
-<translation id="8069615408251337349">Google Cloud Print</translation>
+<translation id="8069615408251337349">Bitpop Cloud Print</translation>
 <translation id="5055518462594137986">จดจำตัวเลือกของฉันสำหรับลิงก์ประเภทนี้ทั้งหมด</translation>
 <translation id="246059062092993255">หน้าเว็บนี้บล็อกการใช้ปลั๊กอิน</translation>
 <translation id="2870560284913253234">เว็บไซต์</translation>
@@ -1429,7 +1429,7 @@
 <translation id="3273951168350045122">แป้นพิมพ์ (<ph name="ADDRESS"/>)</translation>
 <translation id="8221729492052686226">หากคุณไม่ได้ส่งคำขอนี้ แสดงว่าอาจมีการพยายามโจมตีระบบของคุณ ดังนั้นคุณจึงควรกด ไม่ทำอะไร เว้นเสียแต่ว่าคุณได้ดำเนินการส่งคำขอนี้อย่างชัดแจ้ง</translation>
 <translation id="894360074127026135">Netscape International Step-Up</translation>
-<translation id="8420060421540670057">แสดงไฟล์ Google เอกสาร</translation>
+<translation id="8420060421540670057">แสดงไฟล์ Bitpop เอกสาร</translation>
 <translation id="1201402288615127009">ถัดไป</translation>
 <translation id="1335588927966684346">ยูทิลิตี:</translation>
 <translation id="2710582058364740604">แทนที่ความละเอียดในการแสดงของอุปกรณ์เพื่อบังคับการใช้โหมด DPI ระดับสูงและเนื้อหา</translation>
@@ -1517,7 +1517,7 @@
 <translation id="5669267381087807207">กำลังเปิดการใช้งาน</translation>
 <translation id="7434823369735508263">แป้นพิมพ์ดีโวรักสหราชอาณาจักร</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> วัน</translation>
-<translation id="5308845175611284862">การซิงค์ <ph name="PRODUCT_NAME"/> ทำให้คุณสามารถแบ่งปันข้อมูล (เช่น บุ๊กมาร์กและการตั้งค่า) ระหว่างเครื่องคอมพิวเตอร์ของคุณได้ง่ายขึ้น <ph name="PRODUCT_NAME"/> จะซิงค์ข้อมูลของคุณโดยจัดเก็บข้อมูลแบบออนไลน์ไว้กับ Google เมื่อคุณลงชื่อเข้าใช้บัญชี Google ของคุณ</translation>
+<translation id="5308845175611284862">การซิงค์ <ph name="PRODUCT_NAME"/> ทำให้คุณสามารถแบ่งปันข้อมูล (เช่น บุ๊กมาร์กและการตั้งค่า) ระหว่างเครื่องคอมพิวเตอร์ของคุณได้ง่ายขึ้น <ph name="PRODUCT_NAME"/> จะซิงค์ข้อมูลของคุณโดยจัดเก็บข้อมูลแบบออนไลน์ไว้กับ Bitpop เมื่อคุณลงชื่อเข้าใช้บัญชี Google ของคุณ</translation>
 <translation id="1707463636381878959">แบ่งปันเครือข่ายนี้กับผู้ใช้อื่น</translation>
 <translation id="2084978867795361905">MS-IME</translation>
 <translation id="7227669995306390694"><ph name="NETWORK"/> ไม่มีแผนข้อมูล</translation>
@@ -1525,7 +1525,7 @@
 <translation id="7163503212501929773">เหลือ <ph name="NUMBER_MANY"/> ชั่วโมง</translation>
 <translation id="7705276765467986571">ไม่สามารถโหลดรูปแบบบุ๊กมาร์ก</translation>
 <translation id="750413812607578381">คุณควรรีสตาร์ท <ph name="PRODUCT_NAME"/> ในขณะนี้</translation>
-<translation id="8034305971714560781">ด้วยการยกเลิกการเชื่อมต่อบัญชี Google ของคุณจาก <ph name="PRODUCT_NAME"/> การเปลี่้ยนแปลงที่เกิดขึ้นกับข้อมูลของคุณในโทรศัพท์มือถือเครื่องนี้จะไม่ถูกซิงค์ไปที่บัญชี Google ของคุณอีกต่อไป ข้อมูลที่ถูกจัดเก็บไว้ในบัญชี Google ของคุณเรียบร้อยแล้วจะยังคงอยู่ในบัญชีเหมือนเดิมจนกว่าคุณนำออกไปโดยใช้ <ph name="BEGIN_LINK"/>Google แดชบอร์ด<ph name="END_LINK"/></translation>
+<translation id="8034305971714560781">ด้วยการยกเลิกการเชื่อมต่อบัญชี Bitpop ของคุณจาก <ph name="PRODUCT_NAME"/> การเปลี่้ยนแปลงที่เกิดขึ้นกับข้อมูลของคุณในโทรศัพท์มือถือเครื่องนี้จะไม่ถูกซิงค์ไปที่บัญชี Google ของคุณอีกต่อไป ข้อมูลที่ถูกจัดเก็บไว้ในบัญชี Google ของคุณเรียบร้อยแล้วจะยังคงอยู่ในบัญชีเหมือนเดิมจนกว่าคุณนำออกไปโดยใช้ <ph name="BEGIN_LINK"/>Google แดชบอร์ด<ph name="END_LINK"/></translation>
 <translation id="2638286699381354126">อัปเดต...</translation>
 <translation id="1196338895211115272">ไม่สามารถส่งออกคีย์ส่วนตัว</translation>
 <translation id="1459967076783105826">เครื่องมือค้นหาที่เพิ่มโดยส่วนขยาย</translation>
@@ -1559,10 +1559,10 @@
 <translation id="1789424019568293108">เปิดใช้งาน UI รุ่นทดลองที่แสดงบันทึกกิจกรรมของส่วนขยาย</translation>
 <translation id="2090876986345970080">การตั้งค่าความปลอดภัยของระบบ</translation>
 <translation id="3728067901555601989">OTP:</translation>
-<translation id="3475447146579922140">สเปรดชีตของ Google</translation>
+<translation id="3475447146579922140">สเปรดชีตของ Bitpop</translation>
 <translation id="6856526171412069413">เปิดใช้งานอัตราส่วนการบีบนิ้ว</translation>
 <translation id="9219103736887031265">ภาพ</translation>
-<translation id="7415834062450491574">ส่งความคิดเห็นไปยัง Google</translation>
+<translation id="7415834062450491574">ส่งความคิดเห็นไปยัง Bitpop</translation>
 <translation id="4480995875255084924">เปิดใช้งานโปรแกรมดูแบบต้นโอ๊กใน Ash และอนุญาตการตรวจสอบหน้าต่าง โครงสร้างลำดับชั้นเลเยอร์และการดู ตลอดจนคุณสมบัติของโครงสร้างลำดับชั้นดังกล่าว กด Ctrl+Shift+F1 เพื่อเข้าถึง</translation>
 <translation id="6975147921678461939">การชาร์จแบตเตอรี่: <ph name="PRECENTAGE"/> %</translation>
 <translation id="5453632173748266363">ซีริลลิก</translation>
@@ -1573,7 +1573,7 @@
 <translation id="5329858601952122676">&amp;ลบ</translation>
 <translation id="6100736666660498114">เมนูเริ่มต้น</translation>
 <translation id="2706131822305474920">สลับระหว่างแท็บที่เปิด</translation>
-<translation id="4402766404187539019">อีเมล Google.com</translation>
+<translation id="4402766404187539019">อีเมล Bitpop.com</translation>
 <translation id="6275297011664564181">ไม่มีนโยบายใดที่ใช้งานอยู่ในขณะนี้!</translation>
 <translation id="3994878504415702912">ซู&amp;ม</translation>
 <translation id="9009369504041480176">กำลังอัปโหลด (<ph name="PROGRESS_PERCENT"/>%)...</translation>
@@ -1611,7 +1611,7 @@
 <translation id="6059764114876442286">รีเซ็ตเครื่องพิมพ์</translation>
 <translation id="6406506848690869874">การซิงค์ข้อมูล</translation>
 <translation id="5288678174502918605">เ&amp;ปิดแท็บที่ถูกปิดขึ้นใหม่</translation>
-<translation id="7238461040709361198">มีการเปลี่ยนแปลงรหัสผ่านของบัญชี Google ของคุณตั้งแต่ครั้งสุดท้ายที่คุณได้ลงชื่อเข้าใช้คอมพิวเตอร์นี้</translation>
+<translation id="7238461040709361198">มีการเปลี่ยนแปลงรหัสผ่านของบัญชี Bitpop ของคุณตั้งแต่ครั้งสุดท้ายที่คุณได้ลงชื่อเข้าใช้คอมพิวเตอร์นี้</translation>
 <translation id="1956050014111002555">ไฟล์มีใบรับรองหลายใบ แต่ไม่มีการนำเข้าใบรับรอง:</translation>
 <translation id="302620147503052030">ปุ่มแสดง</translation>
 <translation id="1895658205118569222">ปิด</translation>
@@ -1621,7 +1621,7 @@
 <translation id="6624687053722465643">สวีทเนส</translation>
 <translation id="8420296388012619424">อุปกรณ์ USB ของคุณไม่ได้ฟอร์แมต</translation>
 <translation id="3021256392995617989">ถามฉันเมื่อมีไซต์พยายามติดตามตำแหน่งทางกายภาพของฉัน (แนะนำ)</translation>
-<translation id="8083739373364455075">รับพื้นที่ 100 GB ฟรีด้วย Google ไดรฟ์</translation>
+<translation id="8083739373364455075">รับพื้นที่ 100 GB ฟรีด้วย Bitpop ไดรฟ์</translation>
 <translation id="271083069174183365">การตั้งค่าการป้อนข้อมูลภาษาญี่ปุ่น</translation>
 <translation id="1257595095755619623">ถ้าคุณใช้พร็อกซีเซิร์ฟเวอร์ ให้ตรวจสอบการตั้งค่าพร็อกซี หรือ
         ติดต่อผู้ดูแลระบบเครือข่ายของคุณเพื่อให้เแน่ใจว่า
@@ -1822,7 +1822,7 @@
 <translation id="3967885517199024316">ลงชื่อเข้าใช้เพื่อรับบุ๊กมาร์ก ประวัติการเข้าชม และการตั้งค่าของคุณในทุกอุปกรณ์</translation>
 <translation id="5463856536939868464">เมนูมีบุ๊กมาร์กซ่อนอยู่</translation>
 <translation id="8286227656784970313">ใช้พจนานุกรมของระบบ</translation>
-<translation id="5431084084184068621">คุณได้เลือกที่จะเข้ารหัสข้อมูลโดยใช้รหัสผ่าน Google ของคุณ คุณสามารถเปลี่ยนใจในภายหลังได้ตลอดเวลาโดยเปลี่ยนการตั้งค่าการซิงค์ของคุณ</translation>
+<translation id="5431084084184068621">คุณได้เลือกที่จะเข้ารหัสข้อมูลโดยใช้รหัสผ่าน Bitpop ของคุณ คุณสามารถเปลี่ยนใจในภายหลังได้ตลอดเวลาโดยเปลี่ยนการตั้งค่าการซิงค์ของคุณ</translation>
 <translation id="1493263392339817010">กำหนดค่าแบบอักษร...</translation>
 <translation id="5352033265844765294">การระบุเวลา</translation>
 <translation id="1493892686965953381">กำลังรอ <ph name="LOAD_STATE_PARAMETER"/>...</translation>
@@ -1832,7 +1832,7 @@
 <translation id="748138892655239008">ข้อจำกัดพื้นฐานของใบรับรอง</translation>
 <translation id="457386861538956877">เพิ่มเติม...</translation>
 <translation id="9210991923655648139">การเข้าถึงสคริปต์:</translation>
-<translation id="1950295184970569138">* รูปภาพ Google โปรไฟล์ (กำลังโหลด)</translation>
+<translation id="1950295184970569138">* รูปภาพ Bitpop โปรไฟล์ (กำลังโหลด)</translation>
 <translation id="8063491445163840780">เปิดใช้งานแท็บ 4</translation>
 <translation id="5473544328731861874">นำ Intent ออก</translation>
 <translation id="2322193970951063277">ส่วนหัวและส่วนท้ายกระดาษ</translation>
@@ -1882,7 +1882,7 @@
 <translation id="5010043101506446253">ผู้ออกใบรับรอง</translation>
 <translation id="2050524657923939561">Intent ของเว็บ</translation>
 <translation id="8487693399751278191">นำเข้าบุ๊กมาร์กทันที...</translation>
-<translation id="7615602087246926389">คุณมีข้อมูลที่ถูกเข้ารหัสโดยใช้รหัสผ่านบัญชี Google รูปแบบอื่นอยู่แล้ว โปรดป้อนรหัสผ่านด้านล่าง</translation>
+<translation id="7615602087246926389">คุณมีข้อมูลที่ถูกเข้ารหัสโดยใช้รหัสผ่านบัญชี Bitpop รูปแบบอื่นอยู่แล้ว โปรดป้อนรหัสผ่านด้านล่าง</translation>
 <translation id="7484580869648358686">คำเตือน: มีบางอย่างที่นี่ไม่ถูกต้อง</translation>
 <translation id="4474155171896946103">บุ๊กมาร์กแท็บทั้งหมด...</translation>
 <translation id="5895187275912066135">ออกเมื่อ</translation>
@@ -1971,14 +1971,14 @@
 <translation id="2065985942032347596">ต้องมีการตรวจสอบความถูกต้อง</translation>
 <translation id="2563185590376525700">กบ</translation>
 <translation id="2553340429761841190"><ph name="PRODUCT_NAME"/> ไม่สามารถเชื่อมต่อกับ <ph name="NETWORK_ID"/> โปรดเลือกเครือข่ายอื่นหรือลองอีกครั้ง</translation>
-<translation id="2086712242472027775">บัญชีของคุณไม่ทำงานใน <ph name="PRODUCT_NAME"/> โปรดติดต่อผู้ดูแลระบบโดเมนของคุณหรือใช้บัญชี Google ปกติเพื่อลงชื่อเข้าใช้</translation>
-<translation id="1373074393717692190">ลงชื่อเข้าใช้ <ph name="PRODUCT_NAME"/> ด้วยบัญชี Google ของคณเพื่อบันทึกคุณลักษณะของเบราว์เซอร์ที่ปรับเปลี่ยนในแบบของคุณไปที่เว็บ และเข้าถึงคุณลักษณะเหล่านี้โดยใช้ <ph name="PRODUCT_NAME"/> ได้จากโทรศัพท์มือถือทุกเครื่อง นอกจากนี้ คุณยังสามารถลงชื่อเข้าใช้บริการ Google ที่คุณโปรดปรานได้โดยอัตโนมัติ</translation>
+<translation id="2086712242472027775">บัญชีของคุณไม่ทำงานใน <ph name="PRODUCT_NAME"/> โปรดติดต่อผู้ดูแลระบบโดเมนของคุณหรือใช้บัญชี Bitpop ปกติเพื่อลงชื่อเข้าใช้</translation>
+<translation id="1373074393717692190">ลงชื่อเข้าใช้ <ph name="PRODUCT_NAME"/> ด้วยบัญชี Bitpop ของคณเพื่อบันทึกคุณลักษณะของเบราว์เซอร์ที่ปรับเปลี่ยนในแบบของคุณไปที่เว็บ และเข้าถึงคุณลักษณะเหล่านี้โดยใช้ <ph name="PRODUCT_NAME"/> ได้จากโทรศัพท์มือถือทุกเครื่อง นอกจากนี้ คุณยังสามารถลงชื่อเข้าใช้บริการ Google ที่คุณโปรดปรานได้โดยอัตโนมัติ</translation>
 <translation id="7222232353993864120">ที่อยู่อีเมล</translation>
 <translation id="2128531968068887769">Native Client</translation>
 <translation id="2749720227918911728">ไอคอนนี้จะปรากฏเมื่อส่วนขยายสามารถทำงานบนหน้าเว็บปัจจุบัน เปิดใช้งานส่วนขยายนี้โดยคลิกที่ไอคอน หรือกด <ph name="EXTENSION_SHORTCUT"/></translation>
 <translation id="7175353351958621980">โหลดจาก:</translation>
 <translation id="7186367841673660872">แปลหน้าเว็บนี้จาก<ph name="ORIGINAL_LANGUAGE"/>เป็น<ph name="LANGUAGE_LANGUAGE"/>แล้ว</translation>
-<translation id="8448695406146523553">เฉพาะผู้ที่มีข้อความรหัสผ่านของคุณเท่านั้นจึงจะสามารถอ่านข้อมูลที่เข้ารหัสของคุณได้ Google จะไม่ได้รับหรือจัดเก็บข้อความรหัสผ่านนี้ หากคุณลืมข้อความรหัสผ่านของคุณ คุณจะต้อง</translation>
+<translation id="8448695406146523553">เฉพาะผู้ที่มีข้อความรหัสผ่านของคุณเท่านั้นจึงจะสามารถอ่านข้อมูลที่เข้ารหัสของคุณได้ Bitpop จะไม่ได้รับหรือจัดเก็บข้อความรหัสผ่านนี้ หากคุณลืมข้อความรหัสผ่านของคุณ คุณจะต้อง</translation>
 <translation id="8248050856337841185">&amp;วาง</translation>
 <translation id="6052976518993719690">ผู้ออกใบรับรอง SSL</translation>
 <translation id="2925935892230812200">ใช้ GPU เพื่อเร่งการแสดงผลของตัวกรอง SVG</translation>
@@ -2092,7 +2092,7 @@
 <translation id="6374830905869502056">เข้ารหัสโดย</translation>
 <translation id="2230062665678605299">ไม่สามารถสร้างโฟลเดอร์ &quot;<ph name="FOLDER_NAME"/>&quot; <ph name="ERROR_MESSAGE"/></translation>
 <translation id="2526590354069164005">เดสก์ท็อป</translation>
-<translation id="2059205526855036527">คุณต้องออนไลน์เพื่อเข้าถึง Google ไดรฟ์ในครั้งแรก</translation>
+<translation id="2059205526855036527">คุณต้องออนไลน์เพื่อเข้าถึง Bitpop ไดรฟ์ในครั้งแรก</translation>
 <translation id="4165738236481494247">เรียกใช้ปลั๊กอินนี้</translation>
 <translation id="7983301409776629893">แปล <ph name="ORIGINAL_LANGUAGE"/> เป็น <ph name="TARGET_LANGUAGE"/> เสมอ</translation>
 <translation id="4890284164788142455">ไทย</translation>
@@ -2122,7 +2122,7 @@
 <translation id="3479552764303398839">ไม่ใช่ตอนนี้</translation>
 <translation id="3714633008798122362">ปฏิทินเว็บ</translation>
 <translation id="6445051938772793705">ประเทศ</translation>
-<translation id="3430309973417890444">หากคุณไม่มีบัญชี Google คุณสามารถ<ph name="LINK_START"/>สร้างบัญชี Google<ph name="LINK_END"/> ได้ในตอนนี้</translation>
+<translation id="3430309973417890444">หากคุณไม่มีบัญชี Bitpop คุณสามารถ<ph name="LINK_START"/>สร้างบัญชี Google<ph name="LINK_END"/> ได้ในตอนนี้</translation>
 <translation id="3251759466064201842">&lt;ไม่ใช่ส่วนหนึ่งของใบรับรอง&gt;</translation>
 <translation id="4229495110203539533"><ph name="NUMBER_ONE"/> วินาทีที่ผ่านมา</translation>
 <translation id="3399068503715460757">ใช้ IP แบบคงที่</translation>
@@ -2139,7 +2139,7 @@
 <translation id="1800987794509850828">ข้อมูลปลั๊กอิน: <ph name="PLUGIN_NAME"/></translation>
 <translation id="8871696467337989339">คุณกำลังใช้แฟล็กบรรทัดคำสั่งที่ไม่ได้รับการสนับสนุน: <ph name="BAD_FLAG"/> ซึ่งอาจส่งผลต่อเสถียรภาพและความปลอดภัย</translation>
 <translation id="4767443964295394154">ตำแหน่งที่ดาวน์โหลด</translation>
-<translation id="5031870354684148875">เกี่ยวกับ Google แปลภาษา</translation>
+<translation id="5031870354684148875">เกี่ยวกับ Bitpop แปลภาษา</translation>
 <translation id="4266565660628359579">เปิดใช้งานโหมด DPI สูงสำหรับโปรแกรมอ่าน PDF ของ Chrome บนจอภาพ DPI สูง</translation>
 <translation id="5702389759209837579">เข้าถึงแท็บที่เปิดอยู่ในทุกๆ อุปกรณ์ของคุณ</translation>
 <translation id="3828747136564826513">เข้าถึงไฟล์สื่อที่รู้จักทั้งหมดในอุปกรณ์ของคุณ</translation>
@@ -2195,7 +2195,7 @@
 <translation id="1752977958630076881">เก็บข้อมูลในตัวเครื่องไว้จนกระทั่งฉันปิดเบราว์เซอร์เท่านั้น</translation>
 <translation id="7853202427316060426">กิจกรรม</translation>
 <translation id="8550022383519221471">บริการซิงค์ไม่มีให้บริการสำหรับโดเมนของคุณ</translation>
-<translation id="1436238710092600782">สร้างบัญชี Google</translation>
+<translation id="1436238710092600782">สร้างบัญชี Bitpop</translation>
 <translation id="3355823806454867987">เปลี่ยนการตั้งค่าพร็อกซี...</translation>
 <translation id="4780374166989101364">เปิดใช้งาน API ส่วนขยายที่อยู่ในช่วงทดลอง โปรดทราบว่าแกลเลอรีส่วนขยายไม่อนุญาตให้คุณอัปโหลดส่วนขยายที่ใช้ API ที่อยู่ในช่วงทดลอง</translation>
 <translation id="7117247127439884114">ลงชื่อเข้าใช้อีกครั้ง...</translation>
@@ -2208,7 +2208,7 @@
 <translation id="3007574127824276972">ลงชื่อเข้าใช้ใน <ph name="PRODUCT_NAME"/> ด้วยชื่อ <ph name="USER_NAME"/></translation>
 <translation id="6840155730904976091"><ph name="PRODUCT_NAME"/> กำลังใช้การตั้งค่าพร็อกซีระบบของโทรศัพท์มือถือของคุณเพื่อเชื่อมต่อเครือข่าย</translation>
 <translation id="2541913031883863396">ดำเนินการต่อ</translation>
-<translation id="6884284539803678768">เปิดใช้งานเฟรมของช่องโต้ตอบสไตล์ Google</translation>
+<translation id="6884284539803678768">เปิดใช้งานเฟรมของช่องโต้ตอบสไตล์ Bitpop</translation>
 <translation id="2367499218636570208">ชื่อ</translation>
 <translation id="4436689501885286563">ล้างคุกกี้และข้อมูลอื่นของไซต์เมื่อฉันออกจากระบบ</translation>
 <translation id="1520137456044207237">ต้องการใช้บริการใดในการดู</translation>
@@ -2275,7 +2275,7 @@
 <translation id="8053390638574070785">โหลดหน้านี้ใหม่</translation>
 <translation id="5507756662695126555">การป้องกันการปฏิเสธความรับผิดชอบต่อข้อมูล</translation>
 <translation id="3678156199662914018">ส่วนขยาย: <ph name="EXTENSION_NAME"/></translation>
-<translation id="2620090360073999360">ไม่สามารถเข้าถึง Google ไดรฟ์ได้ในเวลานี้</translation>
+<translation id="2620090360073999360">ไม่สามารถเข้าถึง Bitpop ไดรฟ์ได้ในเวลานี้</translation>
 <translation id="3531250013160506608">ช่องข้อความรหัสผ่าน</translation>
 <translation id="506228266759207354">ปิดใช้งานเมนูหน้าแท็บใหม่สำหรับการเข้าถึงแท็บบนอุปกรณ์อื่นๆ</translation>
 <translation id="1781502536226964113">เปิดหน้าแท็บใหม่</translation>
@@ -2414,7 +2414,7 @@
 <translation id="1358735829858566124">ไฟล์หรือไดเรกทอรีใช้งานไม่ได้</translation>
 <translation id="3144135466825225871">ไม่สามารถแทนที่ไฟล์ CRX ได้ โปรดตรวจสอบดูว่าไฟล์มีการใช้งานอยู่หรือไม่</translation>
 <translation id="2744221223678373668">ที่แบ่งปัน</translation>
-<translation id="9064142312330104323">รูปภาพ Google โปรไฟล์ (กำลังโหลด)</translation>
+<translation id="9064142312330104323">รูปภาพ Bitpop โปรไฟล์ (กำลังโหลด)</translation>
 <translation id="4708849949179781599">ออกจาก <ph name="PRODUCT_NAME"/></translation>
 <translation id="2505402373176859469"><ph name="RECEIVED_AMOUNT"/> จาก <ph name="TOTAL_SIZE"/></translation>
 <translation id="6937559152970966646">ตรึงที่หน้าจอเริ่มต้น</translation>
@@ -2512,12 +2512,12 @@
 <translation id="305803244554250778">สร้างทางลัดไปยังแอปพลิเคชันในที่ต่อไปนี้:</translation>
 <translation id="574392208103952083">ขนาดกลาง</translation>
 <translation id="3661117620327489194">เปลี่ยนเป็นคืนค่าหน้าเว็บที่เปิดไว้</translation>
-<translation id="3937609171782005782">ช่วยเพิ่มประสิทธิภาพในการตรวจจับมัลแวร์โดยส่งข้อมูลเพิ่มเติมเกี่ยวกับไซต์ที่คุณเห็นคำเตือนนี้ให้กับ Google ข้อมูลนี้จะได้รับการจัดการโดยเป็นไปตาม <ph name="PRIVACY_PAGE_LINK"/></translation>
+<translation id="3937609171782005782">ช่วยเพิ่มประสิทธิภาพในการตรวจจับมัลแวร์โดยส่งข้อมูลเพิ่มเติมเกี่ยวกับไซต์ที่คุณเห็นคำเตือนนี้ให้กับ Bitpop ข้อมูลนี้จะได้รับการจัดการโดยเป็นไปตาม <ph name="PRIVACY_PAGE_LINK"/></translation>
 <translation id="8877448029301136595">[ไดเรกทอรีหลัก]</translation>
 <translation id="3816844797124379499">ไม่สามารถเพิ่มแอปพลิเคชันเนื่องจากขัดแย้งกับ &quot;<ph name="APP_NAME"/>&quot;</translation>
 <translation id="7301360164412453905">แป้นการเลือกแป้นพิมพ์ของ Hsu</translation>
 <translation id="8631271110654520730">กำลังคัดลอกอิมเมจการกู้คืน...</translation>
-<translation id="7779140087128114262">เฉพาะผู้ที่มีข้อความรหัสผ่านของคุณเท่านั้นจึงจะสามารถอ่านข้อมูลที่เข้ารหัสของคุณได้ Google จะไม่ได้รับหรือจัดเก็บข้อความรหัสผ่านนี้ หากคุณลืมข้อความรหัสผ่านของคุณ คุณจะต้องรีเซ็ตการซิงค์</translation>
+<translation id="7779140087128114262">เฉพาะผู้ที่มีข้อความรหัสผ่านของคุณเท่านั้นจึงจะสามารถอ่านข้อมูลที่เข้ารหัสของคุณได้ Bitpop จะไม่ได้รับหรือจัดเก็บข้อความรหัสผ่านนี้ หากคุณลืมข้อความรหัสผ่านของคุณ คุณจะต้องรีเซ็ตการซิงค์</translation>
 <translation id="13356285923490863">ชื่อนโยบาย</translation>
 <translation id="8241040075392580210">เชดดี้</translation>
 <translation id="8690155203172212841">จัดการตั้งค่าการอนุญาต</translation>
@@ -2539,7 +2539,7 @@
         ไปที่ <ph name="URL_FOR_MORE_INFO"/>
         ซึ่งคุณสามารถพบข้อมูลเพิ่มเติม รวมทั้งวิธีปิดใช้งานคุณลักษณะนี้</translation>
 <translation id="8218008331535230597">ยกเลิกการให้สิทธิ์ใบอนุญาตเนื้อหา</translation>
-<translation id="4744728308552504807">เปิดใช้งานบริการพื้นหลังที่เชื่อมต่อบริการ Google Cloud Print กับเครื่องพิมพ์ที่ติดตั้งในโทรศัพท์มือถือเครื่องนี้ เมื่อมีการเปิดใช้งานแล็บนี้แล้ว คุณจะสามารถเปิดโปรแกรมเชื่อมต่อ Google Cloud Print ได้โดยลงชื่อเข้าใช้บัญชี Google ของคุณในส่วนของการตั้งค่าขั้นสูง</translation>
+<translation id="4744728308552504807">เปิดใช้งานบริการพื้นหลังที่เชื่อมต่อบริการ Bitpop Cloud Print กับเครื่องพิมพ์ที่ติดตั้งในโทรศัพท์มือถือเครื่องนี้ เมื่อมีการเปิดใช้งานแล็บนี้แล้ว คุณจะสามารถเปิดโปรแกรมเชื่อมต่อ Google Cloud Print ได้โดยลงชื่อเข้าใช้บัญชี Google ของคุณในส่วนของการตั้งค่าขั้นสูง</translation>
 <translation id="6691936601825168937">&amp;ส่งต่อ</translation>
 <translation id="6566142449942033617">ไม่สามารถโหลดปลั๊กอินจาก &quot;<ph name="PLUGIN_PATH"/>&quot;</translation>
 <translation id="7065534935986314333">เกี่ยวกับระบบ</translation>
@@ -2550,7 +2550,7 @@
 <translation id="2128691215891724419">การซิงค์มีข้อผิดพลาด: อัปเดตข้อความรหัสผ่านของการซิงค์...</translation>
 <translation id="2148716181193084225">วันนี้</translation>
 <translation id="1002064594444093641">&amp;พิมพ์เฟรม...</translation>
-<translation id="7234674978021619913">เราได้แจ้ง <ph name="HOST_NAME"/> แล้วว่าเราพบมัลแวร์ในไซต์ หากต้องการข้อมูลเพิ่มเติมเกี่ยวกับปัญหาที่พบใน <ph name="HOST_NAME2"/> โปรดไปที่ Google <ph name="DIAGNOSTIC_PAGE"/></translation>
+<translation id="7234674978021619913">เราได้แจ้ง <ph name="HOST_NAME"/> แล้วว่าเราพบมัลแวร์ในไซต์ หากต้องการข้อมูลเพิ่มเติมเกี่ยวกับปัญหาที่พบใน <ph name="HOST_NAME2"/> โปรดไปที่ Bitpop <ph name="DIAGNOSTIC_PAGE"/></translation>
 <translation id="4608500690299898628">&amp;ค้นหา...</translation>
 <translation id="7582582252461552277">ต้องการใช้เครือข่ายนี้</translation>
 <translation id="3574305903863751447"><ph name="CITY"/>, <ph name="STATE"/> <ph name="COUNTRY"/></translation>
@@ -2647,7 +2647,7 @@
 <translation id="6322726279947003371">เรียกใช้เนื้อหาที่มีการป้องกัน (อาจจำเป็นต้องรีสตาร์ทคอมพิวเตอร์)</translation>
 <translation id="3093473105505681231">การตั้งค่าภาษาและเครื่องตรวจตัวสะกด...</translation>
 <translation id="152482086482215392">เหลือ <ph name="NUMBER_ONE"/> วินาที</translation>
-<translation id="4261901459838235729">งานนำเสนอของ Google</translation>
+<translation id="4261901459838235729">งานนำเสนอของ Bitpop</translation>
 <translation id="8678698760965522072">สถานะออนไลน์</translation>
 <translation id="529172024324796256">ชื่อผู้ใช้:</translation>
 <translation id="3308116878371095290">หน้าเว็บนี้ไม่อนุญาตให้มีการตั้งค่าคุกกี้</translation>
@@ -2725,7 +2725,7 @@
 <translation id="2444609190341826949">หากไม่มีข้อความรหัสผ่าน คุณจะไม่สามารถซิงค์รหัสผ่านและข้อมูลที่เข้ารหัสของคุณในคอมพิวเตอร์นี้ได้</translation>
 <translation id="2984337792991268709">วันนี้ <ph name="TODAY_DAYTIME"/></translation>
 <translation id="5227808808023563348">ค้นหาข้อความก่อนหน้า</translation>
-<translation id="6650142020817594541">ไซต์นี้แนะนำให้ใช้งาน Google Chrome Frame (ติดตั้งไว้แล้ว)</translation>
+<translation id="6650142020817594541">ไซต์นี้แนะนำให้ใช้งาน Bitpop Chrome Frame (ติดตั้งไว้แล้ว)</translation>
 <translation id="3862763658360970896">เปิดใช้งาน Chrome To Mobile</translation>
 <translation id="902638246363752736">การตั้งค่าแป้นพิมพ์</translation>
 <translation id="7925686952655276919">อย่าใช้ข้อมูลมือถือสำหรับการซิงค์</translation>
@@ -2745,7 +2745,7 @@
 <translation id="6007237601604674381">การย้ายล้มเหลว <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">ไม่สามารถสร้างซิปไฟล์ชั่วคราวระหว่างการแพ็คเกจ</translation>
 <translation id="1881456419707551346">รายละเอียดการเชื่อมต่อ</translation>
-<translation id="1064912851688322329">หยุดเชื่อมต่อบัญชี Google ของคุณ</translation>
+<translation id="1064912851688322329">หยุดเชื่อมต่อบัญชี Bitpop ของคุณ</translation>
 <translation id="1294298200424241932">แก้ไขการตั้งค่าความเชื่อถือ:</translation>
 <translation id="1407135791313364759">เปิดทั้งหมด</translation>
 <translation id="1434928358870966081">ปิดใช้งาน Canvas 2 มิติที่ได้รับการเร่ง</translation>
@@ -2768,9 +2768,9 @@
 <translation id="267285457822962309">เปลี่ยนการตั้งค่าเฉพาะสำหรับอุปกรณ์และอุปกรณ์ต่อพ่วงของคุณ</translation>
 <translation id="1154228249304313899">เปิดหน้านี้:</translation>
 <translation id="6084074203170335305"><ph name="MARKUP_1"/>เข้าถึงไฟล์ได้จากทุกที่ แม้ขณะออฟไลน์<ph name="MARKUP_2"/>
-        ไฟล์ใน Google ไดรฟ์จะทันสมัยและสามารถใช้ได้จากทุกอุปกรณ์<ph name="MARKUP_3"/>
+        ไฟล์ใน Bitpop ไดรฟ์จะทันสมัยและสามารถใช้ได้จากทุกอุปกรณ์<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>เก็บไฟล์ของคุณให้ปลอดภัย<ph name="MARKUP_5"/>
-        ไม่ว่าจะเกิดอะไรขึ้นกับอุปกรณ์ของคุณ ไฟล์จะได้รับการจัดเก็บไว้อย่างปลอดภัยใน Google ไดรฟ์<ph name="MARKUP_6"/>
+        ไม่ว่าจะเกิดอะไรขึ้นกับอุปกรณ์ของคุณ ไฟล์จะได้รับการจัดเก็บไว้อย่างปลอดภัยใน Bitpop ไดรฟ์<ph name="MARKUP_6"/>
         <ph name="MARKUP_7"/>แบ่งปัน สร้าง และทำงานร่วมกัน<ph name="MARKUP_8"/>
         กับผู้อื่นบนไฟล์ ทุกอย่างทำได้จากที่เดียว<ph name="MARKUP_9"/></translation>
 <translation id="9074348188580488499">คุณแน่ใจหรือไม่ว่าต้องการลบรหัสผ่านทั้งหมด</translation>
@@ -2905,7 +2905,7 @@
 <translation id="8725066075913043281">ลองอีกครั้ง</translation>
 <translation id="387784661603993584">ไม่สามารถนำเข้า เกิดข้อผิดพลาด</translation>
 <translation id="4637968436031842307">เปิดใช้งานตัวแปร CSS</translation>
-<translation id="1887908730460853602">ช่องโต้ตอบสไตล์ Google</translation>
+<translation id="1887908730460853602">ช่องโต้ตอบสไตล์ Bitpop</translation>
 <translation id="8502249598105294518">ปรับแต่งและควบคุม <ph name="PRODUCT_NAME"/></translation>
 <translation id="3797008485206955964">ดูหน้าพื้นหลัง (<ph name="NUM_BACKGROUND_APPS"/>)</translation>
 <translation id="8590375307970699841">ติดตั้งการอัปเดตอัตโนมัติ</translation>
@@ -2925,8 +2925,8 @@
 <translation id="5293659407874396561"><ph name="SUBJECT"/> (<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">ต้องเป็น URL ที่ถูกต้อง</translation>
 <translation id="3464726836683998962">ปิดใช้งานการโรมมิ่งข้อมูลมือถือ</translation>
-<translation id="8986494364107987395">ส่งสถิติการใช้งานและรายงานข้อขัดข้องไปยัง Google โดยอัตโนมัติ</translation>
-<translation id="7070714457904110559">เปิดใช้งานส่วนขยายรุ่นทดลองกับคุณลักษณะตำแหน่งทางภูมิศาสตร์ ซึ่งได้แก่การใช้ API ตำแหน่งระบบปฏิบัติการ (เมื่อมีให้ใช้งาน) และการส่งข้อมูลเพิ่มเติมเกี่ยวกับการกำหนดค่าเครือข่ายท้องถิ่นไปยังบริการตำแหน่งของ Google เพื่อให้การระบุตำแหน่งมีความเที่ยงตรงมากขึ้น</translation>
+<translation id="8986494364107987395">ส่งสถิติการใช้งานและรายงานข้อขัดข้องไปยัง Bitpop โดยอัตโนมัติ</translation>
+<translation id="7070714457904110559">เปิดใช้งานส่วนขยายรุ่นทดลองกับคุณลักษณะตำแหน่งทางภูมิศาสตร์ ซึ่งได้แก่การใช้ API ตำแหน่งระบบปฏิบัติการ (เมื่อมีให้ใช้งาน) และการส่งข้อมูลเพิ่มเติมเกี่ยวกับการกำหนดค่าเครือข่ายท้องถิ่นไปยังบริการตำแหน่งของ Bitpop เพื่อให้การระบุตำแหน่งมีความเที่ยงตรงมากขึ้น</translation>
 <translation id="6701535245008341853">ไม่สามารถโหลดโปรไฟล์</translation>
 <translation id="8303655282093186569">การตั้งค่าการป้อนข้อมูลพินอิน</translation>
 <translation id="992779717417561630">พิมพ์โดยใช้หน้าต่างโต้ตอบ <ph name="CLOUD_PRINT_NAME"/>... <ph name="SHORTCUT_KEY"/></translation>
@@ -2940,7 +2940,7 @@
 <translation id="580571955903695899">จัดลำดับใหม่ตามชื่อ</translation>
 <translation id="5230516054153933099">หน้าต่าง</translation>
 <translation id="921740547845455014">เขียนไปยังไฟล์ที่คุณเปิดไว้ในแอปพลิเคชัน</translation>
-<translation id="1799497982892676838">จัดการข้อมูลที่ซิงค์บน Google แดชบอร์ด</translation>
+<translation id="1799497982892676838">จัดการข้อมูลที่ซิงค์บน Bitpop แดชบอร์ด</translation>
 <translation id="951981865514037445"><ph name="URL"/> ต้องการใช้ตำแหน่งอุปกรณ์ของคุณ</translation>
 <translation id="7554791636758816595">แท็บใหม่</translation>
 <translation id="3026557130425686673">การลงชื่อเข้าใช้ถูกยกเลิกเนื่องจากการตั้งค่าบางอย่างของอุปกรณ์ขัดข้อง</translation>
@@ -2955,7 +2955,7 @@
 <translation id="1103966635949043187">ไปที่หน้าแรกของเว็บไซต์:</translation>
 <translation id="4762295713053835808">สิ่งของส่วนตัว</translation>
 <translation id="6374100501221763867">ปิดใช้งานการถอดรหัสวิดีโอที่เร่งการแสดงผลด้วยฮาร์ดแวร์</translation>
-<translation id="7477347901712410606">หากคุณลืมข้อความรหัสผ่านของคุณ ให้หยุดและรีเซ็ตการซิงค์ผ่าน <ph name="BEGIN_LINK"/>หน้าแดชบอร์ดของ Google<ph name="END_LINK"/></translation>
+<translation id="7477347901712410606">หากคุณลืมข้อความรหัสผ่านของคุณ ให้หยุดและรีเซ็ตการซิงค์ผ่าน <ph name="BEGIN_LINK"/>หน้าแดชบอร์ดของ Bitpop<ph name="END_LINK"/></translation>
 <translation id="6139474630617772623">เปิดใช้งานเดสก์ท็อปขยายซึ่งทำให้คุณสามารถเปิดเบราว์เซอร์ในจอภาพที่สองได้</translation>
 <translation id="2645575947416143543">อย่างไรก็ตาม หากคุณทำงานในองค์กรที่มีการสร้างใบรับรองของตนเอง และคุณพยายามเชื่อมต่อกับเว็บไซต์ภายในขององค์กรโดยใช้ใบรับรองดังกล่าว คุณอาจแก้ปัญหานี้ได้อย่างปลอดภัย คุณสามารถนำเข้าใบรับรองหลักขององค์กรเป็น &quot;ใบรับรองหลัก&quot; จากนั้น ใบรับรองที่ออกหรือรับรองโดยองค์กรของคุณจะได้รับความเชื่อถือและคุณจะไม่พบข้อผิดพลาดนี้อีกในครั้งหน้าที่คุณพยายามเชื่อมต่อกับเว็บไซต์ภายใน ติดต่อพนักงานให้ความช่วยเหลือในองค์กรของคุณ หากต้องการความช่วยเหลือในการเพิ่มใบรับรองหลักลงในคอมพิวเตอร์ของคุณ</translation>
 <translation id="1056898198331236512">คำเตือน</translation>
@@ -3234,7 +3234,7 @@
 <translation id="7063412606254013905">เรียนรู้เพิ่มเติมเกี่ยวกับอุบายฟิชชิ่ง</translation>
 <translation id="7253521419891527137">&amp;เรียนรู้เพิ่มเติม</translation>
 <translation id="3170312251071695679"><ph name="PERMISSION_VALUE"/> โดยค่าเริ่มต้น</translation>
-<translation id="8698464937041809063">ภาพวาดของ Google</translation>
+<translation id="8698464937041809063">ภาพวาดของ Bitpop</translation>
 <translation id="7053053706723613360">ปิดใช้งานการคืนค่าเซสชันที่ดียิ่งขึ้น</translation>
 <translation id="5233930340889611108">WebKit</translation>
 <translation id="8260864402787962391">เมาส์</translation>
@@ -3263,7 +3263,7 @@
 <translation id="6873213799448839504">ส่งสตริงอัตโนมัติ</translation>
 <translation id="7238585580608191973">ลายนิ้วมือ SHA-256</translation>
 <translation id="2501278716633472235">ย้อนกลับ</translation>
-<translation id="3588662957555259973">* รูปโปรไฟล์ Google</translation>
+<translation id="3588662957555259973">* รูปโปรไฟล์ Bitpop</translation>
 <translation id="131461803491198646">เครือข่ายในประเทศ ไม่ใช่โรมมิ่ง</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/> - <ph name="FULL_DATE"/></translation>
 <translation id="1285320974508926690">ไม่ต้องแปลไซต์นี้</translation>
@@ -3333,7 +3333,7 @@
 <translation id="461656879692943278"><ph name="HOST_NAME"/> มีเนื้อหาจาก <ph name="ELEMENTS_HOST_NAME"/> ซึ่งเป็นไซต์ที่ทราบกันว่าเผยแพร่มัลแวร์ คอมพิวเตอร์ของคุณอาจติดไวรัสหากคุณไปที่ไซต์นี้</translation>
 <translation id="8962198349065195967">เครือข่ายนี้มีการกำหนดค่าโดยผู้ดูแลระบบของคุณ</translation>
 <translation id="2143778271340628265">กำหนดค่าพร็อกซีด้วยตนเอง</translation>
-<translation id="2441192698565541088">หากหยุดการเชื่อมต่อบัญชี Google ของคุณกับ <ph name="PRODUCT_NAME"/> การเปลี่ยนแปลงต่างๆ ที่คุณทำกับข้อมูลโดยใช้คอมพิวเตอร์นี้จะไม่ได้รับการซิงค์ไปยังบัญชี Google ข้อมูลที่จัดเก็บไว้ในบัญชี Google แล้วจะยังคงอยู่จนกว่าคุณจะนำออกโดยใช้ <ph name="BEGIN_LINK"/>Google แดชบอร์ด<ph name="END_LINK"/></translation>
+<translation id="2441192698565541088">หากหยุดการเชื่อมต่อบัญชี Bitpop ของคุณกับ <ph name="PRODUCT_NAME"/> การเปลี่ยนแปลงต่างๆ ที่คุณทำกับข้อมูลโดยใช้คอมพิวเตอร์นี้จะไม่ได้รับการซิงค์ไปยังบัญชี Google ข้อมูลที่จัดเก็บไว้ในบัญชี Google แล้วจะยังคงอยู่จนกว่าคุณจะนำออกโดยใช้ <ph name="BEGIN_LINK"/>Google แดชบอร์ด<ph name="END_LINK"/></translation>
 <translation id="8888432776533519951">สี:</translation>
 <translation id="5294529402252479912">อัปเดต Adobe Reader ตอนนี้</translation>
 <translation id="5263972071113911534"><ph name="NUMBER_MANY"/> วันที่ผ่านมา</translation>
@@ -3362,7 +3362,7 @@
 <translation id="8885905466771744233">คีย์ส่วนตัวของส่วนขยายที่ระบุมีอยู่แล้ว นำคีย์นั้นมาใช้ซ้ำหรือลบคีย์ออกก่อน</translation>
 <translation id="1196944142850240972">เข้าถึงข้อมูลของคุณบนเว็บไซต์ทั้งหมด</translation>
 <translation id="7369056754288047856">ผู้ใช้ไม่สามารถแก้ไขการตั้งค่าบางอย่างได้</translation>
-<translation id="4100843820583867709">คำขอแบ่งปันหน้าจอของ Google Talk</translation>
+<translation id="4100843820583867709">คำขอแบ่งปันหน้าจอของ Bitpop Talk</translation>
 <translation id="8109246889182548008">ที่จัดเก็บใบรับรอง</translation>
 <translation id="5030338702439866405">ออกโดย</translation>
 <translation id="2728127805433021124">ใบรับรองของเซิร์ฟเวอร์ถูกเซ็นชื่อด้วยอัลกอริทึมลายเซ็นที่ไม่รัดกุม</translation>
@@ -3551,7 +3551,7 @@
 <translation id="1049926623896334335">เอกสาร Word</translation>
 <translation id="8412145213513410671">ข้อขัดข้อง (<ph name="CRASH_COUNT"/>)</translation>
 <translation id="7003257528951459794">ความถี่:</translation>
-<translation id="3467267818798281173">ขอคำแนะนำจาก Google</translation>
+<translation id="3467267818798281173">ขอคำแนะนำจาก Bitpop</translation>
 <translation id="560602183358579978">กำลังประมลผลตัวเลือก...</translation>
 <translation id="7649070708921625228">ช่วยเหลือ</translation>
 <translation id="858637041960032120">เพิ่มหมายเลขโทรศัพท์</translation>
@@ -3587,7 +3587,7 @@
 <translation id="8000020256436988724">แถบเครื่องมือ</translation>
 <translation id="7507930499305566459">ใบรับรอง Status Responder</translation>
 <translation id="3958088479270651626">นำเข้าบุ๊กมาร์กและการตั้งค่า</translation>
-<translation id="2689915906323125315">ใช้รหัสผ่านบัญชี Google ของฉัน</translation>
+<translation id="2689915906323125315">ใช้รหัสผ่านบัญชี Bitpop ของฉัน</translation>
 <translation id="8518865679229538285">วิธีการป้อนข้อมูลภาษาทมิฬ (พิมพ์ดีด)</translation>
 <translation id="5257456363153333584">แมลงปอ</translation>
 <translation id="4557136421275541763">คำเตือน:</translation>
@@ -3598,7 +3598,7 @@
 <translation id="7681202901521675750">ซิมการ์ดล็อกอยู่ โปรดป้อน PIN จำนวนครั้งที่เหลือ: <ph name="TRIES_COUNT"/></translation>
 <translation id="2489918096470125693">เพิ่ม&amp;โฟลเดอร์...</translation>
 <translation id="7353651168734309780">ต้องมีการอนุญาตใหม่สำหรับ <ph name="EXTENSION_NAME"/></translation>
-<translation id="6420812616858267777">การซิงค์ <ph name="PRODUCT_NAME"/> ทำให้คุณสามารถแบ่งปันข้อมูล (เช่น บุ๊กมาร์กและการตั้งค่า) ระหว่างคอมพิวเตอร์และโทรศัพท์มือถือของคุณได้ง่ายขึ้น <ph name="PRODUCT_NAME"/> จะซิงค์ข้อมูลของคุณโดยจัดเก็บข้อมูลแบบออนไลน์ไว้กับ Google เมื่อคุณลงชื่อเข้าใช้บัญชี Google ของคุณ</translation>
+<translation id="6420812616858267777">การซิงค์ <ph name="PRODUCT_NAME"/> ทำให้คุณสามารถแบ่งปันข้อมูล (เช่น บุ๊กมาร์กและการตั้งค่า) ระหว่างคอมพิวเตอร์และโทรศัพท์มือถือของคุณได้ง่ายขึ้น <ph name="PRODUCT_NAME"/> จะซิงค์ข้อมูลของคุณโดยจัดเก็บข้อมูลแบบออนไลน์ไว้กับ Bitpop เมื่อคุณลงชื่อเข้าใช้บัญชี Google ของคุณ</translation>
 <translation id="7484964289312150019">เปิดบุ๊กมาร์กทั้งหมดใน&amp;หน้าต่างใหม่</translation>
 <translation id="1731346223650886555">อัฒภาค</translation>
 <translation id="158849752021629804">ต้องใช้เครือข่ายในประเทศ</translation>
@@ -3614,7 +3614,7 @@
 <translation id="3021678814754966447">&amp;ดูแหล่งที่มาของเฟรม</translation>
 <translation id="8601206103050338563">การตรวจสอบสิทธิ์ไคลเอ็นต์ TLS WWW </translation>
 <translation id="1692799361700686467">อนุญาตคุกกี้จากหลายไซต์</translation>
-<translation id="5187295959347858724">คุณได้ลงชื่อเข้าใช้ <ph name="SHORT_PRODUCT_NAME"/> แล้วในตอนนี้ บุ๊กมาร์ก ประวัติการเข้าชม และการตั้งค่าอื่นๆ ของคุณจะได้รับการซิงค์กับบัญชี Google</translation>
+<translation id="5187295959347858724">คุณได้ลงชื่อเข้าใช้ <ph name="SHORT_PRODUCT_NAME"/> แล้วในตอนนี้ บุ๊กมาร์ก ประวัติการเข้าชม และการตั้งค่าอื่นๆ ของคุณจะได้รับการซิงค์กับบัญชี Bitpop</translation>
 <translation id="3719415759165722358">เปิดใช้งาน UI การตั้งค่าเว็บไซต์ UI การตั้งค่าเว็บไซต์นี้จะแทนที่ลูกโป่งข้อมูลหน้าเว็บและแสดงวิธีการง่ายๆ ในการกำหนดค่าเฉพาะำสำหรับไซต์</translation>
 <translation id="2717190143245689317">เปิดใช้งาน Textfield ทดลองสำหรับ UI ของแอปพลิเคชัน จะไม่ส่งผลต่อเนื้อหาเว็บ</translation>
 <translation id="529232389703829405">คุณซื้อข้อมูล <ph name="DATA_AMOUNT"/> เมื่อ <ph name="DATE"/></translation>
@@ -3657,7 +3657,7 @@
 <translation id="2927657246008729253">เปลี่ยน...</translation>
 <translation id="7586781939132793422">ปิดใช้งานการตอบสนองด้วยเสียง</translation>
 <translation id="7978412674231730200">กุญแจส่วนตัว</translation>
-<translation id="7056011739864317578">เมื่อเปิดใช้งาน จะใช้ ClientOAuth เพื่อเชื่อมต่อโปรไฟล์กับบัญชี Google มิฉะนั้นจะใช้ ClientLogin แทน
+<translation id="7056011739864317578">เมื่อเปิดใช้งาน จะใช้ ClientOAuth เพื่อเชื่อมต่อโปรไฟล์กับบัญชี Bitpop มิฉะนั้นจะใช้ ClientLogin แทน
       ClientOAuth อนุญาตให้ใช้รหัสยืนยันแทนการใช้ ASP ในระหว่างการตรวจสอบสิทธิ์</translation>
 <translation id="5308380583665731573">เชื่อมต่อ</translation>
 <translation id="9111395131601239814"><ph name="NETWORKDEVICE"/>: <ph name="STATUS"/></translation>
@@ -3679,7 +3679,7 @@
 <translation id="6692173217867674490">ข้อความรหัสผ่านไม่ถูกต้อง</translation>
 <translation id="5550431144454300634">แก้ไขสิ่งที่ป้อนอัตโนมัติ</translation>
 <translation id="3308006649705061278">หน่วยองค์กร (OU)</translation>
-<translation id="8912362522468806198">บัญชี Google</translation>
+<translation id="8912362522468806198">บัญชี Bitpop</translation>
 <translation id="4443536555189480885">&amp;ความช่วยเหลือ</translation>
 <translation id="340485819826776184">ใช้บริการคาดเดาเพื่อช่วยเติมคำค้นหาและ URL ที่พิมพ์ลงในแถบที่อยู่</translation>
 <translation id="4207762215349123040">ปลั๊กอิน <ph name="PEPPER_PLUGIN_NAME"/> บน <ph name="PEPPER_PLUGIN_DOMAIN"/> ต้องการเข้าถึงโทรศัพท์มือถือของคุณ&quot;</translation>
@@ -3698,7 +3698,7 @@
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="4745438305783437565"><ph name="NUMBER_FEW"/> นาที</translation>
 <translation id="2649911884196340328">ใบรับรองการรักษาความปลอดภัยของเซิร์ฟเวอร์มีข้อผิดพลาด!</translation>
-<translation id="6666647326143344290">ด้วยบัญชี Google ของคุณ</translation>
+<translation id="6666647326143344290">ด้วยบัญชี Bitpop ของคุณ</translation>
 <translation id="4980112683975062744">ได้รับส่วนหัวที่ซ้ำกันจากเซิร์ฟเวอร์</translation>
 <translation id="3828029223314399057">ค้นหาบุ๊คมาร์ค</translation>
 <translation id="4885705234041587624">MSCHAPv2</translation>
@@ -3707,7 +3707,7 @@
 <translation id="3551117997325569860">หากต้องการเปลี่ยนพร็อกซี ให้เปิดใช้งานการตั้งค่า &quot;<ph name="USE_SHARED_PROXIES"/>&quot;</translation>
 <translation id="8906421963862390172">&amp;ตัวเลือกเครื่องตรวจตัวสะกด</translation>
 <translation id="9046895021617826162">การเชื่อมต่อล้มเหลว</translation>
-<translation id="4061733942661196912">เมื่อเปิดใช้งานแล้ว การไปที่หน้าลงชื่อเข้าใช้บัญชี Google จะเป็นการเรียกแถบข้อมูลซึ่งจะทำให้ลงชื่อเข้าใช้บัญชี Google ที่เชื่อมต่อกับโปรไฟล์ได้อย่างง่ายดาย การลงชื่อเข้าใช้อัตโนมัติจะถูกปิดใช้งานไว้เสมอหากไม่ได้เชื่อมต่อกับบัญชี แม้ว่าจะมีการตั้งค่าสถานะนี้ก็ตาม</translation>
+<translation id="4061733942661196912">เมื่อเปิดใช้งานแล้ว การไปที่หน้าลงชื่อเข้าใช้บัญชี Bitpop จะเป็นการเรียกแถบข้อมูลซึ่งจะทำให้ลงชื่อเข้าใช้บัญชี Google ที่เชื่อมต่อกับโปรไฟล์ได้อย่างง่ายดาย การลงชื่อเข้าใช้อัตโนมัติจะถูกปิดใช้งานไว้เสมอหากไม่ได้เชื่อมต่อกับบัญชี แม้ว่าจะมีการตั้งค่าสถานะนี้ก็ตาม</translation>
 <translation id="1492188167929010410">รหัสข้อขัดข้อง <ph name="CRASH_ID"/></translation>
 <translation id="1963692530539281474">เหลือ <ph name="NUMBER_DEFAULT"/> วัน</translation>
 <translation id="4470270245053809099">ออกโดย: <ph name="NAME"/></translation>
@@ -3755,7 +3755,7 @@
 <translation id="5869522115854928033">รหัสผ่านที่บันทึกไว้</translation>
 <translation id="3436440123324878555">ซื้อแผนข้อมูล...</translation>
 <translation id="5748266869826978907">ตรวจสอบการตั้งค่า DNS ของคุณ ให้ติดต่อผู้ดูแลระบบเครือข่ายของคุณหากไม่แน่ใจว่าข้อความนี้หมายถึงอะไร</translation>
-<translation id="4193154014135846272">เอกสารของ Google</translation>
+<translation id="4193154014135846272">เอกสารของ Bitpop</translation>
 <translation id="4771973620359291008">มีข้อผิดพลาดที่ไม่ทราบเกิดขึ้น</translation>
 <translation id="5509914365760201064">ผู้ออก: <ph name="CERTIFICATE_AUTHORITY"/></translation>
 <translation id="6446356484127229069"><ph name="PRODUCT_NAME"/> ประสบปัญหาในการเข้าถึงเครือข่าย <ph name="LINE_BREAK"/> อาจเกิดจากการที่ไฟร์วอลล์หรือซอฟต์แวร์ป้องกันไวรัสของคุณเข้าใจผิดว่า <ph name="PRODUCT_NAME"/> เป็นผู้บุกรุกโทรศัพท์มือถือของคุณ และกำลังบล็อกไม่ให้โทรศัพท์มือถือของคุณเชื่อมต่ออินเทอร์เน็ต</translation>
@@ -3853,7 +3853,7 @@
 <translation id="899403249577094719">URL ที่อ้างอิงใบรับรองของ Netscape</translation>
 <translation id="2737363922397526254">ยุบ...</translation>
 <translation id="8605428685123651449">หน่วยความจำ SQLite</translation>
-<translation id="5469175127151858022">นอกเหนือจากข้อมูลอื่นๆ ที่คุณเลือกที่จะส่งด้านบนแล้ว รุ่นของ Chrome และระบบปฏิบัติการของคุณจะถูกส่งไปด้วย ความคิดเห็นนี้จะถูกใช้เพื่อวินิจฉัยปัญหาและช่วยในการพัฒนา Chrome ข้อมูลส่วนบุคคลใดๆ ที่คุณส่งไปไม่ว่าจะโดยชัดแจ้งหรือโดยบังเอิญจะได้รับการปกป้องตามนโยบายส่วนบุคคลของเรา <ph name="BEGIN_BOLD"/>การส่งความคิดเห็นนี้ ถือว่าคุณยอมรับว่า Google อาจใช้ความคิดเห็นที่คุณส่งมาในการปรับปรุงผลิตภัณฑ์หรือบริการใดๆ ของ Google<ph name="END_BOLD"/></translation>
+<translation id="5469175127151858022">นอกเหนือจากข้อมูลอื่นๆ ที่คุณเลือกที่จะส่งด้านบนแล้ว รุ่นของ Chrome และระบบปฏิบัติการของคุณจะถูกส่งไปด้วย ความคิดเห็นนี้จะถูกใช้เพื่อวินิจฉัยปัญหาและช่วยในการพัฒนา Chrome ข้อมูลส่วนบุคคลใดๆ ที่คุณส่งไปไม่ว่าจะโดยชัดแจ้งหรือโดยบังเอิญจะได้รับการปกป้องตามนโยบายส่วนบุคคลของเรา <ph name="BEGIN_BOLD"/>การส่งความคิดเห็นนี้ ถือว่าคุณยอมรับว่า Bitpop อาจใช้ความคิดเห็นที่คุณส่งมาในการปรับปรุงผลิตภัณฑ์หรือบริการใดๆ ของ Google<ph name="END_BOLD"/></translation>
 <translation id="2841013758207633010">เวลา</translation>
 <translation id="4880827082731008257">ค้นประวัติการเข้าชม</translation>
 <translation id="8661290697478713397">เปิดลิงก์ในหน้าต่าง&amp;ที่ไม่ระบุตัวตน</translation>
@@ -3885,10 +3885,10 @@
 <translation id="8828933418460119530">ชื่อ DNS</translation>
 <translation id="988159990683914416">รุ่นนักพัฒนา</translation>
 <translation id="1097658378307015415">ก่อนที่จะลงชื่อเข้าใช้ โปรดเข้าใช้ในฐานะผู้มาเยือนเพื่อเปิดใช้งานเครือข่าย <ph name="NETWORK_ID"/></translation>
-<translation id="5170477580121653719">พื้นที่ของ Google ไดรฟ์ที่ยังเหลือ: <ph name="SPACE_AVAILABLE"/></translation>
+<translation id="5170477580121653719">พื้นที่ของ Bitpop ไดรฟ์ที่ยังเหลือ: <ph name="SPACE_AVAILABLE"/></translation>
 <translation id="4114470632216071239">ล็อกซิมการ์ด (ต้องใช้ PIN เพื่อใช้งานข้อมูลมือถือ)</translation>
 <translation id="5184584788669813359">บางส่วนของเอกสาร PDF นี้ไม่แสดง ต้องการเปิดใน Adobe Reader หรือไม่</translation>
-<translation id="6581162200855843583">ลิงก์ Google ไดรฟ์</translation>
+<translation id="6581162200855843583">ลิงก์ Bitpop ไดรฟ์</translation>
 <translation id="340771324714262530">หยุดแสดงผลคู่ขนาน</translation>
 <translation id="3303260552072730022">มีส่วนขยายหนึ่งเรียกใช้หน้าจอแบบเต็ม</translation>
 <translation id="2183426022964444701">เลือกไดเรกทอรีหลักของส่วนขยาย</translation>
@@ -3987,7 +3987,7 @@
 <translation id="1177437665183591855">ข้อผิดพลาดใบรับรองของเซิร์ฟเวอร์ที่ไม่รู้จัก</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> ต้องการใช้กล้องและไมโครโฟนของคุณ</translation>
 <translation id="8467473010914675605">วิธีป้อนข้อมูลภาษาเกาหลี</translation>
-<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> ได้ซิงค์ข้อมูลของคุณกับบัญชี Google อย่างปลอดภัยแล้ว โปรดซิงค์ข้อมูลทุกอย่างหรือกำหนดค่าประเภทข้อมูลที่ซิงค์และการตั้งค่าการเข้ารหัสเป็นประจำ</translation>
+<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> ได้ซิงค์ข้อมูลของคุณกับบัญชี Bitpop อย่างปลอดภัยแล้ว โปรดซิงค์ข้อมูลทุกอย่างหรือกำหนดค่าประเภทข้อมูลที่ซิงค์และการตั้งค่าการเข้ารหัสเป็นประจำ</translation>
 <translation id="2639739919103226564">สถานะ:</translation>
 <translation id="6923900367903210484">ลิขสิทธิ์</translation>
 <translation id="3819800052061700452">เ&amp;ต็มหน้าจอ</translation>
@@ -4011,7 +4011,7 @@
 <translation id="614998064310228828">รุ่นอุปกรณ์:</translation>
 <translation id="1581962803218266616">แสดงในตัวค้นหา</translation>
 <translation id="9100765901046053179">การตั้งค่าขั้นสูง</translation>
-<translation id="203168018648013061">การซิงค์มีข้อผิดพลาด: โปรดรีเซ็ตการซิงค์ผ่านทาง Google แดชบอร์ด</translation>
+<translation id="203168018648013061">การซิงค์มีข้อผิดพลาด: โปรดรีเซ็ตการซิงค์ผ่านทาง Bitpop แดชบอร์ด</translation>
 <translation id="1405126334425076373">เคอร์เซอร์เมาส์</translation>
 <translation id="6096326118418049043">ชื่อ X.500</translation>
 <translation id="6086259540486894113">คุณต้องเลือกประเภทข้อมูลที่จะซิงค์อย่างน้อยหนึ่งประเภท</translation>
@@ -4060,14 +4060,14 @@
 <translation id="2960316970329790041">หยุดการนำเข้า</translation>
 <translation id="3835522725882634757">แย่แล้ว! เซิร์ฟเวอร์นี้กำลังส่งข้อมูลที่ <ph name="PRODUCT_NAME"/> ไม่เข้าใจ โปรด<ph name="BEGIN_LINK"/>รายงานข้อบกพร่อง<ph name="END_LINK"/> และรวม<ph name="BEGIN2_LINK"/>รายการที่ยังไม่ผ่านกระบวนการ<ph name="END2_LINK"/>ไว้ด้วย</translation>
 <translation id="6586451623538375658">สลับปุ่มเมาส์หลัก</translation>
-<translation id="6937152069980083337">การป้อนข้อมูลภาษาญี่ปุ่นของ Google (สำหรับแป้นพิมพ์สหรัฐฯ)</translation>
+<translation id="6937152069980083337">การป้อนข้อมูลภาษาญี่ปุ่นของ Bitpop (สำหรับแป้นพิมพ์สหรัฐฯ)</translation>
 <translation id="475088594373173692">ผู้ใช้แรก</translation>
 <translation id="1731911755844941020">กำลังส่งคำขอ...</translation>
 <translation id="8371695176452482769">พูดเดี๋ยวนี้</translation>
 <translation id="7622116780510618781">แท็บที่เรียงซ้อน</translation>
 <translation id="2988488679308982380">ไม่สามารถติดตั้งแพคเกจ: &quot;<ph name="ERROR_CODE"/>&quot;</translation>
 <translation id="2904079386864173492">รุ่น:</translation>
-<translation id="728836202927797241">ทำให้สามารถลงชื่อเข้าใช้ไซต์ต่างๆ ของ Google ได้โดยอัตโนมัติด้วยบัญชีนี้</translation>
+<translation id="728836202927797241">ทำให้สามารถลงชื่อเข้าใช้ไซต์ต่างๆ ของ Bitpop ได้โดยอัตโนมัติด้วยบัญชีนี้</translation>
 <translation id="6129953537138746214">ช่องว่าง</translation>
 <translation id="5041795084235183432">เมาส์:</translation>
 <translation id="3704331259350077894">หยุดดำเนินกิจการ</translation>
@@ -4141,7 +4141,7 @@
 <translation id="3325146402434751578">ตั้งค่าหรือจัดการเครื่องพิมพ์ใน <ph name="CLOUD_PRINT_NAME"/></translation>
 <translation id="253434972992662860">&amp;หยุดชั่วคราว</translation>
 <translation id="335985608243443814">เรียกดู...</translation>
-<translation id="7802488492289385605">การป้อนข้อมูลภาษาญี่ปุ่นของ Google (สำหรับแป้นพิมพ์ Dvorak ของสหรัฐฯ)</translation>
+<translation id="7802488492289385605">การป้อนข้อมูลภาษาญี่ปุ่นของ Bitpop (สำหรับแป้นพิมพ์ Dvorak ของสหรัฐฯ)</translation>
 <translation id="3876481682997626897">ลายเซ็นไม่ตรงกัน</translation>
 <translation id="8892992092192084762">ติดตั้งธีม &quot;<ph name="THEME_NAME"/>&quot; แล้ว</translation>
 <translation id="7427348830195639090">หน้าเว็บพื้นหลัง: <ph name="BACKGROUND_PAGE_URL"/></translation>
@@ -4176,7 +4176,7 @@
 <translation id="1131850611586448366">เว็บไซต์ที่ <ph name="HOST_NAME"/> มีองค์ประกอบจากเว็บไซต์ที่ได้รับรายงานว่าเป็นไซต์ &quot;ฟิชชิง&quot; เว็บไซต์ฟิชชิงหลอกลวงผู้ใช้ให้เปิดเผยข้อมูลส่วนตัวหรือข้อมูลทางการเงิน โดยมักจะลวงว่าเป็นตัวแทนของสถาบันที่น่าเชื่อถือ เช่น ธนาคาร</translation>
 <translation id="2669198762040460457">ชื่อผู้ใช้หรือรหัสผ่านที่คุณป้อนไม่ถูกต้อง</translation>
 <translation id="1161575384898972166">โปรดลงชื่อเข้าใช้ <ph name="TOKEN_NAME"/> เพื่อส่งออกใบรับรองไคลเอ็นต์</translation>
-<translation id="1718559768876751602">ไปสร้างบัญชี Google</translation>
+<translation id="1718559768876751602">ไปสร้างบัญชี Bitpop</translation>
 <translation id="5503480894407718969">เข้าถึงข้อมูลทั้งหมดในโทรศัพท์มือถือของคุณและเว็บไซต์ที่คุณเข้าชม</translation>
 <translation id="1884319566525838835">สถานะการทดลองใช้ผลิตภัณฑ์</translation>
 <translation id="2770465223704140727">นำออกจากรายการ</translation>

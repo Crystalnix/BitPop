@@ -34,7 +34,7 @@
 <translation id="3581034179710640788">Sitenin güvenlik sertifikasının süresi doldu!</translation>
 <translation id="2825758591930162672">Konunun Genel Anahtarı</translation>
 <translation id="8306243285620593545">Durum simgesine odaklan</translation>
-<translation id="1130622745736410868">Google'dan kupon kodunuzu doğrulamasını isteyerek bir Chrome OS cihazından göz attığınızı onaylamak istiyor.</translation>
+<translation id="1130622745736410868">Bitpop'dan kupon kodunuzu doğrulamasını isteyerek bir Chrome OS cihazından göz attığınızı onaylamak istiyor.</translation>
 <translation id="8176382683266548737">Bildirimleri Etkinleştir</translation>
 <translation id="8275038454117074363">Al</translation>
 <translation id="8418445294933751433">&amp;Farklı göster sekmesi</translation>
@@ -57,7 +57,7 @@ Psst! Bir dahaki sefere Gizli mod <ph name="SHORTCUT_KEY"/> yararlı olabilir.</
 <translation id="4940047036413029306">Tırnak</translation>
 <translation id="1497897566809397301">Yerel verilerin ayarlanmasına izin ver (önerilen)</translation>
 <translation id="3275778913554317645">Pencere olarak aç</translation>
-<translation id="4553117311324416101">Google, devam etmeniz halinde bilgisayarınıza yüklenebilecek kötü amaçlı yazılımlar tespit etti. Bu siteyi daha önce ziyaret ettiyseniz veya güvendiğiniz bir siteyse, bu kötü amaçlı yazılımlar siteye kısa bir süre içinde eklenmiş olabilir. Şu anda bu siteyi açmamanızı tavsiye ediyoruz. Yarın yeniden deneyebilirsiniz ya da başka bir siteye gitmeyi düşünebilirsiniz.</translation>
+<translation id="4553117311324416101">Bitpop, devam etmeniz halinde bilgisayarınıza yüklenebilecek kötü amaçlı yazılımlar tespit etti. Bu siteyi daha önce ziyaret ettiyseniz veya güvendiğiniz bir siteyse, bu kötü amaçlı yazılımlar siteye kısa bir süre içinde eklenmiş olabilir. Şu anda bu siteyi açmamanızı tavsiye ediyoruz. Yarın yeniden deneyebilirsiniz ya da başka bir siteye gitmeyi düşünebilirsiniz.</translation>
 <translation id="5085514918439894988">Bu işlem için hiç yüklü hizmet yok, ayrıca Chrome Web Mağazası'nda da bu işlem için hiçbir hizmet önerisi bulunmuyor.</translation>
 <translation id="8867568208303837180">Gönderiliyor...</translation>
 <translation id="509988127256758334">A&amp;ranan:</translation>
@@ -91,7 +91,7 @@ Psst! Bir dahaki sefere Gizli mod <ph name="SHORTCUT_KEY"/> yararlı olabilir.</
 <translation id="21426568240411732"><ph name="TITLE"/> kameranızı kullanıyor.</translation>
 <translation id="6156863943908443225">Komut Dosyası Önbelleği</translation>
 <translation id="4274187853770964845">Senkronizasyon hatası: Lütfen Senkronizasyonu durdurup yeniden başlatın.</translation>
-<translation id="4610656722473172270">Google Araç Çubuğu</translation>
+<translation id="4610656722473172270">Bitpop Araç Çubuğu</translation>
 <translation id="656293578423618167">Dosya yolu veya adı çok uzun. Lütfen daha kısa bir adla veya başka bir konuma  kaydedin.</translation>
 <translation id="3484869148456018791">Yeni sertifika al</translation>
 <translation id="151501797353681931">Safari'den İçe Aktarıldı</translation>
@@ -139,13 +139,13 @@ Psst! Bir dahaki sefere Gizli mod <ph name="SHORTCUT_KEY"/> yararlı olabilir.</
 <translation id="7600965453749440009"><ph name="LANGUAGE"/> dilini asla çevirme</translation>
 <translation id="3208703785962634733">Onaylanmayan</translation>
 <translation id="620329680124578183">Yükleme (Önerilen)</translation>
-<translation id="6300924177400055566">Google Drive'da &quot;<ph name="FILE_NAME"/>&quot; dosyasını kaydedecek boş yeriniz yok. Lütfen bazı dosyaları silin veya <ph name="BEGIN_LINK"/>daha fazla depolama alanı satın alın<ph name="END_LINK"/>.</translation>
+<translation id="6300924177400055566">Bitpop Drive'da &quot;<ph name="FILE_NAME"/>&quot; dosyasını kaydedecek boş yeriniz yok. Lütfen bazı dosyaları silin veya <ph name="BEGIN_LINK"/>daha fazla depolama alanı satın alın<ph name="END_LINK"/>.</translation>
 <translation id="9074739597929991885">Bluetooth</translation>
 <translation id="2653266418988778031">Bir Sertifika Yetkilisi (CA) sertifikasını silerseniz, tarayıcınız bundan sonra söz konusu CA tarafından yayınlanan hiçbir sertifikaya güvenmez.</translation>
 <translation id="5341849548509163798"><ph name="NUMBER_MANY"/> saat önce</translation>
 <translation id="4422428420715047158">Etki Alanı:</translation>
 <translation id="7788444488075094252">Diller ve giriş</translation>
-<translation id="6723354935081862304">Google Dokümanlar'a ve diğer bulut (cloud) hedeflerine yazdır. Google Cloud Print'e yazdırmak için <ph name="BEGIN_LINK"/>oturum açın<ph name="END_LINK"/>.</translation>
+<translation id="6723354935081862304">Bitpop Dokümanlar'a ve diğer bulut (cloud) hedeflerine yazdır. Google Cloud Print'e yazdırmak için <ph name="BEGIN_LINK"/>oturum açın<ph name="END_LINK"/>.</translation>
 <translation id="3602290021589620013">Önizleme</translation>
 <translation id="6257035105556579916">Yönetilen modda uzantılar değiştirilemez.</translation>
 <translation id="800602641363855389"><ph name="TITLE"/> mikrofonunuzu kullanıyor.</translation>
@@ -218,7 +218,7 @@ Psst! Bir dahaki sefere Gizli mod <ph name="SHORTCUT_KEY"/> yararlı olabilir.</
 <translation id="1818606096021558659">Sayfa</translation>
 <translation id="1549045574060481141">İndirme işlemini onayla</translation>
 <translation id="5388588172257446328">Kullanıcı adı:</translation>
-<translation id="1657406563541664238">Google'a otomatik olarak kullanım istatistikleri ve kilitlenme raporları göndererek <ph name="PRODUCT_NAME"/> ürününü iyileştirmemize yardımcı olun.</translation>
+<translation id="1657406563541664238">Bitpop'a otomatik olarak kullanım istatistikleri ve kilitlenme raporları göndererek <ph name="PRODUCT_NAME"/> ürününü iyileştirmemize yardımcı olun.</translation>
 <translation id="7982789257301363584">Ağ</translation>
 <translation id="2271281383664374369">Uzantıların bu URL için yaptığı istekler geçici olarak durduruldu.</translation>
 <translation id="8528962588711550376">Oturum açılıyor.</translation>
@@ -235,8 +235,8 @@ Psst! Bir dahaki sefere Gizli mod <ph name="SHORTCUT_KEY"/> yararlı olabilir.</
 <translation id="9151034842884433218">Yeni Chrome profiliniz için bir resim ve ad seçin.</translation>
 <translation id="1510030919967934016">Bu sayfanın konumunuzu izlemesi engellendi.</translation>
 <translation id="8848519885565996859">Kullanıcı tanımlı URL bağlantı çerçevesi</translation>
-<translation id="4640525840053037973">Google Hesabınızla oturum açın</translation>
-<translation id="6315526595991863271">Şu anda <ph name="SHORT_PRODUCT_NAME"/> uygulamasında oturum açmış bulunuyorsunuz. Yer işaretleriniz, geçmişiniz ve diğer ayarlarınız, varsayılan ayarlar kullanılarak Google Hesabınızla senkronize ediliyor.</translation>
+<translation id="4640525840053037973">Bitpop Hesabınızla oturum açın</translation>
+<translation id="6315526595991863271">Şu anda <ph name="SHORT_PRODUCT_NAME"/> uygulamasında oturum açmış bulunuyorsunuz. Yer işaretleriniz, geçmişiniz ve diğer ayarlarınız, varsayılan ayarlar kullanılarak Bitpop Hesabınızla senkronize ediliyor.</translation>
 <translation id="5255315797444241226">Girdiğiniz parola hatalı.</translation>
 <translation id="762917759028004464">Varsayılan tarayıcı şu anda <ph name="BROWSER_NAME"/>.</translation>
 <translation id="8289982954746764694">Video öğelerindeki altyazılar, bölümler ve ses açıklamaları için parça öğesini (henüz tam anlamıyla işlevsel değildir) etkinleştirin.</translation>
@@ -280,7 +280,7 @@ Psst! Bir dahaki sefere Gizli mod <ph name="SHORTCUT_KEY"/> yararlı olabilir.</
           <ph name="BEGIN_BOLD"/>Tamam<ph name="END_BOLD"/>'ı
           tıklayın.</translation>
 <translation id="2179052183774520942">Arama Motoru Ekle</translation>
-<translation id="6868050610674841964">Oturum açarsanız verileriniz Google Hesabı ile senkronize edilir, böylece yer işareti geçmişinize ve diğer ayarlarınıza istediğiniz cihazdan erişebilirsiniz.</translation>
+<translation id="6868050610674841964">Oturum açarsanız verileriniz Bitpop Hesabı ile senkronize edilir, böylece yer işareti geçmişinize ve diğer ayarlarınıza istediğiniz cihazdan erişebilirsiniz.</translation>
 <translation id="5498951625591520696">Sunucuya erişilemiyor.</translation>
 <translation id="1621207256975573490">Çerçeveyi &amp;farklı kaydet...</translation>
 <translation id="4681260323810445443"><ph name="URL"/> adresindeki web sayfasına erişim yetkiniz yok. Oturum açmanız gerekebilir.</translation>
@@ -314,7 +314,7 @@ Psst! Bir dahaki sefere Gizli mod <ph name="SHORTCUT_KEY"/> yararlı olabilir.</
 <translation id="6845180713465955339">&quot;<ph name="CERTIFICATE_NAME"/>&quot; sertifikasını yayınlayan:</translation>
 <translation id="5364525511170219879">Uzantı etkinliği arabirimini etkinleştir</translation>
 <translation id="3088325635286126843">&amp;Yeniden adlandır…</translation>
-<translation id="6979158407327259162">Google Drive</translation>
+<translation id="6979158407327259162">Bitpop Drive</translation>
 <translation id="6853700448789925482"><ph name="TRACK_HTML"/> öğesini etkinleştirin</translation>
 <translation id="3150927491400159470">Tam Yeniden Yükle</translation>
 <translation id="7531238562312180404"><ph name="PRODUCT_NAME"/>, uzantıların kişisel verilerinizi işleme şeklini denetlemediğinden, gizli pencerelerdeki tüm uzantılar devre dışı bırakılmıştır. Bunları <ph name="BEGIN_LINK"/>uzantı yöneticisi<ph name="END_LINK"/> içinde tek tek yeniden etkinleştirebilirsiniz.</translation>
@@ -378,7 +378,7 @@ Psst! Bir dahaki sefere Gizli mod <ph name="SHORTCUT_KEY"/> yararlı olabilir.</
 <translation id="8194465509832052438">Komutları yapılandır</translation>
 <translation id="4422347585044846479">Bu sayfanın yer işaretini düzenle</translation>
 <translation id="2452539774207938933"><ph name="PROFILE_NAME"/> kullanıcısına geç</translation>
-<translation id="4700157086864140907">Google Chrome, tarayıcıda yazdıklarınızı Google sunucularına gönderip akıllı yazım denetimi olanağı sağlayabilir ve Google arama tarafından kullanılan yazım denetimi teknolojisini kullanmanıza olanak tanır.</translation>
+<translation id="4700157086864140907">Bitpop Chrome, tarayıcıda yazdıklarınızı Google sunucularına gönderip akıllı yazım denetimi olanağı sağlayabilir ve Google arama tarafından kullanılan yazım denetimi teknolojisini kullanmanıza olanak tanır.</translation>
 <translation id="7632357940961158759">Bazı ayarlar bir uzantı tarafından yönetiliyor.</translation>
 <translation id="1880905663253319515">&quot;<ph name="CERTIFICATE_NAME"/>&quot; sertifikası silinsin mi?</translation>
 <translation id="8546306075665861288">Resim önbelleği</translation>
@@ -443,7 +443,7 @@ form imzası: <ph name="FORM_SIGNATURE"/>
 deney kimliği: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8656768832129462377">Kontrol etme</translation>
 <translation id="715487527529576698">Başlangıç Çince modu Basitleştirilmiş Çince</translation>
-<translation id="6896830120821965585">Google Cloud Print hizmetini bu bilgisayara yüklü yazıcılara bağlayan bir arka plan hizmetini etkinleştirir. Bu sekme etkinleştirildiğinde, Ayarlar'ın Gelişmiş Seçenekler bölümünde Google hesabınızla giriş yaparak Google Cloud Print Konektörünü etkinleştirebilirsiniz.</translation>
+<translation id="6896830120821965585">Bitpop Cloud Print hizmetini bu bilgisayara yüklü yazıcılara bağlayan bir arka plan hizmetini etkinleştirir. Bu sekme etkinleştirildiğinde, Ayarlar'ın Gelişmiş Seçenekler bölümünde Google hesabınızla giriş yaparak Google Cloud Print Konektörünü etkinleştirebilirsiniz.</translation>
 <translation id="3999508690854143454">Bir sitenin kamerama ve mikrofonuma erişmesi gerektiğinde bana sor (önerilen)</translation>
 <translation id="1674989413181946727">Bilgisayar genelinde SSL ayarları:</translation>
 <translation id="1531285811424589182">Sertifika silme hatası</translation>
@@ -460,7 +460,7 @@ deney kimliği: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="3874070094967379652">Verilerimi şifrelemek için bir senkronizasyon parolası kullan</translation>
 <translation id="6500116422101723010">Sunucu şu anda isteği işleyemiyor. Bu kod, bunun geçici bir durum olduğunu ve sunucunun bir gecikme sonrasında yeniden çalışır durumda olacağını belirtir.</translation>
 <translation id="1644574205037202324">Geçmiş</translation>
-<translation id="4206944295053515692">Google'ın Önerilerini Sor</translation>
+<translation id="4206944295053515692">Bitpop'ın Önerilerini Sor</translation>
 <translation id="1297175357211070620">Hedef</translation>
 <translation id="479280082949089240">Bu sayfa tarafından ayarlanan çerezler</translation>
 <translation id="4198861010405014042">Paylaşılan erişim</translation>
@@ -475,8 +475,8 @@ deney kimliği: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="3887847548716051874">Bu sitenin, bu mikrofonu ve bu kamerayı kullanması için siteye her zaman izin ver</translation>
 <translation id="2886862922374605295">Donanım:</translation>
 <translation id="4497097279402334319">Ağa bağlanamadı.</translation>
-<translation id="7342729285348293164">Kişiselleştirilmiş tarayıcı özelliklerinizi web'e kaydetmek ve sonra herhangi bir bilgisayarda <ph name="PRODUCT_NAME"/> uygulamasını kullanarak bunlara erişmek için Google Hesabınızla <ph name="PRODUCT_NAME"/> uygulamasında oturum açın. Ayrıca, en sevdiğiniz Google hizmetlerinde de oturumunuz otomatik olarak açılacaktır.</translation>
-<translation id="2542049655219295786">Google tablosu</translation>
+<translation id="7342729285348293164">Kişiselleştirilmiş tarayıcı özelliklerinizi web'e kaydetmek ve sonra herhangi bir bilgisayarda <ph name="PRODUCT_NAME"/> uygulamasını kullanarak bunlara erişmek için Bitpop Hesabınızla <ph name="PRODUCT_NAME"/> uygulamasında oturum açın. Ayrıca, en sevdiğiniz Google hizmetlerinde de oturumunuz otomatik olarak açılacaktır.</translation>
+<translation id="2542049655219295786">Bitpop tablosu</translation>
 <translation id="3899879303189199559">Bir yıldan fazladır çevrimdışı</translation>
 <translation id="5303618139271450299">Bu web sayfası bulunamadı</translation>
 <translation id="4256316378292851214">Video Olarak Kay&amp;det...</translation>
@@ -485,7 +485,7 @@ deney kimliği: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="6518014396551869914">Resmi Kop&amp;yala</translation>
 <translation id="3236997602556743698">3 Grup (390)</translation>
 <translation id="542155483965056918"><ph name="NUMBER_ZERO"/> mins ago</translation>
-<translation id="4928351909437667303">Google Drive'ı bu cihazda devre dışı bırak.</translation>
+<translation id="4928351909437667303">Bitpop Drive'ı bu cihazda devre dışı bırak.</translation>
 <translation id="6315723398663634808">Sunucu sertifikası zayıf bir şifreleme anahtarı içeriyor!</translation>
 <translation id="2887525882758501333">PDF dokümanı</translation>
 <translation id="289426338439836048">Diğer mobil ağlar...</translation>
@@ -557,7 +557,7 @@ deney kimliği: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="6431347207794742960"><ph name="PRODUCT_NAME"/> bu bilgisayarın tüm kullanıcıları için otomatik güncellemeleri ayarlar.</translation>
 <translation id="4973698491777102067">Aşağıdaki öğelerin tüm izlerini sil:</translation>
 <translation id="6074963268421707432">Hiçbir sitenin masaüstü bildirimi göstermesine izin verme</translation>
-<translation id="4944952004685780325">Google Drive klasörünü kullanmak için Drive V2 API'sını etkinleştirir.</translation>
+<translation id="4944952004685780325">Bitpop Drive klasörünü kullanmak için Drive V2 API'sını etkinleştirir.</translation>
 <translation id="1995173078718234136">İçerik taranıyor…</translation>
 <translation id="7920521481309889533">SPDY/3'ü etkinleştir</translation>
 <translation id="5979681173469464041">Sonraki bölmeye odaklan</translation>
@@ -566,7 +566,7 @@ deney kimliği: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="1491151370853475546">Bu Sayfayı Yeniden Yükle</translation>
 <translation id="5374359983950678924">Resmi değiştir</translation>
 <translation id="2859738163554174612">Asla oturum açmamı teklif etme</translation>
-<translation id="1378727793141957596">Google Drive'a hoş geldiniz!</translation>
+<translation id="1378727793141957596">Bitpop Drive'a hoş geldiniz!</translation>
 <translation id="5158548125608505876">Şifrelerimi senkronize etme</translation>
 <translation id="3717485073527618485">Bir site fare imlecini devre dışı bırakmaya çalıştığında bana sor (önerilen)</translation>
 <translation id="3273410961255278341">Gönder:</translation>
@@ -599,7 +599,7 @@ deney kimliği: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="773426152488311044">Şu anda tek <ph name="PRODUCT_NAME"/> kullanıcısı sizsiniz.</translation>
 <translation id="2042078858148122628">DNS araması başarısız olduğundan <ph name="HOST_NAME"/> ana makinesindeki sunucu bulunamadı. DNS, web sitesinin adını İnternet adresine çeviren bir web hizmetidir. Bu hata çoğunlukla İnternet erişiminin olmamasından veya hatalı yapılandırılmış ağdan kaynaklanır. Yanıt vermeyen bir DNS sunucusu ya da <ph name="PRODUCT_NAME"/> uygulamasının ağa erişmesini önleyen bir güvenlik duvarı da bu hataya yol açabilir.</translation>
 <translation id="2159087636560291862">Bu durumda sertifika, bilgisayarınızın güvendiği bir üçüncü tarafça doğrulanmamıştır. Herkes seçtiği bir web sitesi olduğunu iddia eden bir sertifika oluşturabilir. Bu nedenle, sertifikaların güvenilen bir üçüncü taraf tarafından doğrulanması gerekmektedir. Bu doğrulama olmadan, sertifikadaki kimlik bilgileri herhangi bir anlam taşımaz. Dolayısıyla, <ph name="DOMAIN2"/> olduğunu iddia eden bir sertifika oluşturmuş bir saldırgan yerine <ph name="DOMAIN"/> ile iletişim kurduğunuzu doğrulamanın bir yolu yoktur. Bu noktadan sonra devam etmemeniz gerekir.</translation>
-<translation id="58625595078799656"><ph name="PRODUCT_NAME"/>, Google şifreniz veya kendi parolanızla verilerinizi şifrelemenizi gerektiriyor.</translation>
+<translation id="58625595078799656"><ph name="PRODUCT_NAME"/>, Bitpop şifreniz veya kendi parolanızla verilerinizi şifrelemenizi gerektiriyor.</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">Sertifika Yetkilisi değildir</translation>
 <translation id="6099520380851856040">Oluşma saati: <ph name="CRASH_TIME"/></translation>
@@ -756,7 +756,7 @@ deney kimliği: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8943805475239098364"><ph name="CURRENT_GOOGLE_HOST"/> yerine <ph name="NEW_GOOGLE_HOST"/> ile arama yapmak ister misiniz?</translation>
 <translation id="3813510441224209252">Biçimlendirme bekliyor</translation>
 <translation id="8912793549644936705">Uzat</translation>
-<translation id="8026684114486203427">Chrome Web Mağazası'nı kullanmak için bir Google Hesabı'nda oturum açmalısınız.</translation>
+<translation id="8026684114486203427">Chrome Web Mağazası'nı kullanmak için bir Bitpop Hesabı'nda oturum açmalısınız.</translation>
 <translation id="1486096554574027028">Şifrelerde ara</translation>
 <translation id="4631887759990505102">Sanatçı</translation>
 <translation id="1836938920852968258">NTP 'Diğer cihazlar' menüsünü devre dışı bırakın.</translation>
@@ -772,12 +772,12 @@ deney kimliği: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="89217462949994770">Yanlış PIN kullanarak çok fazla sayıda giriş denemesi yaptınız. 8 basamaklı yeni bir PIN Kilit Açma Anahtarı almak için lütfen <ph name="CARRIER_ID"/> ile iletişim kurun.</translation>
 <translation id="5920618722884262402">Saldırgan sözcükleri engelle</translation>
 <translation id="242006861730551700">İndirilenler rafını devre dışı bırakır. Uygulama sırasında yeni indirme arayüzünü gösteririz.</translation>
-<translation id="7782102568078991263">Google'dan başka öneri yok</translation>
+<translation id="7782102568078991263">Bitpop'dan başka öneri yok</translation>
 <translation id="8038111231936746805">(varsayılan)</translation>
 <translation id="5120247199412907247">Gelişmiş Yapılandırma</translation>
 <translation id="567881659373499783">Sürüm <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">Güvenli Tarama gizlilik politikaları</translation>
-<translation id="5105859138906591953">Araç Çubuğu yer işaretlerini Chrome'a aktarabilmek için Google hesabınızda oturum açmanız gerekir. Lütfen oturum açın ve içe aktarmayı tekrar deneyin.</translation>
+<translation id="5105859138906591953">Araç Çubuğu yer işaretlerini Chrome'a aktarabilmek için Bitpop hesabınızda oturum açmanız gerekir. Lütfen oturum açın ve içe aktarmayı tekrar deneyin.</translation>
 <translation id="8899851313684471736">Bağlantıyı yeni &amp;pencerede aç</translation>
 <translation id="4110342520124362335"><ph name="DOMAIN"/> tarafından gönderilen çerezler engellendi.</translation>
 <translation id="3303818374450886607">Kopya</translation>
@@ -826,7 +826,7 @@ deney kimliği: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="1871208020102129563">Proxy, bir .pac komut dosyası URL'sini değil, sabit proxy sunucuları kullanacak şekilde ayarlanır.</translation>
 <translation id="1634788685286903402">E-posta kullanıcılarını tanımlamak için bu sertifikaya güvenin.</translation>
 <translation id="3154015489111064513">DHCP kullan</translation>
-<translation id="8642489171979176277">Google Araç Çubuğu'ndan Alınanlar</translation>
+<translation id="8642489171979176277">Bitpop Araç Çubuğu'ndan Alınanlar</translation>
 <translation id="4142744419835627535">Anında Arama Hemen Otomatik Tamamlama</translation>
 <translation id="4684427112815847243">Her şeyi senkronize et</translation>
 <translation id="1125520545229165057">Dvorak (Hsu)</translation>
@@ -836,7 +836,7 @@ deney kimliği: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8071086933245711894">Kopyalama işlemi iptal edildi.</translation>
 <translation id="2441392884867482684">Bu sayfa artık tam ekran görüntüleniyor ve fare imlecinizi devre dışı bırakmak istiyor.</translation>
 <translation id="1422780722984745882">Birden fazla Location (Konum) üstbilgisi alındı. HTTP yanıtını bölme saldırılarına karşı korumak için buna izin verilmez.</translation>
-<translation id="7787129790495067395">Şu an bir parola kullanıyorsunuz. Parolanızı unuttuysanız, verilerinizi Google sunucularından temizlemek için Google Dashboard'u kullanarak senkronizasyon sıfırlaması yapabilirsiniz.</translation>
+<translation id="7787129790495067395">Şu an bir parola kullanıyorsunuz. Parolanızı unuttuysanız, verilerinizi Bitpop sunucularından temizlemek için Google Dashboard'u kullanarak senkronizasyon sıfırlaması yapabilirsiniz.</translation>
 <translation id="3380365263193509176">Bilinmeyen hata</translation>
 <translation id="1273135602584709125">Kurumsal kaydı iptal et</translation>
 <translation id="2686759344028411998">Yüklü bir modül bulunamadı.</translation>
@@ -905,7 +905,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="6204994989617056362">Güvenli el sıkışmada SSL yeniden anlaşma uzantısı eksikti. Yeniden anlaşma uzantısını desteklediği bilinen bazı siteler için Chrome, bilinen bir saldırı sınıfını önlemek üzere daha güvenli bir el sıkışma gerektirir. Bu uzantının eksik olması, başkalarının bağlantınıza girmiş ve bağlantı üzerinden geçen verileri yönlendirmiş olabileceğini gösteriyor.</translation>
 <translation id="1238150413700645698">Korunan İçerik</translation>
 <translation id="6679492495854441399">Hata! Bu cihazı kaydettirirken ağ iletişiminde bir sorun oluştu. Lütfen ağ bağlantınızı kontrol edin ve yeniden deneyin.</translation>
-<translation id="5270547718570958938">Google Takvim</translation>
+<translation id="5270547718570958938">Bitpop Takvim</translation>
 <translation id="5823933238730612365">PPAPI (korumalı alandan çıkarılmadı)</translation>
 <translation id="2879755071890315043">Mobil ağınız kurulurken lütfen bekleyin.</translation>
 <translation id="5301751748813680278">Misafir olarak giriliyor.</translation>
@@ -960,7 +960,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="3909791450649380159">&amp;Kes</translation>
 <translation id="2955913368246107853">Bulma çubuğunu kapat</translation>
 <translation id="8864170386249720785">Mobil cihaz genelinde SSL ayarları</translation>
-<translation id="3914942725612686145">Şu anda Chrome'da oturum açmış durumdasınız. Açık sekmeleriniz, yer işaretleriniz ve çok amaçlı adres çubuğu verileriniz Google Hesabınızla senkronize ediliyor.</translation>
+<translation id="3914942725612686145">Şu anda Chrome'da oturum açmış durumdasınız. Açık sekmeleriniz, yer işaretleriniz ve çok amaçlı adres çubuğu verileriniz Bitpop Hesabınızla senkronize ediliyor.</translation>
 <translation id="5642508497713047">CRL İmza Sahibi</translation>
 <translation id="7612302739128412469">Bu simgeyi tıklayarak bu uzantıyı etkinleştirin.</translation>
 <translation id="813082847718468539">Site bilgilerini görüntüleyin</translation>
@@ -1008,7 +1008,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="1637259088766071440"><ph name="HOST_NAME"/> adresindeki web sitesinde, kötü amaçlı yazılım (mobil cihazınıza zarar verebilecek veya izniniz olmadan çalışabilecek yazılım) barındırdığı bilinen sitelere ait içerikler var.  Kötü amaçlı yazılım içeren bir siteyi sadece ziyaret etmek dahi mobil cihazınıza bu yazılımları bulaştırabilir. Web sitesinde ayrıca  “kimlik avı” siteleri olarak rapor edilmiş sitelere ait içerikler de bulunuyor.  Kimlik avı siteleri çoğu zaman bankalar gibi güvenilir kurumların kimliğine bürünerek kullanıcıları aldatıp, kişisel veya finansal bilgilerini edinir.</translation>
 <translation id="855081842937141170">Sekmeyi iğnele</translation>
 <translation id="6263541650532042179">senkronizasyonu sıfırla</translation>
-<translation id="6513247462497316522">Başka bir ağa bağlı değilseniz Google Chrome mobil verileri kullanır.</translation>
+<translation id="6513247462497316522">Başka bir ağa bağlı değilseniz Bitpop Chrome mobil verileri kullanır.</translation>
 <translation id="6055392876709372977">PKCS #1 RSA Şifrelemeli SHA-256</translation>
 <translation id="7903984238293908205">Katakana</translation>
 <translation id="268053382412112343">Geç&amp;miş</translation>
@@ -1150,8 +1150,8 @@ Kalan süre hesaplanıyor</translation>
 <translation id="7632380866023782514">Sağ üst</translation>
 <translation id="4693789964669838452">FPS</translation>
 <translation id="4925520021222027859">Uygulamaya özel şifrenizi girin:</translation>
-<translation id="3494768541638400973">Google Japonca Girişi (Japonca klavye için)</translation>
-<translation id="4679639996443646335">Google, devam ettiğiniz takdirde mobil cihazınıza kötü amaçlı yazılım yüklenebileceğini algıladı. Bu siteyi geçmişte ziyaret ettiyseniz veya bu siteye güveniyorsanız, son zamanlarda bir hacker (bilgisayar korsanı) tarafından güvenliği ihlal edilmiş olabilir. Devam etmemeniz ve yarın denemeniz ya da başka bir yere gitmeniz önerilir.</translation>
+<translation id="3494768541638400973">Bitpop Japonca Girişi (Japonca klavye için)</translation>
+<translation id="4679639996443646335">Bitpop, devam ettiğiniz takdirde mobil cihazınıza kötü amaçlı yazılım yüklenebileceğini algıladı. Bu siteyi geçmişte ziyaret ettiyseniz veya bu siteye güveniyorsanız, son zamanlarda bir hacker (bilgisayar korsanı) tarafından güvenliği ihlal edilmiş olabilir. Devam etmemeniz ve yarın denemeniz ya da başka bir yere gitmeniz önerilir.</translation>
 <translation id="7223775956298141902">Maalesef hiç uzantınız yok :-(</translation>
 <translation id="3118046075435288765">Sunucu, bağlantıyı beklenmedik bir şekilde kapattı.</translation>
 <translation id="1725068750138367834">&amp;Dosya Yöneticisi</translation>
@@ -1177,7 +1177,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="3706919628594312718">Fare ayarları</translation>
 <translation id="8326478304147373412">PKCS #7, sertifika zinciri</translation>
 <translation id="3242765319725186192">Önceden paylaşılan anahtar:</translation>
-<translation id="8089798106823170468">Herhangi bir Google hesabı üzerinden yazıcılarınıza erişimi paylaşın ve denetleyin.</translation>
+<translation id="8089798106823170468">Herhangi bir Bitpop hesabı üzerinden yazıcılarınıza erişimi paylaşın ve denetleyin.</translation>
 <translation id="5426597273899159431">Gelişmiş kurulum...</translation>
 <translation id="1105608846356399385">Web sitesini ziyaret edin</translation>
 <translation id="7218608093942361839"><ph name="PRODUCT_NAME"/> <ph name="PRODUCT_VERSION"/> (Platform <ph name="PLATFORM_VERSION"/>)</translation>
@@ -1242,7 +1242,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="81686154743329117">ZRM</translation>
 <translation id="2150139952286079145">Arama hedefleri</translation>
 <translation id="4713309396072794887">Bu uzantılar yüklensin mi?</translation>
-<translation id="5637940320504994319">Google Drive'da boş yeriniz kalmadı</translation>
+<translation id="5637940320504994319">Bitpop Drive'da boş yeriniz kalmadı</translation>
 <translation id="6458467102616083041">Varsayılan arama politika tarafından devre dışı bırakıldığı için yoksayıldı.</translation>
 <translation id="2266011376676382776">Sayfalar Yanıt Vermiyor</translation>
 <translation id="3100609564180505575">Modüller (<ph name="TOTAL_COUNT"/>) - Bilinen çakışmalar: <ph name="BAD_COUNT"/>, şüpheli: <ph name="SUSPICIOUS_COUNT"/></translation>
@@ -1304,7 +1304,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="7092106376816104">Pop-up istisnaları</translation>
 <translation id="4830475881783902092">İstemci Kimliği:</translation>
 <translation id="4600958291864306415">oluşturuluyor...</translation>
-<translation id="8594787581355215556"><ph name="USER_EMAIL_ADDRESS"/> olarak oturum açıldı. Senkronize edilmiş verilerinizi <ph name="BEGIN_LINK"/>Google Hesap Özeti<ph name="END_LINK"/>'nde yönetebilirsiniz.</translation>
+<translation id="8594787581355215556"><ph name="USER_EMAIL_ADDRESS"/> olarak oturum açıldı. Senkronize edilmiş verilerinizi <ph name="BEGIN_LINK"/>Bitpop Hesap Özeti<ph name="END_LINK"/>'nde yönetebilirsiniz.</translation>
 <translation id="4338600611020922010">Ana ekrana ekle</translation>
 <translation id="263325223718984101"><ph name="PRODUCT_NAME"/> yükleme işlemini tamamlayamadı, ancak disk görüntüsünden çalışmaya devam edecek.</translation>
 <translation id="6186893483313227582">Simge <ph name="VALUE"/></translation>
@@ -1321,7 +1321,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="4250680216510889253">Hayır</translation>
 <translation id="5109044022078737958">Maya</translation>
 <translation id="6291953229176937411">Bulucu'da &amp;Göster</translation>
-<translation id="8598687241883907630">Google Hesabınızın bağlantısını kesin...</translation>
+<translation id="8598687241883907630">Bitpop Hesabınızın bağlantısını kesin...</translation>
 <translation id="6410894982725961573">Çevrimdışı kullanılsın</translation>
 <translation id="2556718757702023317">&quot;<ph name="FILE_NAME"/>&quot; dosyasını çevrimdışı olarak kaydetmek için ek <ph name="TOTAL_FILE_SIZE"/> boş yer gerekiyor:<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>artık çevrimdışı olarak erişmeniz gerekmeyen dosyaların sabitlemesini kaldırın<ph name="MARKUP_3"/>
@@ -1409,7 +1409,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="2629089419211541119"><ph name="NUMBER_ONE"/> saat önce</translation>
 <translation id="1691063574428301566">Güncelleme tamamlandığında bilgisayarınız yeniden başlatılacak.</translation>
 <translation id="4697551882387947560">Göz atma oturumu sona erdiğinde</translation>
-<translation id="5900302528761731119">Google Profil fotoğrafı</translation>
+<translation id="5900302528761731119">Bitpop Profil fotoğrafı</translation>
 <translation id="131364520783682672">Caps Lock</translation>
 <translation id="2066999550761485762"><ph name="BEGIN_BOLD"/>Gizli moda geçtiniz.<ph name="END_BOLD"/>
           <ph name="LINE_BREAK"/>
@@ -1433,7 +1433,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="1478897831827830200">İzleme</translation>
 <translation id="5714678912774000384">Son sekmeyi etkinleştir</translation>
 <translation id="8466234950814670489">Tar arşivi</translation>
-<translation id="5902572236435740554">Önce uygulamaya özel şifreyi değil, <ph name="LINE_BREAK"/> Google Hesabınızın şifresini girin.</translation>
+<translation id="5902572236435740554">Önce uygulamaya özel şifreyi değil, <ph name="LINE_BREAK"/> Bitpop Hesabınızın şifresini girin.</translation>
 <translation id="8813811964357448561">kağıt</translation>
 <translation id="2125314715136825419">Adobe Reader'ı güncellemeden devam et (önerilmez)</translation>
 <translation id="5034510593013625357">Ana makine ad kalıbı</translation>
@@ -1454,7 +1454,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="8337399713761067085">Şu anda çevrimdışısınız.</translation>
 <translation id="5199729219167945352">Deneyler</translation>
 <translation id="6499143127267478107">Proxy komut dosyasındaki ana makine çözümleniyor...</translation>
-<translation id="8069615408251337349">Google Cloud Print</translation>
+<translation id="8069615408251337349">Bitpop Cloud Print</translation>
 <translation id="5055518462594137986">Bu tür bağlantıların tümü için tercihimi hatırla.</translation>
 <translation id="246059062092993255">Bu sayfadaki eklentiler engellendi.</translation>
 <translation id="2870560284913253234">Site</translation>
@@ -1499,7 +1499,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="3273951168350045122">Klavye (<ph name="ADDRESS"/>)</translation>
 <translation id="8221729492052686226">Bu isteği başlatmadıysanız, sisteminize yapılmak istenen bir saldırıyı gösteriyor olabilir. Bu isteği başlatmak için açık bir işlem yapmadıysanız, Hiçbir Şey Yapma seçeneğini tıklamalısınız.</translation>
 <translation id="894360074127026135">Netscape Uluslararası İlerlemesi</translation>
-<translation id="8420060421540670057">Google Dokümanlar dosyalarını göster</translation>
+<translation id="8420060421540670057">Bitpop Dokümanlar dosyalarını göster</translation>
 <translation id="1201402288615127009">Sonraki</translation>
 <translation id="1335588927966684346">Yardımcı Program:</translation>
 <translation id="2710582058364740604">Yüksek DPI modunun ve öğelerinin kullanılmasını zorlamak için cihaz ekran yoğunluğunu geçersiz kılar.</translation>
@@ -1591,7 +1591,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="7434823369735508263">İngiltere Dvorak klavye</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> gün</translation>
 <translation id="5308845175611284862"><ph name="PRODUCT_NAME"/> senkronizasyonu, verilerinizi (yer işaretleri ve ayarlar gibi) bilgisayarlarınız arasında paylaşmayı kolaylaştırır.
-          <ph name="PRODUCT_NAME"/>, Google hesabınızda oturum açtığınızda verilerinizi Google'da çevrimiçi saklayarak senkronize eder.</translation>
+          <ph name="PRODUCT_NAME"/>, Bitpop hesabınızda oturum açtığınızda verilerinizi Google'da çevrimiçi saklayarak senkronize eder.</translation>
 <translation id="1707463636381878959">Bu ağı diğer kullanıcılarla paylaş</translation>
 <translation id="2084978867795361905">MS-IME</translation>
 <translation id="7227669995306390694"><ph name="NETWORK"/> veri planı yok</translation>
@@ -1599,7 +1599,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="7163503212501929773"><ph name="NUMBER_MANY"/> saat kaldı</translation>
 <translation id="7705276765467986571">Yer işareti modeli yüklenemedi.</translation>
 <translation id="750413812607578381"><ph name="PRODUCT_NAME"/> ürününü şimdi yeniden başlatmalısınız.</translation>
-<translation id="8034305971714560781">Google Hesabınızın <ph name="PRODUCT_NAME"/> ile olan bağlantısını kestiğinizde, bu mobil cihazda bulunan verilerinizdeki değişiklikler artık Google Hesabınızla senkronize edilmez. Google Hesabınızda depolanmakta olan veriler ise siz <ph name="BEGIN_LINK"/>Google Hesap Özeti<ph name="END_LINK"/> özelliğini kullanarak onları kaldırana kadar orada kalır.</translation>
+<translation id="8034305971714560781">Bitpop Hesabınızın <ph name="PRODUCT_NAME"/> ile olan bağlantısını kestiğinizde, bu mobil cihazda bulunan verilerinizdeki değişiklikler artık Google Hesabınızla senkronize edilmez. Google Hesabınızda depolanmakta olan veriler ise siz <ph name="BEGIN_LINK"/>Google Hesap Özeti<ph name="END_LINK"/> özelliğini kullanarak onları kaldırana kadar orada kalır.</translation>
 <translation id="2638286699381354126">Güncelle...</translation>
 <translation id="1196338895211115272">Özel anahtar dışa alınamadı.</translation>
 <translation id="1459967076783105826">Uzantılar tarafından eklenen arama motorları</translation>
@@ -1633,10 +1633,10 @@ Kalan süre hesaplanıyor</translation>
 <translation id="1789424019568293108">Uzantılı bir etkinliğin günlüğünü gösteren deneysel arabirimi etkinleştirin.</translation>
 <translation id="2090876986345970080">Sistem güvenlik ayarı</translation>
 <translation id="3728067901555601989">OTP:</translation>
-<translation id="3475447146579922140">Google e-tablosu</translation>
+<translation id="3475447146579922140">Bitpop e-tablosu</translation>
 <translation id="6856526171412069413">Tutam ölçeği etkinleştir.</translation>
 <translation id="9219103736887031265">Görseller</translation>
-<translation id="7415834062450491574">Google'a geri bildiriminizi gönderin.</translation>
+<translation id="7415834062450491574">Bitpop'a geri bildiriminizi gönderin.</translation>
 <translation id="4480995875255084924">Külde Meşe ağacı görüntüleyiciyi etkinleştirir. Pencere, katman ve görünüm hiyerarşileri ve özelliklerinin incelenmesine olanak verir. Erişmek için Ctrl+ÜstKrktr+F1 tuşlarına basın.</translation>
 <translation id="6975147921678461939">Pil şarj ediliyor: %<ph name="PRECENTAGE"/></translation>
 <translation id="5453632173748266363">Kiril</translation>
@@ -1647,7 +1647,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="5329858601952122676">&amp;Sil</translation>
 <translation id="6100736666660498114">Başlat menüsü</translation>
 <translation id="2706131822305474920">Açık sekmeler arasında geçiş</translation>
-<translation id="4402766404187539019">Google.com Mail</translation>
+<translation id="4402766404187539019">Bitpop.com Mail</translation>
 <translation id="6275297011664564181">Şu an etkin politika yok!</translation>
 <translation id="3994878504415702912">Y&amp;aklaştır</translation>
 <translation id="9009369504041480176">Yükleniyor (%<ph name="PROGRESS_PERCENT"/>)</translation>
@@ -1687,7 +1687,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="6059764114876442286">Yazıcıyı Sıfırla</translation>
 <translation id="6406506848690869874">Senkronizasyon</translation>
 <translation id="5288678174502918605">Kapatılan Sekmeyi T&amp;ekrar Aç</translation>
-<translation id="7238461040709361198">Bu bilgisayarda son oturum açmanızdan bu yana Google Hesabı şifreniz değişti.</translation>
+<translation id="7238461040709361198">Bu bilgisayarda son oturum açmanızdan bu yana Bitpop Hesabı şifreniz değişti.</translation>
 <translation id="1956050014111002555">Dosya birden çok sertifika içeriyordu, bunların hiçbiri içe aktarılmadı:</translation>
 <translation id="302620147503052030">Düğmeyi göster</translation>
 <translation id="1895658205118569222">Kapat</translation>
@@ -1697,7 +1697,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="6624687053722465643">Tatlı</translation>
 <translation id="8420296388012619424">USB cihazınız biçimlendirilmemiş.</translation>
 <translation id="3021256392995617989">Bir site fiziksel konumumu izlemeye çalıştığında bana sor (önerilen)</translation>
-<translation id="8083739373364455075">Google Drive ile ücretsiz 100 GB alın</translation>
+<translation id="8083739373364455075">Bitpop Drive ile ücretsiz 100 GB alın</translation>
 <translation id="271083069174183365">Japonca giriş ayarları</translation>
 <translation id="1257595095755619623">Bir proxy sunucusu kullanıyorsanız, proxy ayarlarınızı kontrol edin veya
         proxy sunucunuzun çalıştığından emin olmak için ağ yöneticinize
@@ -1902,7 +1902,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="3967885517199024316">Tüm cihazlarınızdaki yer işaretlerinizi, geçmişinizi ve ayarlarınızı almak için oturum açın.</translation>
 <translation id="5463856536939868464">Gizlenmiş yer işaretlerini içeren menü</translation>
 <translation id="8286227656784970313">Sistem sözlüğünü kullan</translation>
-<translation id="5431084084184068621">Verilerinizi Google şifreniz ile şifrelemeyi seçtiniz; senkronizasyon ayarlarınızı kullanarak her zaman fikrinizi değiştirebilirsiniz.</translation>
+<translation id="5431084084184068621">Verilerinizi Bitpop şifreniz ile şifrelemeyi seçtiniz; senkronizasyon ayarlarınızı kullanarak her zaman fikrinizi değiştirebilirsiniz.</translation>
 <translation id="1493263392339817010">Yazı tiplerini özelleştir...</translation>
 <translation id="5352033265844765294">Zaman Damgası</translation>
 <translation id="1493892686965953381"><ph name="LOAD_STATE_PARAMETER"/> bekleniyor...</translation>
@@ -1912,7 +1912,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="748138892655239008">Sertifika Temel Kısıtlamaları</translation>
 <translation id="457386861538956877">Diğer...</translation>
 <translation id="9210991923655648139">Komut dosyasına erişebilir:</translation>
-<translation id="1950295184970569138">* Google Profil fotoğrafı (yükleniyor)</translation>
+<translation id="1950295184970569138">* Bitpop Profil fotoğrafı (yükleniyor)</translation>
 <translation id="8063491445163840780">Sekme 4'ü etkinleştir</translation>
 <translation id="5473544328731861874">Amacı kaldır</translation>
 <translation id="2322193970951063277">Üstbilgiler ve altbilgiler</translation>
@@ -1962,7 +1962,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="5010043101506446253">Sertifika yetkilisi</translation>
 <translation id="2050524657923939561">Web Amaçları</translation>
 <translation id="8487693399751278191">Yer işaretlerini şimdi içe aktar...</translation>
-<translation id="7615602087246926389">Google Hesabı şifrenizin farklı bir sürümü kullanılarak şifrelenmiş verileriniz zaten var. Lütfen bu şifreyi aşağıya girin.</translation>
+<translation id="7615602087246926389">Bitpop Hesabı şifrenizin farklı bir sürümü kullanılarak şifrelenmiş verileriniz zaten var. Lütfen bu şifreyi aşağıya girin.</translation>
 <translation id="7484580869648358686">Uyarı: Burada Yanlış Giden Bir Şeyler Var!</translation>
 <translation id="4474155171896946103">Tüm sekmelere yer işareti koy...</translation>
 <translation id="5895187275912066135">Verildiği Tarih</translation>
@@ -2055,14 +2055,14 @@ Kalan süre hesaplanıyor</translation>
 <translation id="2065985942032347596">Kimlik Doğrulaması Gerekiyor</translation>
 <translation id="2563185590376525700">Kurbağa</translation>
 <translation id="2553340429761841190"><ph name="PRODUCT_NAME"/>, <ph name="NETWORK_ID"/> ağına bağlanamadı. Lütfen başka bir ağ seçin veya tekrar deneyin.</translation>
-<translation id="2086712242472027775">Hesabınız <ph name="PRODUCT_NAME"/> ile çalışmıyor. Lütfen alan yöneticinizle iletişim kurun veya oturum açmak için normal bir Google Hesabı kullanın.</translation>
-<translation id="1373074393717692190">Kişiselleştirilmiş tarayıcı özelliklerinizi Web'e kaydetmek ve bu özelliklere herhangi bir mobil cihazdan <ph name="PRODUCT_NAME"/> programını kullanarak erişmek için <ph name="PRODUCT_NAME"/> programında Google Hesabınızla oturum açın. Bu şekilde, aynı zamanda favori Google hizmetlerinizde de otomatik olarak oturumunuz açılır.</translation>
+<translation id="2086712242472027775">Hesabınız <ph name="PRODUCT_NAME"/> ile çalışmıyor. Lütfen alan yöneticinizle iletişim kurun veya oturum açmak için normal bir Bitpop Hesabı kullanın.</translation>
+<translation id="1373074393717692190">Kişiselleştirilmiş tarayıcı özelliklerinizi Web'e kaydetmek ve bu özelliklere herhangi bir mobil cihazdan <ph name="PRODUCT_NAME"/> programını kullanarak erişmek için <ph name="PRODUCT_NAME"/> programında Bitpop Hesabınızla oturum açın. Bu şekilde, aynı zamanda favori Google hizmetlerinizde de otomatik olarak oturumunuz açılır.</translation>
 <translation id="7222232353993864120">E-posta Adresi</translation>
 <translation id="2128531968068887769">Native Client</translation>
 <translation id="2749720227918911728">Uzantı geçerli sayfada etkin olabildiğinde bu simge görünür. Simgeyi tıklayarak veya <ph name="EXTENSION_SHORTCUT"/> tuşuna basarak bu uzantıyı etkinleştirin.</translation>
 <translation id="7175353351958621980">Yükleme kaynağı:</translation>
 <translation id="7186367841673660872">Bu sayfa,<ph name="ORIGINAL_LANGUAGE"/>dilinden<ph name="LANGUAGE_LANGUAGE"/>diline çevrilmiştir</translation>
-<translation id="8448695406146523553">Şifrelenmiş verileriniz yalnızca parolanıza sahip bir kişi tarafından okunabilir. Parola Google tarafından gönderilmez veya saklanmaz. Parolanızı unutursanız şunu yapmanız gerekir:</translation>
+<translation id="8448695406146523553">Şifrelenmiş verileriniz yalnızca parolanıza sahip bir kişi tarafından okunabilir. Parola Bitpop tarafından gönderilmez veya saklanmaz. Parolanızı unutursanız şunu yapmanız gerekir:</translation>
 <translation id="8248050856337841185">&amp;Yapıştır</translation>
 <translation id="6052976518993719690">SSL Sertifika Yetkilisi</translation>
 <translation id="2925935892230812200">SVG filtrelerinin oluşturulmasını hızlandırmak için GPU'yu kullanın.</translation>
@@ -2187,7 +2187,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="6374830905869502056">Şifreleyen</translation>
 <translation id="2230062665678605299">&quot;<ph name="FOLDER_NAME"/>&quot; klasörü oluşturulamıyor. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="2526590354069164005">Masaüstü</translation>
-<translation id="2059205526855036527">Google Drive'a ilk kez erişmek için çevrimiçi olmalısınız.</translation>
+<translation id="2059205526855036527">Bitpop Drive'a ilk kez erişmek için çevrimiçi olmalısınız.</translation>
 <translation id="4165738236481494247">Bu eklentiyi çalıştır</translation>
 <translation id="7983301409776629893"><ph name="ORIGINAL_LANGUAGE"/> dilini her zaman <ph name="TARGET_LANGUAGE"/> diline çevir</translation>
 <translation id="4890284164788142455">Tayca</translation>
@@ -2217,7 +2217,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="3479552764303398839">Şimdi değil</translation>
 <translation id="3714633008798122362">web takvimi</translation>
 <translation id="6445051938772793705">Ülke</translation>
-<translation id="3430309973417890444">Google Hesabınız yoksa şimdi <ph name="LINK_START"/>bir Google Hesabı oluşturabilirsiniz<ph name="LINK_END"/>.</translation>
+<translation id="3430309973417890444">Bitpop Hesabınız yoksa şimdi <ph name="LINK_START"/>bir Google Hesabı oluşturabilirsiniz<ph name="LINK_END"/>.</translation>
 <translation id="3251759466064201842">&lt;Sertifikanın Parçası Değil&gt;</translation>
 <translation id="4229495110203539533"><ph name="NUMBER_ONE"/> saniye önce</translation>
 <translation id="3399068503715460757">Statik IP kullan</translation>
@@ -2243,7 +2243,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="1800987794509850828">Eklenti Aracı: <ph name="PLUGIN_NAME"/></translation>
 <translation id="8871696467337989339">Desteklenmeyen bir komut satırı işareti kullanıyorsunuz: <ph name="BAD_FLAG"/>. Sağlamlık ve güvenlik düzeyi düşecektir.</translation>
 <translation id="4767443964295394154">İndirme Konumu</translation>
-<translation id="5031870354684148875">Google Çeviri Hakkında</translation>
+<translation id="5031870354684148875">Bitpop Çeviri Hakkında</translation>
 <translation id="4266565660628359579">Yüksek DPI görüntülerinde, Chrome PDF Görüntüleyici uygulamasının yüksek DPI modunu etkinleştirir.</translation>
 <translation id="5702389759209837579">Tüm cihazlarınızda açık sekmelere erişin.</translation>
 <translation id="3828747136564826513">Cihazımdaki bilinen tüm medya dosyalarına eriş</translation>
@@ -2299,7 +2299,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="1752977958630076881">Yerel verileri sadece tarayıcımdan çıkana kadar koru</translation>
 <translation id="7853202427316060426">Etkinlik</translation>
 <translation id="8550022383519221471">Senkronizasyon hizmeti alan adınızda kullanılamıyor.</translation>
-<translation id="1436238710092600782">Bir Google Hesabı oluşturun</translation>
+<translation id="1436238710092600782">Bir Bitpop Hesabı oluşturun</translation>
 <translation id="3355823806454867987">Proxy ayarlarını değiştir...</translation>
 <translation id="4780374166989101364">Deneysel uzantı API'larını etkinleştirir. Uzantı galerisinin deneysel API'lar kullanan uzantıları yüklemenize izin vermeyeceğini unutmayın.</translation>
 <translation id="7117247127439884114">Tekrar Oturum Açın...</translation>
@@ -2312,7 +2312,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="3007574127824276972"><ph name="PRODUCT_NAME"/> ürününde <ph name="USER_NAME"/> olarak oturum açıldı</translation>
 <translation id="6840155730904976091"><ph name="PRODUCT_NAME"/>, ağa bağlanmak için mobil cihazınızın sistem proxy ayarlarını kullanıyor.</translation>
 <translation id="2541913031883863396">yine de devam et</translation>
-<translation id="6884284539803678768">Google tarzı iletişim kutusu çerçevelerini etkinleştirin.</translation>
+<translation id="6884284539803678768">Bitpop tarzı iletişim kutusu çerçevelerini etkinleştirin.</translation>
 <translation id="2367499218636570208">Ad</translation>
 <translation id="4436689501885286563">Çıkış yaptığımda çerezleri ve diğer site verilerini temizle</translation>
 <translation id="1520137456044207237">Görüntüleme için hangi hizmet kullanılmalıdır?</translation>
@@ -2379,7 +2379,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="8053390638574070785">Bu Sayfayı Tekrar Yükle</translation>
 <translation id="5507756662695126555">İnkar edilemez</translation>
 <translation id="3678156199662914018">Uzantı: <ph name="EXTENSION_NAME"/></translation>
-<translation id="2620090360073999360">Google Drive'a şu anda erişilemiyor.</translation>
+<translation id="2620090360073999360">Bitpop Drive'a şu anda erişilemiyor.</translation>
 <translation id="3531250013160506608">Şifre metin kutusu</translation>
 <translation id="506228266759207354">Başka cihazlardaki sekmelere erişim için yeni sekme sayfası menüsünü devre dışı bırakın.</translation>
 <translation id="1781502536226964113">Yeni Sekme sayfasını aç</translation>
@@ -2532,7 +2532,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="1358735829858566124">Dosya veya dizin kullanılamıyor.</translation>
 <translation id="3144135466825225871">crx dosyası değiştirilemedi. Dosyanın kullanımda olup olmadığını kontrol edin.</translation>
 <translation id="2744221223678373668">Paylaşıldı</translation>
-<translation id="9064142312330104323">Google Profil fotoğrafı (yükleniyor)</translation>
+<translation id="9064142312330104323">Bitpop Profil fotoğrafı (yükleniyor)</translation>
 <translation id="4708849949179781599"><ph name="PRODUCT_NAME"/> uygulamasından çık</translation>
 <translation id="2505402373176859469"><ph name="RECEIVED_AMOUNT"/> / <ph name="TOTAL_SIZE"/></translation>
 <translation id="6937559152970966646">Başlangıç Ekranına sabitle</translation>
@@ -2630,12 +2630,12 @@ Kalan süre hesaplanıyor</translation>
 <translation id="305803244554250778">Aşağıdaki konumlarda uygulama kısayolları oluştur:</translation>
 <translation id="574392208103952083">Orta</translation>
 <translation id="3661117620327489194">Açık sayfaları geri yüklemeye geç</translation>
-<translation id="3937609171782005782">Bu uyarıyı gördüğünüz siteler hakkında Google'a ek veriler göndererek kötü amaçlı yazılımları saptamayı daha iyi hale getirmeye yardımcı olun. Bu veriler <ph name="PRIVACY_PAGE_LINK"/> kapsamında değerlendirilir.</translation>
+<translation id="3937609171782005782">Bu uyarıyı gördüğünüz siteler hakkında Bitpop'a ek veriler göndererek kötü amaçlı yazılımları saptamayı daha iyi hale getirmeye yardımcı olun. Bu veriler <ph name="PRIVACY_PAGE_LINK"/> kapsamında değerlendirilir.</translation>
 <translation id="8877448029301136595">[üst dizin]</translation>
 <translation id="3816844797124379499">Uygulama &quot;<ph name="APP_NAME"/>&quot; ile çakıştığından eklenemedi.</translation>
 <translation id="7301360164412453905">Hsu klavye seçim tuşları</translation>
 <translation id="8631271110654520730">Kurtarma görüntüsü kopyalanıyor...</translation>
-<translation id="7779140087128114262">Şifrelenmiş verileriniz yalnızca parolanıza sahip bir kişi tarafından okunabilir. Parola Google tarafından gönderilmez veya saklanmaz. Parolanızı unutursanız, senkronizasyonu sıfırlamanız gerekir.</translation>
+<translation id="7779140087128114262">Şifrelenmiş verileriniz yalnızca parolanıza sahip bir kişi tarafından okunabilir. Parola Bitpop tarafından gönderilmez veya saklanmaz. Parolanızı unutursanız, senkronizasyonu sıfırlamanız gerekir.</translation>
 <translation id="13356285923490863">Politika Adı</translation>
 <translation id="8241040075392580210">Parçalı Bulutlu</translation>
 <translation id="8690155203172212841">İzin ayarlarını yönet</translation>
@@ -2657,7 +2657,7 @@ Kalan süre hesaplanıyor</translation>
         özelliğin nasıl devre dışı bırakılacağı da dahil olmak üzere daha fazla bilgi için lütfen
         <ph name="URL_FOR_MORE_INFO"/> adresini ziyaret edin.</translation>
 <translation id="8218008331535230597">İçerik lisanslarının yetkisini kaldır</translation>
-<translation id="4744728308552504807">Google Cloud Print hizmetini bu mobil cihazda yüklü tüm yazıcılara bağlayan bir arka plan hizmetini etkinleştirir. Bu lab etkinleştirildiğinde, Google hesabınızla oturum açarak Ayarlar'ın Gelişmiş Seçenekler bölümünde Google Cloud Print Bağlayıcı'yı etkinleştirebilirsiniz.</translation>
+<translation id="4744728308552504807">Bitpop Cloud Print hizmetini bu mobil cihazda yüklü tüm yazıcılara bağlayan bir arka plan hizmetini etkinleştirir. Bu lab etkinleştirildiğinde, Google hesabınızla oturum açarak Ayarlar'ın Gelişmiş Seçenekler bölümünde Google Cloud Print Bağlayıcı'yı etkinleştirebilirsiniz.</translation>
 <translation id="6691936601825168937">İle&amp;ri</translation>
 <translation id="6566142449942033617">Eklentiye ilişkin '<ph name="PLUGIN_PATH"/>' yolu yüklenemedi.</translation>
 <translation id="7065534935986314333">Sistem Hakkında</translation>
@@ -2668,7 +2668,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="2128691215891724419">Senkronizasyon Hatası: Senkronizasyon parolasını güncelleyin...</translation>
 <translation id="2148716181193084225">Bugün</translation>
 <translation id="1002064594444093641">Çerçeveyi Y&amp;azdır...</translation>
-<translation id="7234674978021619913">Sitelerinde kötü amaçlı yazılımlar tespit ettiğimizi <ph name="HOST_NAME"/> yönetimine daha önce bildirmiştik. <ph name="HOST_NAME2"/> sitesinde tespit edilen sorunlarla ilgili daha fazla bilgi için Google <ph name="DIAGNOSTIC_PAGE"/> bağlantısını ziyaret edin.</translation>
+<translation id="7234674978021619913">Sitelerinde kötü amaçlı yazılımlar tespit ettiğimizi <ph name="HOST_NAME"/> yönetimine daha önce bildirmiştik. <ph name="HOST_NAME2"/> sitesinde tespit edilen sorunlarla ilgili daha fazla bilgi için Bitpop <ph name="DIAGNOSTIC_PAGE"/> bağlantısını ziyaret edin.</translation>
 <translation id="4608500690299898628">&amp;Bul...</translation>
 <translation id="7582582252461552277">Bu ağı tercih et</translation>
 <translation id="3574305903863751447"><ph name="CITY"/>, <ph name="STATE"/> <ph name="COUNTRY"/></translation>
@@ -2770,7 +2770,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="6322726279947003371">Korumalı içeriği çalıştır (bilgisayarın yeniden başlatılması gerekebilir)</translation>
 <translation id="3093473105505681231">Diller ve yazım denetleyici ayarları...</translation>
 <translation id="152482086482215392"><ph name="NUMBER_ONE"/> saniye kaldı</translation>
-<translation id="4261901459838235729">Google sunusu</translation>
+<translation id="4261901459838235729">Bitpop sunusu</translation>
 <translation id="8678698760965522072">Çevrimiçi durumu</translation>
 <translation id="529172024324796256">Kullanıcı adı:</translation>
 <translation id="3308116878371095290">Bu sayfanın çerezleri ayarlaması engellenmiştir.</translation>
@@ -2848,7 +2848,7 @@ Kalan süre hesaplanıyor</translation>
 <translation id="2444609190341826949">Parola olmadan şifreleriniz ve diğer şifrelenmiş verileriniz bu bilgisayarda senkronize edilmeyecek.</translation>
 <translation id="2984337792991268709">Bugün <ph name="TODAY_DAYTIME"/></translation>
 <translation id="5227808808023563348">Önceki metni bul</translation>
-<translation id="6650142020817594541">Bu site, Google Chrome Frame kullanmanızı tavsiye eder (zaten yüklü).</translation>
+<translation id="6650142020817594541">Bu site, Bitpop Chrome Frame kullanmanızı tavsiye eder (zaten yüklü).</translation>
 <translation id="3862763658360970896">Chrome to Mobile'ı etkinleştirin.</translation>
 <translation id="902638246363752736">Klavye ayarları</translation>
 <translation id="7925686952655276919">Senkronizasyon için mobil veri kullanma</translation>
@@ -2869,7 +2869,7 @@ Dolması için gereken süre: <ph name="HOUR"/>:<ph name="MINUTE"/></translation
 <translation id="6007237601604674381">Taşıma başarısız oldu. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">Paketleme sırasında geçici zip dosyası oluşturulamadı.</translation>
 <translation id="1881456419707551346">Bağlantı ayrıntıları</translation>
-<translation id="1064912851688322329">Google Hesabınızın bağlantısını kesin</translation>
+<translation id="1064912851688322329">Bitpop Hesabınızın bağlantısını kesin</translation>
 <translation id="1294298200424241932">Güven ayarlarını düzenle:</translation>
 <translation id="1407135791313364759">Tümünü aç</translation>
 <translation id="1434928358870966081">Hızlandırılmış 2D tuvali devre dışı bırak</translation>
@@ -2892,9 +2892,9 @@ Dolması için gereken süre: <ph name="HOUR"/>:<ph name="MINUTE"/></translation
 <translation id="267285457822962309">Cihazınıza ve çevre birimlerine özgü ayarları değiştirin.</translation>
 <translation id="1154228249304313899">Ana sayfam şu sayfa olsun:</translation>
 <translation id="6084074203170335305"><ph name="MARKUP_1"/>Dosyalara istediğiniz yerden, hatta çevrimdışı olarak  erişin.<ph name="MARKUP_2"/>
-        Google Drive'daki dosyalar günceldir ve her cihazdan kullanılabilir.<ph name="MARKUP_3"/>
+        Bitpop Drive'daki dosyalar günceldir ve her cihazdan kullanılabilir.<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>Dosyalarınızı güvenli şekilde saklayın.<ph name="MARKUP_5"/>
-        Cihazınıza ne olursa olsun, dosyalarınız Google Drive'da güvenli şekilde saklanır.<ph name="MARKUP_6"/>
+        Cihazınıza ne olursa olsun, dosyalarınız Bitpop Drive'da güvenli şekilde saklanır.<ph name="MARKUP_6"/>
         <ph name="MARKUP_7"/>Tek bir yerden dosyaları oluşturun, başkalarıyla paylaşın ve<ph name="MARKUP_8"/>
         işbirliği yapın.<ph name="MARKUP_9"/></translation>
 <translation id="9074348188580488499">Tüm şifreleri kaldırmak istediğinizden emin misiniz?</translation>
@@ -3030,7 +3030,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="8725066075913043281">Yeniden dene</translation>
 <translation id="387784661603993584">İçe aktarılamıyor. Bir hata oluştu.</translation>
 <translation id="4637968436031842307">CSS Değişkenlerini Etkinleştir.</translation>
-<translation id="1887908730460853602">Google tarzı iletişim kutuları</translation>
+<translation id="1887908730460853602">Bitpop tarzı iletişim kutuları</translation>
 <translation id="8502249598105294518"><ph name="PRODUCT_NAME"/> ürününü özelleştirin ve denetleyin</translation>
 <translation id="3797008485206955964">Arka plandaki sayfaları görüntüle (<ph name="NUM_BACKGROUND_APPS"/>)</translation>
 <translation id="8590375307970699841">Otomatik güncellemeleri ayarla</translation>
@@ -3050,8 +3050,8 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="5293659407874396561"><ph name="SUBJECT"/> (<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">Geçerli bir URL olmalıdır</translation>
 <translation id="3464726836683998962">Mobil veri dolaşımını devre dışı bırak</translation>
-<translation id="8986494364107987395">Kullanım istatistiklerini ve çökme raporlarını otomatik olarak Google'a gönder</translation>
-<translation id="7070714457904110559">Coğrafi konum özelliğine yönelik deneysel uzantıları etkinleştirir. Daha yüksek doğruluk oranına sahip bir konumlandırma sağlamak için işletim sistemi konum API'larının (varsa) kullanılmasını ve ek yerel ağ yapılandırma verilerinin Google konum bulma hizmetine gönderilmesini içerir.</translation>
+<translation id="8986494364107987395">Kullanım istatistiklerini ve çökme raporlarını otomatik olarak Bitpop'a gönder</translation>
+<translation id="7070714457904110559">Coğrafi konum özelliğine yönelik deneysel uzantıları etkinleştirir. Daha yüksek doğruluk oranına sahip bir konumlandırma sağlamak için işletim sistemi konum API'larının (varsa) kullanılmasını ve ek yerel ağ yapılandırma verilerinin Bitpop konum bulma hizmetine gönderilmesini içerir.</translation>
 <translation id="6701535245008341853">Profil alınamadı.</translation>
 <translation id="8303655282093186569">Pinyin giriş ayarları</translation>
 <translation id="992779717417561630"><ph name="CLOUD_PRINT_NAME"/> iletişim kutusunu kullanarak yazdır... <ph name="SHORTCUT_KEY"/></translation>
@@ -3065,7 +3065,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="580571955903695899">Başlığa Göre Yeniden Sırala</translation>
 <translation id="5230516054153933099">Pencere</translation>
 <translation id="921740547845455014">Uygulamada açtığım dosyalara veri yaz</translation>
-<translation id="1799497982892676838">Senkronize edilen verilerinizi Google Hesap Özeti'nde yönetin</translation>
+<translation id="1799497982892676838">Senkronize edilen verilerinizi Bitpop Hesap Özeti'nde yönetin</translation>
 <translation id="951981865514037445"><ph name="URL"/>, cihazınızın konumunu kullanmak istiyor.</translation>
 <translation id="7554791636758816595">Yeni Sekme</translation>
 <translation id="3026557130425686673">Bazı cihaz ayarları bozulduğundan giriş iptal edildi.</translation>
@@ -3079,7 +3079,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="1103966635949043187">Şu sitenin ana sayfasına gidin:</translation>
 <translation id="4762295713053835808">Kişisel öğeler</translation>
 <translation id="6374100501221763867">Donanım ivmeli video kod çözümünü devre dışı bırak.</translation>
-<translation id="7477347901712410606">Parolanızı unuttuysanız, Senkronizasyonu <ph name="BEGIN_LINK"/>Google Hesap Özeti<ph name="END_LINK"/> üzerinden durdurun ve sıfırlayın.</translation>
+<translation id="7477347901712410606">Parolanızı unuttuysanız, Senkronizasyonu <ph name="BEGIN_LINK"/>Bitpop Hesap Özeti<ph name="END_LINK"/> üzerinden durdurun ve sıfırlayın.</translation>
 <translation id="6139474630617772623">İkincil ekranlarda bir tarayıcı açmanıza olanak veren genişletilmiş masaüstünü etkinleştirir.</translation>
 <translation id="2645575947416143543">Ancak, kendi sertifikalarını oluşturan bir kuruluşta çalışıyorsanız ve böyle bir sertifika kullanarak söz konusu sitenin dahili bir web sitesine bağlanmaya çalışıyorsanız, bu sorunu güvenli bir şekilde çözebilirsiniz. Kuruluşunuzun kök sertifikasını bir &quot;kök sertifika&quot; olarak içe aktarabilirsiniz. Bunun ardından kuruluşunuz tarafından yayınlanan veya doğrulanan sertifikalara güvenilir ve bir dahaki sefere dahili bir web sitesine bağlanmaya çalıştığınızda bir daha bu hatayı görmezsiniz. Bilgisayarınıza yeni bir kök sertifikası ekleme hakkında destek almak için kuruluşunuzun yardım personeli ile irtibata geçin.</translation>
 <translation id="1056898198331236512">Uyarı</translation>
@@ -3374,7 +3374,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="7063412606254013905">Phishing tuzakları hakkında daha fazla bilgi edinin.</translation>
 <translation id="7253521419891527137">&amp;Daha Fazla Bilgi Edinin</translation>
 <translation id="3170312251071695679">Varsayılan olarak <ph name="PERMISSION_VALUE"/></translation>
-<translation id="8698464937041809063">Google çizimler</translation>
+<translation id="8698464937041809063">Bitpop çizimler</translation>
 <translation id="7053053706723613360">Daha iyi oturum geri yüklemesini devre dışı bırak</translation>
 <translation id="5233930340889611108">WebKit</translation>
 <translation id="8260864402787962391">Fare</translation>
@@ -3403,7 +3403,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="6873213799448839504">Dizeyi otomatik uygula</translation>
 <translation id="7238585580608191973">SHA-256 Parmak İzi</translation>
 <translation id="2501278716633472235">Geri dön</translation>
-<translation id="3588662957555259973">* Google Profil fotoğrafı</translation>
+<translation id="3588662957555259973">* Bitpop Profil fotoğrafı</translation>
 <translation id="131461803491198646">Ev ağı, dolaşımda değil</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/> - <ph name="FULL_DATE"/></translation>
 <translation id="1285320974508926690">Bu siteyi hiçbir zaman çevirme</translation>
@@ -3475,7 +3475,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="461656879692943278"><ph name="HOST_NAME"/> sayfasında, kötü amaçlı yazılım dağıttığı bilinen <ph name="ELEMENTS_HOST_NAME"/> sitesine ait içerik var. Bu siteyi ziyaret ederseniz bilgisayarınıza virüs bulaşabilir.</translation>
 <translation id="8962198349065195967">Bu ağ, yöneticiniz tarafından yapılandırıldı.</translation>
 <translation id="2143778271340628265">El ile proxy yapılandırması</translation>
-<translation id="2441192698565541088">Google Hesabınızın <ph name="PRODUCT_NAME"/> ile olan bağlantısını keserseniz, bu bilgisayardaki verilerinizde yapılan değişiklikler artık Google Hesabınızla senkronize edilmez. Google Hesabınızda depolanmış bulunan veriler ise siz <ph name="BEGIN_LINK"/>Google Hesap Özeti<ph name="END_LINK"/>'ni kullanarak kaldırana kadar orada kalır.</translation>
+<translation id="2441192698565541088">Bitpop Hesabınızın <ph name="PRODUCT_NAME"/> ile olan bağlantısını keserseniz, bu bilgisayardaki verilerinizde yapılan değişiklikler artık Google Hesabınızla senkronize edilmez. Google Hesabınızda depolanmış bulunan veriler ise siz <ph name="BEGIN_LINK"/>Google Hesap Özeti<ph name="END_LINK"/>'ni kullanarak kaldırana kadar orada kalır.</translation>
 <translation id="8888432776533519951">Renk:</translation>
 <translation id="5294529402252479912">Adobe Reader'ı şimdi güncelle</translation>
 <translation id="5263972071113911534"><ph name="NUMBER_MANY"/> gün önce</translation>
@@ -3504,7 +3504,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="8885905466771744233">Belirtilen uzantıya ilişkin özel anahtar zaten var. Var olan anahtarı yeniden kullanın veya öncelikle bu anahtarı silin.</translation>
 <translation id="1196944142850240972">Tüm web sitelerindeki verilerinize erişme</translation>
 <translation id="7369056754288047856">Bazı ayarlar kullanıcı tarafından değiştirilemez.</translation>
-<translation id="4100843820583867709">Google Talk Ekran Paylaşım İsteği</translation>
+<translation id="4100843820583867709">Bitpop Talk Ekran Paylaşım İsteği</translation>
 <translation id="8109246889182548008">Sertifika Mağazası</translation>
 <translation id="5030338702439866405">Veren:</translation>
 <translation id="2728127805433021124">Sunucunun sertifikası, zayıf bir imza algoritması kullanılarak imzalanmış.</translation>
@@ -3711,7 +3711,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="1049926623896334335">Word belgesi</translation>
 <translation id="8412145213513410671">Kilitlenme Sayısı (<ph name="CRASH_COUNT"/>)</translation>
 <translation id="7003257528951459794">Sıklık:</translation>
-<translation id="3467267818798281173">Google'ın önerilerini sor</translation>
+<translation id="3467267818798281173">Bitpop'ın önerilerini sor</translation>
 <translation id="560602183358579978">Seçim hesaplanıyor...</translation>
 <translation id="7649070708921625228">Yardım</translation>
 <translation id="858637041960032120">Telefon numarası ekle</translation>
@@ -3747,7 +3747,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="8000020256436988724">Araç Çubuğu</translation>
 <translation id="7507930499305566459">Durum Yanıtlayıcı Sertifikası</translation>
 <translation id="3958088479270651626">Yer işaretlerini ve ayarları içe aktar</translation>
-<translation id="2689915906323125315">Google Hesabı şifremi kullan</translation>
+<translation id="2689915906323125315">Bitpop Hesabı şifremi kullan</translation>
 <translation id="8518865679229538285">Tamil giriş yöntemi (Daktilo)</translation>
 <translation id="5257456363153333584">Yusufçuk</translation>
 <translation id="4557136421275541763">Uyarı:</translation>
@@ -3759,7 +3759,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="2489918096470125693">&amp;Klasör Ekle...</translation>
 <translation id="7353651168734309780"><ph name="EXTENSION_NAME"/> yeni izinler gerektiriyor</translation>
 <translation id="6420812616858267777"><ph name="PRODUCT_NAME"/> senkronizasyonu, verilerinizi (yer işaretleri ve ayarlar gibi) bilgisayarlarınız ve mobil cihazlarınız arasında paylaşmayı kolaylaştırır.
-          <ph name="PRODUCT_NAME"/>, Google hesabınızda oturum açtığınızda verilerinizi Google'da çevrimiçi saklayarak senkronize eder.</translation>
+          <ph name="PRODUCT_NAME"/>, Bitpop hesabınızda oturum açtığınızda verilerinizi Google'da çevrimiçi saklayarak senkronize eder.</translation>
 <translation id="7484964289312150019">Tü&amp;m yer işaretlerini yeni pencerede aç</translation>
 <translation id="1731346223650886555">Noktalı virgül</translation>
 <translation id="158849752021629804">Ev ağı gerekli</translation>
@@ -3775,7 +3775,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="3021678814754966447">Çerçeve Kaynağını &amp;Görüntüle</translation>
 <translation id="8601206103050338563">TLS WWW İstemci Kimlik Doğrulaması</translation>
 <translation id="1692799361700686467">Birden çok siteden çerez almaya izin verildi.</translation>
-<translation id="5187295959347858724">Şu anda <ph name="SHORT_PRODUCT_NAME"/> uygulamasında oturum açmış bulunuyorsunuz. Yer işaretleriniz, geçmişiniz ve diğer ayarlarınız Google Hesabınızla senkronize ediliyor.</translation>
+<translation id="5187295959347858724">Şu anda <ph name="SHORT_PRODUCT_NAME"/> uygulamasında oturum açmış bulunuyorsunuz. Yer işaretleriniz, geçmişiniz ve diğer ayarlarınız Bitpop Hesabınızla senkronize ediliyor.</translation>
 <translation id="3719415759165722358">Web Sitesi Ayarları Arayüzünü etkinleştirir. Web Sitesi Ayarları Arayüzü, sayfa bilgisi balonunun yerini alır ve siteye özgü ayarların yapılandırılması için kolay bir yol sağlar.</translation>
 <translation id="2717190143245689317">Uygulama arayüzü için deneysel bir metin alanını etkinleştirir; Web içeriğini etkilemez.</translation>
 <translation id="529232389703829405"><ph name="DATA_AMOUNT"/> tarihinde <ph name="DATE"/> veri satın aldınız</translation>
@@ -3818,7 +3818,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="2927657246008729253">Değiştir...</translation>
 <translation id="7586781939132793422">Sesli Desteği devre dışı bırak</translation>
 <translation id="7978412674231730200">Özel anahtar</translation>
-<translation id="7056011739864317578">Etkinleştirildiğinde, ClientOAuth ile bir profili bir Google hesabına bağlar. Aksi takdirde, ClientLogin kullanılır.
+<translation id="7056011739864317578">Etkinleştirildiğinde, ClientOAuth ile bir profili bir Bitpop hesabına bağlar. Aksi takdirde, ClientLogin kullanılır.
       ClientOAuth, kimlik doğrulaması sırasında ASP'lerin yerine doğrulama kodlarının kullanılmasına izin verir.</translation>
 <translation id="5308380583665731573">Bağlan</translation>
 <translation id="9111395131601239814"><ph name="NETWORKDEVICE"/>: <ph name="STATUS"/></translation>
@@ -3840,7 +3840,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="6692173217867674490">Hatalı parola</translation>
 <translation id="5550431144454300634">Girişi otomatik düzelt</translation>
 <translation id="3308006649705061278">Kuruluş Birimi (OU)</translation>
-<translation id="8912362522468806198">Google Hesabı</translation>
+<translation id="8912362522468806198">Bitpop Hesabı</translation>
 <translation id="4443536555189480885">&amp;Yardım</translation>
 <translation id="340485819826776184">Adres çubuğuna girilen aramaların ve URL'lerin tamamlamasına yardımcı olması için bir tahmin hizmeti kullan</translation>
 <translation id="4207762215349123040"><ph name="PEPPER_PLUGIN_DOMAIN"/> alan adındaki <ph name="PEPPER_PLUGIN_NAME"/> eklentisi mobil cihazınıza erişmek istiyor.&quot;</translation>
@@ -3868,7 +3868,7 @@ Uzantılar, uygulamalar ve temalar mobil cihazınıza zarar verebilir. Devam etm
 <translation id="3551117997325569860">Proxy'yi değiştirmek için, &quot;<ph name="USE_SHARED_PROXIES"/>&quot; ayarını etkinleştirin.</translation>
 <translation id="8906421963862390172">&amp;Yazım Denetleyici Seçenekleri</translation>
 <translation id="9046895021617826162">Bağlantı başarısız oldu</translation>
-<translation id="4061733942661196912">Etkinleştirilirse, bir Google hesabının giriş sayfası ziyaret edildiğinde, profille bağlantılı Google hesabı ile kolayca oturum açmayı sağlayan bir bilgi çubuğu görüntülenir. Profil bir hesaba bağlanmamışsa, bu işaret ne olursa olsun otomatik giriş her zaman devre dışıdır.</translation>
+<translation id="4061733942661196912">Etkinleştirilirse, bir Bitpop hesabının giriş sayfası ziyaret edildiğinde, profille bağlantılı Google hesabı ile kolayca oturum açmayı sağlayan bir bilgi çubuğu görüntülenir. Profil bir hesaba bağlanmamışsa, bu işaret ne olursa olsun otomatik giriş her zaman devre dışıdır.</translation>
 <translation id="1492188167929010410">Kilitlenme Kimliği <ph name="CRASH_ID"/></translation>
 <translation id="1963692530539281474"><ph name="NUMBER_DEFAULT"/> gün kaldı</translation>
 <translation id="4470270245053809099">Sertifikayı veren: <ph name="NAME"/></translation>
@@ -3919,7 +3919,7 @@ Dolana kadar geçecek süre hesaplanıyor</translation>
 <translation id="5869522115854928033">Kayıtlı şifreler</translation>
 <translation id="3436440123324878555">Plan satın al...</translation>
 <translation id="5748266869826978907">DNS ayarlarınızı kontrol edin. Bunun ne anlama geldiğini bilmiyorsanız ağ yöneticinizle bağlantı kurun.</translation>
-<translation id="4193154014135846272">Google dokümanı</translation>
+<translation id="4193154014135846272">Bitpop dokümanı</translation>
 <translation id="4771973620359291008">Bilinmeyen bir hata oluştu.</translation>
 <translation id="5509914365760201064">Sertifikayı Veren: <ph name="CERTIFICATE_AUTHORITY"/></translation>
 <translation id="6446356484127229069"><ph name="PRODUCT_NAME"/>
@@ -4022,7 +4022,7 @@ Dolana kadar geçecek süre hesaplanıyor</translation>
 <translation id="899403249577094719">Netscape Sertifikası Temel URL'si</translation>
 <translation id="2737363922397526254">Daralt...</translation>
 <translation id="8605428685123651449">SQLite Belleği</translation>
-<translation id="5469175127151858022">Yukarıda eklemeyi seçtiğiniz bilgilerle birlikte Chrome ve İşletim sisteminizin sürüm bilgisi de gönderilecektir. Bu geri bildirim, sorunların teşhis edilmesinde ve Chrome'u iyileştirmede kullanılır. Bilerek veya bilmeyerek gönderdiğiniz kişisel bilgiler gizlilik politikalarımıza uygun şekilde korunur.<ph name="BEGIN_BOLD"/> Bu geri bildirimi göndererek, Google'ın bir Google ürünü veya hizmetini iyileştirmek için sağladığınız geri bildirimleri kullanabileceğini kabul etmiş olursunuz.<ph name="END_BOLD"/></translation>
+<translation id="5469175127151858022">Yukarıda eklemeyi seçtiğiniz bilgilerle birlikte Chrome ve İşletim sisteminizin sürüm bilgisi de gönderilecektir. Bu geri bildirim, sorunların teşhis edilmesinde ve Chrome'u iyileştirmede kullanılır. Bilerek veya bilmeyerek gönderdiğiniz kişisel bilgiler gizlilik politikalarımıza uygun şekilde korunur.<ph name="BEGIN_BOLD"/> Bu geri bildirimi göndererek, Bitpop'ın bir Google ürünü veya hizmetini iyileştirmek için sağladığınız geri bildirimleri kullanabileceğini kabul etmiş olursunuz.<ph name="END_BOLD"/></translation>
 <translation id="2841013758207633010">Zaman</translation>
 <translation id="4880827082731008257">Geçmişte ara</translation>
 <translation id="8661290697478713397">Bağlantıyı Giz&amp;li Pencere'de Aç</translation>
@@ -4054,10 +4054,10 @@ Dolana kadar geçecek süre hesaplanıyor</translation>
 <translation id="8828933418460119530">DNS Adı</translation>
 <translation id="988159990683914416">Geliştirici Derlemesi</translation>
 <translation id="1097658378307015415">Oturum açmadan önce <ph name="NETWORK_ID"/> ağını etkinleştirmek için lütfen Misafir olarak giriş yapın</translation>
-<translation id="5170477580121653719">Kalan Google Drive alanı: <ph name="SPACE_AVAILABLE"/>.</translation>
+<translation id="5170477580121653719">Kalan Bitpop Drive alanı: <ph name="SPACE_AVAILABLE"/>.</translation>
 <translation id="4114470632216071239">SIM kartını kilitle (mobil verileri kullanmak için PIN iste)</translation>
 <translation id="5184584788669813359">Bu PDF dokümanın bazı bölümleri görüntülenemiyor. Adobe Reader ile açılsın mı?</translation>
-<translation id="6581162200855843583">Google Drive bağlantısı</translation>
+<translation id="6581162200855843583">Bitpop Drive bağlantısı</translation>
 <translation id="340771324714262530">Yansıtmayı durdur</translation>
 <translation id="3303260552072730022">Bir uzantı tam ekranı etkinleştirdi.</translation>
 <translation id="2183426022964444701">Uzantı kök dizinini seçin.</translation>
@@ -4156,7 +4156,7 @@ Keşfetmeye devam etmek için herhangi bir tuşa basın.</translation>
 <translation id="1177437665183591855">Bilinmeyen sunucu sertifikası hatası</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> kameranızı ve mikrofonunuzu kullanmak istiyor.</translation>
 <translation id="8467473010914675605">Korece giriş yöntemi</translation>
-<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> verilerinizi Google hesabınızla güvenli şekilde senkronize eder. Her şeyi senkronize halde tutun veya senkronize edilmiş veri türlerini ve şifreleme ayarlarını özelleştirin.</translation>
+<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> verilerinizi Bitpop hesabınızla güvenli şekilde senkronize eder. Her şeyi senkronize halde tutun veya senkronize edilmiş veri türlerini ve şifreleme ayarlarını özelleştirin.</translation>
 <translation id="2639739919103226564">Durum:</translation>
 <translation id="6923900367903210484">Telif Hakkı</translation>
 <translation id="3819800052061700452">Tam ek&amp;ran</translation>
@@ -4180,7 +4180,7 @@ Keşfetmeye devam etmek için herhangi bir tuşa basın.</translation>
 <translation id="614998064310228828">Cihaz modeli:</translation>
 <translation id="1581962803218266616">Bulucu'da Göster</translation>
 <translation id="9100765901046053179">Gelişmiş ayarlar</translation>
-<translation id="203168018648013061">Senkronizasyon Hatası: Lütfen senkronizasyonu Google Hesap Özeti üzerinden sıfırlayın.</translation>
+<translation id="203168018648013061">Senkronizasyon Hatası: Lütfen senkronizasyonu Bitpop Hesap Özeti üzerinden sıfırlayın.</translation>
 <translation id="1405126334425076373">Fare imleci</translation>
 <translation id="6096326118418049043">X.500 Adı</translation>
 <translation id="6086259540486894113">Senkronize edilecek en az bir veri türü seçmelisiniz.</translation>
@@ -4229,14 +4229,14 @@ Keşfetmeye devam etmek için herhangi bir tuşa basın.</translation>
 <translation id="2960316970329790041">Alma işlemini durdur</translation>
 <translation id="3835522725882634757">Hata! Bu sunucu, verileri <ph name="PRODUCT_NAME"/> tarafından anlaşılamayacak şekilde gönderiyor. Lütfen <ph name="BEGIN_LINK"/>bir hata bildiriminde bulunun<ph name="END_LINK"/> ve <ph name="BEGIN2_LINK"/>işlenmemiş girişi<ph name="END2_LINK"/> bildirime ekleyin.</translation>
 <translation id="6586451623538375658">Birincil fare düğmesini değiştir</translation>
-<translation id="6937152069980083337">Google Japonca Girişi (ABD klavye için)</translation>
+<translation id="6937152069980083337">Bitpop Japonca Girişi (ABD klavye için)</translation>
 <translation id="475088594373173692">İlk kullanıcı</translation>
 <translation id="1731911755844941020">İstek gönderiliyor...</translation>
 <translation id="8371695176452482769">Şimdi konuşun</translation>
 <translation id="7622116780510618781">Yığılı Sekmeler</translation>
 <translation id="2988488679308982380">Paket yüklenemedi: '<ph name="ERROR_CODE"/>'</translation>
 <translation id="2904079386864173492">Model:</translation>
-<translation id="728836202927797241">Bu hesapla Google sitelerinde otomatik olarak oturum açmayı öner</translation>
+<translation id="728836202927797241">Bu hesapla Bitpop sitelerinde otomatik olarak oturum açmayı öner</translation>
 <translation id="6129953537138746214">Boşluk</translation>
 <translation id="5041795084235183432">Fare:</translation>
 <translation id="3704331259350077894">İşleme Ara Verme</translation>
@@ -4310,7 +4310,7 @@ Keşfetmeye devam etmek için herhangi bir tuşa basın.</translation>
 <translation id="3325146402434751578"><ph name="CLOUD_PRINT_NAME"/> için yazıcıları kur veya yönet</translation>
 <translation id="253434972992662860">&amp;Duraklat</translation>
 <translation id="335985608243443814">Göz at...</translation>
-<translation id="7802488492289385605">Google Japonca Girişi (ABD Dvorak klavye için)</translation>
+<translation id="7802488492289385605">Bitpop Japonca Girişi (ABD Dvorak klavye için)</translation>
 <translation id="3876481682997626897">İmza eşleşmiyor</translation>
 <translation id="8892992092192084762">&quot;<ph name="THEME_NAME"/>&quot; teması yüklendi</translation>
 <translation id="7427348830195639090">Arka Plan Sayfası: <ph name="BACKGROUND_PAGE_URL"/></translation>
@@ -4345,7 +4345,7 @@ Keşfetmeye devam etmek için herhangi bir tuşa basın.</translation>
 <translation id="1131850611586448366"><ph name="HOST_NAME"/> adresindeki web sitesinin bir “e-dolandırıcılık” sitesi olduğu bildirildi. E-dolandırıcılık siteleri, çoğu zaman bankalar benzeri güvenilir kurumları temsil ediyormuş gibi yaparak kullanıcıları kandırıp onların kişisel veya mali bilgilerini öğrenmeye çalışır.</translation>
 <translation id="2669198762040460457">Girmiş olduğunuz kullanıcı adı veya şifre hatalı.</translation>
 <translation id="1161575384898972166">Lütfen istemci sertifikasını dışa aktarmak için <ph name="TOKEN_NAME"/> cihazında oturum açın.</translation>
-<translation id="1718559768876751602">Şimdi bir Google Hesabı oluşturun</translation>
+<translation id="1718559768876751602">Şimdi bir Bitpop Hesabı oluşturun</translation>
 <translation id="5503480894407718969">Mobil cihazınızdaki ve ziyaret ettiğiniz web sitelerindeki tüm verilere erişme</translation>
 <translation id="1884319566525838835">Sandbox (Korumalı Alan) Durumu</translation>
 <translation id="2770465223704140727">Listeden kaldır</translation>

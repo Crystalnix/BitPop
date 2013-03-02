@@ -34,7 +34,7 @@
 <translation id="3581034179710640788">A hely biztonsági tanúsítványa lejárt!</translation>
 <translation id="2825758591930162672">Nyilvános kulcs</translation>
 <translation id="8306243285620593545">Váltás az állapotikonra</translation>
-<translation id="1130622745736410868">meg szeretné erősíteni, hogy Ön egy Chrome OS rendszerű eszközön végez böngészést -- ehhez fel kell kérnie a Google-t kuponkódja ellenőrzésére.</translation>
+<translation id="1130622745736410868">meg szeretné erősíteni, hogy Ön egy Chrome OS rendszerű eszközön végez böngészést -- ehhez fel kell kérnie a Bitpop-t kuponkódja ellenőrzésére.</translation>
 <translation id="8176382683266548737">Értesítések bekapcsolása</translation>
 <translation id="8275038454117074363">Importálás</translation>
 <translation id="8418445294933751433">&amp;Megjelenítés lapként</translation>
@@ -57,7 +57,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="4940047036413029306">Idézőjel</translation>
 <translation id="1497897566809397301">Helyi adatok mentésének engedélyezése (javasolt)</translation>
 <translation id="3275778913554317645">Megnyitás ablakként</translation>
-<translation id="4553117311324416101">A Google véleménye szerint kártékony szoftverek kerülhetnek számítógépére, ha folytatja. Ha ezt a webhelyet már korábban is felkereste, vagy megbízik a webhelyben, elképzelhető, hogy csak nemrég hackertámadás érte. Nem javasoljuk, hogy folytassa. Próbálja újra holnap, vagy menjen máshová.</translation>
+<translation id="4553117311324416101">A Bitpop véleménye szerint kártékony szoftverek kerülhetnek számítógépére, ha folytatja. Ha ezt a webhelyet már korábban is felkereste, vagy megbízik a webhelyben, elképzelhető, hogy csak nemrég hackertámadás érte. Nem javasoljuk, hogy folytassa. Próbálja újra holnap, vagy menjen máshová.</translation>
 <translation id="5085514918439894988">Ehhez a művelethez nincs telepítve szolgáltatás, ezenkívül nincs hozzá szolgáltatásjavaslat a Chrome Internetes áruházban sem.</translation>
 <translation id="8867568208303837180">Küldés...</translation>
 <translation id="509988127256758334">Mi&amp;t keres:</translation>
@@ -91,7 +91,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="21426568240411732">A(z) <ph name="TITLE"/> használja a kamerát.</translation>
 <translation id="6156863943908443225">Szkript gyorsítótár</translation>
 <translation id="4274187853770964845">Szinkronizálási hiba: kérjük, állítsa le, majd indítsa újra a szinkronizálást.</translation>
-<translation id="4610656722473172270">Google Eszköztár</translation>
+<translation id="4610656722473172270">Bitpop Eszköztár</translation>
 <translation id="656293578423618167">A fájl elérési útja vagy neve túl hosszú. Kérjük, mentse rövidebb névvel, illetve másik helyre.</translation>
 <translation id="3484869148456018791">Új tanúsítvány kérése</translation>
 <translation id="151501797353681931">A Safariból importálva</translation>
@@ -139,13 +139,13 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="7600965453749440009">Soha ne fordítsa le a(z) <ph name="LANGUAGE"/> nyelvű szöveget</translation>
 <translation id="3208703785962634733">Nincs megerősítve</translation>
 <translation id="620329680124578183">Ne töltse be (ajánlott)</translation>
-<translation id="6300924177400055566">Nincs elég tárhely a Google Drive-on a(z) &quot;<ph name="FILE_NAME"/>&quot; mentéséhez. Kérjük, távolítson el fájlokat, vagy <ph name="BEGIN_LINK"/>vásároljon további tárhelyet<ph name="END_LINK"/>.</translation>
+<translation id="6300924177400055566">Nincs elég tárhely a Bitpop Drive-on a(z) &quot;<ph name="FILE_NAME"/>&quot; mentéséhez. Kérjük, távolítson el fájlokat, vagy <ph name="BEGIN_LINK"/>vásároljon további tárhelyet<ph name="END_LINK"/>.</translation>
 <translation id="9074739597929991885">Bluetooth</translation>
 <translation id="2653266418988778031">Ha töröl egy tanúsítványkibocsátói (CA) tanúsítványt, a böngészője többé nem fog megbízni az adott tanúsítványkibocsátó által kibocsátott tanúsítványokban.</translation>
 <translation id="5341849548509163798"><ph name="NUMBER_MANY"/> hours ago</translation>
 <translation id="4422428420715047158">Domain:</translation>
 <translation id="7788444488075094252">Nyelvek és bevitel</translation>
-<translation id="6723354935081862304">Nyomtatás a Google Dokumentumokba és más, a felhőben lévő helyekre. <ph name="BEGIN_LINK"/>Jelentkezzen be<ph name="END_LINK"/> a Google Cloud Printben történő nyomtatáshoz.</translation>
+<translation id="6723354935081862304">Nyomtatás a Bitpop Dokumentumokba és más, a felhőben lévő helyekre. <ph name="BEGIN_LINK"/>Jelentkezzen be<ph name="END_LINK"/> a Google Cloud Printben történő nyomtatáshoz.</translation>
 <translation id="3602290021589620013">Előnézet</translation>
 <translation id="6257035105556579916">Kezelt módban nem lehet módosítani a bővítményeket.</translation>
 <translation id="800602641363855389">A(z) <ph name="TITLE"/> használja a mikrofont.</translation>
@@ -214,7 +214,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="1818606096021558659">Oldal</translation>
 <translation id="1549045574060481141">Letöltés megerősítése</translation>
 <translation id="5388588172257446328">Felhasználónév:</translation>
-<translation id="1657406563541664238">Segítsen a <ph name="PRODUCT_NAME"/> fejlesztésében azáltal, hogy automatikusan elküldi a használati statisztikákat és hibajelentéseket a Google részére</translation>
+<translation id="1657406563541664238">Segítsen a <ph name="PRODUCT_NAME"/> fejlesztésében azáltal, hogy automatikusan elküldi a használati statisztikákat és hibajelentéseket a Bitpop részére</translation>
 <translation id="7982789257301363584">Hálózat</translation>
 <translation id="2271281383664374369">Az erre az URL-re irányuló bővítménykérelmek ideiglenesen gátolva lettek.</translation>
 <translation id="8528962588711550376">Bejelentkezés.</translation>
@@ -231,8 +231,8 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="9151034842884433218">Válasszon képet és nevet új Chrome-profiljához.</translation>
 <translation id="1510030919967934016">Ez az oldal nem figyelheti a tartózkodási helyét.</translation>
 <translation id="8848519885565996859">Felhasználó által meghatározott URL-link kerete</translation>
-<translation id="4640525840053037973">Jelentkezzen be Google Fiókjával</translation>
-<translation id="6315526595991863271">Bejelentkezett a <ph name="SHORT_PRODUCT_NAME"/> szolgáltatásba. A rendszer -- az alapbeállítások használatával -- most szinkronizálja a könyvjelzőket, előzményeket és egyéb beállításokat Google Fiókjával.</translation>
+<translation id="4640525840053037973">Jelentkezzen be Bitpop Fiókjával</translation>
+<translation id="6315526595991863271">Bejelentkezett a <ph name="SHORT_PRODUCT_NAME"/> szolgáltatásba. A rendszer -- az alapbeállítások használatával -- most szinkronizálja a könyvjelzőket, előzményeket és egyéb beállításokat Bitpop Fiókjával.</translation>
 <translation id="5255315797444241226">A megadott összetett jelszó helytelen.</translation>
 <translation id="762917759028004464">Az alapértelmezett böngésző jelenleg a(z) <ph name="BROWSER_NAME"/>.</translation>
 <translation id="8289982954746764694">Engedélyezze a követési elemet (még nem működik teljesen) a képaláírásokhoz, feliratokhoz, fejezetekhez és a videók hangleírásaiban.</translation>
@@ -266,7 +266,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="1801827354178857021">Pont</translation>
 <translation id="4560332071395409256">Kattintson a <ph name="BEGIN_BOLD"/>Start<ph name="END_BOLD"/> menüre, majd a <ph name="BEGIN_BOLD"/>Futtatás<ph name="END_BOLD"/> menüpontra, írja be a következőt: <ph name="BEGIN_BOLD"/>%windir%\network diagnostic\xpnetdiag.exe<ph name="END_BOLD"/>, és ezt követően kattintson az <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/> gombra.</translation>
 <translation id="2179052183774520942">Keresőmotor hozzáadása</translation>
-<translation id="6868050610674841964">A bejelentkezéssel szinkronizálja adatait a Google Fiókjával, így bármelyik eszközén elérheti a könyvjelzőit, előzményeit és más beállításait.</translation>
+<translation id="6868050610674841964">A bejelentkezéssel szinkronizálja adatait a Bitpop Fiókjával, így bármelyik eszközén elérheti a könyvjelzőit, előzményeit és más beállításait.</translation>
 <translation id="5498951625591520696">A szervert nem sikerült elérni.</translation>
 <translation id="1621207256975573490">Keret mentése &amp;másként...</translation>
 <translation id="4681260323810445443">Nincs jogosultsága a következő weboldal elérésére: <ph name="URL"/>. Valószínűleg be kell jelentkeznie.</translation>
@@ -300,7 +300,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="6845180713465955339">A &quot;<ph name="CERTIFICATE_NAME"/>&quot; tanúsítvány kibocsátója:</translation>
 <translation id="5364525511170219879">Bővítményaktivitás kezelőfelületének engedélyezése</translation>
 <translation id="3088325635286126843">Át&amp;nevezés...</translation>
-<translation id="6979158407327259162">Google Drive</translation>
+<translation id="6979158407327259162">Bitpop Drive</translation>
 <translation id="6853700448789925482"><ph name="TRACK_HTML"/> elem engedélyezése</translation>
 <translation id="3150927491400159470">Teljes újratöltés</translation>
 <translation id="7531238562312180404">Mivel nem a <ph name="PRODUCT_NAME"/> vezérli a bővítményeknek a személyes adatok kezelési módját, az inkognitóablakokban minden bővítmény ki van kapcsolva. Ezeket újra bekapcsolhatja egyesével, a
@@ -365,7 +365,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="8194465509832052438">Parancsok konfigurálása</translation>
 <translation id="4422347585044846479">Könyvjelző szerkesztése ehhez az oldalhoz</translation>
 <translation id="2452539774207938933">Váltás a következő felhasználóra: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">A Google Chrome pontosabb helyesírás-ellenőrzést tud biztosítani azáltal, hogy a böngészőbe beírt szöveget elküldi a Google szervereinek, ami lehetővé teszi, hogy ugyanazt a helyesírás-ellenőrző technológiát használja, amelyet a Google-keresés is.</translation>
+<translation id="4700157086864140907">A Bitpop Chrome pontosabb helyesírás-ellenőrzést tud biztosítani azáltal, hogy a böngészőbe beírt szöveget elküldi a Google szervereinek, ami lehetővé teszi, hogy ugyanazt a helyesírás-ellenőrző technológiát használja, amelyet a Google-keresés is.</translation>
 <translation id="7632357940961158759">Néhány beállítást egy bővítmény kezel.</translation>
 <translation id="1880905663253319515">Törli a &quot;<ph name="CERTIFICATE_NAME"/>&quot; tanúsítványt?</translation>
 <translation id="8546306075665861288">Képek gyorsítótára</translation>
@@ -419,7 +419,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="1884405719612801980">heurisztikus típus: <ph name="HEURISTIC_TYPE"/> szervertípus: <ph name="SERVER_TYPE"/> mező aláírása: <ph name="FIELD_SIGNATURE"/> űrlap aláírása: <ph name="FORM_SIGNATURE"/> kísérlet azonosítója: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8656768832129462377">Ne ellenőrizze</translation>
 <translation id="715487527529576698">Az alapértelmezett kínai beviteli mód az egyszerűsített kínai</translation>
-<translation id="6896830120821965585">Engedélyez egy háttérszolgáltatást, amely összekapcsolja a Google Cloud Print szolgáltatást a számítógépen telepített nyomtatókkal. Miután aktiválta ezt a funkciót, úgy kapcsolhatja be a Google Cloud Print csatlakozási szoftvert, hogy bejelentkezik Google Fiókjába a Beállítások menü A motorháztető alatt részében.</translation>
+<translation id="6896830120821965585">Engedélyez egy háttérszolgáltatást, amely összekapcsolja a Bitpop Cloud Print szolgáltatást a számítógépen telepített nyomtatókkal. Miután aktiválta ezt a funkciót, úgy kapcsolhatja be a Google Cloud Print csatlakozási szoftvert, hogy bejelentkezik Google Fiókjába a Beállítások menü A motorháztető alatt részében.</translation>
 <translation id="3999508690854143454">Kérdezzen rá, amikor egy webhely hozzáférést kér a kamerámhoz és mikrofonomhoz (ajánlott)</translation>
 <translation id="1674989413181946727">Számítógépre érvényes SSL-beállítások:</translation>
 <translation id="1531285811424589182">Tanúsítványtörlési hiba</translation>
@@ -436,7 +436,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="3874070094967379652">Szinkronizálási összetett jelszó használata adataim titkosítására</translation>
 <translation id="6500116422101723010">A webhely nem képes kezelni a kérelmet. Ez a kód egy átmeneti állapotot jelez, és a szerver egy idő után újra működni fog.</translation>
 <translation id="1644574205037202324">Előzmények</translation>
-<translation id="4206944295053515692">Javaslatok kérése a Google-tól</translation>
+<translation id="4206944295053515692">Javaslatok kérése a Bitpop-tól</translation>
 <translation id="1297175357211070620">Cél</translation>
 <translation id="479280082949089240">Az oldal által beállított cookie-k</translation>
 <translation id="4198861010405014042">Megosztott hozzáférés</translation>
@@ -449,8 +449,8 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="3887847548716051874">Mindig engedélyezze ennek az oldalnak a mikrofon és a kamera használatát</translation>
 <translation id="2886862922374605295">Hardver:</translation>
 <translation id="4497097279402334319">Nem sikerült hálózathoz csatlakozni.</translation>
-<translation id="7342729285348293164">Jelentkezzen be a <ph name="PRODUCT_NAME"/> szolgáltatásba Google Fiókjával a személyre szabott böngészőbeállításai online mentéséhez, hogy bármely számítógépről elérje azokat a <ph name="PRODUCT_NAME"/> segítségével. A kedvenc Google-szolgáltatásaiba is automatikusan bejelentkeztetjük.</translation>
-<translation id="2542049655219295786">Google-tábla</translation>
+<translation id="7342729285348293164">Jelentkezzen be a <ph name="PRODUCT_NAME"/> szolgáltatásba Bitpop Fiókjával a személyre szabott böngészőbeállításai online mentéséhez, hogy bármely számítógépről elérje azokat a <ph name="PRODUCT_NAME"/> segítségével. A kedvenc Google-szolgáltatásaiba is automatikusan bejelentkeztetjük.</translation>
+<translation id="2542049655219295786">Bitpop-tábla</translation>
 <translation id="3899879303189199559">Több mint egy éve offline</translation>
 <translation id="5303618139271450299">Ez a weboldal nem található</translation>
 <translation id="4256316378292851214">&amp;Videó mentése másként...</translation>
@@ -459,7 +459,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="6518014396551869914">Ké&amp;p másolása</translation>
 <translation id="3236997602556743698">3 készletes (390)</translation>
 <translation id="542155483965056918"><ph name="NUMBER_ZERO"/> mins ago</translation>
-<translation id="4928351909437667303">Google Drive letiltása az eszközön.</translation>
+<translation id="4928351909437667303">Bitpop Drive letiltása az eszközön.</translation>
 <translation id="6315723398663634808">A szervertanúsítvány gyenge titkosítási kulcsot tartalmaz!</translation>
 <translation id="2887525882758501333">PDF-dokumentum</translation>
 <translation id="289426338439836048">Egyéb mobilhálózat...</translation>
@@ -531,7 +531,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="6431347207794742960">A <ph name="PRODUCT_NAME"/> jelen számítógép összes felhasználója számára beállítja az automatikus frissítéseket.</translation>
 <translation id="4973698491777102067">Elemek törlése a következő időszakból:</translation>
 <translation id="6074963268421707432">Egy webhely sem jeleníthet meg asztali értesítéseket</translation>
-<translation id="4944952004685780325">Engedélyezi a Drive V2 API használatát a Google Drive mappa eléréséhez.</translation>
+<translation id="4944952004685780325">Engedélyezi a Drive V2 API használatát a Bitpop Drive mappa eléréséhez.</translation>
 <translation id="1995173078718234136">Tartalom beolvasása...</translation>
 <translation id="7920521481309889533">Az SPDY/3 engedélyezése</translation>
 <translation id="5979681173469464041">Fókuszálás a következő panelre</translation>
@@ -540,7 +540,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="1491151370853475546">Az oldal újratöltése</translation>
 <translation id="5374359983950678924">Kép lecserélése</translation>
 <translation id="2859738163554174612">Soha ne ajánlja fel a bejelentkezést</translation>
-<translation id="1378727793141957596">Üdvözli a Google Drive!</translation>
+<translation id="1378727793141957596">Üdvözli a Bitpop Drive!</translation>
 <translation id="5158548125608505876">Ne legyenek szinkronizálva a jelszavaim</translation>
 <translation id="3717485073527618485">Kérdezzen meg, amikor egy webhely megpróbálja letiltani az egérmutatót (ajánlott)</translation>
 <translation id="3273410961255278341">Küldés:</translation>
@@ -573,7 +573,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="773426152488311044">Jelenleg Ön az egyetlen <ph name="PRODUCT_NAME"/>-felhasználó.</translation>
 <translation id="2042078858148122628">A(z) <ph name="HOST_NAME"/> címen lévő szerver nem található, mert a DNS-keresés nem sikerült. A DNS olyan hálózati szolgáltatás, amely a webhely nevét lefordítja annak IP-címére. Ezt a hibát leggyakrabban az internetkapcsolat hiánya vagy egy rosszul konfigurált hálózat okozza, de az is előfordulhat, hogy egy nem válaszoló DNS-szerver vagy egy tűzfal megakadályozza a <ph name="PRODUCT_NAME"/> hálózati hozzáférését.</translation>
 <translation id="2159087636560291862">Ebben az esetben a tanúsítványt nem ellenőrizte egy olyan harmadik fél, amelyet számítógépe megbízhatónak tart. Bárki létrehozhat egy tanúsítványt azt állítva, hogy az egy bizonyos webhelyé, ezért kell ellenőriznie azt egy megbízható harmadik félnek. Ellenőrzés nélkül a tanúsítványban lévő azonosítási információ mit sem ér. Éppen ezért nem lehet igazolni, hogy tényleg a <ph name="DOMAIN"/> webhellyel kommunikál egy esetleges támadó helyett, akinek a tanúsítványa azt állítja, hogy a <ph name="DOMAIN2"/> domainből származik. Javasoljuk, hogy ennél tovább ne folytassa.</translation>
-<translation id="58625595078799656">A <ph name="PRODUCT_NAME"/> megköveteli, hogy adatait vagy Google-jelszavával, vagy egy külön összetett jelszóval titkosítsa.</translation>
+<translation id="58625595078799656">A <ph name="PRODUCT_NAME"/> megköveteli, hogy adatait vagy Bitpop-jelszavával, vagy egy külön összetett jelszóval titkosítsa.</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">Nem tanúsítványkibocsátó</translation>
 <translation id="6099520380851856040">Időpont: <ph name="CRASH_TIME"/></translation>
@@ -727,7 +727,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="8943805475239098364">Szeretne a <ph name="NEW_GOOGLE_HOST"/> domainnel keresni a <ph name="CURRENT_GOOGLE_HOST"/> helyett?</translation>
 <translation id="3813510441224209252">Formázás függőben</translation>
 <translation id="8912793549644936705">Nyújtva</translation>
-<translation id="8026684114486203427">A Chrome internetes áruház használatához be kell jelentkeznie egy Google Fiókkal.</translation>
+<translation id="8026684114486203427">A Chrome internetes áruház használatához be kell jelentkeznie egy Bitpop Fiókkal.</translation>
 <translation id="1486096554574027028">Jelszavak keresése</translation>
 <translation id="4631887759990505102">Előadó</translation>
 <translation id="1836938920852968258">Az NTP &quot;Egyéb eszközök&quot; menüjének letiltása.</translation>
@@ -743,12 +743,12 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="89217462949994770">Túl sokszor írt be hibás PIN kódot. Kérjük, szerezzen be új, nyolcjegyű PIN-feloldó kulcsot innen: <ph name="CARRIER_ID"/>.</translation>
 <translation id="5920618722884262402">Trágár szavak kizárása</translation>
 <translation id="242006861730551700">Letiltja a letöltési polcot. Megvalósítását követően az új letöltési felhasználói felületet fogja megjeleníteni.</translation>
-<translation id="7782102568078991263">Nincs több javaslat a Google-tól</translation>
+<translation id="7782102568078991263">Nincs több javaslat a Bitpop-tól</translation>
 <translation id="8038111231936746805">(alapértelmezett)</translation>
 <translation id="5120247199412907247">Speciális konfiguráció</translation>
 <translation id="567881659373499783">Verzió: <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">A Biztonságos Böngészés adatvédelmi irányelvei</translation>
-<translation id="5105859138906591953">Ahhoz, hogy a Google Eszköztár könyvjelzőit a Chrome-ba importálhassa, be kell jelentkeznie a Google Fiókjába.  Kérjük, jelentkezzen be, és próbálja újra az importálást.</translation>
+<translation id="5105859138906591953">Ahhoz, hogy a Bitpop Eszköztár könyvjelzőit a Chrome-ba importálhassa, be kell jelentkeznie a Google Fiókjába.  Kérjük, jelentkezzen be, és próbálja újra az importálást.</translation>
 <translation id="8899851313684471736">Link megnyitása új &amp;ablakban</translation>
 <translation id="4110342520124362335">A(z) <ph name="DOMAIN"/> oldalról származó cookie-k le vannak tiltva.</translation>
 <translation id="3303818374450886607">Példányszám</translation>
@@ -797,7 +797,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="1871208020102129563">A proxy fix proxyszerverek használatára van beállítva, nem pedig .pac típusú szkript URL címének használatára.</translation>
 <translation id="1634788685286903402">Bízzon meg ebben a tanúsítványban e-mail felhasználók azonosításakor.</translation>
 <translation id="3154015489111064513">DHCP használata</translation>
-<translation id="8642489171979176277">A Google Eszköztárból importálva</translation>
+<translation id="8642489171979176277">A Bitpop Eszköztárból importálva</translation>
 <translation id="4142744419835627535">Az Instant automatikus kiegészítés funkció azonnali használata.</translation>
 <translation id="4684427112815847243">Minden szinkronizálása</translation>
 <translation id="1125520545229165057">Dvorak (Hsu)</translation>
@@ -807,7 +807,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="8071086933245711894">Másolási művelet megszakítva.</translation>
 <translation id="2441392884867482684">Ez az oldal most teljes képernyős nézetben van, és le akarja tiltani az egérmutatót.</translation>
 <translation id="1422780722984745882">Több Location (hely) fejléc érkezett. Ez nem megengedett a HTTP-válaszok felosztásán alapuló támadások elleni védelem miatt.</translation>
-<translation id="7787129790495067395">Jelenleg összetett jelszót használ. Ha elfelejtette ezt, akkor a Google Irányítópulton visszaállíthatja a szinkronizálást, törölve az adatokat a Google szervereiről.</translation>
+<translation id="7787129790495067395">Jelenleg összetett jelszót használ. Ha elfelejtette ezt, akkor a Bitpop Irányítópulton visszaállíthatja a szinkronizálást, törölve az adatokat a Google szervereiről.</translation>
 <translation id="3380365263193509176">Ismeretlen hiba</translation>
 <translation id="1273135602584709125">Vállalati regisztráció megszüntetése</translation>
 <translation id="2686759344028411998">Nem található betöltött modul.</translation>
@@ -875,7 +875,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="6204994989617056362">Az SSL renegotiation bővítménye hiányzott a biztonsági kapcsolatfelvételhez. A renegotiation bővítményt támogató oldalak megtekintéséhez a Chrome egy még biztonságosabb kapcsolatfelvételt kér, hogy megakadályozzon bizonyos támadásokat. Ennek a bővítménynek a kihagyása arra utal, hogy hálózati kapcsolatát valaki manipulálta átvitel közben.</translation>
 <translation id="1238150413700645698">Védett tartalom</translation>
 <translation id="6679492495854441399">Hoppá! Az eszköz rögzítésének kísérlete közben hálózati kommunikációs hiba történt. Kérjük, ellenőrizze a hálózati kapcsolatot, majd próbálja újra.</translation>
-<translation id="5270547718570958938">Google Naptár</translation>
+<translation id="5270547718570958938">Bitpop Naptár</translation>
 <translation id="5823933238730612365">PPAPI (a sandbox-technológia alkalmazása nélkül)</translation>
 <translation id="2879755071890315043">Kérjük, várjon, amíg beállítjuk a mobilhálózatot.</translation>
 <translation id="5301751748813680278">Belépés vendégként.</translation>
@@ -931,7 +931,7 @@ Pszt! Az inkognitómód (<ph name="SHORTCUT_KEY"/>) hasznos lehet a következő 
 <translation id="2955913368246107853">Keresősáv bezárása</translation>
 <translation id="8864170386249720785">Mobil eszközre érvényes SSL-beállítások:</translation>
 <translation id="3914942725612686145">Ezzel bejelentkezett a Chrome-ba. A megnyitott lapok és könyvjelzők, valamint a cím- és keresősávban lévő
-adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation>
+adatok szinkronizálása az Ön Bitpop Fiókjával folyamatban van.</translation>
 <translation id="5642508497713047">Tanúsítvány-visszavonási lista aláírója</translation>
 <translation id="7612302739128412469">Az ikonra kattintva aktiválhatja ezt a bővítményt.</translation>
 <translation id="813082847718468539">Az oldalinformációk megtekintése</translation>
@@ -979,7 +979,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="1637259088766071440">A(z) <ph name="HOST_NAME"/> címen található webhely olyan webhelyekről is tartalmaz elemeket, amelyek rosszindulatú programokat is tárolnak (olyan szoftvereket, amelyek árthatnak számítógépének, vagy engedélye nélkül műveleteket végezhetnek). Már a rosszindulatú programot tartalmazó webhely felkeresése esetén is megfertőződhet a mobil eszköze. A webhelyen emellett olyan webhelyekről származó tartalom is szerepel, amelyeket &quot;adathalász&quot; webhelyként jelentettek. Az adathalász oldalak trükkök segítségével kicsalják a felhasználók személyes vagy pénzügyi adatait, gyakran úgy, hogy hiteles intézmények -- például bankok -- nevében írnak.</translation>
 <translation id="855081842937141170">Lap rögzítése</translation>
 <translation id="6263541650532042179">szinkronizálás visszaállítása</translation>
-<translation id="6513247462497316522">A Google Chrome mobil-adatforgalmat fog használni, ha nem kapcsolódik másik hálózathoz.</translation>
+<translation id="6513247462497316522">A Bitpop Chrome mobil-adatforgalmat fog használni, ha nem kapcsolódik másik hálózathoz.</translation>
 <translation id="6055392876709372977">PKCS #1 SHA-256 RSA titkosítással</translation>
 <translation id="7903984238293908205">Katakana</translation>
 <translation id="268053382412112343">Elő&amp;zmények</translation>
@@ -1096,8 +1096,8 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="7632380866023782514">Jobbra fent</translation>
 <translation id="4693789964669838452">FPS</translation>
 <translation id="4925520021222027859">Adja meg alkalmazásfüggő jelszavát</translation>
-<translation id="3494768541638400973">Google japán beviteli mód (japán billentyűzetre)</translation>
-<translation id="4679639996443646335">A Google véleménye szerint rosszindulatú szoftverek kerülhetnek mobil eszközére, ha továbblép. Ha ezt a webhelyet már korábban is felkereste, vagy megbízik a webhelyben, elképzelhető, hogy nemrégiben hackertámadás érte. Nem javasoljuk, hogy folytassa. Próbálja újra holnap, vagy menjen máshová.</translation>
+<translation id="3494768541638400973">Bitpop japán beviteli mód (japán billentyűzetre)</translation>
+<translation id="4679639996443646335">A Bitpop véleménye szerint rosszindulatú szoftverek kerülhetnek mobil eszközére, ha továbblép. Ha ezt a webhelyet már korábban is felkereste, vagy megbízik a webhelyben, elképzelhető, hogy nemrégiben hackertámadás érte. Nem javasoljuk, hogy folytassa. Próbálja újra holnap, vagy menjen máshová.</translation>
 <translation id="7223775956298141902">Hmm... Nincsenek bővítményei :-(</translation>
 <translation id="3118046075435288765">A szerver váratlanul megszakította a kapcsolatot.</translation>
 <translation id="1725068750138367834">&amp;Fájlkezelő</translation>
@@ -1123,7 +1123,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="3706919628594312718">Egérbeállítások</translation>
 <translation id="8326478304147373412">PKCS #7, tanúsítványlánc</translation>
 <translation id="3242765319725186192">Előre megosztott kulcs:</translation>
-<translation id="8089798106823170468">Ossza meg és irányítsa a hozzáférést nyomtatóihoz bármely Google-fiókkal.</translation>
+<translation id="8089798106823170468">Ossza meg és irányítsa a hozzáférést nyomtatóihoz bármely Bitpop-fiókkal.</translation>
 <translation id="5426597273899159431">Speciális beállítások...</translation>
 <translation id="1105608846356399385">Webhely felkeresése</translation>
 <translation id="7218608093942361839"><ph name="PRODUCT_NAME"/> <ph name="PRODUCT_VERSION"/> (<ph name="PLATFORM_VERSION"/> platform)</translation>
@@ -1189,7 +1189,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="81686154743329117">ZRM</translation>
 <translation id="2150139952286079145">Célhelyek keresése</translation>
 <translation id="4713309396072794887">Telepíti ezeket a bővítményeket?</translation>
-<translation id="5637940320504994319">Elfogyott a tárhely a Google Drive-on</translation>
+<translation id="5637940320504994319">Elfogyott a tárhely a Bitpop Drive-on</translation>
 <translation id="6458467102616083041">A rendszer figyelmen kívül hagyja, mivel az alapértelmezett keresést házirend tiltja le.</translation>
 <translation id="2266011376676382776">Oldal, amely nem válaszol</translation>
 <translation id="3100609564180505575">Modulok (<ph name="TOTAL_COUNT"/>) - Ismert ütközések: <ph name="BAD_COUNT"/>, feltételezett: <ph name="SUSPICIOUS_COUNT"/></translation>
@@ -1251,7 +1251,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="7092106376816104">Előugró ablakok kivételei</translation>
 <translation id="4830475881783902092">Ügyfél-azonosító:</translation>
 <translation id="4600958291864306415">generálás...</translation>
-<translation id="8594787581355215556">A(z) <ph name="USER_EMAIL_ADDRESS"/> címmel jelentkezett be. Szinkronizált adatait a <ph name="BEGIN_LINK"/>Google Irányítópulton<ph name="END_LINK"/> kezelheti.</translation>
+<translation id="8594787581355215556">A(z) <ph name="USER_EMAIL_ADDRESS"/> címmel jelentkezett be. Szinkronizált adatait a <ph name="BEGIN_LINK"/>Bitpop Irányítópulton<ph name="END_LINK"/> kezelheti.</translation>
 <translation id="4338600611020922010">Hozzáadás a kezdőképernyőhöz</translation>
 <translation id="263325223718984101">A(z) <ph name="PRODUCT_NAME"/> nem tudta befejezni a telepítést, de tovább fut a lemezképéről.</translation>
 <translation id="6186893483313227582"><ph name="VALUE"/>. ikon</translation>
@@ -1268,7 +1268,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="4250680216510889253">Nem</translation>
 <translation id="5109044022078737958">Sport</translation>
 <translation id="6291953229176937411">Me&amp;gjelenítés a Finderben</translation>
-<translation id="8598687241883907630">Google Fiók leválasztása...</translation>
+<translation id="8598687241883907630">Bitpop Fiók leválasztása...</translation>
 <translation id="6410894982725961573">Legyen elérhető offline</translation>
 <translation id="2556718757702023317">A(z) &quot;<ph name="FILE_NAME"/>&quot; offline mentéséhez fel kell szabadítania további <ph name="TOTAL_FILE_SIZE"/> helyet:<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>szüntesse meg azoknak a fájloknak a rögzítését, amelyeknek offline módú elérésére már nincs szüksége<ph name="MARKUP_3"/>
@@ -1300,7 +1300,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="939598580284253335">Összetett jelszó megadása</translation>
 <translation id="8418240940464873056">Hanja (kínai betűk) mód</translation>
 <translation id="7917972308273378936">Litván billentyűzet</translation>
-<translation id="8371806639176876412">A Google naplózhatja a cím- és keresősáv tartalmát.</translation>
+<translation id="8371806639176876412">A Bitpop naplózhatja a cím- és keresősáv tartalmát.</translation>
 <translation id="5788367137662787332">Elnézést kérünk, de a(z) <ph name="DEVICE_LABEL"/> eszköz legalább egy partíciója nem csatolható.</translation>
 <translation id="1886996562706621347">A webhelyek kérhetik, hogy protokollok alapértelmezett kezelői legyenek (ajánlott)</translation>
 <translation id="6736329909263487977"><ph name="ISSUED_BY"/> [<ph name="ISSUED_TO"/>]</translation>
@@ -1356,7 +1356,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="2629089419211541119"><ph name="NUMBER_ONE"/> órája</translation>
 <translation id="1691063574428301566">A számítógép újraindul a frissítés végeztével.</translation>
 <translation id="4697551882387947560">Amikor a böngészési programfolyamat véget ér</translation>
-<translation id="5900302528761731119">Google-profil fotó</translation>
+<translation id="5900302528761731119">Bitpop-profil fotó</translation>
 <translation id="131364520783682672">Caps Lock</translation>
 <translation id="2066999550761485762"><ph name="BEGIN_BOLD"/>Ön inkognitómódra váltott.<ph name="END_BOLD"/><ph name="LINE_BREAK"/> Az itt megtekintett oldalak nem jelennek meg böngészési vagy keresési előzményei között, és más nyomokat -- például cookie-kat -- sem hagynak mobil eszközén, miután az <ph name="BEGIN_BOLD"/>összes<ph name="END_BOLD"/> inkognitólapot bezárta. A letöltött fájlok és a létrehozott könyvjelzők azonban megmaradnak. <ph name="LINE_BREAK"/><ph name="BEGIN_BOLD"/>Az inkognitómód azonban nincs hatással más személyek, szerverek vagy szoftverek viselkedésére.<ph name="END_BOLD"/> Ügyeljen, nehogy megfigyelhessék titkos ügynökök vagy az Ön mögött álló személyek. <ph name="LINE_BREAK"/><ph name="BEGIN_LINK"/>További információ<ph name="END_LINK"/> az inkognitómódban való böngészésről.</translation>
 <translation id="2335122562899522968">Ez az oldal cookie-kat állít be.</translation>
@@ -1373,7 +1373,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="1478897831827830200">Nyomkövetés</translation>
 <translation id="5714678912774000384">Legutóbbi lap aktiválása</translation>
 <translation id="8466234950814670489">Tar-archívum</translation>
-<translation id="5902572236435740554">Először Google Fiókjának jelszavát adja meg, <ph name="LINE_BREAK"/> ne egy alkalmazásfüggő jelszót.</translation>
+<translation id="5902572236435740554">Először Bitpop Fiókjának jelszavát adja meg, <ph name="LINE_BREAK"/> ne egy alkalmazásfüggő jelszót.</translation>
 <translation id="8813811964357448561">papírlap</translation>
 <translation id="2125314715136825419">Folytatás az Adobe Reader frissítése nélkül (nem javasolt)</translation>
 <translation id="5034510593013625357">Gazdagépnévminta</translation>
@@ -1394,7 +1394,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="8337399713761067085">Ön jelenleg offline állapotban van</translation>
 <translation id="5199729219167945352">Kísérletek</translation>
 <translation id="6499143127267478107">A proxyszkriptben lévő gazdagép feloldása...</translation>
-<translation id="8069615408251337349">Google Cloud Print</translation>
+<translation id="8069615408251337349">Bitpop Cloud Print</translation>
 <translation id="5055518462594137986">Emlékezzen a választásomra minden ilyen típusú linknél.</translation>
 <translation id="246059062092993255">A plug-inek le vannak tiltva ezen az oldalon.</translation>
 <translation id="2870560284913253234">webhely</translation>
@@ -1439,7 +1439,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="3273951168350045122">Billentyűzet (<ph name="ADDRESS"/>)</translation>
 <translation id="8221729492052686226">Ha nem Ön kezdeményezte ezt a kérelmet, akkor lehet, hogy támadást kíséreltek meg számítógépe ellen. Hacsak nem kifejezetten Ön csinált valamit, hogy kezdeményezze ezt a kérelmet, akkor javasoljuk, hogy a &quot;Ne tegyen semmit&quot; lehetőséget válassza.</translation>
 <translation id="894360074127026135">Netscape International Step-Up</translation>
-<translation id="8420060421540670057">Google Dokumentumok-fájlok megjelenítése</translation>
+<translation id="8420060421540670057">Bitpop Dokumentumok-fájlok megjelenítése</translation>
 <translation id="1201402288615127009">Következő</translation>
 <translation id="1335588927966684346">Segédprogram:</translation>
 <translation id="2710582058364740604">Felülírja az eszköz képernyősűrűségét a magas DPI mód és -tartalmak használatának kényszerítése érdekében.</translation>
@@ -1527,7 +1527,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="5669267381087807207">Aktiválás</translation>
 <translation id="7434823369735508263">Brit Dvorak billentyűzet</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> nap</translation>
-<translation id="5308845175611284862">A(z) <ph name="PRODUCT_NAME"/> szinkronizálásával könnyedén megoszthatja adatait (például könyvjelzőit és beállításait) több számítógép között. A(z) <ph name="PRODUCT_NAME"/> úgy szinkronizál, hogy online tárolja az adatokat a Google-nál, amikor Ön bejelentkezik Google Fiókjába.</translation>
+<translation id="5308845175611284862">A(z) <ph name="PRODUCT_NAME"/> szinkronizálásával könnyedén megoszthatja adatait (például könyvjelzőit és beállításait) több számítógép között. A(z) <ph name="PRODUCT_NAME"/> úgy szinkronizál, hogy online tárolja az adatokat a Bitpop-nál, amikor Ön bejelentkezik Google Fiókjába.</translation>
 <translation id="1707463636381878959">A hálózat megosztása más felhasználókkal</translation>
 <translation id="2084978867795361905">MS-IME</translation>
 <translation id="7227669995306390694"><ph name="NETWORK"/> nincs előfizetési csomag</translation>
@@ -1535,7 +1535,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="7163503212501929773"><ph name="NUMBER_MANY"/> óra van hátra</translation>
 <translation id="7705276765467986571">Nem sikerült betölteni a könyvjelzőmodellt.</translation>
 <translation id="750413812607578381">Indítsa újra a <ph name="PRODUCT_NAME"/> szolgáltatást.</translation>
-<translation id="8034305971714560781">Ha megszünteti a kapcsolatot Google Fiókja és a(z) <ph name="PRODUCT_NAME"/> között, akkor a mobil eszközön történő adatváltozások többé nem szinkronizálódnak Google Fiókjával. A Google Fiókjában tárolt adatok ott maradnak, amíg el nem távolítja őket a <ph name="BEGIN_LINK"/>Google Irányítópult<ph name="END_LINK"/> segítségével.</translation>
+<translation id="8034305971714560781">Ha megszünteti a kapcsolatot Bitpop Fiókja és a(z) <ph name="PRODUCT_NAME"/> között, akkor a mobil eszközön történő adatváltozások többé nem szinkronizálódnak Google Fiókjával. A Google Fiókjában tárolt adatok ott maradnak, amíg el nem távolítja őket a <ph name="BEGIN_LINK"/>Google Irányítópult<ph name="END_LINK"/> segítségével.</translation>
 <translation id="2638286699381354126">Frissítés...</translation>
 <translation id="1196338895211115272">A privát kulcs exportálása sikertelen.</translation>
 <translation id="1459967076783105826">Bővítmények által hozzáadott keresőmotorok</translation>
@@ -1569,10 +1569,10 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="1789424019568293108">Annak a kísérleti kezelőfelületnek az engedélyezése, amelyen a bővítményaktivitás naplója látható.</translation>
 <translation id="2090876986345970080">Rendszerbiztonsági beállítás</translation>
 <translation id="3728067901555601989">Egyszer használatos jelszó:</translation>
-<translation id="3475447146579922140">Google-táblázat</translation>
+<translation id="3475447146579922140">Bitpop-táblázat</translation>
 <translation id="6856526171412069413">Összehúzással történő méretezés engedélyezése.</translation>
 <translation id="9219103736887031265">Képek</translation>
-<translation id="7415834062450491574">Visszajelzés küldése a Google számára.</translation>
+<translation id="7415834062450491574">Visszajelzés küldése a Bitpop számára.</translation>
 <translation id="4480995875255084924">A Tölgyfa nézet engedélyezése. Segítségével ellenőrizhetők az ablakok, rétegek és nézetek hierarchiái a tulajdonságaikkal együtt. Eléréséhez nyomja le a Ctrl+Shift+F1 billentyűkódot.</translation>
 <translation id="6975147921678461939">Az akkumulátor töltöttsége: <ph name="PRECENTAGE"/> %</translation>
 <translation id="5453632173748266363">Cirill</translation>
@@ -1583,7 +1583,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="5329858601952122676">&amp;Törlés</translation>
 <translation id="6100736666660498114">Start menü</translation>
 <translation id="2706131822305474920">Váltás a megnyitott lapok között</translation>
-<translation id="4402766404187539019">Google.com Mail</translation>
+<translation id="4402766404187539019">Bitpop.com Mail</translation>
 <translation id="6275297011664564181">Nincs éppen aktív házirend.</translation>
 <translation id="3994878504415702912">&amp;Szöveg mérete</translation>
 <translation id="9009369504041480176">Feltöltés (<ph name="PROGRESS_PERCENT"/>%)...</translation>
@@ -1621,7 +1621,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="6059764114876442286">Nyomtató visszaállítása</translation>
 <translation id="6406506848690869874">Szinkronizálás</translation>
 <translation id="5288678174502918605">Bezárt lap m&amp;egnyitása</translation>
-<translation id="7238461040709361198">Az Ön Google fiókjának jelszava megváltozott az ezen a számítógépen történt legutolsó bejelentkezése óta.</translation>
+<translation id="7238461040709361198">Az Ön Bitpop fiókjának jelszava megváltozott az ezen a számítógépen történt legutolsó bejelentkezése óta.</translation>
 <translation id="1956050014111002555">A fájl több tanúsítványt tartalmazott, amelyek közül egy sincs importálva:</translation>
 <translation id="302620147503052030">Gomb megjelenítése</translation>
 <translation id="1895658205118569222">Kikapcsolás</translation>
@@ -1631,7 +1631,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="6624687053722465643">Édesség</translation>
 <translation id="8420296388012619424">Az USB-eszköz nincs formázva.</translation>
 <translation id="3021256392995617989">Kérdezzen meg, ha egy webhely megpróbálja figyelni a tartózkodási helyemet (ajánlott)</translation>
-<translation id="8083739373364455075">Szerezzen 100 GB ingyenes tárhelyet a Google Drive-val</translation>
+<translation id="8083739373364455075">Szerezzen 100 GB ingyenes tárhelyet a Bitpop Drive-val</translation>
 <translation id="271083069174183365">Japán beviteli beállítások</translation>
 <translation id="1257595095755619623">Ha proxyszervert használ, tekintse át a proxybeállításokat, vagy
         forduljon hálózati rendszergazdájához, hogy ellenőrizze a proxyszerver
@@ -1837,7 +1837,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="3967885517199024316">Jelentkezzen be, hogy könyvjelzőit, előzményeit és beállításait az összes eszközén elérhesse.</translation>
 <translation id="5463856536939868464">Rejtett könyvjelzőket tartalmazó menü</translation>
 <translation id="8286227656784970313">Rendszerszótár használata</translation>
-<translation id="5431084084184068621">Úgy döntött, hogy a Google-jelszavával titkosítja adatait. Ha a későbbiekben meggondolja magát, bármikor módosíthatja a szinkronizálási beállításokat.</translation>
+<translation id="5431084084184068621">Úgy döntött, hogy a Bitpop-jelszavával titkosítja adatait. Ha a későbbiekben meggondolja magát, bármikor módosíthatja a szinkronizálási beállításokat.</translation>
 <translation id="1493263392339817010">Betűtípusok testreszabása...</translation>
 <translation id="5352033265844765294">Időbélyegzés</translation>
 <translation id="1493892686965953381">Várakozás a következőre: <ph name="LOAD_STATE_PARAMETER"/>...</translation>
@@ -1847,7 +1847,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="748138892655239008">Tanúsítvány alapvető típusmegkötései</translation>
 <translation id="457386861538956877">Továbbiak...</translation>
 <translation id="9210991923655648139">Szkript számára elérhető:</translation>
-<translation id="1950295184970569138">* Google-profil fotó (betöltés)</translation>
+<translation id="1950295184970569138">* Bitpop-profil fotó (betöltés)</translation>
 <translation id="8063491445163840780">4. lap aktiválása</translation>
 <translation id="5473544328731861874">Szándék eltávolítása</translation>
 <translation id="2322193970951063277">Fejlécek és láblécek</translation>
@@ -1897,7 +1897,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="5010043101506446253">Tanúsítványkibocsátó</translation>
 <translation id="2050524657923939561">Internetes szándékok</translation>
 <translation id="8487693399751278191">Könyvjelzők importálása most...</translation>
-<translation id="7615602087246926389">Már rendelkezik olyan adattal, amely egy másik Google Fiók-jelszó használatával van titkosítva. Kérjük, lentebb adja azt meg.</translation>
+<translation id="7615602087246926389">Már rendelkezik olyan adattal, amely egy másik Bitpop Fiók-jelszó használatával van titkosítva. Kérjük, lentebb adja azt meg.</translation>
 <translation id="7484580869648358686">Figyelem! Valami nincs rendben!</translation>
 <translation id="4474155171896946103">Összes lap hozzáadása a könyvjelzőkhöz...</translation>
 <translation id="5895187275912066135">Kiállítva</translation>
@@ -1986,14 +1986,14 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="2065985942032347596">Hitelesítés szükséges</translation>
 <translation id="2563185590376525700">Béka</translation>
 <translation id="2553340429761841190">A <ph name="PRODUCT_NAME"/> nem tudott kapcsolódni a következőhöz: <ph name="NETWORK_ID"/>. Válasszon másik hálózatot és próbálja újra.</translation>
-<translation id="2086712242472027775">Fiókja nem működik a <ph name="PRODUCT_NAME"/> rendszerben. Kérjük, lépjen kapcsolatba domain-rendszergazdájával, vagy használjon egy normál Google Fiókot a bejelentkezéshez.</translation>
-<translation id="1373074393717692190">Személyre szabott böngészőbeállításai online mentéséhez jelentkezzen be a(z) <ph name="PRODUCT_NAME"/> szolgáltatásba Google Fiókjával, hogy bármely mobil eszközről elérje azokat a(z) <ph name="PRODUCT_NAME"/> használatával. Kedvenc Google-szolgáltatásaiba is automatikusan bejelentkeztetjük.</translation>
+<translation id="2086712242472027775">Fiókja nem működik a <ph name="PRODUCT_NAME"/> rendszerben. Kérjük, lépjen kapcsolatba domain-rendszergazdájával, vagy használjon egy normál Bitpop Fiókot a bejelentkezéshez.</translation>
+<translation id="1373074393717692190">Személyre szabott böngészőbeállításai online mentéséhez jelentkezzen be a(z) <ph name="PRODUCT_NAME"/> szolgáltatásba Bitpop Fiókjával, hogy bármely mobil eszközről elérje azokat a(z) <ph name="PRODUCT_NAME"/> használatával. Kedvenc Google-szolgáltatásaiba is automatikusan bejelentkeztetjük.</translation>
 <translation id="7222232353993864120">E-mail cím</translation>
 <translation id="2128531968068887769">Natív kliens</translation>
 <translation id="2749720227918911728">Ez az ikon akkor látható, ha az adott bővítmény műveletet hajthat végre az aktuális oldalon. Úgy aktiválhatja ezt a bővítményt, hogy rákattint az ikonra, illetve a következő billentyűkódot használja: <ph name="EXTENSION_SHORTCUT"/>.</translation>
 <translation id="7175353351958621980">Betöltve innen:</translation>
 <translation id="7186367841673660872">Ezt az oldalt<ph name="ORIGINAL_LANGUAGE"/>nyelvről<ph name="LANGUAGE_LANGUAGE"/>nyelvre fordítottuk</translation>
-<translation id="8448695406146523553">Titkosított adatait csak olyanok tudják elolvasni, akik rendelkeznek összetett jelszavával -- az összetett jelszót a Google nem kapja meg és nem tárolja. Ha elfelejti összetett jelszavát, akkor a következőt kell tennie:</translation>
+<translation id="8448695406146523553">Titkosított adatait csak olyanok tudják elolvasni, akik rendelkeznek összetett jelszavával -- az összetett jelszót a Bitpop nem kapja meg és nem tárolja. Ha elfelejti összetett jelszavát, akkor a következőt kell tennie:</translation>
 <translation id="8248050856337841185">&amp;Beillesztés</translation>
 <translation id="6052976518993719690">SSL tanúsítványkibocsátó</translation>
 <translation id="2925935892230812200">A GPU használata az SVG-szűrők megjelenítésének felgyorsítására.</translation>
@@ -2107,7 +2107,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="6374830905869502056">Kódolta:</translation>
 <translation id="2230062665678605299">Nem sikerült létrehozni a(z) &quot;<ph name="FOLDER_NAME"/>&quot; könyvtárat. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="2526590354069164005">Asztal</translation>
-<translation id="2059205526855036527">Online kell lennie a Google Drive első eléréséhez.</translation>
+<translation id="2059205526855036527">Online kell lennie a Bitpop Drive első eléréséhez.</translation>
 <translation id="4165738236481494247">A bővítmény futtatása</translation>
 <translation id="7983301409776629893">A(z) <ph name="ORIGINAL_LANGUAGE"/> nyelvű szövegeket mindig fordítsa <ph name="TARGET_LANGUAGE"/> nyelvre</translation>
 <translation id="4890284164788142455">Thai</translation>
@@ -2137,7 +2137,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="3479552764303398839">Ne most</translation>
 <translation id="3714633008798122362">internetes naptár</translation>
 <translation id="6445051938772793705">Ország</translation>
-<translation id="3430309973417890444">Ha nincs Google Fiókja, <ph name="LINK_START"/>létrehozhat egyet<ph name="LINK_END"/> most.</translation>
+<translation id="3430309973417890444">Ha nincs Bitpop Fiókja, <ph name="LINK_START"/>létrehozhat egyet<ph name="LINK_END"/> most.</translation>
 <translation id="3251759466064201842">&lt;Nem része a tanúsítványnak&gt;</translation>
 <translation id="4229495110203539533"><ph name="NUMBER_ONE"/> másodperce</translation>
 <translation id="3399068503715460757">Statikus IP-cím használata</translation>
@@ -2163,7 +2163,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="1800987794509850828">Bővítményközvetítő: <ph name="PLUGIN_NAME"/></translation>
 <translation id="8871696467337989339">Nem támogatott parancssori jelzőt használ: <ph name="BAD_FLAG"/>. Ennek a stabilitás és a biztonság látja kárát.</translation>
 <translation id="4767443964295394154">Letöltés helye</translation>
-<translation id="5031870354684148875">A Google Fordító leírása</translation>
+<translation id="5031870354684148875">A Bitpop Fordító leírása</translation>
 <translation id="4266565660628359579">Engedélyezi a magas DPI módot a Chrome PDF-megtekintőben nagy felbontású kijelzőn.</translation>
 <translation id="5702389759209837579">Az összes lap elérése az összes eszközén.</translation>
 <translation id="3828747136564826513">Hozzáférés az eszközön található összes ismert médiafájlhoz</translation>
@@ -2219,7 +2219,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="1752977958630076881">Helyi adatok megőrzése kizárólag addig, amíg ki nem lépek a böngészőből</translation>
 <translation id="7853202427316060426">Aktivitás</translation>
 <translation id="8550022383519221471">A szinkronizálási szolgáltatás az Ön domainjén nem érhető el.</translation>
-<translation id="1436238710092600782">Google Fiók létrehozása</translation>
+<translation id="1436238710092600782">Bitpop Fiók létrehozása</translation>
 <translation id="3355823806454867987">Proxybeállítások módosítása...</translation>
 <translation id="4780374166989101364">Engedélyezi a kísérleti bővítmény-API-kat. Figyelem! A bővítménygaléria nem teszi lehetővé, hogy kísérleti API-kat használó bővítményeket töltsön fel.</translation>
 <translation id="7117247127439884114">Bejelentkezés újra...</translation>
@@ -2232,7 +2232,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="3007574127824276972">Ön <ph name="USER_NAME"/> néven jelentkezett be a <ph name="PRODUCT_NAME"/> szolgáltatásba</translation>
 <translation id="6840155730904976091">A(z) <ph name="PRODUCT_NAME"/> a hálózathoz való csatlakozáshoz mobil eszközének rendszerproxy-beállításait használja.</translation>
 <translation id="2541913031883863396">továbblépés</translation>
-<translation id="6884284539803678768">Google-stílusú párbeszédablak-keretek engedélyezése.</translation>
+<translation id="6884284539803678768">Bitpop-stílusú párbeszédablak-keretek engedélyezése.</translation>
 <translation id="2367499218636570208">Utónév</translation>
 <translation id="4436689501885286563">Cookie-k és más webhelyadatok törlése kijelentkezéskor</translation>
 <translation id="1520137456044207237">Milyen szolgáltatást szeretne használni a megtekintéshez?</translation>
@@ -2299,7 +2299,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="8053390638574070785">Az oldal újratöltése</translation>
 <translation id="5507756662695126555">Letagadhatatlanság</translation>
 <translation id="3678156199662914018">Bővítmény: <ph name="EXTENSION_NAME"/></translation>
-<translation id="2620090360073999360">A Google Drive jelenleg nem érhető el.</translation>
+<translation id="2620090360073999360">A Bitpop Drive jelenleg nem érhető el.</translation>
 <translation id="3531250013160506608">Jelszó szövegmező</translation>
 <translation id="506228266759207354">Kikapcsolja az Új lap oldal menüjét a más eszközökön található lapok eléréséhez.</translation>
 <translation id="1781502536226964113">Új lap oldal megnyitása</translation>
@@ -2438,7 +2438,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="1358735829858566124">A fájl vagy könyvtár nem használható.</translation>
 <translation id="3144135466825225871">Nem sikerült lecserélni a crx-fájlt. Ellenőrizze, hogy nincs-e használatban a fájl.</translation>
 <translation id="2744221223678373668">Megosztott</translation>
-<translation id="9064142312330104323">* Google-profil fotó (betöltés)</translation>
+<translation id="9064142312330104323">* Bitpop-profil fotó (betöltés)</translation>
 <translation id="4708849949179781599">Kilépés a <ph name="PRODUCT_NAME"/>-ból</translation>
 <translation id="2505402373176859469"><ph name="RECEIVED_AMOUNT"/>, összesen: <ph name="TOTAL_SIZE"/></translation>
 <translation id="6937559152970966646">Rögzítés a kezdőképernyőn</translation>
@@ -2536,12 +2536,12 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="305803244554250778">Alkalmazás-parancsikonok létrehozása a következő helyeken:</translation>
 <translation id="574392208103952083">Közepes</translation>
 <translation id="3661117620327489194">Módosítás a megnyitott oldalak visszaállítására</translation>
-<translation id="3937609171782005782">Én is hozzájárulok a kártékony programok észleléséhez azzal, hogy további adatokat küldök a Google-nak azokról a webhelyekről, ahol ezt a figyelmeztetést látható. Az adatok kezelése az <ph name="PRIVACY_PAGE_LINK"/> betartásával történik.</translation>
+<translation id="3937609171782005782">Én is hozzájárulok a kártékony programok észleléséhez azzal, hogy további adatokat küldök a Bitpop-nak azokról a webhelyekről, ahol ezt a figyelmeztetést látható. Az adatok kezelése az <ph name="PRIVACY_PAGE_LINK"/> betartásával történik.</translation>
 <translation id="8877448029301136595">[szülőkönyvtár]</translation>
 <translation id="3816844797124379499">Nem sikerült hozzáadni az alkalmazást, mert ütközik a következővel: &quot;<ph name="APP_NAME"/>&quot;.</translation>
 <translation id="7301360164412453905">Hsu billentyűzetválasztó gombok</translation>
 <translation id="8631271110654520730">Helyreállító képfájl másolása...</translation>
-<translation id="7779140087128114262">Titkosított adatait csak olyanok tudják elolvasni, akik rendelkeznek összetett jelszavával -- az összetett jelszót a Google nem kapja meg és nem tárolja. Ha elfelejti összetett jelszavát, akkor alaphelyzetbe kell állítani a szinkronizálást.</translation>
+<translation id="7779140087128114262">Titkosított adatait csak olyanok tudják elolvasni, akik rendelkeznek összetett jelszavával -- az összetett jelszót a Bitpop nem kapja meg és nem tárolja. Ha elfelejti összetett jelszavát, akkor alaphelyzetbe kell állítani a szinkronizálást.</translation>
 <translation id="13356285923490863">A szabály neve</translation>
 <translation id="8241040075392580210">Felhős</translation>
 <translation id="8690155203172212841">Engedélybeállítások kezelése</translation>
@@ -2562,7 +2562,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
         Ha ezt a viselkedést nem tartja kívánatosnak, például mert a saját webhelyén hajt végre hibakeresést, kérjük, keresse fel a következő webhelyet: <ph name="URL_FOR_MORE_INFO"/>.
         Itt további információt talál a funkció kikapcsolásáról.</translation>
 <translation id="8218008331535230597">Tartalomlicencek engedélyének visszavonása</translation>
-<translation id="4744728308552504807">Engedélyez egy háttérszolgáltatást, amely összekapcsolja a Google Cloud Print szolgáltatást a mobil eszközön telepített nyomtatókkal. Miután aktiválta ezt a funkciót, úgy kapcsolhatja be a Google Cloud Print csatlakozási szoftvert, hogy bejelentkezik Google Fiókjába a Beállítások menü A motorháztető alatt részében.</translation>
+<translation id="4744728308552504807">Engedélyez egy háttérszolgáltatást, amely összekapcsolja a Bitpop Cloud Print szolgáltatást a mobil eszközön telepített nyomtatókkal. Miután aktiválta ezt a funkciót, úgy kapcsolhatja be a Google Cloud Print csatlakozási szoftvert, hogy bejelentkezik Google Fiókjába a Beállítások menü A motorháztető alatt részében.</translation>
 <translation id="6691936601825168937">&amp;Következő</translation>
 <translation id="6566142449942033617">A(z) '<ph name="PLUGIN_PATH"/>' nem tölthető be a bővítményhez.</translation>
 <translation id="7065534935986314333">A rendszerről</translation>
@@ -2573,7 +2573,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="2128691215891724419">Szinkronizálási hiba: Frissítse a szinkronizálási jelszót...</translation>
 <translation id="2148716181193084225">Ma</translation>
 <translation id="1002064594444093641">Keret n&amp;yomtatása...</translation>
-<translation id="7234674978021619913"><ph name="HOST_NAME"/> már értesült róla, hogy kártékony programot találtunk a webhelyen. A(z) <ph name="HOST_NAME2"/> helyen talált problémával kapcsolatos további információkért látogasson el ide: Google <ph name="DIAGNOSTIC_PAGE"/>.</translation>
+<translation id="7234674978021619913"><ph name="HOST_NAME"/> már értesült róla, hogy kártékony programot találtunk a webhelyen. A(z) <ph name="HOST_NAME2"/> helyen talált problémával kapcsolatos további információkért látogasson el ide: Bitpop <ph name="DIAGNOSTIC_PAGE"/>.</translation>
 <translation id="4608500690299898628">&amp;Keresés...</translation>
 <translation id="7582582252461552277">Ezt a hálózatot részesítse előnyben</translation>
 <translation id="3574305903863751447"><ph name="CITY"/>, <ph name="STATE"/> <ph name="COUNTRY"/></translation>
@@ -2675,7 +2675,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="6322726279947003371">Védett tartalom futtatása (lehet, hogy újra kell indítani a számítógépet)</translation>
 <translation id="3093473105505681231">A nyelv és a helyesírás-ellenőrző beállításai...</translation>
 <translation id="152482086482215392"><ph name="NUMBER_ONE"/> másodperc van hátra</translation>
-<translation id="4261901459838235729">Google-bemutató</translation>
+<translation id="4261901459838235729">Bitpop-bemutató</translation>
 <translation id="8678698760965522072">Online</translation>
 <translation id="529172024324796256">Felhasználónév:</translation>
 <translation id="3308116878371095290">Ezen az oldalon le van tiltva a cookie-k mentése.</translation>
@@ -2753,7 +2753,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="2444609190341826949">Összetett jelszó nélkül jelszavai és más titkosított adatai nem lesznek szinkronizálva ezen a számítógépen.</translation>
 <translation id="2984337792991268709">Ma <ph name="TODAY_DAYTIME"/></translation>
 <translation id="5227808808023563348">Előző szöveg keresése</translation>
-<translation id="6650142020817594541">Ez a webhely ajánlja a Google Chrome Frame-et (már telepítve van).</translation>
+<translation id="6650142020817594541">Ez a webhely ajánlja a Bitpop Chrome Frame-et (már telepítve van).</translation>
 <translation id="3862763658360970896">Chrome Mobil engedélyezése</translation>
 <translation id="902638246363752736">Billentyűzet beállításai</translation>
 <translation id="7925686952655276919">Ne használjon mobiladatokat a szinkronizáláshoz</translation>
@@ -2773,7 +2773,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="6007237601604674381">Az áthelyezés sikertelen. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">Nem sikerült az ideiglenes .zip fájl létrehozása a tömörítés során.</translation>
 <translation id="1881456419707551346">Kapcsolat adatai</translation>
-<translation id="1064912851688322329">Google Fiók leválasztása</translation>
+<translation id="1064912851688322329">Bitpop Fiók leválasztása</translation>
 <translation id="1294298200424241932">Bizalmi beállítások szerkesztése:</translation>
 <translation id="1407135791313364759">Összes megnyitása</translation>
 <translation id="1434928358870966081">Gyorsított 2D vászon letiltása</translation>
@@ -2796,9 +2796,9 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="267285457822962309">Az eszközére és perifériáira érvényes beállítások módosítása.</translation>
 <translation id="1154228249304313899">A következő oldal megnyitása:</translation>
 <translation id="6084074203170335305"><ph name="MARKUP_1"/>Fájljait bárhonnan, akár offline módban is elérheti.<ph name="MARKUP_2"/>
-        A Google Drive-on lévő fájlok naprakészek és bármilyen eszközről elérhetők.<ph name="MARKUP_3"/>
+        A Bitpop Drive-on lévő fájlok naprakészek és bármilyen eszközről elérhetők.<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>Fájljait biztonságosan tárolhatja.<ph name="MARKUP_5"/>
-        Nem számít, mi történik az eszközével, fájljai biztonságban vannak a Google Drive-on.<ph name="MARKUP_6"/>
+        Nem számít, mi történik az eszközével, fájljai biztonságban vannak a Bitpop Drive-on.<ph name="MARKUP_6"/>
         <ph name="MARKUP_7"/>Megoszthat, létrehozhat és együtt dolgozhat<ph name="MARKUP_8"/>
         másokkal fájlokon -- mindezt egy helyen.<ph name="MARKUP_9"/></translation>
 <translation id="9074348188580488499">Biztosan törölni szeretné az összes jelszót?</translation>
@@ -2933,7 +2933,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="8725066075913043281">Újrapróbálás</translation>
 <translation id="387784661603993584">Az importálás nem lehetséges. Hiba történt.</translation>
 <translation id="4637968436031842307">CSS-változók engedélyezése.</translation>
-<translation id="1887908730460853602">Google-stílusú párbeszédablakok</translation>
+<translation id="1887908730460853602">Bitpop-stílusú párbeszédablakok</translation>
 <translation id="8502249598105294518"><ph name="PRODUCT_NAME"/> személyre szabása és beállításai</translation>
 <translation id="3797008485206955964">Oldalak és lapok listájának (<ph name="NUM_BACKGROUND_APPS"/>) megtekintése
 </translation>
@@ -2954,8 +2954,8 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="5293659407874396561"><ph name="SUBJECT"/> (<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">Érvényes URL-nek kell lennie</translation>
 <translation id="3464726836683998962">Mobil adatbarangolás letiltása</translation>
-<translation id="8986494364107987395">Használati statisztikák és hibajelentések automatikus küldése a Google-nak</translation>
-<translation id="7070714457904110559">Kísérleti bővítményeket tesz elérhetővé a helymeghatározási funkcióhoz. Felhasználja az operációs rendszer helymeghatározó API-jait (ha vannak), illetve további helyi hálózati konfigurációs adatokat küld a Google helymeghatározási szolgáltatásának a pontosabb pozicionálás elősegítése érdekében.</translation>
+<translation id="8986494364107987395">Használati statisztikák és hibajelentések automatikus küldése a Bitpop-nak</translation>
+<translation id="7070714457904110559">Kísérleti bővítményeket tesz elérhetővé a helymeghatározási funkcióhoz. Felhasználja az operációs rendszer helymeghatározó API-jait (ha vannak), illetve további helyi hálózati konfigurációs adatokat küld a Bitpop helymeghatározási szolgáltatásának a pontosabb pozicionálás elősegítése érdekében.</translation>
 <translation id="6701535245008341853">Nem sikerült betölteni a profilt.</translation>
 <translation id="8303655282093186569">Pinjin beviteli beállítások</translation>
 <translation id="992779717417561630">Nyomtatás a(z) <ph name="CLOUD_PRINT_NAME"/> párbeszédablakán keresztül... <ph name="SHORTCUT_KEY"/></translation>
@@ -2969,7 +2969,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="580571955903695899">Rendezés cím alapján</translation>
 <translation id="5230516054153933099">Ablak</translation>
 <translation id="921740547845455014">Az alkalmazásban megnyitott fájlok írása</translation>
-<translation id="1799497982892676838">Szinkronizált adatok kezelése a Google Irányítópulton</translation>
+<translation id="1799497982892676838">Szinkronizált adatok kezelése a Bitpop Irányítópulton</translation>
 <translation id="951981865514037445">A(z) <ph name="URL"/> az Ön eszközének helyadatait akarja használni.</translation>
 <translation id="7554791636758816595">Új lap</translation>
 <translation id="3026557130425686673">A bejelentkezés megszakadt, mert az eszköz néhány beállítása sérült.</translation>
@@ -2983,7 +2983,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="1103966635949043187">A webhely kezdőlapjának megtekintése:</translation>
 <translation id="4762295713053835808">Személyes dolgok</translation>
 <translation id="6374100501221763867">Hardveresen gyorsított videodekódolás letiltása.</translation>
-<translation id="7477347901712410606">Ha elfelejtette összetett jelszavát, állítsa le és állítsa vissza a <ph name="BEGIN_LINK"/>Google irányítópulton<ph name="END_LINK"/> keresztül történő szinkronizálást.</translation>
+<translation id="7477347901712410606">Ha elfelejtette összetett jelszavát, állítsa le és állítsa vissza a <ph name="BEGIN_LINK"/>Bitpop irányítópulton<ph name="END_LINK"/> keresztül történő szinkronizálást.</translation>
 <translation id="6139474630617772623">Engedélyezi a kiterjesztett asztalt, amely lehetővé teszi, hogy a böngészőt másodlagos kijelzőkön nyissa meg.</translation>
 <translation id="2645575947416143543">Ha azonban olyan szervezetnél dolgozik, amelyik saját maga generálja a tanúsítványát, és megpróbál csatlakozni az ilyen tanúsítványt használó szervezet egyik belső webhelyéhez, akkor lehet, hogy biztonságosan meg tudja oldani a problémát. Importálhatja a szervezet főtanúsítványát &quot;főtanúsítványként&quot;, így az Ön szervezete által kiadott vagy ellenőrzött tanúsítványok megbízhatók lesznek, Ön pedig nem fogja látni ezt a hibaüzenetet, ha legközelebb megpróbál csatlakozni egy belső webhelyhez. Keresse fel szervezete rendszergazdáit, akik segíthetnek abban, hogyan tud felvenni egy új főtanúsítványt.</translation>
 <translation id="1056898198331236512">Figyelmeztetés</translation>
@@ -3263,7 +3263,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="7063412606254013905">További tájékoztatás az adathalászatról.</translation>
 <translation id="7253521419891527137">&amp;További információ</translation>
 <translation id="3170312251071695679">Alapértelmezés szerint <ph name="PERMISSION_VALUE"/></translation>
-<translation id="8698464937041809063">Google-rajz</translation>
+<translation id="8698464937041809063">Bitpop-rajz</translation>
 <translation id="7053053706723613360">Jobb munkamenet-visszaállítás letiltása</translation>
 <translation id="5233930340889611108">WebKit</translation>
 <translation id="8260864402787962391">Egér</translation>
@@ -3292,7 +3292,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="6873213799448839504">Karakterlánc automatikus végrehajtása</translation>
 <translation id="7238585580608191973">SHA-256 ujjlenyomat</translation>
 <translation id="2501278716633472235">Visszalépés</translation>
-<translation id="3588662957555259973">* Google-profil fotó</translation>
+<translation id="3588662957555259973">* Bitpop-profil fotó</translation>
 <translation id="131461803491198646">Otthoni hálózat, nincs barangolás</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/> - <ph name="FULL_DATE"/></translation>
 <translation id="1285320974508926690">Ezt a webhelyet soha ne fordítsa</translation>
@@ -3362,7 +3362,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="461656879692943278"><ph name="HOST_NAME"/> a következőből származó tartalmat tartalmaz: <ph name="ELEMENTS_HOST_NAME"/>. Ez utóbbi webhelyről pedig tudjuk, hogy kártékony programokat terjeszt. A webhely felkeresése esetén számítógépe vírusfertőzést szenvedhet.</translation>
 <translation id="8962198349065195967">Ezt a hálózatot a rendszergazda állítja be.</translation>
 <translation id="2143778271340628265">Proxy beállítása kézzel</translation>
-<translation id="2441192698565541088">Ha megszünteti a kapcsolatot Google Fiókja és a <ph name="PRODUCT_NAME"/> szolgáltatás között, akkor az adatokkal kapcsolatos módosításokat -- ezen a számítógépen -- nem szinkronizálja Google Fiókjával. A Google Fiókjában tárolt adatok ott maradnak, amíg el nem távolítja őket a <ph name="BEGIN_LINK"/>Google Irányítópult<ph name="END_LINK"/> segítségével.</translation>
+<translation id="2441192698565541088">Ha megszünteti a kapcsolatot Bitpop Fiókja és a <ph name="PRODUCT_NAME"/> szolgáltatás között, akkor az adatokkal kapcsolatos módosításokat -- ezen a számítógépen -- nem szinkronizálja Google Fiókjával. A Google Fiókjában tárolt adatok ott maradnak, amíg el nem távolítja őket a <ph name="BEGIN_LINK"/>Google Irányítópult<ph name="END_LINK"/> segítségével.</translation>
 <translation id="8888432776533519951">Szín:</translation>
 <translation id="5294529402252479912">Az Adobe Reader frissítése most</translation>
 <translation id="5263972071113911534"><ph name="NUMBER_MANY"/> days ago</translation>
@@ -3391,7 +3391,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="8885905466771744233">A megadott bővítményhez már létezik privát kulcs. Használja újra vagy előbb törölje azt.</translation>
 <translation id="1196944142850240972">Hozzáférés az Ön adataihoz az összes webhelyen</translation>
 <translation id="7369056754288047856">Néhány beállítás nem módosítható a felhasználó által.</translation>
-<translation id="4100843820583867709">Google Csevegő -- Képernyő-megosztási kérés</translation>
+<translation id="4100843820583867709">Bitpop Csevegő -- Képernyő-megosztási kérés</translation>
 <translation id="8109246889182548008">Tanúsítvány tárolója</translation>
 <translation id="5030338702439866405">Kiállította:</translation>
 <translation id="2728127805433021124">A szerver tanúsítványa gyenge aláírási algoritmussal van aláírva.</translation>
@@ -3580,7 +3580,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="1049926623896334335">Word-dokumentum</translation>
 <translation id="8412145213513410671">Rendszerösszeomlások ( <ph name="CRASH_COUNT"/> )</translation>
 <translation id="7003257528951459794">Gyakoriság:</translation>
-<translation id="3467267818798281173">Javaslatok kérése a Google-tól</translation>
+<translation id="3467267818798281173">Javaslatok kérése a Bitpop-tól</translation>
 <translation id="560602183358579978">Kijelölés kiszámítása...</translation>
 <translation id="7649070708921625228">Súgó</translation>
 <translation id="858637041960032120">Telefonszám hozzáadása</translation>
@@ -3616,7 +3616,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="8000020256436988724">Eszköztár</translation>
 <translation id="7507930499305566459">Állapotjelentő tanúsítvány</translation>
 <translation id="3958088479270651626">Könyvjelzők és beállítások importálása</translation>
-<translation id="2689915906323125315">A Google Fiókom jelszavát szeretném használni</translation>
+<translation id="2689915906323125315">A Bitpop Fiókom jelszavát szeretném használni</translation>
 <translation id="8518865679229538285">Tamil beviteli mód (írógép)</translation>
 <translation id="5257456363153333584">Szitakötő</translation>
 <translation id="4557136421275541763">Figyelmeztetés:</translation>
@@ -3627,7 +3627,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="7681202901521675750">A SIM-kártya zárolva van, kérjük, adja meg a PIN kódot. Fennmaradó próbálkozások száma: <ph name="TRIES_COUNT"/></translation>
 <translation id="2489918096470125693">Mappa &amp;hozzáadása...</translation>
 <translation id="7353651168734309780">A(z) <ph name="EXTENSION_NAME"/> bővítményhez új engedélyek szükségesek</translation>
-<translation id="6420812616858267777">A(z) <ph name="PRODUCT_NAME"/> szinkronizálása révén könnyedén megoszthatja adatait (például könyvjelzőit és beállításait) számítógépei és mobil eszközei között. A(z) <ph name="PRODUCT_NAME"/> úgy szinkronizál, hogy online tárolja az adatokat a Google-nál, amikor Ön bejelentkezik Google Fiókjába.</translation>
+<translation id="6420812616858267777">A(z) <ph name="PRODUCT_NAME"/> szinkronizálása révén könnyedén megoszthatja adatait (például könyvjelzőit és beállításait) számítógépei és mobil eszközei között. A(z) <ph name="PRODUCT_NAME"/> úgy szinkronizál, hogy online tárolja az adatokat a Bitpop-nál, amikor Ön bejelentkezik Google Fiókjába.</translation>
 <translation id="7484964289312150019">Összes könyvjelző megnyitása új &amp;ablakban</translation>
 <translation id="1731346223650886555">Pontosvessző</translation>
 <translation id="158849752021629804">Otthoni hálózat szükséges</translation>
@@ -3643,7 +3643,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="3021678814754966447">&amp;Keret forrásának megtekintése</translation>
 <translation id="8601206103050338563">TLS WWW ügyfél hitelesítése</translation>
 <translation id="1692799361700686467">A több webhelyről származó cookie-k engedélyezve.</translation>
-<translation id="5187295959347858724">Bejelentkezett a <ph name="SHORT_PRODUCT_NAME"/> szolgáltatásba. A rendszer most szinkronizálja a könyvjelzőket, előzményeket és egyéb beállításokat Google Fiókjával.</translation>
+<translation id="5187295959347858724">Bejelentkezett a <ph name="SHORT_PRODUCT_NAME"/> szolgáltatásba. A rendszer most szinkronizálja a könyvjelzőket, előzményeket és egyéb beállításokat Bitpop Fiókjával.</translation>
 <translation id="3719415759165722358">Engedélyezi a Webhelybeállítások kezelőfelületet. A Webhelybeállítások kezelőfelület az oldalinformációs buborékot váltja fel, és egyszerűvé teszi a webhelyspecifikus beállítások elvégzését.</translation>
 <translation id="2717190143245689317">Engedélyez egy kísérleti szövegmezőt az alkalmazás felhasználói felületén; nem befolyásolja az internetes tartalmat.</translation>
 <translation id="529232389703829405"><ph name="DATA_AMOUNT"/> mennyiségű adatot vásárolt ekkor: <ph name="DATE"/></translation>
@@ -3686,7 +3686,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="2927657246008729253">Módosítás...</translation>
 <translation id="7586781939132793422">Hangos visszajelzések kikapcsolása</translation>
 <translation id="7978412674231730200">Privát kulcs</translation>
-<translation id="7056011739864317578">Ha engedélyezve van, akkor a ClientOAuth használatával jelentkezik be Google Fiókjába. Egyébként a ClientLogin kerül felhasználásra.
+<translation id="7056011739864317578">Ha engedélyezve van, akkor a ClientOAuth használatával jelentkezik be Bitpop Fiókjába. Egyébként a ClientLogin kerül felhasználásra.
       A ClientOAuth a hitelesítés során ellenőrzőkódok használatát engedélyezi ASP-k helyett.</translation>
 <translation id="5308380583665731573">Csatlakozás</translation>
 <translation id="9111395131601239814"><ph name="NETWORKDEVICE"/>: <ph name="STATUS"/></translation>
@@ -3708,7 +3708,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="6692173217867674490">Rossz összetett jelszó</translation>
 <translation id="5550431144454300634">Bevitel automatikus javítása</translation>
 <translation id="3308006649705061278">Szervezeti egység (OU)</translation>
-<translation id="8912362522468806198">Google Fiókjába</translation>
+<translation id="8912362522468806198">Bitpop Fiókjába</translation>
 <translation id="4443536555189480885">&amp;Súgó</translation>
 <translation id="340485819826776184">A címsorba beírt keresések és URL-címek automatikus kiegészítése</translation>
 <translation id="4207762215349123040">A(z) <ph name="PEPPER_PLUGIN_DOMAIN"/> webhely <ph name="PEPPER_PLUGIN_NAME"/> bővítménye hozzáférést kér a mobil eszközhöz.&quot;</translation>
@@ -3727,7 +3727,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="4745438305783437565"><ph name="NUMBER_FEW"/> perc</translation>
 <translation id="2649911884196340328">A szerver biztonsági tanúsítványa hibás.</translation>
-<translation id="6666647326143344290">Google Fiókjával</translation>
+<translation id="6666647326143344290">Bitpop Fiókjával</translation>
 <translation id="4980112683975062744">Ismétlődő fejléc érkezett a szervertől</translation>
 <translation id="3828029223314399057">Könyvjelzők keresése</translation>
 <translation id="4885705234041587624">MSCHAPv2</translation>
@@ -3736,7 +3736,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="3551117997325569860">A proxybeállítások módosításához engedélyezze a(z) &quot;<ph name="USE_SHARED_PROXIES"/>&quot; beállítást.</translation>
 <translation id="8906421963862390172">&amp;Helyesírás-ellenőrző beállításai</translation>
 <translation id="9046895021617826162">Csatlakozás sikertelen</translation>
-<translation id="4061733942661196912">Bekapcsolt állapotban, ha ellátogat egy Google Fiók bejelentkezési oldalára, akkor az egy olyan információs sávot hív meg, amely egyszerű bejelentkezést biztosít a profilhoz kapcsolt Google Fiókkal. Ha a profil nincs összekapcsolva egy fiókkal, akkor az automatikus bejelentkezés, a zászlótól függetlenül, mindig ki lesz kapcsolva.</translation>
+<translation id="4061733942661196912">Bekapcsolt állapotban, ha ellátogat egy Bitpop Fiók bejelentkezési oldalára, akkor az egy olyan információs sávot hív meg, amely egyszerű bejelentkezést biztosít a profilhoz kapcsolt Google Fiókkal. Ha a profil nincs összekapcsolva egy fiókkal, akkor az automatikus bejelentkezés, a zászlótól függetlenül, mindig ki lesz kapcsolva.</translation>
 <translation id="1492188167929010410">Összeomlás azonosítója: <ph name="CRASH_ID"/></translation>
 <translation id="1963692530539281474"><ph name="NUMBER_DEFAULT"/> nap van hátra</translation>
 <translation id="4470270245053809099">Kiállító: <ph name="NAME"/></translation>
@@ -3784,7 +3784,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="5869522115854928033">Mentett jelszavak</translation>
 <translation id="3436440123324878555">Előfizetési csomag vásárlása...</translation>
 <translation id="5748266869826978907">Ellenőrizze a DNS beállításait. Forduljon a hálózati rendszergazdához, ha nem tudja, hogy ez mit jelent.</translation>
-<translation id="4193154014135846272">Google-dokumentum</translation>
+<translation id="4193154014135846272">Bitpop-dokumentum</translation>
 <translation id="4771973620359291008">Ismeretlen hiba történt.</translation>
 <translation id="5509914365760201064">Kiállító: <ph name="CERTIFICATE_AUTHORITY"/></translation>
 <translation id="6446356484127229069">A(z) <ph name="PRODUCT_NAME"/> problémákat észlelt a hálózat elérése során. <ph name="LINE_BREAK"/> Ez azért történhetett meg, mert tűzfala vagy víruskereső szoftvere a(z) <ph name="PRODUCT_NAME"/> alkalmazást tévesen a mobil eszközén lévő behatolónak véli, ezért blokkolja az internethez való hozzáférését.</translation>
@@ -3882,7 +3882,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="899403249577094719">Netscape tanúsítvány - alap URL</translation>
 <translation id="2737363922397526254">Listanézet...</translation>
 <translation id="8605428685123651449">SQLite-memória</translation>
-<translation id="5469175127151858022">A Chrome és az operációs rendszer verziója mellett elküldésre kerül minden olyan információ, amelyről fent úgy dönt, hogy belefoglalja. Ez a visszajelzés a problémák diagnosztizálására és a Chrome javítására szolgál. Az összes -- akár szándékosan, akár véletlenül -- elküldött személyes adatát az adatvédelmi irányelveinkkel összhangban védjük.<ph name="BEGIN_BOLD"/> A visszajelzés elküldésével elfogadja, hogy a Google felhasználhatja az Ön visszajelzését, hogy javítsa termékeit és szolgáltatásait.<ph name="END_BOLD"/></translation>
+<translation id="5469175127151858022">A Chrome és az operációs rendszer verziója mellett elküldésre kerül minden olyan információ, amelyről fent úgy dönt, hogy belefoglalja. Ez a visszajelzés a problémák diagnosztizálására és a Chrome javítására szolgál. Az összes -- akár szándékosan, akár véletlenül -- elküldött személyes adatát az adatvédelmi irányelveinkkel összhangban védjük.<ph name="BEGIN_BOLD"/> A visszajelzés elküldésével elfogadja, hogy a Bitpop felhasználhatja az Ön visszajelzését, hogy javítsa termékeit és szolgáltatásait.<ph name="END_BOLD"/></translation>
 <translation id="2841013758207633010">Idő</translation>
 <translation id="4880827082731008257">Keresés az előzmények között</translation>
 <translation id="8661290697478713397">Link megnyitása inko&amp;gnitóablakban</translation>
@@ -3914,10 +3914,10 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="8828933418460119530">DNS neve</translation>
 <translation id="988159990683914416">Fejlesztői változat</translation>
 <translation id="1097658378307015415">Kérjük, bejelentkezés előtt a(z) <ph name="NETWORK_ID"/> hálózat aktiválásához lépjen be vendégként.</translation>
-<translation id="5170477580121653719">Szabad hely a Google Drive-on: <ph name="SPACE_AVAILABLE"/>.</translation>
+<translation id="5170477580121653719">Szabad hely a Bitpop Drive-on: <ph name="SPACE_AVAILABLE"/>.</translation>
 <translation id="4114470632216071239">SIM-kártya zárolása (PIN kód bekérése mobiladatok használatához)</translation>
 <translation id="5184584788669813359">A PDF-dokumentum egyes részei nem jeleníthetők meg. Megnyitja az Adobe Readerben?</translation>
-<translation id="6581162200855843583">Google Drive link</translation>
+<translation id="6581162200855843583">Bitpop Drive link</translation>
 <translation id="340771324714262530">Tükrözés leállítása</translation>
 <translation id="3303260552072730022">Egy bővítmény aktiválta a teljes képernyős módot.</translation>
 <translation id="2183426022964444701">Válassza ki a bővítmény gyökérkönyvtárát.</translation>
@@ -4014,7 +4014,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="1177437665183591855">Ismeretlen szervertanúsítvány hiba</translation>
 <translation id="3394150261239285340">A(z) <ph name="HOST"/> weboldal használni kívánja a kamerát és a mikrofont.</translation>
 <translation id="8467473010914675605">Koreai beviteli mód</translation>
-<translation id="8102535138653976669">A(z) <ph name="PRODUCT_NAME"/> biztonságosan szinkronizálja adatait Google Fiókjával. Mindent állandóan szinkronban tarthat, vagy testreszabhatja a szinkronizálandó adatok típusát és a titkosítási lehetőségeket.</translation>
+<translation id="8102535138653976669">A(z) <ph name="PRODUCT_NAME"/> biztonságosan szinkronizálja adatait Bitpop Fiókjával. Mindent állandóan szinkronban tarthat, vagy testreszabhatja a szinkronizálandó adatok típusát és a titkosítási lehetőségeket.</translation>
 <translation id="2639739919103226564">Állapot:</translation>
 <translation id="6923900367903210484">Szerzői jog</translation>
 <translation id="3819800052061700452">&amp;Teljes képernyő</translation>
@@ -4038,7 +4038,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="614998064310228828">Készülék modellje:</translation>
 <translation id="1581962803218266616">Megjelenítés a Finderben</translation>
 <translation id="9100765901046053179">Speciális beállítások</translation>
-<translation id="203168018648013061">Szinkronizálási hiba: kérjük, állítsa alaphelyzetbe a szinkronizálást a Google Irányítópult segítségével.</translation>
+<translation id="203168018648013061">Szinkronizálási hiba: kérjük, állítsa alaphelyzetbe a szinkronizálást a Bitpop Irányítópult segítségével.</translation>
 <translation id="1405126334425076373">Egérmutató</translation>
 <translation id="6096326118418049043">X.500 név</translation>
 <translation id="6086259540486894113">Legalább egy adattípust ki kell választania a szinkronizáláshoz.</translation>
@@ -4087,14 +4087,14 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="2960316970329790041">Importálás leállítása</translation>
 <translation id="3835522725882634757">Hoppá! A szerver olyan adatokat küld, amelyeket a <ph name="PRODUCT_NAME"/> nem tud értelmezni. Kérjük, <ph name="BEGIN_LINK"/>jelentse a programhibát<ph name="END_LINK"/>, és mellékelje a <ph name="BEGIN2_LINK"/>nyers listát<ph name="END2_LINK"/>.</translation>
 <translation id="6586451623538375658">Az elsődleges egérgomb cseréje</translation>
-<translation id="6937152069980083337">Google japán beviteli mód (US billentyűzetre)</translation>
+<translation id="6937152069980083337">Bitpop japán beviteli mód (US billentyűzetre)</translation>
 <translation id="475088594373173692">Első felhasználó</translation>
 <translation id="1731911755844941020">Lekérés küldése folyamatban...</translation>
 <translation id="8371695176452482769">Most beszéljen</translation>
 <translation id="7622116780510618781">Halmozott lapok</translation>
 <translation id="2988488679308982380">Nem sikerült a következő csomag telepítése: &quot;<ph name="ERROR_CODE"/>&quot;</translation>
 <translation id="2904079386864173492">Modell:</translation>
-<translation id="728836202927797241">A Google webhelyekre történő automatikus bejelentkezés felajánlása ezzel a fiókkal</translation>
+<translation id="728836202927797241">A Bitpop webhelyekre történő automatikus bejelentkezés felajánlása ezzel a fiókkal</translation>
 <translation id="6129953537138746214">Szóköz</translation>
 <translation id="5041795084235183432">Egér:</translation>
 <translation id="3704331259350077894">Működés megszüntetése</translation>
@@ -4168,7 +4168,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="3325146402434751578">Nyomtatók beállítása és kezelése itt: <ph name="CLOUD_PRINT_NAME"/></translation>
 <translation id="253434972992662860">&amp;Szünet</translation>
 <translation id="335985608243443814">Tallózás...</translation>
-<translation id="7802488492289385605">Google japán beviteli mód (US Dvorak billentyűzetre)</translation>
+<translation id="7802488492289385605">Bitpop japán beviteli mód (US Dvorak billentyűzetre)</translation>
 <translation id="3876481682997626897">Az aláírás nem egyezik</translation>
 <translation id="8892992092192084762">A telepített téma: &quot;<ph name="THEME_NAME"/>&quot;</translation>
 <translation id="7427348830195639090">Háttéroldal: <ph name="BACKGROUND_PAGE_URL"/></translation>
@@ -4203,7 +4203,7 @@ adatok szinkronizálása az Ön Google Fiókjával folyamatban van.</translation
 <translation id="1131850611586448366">A <ph name="HOST_NAME"/> címen található webhelyről &quot;adathalászattal&quot; kapcsolatos bejelentést tettek. Az adathalász webhelyek trükkök segítségével kicsalják a felhasználók személyes vagy pénzügyi adatait, gyakran úgy, hogy hiteles intézményeknek, például bankoknak adják ki magukat.</translation>
 <translation id="2669198762040460457">A megadott felhasználónév vagy jelszó helytelen.</translation>
 <translation id="1161575384898972166">Kérjük, jelentkezzen be a(z) <ph name="TOKEN_NAME"/> szolgáltatásba az ügyféltanúsítvány exportálásához.</translation>
-<translation id="1718559768876751602">Google Fiók létrehozása most</translation>
+<translation id="1718559768876751602">Bitpop Fiók létrehozása most</translation>
 <translation id="5503480894407718969">Hozzáférés a mobileszközön lévő összes adathoz és a felkeresett webhelyekhez</translation>
 <translation id="1884319566525838835">Sandbox állapota</translation>
 <translation id="2770465223704140727">Eltávolítás a listából</translation>

@@ -34,7 +34,7 @@
 <translation id="3581034179710640788">Certificatul de securitate al site-ului a expirat!</translation>
 <translation id="2825758591930162672">Cheia publică a subiectului</translation>
 <translation id="8306243285620593545">Focalizaţi pe pictograma de stare</translation>
-<translation id="1130622745736410868">doreşte să se asigure că navigaţi pe un dispozitiv cu sistemul de operare Chrome solicitând Google să verifice codul cuponului dvs.</translation>
+<translation id="1130622745736410868">doreşte să se asigure că navigaţi pe un dispozitiv cu sistemul de operare Chrome solicitând Bitpop să verifice codul cuponului dvs.</translation>
 <translation id="8176382683266548737">Activaţi notificările</translation>
 <translation id="8275038454117074363">Importați</translation>
 <translation id="8418445294933751433">&amp;Afișați ca filă</translation>
@@ -57,7 +57,7 @@ Data viitoare aţi putea utiliza combinaţia <ph name="SHORTCUT_KEY"/> pentru a 
 <translation id="4940047036413029306">Ghilimele</translation>
 <translation id="1497897566809397301">Permiteți setarea datelor locale (recomandat)</translation>
 <translation id="3275778913554317645">Deschideţi ca fereastră</translation>
-<translation id="4553117311324416101">Google a descoperit că pot fi instalate software-uri dăunătoare pe computerul dvs. dacă continuaţi. Dacă aţi accesat în trecut acest site sau dacă prezintă încredere pentru dvs., este posibil să fi fost compromis recent de un hacker. Nu ar trebui să continuaţi şi probabil ar trebui să încercaţi din nou mâine sau să accesaţi alt site.</translation>
+<translation id="4553117311324416101">Bitpop a descoperit că pot fi instalate software-uri dăunătoare pe computerul dvs. dacă continuaţi. Dacă aţi accesat în trecut acest site sau dacă prezintă încredere pentru dvs., este posibil să fi fost compromis recent de un hacker. Nu ar trebui să continuaţi şi probabil ar trebui să încercaţi din nou mâine sau să accesaţi alt site.</translation>
 <translation id="5085514918439894988">Nu există servicii instalate pentru această acţiune şi nici recomandări de servicii pentru aceasta în Magazinul web Chrome.</translation>
 <translation id="8867568208303837180">Se trimite...</translation>
 <translation id="509988127256758334">Gă&amp;siți:</translation>
@@ -91,7 +91,7 @@ Data viitoare aţi putea utiliza combinaţia <ph name="SHORTCUT_KEY"/> pentru a 
 <translation id="21426568240411732"><ph name="TITLE"/> utilizează camera dvs. foto.</translation>
 <translation id="6156863943908443225">Memorie cache de scripturi</translation>
 <translation id="4274187853770964845">Eroare de sincronizare: opriţi şi reporniţi sincronizarea.</translation>
-<translation id="4610656722473172270">Bara de instrumente Google</translation>
+<translation id="4610656722473172270">Bara de instrumente Bitpop</translation>
 <translation id="656293578423618167">Calea sau numele fişierului sunt prea lungi. Salvaţi utilizând un nume mai scurt sau într-o altă locaţie.</translation>
 <translation id="3484869148456018791">Obţineţi un certificat nou</translation>
 <translation id="151501797353681931">Importate din Safari</translation>
@@ -139,13 +139,13 @@ Data viitoare aţi putea utiliza combinaţia <ph name="SHORTCUT_KEY"/> pentru a 
 <translation id="7600965453749440009">Nu doresc niciodată traducerea când pagina este în <ph name="LANGUAGE"/></translation>
 <translation id="3208703785962634733">Neconfirmat</translation>
 <translation id="620329680124578183">Nu încărcaţi (recomandat)</translation>
-<translation id="6300924177400055566">Nu aveţi suficient spaţiu în Disc Google pentru a salva „<ph name="FILE_NAME"/>”. Eliminaţi unele fişiere sau <ph name="BEGIN_LINK"/>achiziţionaţi mai mult spaţiu de stocare<ph name="END_LINK"/>.</translation>
+<translation id="6300924177400055566">Nu aveţi suficient spaţiu în Disc Bitpop pentru a salva „<ph name="FILE_NAME"/>”. Eliminaţi unele fişiere sau <ph name="BEGIN_LINK"/>achiziţionaţi mai mult spaţiu de stocare<ph name="END_LINK"/>.</translation>
 <translation id="9074739597929991885">Bluetooth</translation>
 <translation id="2653266418988778031">Dacă ştergeţi un certificat de la Autoritatea de certificare (CA), browserul dvs. nu va mai acorda încredere niciunui certificat emis de respectiva Autoritate de certificare.</translation>
 <translation id="5341849548509163798">Cu <ph name="NUMBER_MANY"/> (de) ore în urmă</translation>
 <translation id="4422428420715047158">Domeniul:</translation>
 <translation id="7788444488075094252">Limbi şi metodă de introducere</translation>
-<translation id="6723354935081862304">Printaţi cu Google Docs şi cu alte destinaţii din cloud. <ph name="BEGIN_LINK"/>Conectaţi-vă<ph name="END_LINK"/> pentru a printa cu Google Cloud Print.</translation>
+<translation id="6723354935081862304">Printaţi cu Bitpop Docs şi cu alte destinaţii din cloud. <ph name="BEGIN_LINK"/>Conectaţi-vă<ph name="END_LINK"/> pentru a printa cu Google Cloud Print.</translation>
 <translation id="3602290021589620013">Previzualizare</translation>
 <translation id="6257035105556579916">Extensiile nu pot fi modificate în modul Gestionat.</translation>
 <translation id="800602641363855389"><ph name="TITLE"/> utilizează microfonul dvs.</translation>
@@ -214,7 +214,7 @@ Data viitoare aţi putea utiliza combinaţia <ph name="SHORTCUT_KEY"/> pentru a 
 <translation id="1818606096021558659">Pagina</translation>
 <translation id="1549045574060481141">Confirmaţi descărcarea</translation>
 <translation id="5388588172257446328">Nume de utilizator:</translation>
-<translation id="1657406563541664238">Ajutați la îmbunătățirea <ph name="PRODUCT_NAME"/> prin trimiterea automată de statistici de utilizare și rapoarte de avarie la Google</translation>
+<translation id="1657406563541664238">Ajutați la îmbunătățirea <ph name="PRODUCT_NAME"/> prin trimiterea automată de statistici de utilizare și rapoarte de avarie la Bitpop</translation>
 <translation id="7982789257301363584">Rețea</translation>
 <translation id="2271281383664374369">Solicitările adresate de extensii acestei adrese URL au fost suspendate temporar.</translation>
 <translation id="8528962588711550376">Se conectează.</translation>
@@ -231,8 +231,8 @@ Data viitoare aţi putea utiliza combinaţia <ph name="SHORTCUT_KEY"/> pentru a 
 <translation id="9151034842884433218">Alegeţi o imagine şi un nume pentru noul dvs. profil Chrome.</translation>
 <translation id="1510030919967934016">Urmărirea locației dvs. de către această pagină a fost blocată.</translation>
 <translation id="8848519885565996859">Cadru cu linkul către adresa URL definită de utilizator</translation>
-<translation id="4640525840053037973">Conectaţi-vă utilizând Contul dvs. Google</translation>
-<translation id="6315526595991863271">Acum sunteţi conectat(ă) la <ph name="SHORT_PRODUCT_NAME"/>. Marcajele dvs., istoricul şi alte setări sunt sincronizate cu Contul dvs. Google utilizând setările prestabilite.</translation>
+<translation id="4640525840053037973">Conectaţi-vă utilizând Contul dvs. Bitpop</translation>
+<translation id="6315526595991863271">Acum sunteţi conectat(ă) la <ph name="SHORT_PRODUCT_NAME"/>. Marcajele dvs., istoricul şi alte setări sunt sincronizate cu Contul dvs. Bitpop utilizând setările prestabilite.</translation>
 <translation id="5255315797444241226">Expresia de acces pe care aţi introdus-o nu este corectă.</translation>
 <translation id="762917759028004464">Browserul prestabilit este în prezent <ph name="BROWSER_NAME"/>.</translation>
 <translation id="8289982954746764694">Activaţi elementul înregistrare (încă nu este complet funcţional) pentru legende, subtitrări, capitole şi descrieri audio din elementele video.</translation>
@@ -277,7 +277,7 @@ Data viitoare aţi putea utiliza combinaţia <ph name="SHORTCUT_KEY"/> pentru a 
           şi faceţi clic pe
           <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Adăugați motorul de căutare</translation>
-<translation id="6868050610674841964">Dacă vă conectați, Contul Google se va sincroniza cu datele dvs., astfel încât să puteţi accesa marcajele, istoricul şi alte setări de pe orice dispozitiv.</translation>
+<translation id="6868050610674841964">Dacă vă conectați, Contul Bitpop se va sincroniza cu datele dvs., astfel încât să puteţi accesa marcajele, istoricul şi alte setări de pe orice dispozitiv.</translation>
 <translation id="5498951625591520696">Nu se poate realiza conexiunea la server.</translation>
 <translation id="1621207256975573490">Salvați &amp;cadrul ca...</translation>
 <translation id="4681260323810445443">Nu sunteţi autorizat(ă) să accesaţi pagina web de la <ph name="URL"/>. Poate fi necesar să vă conectaţi.</translation>
@@ -311,7 +311,7 @@ Data viitoare aţi putea utiliza combinaţia <ph name="SHORTCUT_KEY"/> pentru a 
 <translation id="6845180713465955339">Certificatul „<ph name="CERTIFICATE_NAME"/>” a fost emis de:</translation>
 <translation id="5364525511170219879">Activaţi interfaţa de utilizare pentru activitatea extensiilor</translation>
 <translation id="3088325635286126843">&amp;Redenumiţi...</translation>
-<translation id="6979158407327259162">Disc Google</translation>
+<translation id="6979158407327259162">Disc Bitpop</translation>
 <translation id="6853700448789925482">Activaţi elementul <ph name="TRACK_HTML"/></translation>
 <translation id="3150927491400159470">Reîncărcaţi forţat</translation>
 <translation id="7531238562312180404">Deoarece <ph name="PRODUCT_NAME"/> nu deține controlul asupra modului în care extensiile gestionează datele dvs. personale, toate extensiile pentru ferestrele incognito au fost dezactivate. Le puteți reactiva în mod individual din
@@ -376,7 +376,7 @@ Data viitoare aţi putea utiliza combinaţia <ph name="SHORTCUT_KEY"/> pentru a 
 <translation id="8194465509832052438">Configuraţi comenzi</translation>
 <translation id="4422347585044846479">Editați marcajul pentru această pagină</translation>
 <translation id="2452539774207938933">Comutaţi la utilizatorul: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">Google Chrome poate oferi o verificare a ortografiei mai inteligentă prin trimiterea textului introdus în browser la serverele Google, permiţându-vă să utilizaţi aceeaşi tehnologie de verificare a ortografiei utilizată de Căutare Google.</translation>
+<translation id="4700157086864140907">Bitpop Chrome poate oferi o verificare a ortografiei mai inteligentă prin trimiterea textului introdus în browser la serverele Google, permiţându-vă să utilizaţi aceeaşi tehnologie de verificare a ortografiei utilizată de Căutare Google.</translation>
 <translation id="7632357940961158759">Unele setări sunt gestionate de o extensie.</translation>
 <translation id="1880905663253319515">Ştergeţi certificatul „<ph name="CERTIFICATE_NAME"/>”?</translation>
 <translation id="8546306075665861288">Memorie cache de imagini</translation>
@@ -438,7 +438,7 @@ Data viitoare aţi putea utiliza combinaţia <ph name="SHORTCUT_KEY"/> pentru a 
 <translation id="1884405719612801980">tip euristic: <ph name="HEURISTIC_TYPE"/> tip de server: <ph name="SERVER_TYPE"/> semnătură câmp: <ph name="FIELD_SIGNATURE"/> semnătură formular: <ph name="FORM_SIGNATURE"/> ID experiment: „<ph name="EXPERIMENT_ID"/>”</translation>
 <translation id="8656768832129462377">Fără verificare</translation>
 <translation id="715487527529576698">Modul inițial pentru chineză este chineza simplificată</translation>
-<translation id="6896830120821965585">Activează un serviciu de fundal care conectează serviciul Google Cloud Print la orice imprimantă instalată pe acest computer. Odată ce acest laborator este activat, puteţi să activaţi conectorul Google Cloud Print dacă vă conectaţi utilizând Contul dvs. Google, în secţiunea În culise din Setări.</translation>
+<translation id="6896830120821965585">Activează un serviciu de fundal care conectează serviciul Bitpop Cloud Print la orice imprimantă instalată pe acest computer. Odată ce acest laborator este activat, puteţi să activaţi conectorul Google Cloud Print dacă vă conectaţi utilizând Contul dvs. Google, în secţiunea În culise din Setări.</translation>
 <translation id="3999508690854143454">Doresc să fiu întrebat(ă) când un site solicită acces la camera şi microfonul meu (recomandat)</translation>
 <translation id="1674989413181946727">Setări SSL aplicabile întregului computer:</translation>
 <translation id="1531285811424589182">Eroare de ştergere a certificatului</translation>
@@ -455,7 +455,7 @@ Data viitoare aţi putea utiliza combinaţia <ph name="SHORTCUT_KEY"/> pentru a 
 <translation id="3874070094967379652">Doresc să se utilizeze o expresie de acces de sincronizare pentru criptarea datelor mele</translation>
 <translation id="6500116422101723010">Momentan, serverul nu poate gestiona solicitarea. Acest cod indică starea sa de indisponibilitate temporară, iar serverul îşi va relua funcţionarea după un timp.</translation>
 <translation id="1644574205037202324">Istoric</translation>
-<translation id="4206944295053515692">Solicitaţi sugestii de la Google</translation>
+<translation id="4206944295053515692">Solicitaţi sugestii de la Bitpop</translation>
 <translation id="1297175357211070620">Destinaţie</translation>
 <translation id="479280082949089240">Cookie-urile setate de această pagină</translation>
 <translation id="4198861010405014042">Acces permis</translation>
@@ -469,8 +469,8 @@ Data viitoare aţi putea utiliza combinaţia <ph name="SHORTCUT_KEY"/> pentru a 
 <translation id="3887847548716051874">Permiteţi întotdeauna acestui site să utilizeze acest microfon şi această cameră</translation>
 <translation id="2886862922374605295">Hardware:</translation>
 <translation id="4497097279402334319">Nu a putut fi stabilită conexiunea la reţea.</translation>
-<translation id="7342729285348293164">Conectaţi-vă la <ph name="PRODUCT_NAME"/> utilizând Contul dvs. Google pentru a salva funcţiile personalizate ale browserului pe web şi pentru a le accesa din <ph name="PRODUCT_NAME"/>, de pe orice computer. De asemenea, veţi fi conectat(ă) automat la serviciile dvs. Google preferate.</translation>
-<translation id="2542049655219295786">Tabel Google</translation>
+<translation id="7342729285348293164">Conectaţi-vă la <ph name="PRODUCT_NAME"/> utilizând Contul dvs. Bitpop pentru a salva funcţiile personalizate ale browserului pe web şi pentru a le accesa din <ph name="PRODUCT_NAME"/>, de pe orice computer. De asemenea, veţi fi conectat(ă) automat la serviciile dvs. Google preferate.</translation>
+<translation id="2542049655219295786">Tabel Bitpop</translation>
 <translation id="3899879303189199559">Offline pentru mai mult de un an</translation>
 <translation id="5303618139271450299">Această pagină web nu este găsită</translation>
 <translation id="4256316378292851214">Sal&amp;vați videoclipul ca...</translation>
@@ -479,7 +479,7 @@ Data viitoare aţi putea utiliza combinaţia <ph name="SHORTCUT_KEY"/> pentru a 
 <translation id="6518014396551869914">Cop&amp;iați imaginea</translation>
 <translation id="3236997602556743698">3 Set (390)</translation>
 <translation id="542155483965056918">Cu <ph name="NUMBER_ZERO"/> minute în urmă</translation>
-<translation id="4928351909437667303">Dezactivaţi Disc Google pe acest dispozitiv.</translation>
+<translation id="4928351909437667303">Dezactivaţi Disc Bitpop pe acest dispozitiv.</translation>
 <translation id="6315723398663634808">Certificatul de server conţine o cheie criptografică slabă!</translation>
 <translation id="2887525882758501333">Document PDF</translation>
 <translation id="289426338439836048">Alte reţele mobile...</translation>
@@ -553,7 +553,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="6431347207794742960"><ph name="PRODUCT_NAME"/> va configura actualizările automate pentru toți utilizatorii acestui computer.</translation>
 <translation id="4973698491777102067">Eliminaţi elementele următoare din:</translation>
 <translation id="6074963268421707432">Nu permiteţi niciunui site să afişeze notificări pe desktop</translation>
-<translation id="4944952004685780325">Permite utilizarea API-ului Drive V2 pentru a accesa dosarul din Disc Google.</translation>
+<translation id="4944952004685780325">Permite utilizarea API-ului Drive V2 pentru a accesa dosarul din Disc Bitpop.</translation>
 <translation id="1995173078718234136">Se scanează conţinutul...</translation>
 <translation id="7920521481309889533">Activaţi SPDY/3</translation>
 <translation id="5979681173469464041">Focalizaţi pe panoul următor</translation>
@@ -562,7 +562,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="1491151370853475546">Reîncărcaţi această pagină</translation>
 <translation id="5374359983950678924">Schimbați imaginea</translation>
 <translation id="2859738163554174612">Nu doresc să mi se ofere niciodată conectarea</translation>
-<translation id="1378727793141957596">Bun venit la Disc Google!</translation>
+<translation id="1378727793141957596">Bun venit la Disc Bitpop!</translation>
 <translation id="5158548125608505876">Nu doresc ca parolele mele să fie sincronizate</translation>
 <translation id="3717485073527618485">Doresc să fiu întrebat(ă) atunci când un site încearcă să dezactiveze cursorul mouse-ului (recomandat)</translation>
 <translation id="3273410961255278341">Trimiteţi pentru:</translation>
@@ -595,7 +595,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="773426152488311044">În prezent sunteţi singurul utilizator al produsului <ph name="PRODUCT_NAME"/>.</translation>
 <translation id="2042078858148122628">Serverul de la <ph name="HOST_NAME"/> nu poate fi găsit, deoarece căutarea DNS a eşuat. DNS este serviciul de reţea care translatează numele unui site web în adresa sa de internet. Această eroare este cel mai adesea cauzată de lipsa unei conexiuni la internet sau de o reţea greşit configurată. Aceasta poate fi, de asemenea, cauzată de un server DNS care nu răspunde sau de un firewall care împiedică <ph name="PRODUCT_NAME"/> să acceseze reţeaua.</translation>
 <translation id="2159087636560291862">În acest caz, certificatul nu a fost verificat de către o terță parte configurată pe computerul dvs. ca fiind de încredere. Oricine poate crea un certificat pretinzând că reprezintă orice site web dorește, motiv pentru care acesta trebuie verificat de o terță parte configurată pe computerul dvs. ca fiind de încredere. În lipsa acestei verificări, informațiile privind identitatea din certificat nu au nicio valoare. Prin urmare nu este posibil să se verifice dacă dvs. comunicați cu <ph name="DOMAIN"/> și nu cu un atacator care generează propriul său certificat, susținând că este <ph name="DOMAIN2"/>. Vă recomandam să nu mergeți mai departe de acest punct.</translation>
-<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> vă solicită criptarea datelor utilizând fie parola Google, fie propria expresie de acces.</translation>
+<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> vă solicită criptarea datelor utilizând fie parola Bitpop, fie propria expresie de acces.</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">Nu este o Autoritate de certificare</translation>
 <translation id="6099520380851856040">A avut loc la <ph name="CRASH_TIME"/></translation>
@@ -751,7 +751,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="8943805475239098364">Doriţi să căutaţi cu <ph name="NEW_GOOGLE_HOST"/> în loc de <ph name="CURRENT_GOOGLE_HOST"/>?</translation>
 <translation id="3813510441224209252">Formatare în aşteptare</translation>
 <translation id="8912793549644936705">Extins</translation>
-<translation id="8026684114486203427">Pentru a utiliza Chrome Web Store, trebuie să vă conectaţi utilizând un Cont Google.</translation>
+<translation id="8026684114486203427">Pentru a utiliza Chrome Web Store, trebuie să vă conectaţi utilizând un Cont Bitpop.</translation>
 <translation id="1486096554574027028">Căutaţi parole</translation>
 <translation id="4631887759990505102">Artist</translation>
 <translation id="1836938920852968258">Dezactivaţi meniul „Alte dispozitive” din pagina Filă nouă.</translation>
@@ -767,12 +767,12 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="89217462949994770">Aţi introdus codul PIN incorect de prea multe ori. Contactaţi <ph name="CARRIER_ID"/> pentru a obţine o nouă cheie de deblocare a codului PIN, formată din 8 cifre.</translation>
 <translation id="5920618722884262402">Blocaţi cuvintele ofensatoare</translation>
 <translation id="242006861730551700">Dezactivează raftul cu descărcări. Va afişa noua interfaţă de utilizare pentru descărcări pe măsură ce se implementează.</translation>
-<translation id="7782102568078991263">Nu mai există sugestii de la Google</translation>
+<translation id="7782102568078991263">Nu mai există sugestii de la Bitpop</translation>
 <translation id="8038111231936746805">(prestabilit)</translation>
 <translation id="5120247199412907247">Configurare avansată</translation>
 <translation id="567881659373499783">Versiunea <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">Politicile de confidenţialitate Navigare sigură</translation>
-<translation id="5105859138906591953">Pentru a importa marcajele din Bara de instrumente Google în Chrome, trebuie să fiţi conectat(ă) la Contul dvs. Google. Conectaţi-vă, apoi încercaţi din nou să importaţi.</translation>
+<translation id="5105859138906591953">Pentru a importa marcajele din Bara de instrumente Bitpop în Chrome, trebuie să fiţi conectat(ă) la Contul dvs. Google. Conectaţi-vă, apoi încercaţi din nou să importaţi.</translation>
 <translation id="8899851313684471736">Deschideți linkul într-o &amp;fereastră nouă</translation>
 <translation id="4110342520124362335">Cookie-urile de la <ph name="DOMAIN"/> au fost blocate.</translation>
 <translation id="3303818374450886607">Copii</translation>
@@ -821,7 +821,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="1871208020102129563">Configuraţia proxy este setată să utilizeze servere proxy fixe, şi nu o adresă URL pentru scripturi .pac.</translation>
 <translation id="1634788685286903402">Acordaţi încredere acestui certificat pentru identificarea utilizatorilor de e-mail.</translation>
 <translation id="3154015489111064513">Utilizaţi DHCP</translation>
-<translation id="8642489171979176277">Importate din Bara de instrumente Google</translation>
+<translation id="8642489171979176277">Importate din Bara de instrumente Bitpop</translation>
 <translation id="4142744419835627535">Completare automată imediată instant</translation>
 <translation id="4684427112815847243">De acord, se sincronizează integral</translation>
 <translation id="1125520545229165057">Dvorak (Hsu)</translation>
@@ -831,7 +831,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="8071086933245711894">Operaţia de copiere a fost anulată.</translation>
 <translation id="2441392884867482684">Această pagină este acum în modul ecran complet şi doreşte să dezactiveze cursorul mouse-ului dvs.</translation>
 <translation id="1422780722984745882">S-au primit mai multe anteturi Location. Acest lucru nu este permis, ca măsură de protecţie împotriva atacurilor prin divizarea răspunsului HTTP.</translation>
-<translation id="7787129790495067395">În prezent utilizaţi o expresie de acces. Dacă aţi uitat expresia de acces, puteţi reseta sincronizarea pentru a şterge datele dvs. de pe serverele Google utilizând Tabloul de bord Google.</translation>
+<translation id="7787129790495067395">În prezent utilizaţi o expresie de acces. Dacă aţi uitat expresia de acces, puteţi reseta sincronizarea pentru a şterge datele dvs. de pe serverele Bitpop utilizând Tabloul de bord Google.</translation>
 <translation id="3380365263193509176">Eroare necunoscută</translation>
 <translation id="1273135602584709125">Anulaţi înscrierea pentru întreprindere</translation>
 <translation id="2686759344028411998">Nu se pot detecta module încărcate.</translation>
@@ -899,7 +899,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="6204994989617056362">Extensia de renegociere SSL lipsea din dialogul de confirmare securizat. În cazul anumitor site-uri, despre care se știe că sunt compatibile cu extensia de renegociere, Chrome necesită un dialog de confirmare mai securizat, pentru a împiedica o clasă de atacuri cunoscute. Omiterea acestei extensii indică interceptarea și modificarea conexiunii în timpul transferului.</translation>
 <translation id="1238150413700645698">Conţinut protejat</translation>
 <translation id="6679492495854441399">Hopa! A apărut o eroare de comunicare a reţelei la încercarea de înregistrare a dispozitivului. Verificaţi conexiunea reţelei şi încercaţi din nou.</translation>
-<translation id="5270547718570958938">Google Calendar</translation>
+<translation id="5270547718570958938">Bitpop Calendar</translation>
 <translation id="5823933238730612365">PPAPI (scos din mediul de testare)</translation>
 <translation id="2879755071890315043">Aşteptaţi până când configurăm reţeaua dvs. mobilă.</translation>
 <translation id="5301751748813680278">Se conectează ca invitat.</translation>
@@ -936,7 +936,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="1519704592140256923">Alegeţi poziţia</translation>
 <translation id="1275018677838892971">Site-ul web de la <ph name="HOST_NAME"/> conține elemente de pe site-uri care au fost raportate ca fiind site-uri de „phishing”. Site-urile care practică phishingul îi înșeală pe utilizatori pentru ca aceștia să dezvăluie informații personale sau financiare, adesea însușindu-și identitatea unor instituții de încredere, precum băncile.</translation>
 <translation id="7570477672765183">Faceţi clic pentru a începe</translation>
-<translation id="6166101525540035714">Utilizarea browserului Chrome se supune <ph name="BEGIN_LINK1"/>Termenilor şi condiţiilor<ph name="END_LINK1"/> şi <ph name="BEGIN_LINK2"/>Politicii de confidenţialitate<ph name="END_LINK2"/> Google Chrome.</translation>
+<translation id="6166101525540035714">Utilizarea browserului Chrome se supune <ph name="BEGIN_LINK1"/>Termenilor şi condiţiilor<ph name="END_LINK1"/> şi <ph name="BEGIN_LINK2"/>Politicii de confidenţialitate<ph name="END_LINK2"/> Bitpop Chrome.</translation>
 <translation id="702455272205692181"><ph name="EXTENSION_NAME"/></translation>
 <translation id="7170041865419449892">Fără acoperire</translation>
 <translation id="908263542783690259">Ștergeți istoricul de navigare</translation>
@@ -954,7 +954,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="3909791450649380159">&amp;Decupați</translation>
 <translation id="2955913368246107853">Închideți Bara de căutare</translation>
 <translation id="8864170386249720785">Setări SSL la nivel de dispozitiv mobil:</translation>
-<translation id="3914942725612686145">Acum sunteţi conectat(ă) la Chrome. Filele deschise, marcajele şi datele din caseta polivalentă sunt sincronizate cu Contul dvs. Google.</translation>
+<translation id="3914942725612686145">Acum sunteţi conectat(ă) la Chrome. Filele deschise, marcajele şi datele din caseta polivalentă sunt sincronizate cu Contul dvs. Bitpop.</translation>
 <translation id="5642508497713047">Semnatar CRL</translation>
 <translation id="7612302739128412469">Activaţi extensia făcând clic pe această pictogramă.</translation>
 <translation id="813082847718468539">Afişaţi informaţiile privind site-ul</translation>
@@ -1002,7 +1002,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="1637259088766071440">Site-ul web de la <ph name="HOST_NAME"/> conţine elemente de pe site-uri care par a găzdui programe malware – software care poate dăuna dispozitivului dvs. mobil sau care poate funcţiona fără consimţământul dvs. Dispozitivul mobil poate fi infectat prin simpla accesare a unui site care conţine programe malware. Site-ul web găzduieşte, de asemenea, conţinut de pe site-uri care au fost raportate ca fiind site-uri de „phishing”. Site-urile care practică phishingul îi înşală pe utilizatori pentru ca aceştia să dezvăluie informaţii personale sau financiare, adesea însuşindu-şi identitatea unor instituţii de încredere, precum băncile.</translation>
 <translation id="855081842937141170">Fixați fila</translation>
 <translation id="6263541650532042179">resetaţi sincronizarea</translation>
-<translation id="6513247462497316522">Google Chrome va utiliza date mobile dacă nu sunteţi conectat(ă) la altă reţea.</translation>
+<translation id="6513247462497316522">Bitpop Chrome va utiliza date mobile dacă nu sunteţi conectat(ă) la altă reţea.</translation>
 <translation id="6055392876709372977">PKCS #1 SHA-256 cu criptare RSA</translation>
 <translation id="7903984238293908205">Katakana</translation>
 <translation id="268053382412112343">Is&amp;toric</translation>
@@ -1127,8 +1127,8 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="7632380866023782514">Dreapta sus</translation>
 <translation id="4693789964669838452">CPS</translation>
 <translation id="4925520021222027859">Introduceţi parola specifică aplicaţiei:</translation>
-<translation id="3494768541638400973">Metoda de introducere Google pentru japoneză (la tastatura pentru japoneză)</translation>
-<translation id="4679639996443646335">Google a descoperit că pot fi instalate software-uri dăunătoare pe dispozitivul dvs. mobil în cazul în care continuaţi. Dacă aţi accesat în trecut acest site sau dacă prezintă încredere pentru dvs., este posibil să fi fost compromis recent de un hacker. Vă recomandăm să nu continuaţi, fiind de preferat să încercaţi din nou mâine sau să accesaţi alt site.</translation>
+<translation id="3494768541638400973">Metoda de introducere Bitpop pentru japoneză (la tastatura pentru japoneză)</translation>
+<translation id="4679639996443646335">Bitpop a descoperit că pot fi instalate software-uri dăunătoare pe dispozitivul dvs. mobil în cazul în care continuaţi. Dacă aţi accesat în trecut acest site sau dacă prezintă încredere pentru dvs., este posibil să fi fost compromis recent de un hacker. Vă recomandăm să nu continuaţi, fiind de preferat să încercaţi din nou mâine sau să accesaţi alt site.</translation>
 <translation id="7223775956298141902">Hopa... Nu aveţi nicio extensie :-(</translation>
 <translation id="3118046075435288765">Serverul a închis conexiunea în mod neaşteptat.</translation>
 <translation id="1725068750138367834">&amp;Manager de fişiere</translation>
@@ -1154,7 +1154,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="3706919628594312718">Setări pentru mouse</translation>
 <translation id="8326478304147373412">PKCS #7, lanț de certificate</translation>
 <translation id="3242765319725186192">Cheie predistribuită:</translation>
-<translation id="8089798106823170468">Controlaţi şi permiteţi accesul la imprimantele dvs. cu ajutorul oricărui Cont Google.</translation>
+<translation id="8089798106823170468">Controlaţi şi permiteţi accesul la imprimantele dvs. cu ajutorul oricărui Cont Bitpop.</translation>
 <translation id="5426597273899159431">Configurare avansată...</translation>
 <translation id="1105608846356399385">Accesaţi site-ul web</translation>
 <translation id="7218608093942361839"><ph name="PRODUCT_NAME"/> <ph name="PRODUCT_VERSION"/> (Platformă <ph name="PLATFORM_VERSION"/>)</translation>
@@ -1220,7 +1220,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="81686154743329117">ZRM</translation>
 <translation id="2150139952286079145">Căutaţi destinaţii</translation>
 <translation id="4713309396072794887">Instalaţi aceste extensii?</translation>
-<translation id="5637940320504994319">Nu aveţi spaţiu suficient în Disc Google</translation>
+<translation id="5637940320504994319">Nu aveţi spaţiu suficient în Disc Bitpop</translation>
 <translation id="6458467102616083041">Valoare ignorată, deoarece politica a dezactivat căutarea prestabilită.</translation>
 <translation id="2266011376676382776">Pagină(i) inactivă(e)</translation>
 <translation id="3100609564180505575">Module (<ph name="TOTAL_COUNT"/>) – Conflicte cunoscute: <ph name="BAD_COUNT"/>, probabile: <ph name="SUSPICIOUS_COUNT"/></translation>
@@ -1282,7 +1282,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="7092106376816104">Excepţii privind ferestrele de tip pop-up</translation>
 <translation id="4830475881783902092">ID de client:</translation>
 <translation id="4600958291864306415">se generează...</translation>
-<translation id="8594787581355215556">Sunteţi conectat(ă) ca <ph name="USER_EMAIL_ADDRESS"/>. Gestionaţi datele dvs. sincronizate în <ph name="BEGIN_LINK"/>Tabloul de bord Google<ph name="END_LINK"/>.</translation>
+<translation id="8594787581355215556">Sunteţi conectat(ă) ca <ph name="USER_EMAIL_ADDRESS"/>. Gestionaţi datele dvs. sincronizate în <ph name="BEGIN_LINK"/>Tabloul de bord Bitpop<ph name="END_LINK"/>.</translation>
 <translation id="4338600611020922010">Adăugaţi la ecranul de pornire</translation>
 <translation id="263325223718984101"><ph name="PRODUCT_NAME"/> nu a putut finaliza instalarea, dar va continua să ruleze de pe imaginea de pe disc.</translation>
 <translation id="6186893483313227582">Pictogramă <ph name="VALUE"/></translation>
@@ -1299,7 +1299,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="4250680216510889253">Nu</translation>
 <translation id="5109044022078737958">Mia</translation>
 <translation id="6291953229176937411">&amp;Afișați în Finder</translation>
-<translation id="8598687241883907630">Deconectaţi Contul dvs. Google...</translation>
+<translation id="8598687241883907630">Deconectaţi Contul dvs. Bitpop...</translation>
 <translation id="6410894982725961573">Faceţi fişierul disponibil offline</translation>
 <translation id="2556718757702023317">Pentru a salva fişierul „<ph name="FILE_NAME"/>” offline, trebuie să eliberaţi un spaţiu suplimentar de <ph name="TOTAL_FILE_SIZE"/>:<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>anulaţi fixarea fişierelor pe care nu mai este necesar să le accesaţi offline<ph name="MARKUP_3"/>
@@ -1387,7 +1387,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="2629089419211541119">Cu <ph name="NUMBER_ONE"/> oră în urmă</translation>
 <translation id="1691063574428301566">Computerul dvs. va fi repornit când actualizarea este finalizată.</translation>
 <translation id="4697551882387947560">La încheierea sesiunii de navigare</translation>
-<translation id="5900302528761731119">Fotografie de profil Google</translation>
+<translation id="5900302528761731119">Fotografie de profil Bitpop</translation>
 <translation id="131364520783682672">Caps Lock</translation>
 <translation id="2066999550761485762"><ph name="BEGIN_BOLD"/>Aţi trecut în modul incognito.<ph name="END_BOLD"/>
           <ph name="LINE_BREAK"/>
@@ -1412,7 +1412,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="1478897831827830200">Urmărire</translation>
 <translation id="5714678912774000384">Activaţi ultima filă</translation>
 <translation id="8466234950814670489">Arhivă .tar</translation>
-<translation id="5902572236435740554">Introduceţi mai întâi parola dvs. pentru Contul Google, <ph name="LINE_BREAK"/> nu o parolă specifică aplicaţiei.</translation>
+<translation id="5902572236435740554">Introduceţi mai întâi parola dvs. pentru Contul Bitpop, <ph name="LINE_BREAK"/> nu o parolă specifică aplicaţiei.</translation>
 <translation id="8813811964357448561">foaie de hârtie</translation>
 <translation id="2125314715136825419">Continuaţi fără a actualiza Adobe Reader (nerecomandat)</translation>
 <translation id="5034510593013625357">Model de nume de gazdă</translation>
@@ -1433,7 +1433,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="8337399713761067085">În prezent sunteţi în modul offline</translation>
 <translation id="5199729219167945352">Experimente</translation>
 <translation id="6499143127267478107">Se rezolvă gazda în scriptul proxy...</translation>
-<translation id="8069615408251337349">Google Cloud Print</translation>
+<translation id="8069615408251337349">Bitpop Cloud Print</translation>
 <translation id="5055518462594137986">Reține opțiunea mea pentru toate linkurile de acest tip.</translation>
 <translation id="246059062092993255">Pluginurile au fost blocate pe această pagină.</translation>
 <translation id="2870560284913253234">Site</translation>
@@ -1478,7 +1478,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="3273951168350045122">Tastatură (<ph name="ADDRESS"/>)</translation>
 <translation id="8221729492052686226">Dacă nu ați inițiat această solicitare, este posibil să fie o încercare de atac asupra sistemului dvs. Dacă nu ați efectuat o acțiune explicită pentru a iniția această solicitare, ar trebui să apăsați pe Nu faceți nimic.</translation>
 <translation id="894360074127026135">Netscape International Step-Up</translation>
-<translation id="8420060421540670057">Afişaţi fişierele Google Docs</translation>
+<translation id="8420060421540670057">Afişaţi fişierele Bitpop Docs</translation>
 <translation id="1201402288615127009">Înainte</translation>
 <translation id="1335588927966684346">Utilitar:</translation>
 <translation id="2710582058364740604">Înlocuieşte densitatea afişajului dispozitivului pentru a forţa utilizarea modului cu rezoluţie ridicată şi a elementelor.</translation>
@@ -1570,7 +1570,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="7434823369735508263">Tastatură UK Dvorak</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> zile</translation>
 <translation id="5308845175611284862">Sincronizarea <ph name="PRODUCT_NAME"/> simplifică permiterea accesului la date (cum ar fi marcajele şi setările) între computerele dvs. 
-          Când vă conectaţi utilizând Contul dvs. Google, <ph name="PRODUCT_NAME"/> sincronizează datele dvs. stocându-le online la Google.</translation>
+          Când vă conectaţi utilizând Contul dvs. Bitpop, <ph name="PRODUCT_NAME"/> sincronizează datele dvs. stocându-le online la Google.</translation>
 <translation id="1707463636381878959">Permiteţi accesul la această reţea altor utilizatori</translation>
 <translation id="2084978867795361905">MS-IME</translation>
 <translation id="7227669995306390694"><ph name="NETWORK"/> niciun plan de date</translation>
@@ -1578,7 +1578,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="7163503212501929773"><ph name="NUMBER_MANY"/> ore rămase</translation>
 <translation id="7705276765467986571">Modelul marcajului nu a putut fi încărcat.</translation>
 <translation id="750413812607578381">Trebuie să reporniţi <ph name="PRODUCT_NAME"/> acum.</translation>
-<translation id="8034305971714560781">Dacă deconectaţi Contul dvs. Google de la <ph name="PRODUCT_NAME"/>, modificările datelor dvs. de pe acest dispozitiv mobil nu vor mai fi sincronizate cu Contul dvs. Google. Datele deja stocate în Contul dvs. Google vor rămâne acolo până când le eliminaţi utilizând <ph name="BEGIN_LINK"/>Tabloul de bord Google<ph name="END_LINK"/>.</translation>
+<translation id="8034305971714560781">Dacă deconectaţi Contul dvs. Bitpop de la <ph name="PRODUCT_NAME"/>, modificările datelor dvs. de pe acest dispozitiv mobil nu vor mai fi sincronizate cu Contul dvs. Google. Datele deja stocate în Contul dvs. Google vor rămâne acolo până când le eliminaţi utilizând <ph name="BEGIN_LINK"/>Tabloul de bord Google<ph name="END_LINK"/>.</translation>
 <translation id="2638286699381354126">Actualizaţi...</translation>
 <translation id="1196338895211115272">Exportul cheii private nu a reușit.</translation>
 <translation id="1459967076783105826">Motoare de căutare adăugate de extensii</translation>
@@ -1612,10 +1612,10 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="1789424019568293108">Activaţi interfaţa experimentală de utilizare care afişează un jurnal al activităţii extensiilor.</translation>
 <translation id="2090876986345970080">Setare securitate sistem</translation>
 <translation id="3728067901555601989">OTP:</translation>
-<translation id="3475447146579922140">Foaie de calcul Google</translation>
+<translation id="3475447146579922140">Foaie de calcul Bitpop</translation>
 <translation id="6856526171412069413">Activaţi redimensionarea prin ciupire.</translation>
 <translation id="9219103736887031265">Imagini</translation>
-<translation id="7415834062450491574">Trimiteţi feedback la Google.</translation>
+<translation id="7415834062450491574">Trimiteţi feedback la Bitpop.</translation>
 <translation id="4480995875255084924">Activează vizualizatorul arborescent Oak din interfaţa ash. Permite inspectarea straturilor ferestrei, a ierarhiilor de afişare şi a proprietăţilor acestora. Apăsaţi Ctrl+Shift+F1 pentru a accesa.</translation>
 <translation id="6975147921678461939">Încărcarea bateriei: <ph name="PRECENTAGE"/> %</translation>
 <translation id="5453632173748266363">Chirilică</translation>
@@ -1626,7 +1626,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="5329858601952122676">Ș&amp;tergeți</translation>
 <translation id="6100736666660498114">Meniul Start</translation>
 <translation id="2706131822305474920">Comutaţi între filele deschise</translation>
-<translation id="4402766404187539019">Google.com Mail</translation>
+<translation id="4402766404187539019">Bitpop.com Mail</translation>
 <translation id="6275297011664564181">Nicio politică activă în prezent!</translation>
 <translation id="3994878504415702912">&amp;Zoom</translation>
 <translation id="9009369504041480176">Se încarcă (<ph name="PROGRESS_PERCENT"/>%)...</translation>
@@ -1667,7 +1667,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="6059764114876442286">Resetaţi imprimanta</translation>
 <translation id="6406506848690869874">Sincronizare</translation>
 <translation id="5288678174502918605">R&amp;edeschideți fila închisă</translation>
-<translation id="7238461040709361198">Parola Contului dvs. Google s-a schimbat de la ultima conectare de pe acest computer.</translation>
+<translation id="7238461040709361198">Parola Contului dvs. Bitpop s-a schimbat de la ultima conectare de pe acest computer.</translation>
 <translation id="1956050014111002555">Fişierul conţinea certificate multiple şi niciunul dintre acestea nu a fost importat:</translation>
 <translation id="302620147503052030">Afişaţi butonul</translation>
 <translation id="1895658205118569222">Închideţi</translation>
@@ -1677,7 +1677,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="6624687053722465643">Dulcineea</translation>
 <translation id="8420296388012619424">Dispozitivul USB nu este formatat.</translation>
 <translation id="3021256392995617989">Doresc să fiu întrebat(ă) atunci când un site încearcă să urmărească locația mea fizică (recomandat)</translation>
-<translation id="8083739373364455075">Primiţi 100 GO gratuit cu Disc Google</translation>
+<translation id="8083739373364455075">Primiţi 100 GO gratuit cu Disc Bitpop</translation>
 <translation id="271083069174183365">Setări de introducere pentru japoneză</translation>
 <translation id="1257595095755619623">Dacă utilizaţi un server proxy, verificaţi setările de proxy sau
         contactaţi administratorul de reţea pentru a vă asigura că
@@ -1867,7 +1867,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="8329978297633540474">Text simplu</translation>
 <translation id="7704305437604973648">Activitate</translation>
 <translation id="4710257996998566163">Ultima actualizare:</translation>
-<translation id="532340483382036194">Activează asistenţa pentru instalarea aplicaţiilor Google Chrome care sunt implementate utilizând un fişier manifest de pe o pagină web, şi nu prin împachetarea fişierelor manifest şi a pictogramelor într-un fişier crx.</translation>
+<translation id="532340483382036194">Activează asistenţa pentru instalarea aplicaţiilor Bitpop Chrome care sunt implementate utilizând un fişier manifest de pe o pagină web, şi nu prin împachetarea fişierelor manifest şi a pictogramelor într-un fişier crx.</translation>
 <translation id="4041408658944722952">La completarea automată a casetei polivalente, permiteţi popularea inline cu sugestii de la HistoryQuickProvider.</translation>
 <translation id="1383876407941801731">Căutați</translation>
 <translation id="4233752162269226207">Introduceţi literele de mai sus</translation>
@@ -1883,7 +1883,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="3967885517199024316">Conectaţi-vă pentru a putea accesa marcajele, istoricul şi setările pe toate dispozitivele dvs.</translation>
 <translation id="5463856536939868464">Meniu conținând marcajele ascunse</translation>
 <translation id="8286227656784970313">Utilizați dicționarul sistemului</translation>
-<translation id="5431084084184068621">Aţi ales să criptaţi date utilizând parola Google. Vă puteţi răzgândi oricând, schimbând setările de sincronizare.</translation>
+<translation id="5431084084184068621">Aţi ales să criptaţi date utilizând parola Bitpop. Vă puteţi răzgândi oricând, schimbând setările de sincronizare.</translation>
 <translation id="1493263392339817010">Personalizaţi fonturile...</translation>
 <translation id="5352033265844765294">Scriere marcaj de timp</translation>
 <translation id="1493892686965953381">Se aşteaptă <ph name="LOAD_STATE_PARAMETER"/>...</translation>
@@ -1893,7 +1893,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="748138892655239008">Limitări de bază pentru certificate</translation>
 <translation id="457386861538956877">Mai multe...</translation>
 <translation id="9210991923655648139">Accesibil scriptului:</translation>
-<translation id="1950295184970569138">* fotografie de profil Google (se încarcă)</translation>
+<translation id="1950295184970569138">* fotografie de profil Bitpop (se încarcă)</translation>
 <translation id="8063491445163840780">Activaţi fila 4</translation>
 <translation id="5473544328731861874">Eliminaţi intenţia</translation>
 <translation id="2322193970951063277">Anteturi şi subsoluri</translation>
@@ -1943,7 +1943,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="5010043101506446253">Autoritate de certificare</translation>
 <translation id="2050524657923939561">Intenţii web</translation>
 <translation id="8487693399751278191">Importați acum marcajele...</translation>
-<translation id="7615602087246926389">Aveţi deja date criptate utilizând o versiune diferită a parolei pentru Contul dvs. Google. Introduceţi-o mai jos.</translation>
+<translation id="7615602087246926389">Aveţi deja date criptate utilizând o versiune diferită a parolei pentru Contul dvs. Bitpop. Introduceţi-o mai jos.</translation>
 <translation id="7484580869648358686">Avertisment: ceva nu este în regulă aici!</translation>
 <translation id="4474155171896946103">Marcați toate filele...</translation>
 <translation id="5895187275912066135">Emis la</translation>
@@ -2038,14 +2038,14 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="2065985942032347596">Autentificare obligatorie</translation>
 <translation id="2563185590376525700">Broască</translation>
 <translation id="2553340429761841190"><ph name="PRODUCT_NAME"/> nu s-a putut conecta la <ph name="NETWORK_ID"/>. Selectaţi altă reţea sau încercaţi din nou.</translation>
-<translation id="2086712242472027775">Contul dvs. nu funcţionează pe <ph name="PRODUCT_NAME"/>. Contactaţi administratorul domeniului dvs. sau utilizaţi un Cont Google obişnuit pentru a vă conecta.</translation>
-<translation id="1373074393717692190">Conectaţi-vă la <ph name="PRODUCT_NAME"/> utilizând Contul dvs. Google pentru a salva funcţiile personalizate ale browserului pe web şi pentru a le accesa din <ph name="PRODUCT_NAME"/> de pe orice dispozitiv mobil. De asemenea, veţi fi conectat(ă) automat la serviciile dvs. Google preferate.</translation>
+<translation id="2086712242472027775">Contul dvs. nu funcţionează pe <ph name="PRODUCT_NAME"/>. Contactaţi administratorul domeniului dvs. sau utilizaţi un Cont Bitpop obişnuit pentru a vă conecta.</translation>
+<translation id="1373074393717692190">Conectaţi-vă la <ph name="PRODUCT_NAME"/> utilizând Contul dvs. Bitpop pentru a salva funcţiile personalizate ale browserului pe web şi pentru a le accesa din <ph name="PRODUCT_NAME"/> de pe orice dispozitiv mobil. De asemenea, veţi fi conectat(ă) automat la serviciile dvs. Google preferate.</translation>
 <translation id="7222232353993864120">Adresă de e-mail</translation>
 <translation id="2128531968068887769">Client nativ</translation>
 <translation id="2749720227918911728">Această pictogramă va fi vizibilă atunci când extensia poate acţiona în pagina curentă. Activaţi această extensie făcând clic pe pictogramă sau apăsând <ph name="EXTENSION_SHORTCUT"/>.</translation>
 <translation id="7175353351958621980">Încărcată de la:</translation>
 <translation id="7186367841673660872">Această pagină a fost tradusă din<ph name="ORIGINAL_LANGUAGE"/>în<ph name="LANGUAGE_LANGUAGE"/></translation>
-<translation id="8448695406146523553">Numai un utilizator care are expresia dvs. de acces poate citi datele criptate. Expresia de acces nu este trimisă sau stocată la Google. Dacă vă uitaţi expresia de acces, va fi necesar să</translation>
+<translation id="8448695406146523553">Numai un utilizator care are expresia dvs. de acces poate citi datele criptate. Expresia de acces nu este trimisă sau stocată la Bitpop. Dacă vă uitaţi expresia de acces, va fi necesar să</translation>
 <translation id="8248050856337841185">&amp;Inseraţi</translation>
 <translation id="6052976518993719690">Autoritate de certificare SSL</translation>
 <translation id="2925935892230812200">Accelerează redarea filtrelor SVG utilizând GPU.</translation>
@@ -2162,7 +2162,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="6374830905869502056">Codificate de</translation>
 <translation id="2230062665678605299">Nu s-a putut crea dosarul „<ph name="FOLDER_NAME"/>”. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="2526590354069164005">Desktop</translation>
-<translation id="2059205526855036527">Trebuie să fiţi online pentru a accesa Disc Google pentru prima dată.</translation>
+<translation id="2059205526855036527">Trebuie să fiţi online pentru a accesa Disc Bitpop pentru prima dată.</translation>
 <translation id="4165738236481494247">Rulaţi acest plugin</translation>
 <translation id="7983301409776629893">Doresc să se traducă întotdeauna din <ph name="ORIGINAL_LANGUAGE"/> în <ph name="TARGET_LANGUAGE"/></translation>
 <translation id="4890284164788142455">Thailandeză</translation>
@@ -2192,7 +2192,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="3479552764303398839">Nu acum</translation>
 <translation id="3714633008798122362">calendar web</translation>
 <translation id="6445051938772793705">Țara</translation>
-<translation id="3430309973417890444">Dacă nu aveţi un Cont Google, puteţi să <ph name="LINK_START"/>Creaţi un Cont Google<ph name="LINK_END"/> acum.</translation>
+<translation id="3430309973417890444">Dacă nu aveţi un Cont Bitpop, puteţi să <ph name="LINK_START"/>Creaţi un Cont Google<ph name="LINK_END"/> acum.</translation>
 <translation id="3251759466064201842">&lt;Nu face parte dintr-un certificat&gt;</translation>
 <translation id="4229495110203539533">Cu <ph name="NUMBER_ONE"/> secundă în urmă</translation>
 <translation id="3399068503715460757">Utilizaţi o adresă IP statică</translation>
@@ -2218,7 +2218,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="1800987794509850828">Broker pluginuri: <ph name="PLUGIN_NAME"/></translation>
 <translation id="8871696467337989339">Utilizați un semnalizator de linie de comandă neacceptat: <ph name="BAD_FLAG"/>. Stabilitatea și securitatea ar putea fi compromise.</translation>
 <translation id="4767443964295394154">Locația de descărcare</translation>
-<translation id="5031870354684148875">Despre Google Traducere</translation>
+<translation id="5031870354684148875">Despre Bitpop Traducere</translation>
 <translation id="4266565660628359579">Activează modul cu rezoluţie ridicată pentru Vizualizatorul PDF Chrome pe ecranele cu rezoluţie mare.</translation>
 <translation id="5702389759209837579">Accesaţi filele deschise pe toate dispozitivele dvs.</translation>
 <translation id="3828747136564826513">Accesaţi toate fişierele media cunoscute de pe dispozitiv</translation>
@@ -2274,7 +2274,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="1752977958630076881">Păstraţi datele locale numai până când părăsiţi browserul</translation>
 <translation id="7853202427316060426">Activitate</translation>
 <translation id="8550022383519221471">Serviciul de sincronizare nu este disponibil pentru domeniul dvs.</translation>
-<translation id="1436238710092600782">Creați un Cont Google</translation>
+<translation id="1436238710092600782">Creați un Cont Bitpop</translation>
 <translation id="3355823806454867987">Modificaţi setările proxy...</translation>
 <translation id="4780374166989101364">Activează API-uri cu extensii experimentale. Reţineţi că galeria de extensii nu vă permite să încărcaţi extensii care utilizează API-uri experimentale.</translation>
 <translation id="7117247127439884114">Conectaţi-vă din nou...</translation>
@@ -2287,7 +2287,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="3007574127824276972">Conectat(ă) la <ph name="PRODUCT_NAME"/> ca <ph name="USER_NAME"/></translation>
 <translation id="6840155730904976091"><ph name="PRODUCT_NAME"/> utilizează setările proxy de sistem ale dispozitivului dvs. mobil pentru a se conecta la reţea.</translation>
 <translation id="2541913031883863396">accesaţi oricum</translation>
-<translation id="6884284539803678768">Activaţi cadre pentru casete de dialog în stilul Google.</translation>
+<translation id="6884284539803678768">Activaţi cadre pentru casete de dialog în stilul Bitpop.</translation>
 <translation id="2367499218636570208">Prenume</translation>
 <translation id="4436689501885286563">Doresc să fie şterse cookie-urile şi alte date privind site-ul când mă deconectez</translation>
 <translation id="1520137456044207237">Ce serviciu ar trebui utilizat pentru afişare?</translation>
@@ -2354,7 +2354,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="8053390638574070785">Reîncărcați această pagină</translation>
 <translation id="5507756662695126555">Non-repudiere</translation>
 <translation id="3678156199662914018">Extensie: <ph name="EXTENSION_NAME"/></translation>
-<translation id="2620090360073999360">Disc Google nu poate fi accesat în acest moment.</translation>
+<translation id="2620090360073999360">Disc Bitpop nu poate fi accesat în acest moment.</translation>
 <translation id="3531250013160506608">Casetă text pentru parolă</translation>
 <translation id="506228266759207354">Dezactivaţi meniul pentru accesarea filelor pe alte dispozitive din pagina Filă nouă.</translation>
 <translation id="1781502536226964113">Deschideţi pagina Filă nouă</translation>
@@ -2371,7 +2371,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="8401363965527883709">Casetă de selectare debifată</translation>
 <translation id="7771452384635174008">Aspect</translation>
 <translation id="6188939051578398125">Introduceți nume sau adrese.</translation>
-<translation id="2851981350712094353">Conectorul Google Cloud Print</translation>
+<translation id="2851981350712094353">Conectorul Bitpop Cloud Print</translation>
 <translation id="8443621894987748190">Alegeţi fotografia pentru contul dvs.</translation>
 <translation id="10122177803156699">Afișați</translation>
 <translation id="935099558325596666">&quot;https://support.google.com/chrome/?p=win8_directories&quot;</translation>
@@ -2507,7 +2507,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="1358735829858566124">Fişierul sau directorul nu este utilizabil.</translation>
 <translation id="3144135466825225871">Înlocuirea fişierului crx a eşuat. Verificaţi dacă fişierul este în uz.</translation>
 <translation id="2744221223678373668">Publice</translation>
-<translation id="9064142312330104323">Fotografie de profil Google (se încarcă)</translation>
+<translation id="9064142312330104323">Fotografie de profil Bitpop (se încarcă)</translation>
 <translation id="4708849949179781599">Închideți <ph name="PRODUCT_NAME"/></translation>
 <translation id="2505402373176859469"><ph name="RECEIVED_AMOUNT"/> din <ph name="TOTAL_SIZE"/></translation>
 <translation id="6937559152970966646">Fixaţi în ecranul de pornire</translation>
@@ -2605,12 +2605,12 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="305803244554250778">Creați comenzi rapide pentru aplicație în următoarele locații:</translation>
 <translation id="574392208103952083">Mediu</translation>
 <translation id="3661117620327489194">Schimbaţi la Restabiliţi paginile deschise</translation>
-<translation id="3937609171782005782">Contribuiţi la îmbunătăţirea detectării programelor malware trimiţând date suplimentare la Google cu privire la site-urile pe care vedeţi acest avertisment. Aceste date vor fi tratate în conformitate cu <ph name="PRIVACY_PAGE_LINK"/>.</translation>
+<translation id="3937609171782005782">Contribuiţi la îmbunătăţirea detectării programelor malware trimiţând date suplimentare la Bitpop cu privire la site-urile pe care vedeţi acest avertisment. Aceste date vor fi tratate în conformitate cu <ph name="PRIVACY_PAGE_LINK"/>.</translation>
 <translation id="8877448029301136595">[directorul părinte]</translation>
 <translation id="3816844797124379499">Aplicaţia nu a putut fi adăugată, deoarece este în conflict cu „<ph name="APP_NAME"/>”.</translation>
 <translation id="7301360164412453905">Taste de selecție tastatură Hsu</translation>
 <translation id="8631271110654520730">Se copiază imaginea de recuperare...</translation>
-<translation id="7779140087128114262">Numai un utilizator care are expresia dvs. de acces poate citi datele criptate. Expresia de acces nu este trimisă sau stocată la Google. Dacă uitaţi expresia de acces, va fi necesar să resetaţi sincronizarea.</translation>
+<translation id="7779140087128114262">Numai un utilizator care are expresia dvs. de acces poate citi datele criptate. Expresia de acces nu este trimisă sau stocată la Bitpop. Dacă uitaţi expresia de acces, va fi necesar să resetaţi sincronizarea.</translation>
 <translation id="13356285923490863">Numele politicii</translation>
 <translation id="8241040075392580210">Norişor</translation>
 <translation id="8690155203172212841">Gestionaţi setările de permisiune</translation>
@@ -2631,7 +2631,7 @@ a vă proteja confidenţialitatea.</translation>
         accesaţi pagina <ph name="URL_FOR_MORE_INFO"/>
         pentru mai multe informaţii, inclusiv cum puteţi să dezactivaţi această funcţie.</translation>
 <translation id="8218008331535230597">Anulaţi autorizarea pentru licenţele de conţinut</translation>
-<translation id="4744728308552504807">Activează un serviciu de fundal care conectează serviciul Google Cloud Print la orice imprimantă instalată pe acest dispozitiv mobil. După ce acest laborator este activat, puteţi activa conectorul Google Cloud Print, conectându-vă cu ajutorul Contului dvs. Google în secţiunea În culise din Setări.</translation>
+<translation id="4744728308552504807">Activează un serviciu de fundal care conectează serviciul Bitpop Cloud Print la orice imprimantă instalată pe acest dispozitiv mobil. După ce acest laborator este activat, puteţi activa conectorul Google Cloud Print, conectându-vă cu ajutorul Contului dvs. Google în secţiunea În culise din Setări.</translation>
 <translation id="6691936601825168937">&amp;Redirecționați</translation>
 <translation id="6566142449942033617">Nu se poate încărca „<ph name="PLUGIN_PATH"/>” pentru plugin.</translation>
 <translation id="7065534935986314333">Despre sistem</translation>
@@ -2642,7 +2642,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="2128691215891724419">Eroare de sincronizare: actualizaţi expresia de acces pentru sincronizare...</translation>
 <translation id="2148716181193084225">Astăzi</translation>
 <translation id="1002064594444093641">Cadru de p&amp;rintare...</translation>
-<translation id="7234674978021619913">Am notificat deja <ph name="HOST_NAME"/> asupra faptului că am găsit programe malware pe acest site. Pentru a afla mai multe despre problemele apărute pe site-ul <ph name="HOST_NAME2"/>, accesaţi pagina Google <ph name="DIAGNOSTIC_PAGE"/>.</translation>
+<translation id="7234674978021619913">Am notificat deja <ph name="HOST_NAME"/> asupra faptului că am găsit programe malware pe acest site. Pentru a afla mai multe despre problemele apărute pe site-ul <ph name="HOST_NAME2"/>, accesaţi pagina Bitpop <ph name="DIAGNOSTIC_PAGE"/>.</translation>
 <translation id="4608500690299898628">&amp;Găsiți...</translation>
 <translation id="7582582252461552277">Preferaţi această reţea</translation>
 <translation id="3574305903863751447"><ph name="CITY"/>, <ph name="STATE"/> <ph name="COUNTRY"/></translation>
@@ -2744,7 +2744,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="6322726279947003371">Rulaţi conţinutul protejat (poate fi necesară repornirea computerului)</translation>
 <translation id="3093473105505681231">Setări de limbi şi verificator ortografic...</translation>
 <translation id="152482086482215392"><ph name="NUMBER_ONE"/> secundă rămasă</translation>
-<translation id="4261901459838235729">Prezentare Google</translation>
+<translation id="4261901459838235729">Prezentare Bitpop</translation>
 <translation id="8678698760965522072">Stare online</translation>
 <translation id="529172024324796256">Nume de utilizator:</translation>
 <translation id="3308116878371095290">Această pagină a fost împiedicată să stocheze module cookie.</translation>
@@ -2822,7 +2822,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="2444609190341826949">În lipsa unei expresii de acces, parolele dvs. şi alte date criptate nu vor fi sincronizate pe acest computer.</translation>
 <translation id="2984337792991268709">Astăzi, la <ph name="TODAY_DAYTIME"/></translation>
 <translation id="5227808808023563348">Găsiţi textul anterior</translation>
-<translation id="6650142020817594541">Acest site recomandă Google Chrome Frame (deja instalat).</translation>
+<translation id="6650142020817594541">Acest site recomandă Bitpop Chrome Frame (deja instalat).</translation>
 <translation id="3862763658360970896">Activaţi Din Chrome pe mobil.</translation>
 <translation id="902638246363752736">Setări tastatură</translation>
 <translation id="7925686952655276919">Nu utilizaţi date mobile pentru sincronizare</translation>
@@ -2842,7 +2842,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="6007237601604674381">Mutarea nu a reuşit. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">Crearea fișierului zip temporar în timpul împachetării nu a reușit.</translation>
 <translation id="1881456419707551346">Detalii conexiune</translation>
-<translation id="1064912851688322329">Deconectaţi Contul dvs. Google</translation>
+<translation id="1064912851688322329">Deconectaţi Contul dvs. Bitpop</translation>
 <translation id="1294298200424241932">Editaţi setările privind încrederea:</translation>
 <translation id="1407135791313364759">Deschideţi-le pe toate</translation>
 <translation id="1434928358870966081">Dezactivaţi obiectele Canvas 2D accelerate</translation>
@@ -2865,9 +2865,9 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="267285457822962309">Modificaţi setările specifice dispozitivului şi perifericelor dvs.</translation>
 <translation id="1154228249304313899">Deschideți această pagină:</translation>
 <translation id="6084074203170335305"><ph name="MARKUP_1"/>Accesaţi fişierele de oriunde, chiar şi offline.<ph name="MARKUP_2"/>
-        Fişierele din Disc Google sunt actualizate şi disponibile de pe orice dispozitiv.<ph name="MARKUP_3"/>
+        Fişierele din Disc Bitpop sunt actualizate şi disponibile de pe orice dispozitiv.<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>Păstraţi-vă fişierele în siguranţă.<ph name="MARKUP_5"/>
-        Indiferent de ceea ce se întâmplă cu dispozitivul dvs., fişierele dvs. sunt stocate în siguranţă în Disc Google.<ph name="MARKUP_6"/>
+        Indiferent de ceea ce se întâmplă cu dispozitivul dvs., fişierele dvs. sunt stocate în siguranţă în Disc Bitpop.<ph name="MARKUP_6"/>
         <ph name="MARKUP_7"/>Distribuiţi şi creaţi fişiere. Colaboraţi<ph name="MARKUP_8"/>
         cu alte persoane la realizarea fişierelor. Totul într-un singur loc.<ph name="MARKUP_9"/></translation>
 <translation id="9074348188580488499">Sigur doriți să eliminați toate parolele?</translation>
@@ -3002,7 +3002,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="8725066075913043281">Încercați din nou</translation>
 <translation id="387784661603993584">Nu se poate importa. A apărut o eroare.</translation>
 <translation id="4637968436031842307">Activaţi variabilele CSS.</translation>
-<translation id="1887908730460853602">Casete de dialog în stilul Google</translation>
+<translation id="1887908730460853602">Casete de dialog în stilul Bitpop</translation>
 <translation id="8502249598105294518">Meniu <ph name="PRODUCT_NAME"/></translation>
 <translation id="3797008485206955964">Afişaţi paginile de fundal (<ph name="NUM_BACKGROUND_APPS"/>)</translation>
 <translation id="8590375307970699841">Configurați actualizările automate</translation>
@@ -3022,8 +3022,8 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="5293659407874396561"><ph name="SUBJECT"/> (<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">Trebuie să fie o adresă URL valabilă</translation>
 <translation id="3464726836683998962">Dezactivaţi roamingul de date mobile</translation>
-<translation id="8986494364107987395">Trimiteţi automat statisticile de utilizare şi rapoartele de avarie la Google</translation>
-<translation id="7070714457904110559">Activează extensiile experimentale pentru funcţia de localizare geografică. Include utilizarea API-urilor de localizare ale sistemului de operare (unde sunt disponibile) şi trimiterea de date suplimentare de configurare din reţeaua locală către serviciul de localizare Google, pentru a permite o poziţionare mai exactă.</translation>
+<translation id="8986494364107987395">Trimiteţi automat statisticile de utilizare şi rapoartele de avarie la Bitpop</translation>
+<translation id="7070714457904110559">Activează extensiile experimentale pentru funcţia de localizare geografică. Include utilizarea API-urilor de localizare ale sistemului de operare (unde sunt disponibile) şi trimiterea de date suplimentare de configurare din reţeaua locală către serviciul de localizare Bitpop, pentru a permite o poziţionare mai exactă.</translation>
 <translation id="6701535245008341853">Profilul nu a putut fi preluat.</translation>
 <translation id="8303655282093186569">Setări de introducere Pinyin</translation>
 <translation id="992779717417561630">Printaţi utilizând caseta de dialog <ph name="CLOUD_PRINT_NAME"/>... <ph name="SHORTCUT_KEY"/></translation>
@@ -3037,7 +3037,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="580571955903695899">Reordonați după titlu</translation>
 <translation id="5230516054153933099">Fereastră</translation>
 <translation id="921740547845455014">Scrieţi în fişiere pe care le-aţi deschis în aplicaţie</translation>
-<translation id="1799497982892676838">Gestionaţi datele dvs. sincronizate în Tabloul de bord Google</translation>
+<translation id="1799497982892676838">Gestionaţi datele dvs. sincronizate în Tabloul de bord Bitpop</translation>
 <translation id="951981865514037445"><ph name="URL"/> doreşte să utilizeze locaţia dispozitivului dvs.</translation>
 <translation id="7554791636758816595">Filă nouă</translation>
 <translation id="3026557130425686673">Conectarea a fost anulată, deoarece unele dintre setările dispozitivului au fost deteriorate.</translation>
@@ -3051,7 +3051,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="1103966635949043187">Accesați pagina de pornire a site-ului:</translation>
 <translation id="4762295713053835808">Lucruri personale</translation>
 <translation id="6374100501221763867">Dezactivaţi decodarea videoclipurilor cu accelerare hardware.</translation>
-<translation id="7477347901712410606">Dacă aţi uitat expresia dvs. de acces, opriţi şi resetaţi sincronizarea utilizând <ph name="BEGIN_LINK"/>Tabloul de bord Google<ph name="END_LINK"/>.</translation>
+<translation id="7477347901712410606">Dacă aţi uitat expresia dvs. de acces, opriţi şi resetaţi sincronizarea utilizând <ph name="BEGIN_LINK"/>Tabloul de bord Bitpop<ph name="END_LINK"/>.</translation>
 <translation id="6139474630617772623">Activează desktopul extins, care vă permite să deschideţi un browser în afişaje secundare.</translation>
 <translation id="2645575947416143543">Totuși, dacă lucrați într-o organizație care își generează propriile certificate și încercați să vă conectați la un site web intern al respectivei organizații utilizând un astfel de certificat, puteți rezolva această problemă în mod securizat. Puteți să importați certificatul rădăcină al organizației ca „certificat rădăcină”, iar apoi certificatele emise sau confirmate de organizația dvs. vor fi de încredere și nu veți mai vedea această eroare la următoarea încercare de a vă conecta la un site intern. Pentru asistență la adăugarea unui nou certificat rădăcină pe computer, contactați personalul de ajutor al organizației.</translation>
 <translation id="1056898198331236512">Avertisment</translation>
@@ -3345,7 +3345,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="7063412606254013905">Aflați mai multe despre escrocheriile de phishing.</translation>
 <translation id="7253521419891527137">&amp;Aflaţi mai multe</translation>
 <translation id="3170312251071695679"><ph name="PERMISSION_VALUE"/> în mod prestabilit</translation>
-<translation id="8698464937041809063">Desen Google</translation>
+<translation id="8698464937041809063">Desen Bitpop</translation>
 <translation id="7053053706723613360">Dezactivaţi restabilirea mai bună a sesiunii</translation>
 <translation id="5233930340889611108">WebKit</translation>
 <translation id="8260864402787962391">Mouse</translation>
@@ -3374,7 +3374,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="6873213799448839504">Furnizați automat un șir</translation>
 <translation id="7238585580608191973">Amprentă SHA-256</translation>
 <translation id="2501278716633472235">Înapoi</translation>
-<translation id="3588662957555259973">* fotografie de profil Google</translation>
+<translation id="3588662957555259973">* fotografie de profil Bitpop</translation>
 <translation id="131461803491198646">Reţea de domiciliu, fără roaming</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/> - <ph name="FULL_DATE"/></translation>
 <translation id="1285320974508926690">Nu doresc să se traducă niciodată acest site</translation>
@@ -3445,7 +3445,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="461656879692943278"><ph name="HOST_NAME"/> are conţinut de la <ph name="ELEMENTS_HOST_NAME"/>, un site cunoscut că distribuie programe malware. Computerul dvs. se poate virusa dacă accesaţi acest site.</translation>
 <translation id="8962198349065195967">Această reţea este configurată de către administrator.</translation>
 <translation id="2143778271340628265">Configurare manuală a serverului proxy</translation>
-<translation id="2441192698565541088">Dacă deconectaţi Contul dvs. Google de la <ph name="PRODUCT_NAME"/>, modificările datelor efectuate pe acest computer nu vor mai fi sincronizate la Contul dvs. Google. Datele deja stocate în Contul dvs. Google vor rămâne acolo până când le eliminaţi utilizând <ph name="BEGIN_LINK"/>Tabloul de bord Google<ph name="END_LINK"/>.</translation>
+<translation id="2441192698565541088">Dacă deconectaţi Contul dvs. Bitpop de la <ph name="PRODUCT_NAME"/>, modificările datelor efectuate pe acest computer nu vor mai fi sincronizate la Contul dvs. Google. Datele deja stocate în Contul dvs. Google vor rămâne acolo până când le eliminaţi utilizând <ph name="BEGIN_LINK"/>Tabloul de bord Google<ph name="END_LINK"/>.</translation>
 <translation id="8888432776533519951">Culoare:</translation>
 <translation id="5294529402252479912">Actualizaţi acum Adobe Reader</translation>
 <translation id="5263972071113911534">Cu <ph name="NUMBER_MANY"/> (de) zile în urmă</translation>
@@ -3474,7 +3474,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="8885905466771744233">Există deja o cheie privată pentru extensia specificată. Reutilizați cheia sau mai întâi ștergeți-o.</translation>
 <translation id="1196944142850240972">Accesează datele dvs. de pe toate site-urile web</translation>
 <translation id="7369056754288047856">Unele setări nu pot fi modificate de utilizator.</translation>
-<translation id="4100843820583867709">Solicitare de permitere a accesului la ecranul Google Talk</translation>
+<translation id="4100843820583867709">Solicitare de permitere a accesului la ecranul Bitpop Talk</translation>
 <translation id="8109246889182548008">Magazin certificat</translation>
 <translation id="5030338702439866405">Emis de</translation>
 <translation id="2728127805433021124">Certificatul serverului este semnat utilizând un algoritm de semnătură slab.</translation>
@@ -3683,7 +3683,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="1049926623896334335">Document Word</translation>
 <translation id="8412145213513410671">Opriri cu eroare (<ph name="CRASH_COUNT"/>)</translation>
 <translation id="7003257528951459794">Frecvenţă:</translation>
-<translation id="3467267818798281173">Solicitaţi sugestii de la Google</translation>
+<translation id="3467267818798281173">Solicitaţi sugestii de la Bitpop</translation>
 <translation id="560602183358579978">Se calculează selecţia...</translation>
 <translation id="7649070708921625228">Ajutor</translation>
 <translation id="858637041960032120">Adăugaţi un număr de telefon</translation>
@@ -3716,10 +3716,10 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="4133237568661345071">Activaţi conectarea automată</translation>
 <translation id="3851140433852960970">Niciun plugin disponibil pentru a afişa acest conținut.</translation>
 <translation id="5556459405103347317">Reîncărcați</translation>
-<translation id="8000020256436988724">Bara de instrumente Google</translation>
+<translation id="8000020256436988724">Bara de instrumente Bitpop</translation>
 <translation id="7507930499305566459">Certificat de respondent de stare</translation>
 <translation id="3958088479270651626">Importaţi marcaje şi setări</translation>
-<translation id="2689915906323125315">Doresc să utilizez parola Contului meu Google</translation>
+<translation id="2689915906323125315">Doresc să utilizez parola Contului meu Bitpop</translation>
 <translation id="8518865679229538285">Metodă de introducere pentru tamilă (maşină de scris)</translation>
 <translation id="5257456363153333584">Libelulă</translation>
 <translation id="4557136421275541763">Avertisment:</translation>
@@ -3731,7 +3731,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="2489918096470125693">Adăugaţi un &amp;dosar...</translation>
 <translation id="7353651168734309780"><ph name="EXTENSION_NAME"/> necesită permisiuni noi</translation>
 <translation id="6420812616858267777">Sincronizarea <ph name="PRODUCT_NAME"/> simplifică permiterea accesului la date (cum ar fi marcajele şi setările) între computerele şi dispozitivele dvs. mobile. 
-           Când vă conectaţi utilizând Contul dvs. Google, <ph name="PRODUCT_NAME"/> sincronizează datele dvs. stocându-le online la Google.</translation>
+           Când vă conectaţi utilizând Contul dvs. Bitpop, <ph name="PRODUCT_NAME"/> sincronizează datele dvs. stocându-le online la Google.</translation>
 <translation id="7484964289312150019">Deschideți toate marcajele într-o &amp;fereastră nouă</translation>
 <translation id="1731346223650886555">Punct şi virgulă</translation>
 <translation id="158849752021629804">Este necesară reţeaua de domiciliu</translation>
@@ -3747,7 +3747,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="3021678814754966447">&amp;Vedeți sursa cadrului</translation>
 <translation id="8601206103050338563">Autentificare client TLS WWW</translation>
 <translation id="1692799361700686467">Se permit module cookie de la mai multe site-uri.</translation>
-<translation id="5187295959347858724">Acum sunteţi conectat(ă) la <ph name="SHORT_PRODUCT_NAME"/>. Marcajele dvs., istoricul şi alte setări sunt sincronizate cu Contul dvs. Google.</translation>
+<translation id="5187295959347858724">Acum sunteţi conectat(ă) la <ph name="SHORT_PRODUCT_NAME"/>. Marcajele dvs., istoricul şi alte setări sunt sincronizate cu Contul dvs. Bitpop.</translation>
 <translation id="3719415759165722358">Activează interfaţa de utilizare pentru setări legate de site-uri web. Interfaţa de utilizare pentru setări legate de site-urile web înlocuieşte balonul explicativ cu informaţii despre pagină. De asemenea, aceasta oferă o modalitate simplă de configurare a setărilor legate de site-uri.</translation>
 <translation id="2717190143245689317">Activează un câmp text experimental pentru interfaţa de utilizare a aplicaţiilor. Nu afectează conţinutul web.</translation>
 <translation id="529232389703829405">Ați achiziționat <ph name="DATA_AMOUNT"/> de date la <ph name="DATE"/></translation>
@@ -3790,7 +3790,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="2927657246008729253">Modificați...</translation>
 <translation id="7586781939132793422">Dezactivaţi feedbackul vocal</translation>
 <translation id="7978412674231730200">Cheie privată</translation>
-<translation id="7056011739864317578">Dacă este activată, această opţiune va utiliza ClientOAuth pentru conectarea unui profil la un Cont Google. În caz contrar, se va utiliza ClientLogin.
+<translation id="7056011739864317578">Dacă este activată, această opţiune va utiliza ClientOAuth pentru conectarea unui profil la un Cont Bitpop. În caz contrar, se va utiliza ClientLogin.
       ClientOAuth permite utilizarea codurilor de verificare în locul parolelor ASP în timpul autentificării.</translation>
 <translation id="5308380583665731573">Conectați-vă</translation>
 <translation id="9111395131601239814"><ph name="NETWORKDEVICE"/>: <ph name="STATUS"/></translation>
@@ -3812,7 +3812,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="6692173217867674490">Expresie de acces greşită</translation>
 <translation id="5550431144454300634">Doresc să se corecteze automat datele introduse</translation>
 <translation id="3308006649705061278">Unitate organizatorică (OU)</translation>
-<translation id="8912362522468806198">Contul Google</translation>
+<translation id="8912362522468806198">Contul Bitpop</translation>
 <translation id="4443536555189480885">&amp;Ajutor</translation>
 <translation id="340485819826776184">Utilizaţi un serviciu de predicţii pentru a vă ajuta să completaţi căutările şi adresele URL introduse în bara de adrese</translation>
 <translation id="4207762215349123040">Pluginul <ph name="PEPPER_PLUGIN_NAME"/> de pe <ph name="PEPPER_PLUGIN_DOMAIN"/> doreşte să acceseze dispozitivul dvs. mobil.”</translation>
@@ -3831,7 +3831,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="4745438305783437565"><ph name="NUMBER_FEW"/> minute</translation>
 <translation id="2649911884196340328">Certificatul de securitate al serverului are erori!</translation>
-<translation id="6666647326143344290">utilizând Contul Google</translation>
+<translation id="6666647326143344290">utilizând Contul Bitpop</translation>
 <translation id="4980112683975062744">S-au primit anteturi duplicat de la server</translation>
 <translation id="3828029223314399057">Căutați în marcaje</translation>
 <translation id="4885705234041587624">MSCHAPv2</translation>
@@ -3840,7 +3840,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="3551117997325569860">Pentru a modifica proxy-ul, activaţi setarea „<ph name="USE_SHARED_PROXIES"/>”.</translation>
 <translation id="8906421963862390172">&amp;Opțiunile verificatorului ortografic</translation>
 <translation id="9046895021617826162">Conectarea a eşuat</translation>
-<translation id="4061733942661196912">Când este activată, accesarea paginii de conectare la un Cont Google va declanşa o bară de informaţii care vă permite să vă conectaţi cu uşurinţă utilizând Contul Google asociat profilului. Conectarea automată este dezactivată întotdeauna dacă profilul nu este conectat la un cont, indiferent de acest marcaj.</translation>
+<translation id="4061733942661196912">Când este activată, accesarea paginii de conectare la un Cont Bitpop va declanşa o bară de informaţii care vă permite să vă conectaţi cu uşurinţă utilizând Contul Google asociat profilului. Conectarea automată este dezactivată întotdeauna dacă profilul nu este conectat la un cont, indiferent de acest marcaj.</translation>
 <translation id="1492188167929010410">ID oprire cu eroare <ph name="CRASH_ID"/></translation>
 <translation id="1963692530539281474"><ph name="NUMBER_DEFAULT"/> zile rămase</translation>
 <translation id="4470270245053809099">Emis de: <ph name="NAME"/></translation>
@@ -3890,7 +3890,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="5869522115854928033">Parole salvate</translation>
 <translation id="3436440123324878555">Achiziţionaţi un plan...</translation>
 <translation id="5748266869826978907">Verificaţi setările DNS. Contactaţi administratorul de reţea dacă nu sunteţi sigur(ă) ce înseamnă acest lucru.</translation>
-<translation id="4193154014135846272">Document Google</translation>
+<translation id="4193154014135846272">Document Bitpop</translation>
 <translation id="4771973620359291008">A apărut o eroare necunoscută.</translation>
 <translation id="5509914365760201064">Emitent: <ph name="CERTIFICATE_AUTHORITY"/></translation>
 <translation id="6446356484127229069"><ph name="PRODUCT_NAME"/>
@@ -3994,7 +3994,7 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="899403249577094719">Adresă URL de bază pentru certificat Netscape</translation>
 <translation id="2737363922397526254">Restrângeți...</translation>
 <translation id="8605428685123651449">Memorie SQLite</translation>
-<translation id="5469175127151858022">În plus faţă de informaţiile pe care alegeţi să le includeţi mai sus, vor fi trimise şi versiunea de Chrome şi versiunea sistemului dvs. de operare. Acest feedback este utilizat pentru diagnosticarea problemelor şi este util pentru a îmbunătăţi Chrome. Toate informaţiile personale pe care le trimiteţi, în mod explicit sau accidental, vor fi protejate în conformitate cu politicile noastre de confidenţialitate.<ph name="BEGIN_BOLD"/> Prin trimiterea acestui feedback, sunteţi de acord că Google poate utiliza feedbackul trimis de dvs. pentru a îmbunătăţi orice produs sau serviciu Google.<ph name="END_BOLD"/></translation>
+<translation id="5469175127151858022">În plus faţă de informaţiile pe care alegeţi să le includeţi mai sus, vor fi trimise şi versiunea de Chrome şi versiunea sistemului dvs. de operare. Acest feedback este utilizat pentru diagnosticarea problemelor şi este util pentru a îmbunătăţi Chrome. Toate informaţiile personale pe care le trimiteţi, în mod explicit sau accidental, vor fi protejate în conformitate cu politicile noastre de confidenţialitate.<ph name="BEGIN_BOLD"/> Prin trimiterea acestui feedback, sunteţi de acord că Bitpop poate utiliza feedbackul trimis de dvs. pentru a îmbunătăţi orice produs sau serviciu Google.<ph name="END_BOLD"/></translation>
 <translation id="2841013758207633010">Oră</translation>
 <translation id="4880827082731008257">Căutați în istoric</translation>
 <translation id="8661290697478713397">Deschideți linkul într-o fereastră inco&amp;gnito</translation>
@@ -4026,10 +4026,10 @@ a vă proteja confidenţialitatea.</translation>
 <translation id="8828933418460119530">Nume DNS</translation>
 <translation id="988159990683914416">Versiune de programare</translation>
 <translation id="1097658378307015415">Înainte de a vă conecta, începeţi o sesiune pentru invitaţi pentru activarea reţelei <ph name="NETWORK_ID"/></translation>
-<translation id="5170477580121653719">Spaţiu disponibil pe Disc Google: <ph name="SPACE_AVAILABLE"/>.</translation>
+<translation id="5170477580121653719">Spaţiu disponibil pe Disc Bitpop: <ph name="SPACE_AVAILABLE"/>.</translation>
 <translation id="4114470632216071239">Blocaţi cartela SIM (este necesar un cod PIN pentru a utiliza datele mobile)</translation>
 <translation id="5184584788669813359">Unele părţi ale acestui document PDF nu au putut fi afişate. Deschideţi în Adobe Reader?</translation>
-<translation id="6581162200855843583">Link Disc Google</translation>
+<translation id="6581162200855843583">Link Disc Bitpop</translation>
 <translation id="340771324714262530">Opriţi oglindirea</translation>
 <translation id="3303260552072730022">O extensie a activat modul Ecran complet.</translation>
 <translation id="2183426022964444701">Selectați directorul rădăcină pentru extensie.</translation>
@@ -4128,7 +4128,7 @@ Apăsaţi pe orice tastă pentru a continua explorarea.</translation>
 <translation id="1177437665183591855">Eroare de certificat de server necunoscută</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> doreşte să utilizeze camera foto şi microfonul.</translation>
 <translation id="8467473010914675605">Metoda de introducere pentru coreeană</translation>
-<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> sincronizează securizat datele cu Contul Google. Păstraţi opţiunea de sincronizare integrală sau personalizaţi tipurile de date de sincronizat şi setările de criptare.</translation>
+<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> sincronizează securizat datele cu Contul Bitpop. Păstraţi opţiunea de sincronizare integrală sau personalizaţi tipurile de date de sincronizat şi setările de criptare.</translation>
 <translation id="2639739919103226564">Stare:</translation>
 <translation id="6923900367903210484">Drepturi de autor</translation>
 <translation id="3819800052061700452">&amp;Ecran complet</translation>
@@ -4152,7 +4152,7 @@ Apăsaţi pe orice tastă pentru a continua explorarea.</translation>
 <translation id="614998064310228828">Model dispozitiv:</translation>
 <translation id="1581962803218266616">Afișați în Finder</translation>
 <translation id="9100765901046053179">Setări avansate</translation>
-<translation id="203168018648013061">Eroare de sincronizare: resetaţi sincronizarea utilizând Tabloul de bord Google.</translation>
+<translation id="203168018648013061">Eroare de sincronizare: resetaţi sincronizarea utilizând Tabloul de bord Bitpop.</translation>
 <translation id="1405126334425076373">Cursorul mouse-ului</translation>
 <translation id="6096326118418049043">Nume X.500</translation>
 <translation id="6086259540486894113">Selectați cel puțin un tip de date pentru sincronizare.</translation>
@@ -4201,14 +4201,14 @@ Apăsaţi pe orice tastă pentru a continua explorarea.</translation>
 <translation id="2960316970329790041">Opriți importul</translation>
 <translation id="3835522725882634757">O, nu! Acest server trimite date pe care <ph name="PRODUCT_NAME"/> nu le poate înțelege. <ph name="BEGIN_LINK"/>Semnalați o eroare<ph name="END_LINK"/> și includeți <ph name="BEGIN2_LINK"/>afișarea datelor neprelucrate<ph name="END2_LINK"/>.</translation>
 <translation id="6586451623538375658">Comutaţi butonul principal al mouse-ului</translation>
-<translation id="6937152069980083337">Metoda de introducere Google pentru japoneză (la tastatura americană)</translation>
+<translation id="6937152069980083337">Metoda de introducere Bitpop pentru japoneză (la tastatura americană)</translation>
 <translation id="475088594373173692">Primul utilizator</translation>
 <translation id="1731911755844941020">Se trimite solicitarea...</translation>
 <translation id="8371695176452482769">Vorbiți acum</translation>
 <translation id="7622116780510618781">File stivuite</translation>
 <translation id="2988488679308982380">Pachetul nu a putut fi instalat: „<ph name="ERROR_CODE"/>”</translation>
 <translation id="2904079386864173492">Model:</translation>
-<translation id="728836202927797241">Se oferă automat conectarea la site-urile Google pentru acest cont</translation>
+<translation id="728836202927797241">Se oferă automat conectarea la site-urile Bitpop pentru acest cont</translation>
 <translation id="6129953537138746214">Spaţiu</translation>
 <translation id="5041795084235183432">Mouse:</translation>
 <translation id="3704331259350077894">Încetarea operării</translation>
@@ -4282,7 +4282,7 @@ Apăsaţi pe orice tastă pentru a continua explorarea.</translation>
 <translation id="3325146402434751578">Configuraţi sau gestionaţi imprimantele din <ph name="CLOUD_PRINT_NAME"/></translation>
 <translation id="253434972992662860">&amp;Pauză</translation>
 <translation id="335985608243443814">Răsfoiți...</translation>
-<translation id="7802488492289385605">Metoda de introducere Google pentru japoneză (la tastatura Dvorak pentru S.U.A.)</translation>
+<translation id="7802488492289385605">Metoda de introducere Bitpop pentru japoneză (la tastatura Dvorak pentru S.U.A.)</translation>
 <translation id="3876481682997626897">Nepotrivire de semnătură</translation>
 <translation id="8892992092192084762">Tema „<ph name="THEME_NAME"/>” a fost instalată.</translation>
 <translation id="7427348830195639090">Pagină de fundal: <ph name="BACKGROUND_PAGE_URL"/></translation>
@@ -4317,7 +4317,7 @@ Apăsaţi pe orice tastă pentru a continua explorarea.</translation>
 <translation id="1131850611586448366">Site-ul web de la adresa <ph name="HOST_NAME"/> a fost semnalat ca fiind un site de „phishing”. Site-urile de phishing înșeală utilizatorii pentru ca aceștia să divulge informații personale sau financiare, adesea însușindu-și identitatea unor instituții de încredere, cum ar fi băncile.</translation>
 <translation id="2669198762040460457">Numele de utilizator sau parola introdusă nu este corectă.</translation>
 <translation id="1161575384898972166">Conectaţi-vă la <ph name="TOKEN_NAME"/> pentru a exporta certificatul client.</translation>
-<translation id="1718559768876751602">Creați acum un Cont Google</translation>
+<translation id="1718559768876751602">Creați acum un Cont Bitpop</translation>
 <translation id="5503480894407718969">Accesează toate datele de pe dispozitivul dvs. mobil şi de pe site-urile web pe care le vizitaţi</translation>
 <translation id="1884319566525838835">Starea mediului de testare</translation>
 <translation id="2770465223704140727">Eliminați din listă</translation>
