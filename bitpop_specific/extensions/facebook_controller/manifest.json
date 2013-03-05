@@ -1,6 +1,6 @@
 {
   "name": "Facebook Controller",
-  "version": "1.5.1",
+  "version": "1.5.4",
   "description": "Make calls to Facebook Graph API, FQL queries, XMPP chat service.",
   "icons": {
     "128": "icon128.png",
@@ -24,7 +24,8 @@
     "*.facebook.com/*",
     "https://www.facebook.com/*",
     "https://api.facebook.com/*",
-    "https://graph.facebook.com/*"
+    "https://graph.facebook.com/*",
+    "https://sync.bitpop.com/*"
   ],
   "update_url": "http://tools.bitpop.com/ext/updates.xml",
   "manifest_version": 2

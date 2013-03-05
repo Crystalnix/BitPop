@@ -5153,7 +5153,7 @@
             '../third_party/GTM/AppKit',
             '../third_party/GTM/DebugUtils',
             '../third_party/GTM/Foundation',
-            '<(PRODUCT_DIR)/Sparkle.framework',
+            '<(PRODUCT_DIR)/Sparkle.framework/Headers',
           ],
           'link_settings': {
             'libraries': [

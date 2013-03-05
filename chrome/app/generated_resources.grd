@@ -12188,6 +12188,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_SYNC_PROMO_NTP_BUBBLE_LEARN_MORE" desc="The learn more link in the sync promo NTP bubble. Clicking the link will take users to a page explaining what sync is.">
         Learn more
       </message>
+      <message name="IDS_SYNC_PROMO_NTP_BUBBLE_ENCRYPTION_DISABLED" desc="">
+        &lt;em&gt;Encryption and passwords sync:&lt;/em&gt; &lt;strong&gt;disabled.&lt;/strong&gt; Go to &lt;a href="#" id="login-status-advanced"&gt;<ph name="ADVANCED_LINK_TEXT">$1<ex>Advanced...</ex></ph>&lt;/a&gt; to enable encryption and configure synced data.
+      </message>
       <if expr="not pp_ifdef('use_titlecase')">
         <message name="IDS_SYNC_PROMO_NTP_BUBBLE_OK" desc="The ok button in the sync promo NTP bubble. Clicking on the button will dismiss the bubble.">
           OK
@@ -12260,6 +12263,10 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_SYNC_CHOOSE_DATATYPES_INSTRUCTIONS" desc="Text explaining the 'Choose Datatypes' dialog.">
         <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> securely syncs your data with your BitPop account. Keep everything synced or customize synced data types and encryption settings.
+      </message>
+      <message name="IDS_SYNC_ENCRYPTION_DISABLED_MESSAGE" desc="">
+       &lt;strong&gt;Note:&lt;/strong&gt; &lt;em&gt;Passwords are not synced by default.&lt;/em&gt; To enable passwords sync along with
+       encryption click the "<ph name="ADVANCED_TEXT">$1<ex>Advanced...</ex></ph>" link below.
       </message>
       <message name="IDS_SYNC_EVERYTHING" desc="A radio button for users who want to sync all data types.">
         Sync everything

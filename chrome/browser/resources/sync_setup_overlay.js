@@ -80,6 +80,12 @@ cr.define('options', function() {
     },
 
     showOverlay_: function() {
+      if (this.waitingForSigninPageResult_) {
+        window.removeEventListener('beforeunload',
+            SyncSetupOverlay.openSigninInProgressDialog, false);
+      }
+      this.waitingForSigninPageResult_ = false;
+
       OptionsPage.navigateToPage('syncSetup');
     },
 
@@ -415,6 +421,7 @@ cr.define('options', function() {
 
       if (args) {
         this.setCheckboxesAndErrors_(args);
+        this.updatePasswordsCheckbox_();
 
         this.shouldNotEncrypt_ = args.shouldNotEncrypt;
         this.useEncryptEverything_ = args.encryptAllData;
@@ -452,6 +459,7 @@ cr.define('options', function() {
 
       // The default state is to sync everything.
       this.setCheckboxesToKeepEverythingSynced_(true);
+      this.updatePasswordsCheckbox_();
 
       if (this.shouldNotEncrypt_)
         $('do-not-encrypt-option').checked = true;
@@ -779,6 +787,12 @@ cr.define('options', function() {
     },
 
     openSigninPage_: function(source) {
+      if (!this.waitingForSigninPageResult_) {
+          this.waitingForSigninPageResult_ = true;
+          window.addEventListener('beforeunload',
+              SyncSetupOverlay.openSigninInProgressDialog, false);
+      }
+
       chrome.send('SyncSetupOpenSigninPage', [ source ]);
     },
   };
@@ -818,6 +832,13 @@ cr.define('options', function() {
 
   SyncSetupOverlay.openSigninPageFromStartSyncSettings = function() {
     SyncSetupOverlay.getInstance().openSigninPage_("settingsPage");
+  };
+
+  SyncSetupOverlay.openSigninInProgressDialog = function(ev) {
+    return 'Closing this page will cancel the sign-in process.\n' +
+           'The sign-in tab, BitPop opened for you before,' +
+           ' will also be closed.\n\n' +
+           'Do you really wish to close this tab?';
   };
 
   // Export

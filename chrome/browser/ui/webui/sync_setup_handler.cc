@@ -261,6 +261,10 @@ void SyncSetupHandler::GetStaticLocalizedValues(
       "chooseDataTypesInstructions",
       GetStringFUTF16(IDS_SYNC_CHOOSE_DATATYPES_INSTRUCTIONS, product_name));
   localized_strings->SetString(
+      "encryptionDisabledMessage",
+      GetStringFUTF16(IDS_SYNC_ENCRYPTION_DISABLED_MESSAGE,
+          GetStringUTF16(IDS_SYNC_PROMO_ADVANCED)));
+  localized_strings->SetString(
       "encryptionInstructions",
       GetStringFUTF16(IDS_SYNC_ENCRYPTION_INSTRUCTIONS, product_name));
   localized_strings->SetString(
@@ -1033,6 +1037,7 @@ void SyncSetupHandler::CloseSyncSetup() {
 
   SigninResultPageTracker* tracker = GetPageTracker();
   if (tracker->GetCurrentObserver() == this) {
+    tracker->CloseUI();
     tracker->UntrackCurrent();
   }
 

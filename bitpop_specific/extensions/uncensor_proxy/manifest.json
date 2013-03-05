@@ -1,6 +1,6 @@
 {
   "name": "Uncensor ISP",
-  "version": "1.6",
+  "version": "1.7",
   "description": "Your internet provider might try to block your access to some sites without proper proceedure. We give you access automatically through a proxy.",
   "background": {
     "scripts": ["parseuri.js", "fancy-settings/source/lib/store.js", "background.js"]

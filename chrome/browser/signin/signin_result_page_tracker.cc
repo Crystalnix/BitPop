@@ -203,10 +203,10 @@ void SigninResultPageTracker::Observe(int type,
 
         std::string state = params["state"];
         if (state[0] == kStateSetBySigninPageIndicator) {
-        	GURL url(std::string(chrome::kChromeUISyncPromoURL) +
+        	GURL url2(std::string(chrome::kChromeUISyncPromoURL) +
         					 std::string("?") + url.query());
 					OpenURLParams url_params(
-          	url, content::Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_LINK, false);
+          	url2, content::Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_LINK, false);
       		tracked_contents_->OpenURL(url_params);
         } else if (state[0] == kStateSetBySettingsPageIndicator &&
         					 observer_ != NULL) {

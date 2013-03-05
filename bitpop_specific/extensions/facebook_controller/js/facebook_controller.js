@@ -35,6 +35,7 @@ bitpop.FacebookController = (function() {
   var GRAPH_API_URL = 'https://graph.facebook.com';
   var FQL_API_URL = 'https://graph.facebook.com/fql';
   var REST_API_URL = 'https://api.facebook.com/method/';
+  var TOKEN_EXCHANGE_URL = 'https://sync.bitpop.com/fb_exchange_token/';
 
   var FRIEND_LIST_UPDATE_INTERVAL = 1000 * 60; // in milliseconds
   var MACHINE_IDLE_INTERVAL = 60 * 10;  // in seconds
@@ -397,6 +398,7 @@ bitpop.FacebookController = (function() {
               changeInfo.url);
         } else {
           localStorage.setItem('accessToken', accessToken);
+          extendAccessToken();
           checkForPermissions(function() {
               notifyObservingExtensions({ type: 'accessTokenAvailable',
                                         accessToken: accessToken });
@@ -566,6 +568,32 @@ bitpop.FacebookController = (function() {
         'json');
     if (onError)
       xhr.callOnError = onError;
+  }
+
+  function extendAccessToken() {
+    var token = localStorage.accessToken;
+    if (!token)
+      return;
+
+    var xhr = $.get(
+        TOKEN_EXCHANGE_URL + token, {},
+        function(data) {
+          var at_prefix = "access_token=";
+          if (data && data.indexOf(at_prefix) == 0) {
+            var access_token = data.substring(at_prefix.length,
+                                              access_token.indexOf('&')-1);
+            if (access_token) {
+              localStorage.setItem('accessToken', access_token);
+              notifyObservingExtensions({ type: 'accessTokenAvailable',
+                                          accessToken: access_token });
+            }
+            console.log('Extend token success.')
+          }
+        },
+      'html');
+    xhr.callOnError = function (error) {
+      console.error(error.error);
+    };
   }
 
   function login(permissions) {
