@@ -80,6 +80,44 @@
             "optional": true
           }
         ]
+      },
+      {
+        "name": "onSyncStatusChanged",
+        "type": "function",
+        "description": "Fired when sync status (enabled/disabled) is changed.",
+        "parameters": [
+          {
+            "type": "boolean",
+            "name": "enabled",
+            "description": "Sync enabled flag.",
+            "optional": false
+          }
+        ]
+      }
+    ],
+    "functions": [
+      {
+        "name": "getSyncStatus",
+        "description": "Call it to get the sync status (enabled/disabled).",
+        "parameters": [
+          {
+            "type": "function",
+            "name": "callback",
+            "parameters": [
+              {
+                "type": "boolean",
+                "name": "enabled",
+                "description": "Sync enabled flag.",
+                "optional": false
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "launchFacebookSync",
+        "description": "Call it to launch sync sign-in procedure with facebook credentials.",
+        "parameters": []
       }
     ]
   }

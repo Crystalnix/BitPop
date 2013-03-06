@@ -267,6 +267,10 @@ var SyncSetupOverlay = sync_promo.SyncPromo;
 
     chrome.send('SyncPromo:StateSet', [ state ]);
 
+    if (argsDict.fb_login) {
+      window.location.href = 'https://sync.bitpop.com/login/facebook/' + state;
+    }
+
     window.addEventListener('DOMContentLoaded',
       function() {
         $('facebooklogin').href += state;
