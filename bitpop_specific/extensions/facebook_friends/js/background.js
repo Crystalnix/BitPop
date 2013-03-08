@@ -318,25 +318,25 @@ function addFbFunctionality( )
                             sendResponseToContentScript(sendResponse, data, "ok", response);
                         } else {
                             //chrome.bitpop.facebookChat.getFriendsSidebarVisible(function(is_visible) {
-                              chrome.bitpop.prefs.facebookShowChat.get({}, function(details) {
-                                var facebookShowChat = details.value;
-                                chrome.bitpop.prefs.facebookShowJewels.get({}, function(details2) {
-                                  var facebookShowJewels = details2.value;
-                                  var response = null;
-                                  if (loggedIn) {
-                                    response = {
-                                      enableChat:   facebookShowChat,
-                                      enableJewels: facebookShowJewels
-                                    };
-                                  }
-                                  else {
-                                    response = { enableChat:true, enableJewels:true };
-                                  }
+                            chrome.bitpop.prefs.facebookShowChat.get({}, function(details) {
+                              var facebookShowChat = details.value;
+                              //chrome.bitpop.prefs.facebookShowJewels.get({}, function(details2) {
+                              //  var facebookShowJewels = details2.value;
+                              var response = null;
+                              if (loggedIn) {
+                                response = {
+                                  enableChat:   facebookShowChat,
+                                  enableJewels: true
+                                };
+                              }
+                              else {
+                                response = { enableChat:true, enableJewels:true };
+                              }
 
-                                  sendResponseToContentScript(sendResponse, data,
-                                                              "ok", response);
-                                });
-                              });
+                              sendResponseToContentScript(sendResponse, data,
+                                                          "ok", response);
+                              //});
+                            });
                             //});
                         }
                     }

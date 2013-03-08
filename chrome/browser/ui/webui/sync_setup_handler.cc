@@ -15,6 +15,8 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/extensions/event_router.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
@@ -36,6 +38,7 @@
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/net/gaia/gaia_constants.h"
 #include "chrome/common/url_constants.h"
@@ -59,6 +62,8 @@ using l10n_util::GetStringFUTF16;
 using l10n_util::GetStringUTF16;
 
 namespace {
+
+const char kSyncStatusChanged = "bitpop.onSyncStatusChanged";
 
 // A structure which contains all the configuration information for sync.
 struct SyncConfigInfo {
@@ -484,6 +489,14 @@ void SyncSetupHandler::ConfigureSyncDone() {
     // We're done configuring, so notify ProfileSyncService that it is OK to
     // start syncing.
     service->SetSyncSetupCompleted();
+
+    extensions::EventRouter* router = GetProfile()->GetExtensionEventRouter();
+    router->DispatchEventToExtension(chrome::kFacebookChatExtensionId,
+        kOnSyncStatusChanged,
+        std::string("[ true ]"),
+        NULL,
+        GURL()
+    );
   }
 }
 
@@ -945,6 +958,14 @@ void SyncSetupHandler::HandleStopSyncing(const ListValue* args) {
   if (ProfileSyncService::IsSyncEnabled()) {
     service->DisableForUser();
     ProfileSyncService::SyncEvent(ProfileSyncService::STOP_FROM_OPTIONS);
+
+    extensions::EventRouter* router = GetProfile()->GetExtensionEventRouter();
+    router->DispatchEventToExtension(chrome::kFacebookChatExtensionId,
+        kOnSyncStatusChanged,
+        std::string("[ false ]"),
+        NULL,
+        GURL()
+    );
   }
 }
 

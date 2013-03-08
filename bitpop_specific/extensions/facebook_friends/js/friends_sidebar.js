@@ -28,8 +28,7 @@ bitpop.FriendsSidebar = (function() {
   $(document).ready(function() {
     var bgPage = chrome.extension.getBackgroundPage();
 
-    // TODO: specify narrower element selector
-    $('button').click(function () {
+    $('#login-button').click(function () {
       chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
         { type: 'login' },
         function (params) {
@@ -128,6 +127,24 @@ bitpop.FriendsSidebar = (function() {
     });
 
     $('#head-col2-row1').click(setStatusAreaClicked);
+
+    function toggleSyncMessage(params) {
+      if (params.status == 'enabled') {
+        $('#sync-para').hide();
+        $('#enable-sync').attr('checked', false);
+        $('#enable-sync').attr('disabled', true);
+      } else if (params.status == 'disabled') {
+        $('#sync-para').show();
+        $('#enable-sync').attr('checked', true);
+        $('#enable-sync').attr('disabled', false);
+      }
+    }
+    chrome.bitpop.getSyncStatus(function (result) {
+      toggleSyncMessage(result);
+    });
+    chrome.bitpop.onSyncStatusChanged.addListener(function (params) {
+      toggleSyncMessage(params);
+    });
   });
 
   /*- private ------------------------*/
@@ -298,6 +315,10 @@ bitpop.FriendsSidebar = (function() {
   };
 
   self.slideToFriendsView = function(dontAnimate) {
+    if ($('#enable-sync').attr('checked') === true) {
+      chrome.bitpop.launchFacebookSync();
+    }
+
     var bgPage = chrome.extension.getBackgroundPage();
     var myUid = bgPage ? bgPage.myUid : undefined;
     if (myUid) {
