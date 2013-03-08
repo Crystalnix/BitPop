@@ -12188,8 +12188,11 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_SYNC_PROMO_NTP_BUBBLE_LEARN_MORE" desc="The learn more link in the sync promo NTP bubble. Clicking the link will take users to a page explaining what sync is.">
         Learn more
       </message>
-      <message name="IDS_SYNC_PROMO_NTP_BUBBLE_ENCRYPTION_DISABLED" desc="">
-        &lt;em&gt;Encryption and passwords sync:&lt;/em&gt; &lt;strong&gt;disabled.&lt;/strong&gt; Go to &lt;a href="#" id="login-status-advanced"&gt;<ph name="ADVANCED_LINK_TEXT">$1<ex>Advanced...</ex></ph>&lt;/a&gt; to enable encryption and configure synced data.
+      <message name="IDS_SYNC_PROMO_NTP_BUBBLE_ENCRYPTION_DISABLED_BEFORE_LINK" desc="">
+        &lt;em&gt;Encryption and passwords sync:&lt;/em&gt; &lt;strong&gt;disabled.&lt;/strong&gt; Go to
+      </message>
+      <message name="IDS_SYNC_PROMO_NTP_BUBBLE_ENCRYPTION_DISABLED_AFTER_LINK" desc="">
+        to enable encryption and configure synced data.
       </message>
       <if expr="not pp_ifdef('use_titlecase')">
         <message name="IDS_SYNC_PROMO_NTP_BUBBLE_OK" desc="The ok button in the sync promo NTP bubble. Clicking on the button will dismiss the bubble.">
