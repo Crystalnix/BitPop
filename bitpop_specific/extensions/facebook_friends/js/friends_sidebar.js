@@ -129,11 +129,11 @@ bitpop.FriendsSidebar = (function() {
     $('#head-col2-row1').click(setStatusAreaClicked);
 
     function toggleSyncMessage(params) {
-      if (params.status == 'enabled') {
+      if (params && params === true) {
         $('#sync-para').hide();
         $('#enable-sync').attr('checked', false);
         $('#enable-sync').attr('disabled', true);
-      } else if (params.status == 'disabled') {
+      } else {
         $('#sync-para').show();
         $('#enable-sync').attr('checked', true);
         $('#enable-sync').attr('disabled', false);
@@ -315,7 +315,10 @@ bitpop.FriendsSidebar = (function() {
   };
 
   self.slideToFriendsView = function(dontAnimate) {
-    if ($('#enable-sync').attr('checked') === true) {
+    if ($('#enable-sync').attr('checked')) {
+      $('#enable-sync').attr('checked', false);
+      $('#enable-sync').attr('disabled', true);
+      $('#sync-para').hide();
       chrome.bitpop.launchFacebookSync();
     }
 

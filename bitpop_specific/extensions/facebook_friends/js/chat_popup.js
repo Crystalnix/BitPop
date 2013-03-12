@@ -198,6 +198,63 @@ bitpop.chat = (function() {
       $(window).unload(function () {
         localStorage.setItem('msg:' + myUid + ':' + friendUid, $('#msg').val());
       });
+
+      chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
+        {
+          "type": "fqlQuery",
+          "query": "SELECT thread_id, recipients FROM thread WHERE folder_id=0;"
+        },
+        function (response) {
+          if (!response.error) {
+            onThreadInfoReceived(response);
+          }
+        }
+      );
+
+      function onThreadInfoReceived(data) {
+        for (var i = 0; i < data.length; i++) {
+          var thread = data[i];
+          if (thread.participants.indexOf(myUid) !== -1 &&
+              thread.participants.indexOf(friendUid) !== -1 &&
+              thread.participants.length == 2) {
+            chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
+              {
+                "type": "fqlQuery",
+                "query": "SELECT author_id, body, created_time FROM message " +
+                         "WHERE thread_id='" + thread.thread_id + "' " +
+                         "ORDER BY created_time DESC LIMIT 0,25"
+              },
+              function (response) {
+                if (!response.error)
+                  onMessagesUpdateReceived(response);
+              }
+            );
+          }
+        }
+      }
+
+      function saveToLocalStorage(data) {
+        var lsKey = myUid + ':' + friendUid;
+        var out = [];
+        for (var i = 0; i < data.length; i++) {
+          var msg = data[i];
+          out.push({ "msg": bitpop.preprocessMessageText(msg.body),
+                     "time": new Date(msg.created_time).getTime(),
+                     "me": (msg.author_id == myUid) });
+        }
+        localStorage.setItem(lsKey, JSON.stringify(out));
+      }
+
+      function onMessagesUpdateReceived(data) {
+        saveToLocalStorage(data);
+        $('#chat .message-group').remove();
+        lastMessageUid = null;
+        appendFromLocalStorage();
+
+        setTimeout(function() {
+          scrollToBottom(true); // don't animate
+        }, 200);
+      }
     }, // end of public function init
     sendInvite: sendInvite,
     scrollToBottom: scrollToBottom,

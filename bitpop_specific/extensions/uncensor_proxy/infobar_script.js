@@ -81,7 +81,7 @@
 
     initCommon();
 
-    setTimeout(hideBar, 5000);
+    setTimeout(hideBar, 10000);
   }
 
   var options = bitpop_uncensor_proxy_options;

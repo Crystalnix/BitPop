@@ -8,6 +8,7 @@
 #include "chrome/browser/bookmarks/bookmark_extension_api.h"
 #include "chrome/browser/bookmarks/bookmark_manager_extension_api.h"
 #include "chrome/browser/extensions/api/app/app_api.h"
+#include "chrome/browser/extensions/api/bitpop/bitpop_api.h"
 #include "chrome/browser/extensions/api/browsing_data/browsing_data_api.h"
 #include "chrome/browser/extensions/api/cloud_print_private/cloud_print_private_api.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_api.h"
@@ -499,6 +500,10 @@ void ExtensionFunctionRegistry::ResetFunctions() {
 
   // Runtime
   RegisterFunction<extensions::RuntimeGetBackgroundPageFunction>();
+
+  // BitPop
+  RegisterFunction<BitpopGetSyncStatusFunction>();
+  RegisterFunction<BitpopLaunchFacebookSyncFunction>();
 
   // Facebook chat
   RegisterFunction<GetFriendsSidebarVisibleFunction>();

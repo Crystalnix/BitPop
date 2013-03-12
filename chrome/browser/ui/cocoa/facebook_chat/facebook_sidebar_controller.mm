@@ -35,10 +35,9 @@ const int kFriendsSidebarWidth = 186;
 }  // end namespace
 
 @interface FacebookSidebarController (Private)
-//- (void)resizeSidebarToNewWidth:(CGFloat)width;
 - (void)showSidebarContents:(WebContents*)sidebarContents;
 - (void)initializeExtensionHost;
-- (void)sizeChanged:(NSNotification*)notification;
+- (void)sizeChanged;
 - (void)onViewDidShow;
 @end
 
@@ -62,11 +61,8 @@ class SidebarExtensionContainer : public ExtensionViewMac::Container {
        : controller_(controller) {
   }
 
-  virtual void OnExtensionSizeChanged(
-      ExtensionViewMac* view,
-      const gfx::Size& new_size) OVERRIDE {
-   [controller_ sizeChanged:nil];
- }
+  virtual void OnExtensionSizeChanged(ExtensionViewMac* view,
+                                      const gfx::Size& new_size) OVERRIDE {}
 
   virtual void OnExtensionViewDidShow(ExtensionViewMac* view) OVERRIDE {
     [controller_ onViewDidShow];
@@ -88,8 +84,7 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
       case chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING: {
         if (content::Details<extensions::ExtensionHost>(
                 [controller_ extension_host]) == details) {
-          //[controller_ showDevTools];
-          // NOTE: do nothing here
+          // ---
         }
         break;
       }
@@ -127,7 +122,7 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
     browser_ = browser;
     sidebarVisible_ = NO;
     NSRect rc = [self view].frame;
-    rc.size.width = 0;
+    rc.size.width = kFriendsSidebarWidth;
     [[self view] setFrame:rc];
 
     view_id_util::SetID(
@@ -139,7 +134,7 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
 
     [[NSNotificationCenter defaultCenter]
         addObserver:self
-        selector:@selector(sizeChanged:)
+        selector:@selector(sizeChanged)
         name:NSViewFrameDidChangeNotification
         object:[self view]
     ];
@@ -159,6 +154,7 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
 }
 
 - (void)dealloc {
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
   [super dealloc];
 }
 
@@ -208,31 +204,30 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
 }
 
 - (void)removeAllChildViews {
-  for (NSView* view in [[self view] subviews])
-    [view removeFromSuperview];
+  for (NSView* childView in [[self view] subviews])
+    [childView removeFromSuperview];
 }
 
 - (void)setVisible:(BOOL)visible {
-   sidebarVisible_ = visible;
-   //[[self view] setHidden:!visible];
+  sidebarVisible_ = visible;
+  [[self view] setHidden:!visible];
 
-   NSRect frame = [self view].frame;
-   frame.size.width = (visible ? [self maxWidth] : 0);
-   [self view].frame = frame;
-
-   [self sizeChanged:nil];
+  gfx::NativeView native_view = extension_host_->view()->native_view();
+  [native_view setNeedsDisplay:YES];
+  [[self view] setNeedsDisplay:YES];
 }
 
-- (void)sizeChanged:(NSNotification*)notification {
+- (void)sizeChanged {
   gfx::NativeView native_view = extension_host_->view()->native_view();
   NSRect container_bounds = [[self view] bounds];
   [native_view setFrame:container_bounds];
 
   [native_view setNeedsDisplay:YES];
+  [[self view] setNeedsDisplay:YES];
 }
 
 - (void)onViewDidShow {
-  [self sizeChanged:nil];
+  [self sizeChanged];
 }
 
 @end

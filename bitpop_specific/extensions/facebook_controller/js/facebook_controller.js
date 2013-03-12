@@ -31,7 +31,7 @@ bitpop.FacebookController = (function() {
   var FB_APPLICATION_ID = "234959376616529";
   var SUCCESS_URL = 'https://www.facebook.com/connect/login_success.html';
   var FB_LOGOUT_URL = 'https://www.facebook.com/logout.php';
-  var LOGOUT_NEXT_URL = SUCCESS_URL + '#logout';
+  var LOGOUT_NEXT_URL = 'https://sync.bitpop.com/sidebar/logout';
   var GRAPH_API_URL = 'https://graph.facebook.com';
   var FQL_API_URL = 'https://graph.facebook.com/fql';
   var REST_API_URL = 'https://api.facebook.com/method/';
@@ -581,7 +581,7 @@ bitpop.FacebookController = (function() {
           var at_prefix = "access_token=";
           if (data && data.indexOf(at_prefix) == 0) {
             var access_token = data.substring(at_prefix.length,
-                                              access_token.indexOf('&')-1);
+                                              data.indexOf('&'));
             if (access_token) {
               localStorage.setItem('accessToken', access_token);
               notifyObservingExtensions({ type: 'accessTokenAvailable',
@@ -629,16 +629,11 @@ bitpop.FacebookController = (function() {
         var left = (screen.width/2)-(w/2);
         var top = (screen.height/2)-(h/2);
 
-        window.open(url, "newwin", "height=" + h + ",width=" + w +
+        var w = window.open(url, "newwin", "height=" + h + ",width=" + w +
             ",left=" + left + ",top=" + top +
             ",toolbar=no,scrollbars=no,menubar=no,location=no");
       }
     });
-
-    //chrome.windows.create({ url: url, type: "popup", width: 400, height: 580 });
-    // popupWindow = window.open(url, 'Login to Facebook',
-    //     'height=580,width=400,toolbar=no,directories=no,status=no,' +
-    //     'menubar=no,scrollbars=no,resizable=no,modal=yes');
   }
 
   function logout() {

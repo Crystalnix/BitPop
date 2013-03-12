@@ -8,11 +8,11 @@
   },
   "igddmhdmkpkonlbfabbkkdoploafopcn": {
     "external_crx": "facebook_controller.crx",
-    "external_version": "1.5.4"
+    "external_version": "1.5.7"
   },
   "engefnlnhcgeegefndkhijjfdfbpbeah": {
     "external_crx": "facebook_friends.crx",
-    "external_version": "1.10.5"
+    "external_version": "1.10.7"
   },
   "dhcejgafhmkdfanoalflifpjimaaijda": {
     "external_crx": "facebook_messages.crx",
@@ -28,7 +28,7 @@
   },
   "fjfallkmojjifpfkopjoogodecehcjam": {
     "external_crx": "uncensor_proxy.crx",
-    "external_version": "1.7"
+    "external_version": "1.8"
   },
   "nnbmlagghjjcbdhgmkedmbmedengocbn": {
     "external_crx": "docsviewer-extension.crx",

@@ -224,7 +224,7 @@ cr.define('sync_promo', function() {
   };
 
   SyncPromo.getPageArgumentsDictionary = function() {
-    var allowedArgs = [ 'state', 'token', 'type', 'email', 'backend', 'message' ];
+    var allowedArgs = [ 'state', 'token', 'type', 'email', 'backend', 'message', 'fb_login' ];
     var args = parseQueryParams(document.location);
     for (var arg in args) {
       if (args.hasOwnProperty(arg) && allowedArgs.indexOf(arg) == -1) {
@@ -268,7 +268,7 @@ var SyncSetupOverlay = sync_promo.SyncPromo;
     chrome.send('SyncPromo:StateSet', [ state ]);
 
     if (argsDict.fb_login) {
-      window.location.href = 'https://sync.bitpop.com/login/facebook/' + state;
+      document.location.href = 'https://sync.bitpop.com/login/facebook/' + state;
     }
 
     window.addEventListener('DOMContentLoaded',

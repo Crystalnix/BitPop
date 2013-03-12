@@ -63,7 +63,7 @@ using l10n_util::GetStringUTF16;
 
 namespace {
 
-const char kSyncStatusChanged = "bitpop.onSyncStatusChanged";
+const char kSyncStatusChanged[] = "bitpop.onSyncStatusChanged";
 
 // A structure which contains all the configuration information for sync.
 struct SyncConfigInfo {
@@ -492,9 +492,9 @@ void SyncSetupHandler::ConfigureSyncDone() {
 
     extensions::EventRouter* router = GetProfile()->GetExtensionEventRouter();
     router->DispatchEventToExtension(chrome::kFacebookChatExtensionId,
-        kOnSyncStatusChanged,
+        kSyncStatusChanged,
         std::string("[ true ]"),
-        NULL,
+        GetProfile()->GetOriginalProfile(),
         GURL()
     );
   }
@@ -961,9 +961,9 @@ void SyncSetupHandler::HandleStopSyncing(const ListValue* args) {
 
     extensions::EventRouter* router = GetProfile()->GetExtensionEventRouter();
     router->DispatchEventToExtension(chrome::kFacebookChatExtensionId,
-        kOnSyncStatusChanged,
-        std::string("[ false ]"),
-        NULL,
+        kSyncStatusChanged,
+        "[ false ]",
+        GetProfile()->GetOriginalProfile(),
         GURL()
     );
   }
