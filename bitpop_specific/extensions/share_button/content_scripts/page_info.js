@@ -1,4 +1,4 @@
-chrome.extension.sendRequest({
+chrome.extension.sendMessage({
     type: 'pageInfo',
     info: {
         link: window.location.href,

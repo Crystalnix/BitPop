@@ -2057,4 +2057,6 @@ const char kShowMessageForActiveProxy[] = "bitpop.show_message_for_active_proxy"
 const char kIPRecognitionCountryName[] = "bitpop.ip_recognition_country_name";
 const char kBlockedSitesList[] = "bitpop.blocked_sites_list";
 
+const char kShouldNotEncrypt[] = "bitpop.should_not_encrypt";
+
 }  // namespace prefs

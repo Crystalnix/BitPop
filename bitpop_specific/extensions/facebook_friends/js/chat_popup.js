@@ -63,7 +63,7 @@ bitpop.chat = (function() {
         }
       })();
 
-      chrome.extension.onRequestExternal.addListener(function (request, sender, sendResponse) {
+      chrome.extension.onMessageExternal.addListener(function (request, sender, sendResponse) {
         if (request.type == 'newMessage') {
           if (friendUid == request.from) {
             appendMessage(bitpop.preprocessMessageText(request.body), new Date(), false);
@@ -115,7 +115,7 @@ bitpop.chat = (function() {
                         uidTo: uidTo,
                         state: 'active',
                         type: 'sendChatMessage'};
-        chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID, request,
+        chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID, request,
             function(response) {
               onMessageSent(response, meMsg, uidTo);
             });
@@ -142,7 +142,7 @@ bitpop.chat = (function() {
                             state: 'composing',
                             type: 'sendChatMessage'};
 
-            chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID, request,
+            chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID, request,
               function(response) {});
             $(this).parent().data('composing', true);
             if (typingExpired) {
@@ -152,7 +152,7 @@ bitpop.chat = (function() {
             var that = this;
             typingExpired = setTimeout(function() {
               if ($(that).parent().data('composing')) {
-                chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+                chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
                   {
                     message: '',
                     uidTo: uidTo,
@@ -194,10 +194,67 @@ bitpop.chat = (function() {
         var scrollTop = $(this).scrollTop();
         $(this).scrollTop(scrollTop-Math.round(ev.originalEvent.wheelDelta/40));
       });
-      
+
       $(window).unload(function () {
         localStorage.setItem('msg:' + myUid + ':' + friendUid, $('#msg').val());
       });
+
+      chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
+        {
+          "type": "fqlQuery",
+          "query": "SELECT thread_id, recipients FROM thread WHERE folder_id=0;"
+        },
+        function (response) {
+          if (!response.error) {
+            onThreadInfoReceived(response);
+          }
+        }
+      );
+
+      function onThreadInfoReceived(data) {
+        for (var i = 0; i < data.length; i++) {
+          var thread = data[i];
+          if (thread.recipients.indexOf(+myUid) !== -1 &&
+              thread.recipients.indexOf(+friendUid) !== -1 &&
+              thread.recipients.length == 2) {
+            chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
+              {
+                "type": "fqlQuery",
+                "query": "SELECT author_id, body, created_time FROM message " +
+                         "WHERE thread_id='" + thread.thread_id + "' " +
+                         "ORDER BY created_time DESC LIMIT 0,25"
+              },
+              function (response) {
+                if (!response.error)
+                  onMessagesUpdateReceived(response);
+              }
+            );
+          }
+        }
+      }
+
+      function saveToLocalStorage(data) {
+        var lsKey = myUid + ':' + friendUid;
+        var out = [];
+        for (var i = data.length-1; i >= 0; --i) {
+          var msg = data[i];
+          out.push({ "msg": bitpop.preprocessMessageText(msg.body),
+                     "time": new Date(msg.created_time * 1000).getTime(),
+                     "me": (msg.author_id == +myUid) });
+        }
+        localStorage.setItem(lsKey, JSON.stringify(out));
+      }
+
+      function onMessagesUpdateReceived(data) {
+        saveToLocalStorage(data);
+        $('#chat .message-group').remove();
+        lastMessageUid = null;
+        appendFromLocalStorage();
+
+        setTimeout(function() {
+          scrollToBottom(true); // don't animate
+        }, 200);
+      }
     }, // end of public function init
     sendInvite: sendInvite,
     scrollToBottom: scrollToBottom,
@@ -298,7 +355,7 @@ bitpop.chat = (function() {
   }
 
   function sendInvite() {
-    chrome.extension.sendRequest(
+    chrome.extension.sendMessage(
         bitpop.CONTROLLER_EXTENSION_ID,
         {
           type: 'sendInvite',

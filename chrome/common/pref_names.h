@@ -768,6 +768,8 @@ extern const char kShowMessageForActiveProxy[];
 extern const char kIPRecognitionCountryName[];
 extern const char kBlockedSitesList[];
 
+extern const char kShouldNotEncrypt[];
+
 }  // namespace prefs
 
 #endif  // CHROME_COMMON_PREF_NAMES_H_

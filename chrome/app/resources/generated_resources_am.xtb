@@ -17,7 +17,7 @@
 <translation id="1763046204212875858">የመተግበሪያ አቋራጮችን ፍጠር</translation>
 <translation id="561349411957324076">ተጠናቋል</translation>
 <translation id="6156863943908443225">የስክሪፕት መሸጎጫ</translation>
-<translation id="4610656722473172270">የGoogle የመሳሪያ አሞሌ</translation>
+<translation id="4610656722473172270">የBitpop የመሳሪያ አሞሌ</translation>
 <translation id="151501797353681931">ከSafari የመጣ</translation>
 <translation id="3775432569830822555">SSL አገልጋይ ሰርቲፊኬት</translation>
 <translation id="5704565838965461712">እንደመታወቂያ የሚቀርብ ሰርቲፊኬት ምረጥ፦</translation>
@@ -49,7 +49,7 @@
 <translation id="558170650521898289">Microsoft Windows የሃርድዌር መሳሪያ ማረጋገጫ</translation>
 <translation id="8974161578568356045">ራስ ፈልግ</translation>
 <translation id="1818606096021558659">ገጽ</translation>
-<translation id="1657406563541664238">የአጠቃቀም ስታቲክሶችን እና የስንኩል ሪፖርቶችን ወደ Google በቀጥታ በመላክ <ph name="PRODUCT_NAME"/>ን የተሻለ ለማድረግ እገዛ ያድርጉ።</translation>
+<translation id="1657406563541664238">የአጠቃቀም ስታቲክሶችን እና የስንኩል ሪፖርቶችን ወደ Bitpop በቀጥታ በመላክ <ph name="PRODUCT_NAME"/>ን የተሻለ ለማድረግ እገዛ ያድርጉ።</translation>
 <translation id="7982789257301363584">አውታረ መረብ</translation>
 <translation id="2336228925368920074">ለሁሉም ትሮች ዕልባት አብጅ...</translation>
 <translation id="7481475534986701730">በቅርብ ጊዜ የተጎበኙ ጣቢያዎች</translation>
@@ -198,7 +198,7 @@ nil</translation>
 <translation id="2423578206845792524">ምስል አስ&amp;ቀምጥ እንደ…</translation>
 <translation id="9068931793451030927">ዱካ፦</translation>
 <translation id="1407050882688520094">የእነዚህን ሰርቲፊኬቲች ባለስልጣን የሚለዩ ሰርቲፊኬቶች በፋይሉ ላይ አሉዎት፦</translation>
-<translation id="8642489171979176277">ከGoogle መሳሪያ አሞሌ የመጣ</translation>
+<translation id="8642489171979176277">ከBitpop መሳሪያ አሞሌ የመጣ</translation>
 <translation id="2011110593081822050">Web Worker፦ <ph name="WORKER_NAME"/></translation>
 <translation id="8494979374722910010">ከአገልጋዩ ጋር ለመገናኘት የተደረገው ሙከራ ከሽፏል።</translation>
 <translation id="7810202088502699111">በዚህ ገጽ ብቅ-ባዮች ታግደዋል።</translation>
@@ -545,7 +545,7 @@ nil</translation>
 <translation id="1047726139967079566">ለእዚህ ገጽ ዕልባት አዘጋጅ…</translation>
 <translation id="2544782972264605588">ከ<ph name="NUMBER_DEFAULT"/> ሰከንድ በፊት</translation>
 <translation id="4767443964295394154">የሚወርድ ቦታ</translation>
-<translation id="5031870354684148875">ስለ Google ትርጉም</translation>
+<translation id="5031870354684148875">ስለ Bitpop ትርጉም</translation>
 <translation id="720658115504386855">ሆሄያት መልከ ፊደልን ያገናዘቡ አይደሉም</translation>
 <translation id="2454247629720664989">ቁልፍ ቃል</translation>
 <translation id="3950820424414687140">ይግቡ</translation>
@@ -563,7 +563,7 @@ nil</translation>
 <translation id="6463795194797719782">&amp;አርትዕ</translation>
 <translation id="4188026131102273494">ቁልፍ ቃል፦</translation>
 <translation id="1720318856472900922">TLS WWW የአገልጋይ ማረጋገጫ</translation>
-<translation id="1436238710092600782">የGoogle መለያ ፍጠር</translation>
+<translation id="1436238710092600782">የBitpop መለያ ፍጠር</translation>
 <translation id="7227780179130368205">ማልዌር ተገኝቷል!</translation>
 <translation id="5149131957118398098"><ph name="NUMBER_ZERO"/> ሰዓት ይቀራል</translation>
 <translation id="2367499218636570208">የመጀመሪያ ስም</translation>
@@ -970,7 +970,7 @@ nil</translation>
 <translation id="7278870042769914968">ጂቲኬ ገጽታ ተጠቀም</translation>
 <translation id="1902576642799138955">የተገቢነት ክፍለ ጊዜ</translation>
 <translation id="3308006649705061278">ድርጅታዊ መስፈርት (ድመ)</translation>
-<translation id="8912362522468806198">የGoogle መለያ</translation>
+<translation id="8912362522468806198">የBitpop መለያ</translation>
 <translation id="4074900173531346617">የኢሜይል ፈራሚ ሰርቲፊኬት</translation>
 <translation id="6165508094623778733">ተጨማሪ ለመረዳት</translation>
 <translation id="822618367988303761">ከ<ph name="NUMBER_TWO"/> ቀናት በፊት</translation>
@@ -1107,7 +1107,7 @@ nil</translation>
 <translation id="5154702632169343078">ርዕሰ ጉዳይ</translation>
 <translation id="122082903575839559">የሰርቲፊኬት ፊርማ አልጎሪዝም</translation>
 <translation id="7240120331469437312">የሰርቲፊኬት ርዕስ ተለዋጭ ስም</translation>
-<translation id="1718559768876751602">የGoogle መለያ አሁን ፍጠር</translation>
+<translation id="1718559768876751602">የBitpop መለያ አሁን ፍጠር</translation>
 <translation id="2770465223704140727">ከዝርዝር  አስወግድ</translation>
 <translation id="6053401458108962351">&amp;የአሰሳ ውሂብ አስወግድ…</translation>
 <translation id="2339641773402824483">የተሻሻሉ ነገሮች ካሉ በመፈተሽ ላይ ነው...</translation>

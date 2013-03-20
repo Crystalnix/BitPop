@@ -101,7 +101,7 @@ function listenToRequestsFromWebPage( )
         function(req) {
             if(req && req.data) {
                 //send the request to the background page
-                chrome.extension.sendRequest(req.data, handleBackgroundPageResponse);
+                chrome.extension.sendMessage(req.data, handleBackgroundPageResponse);
             } else {
                 var msg = "Could not send request.  req=" + req;
                 var e = document.createEvent("TextEvent");

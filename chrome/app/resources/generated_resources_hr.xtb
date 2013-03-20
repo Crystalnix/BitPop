@@ -34,7 +34,7 @@
 <translation id="3581034179710640788">Istekla je sigurnosna potvrda ove web lokacije!</translation>
 <translation id="2825758591930162672">Javni ključ predmeta</translation>
 <translation id="8306243285620593545">Ikona statusa fokusa</translation>
-<translation id="1130622745736410868">želi potvrditi da pregledavate na uređaju OS-a Chrome tako da od Googlea traži potvrdu vašeg koda kupona.</translation>
+<translation id="1130622745736410868">želi potvrditi da pregledavate na uređaju OS-a Chrome tako da od Bitpopa traži potvrdu vašeg koda kupona.</translation>
 <translation id="8176382683266548737">Omogući obavijesti</translation>
 <translation id="8275038454117074363">Uvezi</translation>
 <translation id="8418445294933751433">&amp;Prikaži kao karticu</translation>
@@ -57,7 +57,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="4940047036413029306">Navod.</translation>
 <translation id="1497897566809397301">Dopusti postavljanje lokalnih podataka (preporučuje se)</translation>
 <translation id="3275778913554317645">Otvori kao prozor</translation>
-<translation id="4553117311324416101">Google je utvrdio da zlonamjerni softver može biti instaliran na vaše računalo ako nastavite. Ako ste prije posjećivali tu web-lokaciju ili ako joj vjerujete, moguće je da su je nedavno ugrozili hakeri. Ne biste trebali nastaviti, pokušajte opet sutra ili idite na neku drugu web.lokaciju.</translation>
+<translation id="4553117311324416101">Bitpop je utvrdio da zlonamjerni softver može biti instaliran na vaše računalo ako nastavite. Ako ste prije posjećivali tu web-lokaciju ili ako joj vjerujete, moguće je da su je nedavno ugrozili hakeri. Ne biste trebali nastaviti, pokušajte opet sutra ili idite na neku drugu web.lokaciju.</translation>
 <translation id="5085514918439894988">Za ovu radnju nije instalirana nijedna usluga, a za tu radnju nema ni preporučenih usluga u Chrome web-trgovini.</translation>
 <translation id="8867568208303837180">Šaljemo...</translation>
 <translation id="509988127256758334">Tr&amp;aži ovo:</translation>
@@ -91,7 +91,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="21426568240411732"><ph name="TITLE"/> upotrebljava vašu kameru.</translation>
 <translation id="6156863943908443225">Predmemorija skripte</translation>
 <translation id="4274187853770964845">Pogreška u sinkronizaciji: zaustavite i ponovo pokrenite sinkronizaciju.</translation>
-<translation id="4610656722473172270">Google Alatna traka</translation>
+<translation id="4610656722473172270">Bitpop Alatna traka</translation>
 <translation id="656293578423618167">Putanja ili naziv datoteke predugački su. Spremite datoteku pod kraćim nazivom ili na neku drugu lokaciju.</translation>
 <translation id="3484869148456018791">Preuzmi novi certifikat</translation>
 <translation id="151501797353681931">Uvezeno iz preglednika Safari</translation>
@@ -139,13 +139,13 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="7600965453749440009">Nikad ne prevodi <ph name="LANGUAGE"/></translation>
 <translation id="3208703785962634733">Nepotvrđeno</translation>
 <translation id="620329680124578183">Ne učitavajte (preporučeno)</translation>
-<translation id="6300924177400055566">Nemate dovoljno prostora na Google disku da biste spremili datoteku &quot;<ph name="FILE_NAME"/>&quot;. Uklonite datoteke ili <ph name="BEGIN_LINK"/>kupite više prostora za pohranu<ph name="END_LINK"/>.</translation>
+<translation id="6300924177400055566">Nemate dovoljno prostora na Bitpop disku da biste spremili datoteku &quot;<ph name="FILE_NAME"/>&quot;. Uklonite datoteke ili <ph name="BEGIN_LINK"/>kupite više prostora za pohranu<ph name="END_LINK"/>.</translation>
 <translation id="9074739597929991885">Bluetooth</translation>
 <translation id="2653266418988778031">Ako izbrišete certifikat tijela za izdavanje certifikata, vaš preglednik više neće vjerovati nijednom certifikatu koji to tijelo izda.</translation>
 <translation id="5341849548509163798"><ph name="NUMBER_MANY"/> hours ago</translation>
 <translation id="4422428420715047158">Domena:</translation>
 <translation id="7788444488075094252">Jezici i unos</translation>
-<translation id="6723354935081862304">Ispisujte u Google dokumente i druga odredišta u oblaku. <ph name="BEGIN_LINK"/>Prijavite se<ph name="END_LINK"/> za ispis u Google Cloud Print.</translation>
+<translation id="6723354935081862304">Ispisujte u Bitpop dokumente i druga odredišta u oblaku. <ph name="BEGIN_LINK"/>Prijavite se<ph name="END_LINK"/> za ispis u Google Cloud Print.</translation>
 <translation id="3602290021589620013">Pregled</translation>
 <translation id="6257035105556579916">Proširenja se ne mogu modificirati u upravljanom načinu.</translation>
 <translation id="800602641363855389"><ph name="TITLE"/> upotrebljava vaš mikrofon.</translation>
@@ -214,7 +214,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="1818606096021558659">Stranica</translation>
 <translation id="1549045574060481141">Potvrda preuzimanja</translation>
 <translation id="5388588172257446328">Korisničko ime:</translation>
-<translation id="1657406563541664238">Olakšajte nam poboljšanje preglednika <ph name="PRODUCT_NAME"/> automatskim slanjem statistike o upotrebi i izvješća o padu programa Googleu</translation>
+<translation id="1657406563541664238">Olakšajte nam poboljšanje preglednika <ph name="PRODUCT_NAME"/> automatskim slanjem statistike o upotrebi i izvješća o padu programa Bitpopu</translation>
 <translation id="7982789257301363584">Mreža</translation>
 <translation id="2271281383664374369">Zahtjevi proširenja upućeni tom URL-u privremeno su ograničeni.</translation>
 <translation id="8528962588711550376">Prijava.</translation>
@@ -231,8 +231,8 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="9151034842884433218">Odaberite sliku i ime za svoj novi profil na usluzi Chrome.</translation>
 <translation id="1510030919967934016">Ova je stranica blokirana u praćenju vaše lokacije.</translation>
 <translation id="8848519885565996859">Korisnički definirani okvir veze URL-a</translation>
-<translation id="4640525840053037973">Prijavite se svojim Google računom</translation>
-<translation id="6315526595991863271">Sada ste prijavljeni na uslugu <ph name="SHORT_PRODUCT_NAME"/>. Vaše oznake, povijest i druge postavke sinkroniziraju se s vašim Google računom prema zadanim postavkama.</translation>
+<translation id="4640525840053037973">Prijavite se svojim Bitpop računom</translation>
+<translation id="6315526595991863271">Sada ste prijavljeni na uslugu <ph name="SHORT_PRODUCT_NAME"/>. Vaše oznake, povijest i druge postavke sinkroniziraju se s vašim Bitpop računom prema zadanim postavkama.</translation>
 <translation id="5255315797444241226">Zaporka koju ste unijeli nije točna.</translation>
 <translation id="762917759028004464">Zadani preglednik trenutno je <ph name="BROWSER_NAME"/>.</translation>
 <translation id="8289982954746764694">Omogućite element praćenja (još nije u potpunosti funkcionalan) za naslove, podnaslove, poglavlja i audioopise na elementima videozapisa.</translation>
@@ -266,7 +266,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="1801827354178857021">Točka</translation>
 <translation id="4560332071395409256">Kliknite <ph name="BEGIN_BOLD"/>Start<ph name="END_BOLD"/>, kliknite <ph name="BEGIN_BOLD"/>Pokreni<ph name="END_BOLD"/>, upišite <ph name="BEGIN_BOLD"/>%windir%\network diagnostic\xpnetdiag.exe<ph name="END_BOLD"/> pa kliknite <ph name="BEGIN_BOLD"/>U redu<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Dodaj tražilicu</translation>
-<translation id="6868050610674841964">Kada se prijavite, vaši će se podaci sinkronizirati putem vašega Google računa kako biste mogli pristupiti svojim oznakama, povijesti i drugim postavkama na bilo kojem uređaju.</translation>
+<translation id="6868050610674841964">Kada se prijavite, vaši će se podaci sinkronizirati putem vašega Bitpop računa kako biste mogli pristupiti svojim oznakama, povijesti i drugim postavkama na bilo kojem uređaju.</translation>
 <translation id="5498951625591520696">Dohvaćanje poslužitelja nije moguće.</translation>
 <translation id="1621207256975573490">Spremi &amp;okvir kao...</translation>
 <translation id="4681260323810445443">Nemate autorizaciju za pristup web-stranici na <ph name="URL"/>. Možda se trebate prijaviti.</translation>
@@ -300,7 +300,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="6845180713465955339">Certifikat &quot;<ph name="CERTIFICATE_NAME"/>&quot; izdaje:</translation>
 <translation id="5364525511170219879">Omogući korisničko sučelje aktivnosti proširenja</translation>
 <translation id="3088325635286126843">&amp;Preimenuj...</translation>
-<translation id="6979158407327259162">Google disk</translation>
+<translation id="6979158407327259162">Bitpop disk</translation>
 <translation id="6853700448789925482">Omogući element <ph name="TRACK_HTML"/></translation>
 <translation id="3150927491400159470">Tvrdo ponovno učitavanje</translation>
 <translation id="7531238562312180404">Budući da <ph name="PRODUCT_NAME"/> ne kontrolira način na koji proširenja rukuju vašim osobnim podacima, sva su proširenja onemogućena za anonimne prozore. Pojedinačno ih možete ponovo omogućiti u <ph name="BEGIN_LINK"/>upravitelju proširenja<ph name="END_LINK"/>.</translation>
@@ -364,7 +364,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="8194465509832052438">Konfiguracija naredbi</translation>
 <translation id="4422347585044846479">Uredi oznaku za ovu stranicu</translation>
 <translation id="2452539774207938933">Prebaci na korisnika: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">Google Chrome može pružiti bolju provjeru pravopisa slanjem teksta unesenog u preglednik Googleovim poslužiteljima te vam na taj način omogućuje upotrebu iste tehnologije provjere pravopisa kojom se služi Google pretraživanje.</translation>
+<translation id="4700157086864140907">Bitpop Chrome može pružiti bolju provjeru pravopisa slanjem teksta unesenog u preglednik Googleovim poslužiteljima te vam na taj način omogućuje upotrebu iste tehnologije provjere pravopisa kojom se služi Google pretraživanje.</translation>
 <translation id="7632357940961158759">Nekim postavkama upravlja proširenje.</translation>
 <translation id="1880905663253319515">Izbrisati certifikat &quot;<ph name="CERTIFICATE_NAME"/>&quot;?</translation>
 <translation id="8546306075665861288">Predmemorija slike</translation>
@@ -417,7 +417,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="1884405719612801980">heuristička vrsta: <ph name="HEURISTIC_TYPE"/> vrsta poslužitelja: <ph name="SERVER_TYPE"/> polje za potpis: <ph name="FIELD_SIGNATURE"/> obrazac za potpis: <ph name="FORM_SIGNATURE"/> id eksperimenta: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8656768832129462377">Nemoj provjeravati</translation>
 <translation id="715487527529576698">Početni kineski način je pojednostavljeni kineski</translation>
-<translation id="6896830120821965585">Omogućuje pozadinsku uslugu koja povezuje uslugu Google Cloud Print s bilo kojim pisačem instaliranim na ovom računalu. Nakon omogućavanja ovog laboratorija, možete uključiti priključak usluge Google Cloud Print ako otvorite Postavke i prijavite se na Google račun u odjeljku Napredne postavke.</translation>
+<translation id="6896830120821965585">Omogućuje pozadinsku uslugu koja povezuje uslugu Bitpop Cloud Print s bilo kojim pisačem instaliranim na ovom računalu. Nakon omogućavanja ovog laboratorija, možete uključiti priključak usluge Google Cloud Print ako otvorite Postavke i prijavite se na Google račun u odjeljku Napredne postavke.</translation>
 <translation id="3999508690854143454">Pitaj me kada web-lokacija zatraži pristup mojoj kameri i mikrofonu (preporučeno)</translation>
 <translation id="1674989413181946727">SSL postavke za cijelo računalo:</translation>
 <translation id="1531285811424589182">Pogreška pri brisanju certifikata</translation>
@@ -434,7 +434,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="3874070094967379652">Upotrijebi zaporku sinkronizacije za kriptiranje mojih podataka</translation>
 <translation id="6500116422101723010">Poslužitelj trenutno ne može obraditi zahtjev. Ovaj kôd znači da je to privremeno stanje, a poslužitelj će se vratiti nakon stanke.</translation>
 <translation id="1644574205037202324">Povijest</translation>
-<translation id="4206944295053515692">Traži prijedloge od Googlea</translation>
+<translation id="4206944295053515692">Traži prijedloge od Bitpopa</translation>
 <translation id="1297175357211070620">Odredište</translation>
 <translation id="479280082949089240">Kolačići koje je postavila ova stranica</translation>
 <translation id="4198861010405014042">Dijeljeni pristup</translation>
@@ -447,8 +447,8 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="3887847548716051874">Uvijek dopusti ovoj web-lokaciji upotrebu ovog mikrofona i ove kamere</translation>
 <translation id="2886862922374605295">Hardver:</translation>
 <translation id="4497097279402334319">Povezivanje s mrežom nije uspjelo.</translation>
-<translation id="7342729285348293164">Prijavite se na uslugu <ph name="PRODUCT_NAME"/> svojim Google računom da biste spremili svoje prilagođene značajke preglednika na web i pristupali im s usluge <ph name="PRODUCT_NAME"/> na bilo kojem računalu. Također ćete se automatski prijaviti na svoje omiljene Googleove usluge.</translation>
-<translation id="2542049655219295786">Googleova tablica</translation>
+<translation id="7342729285348293164">Prijavite se na uslugu <ph name="PRODUCT_NAME"/> svojim Bitpop računom da biste spremili svoje prilagođene značajke preglednika na web i pristupali im s usluge <ph name="PRODUCT_NAME"/> na bilo kojem računalu. Također ćete se automatski prijaviti na svoje omiljene Googleove usluge.</translation>
+<translation id="2542049655219295786">Bitpopova tablica</translation>
 <translation id="3899879303189199559">Izvan mreže više od godinu dana</translation>
 <translation id="5303618139271450299">Ta web-stranica nije pronađena</translation>
 <translation id="4256316378292851214">Sp&amp;remi videozapis kao...</translation>
@@ -457,7 +457,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="6518014396551869914">Kop&amp;iraj sliku</translation>
 <translation id="3236997602556743698">3 Set (390)</translation>
 <translation id="542155483965056918"><ph name="NUMBER_ZERO"/> mins ago</translation>
-<translation id="4928351909437667303">Onemogući Google disk na ovom uređaju.</translation>
+<translation id="4928351909437667303">Onemogući Bitpop disk na ovom uređaju.</translation>
 <translation id="6315723398663634808">Certifikat poslužitelja sadrži slab kriptografski ključ!</translation>
 <translation id="2887525882758501333">PDF dokument</translation>
 <translation id="289426338439836048">Druga mobilna mreža...</translation>
@@ -525,7 +525,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="6431347207794742960"><ph name="PRODUCT_NAME"/> postavit će automatsko ažuriranje za sve korisnike na ovom računalu.</translation>
 <translation id="4973698491777102067">Odstrani sljedeće stavke iz:</translation>
 <translation id="6074963268421707432">Nemoj dopustiti nijednoj web-lokaciji da prikazuje obavijesti radne površine</translation>
-<translation id="4944952004685780325">Omogućuje upotrebu API-ja Disk V2 za pristupanje mapi Google diska.</translation>
+<translation id="4944952004685780325">Omogućuje upotrebu API-ja Disk V2 za pristupanje mapi Bitpop diska.</translation>
 <translation id="1995173078718234136">Skeniranje sadržaja...</translation>
 <translation id="7920521481309889533">Omogući SPDY/3</translation>
 <translation id="5979681173469464041">Fokusiraj sljedeće okno</translation>
@@ -534,7 +534,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="1491151370853475546">Ponovo učitaj ovu stranicu</translation>
 <translation id="5374359983950678924">Promijeni sliku</translation>
 <translation id="2859738163554174612">Nikada mi ne nudi prijavu</translation>
-<translation id="1378727793141957596">Dobro došli u Google disk!</translation>
+<translation id="1378727793141957596">Dobro došli u Bitpop disk!</translation>
 <translation id="5158548125608505876">Ne sinkroniziraj moje zaporke</translation>
 <translation id="3717485073527618485">Pitaj me kada stranica pokuša onemogućiti pokazivač miša (preporučeno)</translation>
 <translation id="3273410961255278341">Prima:</translation>
@@ -567,7 +567,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="773426152488311044">Trenutačno ste jedini korisnik usluge <ph name="PRODUCT_NAME"/>.</translation>
 <translation id="2042078858148122628">Nije moguće pronaći poslužitelj na usluzi <ph name="HOST_NAME"/> jer nije uspjelo pretraživanje DNS-a. DNS je web-usluga koja prevodi naziv web-lokacije u njezinu internetsku adresu. Najčešći je uzrok te pogreške nepostojanje internetske veze ili pogrešna konfiguracija mreže. Uzrok pogreške također može biti izostanak odgovora poslužitelja DNS-a poslužitelja ili vatrozid koji proizvodu <ph name="PRODUCT_NAME"/> sprječava pristup mreži.</translation>
 <translation id="2159087636560291862">U tom slučaju, certifikat nisu provjerile treće strane kojima vaše računalo vjeruje. Svatko može stvoriti certifikat i tvrditi da je bilo koja web-lokacija, stoga to mora potvrditi pouzdana treća strana. Bez potvrde, informacije o identitetu u certifikatu nemaju smisla. Dakle, nije moguće provjeriti komunicirate li s domenom <ph name="DOMAIN"/> ili s napadačem koji je generirao vlastiti certifikat s kojim tvrdi da je domena <ph name="DOMAIN2"/>. Ne biste trebali nastaviti dalje.</translation>
-<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> zahtijeva od vas da kriptirate svoje podatke pomoću Googleove zaporke ili vlastite zaporke.</translation>
+<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> zahtijeva od vas da kriptirate svoje podatke pomoću Bitpopove zaporke ili vlastite zaporke.</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">Nije tijelo za izdavanje certifikata</translation>
 <translation id="6099520380851856040">Dogodio se <ph name="CRASH_TIME"/></translation>
@@ -721,7 +721,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="8943805475239098364">Želite li pretraživati uz <ph name="NEW_GOOGLE_HOST"/> umjesto <ph name="CURRENT_GOOGLE_HOST"/>?</translation>
 <translation id="3813510441224209252">Formatiranje na čekanju</translation>
 <translation id="8912793549644936705">Rastegni</translation>
-<translation id="8026684114486203427">Da biste koristili Chrome Web Store, morate se prijaviti putem Google Računa.</translation>
+<translation id="8026684114486203427">Da biste koristili Chrome Web Store, morate se prijaviti putem Bitpop Računa.</translation>
 <translation id="1486096554574027028">Pretraživanje zaporki</translation>
 <translation id="4631887759990505102">Izvođač</translation>
 <translation id="1836938920852968258">Onemogući izbornik &quot;Ostali uređaji&quot; stranice Nova kartica.</translation>
@@ -737,12 +737,12 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="89217462949994770">Unijeli ste netočan PIN previše puta. Kontaktirajte s <ph name="CARRIER_ID"/> kako biste dobili novi 8-znamenkasti ključ za otključavanje PIN-a.</translation>
 <translation id="5920618722884262402">Blokiraj uvredljive riječi</translation>
 <translation id="242006861730551700">Onemogućuje policu za preuzimanje. Pokazat će korisničko sučelje za nova preuzimanja kad bude provedeno.</translation>
-<translation id="7782102568078991263">Nema više prijedloga iz Googlea</translation>
+<translation id="7782102568078991263">Nema više prijedloga iz Bitpopa</translation>
 <translation id="8038111231936746805">(zadano)</translation>
 <translation id="5120247199412907247">Napredna konfiguracija</translation>
 <translation id="567881659373499783">Verzija <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">Pravila o privatnosti Sigurnog pregledavanja</translation>
-<translation id="5105859138906591953">Da biste uvezli oznake Google Alatne trake u Chrome, morate biti prijavljeni na Google račun. Prijavite se i pokušajte ponoviti uvoz.</translation>
+<translation id="5105859138906591953">Da biste uvezli oznake Bitpop Alatne trake u Chrome, morate biti prijavljeni na Google račun. Prijavite se i pokušajte ponoviti uvoz.</translation>
 <translation id="8899851313684471736">Otvori vezu u novom &amp;prozoru</translation>
 <translation id="4110342520124362335">Blokirani su kolačići s web-mjesta <ph name="DOMAIN"/>.</translation>
 <translation id="3303818374450886607">Kopije</translation>
@@ -791,7 +791,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="1871208020102129563">Proxy poslužitelj postavljen je na upotrebu fiksnih proxy poslužitelja, a ne URL .pac skripte.</translation>
 <translation id="1634788685286903402">Vjeruj ovom certifikatu za identificiranje korisnika e-pošte.</translation>
 <translation id="3154015489111064513">Upotrijebi DHCP</translation>
-<translation id="8642489171979176277">Uvezeno iz Google Alatne trake</translation>
+<translation id="8642489171979176277">Uvezeno iz Bitpop Alatne trake</translation>
 <translation id="4142744419835627535">Neposredno automatsko samodovršavanje</translation>
 <translation id="4684427112815847243">Sinkroniziraj sve</translation>
 <translation id="1125520545229165057">Dvorak (Hsu)</translation>
@@ -801,7 +801,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="8071086933245711894">Kopiranje otkazano.</translation>
 <translation id="2441392884867482684">Ova je stranica sada na cijelom zaslonu i želi onemogućiti pokazivač miša.</translation>
 <translation id="1422780722984745882">Primljeno je više zasebnih zaglavlja lokacije. To nije dopušteno radi zaštite od napada koji razdvajaju HTTP odgovore.</translation>
-<translation id="7787129790495067395">Trenutno upotrebljavate zaporku. Ako ste zaboravili svoju zaporku, možete poništiti sinkronizaciju kako biste pomoću Google Nadzorne ploče izbrisali svoje podatke iz Google poslužitelja.</translation>
+<translation id="7787129790495067395">Trenutno upotrebljavate zaporku. Ako ste zaboravili svoju zaporku, možete poništiti sinkronizaciju kako biste pomoću Bitpop Nadzorne ploče izbrisali svoje podatke iz Google poslužitelja.</translation>
 <translation id="3380365263193509176">Nepoznata pogreška</translation>
 <translation id="1273135602584709125">Otkaži upis tvrtke</translation>
 <translation id="2686759344028411998">Nije moguće otkriti nijedan učitani modul.</translation>
@@ -869,7 +869,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="6204994989617056362">U sigurnom rukovanju nedostajalo je proširenje za ponovni SSL pregovor. Za neke web-lokacije, za koje se zna da podržavaju proširenje za ponovni pregovor, Chrome zahtijeva sigurnije rukovanje radi sprječavanja niza poznatih napada. Izostanak ovog proširenja može značiti da je veza tijekom tranzita bila presretnuta i manipulirana.</translation>
 <translation id="1238150413700645698">Zaštićeni sadržaj</translation>
 <translation id="6679492495854441399">Uh!  Došlo je do problema u mrežnoj komunikaciji tijekom pokušaja prijavljivanja ovog uređaja.  Provjerite svoju mrežnu vezu i pokušajte ponovo.</translation>
-<translation id="5270547718570958938">Google kalendar</translation>
+<translation id="5270547718570958938">Bitpop kalendar</translation>
 <translation id="5823933238730612365">PPAPI (izvan sigurne okoline)</translation>
 <translation id="2879755071890315043">Pričekajte dok ne postavimo vašu mobilnu mrežu.</translation>
 <translation id="5301751748813680278">Ulazite kao Gost.</translation>
@@ -924,7 +924,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="3909791450649380159">Iz&amp;reži</translation>
 <translation id="2955913368246107853">Zatvori traku za traženje</translation>
 <translation id="8864170386249720785">Postavke SSL-a za cijeli mobilni uređaj:</translation>
-<translation id="3914942725612686145">Prijavljeni ste u Chrome. Podaci otvorenih kartica, oznaka i višenamjenskog okvira sada se sinkroniziraju s vašim Google računom.</translation>
+<translation id="3914942725612686145">Prijavljeni ste u Chrome. Podaci otvorenih kartica, oznaka i višenamjenskog okvira sada se sinkroniziraju s vašim Bitpop računom.</translation>
 <translation id="5642508497713047">CRL potpisnik</translation>
 <translation id="7612302739128412469">Aktivirajte to proširenje klikom na ovu ikonu.</translation>
 <translation id="813082847718468539">Prikaz informacija o web-mjestu</translation>
@@ -972,7 +972,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="1637259088766071440">Web-lokacija na domeni <ph name="HOST_NAME"/> sadrži elemente s web-lokacija koje vjerojatno sadrže zlonamjerni softver – softver koji može nauditi vašem mobilnom uređaju ili na neki drugi način raditi bez vašeg pristanka. I sam posjet web-lokaciji koja sadrži zlonamjerni softver može nauditi vašem mobilnom uređaju. Ta web-lokacija također ima sadržaje s web-lokacija koje su prijavljene kao web-lokacije za “krađu identiteta”. Web-lokacije za krađu identiteta navode korisnike da otkriju osobne ili financijske podatke, često na taj način da se pretvaraju da su predstavnici pouzdanih ustanova kao što su banke.</translation>
 <translation id="855081842937141170">Označi karticu</translation>
 <translation id="6263541650532042179">Poništi sinkronizaciju</translation>
-<translation id="6513247462497316522">Google Chrome upotrijebit će mobilne podatke ako niste povezani na drugu mrežu.</translation>
+<translation id="6513247462497316522">Bitpop Chrome upotrijebit će mobilne podatke ako niste povezani na drugu mrežu.</translation>
 <translation id="6055392876709372977">PKCS br. 1 SHA-256 s RSA enkripcijom</translation>
 <translation id="7903984238293908205">katakana</translation>
 <translation id="268053382412112343">Hi&amp;story (Povijest)</translation>
@@ -1105,8 +1105,8 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="7632380866023782514">Gornje desno</translation>
 <translation id="4693789964669838452">FPS</translation>
 <translation id="4925520021222027859">Unesite svoju zaporku za pristup aplikaciji:</translation>
-<translation id="3494768541638400973">Google japanski unos (za japanske tipkovnice)</translation>
-<translation id="4679639996443646335">Google je ustanovio da bi na vaš mobilni uređaj mogao biti instaliran zlonamjeran softver ako nastavite. Ako ste već posjećivali tu web-lokaciju ili ako joj vjerujete, moguće je da ju je nedavno ugrozio neki haker. Ne nastavljajte, možda biste mogli pokušati sutra ili otići na neku drugu web-lokaciju.</translation>
+<translation id="3494768541638400973">Bitpop japanski unos (za japanske tipkovnice)</translation>
+<translation id="4679639996443646335">Bitpop je ustanovio da bi na vaš mobilni uređaj mogao biti instaliran zlonamjeran softver ako nastavite. Ako ste već posjećivali tu web-lokaciju ili ako joj vjerujete, moguće je da ju je nedavno ugrozio neki haker. Ne nastavljajte, možda biste mogli pokušati sutra ili otići na neku drugu web-lokaciju.</translation>
 <translation id="7223775956298141902">Nažalost... nemate proširenja :-(</translation>
 <translation id="3118046075435288765">Poslužitelj je neočekivano prekinuo vezu.</translation>
 <translation id="1725068750138367834">&amp;Upravitelj datoteka</translation>
@@ -1132,7 +1132,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="3706919628594312718">Postavke miša</translation>
 <translation id="8326478304147373412">PKCS br. 7, lanac certifikata</translation>
 <translation id="3242765319725186192">Unaprijed podijeljen ključ:</translation>
-<translation id="8089798106823170468">Dijelite pristup svojim pisačima i upravljajte njime s bilo kojim Google računom.</translation>
+<translation id="8089798106823170468">Dijelite pristup svojim pisačima i upravljajte njime s bilo kojim Bitpop računom.</translation>
 <translation id="5426597273899159431">Napredno postavljanje...</translation>
 <translation id="1105608846356399385">Posjetite web-lokaciju</translation>
 <translation id="7218608093942361839"><ph name="PRODUCT_NAME"/><ph name="PRODUCT_VERSION"/> (platforma <ph name="PLATFORM_VERSION"/>)</translation>
@@ -1198,7 +1198,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="81686154743329117">ZRM</translation>
 <translation id="2150139952286079145">Pretražite odredišta</translation>
 <translation id="4713309396072794887">Instalirati ta proširenja?</translation>
-<translation id="5637940320504994319">Ponestalo vam je prostora na Google disku</translation>
+<translation id="5637940320504994319">Ponestalo vam je prostora na Bitpop disku</translation>
 <translation id="6458467102616083041">Zanemareno jer je zadano pretraživanje onemogućeno pravilom.</translation>
 <translation id="2266011376676382776">Stranica ne reagira</translation>
 <translation id="3100609564180505575">Moduli (<ph name="TOTAL_COUNT"/>) - Poznatih konflikata: <ph name="BAD_COUNT"/>, mogućih: <ph name="SUSPICIOUS_COUNT"/></translation>
@@ -1260,7 +1260,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="7092106376816104">Iznimke za skočne prozore</translation>
 <translation id="4830475881783902092">ID klijenta:</translation>
 <translation id="4600958291864306415">generiranje...</translation>
-<translation id="8594787581355215556">Prijavljeni ste e-adresom <ph name="USER_EMAIL_ADDRESS"/>. Upravljajte svojim sinkroniziranim podacima na <ph name="BEGIN_LINK"/>Google nadzornoj ploči<ph name="END_LINK"/>.</translation>
+<translation id="8594787581355215556">Prijavljeni ste e-adresom <ph name="USER_EMAIL_ADDRESS"/>. Upravljajte svojim sinkroniziranim podacima na <ph name="BEGIN_LINK"/>Bitpop nadzornoj ploči<ph name="END_LINK"/>.</translation>
 <translation id="4338600611020922010">Dodaj na početni zaslon</translation>
 <translation id="263325223718984101">Program <ph name="PRODUCT_NAME"/> nije uspio dovršiti instalaciju, ali nastavit će rad iz diskovne slike.</translation>
 <translation id="6186893483313227582">Ikona <ph name="VALUE"/></translation>
@@ -1277,7 +1277,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="4250680216510889253">Ne</translation>
 <translation id="5109044022078737958">Blanka</translation>
 <translation id="6291953229176937411">&amp;Prikaži u programu Finder</translation>
-<translation id="8598687241883907630">Prekini vezu s Google računom...</translation>
+<translation id="8598687241883907630">Prekini vezu s Bitpop računom...</translation>
 <translation id="6410894982725961573">Učini dostupnim izvan mreže</translation>
 <translation id="2556718757702023317">Da biste spremili datoteku &quot;<ph name="FILE_NAME"/>&quot; izvan mreže, morate osloboditi još <ph name="TOTAL_FILE_SIZE"/> prostora:<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>otkvačite datoteke kojima više ne morate pristupati izvan mreže<ph name="MARKUP_3"/>
@@ -1365,7 +1365,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="2629089419211541119">Prije <ph name="NUMBER_ONE"/> sat</translation>
 <translation id="1691063574428301566">Vaše računalo će se ponovo pokrenuti nakon dovršetka ažuriranja.</translation>
 <translation id="4697551882387947560">Kad završi sesija pregledavanja</translation>
-<translation id="5900302528761731119">Fotografija Google profila</translation>
+<translation id="5900302528761731119">Fotografija Bitpop profila</translation>
 <translation id="131364520783682672">Caps Lock</translation>
 <translation id="2066999550761485762"><ph name="BEGIN_BOLD"/>Radite u anonimnom načinu rada.<ph name="END_BOLD"/> <ph name="LINE_BREAK"/> Stranice prikazane na ovoj kartici neće se pojaviti u povijesti preglednika ni u povijesti pretraživanja i neće ostaviti ostale tragove, poput kolačića, na vašem mobilnom uređaju nakon zatvaranja <ph name="BEGIN_BOLD"/>svih<ph name="END_BOLD"/>  otvorenih kartica u anonimnom načinu rada. Međutim, sve datoteke koje preuzmete i sve oznake koje stvorite bit će sačuvane. <ph name="LINE_BREAK"/> <ph name="BEGIN_BOLD"/>Anonimni način rada ne utječe na ponašanje ostalih korisnika, poslužitelja ili softvera.<ph name="END_BOLD"/> Pripazite na tajne agente koji nadgledaju stranice ili na ljude koji stoje iza vas. <ph name="LINE_BREAK"/> <ph name="BEGIN_LINK"/>Saznajte više<ph name="END_LINK"/> o pregledavanju u anonimnom načinu rada.</translation>
 <translation id="2335122562899522968">Ova stranica postavila je kolačiće.</translation>
@@ -1382,7 +1382,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="1478897831827830200">Praćenje</translation>
 <translation id="5714678912774000384">Aktiviraj posljednju karticu</translation>
 <translation id="8466234950814670489">Tar arhiva</translation>
-<translation id="5902572236435740554">Najprije unesite zaporku Google računa, <ph name="LINE_BREAK"/>a ne zaporku za pristup aplikaciji.</translation>
+<translation id="5902572236435740554">Najprije unesite zaporku Bitpop računa, <ph name="LINE_BREAK"/>a ne zaporku za pristup aplikaciji.</translation>
 <translation id="8813811964357448561">list papira</translation>
 <translation id="2125314715136825419">Nastavite bez ažuriranja Adobe Readera (ne preporučuje se)</translation>
 <translation id="5034510593013625357">Model naziva hosta</translation>
@@ -1403,7 +1403,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="8337399713761067085">Trenutačno ste izvan mreže</translation>
 <translation id="5199729219167945352">Eksperimenti</translation>
 <translation id="6499143127267478107">Rješavanje hosta u proxy skripti...</translation>
-<translation id="8069615408251337349">Google Cloud Print</translation>
+<translation id="8069615408251337349">Bitpop Cloud Print</translation>
 <translation id="5055518462594137986">Zapamti moj odabir za sve veze tog tipa.</translation>
 <translation id="246059062092993255">Na ovoj su stranici blokirani dodaci.</translation>
 <translation id="2870560284913253234">Web lokacija</translation>
@@ -1448,7 +1448,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="3273951168350045122">Tipkovnica (<ph name="ADDRESS"/>)</translation>
 <translation id="8221729492052686226">Ako niste pokrenuli taj zahtjev, možda je riječ o pokušaju napada na vaš sustav. Osim ako niste poduzeli izričite mjere za pokretanje tog zahtjeva, trebate pritisnuti Ništa ne poduzimaj.</translation>
 <translation id="894360074127026135">Netscape međunarodni iskorak</translation>
-<translation id="8420060421540670057">Prikaži datoteke Google dokumenata</translation>
+<translation id="8420060421540670057">Prikaži datoteke Bitpop dokumenata</translation>
 <translation id="1201402288615127009">Sljedeće</translation>
 <translation id="1335588927966684346">Uslužni program:</translation>
 <translation id="2710582058364740604">Premošćuje gustoću prikaza na uređaju radi prisilne upotrebe načina i materijala s visokim DPI-jem.</translation>
@@ -1536,7 +1536,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="5669267381087807207">Aktivacija</translation>
 <translation id="7434823369735508263">UK Dvorak tipkovnica</translation>
 <translation id="1572103024875503863">Broj dana: <ph name="NUMBER_MANY"/></translation>
-<translation id="5308845175611284862">Sinkronizacija usluge <ph name="PRODUCT_NAME"/> olakšava dijeljenje podataka (na primjer, oznaka i postavki) na više računala. Usluga <ph name="PRODUCT_NAME"/> sinkronizira vaše podatke mrežnim pohranjivanjem na Googleu kad se prijavite putem Google računa.</translation>
+<translation id="5308845175611284862">Sinkronizacija usluge <ph name="PRODUCT_NAME"/> olakšava dijeljenje podataka (na primjer, oznaka i postavki) na više računala. Usluga <ph name="PRODUCT_NAME"/> sinkronizira vaše podatke mrežnim pohranjivanjem na Bitpopu kad se prijavite putem Google računa.</translation>
 <translation id="1707463636381878959">Dijeli ovu mrežu s drugim korisnicima</translation>
 <translation id="2084978867795361905">MS-IME</translation>
 <translation id="7227669995306390694"><ph name="NETWORK"/> nema pretplatničkog paketa</translation>
@@ -1544,7 +1544,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="7163503212501929773">Preostalo sati: <ph name="NUMBER_MANY"/></translation>
 <translation id="7705276765467986571">Nije bilo moguće učitati model oznaka.</translation>
 <translation id="750413812607578381">Sada biste trebali ponovo pokrenuti uslugu <ph name="PRODUCT_NAME"/>.</translation>
-<translation id="8034305971714560781">Ako prekinete vezu svojeg Google računa i usluge <ph name="PRODUCT_NAME"/>, promjene podataka na ovom mobilnom uređaju više se neće sinkronizirati s vašim Google računom. Podaci koji su već pohranjeni na vašem Google računu ostat će tamo dok ih ne uklonite putem <ph name="BEGIN_LINK"/>Google nadzorne ploče<ph name="END_LINK"/>.</translation>
+<translation id="8034305971714560781">Ako prekinete vezu svojeg Bitpop računa i usluge <ph name="PRODUCT_NAME"/>, promjene podataka na ovom mobilnom uređaju više se neće sinkronizirati s vašim Google računom. Podaci koji su već pohranjeni na vašem Google računu ostat će tamo dok ih ne uklonite putem <ph name="BEGIN_LINK"/>Google nadzorne ploče<ph name="END_LINK"/>.</translation>
 <translation id="2638286699381354126">Ažuriraj...</translation>
 <translation id="1196338895211115272">Izvoz osobnog ključa nije uspio.</translation>
 <translation id="1459967076783105826">Tražilice dodane proširenjem</translation>
@@ -1578,10 +1578,10 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="1789424019568293108">Omogućite eksperimentalno korisničko sučelje koje prikazuje dnevnik aktivnosti proširenja.</translation>
 <translation id="2090876986345970080">Postavka sigurnosti sustava</translation>
 <translation id="3728067901555601989">OTP:</translation>
-<translation id="3475447146579922140">Googleova proračunska tablica</translation>
+<translation id="3475447146579922140">Bitpopova proračunska tablica</translation>
 <translation id="6856526171412069413">Omogući skalu privlačenja prstiju.</translation>
 <translation id="9219103736887031265">Slike</translation>
-<translation id="7415834062450491574">Pošaljite Googleu povratne informacije.</translation>
+<translation id="7415834062450491574">Pošaljite Bitpopu povratne informacije.</translation>
 <translation id="4480995875255084924">Omogućuje pregledač u shemi stabla Oak u značajci ash. Dopušta pregled prozora, hijerarhije slojeva i prikaza i njihova svojstva. Pritisnite Ctrl+Shift+F1 za pristup.</translation>
 <translation id="6975147921678461939">Punjenje baterije: <ph name="PRECENTAGE"/>%</translation>
 <translation id="5453632173748266363">ćirilica</translation>
@@ -1592,7 +1592,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="5329858601952122676">&amp;Obriši</translation>
 <translation id="6100736666660498114">Izbornik Start</translation>
 <translation id="2706131822305474920">Prijelaz između otvorenih kartica</translation>
-<translation id="4402766404187539019">Google.com Mail</translation>
+<translation id="4402766404187539019">Bitpop.com Mail</translation>
 <translation id="6275297011664564181">Trenutačno nije aktivno nijedno pravilo!</translation>
 <translation id="3994878504415702912">&amp;Zum</translation>
 <translation id="9009369504041480176">Prijenos (<ph name="PROGRESS_PERCENT"/>%)...</translation>
@@ -1630,7 +1630,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="6059764114876442286">Poništavanje pisača</translation>
 <translation id="6406506848690869874">Sinkronizacija</translation>
 <translation id="5288678174502918605">P&amp;onovo otvori zatvorenu karticu</translation>
-<translation id="7238461040709361198">Zaporka vašeg Google Računa promijenjena je od posljednjeg puta kada ste se prijavili s ovog računala.</translation>
+<translation id="7238461040709361198">Zaporka vašeg Bitpop Računa promijenjena je od posljednjeg puta kada ste se prijavili s ovog računala.</translation>
 <translation id="1956050014111002555">Datoteka je sadržavala više certifikata, a nijedan od njih nije uvezen:</translation>
 <translation id="302620147503052030">Prikaži gumb</translation>
 <translation id="1895658205118569222">Isključivanje</translation>
@@ -1640,7 +1640,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="6624687053722465643">Slastica</translation>
 <translation id="8420296388012619424">Vaš USB uređaj nije formatiran.</translation>
 <translation id="3021256392995617989">Pošalji mi upit kad web-lokacija pokuša pratiti moju fizičku lokaciju (preporučujemo)</translation>
-<translation id="8083739373364455075">Uz Google disk dobit ćete 100 GB besplatno</translation>
+<translation id="8083739373364455075">Uz Bitpop disk dobit ćete 100 GB besplatno</translation>
 <translation id="271083069174183365">Postavke unosa za japanski</translation>
 <translation id="1257595095755619623">Ako upotrebljavate proxy poslužitelj, provjerite svoje postavke proxy poslužitelja ili se
         obratite administratoru mreže kako biste se uvjerili funkcionira li proxy
@@ -1843,7 +1843,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="3967885517199024316">Prijavite se da biste dobili svoje oznake, povijest i postavke na svim svojim uređajima.</translation>
 <translation id="5463856536939868464">Izbornik koji sadrži skrivene oznake</translation>
 <translation id="8286227656784970313">Koristi sistemski rječnik</translation>
-<translation id="5431084084184068621">Odabrali ste kriptirati podatke pomoću svoje zaporke usluge Google; možete uvijek promijeniti odluku promjenom postavki sinkronizacije.</translation>
+<translation id="5431084084184068621">Odabrali ste kriptirati podatke pomoću svoje zaporke usluge Bitpop; možete uvijek promijeniti odluku promjenom postavki sinkronizacije.</translation>
 <translation id="1493263392339817010">Prilagodi fontove...</translation>
 <translation id="5352033265844765294">Vremensko označavanje</translation>
 <translation id="1493892686965953381">Čeka se <ph name="LOAD_STATE_PARAMETER"/>...</translation>
@@ -1853,7 +1853,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="748138892655239008">Osnovno ograničenje certifikata</translation>
 <translation id="457386861538956877">Više...</translation>
 <translation id="9210991923655648139">Dostupno za skriptu:</translation>
-<translation id="1950295184970569138">* Fotografija Google profila (učitavanje)</translation>
+<translation id="1950295184970569138">* Fotografija Bitpop profila (učitavanje)</translation>
 <translation id="8063491445163840780">Aktiviranje kartice 4</translation>
 <translation id="5473544328731861874">Ukloni cilj</translation>
 <translation id="2322193970951063277">Zaglavlja i podnožja</translation>
@@ -1903,7 +1903,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="5010043101506446253">Tijelo za izdavanje certifikata</translation>
 <translation id="2050524657923939561">Web-ciljevi</translation>
 <translation id="8487693399751278191">Odmah uvezi oznake...</translation>
-<translation id="7615602087246926389">Već imate podatke koji su kriptirani pomoću druge verzije zaporke vašeg Google računa. Unesite je u nastavku.</translation>
+<translation id="7615602087246926389">Već imate podatke koji su kriptirani pomoću druge verzije zaporke vašeg Bitpop računa. Unesite je u nastavku.</translation>
 <translation id="7484580869648358686">Upozorenje: Nešto nije u redu!</translation>
 <translation id="4474155171896946103">Označi sve kartice...</translation>
 <translation id="5895187275912066135">Izdano</translation>
@@ -1992,14 +1992,14 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="2065985942032347596">Potrebna autentikacija</translation>
 <translation id="2563185590376525700">Žaba</translation>
 <translation id="2553340429761841190"><ph name="PRODUCT_NAME"/> nije se mogao povezati s mrežom <ph name="NETWORK_ID"/>. Odaberite drugu mrežu ili pokušajte ponovno.</translation>
-<translation id="2086712242472027775">Vaš račun ne radi na usluzi <ph name="PRODUCT_NAME"/>. Obratite se administratoru domene ili za prijavu upotrijebite obični Google Račun.</translation>
-<translation id="1373074393717692190">Prijavite se u uslugu <ph name="PRODUCT_NAME"/> svojim Google računom da biste spremili svoje prilagođene značajke preglednika na web i pristupali im iz usluge <ph name="PRODUCT_NAME"/> na bilo kojem mobilnom uređaju. Također ćete se automatski prijaviti na svoje omiljene Googleove usluge.</translation>
+<translation id="2086712242472027775">Vaš račun ne radi na usluzi <ph name="PRODUCT_NAME"/>. Obratite se administratoru domene ili za prijavu upotrijebite obični Bitpop Račun.</translation>
+<translation id="1373074393717692190">Prijavite se u uslugu <ph name="PRODUCT_NAME"/> svojim Bitpop računom da biste spremili svoje prilagođene značajke preglednika na web i pristupali im iz usluge <ph name="PRODUCT_NAME"/> na bilo kojem mobilnom uređaju. Također ćete se automatski prijaviti na svoje omiljene Googleove usluge.</translation>
 <translation id="7222232353993864120">Adresa e-pošte</translation>
 <translation id="2128531968068887769">Lokalni klijent</translation>
 <translation id="2749720227918911728">Ova će ikona biti vidljiva kada proširenje bude moglo djelovati na trenutačnoj stranici. Aktivirajte to proširenje tako što ćete kliknuti ikonu ili pritisnuti <ph name="EXTENSION_SHORTCUT"/>.</translation>
 <translation id="7175353351958621980">Učitano iz:</translation>
 <translation id="7186367841673660872">Ova je stranica prevedena s jezika<ph name="ORIGINAL_LANGUAGE"/>na<ph name="LANGUAGE_LANGUAGE"/></translation>
-<translation id="8448695406146523553">Vaše šifrirane podatke može pročitati samo osoba s vašom zaporkom -- zaporka se ne šalje Googleu i ne pohranjuje se na Googleu. Ako zaboravite svoju zaporku, morat ćete</translation>
+<translation id="8448695406146523553">Vaše šifrirane podatke može pročitati samo osoba s vašom zaporkom -- zaporka se ne šalje Bitpopu i ne pohranjuje se na Googleu. Ako zaboravite svoju zaporku, morat ćete</translation>
 <translation id="8248050856337841185">&amp;Zalijepi</translation>
 <translation id="6052976518993719690">Tijelo za izdavanje SSL certifikata</translation>
 <translation id="2925935892230812200">Upotreba grafičkog procesora za ubrzavanje renderiranja SVG filtra.</translation>
@@ -2113,7 +2113,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="6374830905869502056">Kodirano pomoću:</translation>
 <translation id="2230062665678605299">Nije moguće izraditi mapu &quot;<ph name="FOLDER_NAME"/>&quot;. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="2526590354069164005">Radna površina</translation>
-<translation id="2059205526855036527">Morate biti povezani s mrežom da biste prvi put pristupili Google disku.</translation>
+<translation id="2059205526855036527">Morate biti povezani s mrežom da biste prvi put pristupili Bitpop disku.</translation>
 <translation id="4165738236481494247">Pokreni ovaj dodatak</translation>
 <translation id="7983301409776629893">Uvijek prevedi <ph name="ORIGINAL_LANGUAGE"/> na <ph name="TARGET_LANGUAGE"/></translation>
 <translation id="4890284164788142455">Tajlandski</translation>
@@ -2143,7 +2143,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="3479552764303398839">Ne sada</translation>
 <translation id="3714633008798122362">web-kalendar</translation>
 <translation id="6445051938772793705">Zemlja</translation>
-<translation id="3430309973417890444">Ako nemate Google račun, možete <ph name="LINK_START"/>izraditi Google račun<ph name="LINK_END"/> sada.</translation>
+<translation id="3430309973417890444">Ako nemate Bitpop račun, možete <ph name="LINK_START"/>izraditi Google račun<ph name="LINK_END"/> sada.</translation>
 <translation id="3251759466064201842">&lt;Nije dio certifikata&gt;</translation>
 <translation id="4229495110203539533">Prije <ph name="NUMBER_ONE"/> sekundu</translation>
 <translation id="3399068503715460757">Upotrijebi statički IP</translation>
@@ -2169,7 +2169,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="1800987794509850828">Broker dodatka: <ph name="PLUGIN_NAME"/></translation>
 <translation id="8871696467337989339">Koristite nepodržanu oznaku naredbenog retka: <ph name="BAD_FLAG"/>. Ugrožena je stabilnost i sigurnost.</translation>
 <translation id="4767443964295394154">Lokacija za preuzimanje</translation>
-<translation id="5031870354684148875">O Google Prevoditelju</translation>
+<translation id="5031870354684148875">O Bitpop Prevoditelju</translation>
 <translation id="4266565660628359579">Omogućuje način visokog DPI-ja za Pregledač PDF-a u Chromeu na zaslonima s visokim vrijednostima DPI-ja.</translation>
 <translation id="5702389759209837579">Pristupajte svojim otvorenim karticama na svim svojim uređajima.</translation>
 <translation id="3828747136564826513">Pristupite svim poznatim medijskim datotekama na svojem uređaju</translation>
@@ -2225,7 +2225,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="1752977958630076881">Čuvaj lokalne podatke samo dok ne napustim preglednik</translation>
 <translation id="7853202427316060426">Aktivnost</translation>
 <translation id="8550022383519221471">Usluga sinkroniziranja nije dostupna za vašu domenu.</translation>
-<translation id="1436238710092600782">Izradite Google račun</translation>
+<translation id="1436238710092600782">Izradite Bitpop račun</translation>
 <translation id="3355823806454867987">Promijeni proxy postavke...</translation>
 <translation id="4780374166989101364">Omogućuje API-je eksperimentalnih proširenja. Napominjemo da galerija proširenja ne dopušta prijenos proširenja koja upotrebljavaju eksperimentalne API-je.</translation>
 <translation id="7117247127439884114">Prijavite se ponovo...</translation>
@@ -2238,7 +2238,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="3007574127824276972">Prijavljeni ste na proizvod <ph name="PRODUCT_NAME"/> kao <ph name="USER_NAME"/></translation>
 <translation id="6840155730904976091">Usluga <ph name="PRODUCT_NAME"/> upotrebljava proxy postavke sustava vašeg mobilnog uređaja za povezivanje s mrežom.</translation>
 <translation id="2541913031883863396">svejedno nastavi</translation>
-<translation id="6884284539803678768">Omogućavanje dijaloških okvira u Googleovom stilu.</translation>
+<translation id="6884284539803678768">Omogućavanje dijaloških okvira u Bitpopovom stilu.</translation>
 <translation id="2367499218636570208">Ime</translation>
 <translation id="4436689501885286563">Isprazni kolačiće i ostale podatke web-lokacije kad se odjavim</translation>
 <translation id="1520137456044207237">Koja će se usluga upotrebljavati za gledanje?</translation>
@@ -2305,7 +2305,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="8053390638574070785">Ponovo učitaj ovu stranicu</translation>
 <translation id="5507756662695126555">Neosporavanje</translation>
 <translation id="3678156199662914018">Proširenje: <ph name="EXTENSION_NAME"/></translation>
-<translation id="2620090360073999360">Trenutačno nije moguće pristupiti usluzi Google disk.</translation>
+<translation id="2620090360073999360">Trenutačno nije moguće pristupiti usluzi Bitpop disk.</translation>
 <translation id="3531250013160506608">Tekstni okvir zaporke</translation>
 <translation id="506228266759207354">Onemogućite izbornik stranice Nove kartice za pristupanje karticama na ostalim uređajima.</translation>
 <translation id="1781502536226964113">Otvori stranicu Nova kartica</translation>
@@ -2444,7 +2444,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="1358735829858566124">Datoteka ili direktorij nisu upotrebljivi.</translation>
 <translation id="3144135466825225871">Zamjena CRX datoteke nije uspjela. Provjerite je li datoteka u upotrebi.</translation>
 <translation id="2744221223678373668">Dijeljeno</translation>
-<translation id="9064142312330104323">Fotografija Google profila (učitavanje)</translation>
+<translation id="9064142312330104323">Fotografija Bitpop profila (učitavanje)</translation>
 <translation id="4708849949179781599">Izađi iz programa <ph name="PRODUCT_NAME"/></translation>
 <translation id="2505402373176859469"><ph name="RECEIVED_AMOUNT"/> od <ph name="TOTAL_SIZE"/></translation>
 <translation id="6937559152970966646">Prikvači na početni zaslon</translation>
@@ -2542,12 +2542,12 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="305803244554250778">Stvorite prečace aplikacije na sljedećim mjestima:</translation>
 <translation id="574392208103952083">Srednje</translation>
 <translation id="3661117620327489194">Promijeni u vraćanje otvorenih stranica</translation>
-<translation id="3937609171782005782">Pomozite unaprijediti prepoznavanje zlonamjernog softvera slanjem dodatnih podataka usluzi Google o web-lokacijama na kojim vidite ovo upozorenje. Ovim će se podacima rukovati sukladno s <ph name="PRIVACY_PAGE_LINK"/>.</translation>
+<translation id="3937609171782005782">Pomozite unaprijediti prepoznavanje zlonamjernog softvera slanjem dodatnih podataka usluzi Bitpop o web-lokacijama na kojim vidite ovo upozorenje. Ovim će se podacima rukovati sukladno s <ph name="PRIVACY_PAGE_LINK"/>.</translation>
 <translation id="8877448029301136595">[matični direktorij]</translation>
 <translation id="3816844797124379499">Nije bilo moguće dodati aplikaciju jer je u sukobu s aplikacijom &quot;<ph name="APP_NAME"/>&quot;.</translation>
 <translation id="7301360164412453905">Tipke odabira Hsu tipkovnice</translation>
 <translation id="8631271110654520730">Kopiranje slike za oporavak...</translation>
-<translation id="7779140087128114262">Vaše šifrirane podatke može pročitati samo osoba s vašom zaporkom -- zaporka se ne šalje Googleu i ne pohranjuje se na Googleu. Ako zaboravite svoju zaporku, morat ćete ponovo postaviti sinkronizaciju.</translation>
+<translation id="7779140087128114262">Vaše šifrirane podatke može pročitati samo osoba s vašom zaporkom -- zaporka se ne šalje Bitpopu i ne pohranjuje se na Googleu. Ako zaboravite svoju zaporku, morat ćete ponovo postaviti sinkronizaciju.</translation>
 <translation id="13356285923490863">Naziv pravila</translation>
 <translation id="8241040075392580210">Sjena</translation>
 <translation id="8690155203172212841">Upravljanje postavkama dozvola</translation>
@@ -2569,7 +2569,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
         posjetite <ph name="URL_FOR_MORE_INFO"/>,
         gdje ćete pronaći više informacija, uključujući informacije o isključivanju te značajke.</translation>
 <translation id="8218008331535230597">Poništi autorizaciju dozvola za sadržaje</translation>
-<translation id="4744728308552504807">Omogućuje pozadinsku uslugu koja povezuje uslugu Google Cloud Print sa svim pisačima instaliranima na ovom mobilnom uređaju. Kada ovaj laboratorij bude omogućen, možete uključiti priključak usluge Google Cloud tako da se prijavite svojim Google računom u odjeljku &quot;Napredne postavke&quot; u &quot;Postavkama&quot;.</translation>
+<translation id="4744728308552504807">Omogućuje pozadinsku uslugu koja povezuje uslugu Bitpop Cloud Print sa svim pisačima instaliranima na ovom mobilnom uređaju. Kada ovaj laboratorij bude omogućen, možete uključiti priključak usluge Google Cloud tako da se prijavite svojim Google računom u odjeljku &quot;Napredne postavke&quot; u &quot;Postavkama&quot;.</translation>
 <translation id="6691936601825168937">&amp;Proslijedi</translation>
 <translation id="6566142449942033617">Nije uspjelo učitavanje putanje &quot;<ph name="PLUGIN_PATH"/>&quot; za dodatak.</translation>
 <translation id="7065534935986314333">O sustavu</translation>
@@ -2580,7 +2580,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="2128691215891724419">Pogreška u sinkronizaciji: ažurirajte pristupni izraz...</translation>
 <translation id="2148716181193084225">Danas</translation>
 <translation id="1002064594444093641">I&amp;spiši okvir...</translation>
-<translation id="7234674978021619913">Već smo obavijestili <ph name="HOST_NAME"/> da smo našli zlonamjerni softver na toj web-lokaciji. Da biste saznali više informacija o problemima pronađenim na web-lokaciji <ph name="HOST_NAME2"/>, posjetite Google <ph name="DIAGNOSTIC_PAGE"/>.</translation>
+<translation id="7234674978021619913">Već smo obavijestili <ph name="HOST_NAME"/> da smo našli zlonamjerni softver na toj web-lokaciji. Da biste saznali više informacija o problemima pronađenim na web-lokaciji <ph name="HOST_NAME2"/>, posjetite Bitpop <ph name="DIAGNOSTIC_PAGE"/>.</translation>
 <translation id="4608500690299898628">&amp;Traži...</translation>
 <translation id="7582582252461552277">Preferiraj ovu mrežu</translation>
 <translation id="3574305903863751447"><ph name="CITY"/>, <ph name="STATE"/> <ph name="COUNTRY"/></translation>
@@ -2680,7 +2680,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="6322726279947003371">Pokreni zaštićeni sadržaj (možda će biti potrebno ponovo pokrenuti računalo)</translation>
 <translation id="3093473105505681231">Postavke jezika i provjere pravopisa...</translation>
 <translation id="152482086482215392">Preostalo sekundi: <ph name="NUMBER_ONE"/></translation>
-<translation id="4261901459838235729">Googleova prezentacija</translation>
+<translation id="4261901459838235729">Bitpopova prezentacija</translation>
 <translation id="8678698760965522072">Stanje na mreži</translation>
 <translation id="529172024324796256">Korisničko ime:</translation>
 <translation id="3308116878371095290">Ova stranica je spriječena u postavljanju kolačića.</translation>
@@ -2758,7 +2758,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="2444609190341826949">Bez zaporke vaše se zaporke i ostali kriptirani podaci neće sinkronizirati na ovom računalu.</translation>
 <translation id="2984337792991268709">Danas u <ph name="TODAY_DAYTIME"/></translation>
 <translation id="5227808808023563348">Nađi prethodni tekst</translation>
-<translation id="6650142020817594541">Ova web-lokacija preporučuje Google Chrome Frame (već instaliran).</translation>
+<translation id="6650142020817594541">Ova web-lokacija preporučuje Bitpop Chrome Frame (već instaliran).</translation>
 <translation id="3862763658360970896">Omogući Chrome To Mobile.</translation>
 <translation id="902638246363752736">Postavke tipkovnice</translation>
 <translation id="7925686952655276919">Ne upotrebljavaj mobilne podatke za sinkronizaciju</translation>
@@ -2778,7 +2778,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="6007237601604674381">Premještanje nije uspjelo. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">Nije uspjelo stvaranje privremene sažete datoteke tijekom sažimanja.</translation>
 <translation id="1881456419707551346">Pojedinosti veze</translation>
-<translation id="1064912851688322329">Prekidanje veze s Google računom</translation>
+<translation id="1064912851688322329">Prekidanje veze s Bitpop računom</translation>
 <translation id="1294298200424241932">Uredi postavke pouzdanosti:</translation>
 <translation id="1407135791313364759">Otvori sve</translation>
 <translation id="1434928358870966081">Onemogućavanje ubrzanog 2D platna</translation>
@@ -2801,9 +2801,9 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="267285457822962309">Promijenite postavke specifične za svoj uređaj i periferne uređaje.</translation>
 <translation id="1154228249304313899">Otvori ovu stranicu:</translation>
 <translation id="6084074203170335305"><ph name="MARKUP_1"/>Pristupite datotekama svugdje, čak i izvan mreže.<ph name="MARKUP_2"/>
-        Datoteke na Google disku ažurirane su i dostupne putem bilo kojeg uređaja.<ph name="MARKUP_3"/>
+        Datoteke na Bitpop disku ažurirane su i dostupne putem bilo kojeg uređaja.<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>Čuvajte svoje datoteke na sigurnom.<ph name="MARKUP_5"/>
-        Bez obzira što se može dogoditi s vašim uređajem, vaše su datoteke sigurno pohranjene na Google disku.<ph name="MARKUP_6"/>
+        Bez obzira što se može dogoditi s vašim uređajem, vaše su datoteke sigurno pohranjene na Bitpop disku.<ph name="MARKUP_6"/>
         <ph name="MARKUP_7"/>Dijelite, stvarajte i surađujte<ph name="MARKUP_8"/>
         na datotekama s drugima i sve to na jednom mjestu.<ph name="MARKUP_9"/></translation>
 <translation id="9074348188580488499">Doista želite ukloniti sve zaporke?</translation>
@@ -2938,7 +2938,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="8725066075913043281">Pokušajte ponovo</translation>
 <translation id="387784661603993584">Uvoz nije moguć. Dogodila se pogreška.</translation>
 <translation id="4637968436031842307">Omogući CSS varijable.</translation>
-<translation id="1887908730460853602">Dijaloški okviri u Googleovom stilu</translation>
+<translation id="1887908730460853602">Dijaloški okviri u Bitpopovom stilu</translation>
 <translation id="8502249598105294518">Prilagodi i kontroliraj <ph name="PRODUCT_NAME"/></translation>
 <translation id="3797008485206955964">Prikaži pozadinske stranice (<ph name="NUM_BACKGROUND_APPS"/>)</translation>
 <translation id="8590375307970699841">Postavi automatsko ažuriranje</translation>
@@ -2958,8 +2958,8 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="5293659407874396561"><ph name="SUBJECT"/> (<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">URL mora biti valjan</translation>
 <translation id="3464726836683998962">Onemogući roaming mobilnih podataka</translation>
-<translation id="8986494364107987395">Automatski usluzi Google šalje statistiku o upotrebi i izvješća o padu programa</translation>
-<translation id="7070714457904110559">Omogućuje eksperimentalna proširenja za geolokacijsku značajku. Uključuje upotrebu lokacijskih API-ja operativnog sustava (ako su dostupni) i slanje dodatnih podataka o konfiguraciji lokalne mreže Googleovoj usluzi za lokaciju kako bi ona pružila preciznije pozicioniranje.</translation>
+<translation id="8986494364107987395">Automatski usluzi Bitpop šalje statistiku o upotrebi i izvješća o padu programa</translation>
+<translation id="7070714457904110559">Omogućuje eksperimentalna proširenja za geolokacijsku značajku. Uključuje upotrebu lokacijskih API-ja operativnog sustava (ako su dostupni) i slanje dodatnih podataka o konfiguraciji lokalne mreže Bitpopovoj usluzi za lokaciju kako bi ona pružila preciznije pozicioniranje.</translation>
 <translation id="6701535245008341853">Nije bilo moguće dobiti profil.</translation>
 <translation id="8303655282093186569">Postavke unosa za Pinyin</translation>
 <translation id="992779717417561630">Ispis pomoću dijaloškog okvira <ph name="CLOUD_PRINT_NAME"/>... <ph name="SHORTCUT_KEY"/></translation>
@@ -2973,7 +2973,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="580571955903695899">Poredaj ponovo po naslovu</translation>
 <translation id="5230516054153933099">Prozor</translation>
 <translation id="921740547845455014">Pišite u datoteke koje ste otvorili u aplikaciji</translation>
-<translation id="1799497982892676838">Upravljanje sinkroniziranim podacima na Google Nadzornoj ploči</translation>
+<translation id="1799497982892676838">Upravljanje sinkroniziranim podacima na Bitpop Nadzornoj ploči</translation>
 <translation id="951981865514037445"><ph name="URL"/> želi upotrijebiti lokaciju vašeg uređaja.</translation>
 <translation id="7554791636758816595">Nova kartica</translation>
 <translation id="3026557130425686673">Prijava je otkazana jer su neke postavke uređaja oštećene.</translation>
@@ -2987,7 +2987,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="1103966635949043187">Idi na početnu stranicu ove web-lokacije:</translation>
 <translation id="4762295713053835808">Osobne stavke</translation>
 <translation id="6374100501221763867">Onemogući hardverski ubrzano dekodiranje videozapisa.</translation>
-<translation id="7477347901712410606">Ako ste zaboravili zaporku, stanite i poništite sinkronizaciju na <ph name="BEGIN_LINK"/>Google Nadzornoj ploči<ph name="END_LINK"/>.</translation>
+<translation id="7477347901712410606">Ako ste zaboravili zaporku, stanite i poništite sinkronizaciju na <ph name="BEGIN_LINK"/>Bitpop Nadzornoj ploči<ph name="END_LINK"/>.</translation>
 <translation id="6139474630617772623">Omogućuje proširenu radnu površinu što vam omogućuje otvaranje preglednika na sekundarnim zaslonima.</translation>
 <translation id="2645575947416143543">Ako, međutim, radite u organizaciji koja generira vlastite certifikate i pokušavate se povezati na internu web-lokaciju organizacije pomoću takvog certifikata, taj problem možete riješiti na siguran način. Možete uvesti korijenski certifikat svoje organizacije kao &quot;korijenski certifikat&quot;, a nakon toga će certifikati koje je izdala ili ovjerila vaša organizacija biti pouzdani i pri sljedećem povezivanju na internu web-lokaciju neće se prikazati ova pogreška. U svojoj organizaciji kontaktirajte zaposlenike zadužene za pomoć kako biste dodali novi korijenski certifikat na računalo.</translation>
 <translation id="1056898198331236512">Upozorenje</translation>
@@ -3267,7 +3267,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="7063412606254013905">Saznajte više o načinima krađe identiteta.</translation>
 <translation id="7253521419891527137">&amp;Saznajte više</translation>
 <translation id="3170312251071695679"><ph name="PERMISSION_VALUE"/> prema zadanim postavkama</translation>
-<translation id="8698464937041809063">Googleov crtež</translation>
+<translation id="8698464937041809063">Bitpopov crtež</translation>
 <translation id="7053053706723613360">Onemogući bolje obnavljanje sesije</translation>
 <translation id="5233930340889611108">WebKit</translation>
 <translation id="8260864402787962391">Miš</translation>
@@ -3296,7 +3296,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="6873213799448839504">Automatski izvrši niz</translation>
 <translation id="7238585580608191973">SHA-256 otisak prsta</translation>
 <translation id="2501278716633472235">Natrag</translation>
-<translation id="3588662957555259973">* Fotografija Google profila</translation>
+<translation id="3588662957555259973">* Fotografija Bitpop profila</translation>
 <translation id="131461803491198646">Matična mreža, bez roaminga</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/> - <ph name="FULL_DATE"/></translation>
 <translation id="1285320974508926690">Nikad nemoj prevoditi ovu web-lokaciju</translation>
@@ -3366,7 +3366,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="461656879692943278"><ph name="HOST_NAME"/> ima sadržaj s web-lokacije <ph name="ELEMENTS_HOST_NAME"/> za koju se zna da distribuira zlonamjerni softver. Vaše računalo može dobiti virus ako posjetite tu web-lokaciju.</translation>
 <translation id="8962198349065195967">Ovu mrežu konfigurirao je vaš administrator.</translation>
 <translation id="2143778271340628265">Ručna konfiguracija proxyja</translation>
-<translation id="2441192698565541088">Ako prekinete vezu Google računa i usluge <ph name="PRODUCT_NAME"/>, promjene vaših podataka na ovom računalu neće se više sinkronizirati s vašim Google računom. Podaci koji su već pohranjeni na vašem Google računu ostat će tamo dok ih ne uklonite putem <ph name="BEGIN_LINK"/>Google Nadzorne ploče<ph name="END_LINK"/>.</translation>
+<translation id="2441192698565541088">Ako prekinete vezu Bitpop računa i usluge <ph name="PRODUCT_NAME"/>, promjene vaših podataka na ovom računalu neće se više sinkronizirati s vašim Google računom. Podaci koji su već pohranjeni na vašem Google računu ostat će tamo dok ih ne uklonite putem <ph name="BEGIN_LINK"/>Google Nadzorne ploče<ph name="END_LINK"/>.</translation>
 <translation id="8888432776533519951">Boja:</translation>
 <translation id="5294529402252479912">Ažuriraj Adobe Reader sada</translation>
 <translation id="5263972071113911534"><ph name="NUMBER_MANY"/> days ago</translation>
@@ -3395,7 +3395,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="8885905466771744233">Osobni ključ za navedeno proširenje već postoji. Ponovo koristite taj ključ ili ga prvo izbrišite.</translation>
 <translation id="1196944142850240972">pristupiti podacima na svim web-lokacijama</translation>
 <translation id="7369056754288047856">Neke postavke korisnik ne može mijenjati.</translation>
-<translation id="4100843820583867709">Zahtjev za dijeljenje zaslona usluge Google Talk</translation>
+<translation id="4100843820583867709">Zahtjev za dijeljenje zaslona usluge Bitpop Talk</translation>
 <translation id="8109246889182548008">Trgovina s certifikatom</translation>
 <translation id="5030338702439866405">Izdaje</translation>
 <translation id="2728127805433021124">Certifikat poslužitelja potpisan je slabim algoritmom potpisa.</translation>
@@ -3584,7 +3584,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="1049926623896334335">Wordov dokument</translation>
 <translation id="8412145213513410671">Padovi (<ph name="CRASH_COUNT"/>)</translation>
 <translation id="7003257528951459794">Frekvencija:</translation>
-<translation id="3467267818798281173">Traži prijedloge od Googlea</translation>
+<translation id="3467267818798281173">Traži prijedloge od Bitpopa</translation>
 <translation id="560602183358579978">Odabir izračunavanja...</translation>
 <translation id="7649070708921625228">Pomoć</translation>
 <translation id="858637041960032120">Dodavanje telefonskog broja</translation>
@@ -3620,7 +3620,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="8000020256436988724">Alatna traka</translation>
 <translation id="7507930499305566459">Certifikat odgovora statusa</translation>
 <translation id="3958088479270651626">Uvoz oznaka i postavki</translation>
-<translation id="2689915906323125315">Upotrijebi zaporku mog Google računa</translation>
+<translation id="2689915906323125315">Upotrijebi zaporku mog Bitpop računa</translation>
 <translation id="8518865679229538285">Tamilski način unosa (pisaći stroj)</translation>
 <translation id="5257456363153333584">Vilin konjic</translation>
 <translation id="4557136421275541763">Upozorenje:</translation>
@@ -3631,7 +3631,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="7681202901521675750">SIM kartica je zaključana, unesite PIN. Preostalih pokušaja: <ph name="TRIES_COUNT"/></translation>
 <translation id="2489918096470125693">Dodavanje &amp;mape...</translation>
 <translation id="7353651168734309780">Proširenje <ph name="EXTENSION_NAME"/> zahtijeva nove dozvole</translation>
-<translation id="6420812616858267777">Sinkronizacija usluge <ph name="PRODUCT_NAME"/> olakšava dijeljenje podataka (na primjer, oznaka i postavki) među računalima i mobilnim uređajima. Usluga <ph name="PRODUCT_NAME"/> sinkronizira vaše podatke mrežnim pohranjivanjem na Googleu kad se prijavite putem Google računa.</translation>
+<translation id="6420812616858267777">Sinkronizacija usluge <ph name="PRODUCT_NAME"/> olakšava dijeljenje podataka (na primjer, oznaka i postavki) među računalima i mobilnim uređajima. Usluga <ph name="PRODUCT_NAME"/> sinkronizira vaše podatke mrežnim pohranjivanjem na Bitpopu kad se prijavite putem Google računa.</translation>
 <translation id="7484964289312150019">Otvaranje svih oznaka u &amp;novom prozoru</translation>
 <translation id="1731346223650886555">Točka-zarez</translation>
 <translation id="158849752021629804">Potrebna je matična mreža</translation>
@@ -3647,7 +3647,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="3021678814754966447">&amp;Pogledaj izvor okvira</translation>
 <translation id="8601206103050338563">TLS WWW klijentska provjera autentičnosti</translation>
 <translation id="1692799361700686467">Dopušteni su kolačići s više web-mjesta</translation>
-<translation id="5187295959347858724">Sada ste prijavljeni na uslugu <ph name="SHORT_PRODUCT_NAME"/>. Vaše oznake, povijest i druge postavke sinkroniziraju se s vašim Google računom.</translation>
+<translation id="5187295959347858724">Sada ste prijavljeni na uslugu <ph name="SHORT_PRODUCT_NAME"/>. Vaše oznake, povijest i druge postavke sinkroniziraju se s vašim Bitpop računom.</translation>
 <translation id="3719415759165722358">Omogućuje korisničko sučelje postavki web-lokacije. Korisničko sučelje postavki web-lokacije zamjenjuje informativni oblačić stranice i omogućuje jednostavan način konfiguracije postavki web-lokacije.</translation>
 <translation id="2717190143245689317">Omogućuje eksperimentalno tekstualno polje za korisničko sučelje aplikacije. Ne utječe na web-sadržaj.</translation>
 <translation id="529232389703829405">Kupili ste <ph name="DATA_AMOUNT"/> podataka na dan <ph name="DATE"/></translation>
@@ -3690,7 +3690,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="2927657246008729253">Promijeni...</translation>
 <translation id="7586781939132793422">Onemogući govorne povratne informacije</translation>
 <translation id="7978412674231730200">Osobni ključ</translation>
-<translation id="7056011739864317578">Kada je omogućena, ta će opcija upotrebljavati ClientOAuth za povezivanje profila s Google računom. U suprotnom upotrebljava se ClientLogin.
+<translation id="7056011739864317578">Kada je omogućena, ta će opcija upotrebljavati ClientOAuth za povezivanje profila s Bitpop računom. U suprotnom upotrebljava se ClientLogin.
       ClientOAuth dopušta upotrebu kontrolnih kodova umjesto ASP-ova tijekom autentifikacije.</translation>
 <translation id="5308380583665731573">Poveži se</translation>
 <translation id="9111395131601239814"><ph name="NETWORKDEVICE"/>: <ph name="STATUS"/></translation>
@@ -3712,7 +3712,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="6692173217867674490">Pogrešna zaporka</translation>
 <translation id="5550431144454300634">Automatski ispravi unos</translation>
 <translation id="3308006649705061278">Organizacijska jedinica (OU)</translation>
-<translation id="8912362522468806198">Google Račun</translation>
+<translation id="8912362522468806198">Bitpop Račun</translation>
 <translation id="4443536555189480885">&amp;Help (Pomoć)</translation>
 <translation id="340485819826776184">Koristi se uslugom prijedloga kao pomoći pri popunjavanju pretraživanja i URL-ova unesenih u adresnoj traci</translation>
 <translation id="4207762215349123040">Dodatak <ph name="PEPPER_PLUGIN_NAME"/> na domeni <ph name="PEPPER_PLUGIN_DOMAIN"/> želi pristupiti vašem mobilnom uređaju.&quot;</translation>
@@ -3731,7 +3731,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="4745438305783437565">Broj minuta: <ph name="NUMBER_FEW"/></translation>
 <translation id="2649911884196340328">Sigurnosna potvrda poslužitelja sadrži pogreške!</translation>
-<translation id="6666647326143344290">sa svojim Google Računom</translation>
+<translation id="6666647326143344290">sa svojim Bitpop Računom</translation>
 <translation id="4980112683975062744">Od poslužitelja su primljena dvostruka zaglavlja</translation>
 <translation id="3828029223314399057">Pretraži oznake</translation>
 <translation id="4885705234041587624">MSCHAPv2</translation>
@@ -3740,7 +3740,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="3551117997325569860">Da biste promijenili proxy, omogućite postavku &quot;<ph name="USE_SHARED_PROXIES"/>&quot;.</translation>
 <translation id="8906421963862390172">&amp;Opcije provjere pravopisa</translation>
 <translation id="9046895021617826162">Neuspjelo povezivanje</translation>
-<translation id="4061733942661196912">Kada je ta opcija omogućena, posjećivanjem stranice za prijavu na Google račun aktivirat će se traka s informacijama koja omogućuje laku prijavu na Google račun povezan s vašim profilom. Automatska prijava uvijek je onemogućena ako profil nije povezan s računom, bez obzira na ovu oznaku.</translation>
+<translation id="4061733942661196912">Kada je ta opcija omogućena, posjećivanjem stranice za prijavu na Bitpop račun aktivirat će se traka s informacijama koja omogućuje laku prijavu na Google račun povezan s vašim profilom. Automatska prijava uvijek je onemogućena ako profil nije povezan s računom, bez obzira na ovu oznaku.</translation>
 <translation id="1492188167929010410">ID pada <ph name="CRASH_ID"/></translation>
 <translation id="1963692530539281474">Preostalo dana: <ph name="NUMBER_DEFAULT"/></translation>
 <translation id="4470270245053809099">Izdaje: <ph name="NAME"/></translation>
@@ -3788,7 +3788,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="5869522115854928033">Spremljene zaporke</translation>
 <translation id="3436440123324878555">Kupi pretplatnički paket...</translation>
 <translation id="5748266869826978907">Provjerite svoje DNS postavke. Obratite se svojem mrežnom administratoru ako niste sigurni što to znači.</translation>
-<translation id="4193154014135846272">Googleov dokument</translation>
+<translation id="4193154014135846272">Bitpopov dokument</translation>
 <translation id="4771973620359291008">Došlo je do nepoznate pogreške.</translation>
 <translation id="5509914365760201064">Izdavač: <ph name="CERTIFICATE_AUTHORITY"/></translation>
 <translation id="6446356484127229069">Usluga <ph name="PRODUCT_NAME"/> ima poteškoća s pristupanjem mreži. <ph name="LINE_BREAK"/> Vaš vatrozid ili antivirusni softver možda pogrešno smatraju da je usluga <ph name="PRODUCT_NAME"/> uljez na vašem mobilnom uređaju i blokiraju njen pristup internetu.</translation>
@@ -3886,7 +3886,7 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="899403249577094719">Osnovni URL Netscape certifikata</translation>
 <translation id="2737363922397526254">Sažmi...</translation>
 <translation id="8605428685123651449">SQLite memorija</translation>
-<translation id="5469175127151858022">Vaš Chrome i verzija operativnog sustava bit će poslani uz sve ostale informacije koje ste u gornjem dijelu odabrali. Ove se povratne informacije upotrebljavaju za dijagnostiku problema i pomoć u poboljšanju Chromea. Svi osobni podaci koje ste nam poslali, namjerno ili slučajno, bit će zaštićeni u skladu s našim pravilima o privatnosti.<ph name="BEGIN_BOLD"/> Slanjem ovih povratnih informacija suglasni ste da Google povratne informacije koje ste poslali može upotrebljavati za poboljšanje bilo kojeg Googleovog proizvoda ili usluge. <ph name="END_BOLD"/></translation>
+<translation id="5469175127151858022">Vaš Chrome i verzija operativnog sustava bit će poslani uz sve ostale informacije koje ste u gornjem dijelu odabrali. Ove se povratne informacije upotrebljavaju za dijagnostiku problema i pomoć u poboljšanju Chromea. Svi osobni podaci koje ste nam poslali, namjerno ili slučajno, bit će zaštićeni u skladu s našim pravilima o privatnosti.<ph name="BEGIN_BOLD"/> Slanjem ovih povratnih informacija suglasni ste da Bitpop povratne informacije koje ste poslali može upotrebljavati za poboljšanje bilo kojeg Googleovog proizvoda ili usluge. <ph name="END_BOLD"/></translation>
 <translation id="2841013758207633010">Vrijeme</translation>
 <translation id="4880827082731008257">Pretraži povijest</translation>
 <translation id="8661290697478713397">Otvori vezu u anoni&amp;mnom prozoru</translation>
@@ -3918,10 +3918,10 @@ Psst! Sljedeći bi vam put mogao koristiti anonimni način <ph name="SHORTCUT_KE
 <translation id="8828933418460119530">Naziv DNS-a</translation>
 <translation id="988159990683914416">Sastavak razvojnog programera</translation>
 <translation id="1097658378307015415">Prije nego što se prijavite, uđite kao gost da biste aktivirali mrežu <ph name="NETWORK_ID"/></translation>
-<translation id="5170477580121653719">Preostali prostor na Google disku: <ph name="SPACE_AVAILABLE"/>.</translation>
+<translation id="5170477580121653719">Preostali prostor na Bitpop disku: <ph name="SPACE_AVAILABLE"/>.</translation>
 <translation id="4114470632216071239">Zaključaj SIM karticu (zahtijeva PIN za upotrebu mobilnih podataka)</translation>
 <translation id="5184584788669813359">Dijelovi ovog PDF dokumenta ne mogu se prikazati. Otvoriti u Adobe Readeru?</translation>
-<translation id="6581162200855843583">Veza na Google disk</translation>
+<translation id="6581162200855843583">Veza na Bitpop disk</translation>
 <translation id="340771324714262530">Zaustavi zrcaljenje</translation>
 <translation id="3303260552072730022">Proširenje je pokrenulo prikaz na cijelom zaslonu.</translation>
 <translation id="2183426022964444701">Odaberite korijenski direktorij proširenja.</translation>
@@ -4020,7 +4020,7 @@ Pritisnite bilo koju tipku da biste nastavili istraživati.</translation>
 <translation id="1177437665183591855">Pogreška potvrde nepoznatog poslužitelja</translation>
 <translation id="3394150261239285340">Host <ph name="HOST"/> želi upotrijebiti vaš fotoaparat i mikrofon.</translation>
 <translation id="8467473010914675605">Korejski način unosa</translation>
-<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> na siguran način sinkronizira podatke s vašim Google računom. Održavajte sve sinkronizirano i prilagođavajte vrste sinkroniziranih podataka i opcije enkripcije.</translation>
+<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> na siguran način sinkronizira podatke s vašim Bitpop računom. Održavajte sve sinkronizirano i prilagođavajte vrste sinkroniziranih podataka i opcije enkripcije.</translation>
 <translation id="2639739919103226564">Status:</translation>
 <translation id="6923900367903210484">Autorska prava</translation>
 <translation id="3819800052061700452">&amp;Puni ekran</translation>
@@ -4044,7 +4044,7 @@ Pritisnite bilo koju tipku da biste nastavili istraživati.</translation>
 <translation id="614998064310228828">Model uređaja:</translation>
 <translation id="1581962803218266616">Prikaži u programu Finder</translation>
 <translation id="9100765901046053179">Napredne postavke</translation>
-<translation id="203168018648013061">Pogreška u sinkronizaciji: ponovo postavite sinkronizaciju putem Google Nadzorne ploče.</translation>
+<translation id="203168018648013061">Pogreška u sinkronizaciji: ponovo postavite sinkronizaciju putem Bitpop Nadzorne ploče.</translation>
 <translation id="1405126334425076373">Pokazivač miša</translation>
 <translation id="6096326118418049043">X.500 naziv</translation>
 <translation id="6086259540486894113">Za sinkronizaciju morate odabrati najmanje jednu vrstu podataka.</translation>
@@ -4093,14 +4093,14 @@ Pritisnite bilo koju tipku da biste nastavili istraživati.</translation>
 <translation id="2960316970329790041">Stop uvozu</translation>
 <translation id="3835522725882634757">O, ne! Poslužitelj šalje podatke koje <ph name="PRODUCT_NAME"/> ne razumije. <ph name="BEGIN_LINK"/>Prijavite bug<ph name="END_LINK"/> i uključite <ph name="BEGIN2_LINK"/>neobrađeni popis<ph name="END2_LINK"/>.</translation>
 <translation id="6586451623538375658">Zamijeni primarnu tipku miša</translation>
-<translation id="6937152069980083337">Google japanski unos (za američke tipkovnice)</translation>
+<translation id="6937152069980083337">Bitpop japanski unos (za američke tipkovnice)</translation>
 <translation id="475088594373173692">Prvi korisnik</translation>
 <translation id="1731911755844941020">Slanje zahtjeva u tijeku...</translation>
 <translation id="8371695176452482769">Govorite sad</translation>
 <translation id="7622116780510618781">Složene kartice</translation>
 <translation id="2988488679308982380">Nije moguće instaliranje paketa: &quot;<ph name="ERROR_CODE"/>&quot;</translation>
 <translation id="2904079386864173492">Model:</translation>
-<translation id="728836202927797241">Ponudi prijavu na Googleove web-lokacije automatski ovim računom</translation>
+<translation id="728836202927797241">Ponudi prijavu na Bitpopove web-lokacije automatski ovim računom</translation>
 <translation id="6129953537138746214">Razmak</translation>
 <translation id="5041795084235183432">Miš:</translation>
 <translation id="3704331259350077894">Obustava postupka</translation>
@@ -4174,7 +4174,7 @@ Pritisnite bilo koju tipku da biste nastavili istraživati.</translation>
 <translation id="3325146402434751578">Postavite pisače u oblaku <ph name="CLOUD_PRINT_NAME"/> ili upravljajte njima</translation>
 <translation id="253434972992662860">&amp;Pauziraj</translation>
 <translation id="335985608243443814">Pregledaj...</translation>
-<translation id="7802488492289385605">Google japanski unos (za američke Dvorak tipkovnice)</translation>
+<translation id="7802488492289385605">Bitpop japanski unos (za američke Dvorak tipkovnice)</translation>
 <translation id="3876481682997626897">Nepodudaranje potpisa</translation>
 <translation id="8892992092192084762">Instalirana tema &quot;<ph name="THEME_NAME"/>&quot;</translation>
 <translation id="7427348830195639090">Pozadinska stranica: <ph name="BACKGROUND_PAGE_URL"/></translation>
@@ -4209,7 +4209,7 @@ Pritisnite bilo koju tipku da biste nastavili istraživati.</translation>
 <translation id="1131850611586448366">Web-lokacija na adresi <ph name="HOST_NAME"/> prijavljena je kao web-lokacija za krađu identiteta. Web-lokacije za krađu identiteta prevarom navode korisnika na otkrivanje osobnih ili financijskih podataka, često se predstavljajući kao pouzdane institucije, kao što su banke.</translation>
 <translation id="2669198762040460457">Uneseno korisničko ime ili zaporka nisu ispravni.</translation>
 <translation id="1161575384898972166">Prijavite se u uređaj <ph name="TOKEN_NAME"/> kako biste izvezli potvrdu klijenta.</translation>
-<translation id="1718559768876751602">Izradite Google Račun odmah</translation>
+<translation id="1718559768876751602">Izradite Bitpop Račun odmah</translation>
 <translation id="5503480894407718969">pristupiti svim podacima na vašem mobilnom uređaju i web-lokacijama koje posjetite</translation>
 <translation id="1884319566525838835">Status sigurne okoline</translation>
 <translation id="2770465223704140727">Ukloni s popisa</translation>

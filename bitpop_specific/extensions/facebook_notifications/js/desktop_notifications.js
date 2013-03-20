@@ -163,7 +163,7 @@ DesktopNotifications = {
                  'FROM notification ' +
                  'WHERE recipient_id=me() AND is_unread = 1 AND is_hidden = 0'
 
-    chrome.extension.sendRequest(self.controllerExtensionId,
+    chrome.extension.sendMessage(self.controllerExtensionId,
         { type: 'fqlQuery',
           query: query
         },

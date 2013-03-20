@@ -28,9 +28,8 @@ bitpop.FriendsSidebar = (function() {
   $(document).ready(function() {
     var bgPage = chrome.extension.getBackgroundPage();
 
-    // TODO: specify narrower element selector
-    $('button').click(function () {
-      chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+    $('#login-button').click(function () {
+      chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
         { type: 'login' },
         function (params) {
           if (params.canLogin && $('p.error').is(':visible'))
@@ -41,7 +40,7 @@ bitpop.FriendsSidebar = (function() {
     });
 
     $('#logout a').click(function() {
-      chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+      chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
         { type: 'logout' });
     });
 
@@ -128,6 +127,24 @@ bitpop.FriendsSidebar = (function() {
     });
 
     $('#head-col2-row1').click(setStatusAreaClicked);
+
+    function toggleSyncMessage(params) {
+      if (params && params === true) {
+        $('#sync-para').hide();
+        $('#enable-sync').attr('checked', false);
+        $('#enable-sync').attr('disabled', true);
+      } else {
+        $('#sync-para').show();
+        $('#enable-sync').attr('checked', true);
+        $('#enable-sync').attr('disabled', false);
+      }
+    }
+    chrome.bitpop.getSyncStatus(function (result) {
+      toggleSyncMessage(result);
+    });
+    chrome.bitpop.onSyncStatusChanged.addListener(function (params) {
+      toggleSyncMessage(params);
+    });
   });
 
   /*- private ------------------------*/
@@ -161,7 +178,7 @@ bitpop.FriendsSidebar = (function() {
   };
 
   function onStatusControlChange(value) {
-    chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+    chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
       { type: "changeOwnStatus", status: value });
 
     var bgPage = chrome.extension.getBackgroundPage();
@@ -273,7 +290,7 @@ bitpop.FriendsSidebar = (function() {
     if (!val)
       return false;
 
-    chrome.extension.sendRequest({ type: 'setStatusMessage', msg: val }, function(response) {
+    chrome.extension.sendMessage({ type: 'setStatusMessage', msg: val }, function(response) {
       console.assert(self.isEditingStatus);
 
       if (response.error == 'yes')
@@ -298,6 +315,13 @@ bitpop.FriendsSidebar = (function() {
   };
 
   self.slideToFriendsView = function(dontAnimate) {
+    if ($('#enable-sync').attr('checked')) {
+      $('#enable-sync').attr('checked', false);
+      $('#enable-sync').attr('disabled', true);
+      $('#sync-para').hide();
+      chrome.bitpop.launchFacebookSync();
+    }
+
     var bgPage = chrome.extension.getBackgroundPage();
     var myUid = bgPage ? bgPage.myUid : undefined;
     if (myUid) {
@@ -564,7 +588,7 @@ bitpop.FriendsSidebar = (function() {
   self.friendList = null;
   self.onlineFavNum = 0;
 
-  chrome.extension.onRequestExternal.addListener(function(request, sender, sendResponse) {
+  chrome.extension.onMessageExternal.addListener(function(request, sender, sendResponse) {
     if (!request.type)
       return;
     switch (request.type) {
@@ -586,7 +610,7 @@ bitpop.FriendsSidebar = (function() {
     }
   });
 
-  chrome.extension.onRequest.addListener(function(request, sender, sendResponse) {
+  chrome.extension.onMessage.addListener(function(request, sender, sendResponse) {
     if (request.type && request.type == 'inboxDataAvailable') {
       self.updateDOM();
     } else if (request.type && request.type == 'statusMessageUpdate') {

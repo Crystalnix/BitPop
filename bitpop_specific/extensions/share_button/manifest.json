@@ -15,6 +15,6 @@
    },
    "name": "Facebook Share Button (by Shareaholic) (modified)",
    "permissions": [ "tabs", "http://*/*", "https://*/*" ],
-   "version": "0.3",
+   "version": "0.4",
    "manifest_version": 2
 }

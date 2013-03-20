@@ -34,7 +34,7 @@
 <translation id="3581034179710640788">El certificat de seguretat del lloc ha caducat!</translation>
 <translation id="2825758591930162672">Clau pública del subjecte</translation>
 <translation id="8306243285620593545">Se centra en la icona d'estat</translation>
-<translation id="1130622745736410868">vol confirmar que esteu avegant des d'un dispositiu amb Chrome OS. Per fer-ho, sol·licitarà a Google que verifiqui el vostre codi del cupó.</translation>
+<translation id="1130622745736410868">vol confirmar que esteu avegant des d'un dispositiu amb Chrome OS. Per fer-ho, sol·licitarà a Bitpop que verifiqui el vostre codi del cupó.</translation>
 <translation id="8176382683266548737">Activa les notificacions</translation>
 <translation id="8275038454117074363">Importa</translation>
 <translation id="8418445294933751433">&amp;Mostra com a pestanya</translation>
@@ -57,7 +57,7 @@ El mode d'incògnit <ph name="SHORTCUT_KEY"/> us pot ser útil la propera vegada
 <translation id="4940047036413029306">Comet.</translation>
 <translation id="1497897566809397301">Permet l'establiment de dades locals (opció recomanada)</translation>
 <translation id="3275778913554317645">Obre com a finestra</translation>
-<translation id="4553117311324416101">Google ha determinat que pot ser que s'instal·li programari maliciós al vostre equip si continueu. Si ja heu visitat aquest lloc anteriorment o hi confieu, és possible que un pirata l'hagi posat en perill recentment. Us recomanem que no continueu i que ho torneu a provar demà, o bé que aneu a un altre lloc.</translation>
+<translation id="4553117311324416101">Bitpop ha determinat que pot ser que s'instal·li programari maliciós al vostre equip si continueu. Si ja heu visitat aquest lloc anteriorment o hi confieu, és possible que un pirata l'hagi posat en perill recentment. Us recomanem que no continueu i que ho torneu a provar demà, o bé que aneu a un altre lloc.</translation>
 <translation id="5085514918439894988">No hi ha instal·lat cap servei per a aquesta acció i tampoc no hi ha cap recomanació de servei per a aquesta acció a Chrome Web Store.</translation>
 <translation id="8867568208303837180">S'està enviant...</translation>
 <translation id="509988127256758334">Ce&amp;rca:</translation>
@@ -91,7 +91,7 @@ El mode d'incògnit <ph name="SHORTCUT_KEY"/> us pot ser útil la propera vegada
 <translation id="21426568240411732"><ph name="TITLE"/> està utilitzant la càmera.</translation>
 <translation id="6156863943908443225">Memòria cau d'scripts</translation>
 <translation id="4274187853770964845">Error de sincronització: atureu i reinicieu la sincronització.</translation>
-<translation id="4610656722473172270">Barra Google</translation>
+<translation id="4610656722473172270">Barra Bitpop</translation>
 <translation id="656293578423618167">El camí o el nom del fitxer és massa llarg. Deseu-ho amb un nom més curt o en una altra ubicació.</translation>
 <translation id="3484869148456018791">Obtén el certificat nou</translation>
 <translation id="151501797353681931">Importat de Safari</translation>
@@ -139,13 +139,13 @@ El mode d'incògnit <ph name="SHORTCUT_KEY"/> us pot ser útil la propera vegada
 <translation id="7600965453749440009">No tradueixis mai: <ph name="LANGUAGE"/></translation>
 <translation id="3208703785962634733">No confirmat</translation>
 <translation id="620329680124578183">No carreguis (recomanat)</translation>
-<translation id="6300924177400055566">No teniu prou espai a Google Drive per desar &quot;<ph name="FILE_NAME"/>&quot;. Elimineu-ne fitxers o <ph name="BEGIN_LINK"/>compreu més espai d'emmagatzematge<ph name="END_LINK"/>.</translation>
+<translation id="6300924177400055566">No teniu prou espai a Bitpop Drive per desar &quot;<ph name="FILE_NAME"/>&quot;. Elimineu-ne fitxers o <ph name="BEGIN_LINK"/>compreu més espai d'emmagatzematge<ph name="END_LINK"/>.</translation>
 <translation id="9074739597929991885">Bluetooth</translation>
 <translation id="2653266418988778031">Si suprimiu una entitat emissora de certificats, el vostre navegador ja no confiarà en cap certificat emès per aquella entitat.</translation>
 <translation id="5341849548509163798">Fa <ph name="NUMBER_MANY"/> hores</translation>
 <translation id="4422428420715047158">Domini:</translation>
 <translation id="7788444488075094252">Idiomes i entrada</translation>
-<translation id="6723354935081862304">Imprimeix a Google Docs i a altres destinacions al núvol. <ph name="BEGIN_LINK"/>Inicia la sessió<ph name="END_LINK"/> per imprimir a Google Cloud Print.</translation>
+<translation id="6723354935081862304">Imprimeix a Bitpop Docs i a altres destinacions al núvol. <ph name="BEGIN_LINK"/>Inicia la sessió<ph name="END_LINK"/> per imprimir a Google Cloud Print.</translation>
 <translation id="3602290021589620013">Previsualitza</translation>
 <translation id="6257035105556579916">Les extensions no es poden modificar en el mode gestionat.</translation>
 <translation id="800602641363855389"><ph name="TITLE"/> està utilitzant el micròfon.</translation>
@@ -214,7 +214,7 @@ El mode d'incògnit <ph name="SHORTCUT_KEY"/> us pot ser útil la propera vegada
 <translation id="1818606096021558659">Pàgina</translation>
 <translation id="1549045574060481141">Confirmeu la baixada</translation>
 <translation id="5388588172257446328">Nom d'usuari:</translation>
-<translation id="1657406563541664238">Per ajudar-nos a millorar <ph name="PRODUCT_NAME"/>, envieu automàticament estadístiques d'ús i informes d'error a Google</translation>
+<translation id="1657406563541664238">Per ajudar-nos a millorar <ph name="PRODUCT_NAME"/>, envieu automàticament estadístiques d'ús i informes d'error a Bitpop</translation>
 <translation id="7982789257301363584">Xarxa</translation>
 <translation id="2271281383664374369">Les sol·licituds d'extensions a aquest URL s'han restringit temporalment.</translation>
 <translation id="8528962588711550376">S'està iniciant la sessió.</translation>
@@ -231,8 +231,8 @@ El mode d'incògnit <ph name="SHORTCUT_KEY"/> us pot ser útil la propera vegada
 <translation id="9151034842884433218">Trieu una imatge i un nom per al vostre perfil nou de Chrome.</translation>
 <translation id="1510030919967934016">Aquesta pàgina ha bloquejat el seguiment de la vostra ubicació.</translation>
 <translation id="8848519885565996859">L'usuari ha definit el marc d'enllaç de l'URL</translation>
-<translation id="4640525840053037973">Inicieu la sessió amb el vostre Compte de Google</translation>
-<translation id="6315526595991863271">Ara teniu la sessió iniciada a <ph name="SHORT_PRODUCT_NAME"/>. Els vostres marcadors, l'historial i altres opcions de configuració s'estan sincronitzant amb el vostre compte de Google seguint la configuració predeterminada.</translation>
+<translation id="4640525840053037973">Inicieu la sessió amb el vostre Compte de Bitpop</translation>
+<translation id="6315526595991863271">Ara teniu la sessió iniciada a <ph name="SHORT_PRODUCT_NAME"/>. Els vostres marcadors, l'historial i altres opcions de configuració s'estan sincronitzant amb el vostre compte de Bitpop seguint la configuració predeterminada.</translation>
 <translation id="5255315797444241226">La paraula de pas que heu introduït no és correcta.</translation>
 <translation id="762917759028004464">El navegador predeterminat actualment és <ph name="BROWSER_NAME"/>.</translation>
 <translation id="8289982954746764694">Activació de l'element de seguiment (encara no funciona completament) per a llegendes, subtítols, capítols i descripcions d'àudio d'elements de vídeo.</translation>
@@ -270,7 +270,7 @@ El mode d'incògnit <ph name="SHORTCUT_KEY"/> us pot ser útil la propera vegada
 <translation id="1801827354178857021">Punt</translation>
 <translation id="4560332071395409256">Feu clic a <ph name="BEGIN_BOLD"/>Inicia<ph name="END_BOLD"/>, feu clic a <ph name="BEGIN_BOLD"/>Executa<ph name="END_BOLD"/>, escriviu <ph name="BEGIN_BOLD"/>%windir%\\network diagnostic\\xpnetdiag.exe<ph name="END_BOLD"/> i, a continuació, feu clic a <ph name="BEGIN_BOLD"/>D'acord<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Afegeix un motor de cerca</translation>
-<translation id="6868050610674841964">En iniciar la sessió se sincronitzaran les dades i el vostre compte de Google perquè pugueu accedir als marcadors, a l'historial i a altres configuracions a qualsevol dispositiu.</translation>
+<translation id="6868050610674841964">En iniciar la sessió se sincronitzaran les dades i el vostre compte de Bitpop perquè pugueu accedir als marcadors, a l'historial i a altres configuracions a qualsevol dispositiu.</translation>
 <translation id="5498951625591520696">No es pot connectar amb el servidor.</translation>
 <translation id="1621207256975573490">Desa el &amp;marc com a...</translation>
 <translation id="4681260323810445443">No esteu autoritzat a accedir a la pàgina web de <ph name="URL"/>. És possible que calgui que hi inicieu la sessió.</translation>
@@ -304,7 +304,7 @@ El mode d'incògnit <ph name="SHORTCUT_KEY"/> us pot ser útil la propera vegada
 <translation id="6845180713465955339">L'emissió del certificat &quot;<ph name="CERTIFICATE_NAME"/>&quot; ha anat a càrrec de:</translation>
 <translation id="5364525511170219879">Activa la IU d'activitat d'extensions</translation>
 <translation id="3088325635286126843">&amp;Canvia el nom...</translation>
-<translation id="6979158407327259162">Google Drive</translation>
+<translation id="6979158407327259162">Bitpop Drive</translation>
 <translation id="6853700448789925482">Activa l'element <ph name="TRACK_HTML"/></translation>
 <translation id="3150927491400159470">Torna a carregar de manera forçada</translation>
 <translation id="7531238562312180404">Com que <ph name="PRODUCT_NAME"/> no controla la manera com les extensions gestionen les dades personals, s'han desactivat totes les extensions per a les finestres d'incògnit. Podeu tornar a activar-les individualment a
@@ -369,7 +369,7 @@ El mode d'incògnit <ph name="SHORTCUT_KEY"/> us pot ser útil la propera vegada
 <translation id="8194465509832052438">Configura les ordres</translation>
 <translation id="4422347585044846479">Editeu el marcador d'aquesta pàgina</translation>
 <translation id="2452539774207938933">Canvia a l'usuari: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">Google Chrome pot proporcionar correccions ortogràfiques més útils mitjançant l'enviament del que escriviu al navegador als servidors de Google, fet que us permet utilitzar la mateixa tecnologia de correcció ortogràfica utilitzada per a la cerca de Google.</translation>
+<translation id="4700157086864140907">Bitpop Chrome pot proporcionar correccions ortogràfiques més útils mitjançant l'enviament del que escriviu al navegador als servidors de Google, fet que us permet utilitzar la mateixa tecnologia de correcció ortogràfica utilitzada per a la cerca de Google.</translation>
 <translation id="7632357940961158759">Una extensió gestiona algunes configuracions.</translation>
 <translation id="1880905663253319515">Voleu suprimir el certificat &quot;<ph name="CERTIFICATE_NAME"/>&quot;?</translation>
 <translation id="8546306075665861288">Memòria cau d'imatges</translation>
@@ -426,7 +426,7 @@ signatura de formulari: <ph name="FORM_SIGNATURE"/>
 id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8656768832129462377">No els comprovis</translation>
 <translation id="715487527529576698">El mode xinès inicial és xinès simplificat</translation>
-<translation id="6896830120821965585">Activa un servei en segon pla que connecta el servei de Google Cloud Print amb totes les impressores instal·lades a l'equip. Amb aquest experiment, podeu activar el connector de Google Cloud Print si inicieu la sessió amb el vostre compte de Google, a la secció Avançat de la configuració.</translation>
+<translation id="6896830120821965585">Activa un servei en segon pla que connecta el servei de Bitpop Cloud Print amb totes les impressores instal·lades a l'equip. Amb aquest experiment, podeu activar el connector de Google Cloud Print si inicieu la sessió amb el vostre compte de Google, a la secció Avançat de la configuració.</translation>
 <translation id="3999508690854143454">Pregunta quan un lloc requereixi accés a la càmera i al micròfon (recomanat)</translation>
 <translation id="1674989413181946727">Configuració de SSL a tot l'equip:</translation>
 <translation id="1531285811424589182">Error de supressió del certificat</translation>
@@ -443,7 +443,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="3874070094967379652">Utilitza una contrasenya de sincronització per encriptar les meves dades</translation>
 <translation id="6500116422101723010">El servidor no pot gestionar la sol·licitud. Aquest codi indica que és una situació temporal, i el servidor estarà disponible més tard.</translation>
 <translation id="1644574205037202324">Historial</translation>
-<translation id="4206944295053515692">Demana suggeriments a Google</translation>
+<translation id="4206944295053515692">Demana suggeriments a Bitpop</translation>
 <translation id="1297175357211070620">Destí</translation>
 <translation id="479280082949089240">Aquesta pàgina defineix les galetes</translation>
 <translation id="4198861010405014042">Accés compartit</translation>
@@ -456,8 +456,8 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="3887847548716051874">Permet sempre que aquest lloc utilitzi aquest micròfon i aquesta càmera</translation>
 <translation id="2886862922374605295">Maquinari:</translation>
 <translation id="4497097279402334319">No s'ha pogut connectar a la xarxa.</translation>
-<translation id="7342729285348293164">Inicieu la sessió a <ph name="PRODUCT_NAME"/> amb el vostre compte de Google per desar al web les funcions personalitzades del navegador i per accedir-hi des de qualsevol equip mitjançant <ph name="PRODUCT_NAME"/>. També podeu iniciar la sessió automàticament als vostres serveis de Google preferits.</translation>
-<translation id="2542049655219295786">Taula de Google</translation>
+<translation id="7342729285348293164">Inicieu la sessió a <ph name="PRODUCT_NAME"/> amb el vostre compte de Bitpop per desar al web les funcions personalitzades del navegador i per accedir-hi des de qualsevol equip mitjançant <ph name="PRODUCT_NAME"/>. També podeu iniciar la sessió automàticament als vostres serveis de Google preferits.</translation>
+<translation id="2542049655219295786">Taula de Bitpop</translation>
 <translation id="3899879303189199559">Fora de línia des de fa més d'un any</translation>
 <translation id="5303618139271450299">No s'ha trobat aquesta pàgina web</translation>
 <translation id="4256316378292851214">De&amp;sa el vídeo com a...</translation>
@@ -466,7 +466,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="6518014396551869914">Copia&amp; la imatge</translation>
 <translation id="3236997602556743698">Configuració 3 (390)</translation>
 <translation id="542155483965056918"><ph name="NUMBER_ZERO"/> mins ago</translation>
-<translation id="4928351909437667303">Desactiva Google Drive en aquest dispositiu.</translation>
+<translation id="4928351909437667303">Desactiva Bitpop Drive en aquest dispositiu.</translation>
 <translation id="6315723398663634808">El certificat de servidor conté una clau criptogràfica dèbil</translation>
 <translation id="2887525882758501333">Document PDF</translation>
 <translation id="289426338439836048">Altres xarxes de telefonia mòbil...</translation>
@@ -539,7 +539,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="6431347207794742960"><ph name="PRODUCT_NAME"/> configurarà les actualitzacions automàtiques per a tots els usuaris d'aquest equip.</translation>
 <translation id="4973698491777102067">Elimina els elements següents de:</translation>
 <translation id="6074963268421707432">No permetis que cap lloc mostri notificacions d'escriptori</translation>
-<translation id="4944952004685780325">Permet fer servir l'API de la versió 2 de Google Drive per accedir a la carpeta de Google Drive.</translation>
+<translation id="4944952004685780325">Permet fer servir l'API de la versió 2 de Bitpop Drive per accedir a la carpeta de Google Drive.</translation>
 <translation id="1995173078718234136">S'està analitzant el contingut...</translation>
 <translation id="7920521481309889533">Activa SPDY/3</translation>
 <translation id="5979681173469464041">Se centra en la subfinestra següent</translation>
@@ -548,7 +548,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="1491151370853475546">Torna a carregar aquesta pàgina</translation>
 <translation id="5374359983950678924">Canvia la imatge</translation>
 <translation id="2859738163554174612">No m'ofereixis mai iniciar la sessió</translation>
-<translation id="1378727793141957596">Us donem la benvinguda a Google Drive.</translation>
+<translation id="1378727793141957596">Us donem la benvinguda a Bitpop Drive.</translation>
 <translation id="5158548125608505876">No sincronitzis les meves contrasenyes</translation>
 <translation id="3717485073527618485">Pregunta'm quan un lloc intenti desactivar el cursor del ratolí (recomanat)</translation>
 <translation id="3273410961255278341">Envia a:</translation>
@@ -581,7 +581,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="773426152488311044">Actualment sou l'únic usuari de <ph name="PRODUCT_NAME"/>.</translation>
 <translation id="2042078858148122628">No s'ha trobat el servidor a <ph name="HOST_NAME"/> perquè la consulta de DNS ha fallat. DNS és el servei de xarxa que tradueix el nom d'un lloc web a la seva adreça d'Internet. Aquest error sovint es produeix perquè no hi ha connexió a Internet o perquè una xarxa està mal configurada. També pot ser que el servidor DNS no respongui o que un tallafoc impedeixi l'accés de <ph name="PRODUCT_NAME"/> a la xarxa.</translation>
 <translation id="2159087636560291862">En aquest cas, el certificat no ha estat verificat per un tercer en què confiï l'equip. Tothom pot crear un certificat fent-se passar pel lloc web que vulgui i, en conseqüència, cal que un tercer de confiança verifiqui el certificat. Sense aquesta verificació, la informació d'identitat del certificat no té cap significat. Per tant, no es pot verificar que us esteu comunicant amb <ph name="DOMAIN"/> en lloc de amb un atacant que ha generat el seu propi certificat fent-se passar per <ph name="DOMAIN2"/>. No hauríeu de continuar.</translation>
-<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> requereix que encripteu les dades mitjançant la contrasenya de Google o la vostra pròpia paraula de pas.</translation>
+<translation id="58625595078799656"><ph name="PRODUCT_NAME"/> requereix que encripteu les dades mitjançant la contrasenya de Bitpop o la vostra pròpia paraula de pas.</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">No és una entitat emissora de certificats</translation>
 <translation id="6099520380851856040">S'ha produït a les <ph name="CRASH_TIME"/></translation>
@@ -737,7 +737,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8943805475239098364">Voleu cercar amb <ph name="NEW_GOOGLE_HOST"/> en lloc de <ph name="CURRENT_GOOGLE_HOST"/>?</translation>
 <translation id="3813510441224209252">Format pendent</translation>
 <translation id="8912793549644936705">Amplia</translation>
-<translation id="8026684114486203427">Per utilitzar Chrome Web Store, inicieu la sessió amb un Compte de Google.</translation>
+<translation id="8026684114486203427">Per utilitzar Chrome Web Store, inicieu la sessió amb un Compte de Bitpop.</translation>
 <translation id="1486096554574027028">Cerca a les contrasenyes</translation>
 <translation id="4631887759990505102">Artista</translation>
 <translation id="1836938920852968258">Desactiveu el menú &quot;Altres dispositius&quot; a NTP.</translation>
@@ -753,12 +753,12 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="89217462949994770">Heu introduït un PIN incorrecte massa vegades. Contacteu amb <ph name="CARRIER_ID"/> per obtenir una nova clau de desbloqueig del PIN (PUK) de vuit dígits.</translation>
 <translation id="5920618722884262402">Bloqueja les paraules ofensives</translation>
 <translation id="242006861730551700">Desactiva la plataforma de baixada. Es mostrarà la interfície d'usuari de baixades noves a mesura que s'implementi.</translation>
-<translation id="7782102568078991263">Cap suggeriment més de Google</translation>
+<translation id="7782102568078991263">Cap suggeriment més de Bitpop</translation>
 <translation id="8038111231936746805">(predeterminada)</translation>
 <translation id="5120247199412907247">Configuració avançada</translation>
 <translation id="567881659373499783">Versió <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">Polítiques de privadesa de la navegació segura</translation>
-<translation id="5105859138906591953">Per tal d'importar els marcadors de la barra Google a Google Chrome, cal que tingueu la sessió iniciada al vostre compte de Google. Inicieu la sessió i torneu a provar d'importar-los.</translation>
+<translation id="5105859138906591953">Per tal d'importar els marcadors de la barra Bitpop a Google Chrome, cal que tingueu la sessió iniciada al vostre compte de Google. Inicieu la sessió i torneu a provar d'importar-los.</translation>
 <translation id="8899851313684471736">Obre l'enllaç en una &amp;finestra nova</translation>
 <translation id="4110342520124362335">S'han bloquejat les galetes de <ph name="DOMAIN"/>.</translation>
 <translation id="3303818374450886607">Còpies</translation>
@@ -807,7 +807,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="1871208020102129563">El servidor intermediari està configurat perquè utilitzi servidors intermediaris fixos, en lloc d'un URL d'script .pac.</translation>
 <translation id="1634788685286903402">Confia en aquest certificat per identificar els usuaris de correu electrònic.</translation>
 <translation id="3154015489111064513">Utilitza DHCP</translation>
-<translation id="8642489171979176277">Importats de la Barra Google</translation>
+<translation id="8642489171979176277">Importats de la Barra Bitpop</translation>
 <translation id="4142744419835627535">Compleció automàtica d'Instant</translation>
 <translation id="4684427112815847243">Sincronitza-ho tot</translation>
 <translation id="1125520545229165057">Dvorak (hsu)</translation>
@@ -818,7 +818,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="2441392884867482684">Aquesta pàgina es mostra en pantalla completa i vol desactivar el cursor del ratolí.</translation>
 <translation id="1422780722984745882">S'han rebut diverses capçaleres d'ubicació diferent. Això no està permès per protegir-vos
         contra atacs de divisió de respostes HTTP.</translation>
-<translation id="7787129790495067395">Actualment utilitzeu una paraula de pas. Si l'heu oblidat, podeu restablir la sincronització per esborrar les dades dels servidors de Google mitjançant Google Dashboard.</translation>
+<translation id="7787129790495067395">Actualment utilitzeu una paraula de pas. Si l'heu oblidat, podeu restablir la sincronització per esborrar les dades dels servidors de Bitpop mitjançant Google Dashboard.</translation>
 <translation id="3380365263193509176">Error desconegut</translation>
 <translation id="1273135602584709125">Cancel·la la inscripció d'empresa</translation>
 <translation id="2686759344028411998">No es detecten mòduls carregats.</translation>
@@ -886,7 +886,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="6204994989617056362">Falta l'extensió de la renegociació SSL al protocol d'enllaç segur. Per a alguns llocs, els que són compatibles amb l'extensió de renegociació, Chrome necessita un protocol d'enllaç més segur per evitar una classe determinada d'atacs. L'omissió d'aquesta extensió suggereix que la vostra connexió ha estat interceptada i manipulada en trànsit.</translation>
 <translation id="1238150413700645698">Contingut protegit</translation>
 <translation id="6679492495854441399">Vaja. S'ha produït un problema de comunicació de la xarxa en provar d'inscriure aquest dispositiu. Comproveu la connexió de xarxa i torneu-ho a provar.</translation>
-<translation id="5270547718570958938">Google Calendar</translation>
+<translation id="5270547718570958938">Bitpop Calendar</translation>
 <translation id="5823933238730612365">PPAPI (fora de la zona de proves)</translation>
 <translation id="2879755071890315043">Espereu mentre configurem la xarxa de telefonia mòbil.</translation>
 <translation id="5301751748813680278">S'està entrant com a Convidat.</translation>
@@ -941,7 +941,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="3909791450649380159">Re&amp;talla</translation>
 <translation id="2955913368246107853">Tanca la barra de cerca</translation>
 <translation id="8864170386249720785">Configuració de SSL a tot el dispositiu mòbil:</translation>
-<translation id="3914942725612686145">Heu iniciat la sessió a Chrome. Les pestanyes que tingueu obertes, els marcadors i les dades de l'omnibox se sincronitzaran amb el compte de Google.</translation>
+<translation id="3914942725612686145">Heu iniciat la sessió a Chrome. Les pestanyes que tingueu obertes, els marcadors i les dades de l'omnibox se sincronitzaran amb el compte de Bitpop.</translation>
 <translation id="5642508497713047">Signant de CRL</translation>
 <translation id="7612302739128412469">Per activar aquesta extensió, feu clic en aquesta icona.</translation>
 <translation id="813082847718468539">Mostra la informació del lloc</translation>
@@ -989,7 +989,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="1637259088766071440">El lloc web de <ph name="HOST_NAME"/> conté elements de llocs que semblen allotjar programari maliciós, és a dir, programari que pot malmetre el dispositiu mòbil o operar sense el vostre consentiment. Només el fet de visitar un lloc que contingui aquest tipus de programari pot infectar el vostre dispositiu mòbil. El lloc web també té contingut de llocs web que s'han notificat com a llocs de &quot;pesca&quot;. Els llocs de pesca enganyen els usuaris perquè proporcionin informació personal o financera i sovint fingeixen que són institucions de confiança, com ara entitats bancàries.</translation>
 <translation id="855081842937141170">Fixa la pestanya</translation>
 <translation id="6263541650532042179">restableix la sincronització</translation>
-<translation id="6513247462497316522">Google Chrome utilitzarà dades mòbils si no esteu connectat a una altra xarxa.</translation>
+<translation id="6513247462497316522">Bitpop Chrome utilitzarà dades mòbils si no esteu connectat a una altra xarxa.</translation>
 <translation id="6055392876709372977">PKCS #1 SHA-256 amb encriptació RSA</translation>
 <translation id="7903984238293908205">Katakana</translation>
 <translation id="268053382412112343">Hi&amp;storial</translation>
@@ -1131,8 +1131,8 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="7632380866023782514">Superior dret</translation>
 <translation id="4693789964669838452">FPS</translation>
 <translation id="4925520021222027859">Introduïu la contrasenya d'aplicació:</translation>
-<translation id="3494768541638400973">Mètode d'entrada japonès de Google (per a teclat japonès)</translation>
-<translation id="4679639996443646335">Google ha descobert que és possible que, si continueu, s'instal·li programari maliciós al dispositiu mòbil. Si ja heu visitat alguna vegada aquest lloc o hi confieu, és possible que un pirata l'hagi posat en perill. No hauríeu de continuar. Pot ser bona idea tornar-ho a provar demà o anar a un altre lloc.</translation>
+<translation id="3494768541638400973">Mètode d'entrada japonès de Bitpop (per a teclat japonès)</translation>
+<translation id="4679639996443646335">Bitpop ha descobert que és possible que, si continueu, s'instal·li programari maliciós al dispositiu mòbil. Si ja heu visitat alguna vegada aquest lloc o hi confieu, és possible que un pirata l'hagi posat en perill. No hauríeu de continuar. Pot ser bona idea tornar-ho a provar demà o anar a un altre lloc.</translation>
 <translation id="7223775956298141902">No teniu cap extensió :-(</translation>
 <translation id="3118046075435288765">El servidor ha tancat la connexió de manera inesperada.</translation>
 <translation id="1725068750138367834">Gestor de &amp;fitxers</translation>
@@ -1158,7 +1158,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="3706919628594312718">Configuració del ratolí</translation>
 <translation id="8326478304147373412">PKCS #7, cadena de certificats</translation>
 <translation id="3242765319725186192">Clau compartida prèviament:</translation>
-<translation id="8089798106823170468">Compartiu i controleu l'accés a les vostres impressores amb un compte de Google.</translation>
+<translation id="8089798106823170468">Compartiu i controleu l'accés a les vostres impressores amb un compte de Bitpop.</translation>
 <translation id="5426597273899159431">Configuració avançada...</translation>
 <translation id="1105608846356399385">Visita el lloc web</translation>
 <translation id="7218608093942361839"><ph name="PRODUCT_NAME"/> <ph name="PRODUCT_VERSION"/> (Plataforma <ph name="PLATFORM_VERSION"/>)</translation>
@@ -1224,7 +1224,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="81686154743329117">ZRM</translation>
 <translation id="2150139952286079145">Cerqueu destinacions</translation>
 <translation id="4713309396072794887">Voleu instal·lar aquestes extensions?</translation>
-<translation id="5637940320504994319">Us heu quedat sense espai a Google Drive</translation>
+<translation id="5637940320504994319">Us heu quedat sense espai a Bitpop Drive</translation>
 <translation id="6458467102616083041">S'ha ignorat perquè la política ha desactivat la cerca predeterminada.</translation>
 <translation id="2266011376676382776">Pàgines sense resposta</translation>
 <translation id="3100609564180505575">Mòduls (<ph name="TOTAL_COUNT"/>) - Conflictes coneguts: <ph name="BAD_COUNT"/>, sospitats: <ph name="SUSPICIOUS_COUNT"/></translation>
@@ -1287,7 +1287,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="7092106376816104">Excepcions de finestres emergents</translation>
 <translation id="4830475881783902092">Identificador de client:</translation>
 <translation id="4600958291864306415">s'està generant...</translation>
-<translation id="8594787581355215556">Heu iniciat la sessió com a <ph name="USER_EMAIL_ADDRESS"/>. Gestioneu les dades sincronitzades al <ph name="BEGIN_LINK"/>Tauler de Google<ph name="END_LINK"/>.</translation>
+<translation id="8594787581355215556">Heu iniciat la sessió com a <ph name="USER_EMAIL_ADDRESS"/>. Gestioneu les dades sincronitzades al <ph name="BEGIN_LINK"/>Tauler de Bitpop<ph name="END_LINK"/>.</translation>
 <translation id="4338600611020922010">Afegeix a l'escriptori</translation>
 <translation id="263325223718984101"><ph name="PRODUCT_NAME"/> no ha pogut completar la instal·lació, però es continuarà executant des de la imatge de disc.</translation>
 <translation id="6186893483313227582">Icona <ph name="VALUE"/></translation>
@@ -1304,7 +1304,7 @@ id de la prova: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="4250680216510889253">No</translation>
 <translation id="5109044022078737958">Laura</translation>
 <translation id="6291953229176937411">&amp;Mostra a Finder</translation>
-<translation id="8598687241883907630">Desconnecta el compte de Google...</translation>
+<translation id="8598687241883907630">Desconnecta el compte de Bitpop...</translation>
 <translation id="6410894982725961573">Disponible fora de línia</translation>
 <translation id="2556718757702023317">Per desar &quot;<ph name="FILE_NAME"/>&quot; fora de línia, cal que allibereu <ph name="TOTAL_FILE_SIZE"/> més d'espai:<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>desenganxeu els fitxers als quals ja no necessiteu accedir fora de línia<ph name="MARKUP_3"/>
@@ -1395,7 +1395,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="2629089419211541119">Fa <ph name="NUMBER_ONE"/> hora</translation>
 <translation id="1691063574428301566">El vostre equip es reiniciarà quan s'hagi completat l'actualització.</translation>
 <translation id="4697551882387947560">Quan finalitza la sessió de navegació</translation>
-<translation id="5900302528761731119">Foto del perfil de Google</translation>
+<translation id="5900302528761731119">Foto del perfil de Bitpop</translation>
 <translation id="131364520783682672">Bloq Maj</translation>
 <translation id="2066999550761485762"><ph name="BEGIN_BOLD"/>Us heu posat en mode d'incògnit.<ph name="END_BOLD"/> <ph name="LINE_BREAK"/> Les pàgines que visualitzeu en aquesta pestanya no apareixeran a l'historial de navegació o a l'historial de cerca, i no deixaran cap altre rastre, com ara galetes, al dispositiu mòbil després de tancar <ph name="BEGIN_BOLD"/>totes<ph name="END_BOLD"/> les pestanyes en mode d'incògnit. Es conservaran tots els fitxers que baixeu o els marcadors que creeu, però. <ph name="LINE_BREAK"/> <ph name="BEGIN_BOLD"/>Utilitzar el mode d'incògnit no afecta el comportament d'altres persones, servidors o programaris.<ph name="END_BOLD"/> Aneu amb compte amb la vigilància dels agents secrets o de les persones que siguin al darrere. <ph name="LINE_BREAK"/> <ph name="BEGIN_LINK"/>Obteniu més informació<ph name="END_LINK"/> sobre la navegació en mode d'incògnit.</translation>
 <translation id="2335122562899522968">Aquesta pàgina ha definit galetes.</translation>
@@ -1412,7 +1412,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="1478897831827830200">Seguiment</translation>
 <translation id="5714678912774000384">Activa l'última pestanya</translation>
 <translation id="8466234950814670489">Arxiu tar</translation>
-<translation id="5902572236435740554">Introduïu primer la contrasenya del compte de Google, <ph name="LINE_BREAK"/> no la contrasenya específica d'una aplicació.</translation>
+<translation id="5902572236435740554">Introduïu primer la contrasenya del compte de Bitpop, <ph name="LINE_BREAK"/> no la contrasenya específica d'una aplicació.</translation>
 <translation id="8813811964357448561">full de paper</translation>
 <translation id="2125314715136825419">Continua sense actualitzar Adobe Reader (no recomanat)</translation>
 <translation id="5034510593013625357">Patró del nom d'amfitrió</translation>
@@ -1433,7 +1433,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="8337399713761067085">Actualment esteu fora de línia</translation>
 <translation id="5199729219167945352">Experiments</translation>
 <translation id="6499143127267478107">S'està resolent l'amfitrió de l'script del servidor intermediari...</translation>
-<translation id="8069615408251337349">Google Cloud Print</translation>
+<translation id="8069615408251337349">Bitpop Cloud Print</translation>
 <translation id="5055518462594137986">Recorda la meva selecció per a tots els enllaços d'aquest tipus.</translation>
 <translation id="246059062092993255">S'han bloquejat connectors en aquesta pàgina.</translation>
 <translation id="2870560284913253234">Lloc</translation>
@@ -1478,7 +1478,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="3273951168350045122">Teclat (<ph name="ADDRESS"/>)</translation>
 <translation id="8221729492052686226">Si no heu iniciat aquesta sol·licitud, es pot tractar d'un intent d'atac al sistema. Tret que hàgiu dut a terme una acció concreta per iniciar la sol·licitud, hauríeu de prémer &quot;No facis res&quot;.</translation>
 <translation id="894360074127026135">Entrada progressiva internacional de Netscape</translation>
-<translation id="8420060421540670057">Mostra els fitxers de Google Docs</translation>
+<translation id="8420060421540670057">Mostra els fitxers de Bitpop Docs</translation>
 <translation id="1201402288615127009">Següent</translation>
 <translation id="1335588927966684346">Utilitat:</translation>
 <translation id="2710582058364740604">Anul·la la densitat de la pantalla del dispositiu per forçar l'ús del mode PPP d'alt rendiment i els actius.</translation>
@@ -1566,7 +1566,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="5669267381087807207">S'està activant</translation>
 <translation id="7434823369735508263">Teclat Dvorak anglès</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> dies</translation>
-<translation id="5308845175611284862">La sincronització de <ph name="PRODUCT_NAME"/> facilita l'ús compartit de les dades (com ara marcadors i configuració) entre els equips. <ph name="PRODUCT_NAME"/> sincronitza les dades emmagatzemant-les en línia amb Google quan inicieu la sessió en un compte de Google.</translation>
+<translation id="5308845175611284862">La sincronització de <ph name="PRODUCT_NAME"/> facilita l'ús compartit de les dades (com ara marcadors i configuració) entre els equips. <ph name="PRODUCT_NAME"/> sincronitza les dades emmagatzemant-les en línia amb Bitpop quan inicieu la sessió en un compte de Google.</translation>
 <translation id="1707463636381878959">Comparteix aquesta xarxa amb altres usuaris</translation>
 <translation id="2084978867795361905">MS-IME</translation>
 <translation id="7227669995306390694">No hi ha cap pla de dades de <ph name="NETWORK"/></translation>
@@ -1574,7 +1574,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="7163503212501929773"><ph name="NUMBER_MANY"/> hores restants</translation>
 <translation id="7705276765467986571">No s'ha pogut carregar el model de marcador.</translation>
 <translation id="750413812607578381">Reinicieu <ph name="PRODUCT_NAME"/> ara.</translation>
-<translation id="8034305971714560781">En desconnectar el compte de Google de <ph name="PRODUCT_NAME"/>, els canvis que es facin a les dades d'aquest dispositiu mòbil deixaran de sincronitzar-se amb el vostre compte de Google. Les dades que ja s'hagin emmagatzemat al compte de Google hi restaran fins que les elimineu amb el <ph name="BEGIN_LINK"/>Tauler de Google<ph name="END_LINK"/>.</translation>
+<translation id="8034305971714560781">En desconnectar el compte de Bitpop de <ph name="PRODUCT_NAME"/>, els canvis que es facin a les dades d'aquest dispositiu mòbil deixaran de sincronitzar-se amb el vostre compte de Google. Les dades que ja s'hagin emmagatzemat al compte de Google hi restaran fins que les elimineu amb el <ph name="BEGIN_LINK"/>Tauler de Google<ph name="END_LINK"/>.</translation>
 <translation id="2638286699381354126">Actualitza...</translation>
 <translation id="1196338895211115272">No s'ha pogut exportar la clau privada.</translation>
 <translation id="1459967076783105826">Les extensions han afegit motors de cerca</translation>
@@ -1608,10 +1608,10 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="1789424019568293108">Activeu la IU experimental que mostra un registre de l'activitat d'extensions.</translation>
 <translation id="2090876986345970080">Configuració de seguretat del sistema</translation>
 <translation id="3728067901555601989">Ordre de pagament:</translation>
-<translation id="3475447146579922140">Full de càlcul de Google</translation>
+<translation id="3475447146579922140">Full de càlcul de Bitpop</translation>
 <translation id="6856526171412069413">Activa l'escala per pessigada.</translation>
 <translation id="9219103736887031265">Imatges</translation>
-<translation id="7415834062450491574">Envia comentaris a Google.</translation>
+<translation id="7415834062450491574">Envia comentaris a Bitpop.</translation>
 <translation id="4480995875255084924">Activa el lector Oak d'ash. Permet la inspecció de les jerarquies de finestres, de capes i de visualitzacions i les seves propietats. Premeu Ctrl+Maj+F1 per accedir-hi.</translation>
 <translation id="6975147921678461939">S'està carregant la bateria: <ph name="PRECENTAGE"/>%</translation>
 <translation id="5453632173748266363">Ciríl·lic</translation>
@@ -1622,7 +1622,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="5329858601952122676">&amp;Suprimeix</translation>
 <translation id="6100736666660498114">Menú &quot;Inici&quot;</translation>
 <translation id="2706131822305474920">Canvieu entre pestanyes obertes</translation>
-<translation id="4402766404187539019">Correu de Google.com</translation>
+<translation id="4402766404187539019">Correu de Bitpop.com</translation>
 <translation id="6275297011664564181">En aquests moments no hi ha polítiques actives.</translation>
 <translation id="3994878504415702912">&amp;Zoom</translation>
 <translation id="9009369504041480176">S'està carregant (<ph name="PROGRESS_PERCENT"/>%)...</translation>
@@ -1660,7 +1660,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="6059764114876442286">Restabliment de la impressora</translation>
 <translation id="6406506848690869874">Sincronització</translation>
 <translation id="5288678174502918605">T&amp;orna a obrir la pestanya tancada</translation>
-<translation id="7238461040709361198">La contrasenya del vostre Compte de Google  ha canviat des de la darrera vegada que vau iniciar la sessió en aquest equip.</translation>
+<translation id="7238461040709361198">La contrasenya del vostre Compte de Bitpop  ha canviat des de la darrera vegada que vau iniciar la sessió en aquest equip.</translation>
 <translation id="1956050014111002555">El fitxer conté certificats múltiples, però cap d'ells no s'ha importat:</translation>
 <translation id="302620147503052030">Mostra el botó</translation>
 <translation id="1895658205118569222">Aturada</translation>
@@ -1670,7 +1670,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="6624687053722465643">Pastisset</translation>
 <translation id="8420296388012619424">El vostre dispositiu USB no està formatat.</translation>
 <translation id="3021256392995617989">Pregunta'm quan un lloc prova de fer el seguiment de la meva ubicació física (opció recomanada)</translation>
-<translation id="8083739373364455075">Obteniu 100 GB gratis amb Google Drive</translation>
+<translation id="8083739373364455075">Obteniu 100 GB gratis amb Bitpop Drive</translation>
 <translation id="271083069174183365">Configuració de la introducció en japonès</translation>
 <translation id="1257595095755619623">Si utilitzeu un servidor intermediari, comproveu la configuració del servidor intermediari o
         poseu-vos en contacte amb el vostre administrador de xarxa per assegurar-vos que el servidor
@@ -1876,7 +1876,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="3967885517199024316">Inicieu la sessió per tenir els marcadors, l'historial i la configuració a tots els dispositius.</translation>
 <translation id="5463856536939868464">Menú amb marcadors amagats</translation>
 <translation id="8286227656784970313">Utilitza el diccionari del sistema</translation>
-<translation id="5431084084184068621">Heu triat encriptar les dades mitjançant la contrasenya de Google. Si més endavant canvieu d'opinió, podeu canviar la configuració de sincronització.</translation>
+<translation id="5431084084184068621">Heu triat encriptar les dades mitjançant la contrasenya de Bitpop. Si més endavant canvieu d'opinió, podeu canviar la configuració de sincronització.</translation>
 <translation id="1493263392339817010">Personalitza els tipus de lletra...</translation>
 <translation id="5352033265844765294">Indicació de data i hora</translation>
 <translation id="1493892686965953381">S'està esperant <ph name="LOAD_STATE_PARAMETER"/>...</translation>
@@ -1886,7 +1886,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="748138892655239008">Restriccions bàsiques de certificats</translation>
 <translation id="457386861538956877">Més...</translation>
 <translation id="9210991923655648139">Accessible a l'script:</translation>
-<translation id="1950295184970569138">* Foto del perfil de Google (s'està carregant)</translation>
+<translation id="1950295184970569138">* Foto del perfil de Bitpop (s'està carregant)</translation>
 <translation id="8063491445163840780">Activa la pestanya 4</translation>
 <translation id="5473544328731861874">Elimina l'intent</translation>
 <translation id="2322193970951063277">Capçaleres i peus de pàgina</translation>
@@ -1936,7 +1936,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="5010043101506446253">Autoritats certificadores</translation>
 <translation id="2050524657923939561">Intents web</translation>
 <translation id="8487693399751278191">Importa els marcadors ara...</translation>
-<translation id="7615602087246926389">Ja teniu dades encriptades amb una versió diferent de la contrasenya del vostre compte de Google. Introduïu-la a continuació.</translation>
+<translation id="7615602087246926389">Ja teniu dades encriptades amb una versió diferent de la contrasenya del vostre compte de Bitpop. Introduïu-la a continuació.</translation>
 <translation id="7484580869648358686">Advertiment: alguna cosa no funciona bé.</translation>
 <translation id="4474155171896946103">Marca totes les pestanyes...</translation>
 <translation id="5895187275912066135">Emès el</translation>
@@ -2030,14 +2030,14 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="2065985942032347596">Es necessita autenticació</translation>
 <translation id="2563185590376525700">Granota</translation>
 <translation id="2553340429761841190"><ph name="PRODUCT_NAME"/> no s'ha pogut connectar a <ph name="NETWORK_ID"/>. Seleccioneu una altra xarxa o bé torneu-ho a provar.</translation>
-<translation id="2086712242472027775">El vostre compte no funciona a <ph name="PRODUCT_NAME"/>. Contacteu amb l'administrador del domini o utilitzeu un Compte de Google normal per iniciar la sessió.</translation>
-<translation id="1373074393717692190">Inicieu la sessió a <ph name="PRODUCT_NAME"/> amb el vostre compte de Google per desar al web les funcions personalitzades del navegador i per accedir-hi des de qualsevol dispositiu mòbil mitjançant <ph name="PRODUCT_NAME"/>. També podreu iniciar la sessió automàticament als vostres serveis de Google preferits.</translation>
+<translation id="2086712242472027775">El vostre compte no funciona a <ph name="PRODUCT_NAME"/>. Contacteu amb l'administrador del domini o utilitzeu un Compte de Bitpop normal per iniciar la sessió.</translation>
+<translation id="1373074393717692190">Inicieu la sessió a <ph name="PRODUCT_NAME"/> amb el vostre compte de Bitpop per desar al web les funcions personalitzades del navegador i per accedir-hi des de qualsevol dispositiu mòbil mitjançant <ph name="PRODUCT_NAME"/>. També podreu iniciar la sessió automàticament als vostres serveis de Google preferits.</translation>
 <translation id="7222232353993864120">Adreça electrònica</translation>
 <translation id="2128531968068887769">Client nadiu</translation>
 <translation id="2749720227918911728">Aquesta icona serà visible quan les extensions puguin actuar a la pàgina actual. Per activar aquesta extensió, feu clic a la icona o premeu <ph name="EXTENSION_SHORTCUT"/>.</translation>
 <translation id="7175353351958621980">Carregat des de:</translation>
 <translation id="7186367841673660872">Aquesta pàgina s'ha traduït de:<ph name="ORIGINAL_LANGUAGE"/>a:<ph name="LANGUAGE_LANGUAGE"/></translation>
-<translation id="8448695406146523553">Només una persona que tingui la vostra contrasenya pot llegir les dades encriptades: la contrasenya no s'envia ni s'emmagatzema a Google. Si oblideu la contrasenya, haureu de</translation>
+<translation id="8448695406146523553">Només una persona que tingui la vostra contrasenya pot llegir les dades encriptades: la contrasenya no s'envia ni s'emmagatzema a Bitpop. Si oblideu la contrasenya, haureu de</translation>
 <translation id="8248050856337841185">&amp;Enganxa</translation>
 <translation id="6052976518993719690">Entitat emissora de certificats SSL</translation>
 <translation id="2925935892230812200">Utilitzeu la GPU per accelerar la representació dels filtres SVG.</translation>
@@ -2151,7 +2151,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="6374830905869502056">Codificat per</translation>
 <translation id="2230062665678605299">No es pot crear la carpeta &quot;<ph name="FOLDER_NAME"/>&quot;. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="2526590354069164005">Escriptori</translation>
-<translation id="2059205526855036527">Heu d'estar en línia per accedir a Google Drive per primera vegada.</translation>
+<translation id="2059205526855036527">Heu d'estar en línia per accedir a Bitpop Drive per primera vegada.</translation>
 <translation id="4165738236481494247">Executa aquest connector</translation>
 <translation id="7983301409776629893">Tradueix sempre de: <ph name="ORIGINAL_LANGUAGE"/> a: <ph name="TARGET_LANGUAGE"/></translation>
 <translation id="4890284164788142455">Tailandès</translation>
@@ -2182,7 +2182,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="3479552764303398839">Ara no</translation>
 <translation id="3714633008798122362">calendari web</translation>
 <translation id="6445051938772793705">País</translation>
-<translation id="3430309973417890444">Si no teniu cap compte de Google, podeu <ph name="LINK_START"/>crear un compte de Google<ph name="LINK_END"/> ara.</translation>
+<translation id="3430309973417890444">Si no teniu cap compte de Bitpop, podeu <ph name="LINK_START"/>crear un compte de Google<ph name="LINK_END"/> ara.</translation>
 <translation id="3251759466064201842">&lt;No forma part del certificat&gt;</translation>
 <translation id="4229495110203539533">Fa <ph name="NUMBER_ONE"/> segon</translation>
 <translation id="3399068503715460757">Utilitza l'adreça IP estàtica</translation>
@@ -2208,7 +2208,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="1800987794509850828">Agent de connector: <ph name="PLUGIN_NAME"/></translation>
 <translation id="8871696467337989339">Utilitzeu una marca de la línia d'ordres que no és compatible: <ph name="BAD_FLAG"/>. Se'n ressentiran l'estabilitat i la seguretat.</translation>
 <translation id="4767443964295394154">Ubicació de baixada</translation>
-<translation id="5031870354684148875">Quant a Google Traductor</translation>
+<translation id="5031870354684148875">Quant a Bitpop Traductor</translation>
 <translation id="4266565660628359579">Activa el mode PPP d'alt rendiment per al lector de PDF de Chrome en visualitzacions de PPP d'alt rendiment.</translation>
 <translation id="5702389759209837579">Accediu a les vostres pestanyes obertes a tots els dispositius.</translation>
 <translation id="3828747136564826513">Accedeix a tots els fitxers multimèdia coneguts del vostre dispositiu</translation>
@@ -2264,7 +2264,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="1752977958630076881">Conserva les dates locals fins que surti del navegador</translation>
 <translation id="7853202427316060426">Activitat</translation>
 <translation id="8550022383519221471">El servei de sincronització no està disponible per al vostre domini.</translation>
-<translation id="1436238710092600782">Creeu un compte de Google</translation>
+<translation id="1436238710092600782">Creeu un compte de Bitpop</translation>
 <translation id="3355823806454867987">Canvia la configuració de proxy...</translation>
 <translation id="4780374166989101364">Activa les API d'extensions experimentals. Tingueu en compte que la galeria d'extensions no permet penjar extensions que utilitzin API experimentals.</translation>
 <translation id="7117247127439884114">Torna a iniciar la sessió...</translation>
@@ -2277,7 +2277,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="3007574127824276972">S'ha iniciat la sessió a <ph name="PRODUCT_NAME"/> com a <ph name="USER_NAME"/></translation>
 <translation id="6840155730904976091"><ph name="PRODUCT_NAME"/> fa servir la configuració del servidor intermediari del sistema per al dispositiu mòbil per connectar a la xarxa.</translation>
 <translation id="2541913031883863396">continua igualment</translation>
-<translation id="6884284539803678768">Activa els marcs de diàlegs amb l'estil de Google.</translation>
+<translation id="6884284539803678768">Activa els marcs de diàlegs amb l'estil de Bitpop.</translation>
 <translation id="2367499218636570208">Nom</translation>
 <translation id="4436689501885286563">Esborra les galetes i altres dades dels llocs quan tanqui la sessió</translation>
 <translation id="1520137456044207237">Quin servei s'ha d'utilitzar per visualitzar?</translation>
@@ -2344,7 +2344,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="8053390638574070785">Torna a carregar aquesta pàgina</translation>
 <translation id="5507756662695126555">No repudiació</translation>
 <translation id="3678156199662914018">Extensió: <ph name="EXTENSION_NAME"/></translation>
-<translation id="2620090360073999360">No es pot contactar amb Google Drive en aquest moment.</translation>
+<translation id="2620090360073999360">No es pot contactar amb Bitpop Drive en aquest moment.</translation>
 <translation id="3531250013160506608">Quadre de text de la contrasenya</translation>
 <translation id="506228266759207354">Desactiveu el menú de pàgina nova per accedir a les pestanyes en altres dispositius.</translation>
 <translation id="1781502536226964113">Obre la pestanya nova</translation>
@@ -2495,7 +2495,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="1358735829858566124">El fitxer o directori no es pot fer servir.</translation>
 <translation id="3144135466825225871">No s'ha pogut substituir el fitxer crx. Comproveu si el fitxer s'està utilitzant.</translation>
 <translation id="2744221223678373668">Compartides</translation>
-<translation id="9064142312330104323">Foto del perfil de Google (s'està carregant)</translation>
+<translation id="9064142312330104323">Foto del perfil de Bitpop (s'està carregant)</translation>
 <translation id="4708849949179781599">Surt de <ph name="PRODUCT_NAME"/></translation>
 <translation id="2505402373176859469"><ph name="RECEIVED_AMOUNT"/> de <ph name="TOTAL_SIZE"/></translation>
 <translation id="6937559152970966646">Fixa a la pantalla d'inici</translation>
@@ -2593,12 +2593,12 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="305803244554250778">Crea dreceres d'aplicacions als llocs següents:</translation>
 <translation id="574392208103952083">Mitjà</translation>
 <translation id="3661117620327489194">Canvia per restaurar les pàgines obertes</translation>
-<translation id="3937609171782005782">Ajudeu-nos a millorar la detecció de programari maliciós. Envieu a Google dades addicionals sobre llocs en què vegeu aquest advertiment. Aquestes dades es gestionaran de conformitat amb la <ph name="PRIVACY_PAGE_LINK"/>.</translation>
+<translation id="3937609171782005782">Ajudeu-nos a millorar la detecció de programari maliciós. Envieu a Bitpop dades addicionals sobre llocs en què vegeu aquest advertiment. Aquestes dades es gestionaran de conformitat amb la <ph name="PRIVACY_PAGE_LINK"/>.</translation>
 <translation id="8877448029301136595">[directori principal]</translation>
 <translation id="3816844797124379499">No s'ha pogut afegir l'aplicació perquè crea un conflicte amb &quot;<ph name="APP_NAME"/>&quot;.</translation>
 <translation id="7301360164412453905">Botons de selecció del teclat hsu</translation>
 <translation id="8631271110654520730">S'està copiant la imatge de recuperació...</translation>
-<translation id="7779140087128114262">Només una persona que tingui la vostra contrasenya pot llegir les dades encriptades: la contrasenya no s'envia ni s'emmagatzema a Google. Si oblideu la contrasenya, haureu de restablir la sincronització.</translation>
+<translation id="7779140087128114262">Només una persona que tingui la vostra contrasenya pot llegir les dades encriptades: la contrasenya no s'envia ni s'emmagatzema a Bitpop. Si oblideu la contrasenya, haureu de restablir la sincronització.</translation>
 <translation id="13356285923490863">Nom de la política</translation>
 <translation id="8241040075392580210">Ennuvolat</translation>
 <translation id="8690155203172212841">Gestiona la configuració de permisos</translation>
@@ -2620,7 +2620,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
         visiteu <ph name="URL_FOR_MORE_INFO"/>,
         on podreu trobar més informació, inclosa la manera de desactivar la funció.</translation>
 <translation id="8218008331535230597">Desautoritza les llicències de contingut</translation>
-<translation id="4744728308552504807">Activa un servei en segon pla que connecta el servei Google Cloud Print per a totes les impressores instal·lades en aquest dispositiu mòbil. Un cop activat aquest experiment, inicieu la sessió al compte de Google a la secció Avançat de Configuració per activar el connector de Google Cloud Print.</translation>
+<translation id="4744728308552504807">Activa un servei en segon pla que connecta el servei Bitpop Cloud Print per a totes les impressores instal·lades en aquest dispositiu mòbil. Un cop activat aquest experiment, inicieu la sessió al compte de Google a la secció Avançat de Configuració per activar el connector de Google Cloud Print.</translation>
 <translation id="6691936601825168937">&amp;Reenvia</translation>
 <translation id="6566142449942033617">No s'ha pogut carregar &quot;<ph name="PLUGIN_PATH"/>&quot; per al connector.</translation>
 <translation id="7065534935986314333">Quant al Sistema</translation>
@@ -2631,7 +2631,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="2128691215891724419">Error de sincronització: actualitzeu la contrasenya de sincronització...</translation>
 <translation id="2148716181193084225">Avui</translation>
 <translation id="1002064594444093641">Imp&amp;rimeix el marc...</translation>
-<translation id="7234674978021619913">Ja hem notificat a <ph name="HOST_NAME"/> que hem trobat programari maliciós al lloc. Per obtenir més informació sobre els problemes que hem trobat a <ph name="HOST_NAME2"/>, visiteu la <ph name="DIAGNOSTIC_PAGE"/> de Google.</translation>
+<translation id="7234674978021619913">Ja hem notificat a <ph name="HOST_NAME"/> que hem trobat programari maliciós al lloc. Per obtenir més informació sobre els problemes que hem trobat a <ph name="HOST_NAME2"/>, visiteu la <ph name="DIAGNOSTIC_PAGE"/> de Bitpop.</translation>
 <translation id="4608500690299898628">&amp;Cerca...</translation>
 <translation id="7582582252461552277">Estableix aquesta xarxa com a preferida</translation>
 <translation id="3574305903863751447"><ph name="CITY"/>, <ph name="STATE"/> <ph name="COUNTRY"/></translation>
@@ -2733,7 +2733,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="6322726279947003371">Executa contingut protegit (potser cal reiniciar l'equip)</translation>
 <translation id="3093473105505681231">Configuració del corrector ortogràfic i dels idiomes...</translation>
 <translation id="152482086482215392"><ph name="NUMBER_ONE"/> segon restant</translation>
-<translation id="4261901459838235729">Presentació de Google</translation>
+<translation id="4261901459838235729">Presentació de Bitpop</translation>
 <translation id="8678698760965522072">Estat en línia</translation>
 <translation id="529172024324796256">Nom d'usuari:</translation>
 <translation id="3308116878371095290">S'ha impedit que aquesta pàgina estableixi galetes.</translation>
@@ -2811,7 +2811,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="2444609190341826949">Sense una paraula de pas, les contrasenyes i altres dades encriptades no se sincronitzaran en aquest equip.</translation>
 <translation id="2984337792991268709">Avui a les <ph name="TODAY_DAYTIME"/></translation>
 <translation id="5227808808023563348">Cerca el text anterior</translation>
-<translation id="6650142020817594541">Aquest lloc recomana Google Chrome Frame (ja instal·lat).</translation>
+<translation id="6650142020817594541">Aquest lloc recomana Bitpop Chrome Frame (ja instal·lat).</translation>
 <translation id="3862763658360970896">Activeu De Chrome a mòbils.</translation>
 <translation id="902638246363752736">Configuració de teclat</translation>
 <translation id="7925686952655276919">No utilitzis les dades mòbils per a la sincronització</translation>
@@ -2831,7 +2831,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="6007237601604674381">El trasllat ha fallat. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">No s'ha pogut crear el fitxer ZIP temporal durant l'empaquetament.</translation>
 <translation id="1881456419707551346">Detalls de la connexió</translation>
-<translation id="1064912851688322329">Desconnexió del vostre compte de Google</translation>
+<translation id="1064912851688322329">Desconnexió del vostre compte de Bitpop</translation>
 <translation id="1294298200424241932">Edita la configuració de confiança:</translation>
 <translation id="1407135791313364759">Obre-les totes</translation>
 <translation id="1434928358870966081">Desactivació de llenç 2D accelerat</translation>
@@ -2854,9 +2854,9 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="267285457822962309">Canvieu la configuració específica del dispositiu i dels dispositius perifèrics.</translation>
 <translation id="1154228249304313899">Obre aquesta pàgina:</translation>
 <translation id="6084074203170335305"><ph name="MARKUP_1"/>Accediu a fitxers des de qualsevol lloc, fins i tot fora de línia.<ph name="MARKUP_2"/>
-        Els fitxers que són a Google Drive estan actualitzats i disponibles des de qualsevol dispositiu.<ph name="MARKUP_3"/>
+        Els fitxers que són a Bitpop Drive estan actualitzats i disponibles des de qualsevol dispositiu.<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>Manteniu els fitxers segurs.<ph name="MARKUP_5"/>
-        Passi el que passi amb el vostre dispositiu, els fitxers s'emmagatzemen amb tota seguretat a Google Drive.<ph name="MARKUP_6"/>
+        Passi el que passi amb el vostre dispositiu, els fitxers s'emmagatzemen amb tota seguretat a Bitpop Drive.<ph name="MARKUP_6"/>
         <ph name="MARKUP_7"/>Compartiu, creeu fitxers i col·laboreu-hi<ph name="MARKUP_8"/>
         amb altres persones; tot en un sol lloc.<ph name="MARKUP_9"/></translation>
 <translation id="9074348188580488499">Esteu segur que voleu eliminar totes les contrasenyes?</translation>
@@ -2991,7 +2991,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="8725066075913043281">Torna-ho a provar</translation>
 <translation id="387784661603993584">No es pot importar. S'ha produït un error.</translation>
 <translation id="4637968436031842307">Activa les variables CSS.</translation>
-<translation id="1887908730460853602">Diàlegs de l'estil de Google</translation>
+<translation id="1887908730460853602">Diàlegs de l'estil de Bitpop</translation>
 <translation id="8502249598105294518">Personalitza i controla <ph name="PRODUCT_NAME"/></translation>
 <translation id="3797008485206955964">Mostra les pàgines de fons (<ph name="NUM_BACKGROUND_APPS"/>)</translation>
 <translation id="8590375307970699841">Configurar actualitzacions automàtiques</translation>
@@ -3011,8 +3011,8 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="5293659407874396561"><ph name="SUBJECT"/> (<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">Ha de ser un URL vàlid</translation>
 <translation id="3464726836683998962">Desactiva la itinerància de dades de telefonia mòbil</translation>
-<translation id="8986494364107987395">Envia automàticament les estadístiques d'ús i els informes d'error a Google</translation>
-<translation id="7070714457904110559">Activa les extensions experimentals a la funció d'ubicació geogràfica. Inclou l'ús de les API d'ubicació del sistema operatiu (on estiguin disponibles) i l'enviament de dades addicionals de configuració de xarxes locals al servei d'ubicació de Google per proporcionar un posicionament més precís.
+<translation id="8986494364107987395">Envia automàticament les estadístiques d'ús i els informes d'error a Bitpop</translation>
+<translation id="7070714457904110559">Activa les extensions experimentals a la funció d'ubicació geogràfica. Inclou l'ús de les API d'ubicació del sistema operatiu (on estiguin disponibles) i l'enviament de dades addicionals de configuració de xarxes locals al servei d'ubicació de Bitpop per proporcionar un posicionament més precís.
 </translation>
 <translation id="6701535245008341853">No s'ha pogut obtenir el perfil.</translation>
 <translation id="8303655282093186569">Configuració de la introducció en pinyin</translation>
@@ -3027,7 +3027,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="580571955903695899">Torna a ordenar per títol</translation>
 <translation id="5230516054153933099">Finestra</translation>
 <translation id="921740547845455014">Escriu als fitxers oberts a l'aplicació</translation>
-<translation id="1799497982892676838">Gestiona les dades sincronitzades al Tauler de Google</translation>
+<translation id="1799497982892676838">Gestiona les dades sincronitzades al Tauler de Bitpop</translation>
 <translation id="951981865514037445"><ph name="URL"/> vol fer servir la ubicació del dispositiu.</translation>
 <translation id="7554791636758816595">Pestanya nova</translation>
 <translation id="3026557130425686673">S'ha cancel·lat l'inici de sessió perquè s'han malmès algunes opcions de configuració del dispositiu.</translation>
@@ -3042,7 +3042,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="1103966635949043187">Aneu a la pàgina d'inici del lloc:</translation>
 <translation id="4762295713053835808">Coses personals</translation>
 <translation id="6374100501221763867">Desactiva la descodificació de vídeo accelerada mitjançant maquinari.</translation>
-<translation id="7477347901712410606">Si heu oblidat la contrasenya, atureu i restabliu la sincronització mitjançant <ph name="BEGIN_LINK"/>Google Dashboard<ph name="END_LINK"/>.</translation>
+<translation id="7477347901712410606">Si heu oblidat la contrasenya, atureu i restabliu la sincronització mitjançant <ph name="BEGIN_LINK"/>Bitpop Dashboard<ph name="END_LINK"/>.</translation>
 <translation id="6139474630617772623">Activa l'escriptori ampliat, que us permet obrir un navegador en visualitzacions secundàries.</translation>
 <translation id="2645575947416143543">Tot i això, si treballeu en una organització que genera els seus propis certificats i proveu de connectar-vos a un lloc web intern d'aquesta organització mitjançant un certificat, és possible que pugueu resoldre aquest problema de forma segura. Podeu importar el certificat arrel de la vostra organització com a tal perquè es pugui confiar en els certificats emesos o verificats per la vostra organització. Així, no tornareu a veure aquest error la propera vegada que us proveu de connectar a un lloc web intern. Poseu-vos en contacte amb el personal d'ajuda de la vostra organització per obtenir ajuda per afegir un certificat arrel nou a l'equip.</translation>
 <translation id="1056898198331236512">Advertiment</translation>
@@ -3322,7 +3322,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="7063412606254013905">Més informació sobre les pràctiques fraudulentes de pesca.</translation>
 <translation id="7253521419891527137">&amp;Més informació</translation>
 <translation id="3170312251071695679"><ph name="PERMISSION_VALUE"/> de manera predeterminada</translation>
-<translation id="8698464937041809063">Dibuix de Google</translation>
+<translation id="8698464937041809063">Dibuix de Bitpop</translation>
 <translation id="7053053706723613360">Desactiva la funció Restabliment de la millor sessió </translation>
 <translation id="5233930340889611108">WebKit</translation>
 <translation id="8260864402787962391">Ratolí</translation>
@@ -3351,7 +3351,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="6873213799448839504">Confirma automàticament una cadena</translation>
 <translation id="7238585580608191973">Empremta SHA-256</translation>
 <translation id="2501278716633472235">Enrere</translation>
-<translation id="3588662957555259973">* Foto del perfil de Google</translation>
+<translation id="3588662957555259973">* Foto del perfil de Bitpop</translation>
 <translation id="131461803491198646">Xarxa domèstica, no itinerància</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/> - <ph name="FULL_DATE"/></translation>
 <translation id="1285320974508926690">No tradueixis mai aquest lloc</translation>
@@ -3422,7 +3422,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="461656879692943278"><ph name="HOST_NAME"/> inclou contingut del lloc <ph name="ELEMENTS_HOST_NAME"/>, conegut per distribuir programari maliciós. Si visiteu aquest lloc, el vostre equip es pot veure infectat per un virus.</translation>
 <translation id="8962198349065195967">Aquesta xarxa està configurada per l'administrador.</translation>
 <translation id="2143778271340628265">Configuració del servidor intermediari manual</translation>
-<translation id="2441192698565541088">En desconnectar el compte de Google de <ph name="PRODUCT_NAME"/>, els canvis que es facin a les dades d'aquest equip deixaran de sincronitzar-se amb el vostre compte de Google. Les dades que ja s'han emmagatzemat al compte de Google hi restaran fins que les elimineu amb el <ph name="BEGIN_LINK"/>Tauler de Google<ph name="END_LINK"/>.</translation>
+<translation id="2441192698565541088">En desconnectar el compte de Bitpop de <ph name="PRODUCT_NAME"/>, els canvis que es facin a les dades d'aquest equip deixaran de sincronitzar-se amb el vostre compte de Google. Les dades que ja s'han emmagatzemat al compte de Google hi restaran fins que les elimineu amb el <ph name="BEGIN_LINK"/>Tauler de Google<ph name="END_LINK"/>.</translation>
 <translation id="8888432776533519951">Color:</translation>
 <translation id="5294529402252479912">Actualitza Adobe Reader ara</translation>
 <translation id="5263972071113911534">Fa <ph name="NUMBER_MANY"/> dies</translation>
@@ -3451,7 +3451,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="8885905466771744233">Ja existeix una clau privada per a l'extensió especificada. Torneu a utilitzar-la o suprimiu-la primer.</translation>
 <translation id="1196944142850240972">Accediu a les dades de tots els llocs web</translation>
 <translation id="7369056754288047856">L'usuari no pot modificar algunes configuracions.</translation>
-<translation id="4100843820583867709">Sol·licitud per compartir la pantalla a Google Talk</translation>
+<translation id="4100843820583867709">Sol·licitud per compartir la pantalla a Bitpop Talk</translation>
 <translation id="8109246889182548008">Botiga certificada</translation>
 <translation id="5030338702439866405">Emès per</translation>
 <translation id="2728127805433021124">El certificat del servidor està signat mitjançant un algoritme de signatura dèbil.</translation>
@@ -3640,7 +3640,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="1049926623896334335">Document de Word</translation>
 <translation id="8412145213513410671">Bloqueigs (<ph name="CRASH_COUNT"/>)</translation>
 <translation id="7003257528951459794">Freqüència:</translation>
-<translation id="3467267818798281173">Demana suggeriments a Google</translation>
+<translation id="3467267818798281173">Demana suggeriments a Bitpop</translation>
 <translation id="560602183358579978">S'està calculant la selecció...</translation>
 <translation id="7649070708921625228">Ajuda</translation>
 <translation id="858637041960032120">Afegeix un número de telèfon</translation>
@@ -3673,10 +3673,10 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="4133237568661345071">Activa l'inici de sessió automàtic</translation>
 <translation id="3851140433852960970">No hi ha cap connector disponible per mostrar aquest contingut.</translation>
 <translation id="5556459405103347317">Torna a carregar</translation>
-<translation id="8000020256436988724">Barra Google</translation>
+<translation id="8000020256436988724">Barra Bitpop</translation>
 <translation id="7507930499305566459">Certificat de resposta d'estat</translation>
 <translation id="3958088479270651626">Importació dels marcadors i de la configuració</translation>
-<translation id="2689915906323125315">Utilitza la contrasenya del meu compte de Google</translation>
+<translation id="2689915906323125315">Utilitza la contrasenya del meu compte de Bitpop</translation>
 <translation id="8518865679229538285">Mètode d'introducció en tàmil (màquina d'escriure)</translation>
 <translation id="5257456363153333584">Libèl·lula</translation>
 <translation id="4557136421275541763">Advertiment:</translation>
@@ -3687,7 +3687,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="7681202901521675750">La targeta SIM està bloquejada, introduïu el PIN. Nombre d'intents restants: <ph name="TRIES_COUNT"/></translation>
 <translation id="2489918096470125693">Afegeix una &amp;carpeta...</translation>
 <translation id="7353651168734309780"><ph name="EXTENSION_NAME"/> necessita permisos nous</translation>
-<translation id="6420812616858267777">La sincronització de <ph name="PRODUCT_NAME"/> facilita l'ús compartit de les dades (com ara marcadors i configuració) entre els equips i els dispositius mòbils. <ph name="PRODUCT_NAME"/> sincronitza les dades emmagatzemant-les en línia amb Google quan inicieu la sessió en un compte de Google.</translation>
+<translation id="6420812616858267777">La sincronització de <ph name="PRODUCT_NAME"/> facilita l'ús compartit de les dades (com ara marcadors i configuració) entre els equips i els dispositius mòbils. <ph name="PRODUCT_NAME"/> sincronitza les dades emmagatzemant-les en línia amb Bitpop quan inicieu la sessió en un compte de Google.</translation>
 <translation id="7484964289312150019">Obre tots els marcadors en una &amp;finestra nova</translation>
 <translation id="1731346223650886555">Punt i coma</translation>
 <translation id="158849752021629804">Es necessita una xarxa domèstica</translation>
@@ -3703,7 +3703,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="3021678814754966447">&amp;Visualitza l'origen del marc</translation>
 <translation id="8601206103050338563">Autenticació de client WWW de TLS</translation>
 <translation id="1692799361700686467">S'admeten les galetes de diversos llocs.</translation>
-<translation id="5187295959347858724">Ara teniu la sessió iniciada a <ph name="SHORT_PRODUCT_NAME"/>. Els vostres marcadors, l'historial i altres opcions de configuració s'estan sincronitzant amb el vostre compte de Google.</translation>
+<translation id="5187295959347858724">Ara teniu la sessió iniciada a <ph name="SHORT_PRODUCT_NAME"/>. Els vostres marcadors, l'historial i altres opcions de configuració s'estan sincronitzant amb el vostre compte de Bitpop.</translation>
 <translation id="3719415759165722358">Activa la IU de configuració del lloc web. La IU de configuració del lloc web substitueix la bombolla d'informació de la pàgina i ofereix una manera senzilla de configurar paràmetres específics del lloc.</translation>
 <translation id="2717190143245689317">Activa un element textfield per a la IU d'aplicacions; no afecta el contingut web.</translation>
 <translation id="529232389703829405">Heu comprat <ph name="DATA_AMOUNT"/> de dades el <ph name="DATE"/></translation>
@@ -3746,7 +3746,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="2927657246008729253">Canvia...</translation>
 <translation id="7586781939132793422">Desactiva els comentaris per veu</translation>
 <translation id="7978412674231730200">Clau privada</translation>
-<translation id="7056011739864317578">Si està activat, s'utilitzarà ClientOAuth per connectar un perfil a un compte de Google. En cas contrari, s'utilitzarà ClientLogin.
+<translation id="7056011739864317578">Si està activat, s'utilitzarà ClientOAuth per connectar un perfil a un compte de Bitpop. En cas contrari, s'utilitzarà ClientLogin.
       ClientOAuth permet l'ús de codis de verificació en lloc d'ASP durant l'autenticació.</translation>
 <translation id="5308380583665731573">Connecta</translation>
 <translation id="9111395131601239814"><ph name="NETWORKDEVICE"/>: <ph name="STATUS"/></translation>
@@ -3768,7 +3768,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="6692173217867674490">Contrasenya no vàlida</translation>
 <translation id="5550431144454300634">Corregeix l'entrada automàticament</translation>
 <translation id="3308006649705061278">Unitat organitzativa (OU)</translation>
-<translation id="8912362522468806198">Compte de Google</translation>
+<translation id="8912362522468806198">Compte de Bitpop</translation>
 <translation id="4443536555189480885">&amp;Ajuda</translation>
 <translation id="340485819826776184">Utilitza un servei de predicció per ajudar a completar cerques i URL escrits a la barra d'adreces</translation>
 <translation id="4207762215349123040">El connector <ph name="PEPPER_PLUGIN_NAME"/> de <ph name="PEPPER_PLUGIN_DOMAIN"/> vol accedir al vostre dispositiu mòbil.&quot;</translation>
@@ -3787,7 +3787,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="4745438305783437565"><ph name="NUMBER_FEW"/> minuts</translation>
 <translation id="2649911884196340328">El certificat de seguretat del servidor té errors!</translation>
-<translation id="6666647326143344290">amb el vostre Compte de Google</translation>
+<translation id="6666647326143344290">amb el vostre Compte de Bitpop</translation>
 <translation id="4980112683975062744">S'han rebut capçaleres duplicades des del servidor</translation>
 <translation id="3828029223314399057">Cerca marcadors</translation>
 <translation id="4885705234041587624">MSCHAPv2</translation>
@@ -3796,7 +3796,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="3551117997325569860">Per canviar el servidor intermediari, activeu la configuració &quot;<ph name="USE_SHARED_PROXIES"/>&quot;.</translation>
 <translation id="8906421963862390172">&amp;Opcions del corrector ortogràfic</translation>
 <translation id="9046895021617826162">S'ha produït un error en la connexió</translation>
-<translation id="4061733942661196912">Si la funció està activada, en visitar una pàgina d'inici de sessió del compte de Google apareix una barra d'informació que permet iniciar la sessió fàcilment amb el compte de Google connectat al perfil. L'inici de sessió automàtic està sempre desactivat si el perfil no està connectat a cap compte, independentment d'aquesta marca.</translation>
+<translation id="4061733942661196912">Si la funció està activada, en visitar una pàgina d'inici de sessió del compte de Bitpop apareix una barra d'informació que permet iniciar la sessió fàcilment amb el compte de Google connectat al perfil. L'inici de sessió automàtic està sempre desactivat si el perfil no està connectat a cap compte, independentment d'aquesta marca.</translation>
 <translation id="1492188167929010410">ID del bloqueig: <ph name="CRASH_ID"/></translation>
 <translation id="1963692530539281474"><ph name="NUMBER_DEFAULT"/> dies restants</translation>
 <translation id="4470270245053809099">Emès per: <ph name="NAME"/></translation>
@@ -3844,7 +3844,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="5869522115854928033">Contrasenyes desades</translation>
 <translation id="3436440123324878555">Compra el pla...</translation>
 <translation id="5748266869826978907">Comproveu la configuració de DNS. Poseu-vos en contacte amb l'administrador de la xarxa si no esteu segur del que això significa.</translation>
-<translation id="4193154014135846272">Document de Google</translation>
+<translation id="4193154014135846272">Document de Bitpop</translation>
 <translation id="4771973620359291008">S'ha produït un error desconegut.</translation>
 <translation id="5509914365760201064">Emissor: <ph name="CERTIFICATE_AUTHORITY"/></translation>
 <translation id="6446356484127229069"><ph name="PRODUCT_NAME"/> té problemes per accedir a la xarxa. <ph name="LINE_BREAK"/> La causa pot ser que el tallafoc o el programari antivirus consideri per error que <ph name="PRODUCT_NAME"/> és un intrús al vostre dispositiu mòbil i impedeixi que es connecti a Internet.</translation>
@@ -3946,8 +3946,8 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
         qualsevol informació que hàgiu inclòs més amunt. Aquests comentaris es fan servir per
         diagnosticar problemes i per ajudar a millorar Chrome. La informació personal que
         envieu, ja sigui de manera explícita o accidental, es protegirà
-        d'acord amb la nostra política de privadesa.<ph name="BEGIN_BOLD"/> Si envieu aquests comentaris, accepteu que Google els faci servir
-        per millorar qualsevol producte o servei de Google.
+        d'acord amb la nostra política de privadesa.<ph name="BEGIN_BOLD"/> Si envieu aquests comentaris, accepteu que Bitpop els faci servir
+        per millorar qualsevol producte o servei de Bitpop.
         <ph name="END_BOLD"/></translation>
 <translation id="2841013758207633010">Hora</translation>
 <translation id="4880827082731008257">Historial de cerca</translation>
@@ -3959,7 +3959,7 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="5338503421962489998">Emmagatzematge local</translation>
 <translation id="1702534956030472451">Occidental</translation>
 <translation id="794676567536738329">Confirma els permisos</translation>
-<translation id="4222346714274826242">Activa l'API de la versió 2 de Google Drive.</translation>
+<translation id="4222346714274826242">Activa l'API de la versió 2 de Bitpop Drive.</translation>
 <translation id="6636709850131805001">Estat no reconegut</translation>
 <translation id="6095984072944024315">−</translation>
 <translation id="5567989639534621706">Memòries cau de l'aplicació</translation>
@@ -3980,10 +3980,10 @@ Voleu iniciar <ph name="CONTROL_PANEL_APPLET_NAME"/>?</translation>
 <translation id="8828933418460119530">Nom DNS</translation>
 <translation id="988159990683914416">Muntatge del desenvolupador</translation>
 <translation id="1097658378307015415">Abans d'iniciar la sessió amb el vostre usuari, entreu com a convidat per activar la xarxa <ph name="NETWORK_ID"/></translation>
-<translation id="5170477580121653719">Espai que queda a Google Drive: <ph name="SPACE_AVAILABLE"/>.</translation>
+<translation id="5170477580121653719">Espai que queda a Bitpop Drive: <ph name="SPACE_AVAILABLE"/>.</translation>
 <translation id="4114470632216071239">Bloqueja la targeta SIM (requereix el PIN per utilitzar dades de telefonia mòbil)</translation>
 <translation id="5184584788669813359">No s'han pogut mostrar algunes parts d'aquest document PDF. Voleu obrir-lo a Adobe Reader?</translation>
-<translation id="6581162200855843583">Enllaç de Google Drive</translation>
+<translation id="6581162200855843583">Enllaç de Bitpop Drive</translation>
 <translation id="340771324714262530">Atura la rèplica</translation>
 <translation id="3303260552072730022">Una extensió ha activat la pantalla completa.</translation>
 <translation id="2183426022964444701">Seleccioneu el directori arrel de l'extensió.</translation>
@@ -4083,7 +4083,7 @@ Premeu qualsevol tecla per continuar explorant.</translation>
 <translation id="1177437665183591855">Error de certificat de servidor desconegut</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> vol utilitzar la càmera i el micròfon.</translation>
 <translation id="8467473010914675605">Mètode d'entrada de coreà</translation>
-<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> sincronitza les vostres dades de manera segura amb el vostre compte de Google. Manteniu-ho tot sincronitzat o personalitzeu els tipus de dades sincronitzades i les opcions d'encriptació.</translation>
+<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> sincronitza les vostres dades de manera segura amb el vostre compte de Bitpop. Manteniu-ho tot sincronitzat o personalitzeu els tipus de dades sincronitzades i les opcions d'encriptació.</translation>
 <translation id="2639739919103226564">Estat:</translation>
 <translation id="6923900367903210484">Drets d'autor</translation>
 <translation id="3819800052061700452">&amp;Pantalla completa</translation>
@@ -4107,7 +4107,7 @@ Premeu qualsevol tecla per continuar explorant.</translation>
 <translation id="614998064310228828">Model de dispositiu:</translation>
 <translation id="1581962803218266616">Mostra a Finder</translation>
 <translation id="9100765901046053179">Configuració avançada</translation>
-<translation id="203168018648013061">Error de sincronització: restabliu la sincronització mitjançant Tauler de Google.</translation>
+<translation id="203168018648013061">Error de sincronització: restabliu la sincronització mitjançant Tauler de Bitpop.</translation>
 <translation id="1405126334425076373">Cursor del ratolí</translation>
 <translation id="6096326118418049043">Nom X.500</translation>
 <translation id="6086259540486894113">Heu de seleccionar com a mínim in tipus de dades per sincronitzar.</translation>
@@ -4156,14 +4156,14 @@ Premeu qualsevol tecla per continuar explorant.</translation>
 <translation id="2960316970329790041">Atura la importació</translation>
 <translation id="3835522725882634757">Aquest servidor envia dades que <ph name="PRODUCT_NAME"/> no pot entendre. <ph name="BEGIN_LINK"/>Informeu d'un error<ph name="END_LINK"/> i incloeu la <ph name="BEGIN2_LINK"/>llista sense format<ph name="END2_LINK"/>.</translation>
 <translation id="6586451623538375658">Canvia el botó principal del ratolí</translation>
-<translation id="6937152069980083337">Mètode d'entrada japonès de Google (per a teclat nord-americà)</translation>
+<translation id="6937152069980083337">Mètode d'entrada japonès de Bitpop (per a teclat nord-americà)</translation>
 <translation id="475088594373173692">Primer usuari</translation>
 <translation id="1731911755844941020">Enviant sol·licitud....</translation>
 <translation id="8371695176452482769">Parleu ara</translation>
 <translation id="7622116780510618781">Pestanyes apilades</translation>
 <translation id="2988488679308982380">No s'ha pogut instal·lar el paquet: &quot;<ph name="ERROR_CODE"/>&quot;</translation>
 <translation id="2904079386864173492">Model:</translation>
-<translation id="728836202927797241">Ofereix iniciar la sessió automàticament a llocs de Google amb aquest compte</translation>
+<translation id="728836202927797241">Ofereix iniciar la sessió automàticament a llocs de Bitpop amb aquest compte</translation>
 <translation id="6129953537138746214">Espai</translation>
 <translation id="5041795084235183432">Ratolí:</translation>
 <translation id="3704331259350077894">Cessament d'activitats</translation>
@@ -4237,7 +4237,7 @@ Premeu qualsevol tecla per continuar explorant.</translation>
 <translation id="3325146402434751578">Configura o gestiona les impressores a <ph name="CLOUD_PRINT_NAME"/></translation>
 <translation id="253434972992662860">P&amp;ausa</translation>
 <translation id="335985608243443814">Navega...</translation>
-<translation id="7802488492289385605">Mètode d'entrada japonès de Google (per a teclat Dvorak nord-americà)</translation>
+<translation id="7802488492289385605">Mètode d'entrada japonès de Bitpop (per a teclat Dvorak nord-americà)</translation>
 <translation id="3876481682997626897">La signatura no coincideix</translation>
 <translation id="8892992092192084762">S'ha instal·lat el tema &quot;<ph name="THEME_NAME"/>&quot;.</translation>
 <translation id="7427348830195639090">Pàgina de fons: <ph name="BACKGROUND_PAGE_URL"/></translation>
@@ -4272,7 +4272,7 @@ Premeu qualsevol tecla per continuar explorant.</translation>
 <translation id="1131850611586448366">El lloc web de <ph name="HOST_NAME"/> ha estat identificat com a lloc de &quot;pesca&quot; (suplantació d'identitat). Els llocs de pesca enganyen els usuaris perquè proporcionin informació personal o financera i sovint fingeixen que són institucions de confiança, com ara entitats bancàries.</translation>
 <translation id="2669198762040460457">El nom d'usuari o la contrasenya que heu introduït no són correctes.</translation>
 <translation id="1161575384898972166">Inicieu la sessió a <ph name="TOKEN_NAME"/> per exportar el certificat de client.</translation>
-<translation id="1718559768876751602">Creeu un Compte de Google ara</translation>
+<translation id="1718559768876751602">Creeu un Compte de Bitpop ara</translation>
 <translation id="5503480894407718969">Accediu a totes les dades del dispositiu mòbil i dels llocs web que visiteu</translation>
 <translation id="1884319566525838835">Estat del sandbox</translation>
 <translation id="2770465223704140727">Elimina de la llista</translation>

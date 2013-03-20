@@ -34,7 +34,7 @@
 <translation id="3581034179710640788">O certificado de segurança do site expirou!</translation>
 <translation id="2825758591930162672">Chave pública do requerente</translation>
 <translation id="8306243285620593545">Ícone de foco no estado</translation>
-<translation id="1130622745736410868">pretende confirmar que está a navegar num aparelho com SO Chrome, solicitando ao Google que verifique o seu código de cupão.</translation>
+<translation id="1130622745736410868">pretende confirmar que está a navegar num aparelho com SO Chrome, solicitando ao Bitpop que verifique o seu código de cupão.</translation>
 <translation id="8176382683266548737">Ativar Notificações</translation>
 <translation id="8275038454117074363">Importar</translation>
 <translation id="8418445294933751433">Mo&amp;strar como separador</translation>
@@ -57,7 +57,7 @@ O modo de navegação anónima <ph name="SHORTCUT_KEY"/> pode ser útil da próx
 <translation id="4940047036413029306">Aspas</translation>
 <translation id="1497897566809397301">Permitir definição dos dados locais (recomendado)</translation>
 <translation id="3275778913554317645">Abrir como janela</translation>
-<translation id="4553117311324416101">O Google detectou que pode ser instalado software malicioso no seu computador se continuar. Se visitou este Web site anteriormente ou se o considera fidedigno, é possível que tenha sido comprometido recentemente por um hacker. Não deverá continuar e, talvez, tentar novamente amanhã ou aceder a outra página.</translation>
+<translation id="4553117311324416101">O Bitpop detectou que pode ser instalado software malicioso no seu computador se continuar. Se visitou este Web site anteriormente ou se o considera fidedigno, é possível que tenha sido comprometido recentemente por um hacker. Não deverá continuar e, talvez, tentar novamente amanhã ou aceder a outra página.</translation>
 <translation id="5085514918439894988">Não existem serviços para esta ação instalados e também não existem recomendações de serviço para esta ação na Web Store do Chrome.</translation>
 <translation id="8867568208303837180">A enviar...</translation>
 <translation id="509988127256758334">&amp;Localizar:</translation>
@@ -91,7 +91,7 @@ O modo de navegação anónima <ph name="SHORTCUT_KEY"/> pode ser útil da próx
 <translation id="21426568240411732"><ph name="TITLE"/> está a utilizar a sua câmara.</translation>
 <translation id="6156863943908443225">Cache de script</translation>
 <translation id="4274187853770964845">Erro de Sincronização: pare e reinicie a Sincronização.</translation>
-<translation id="4610656722473172270">Barra de ferramentas do Google</translation>
+<translation id="4610656722473172270">Barra de ferramentas do Bitpop</translation>
 <translation id="656293578423618167">O caminho ou nome do ficheiro é demasiado longo. Guarde com um nome mais curto ou noutra localização.</translation>
 <translation id="3484869148456018791">Obter novo certificado</translation>
 <translation id="151501797353681931">Importado do Safari</translation>
@@ -139,13 +139,13 @@ O modo de navegação anónima <ph name="SHORTCUT_KEY"/> pode ser útil da próx
 <translation id="7600965453749440009">Nunca traduzir do <ph name="LANGUAGE"/></translation>
 <translation id="3208703785962634733">Não confirmado</translation>
 <translation id="620329680124578183">Não Carregar (Recomendado)</translation>
-<translation id="6300924177400055566">Não tem espaço suficiente no Google Drive para guardar &quot;<ph name="FILE_NAME"/>&quot;. Remova ficheiros ou <ph name="BEGIN_LINK"/>compre mais espaço de armazenamento<ph name="END_LINK"/>.</translation>
+<translation id="6300924177400055566">Não tem espaço suficiente no Bitpop Drive para guardar &quot;<ph name="FILE_NAME"/>&quot;. Remova ficheiros ou <ph name="BEGIN_LINK"/>compre mais espaço de armazenamento<ph name="END_LINK"/>.</translation>
 <translation id="9074739597929991885">Bluetooth</translation>
 <translation id="2653266418988778031">Se eliminar um certificado de uma autoridade de certificação (AC), o navegador deixará de confiar nos certificados emitidos por essa autoridade.</translation>
 <translation id="5341849548509163798">Há <ph name="NUMBER_MANY"/> horas</translation>
 <translation id="4422428420715047158">Domínio:</translation>
 <translation id="7788444488075094252">Idiomas e introdução</translation>
-<translation id="6723354935081862304">Imprima para o Google Docs e outros destinos na nuvem. <ph name="BEGIN_LINK"/>Inicie sessão<ph name="END_LINK"/> para imprimir para o Google Cloud Print.</translation>
+<translation id="6723354935081862304">Imprima para o Bitpop Docs e outros destinos na nuvem. <ph name="BEGIN_LINK"/>Inicie sessão<ph name="END_LINK"/> para imprimir para o Google Cloud Print.</translation>
 <translation id="3602290021589620013">Pré-visualizar</translation>
 <translation id="6257035105556579916">Não é possível modificar as extensões no modo gerido.</translation>
 <translation id="800602641363855389"><ph name="TITLE"/> está a utilizar o seu microfone.</translation>
@@ -214,7 +214,7 @@ O modo de navegação anónima <ph name="SHORTCUT_KEY"/> pode ser útil da próx
 <translation id="1818606096021558659">Página</translation>
 <translation id="1549045574060481141">Confirmar Transferência</translation>
 <translation id="5388588172257446328">Nome de utilizador:</translation>
-<translation id="1657406563541664238">Ajude a melhorar o <ph name="PRODUCT_NAME"/> enviando automaticamente estatísticas de utilização e relatórios de falhas para a Google</translation>
+<translation id="1657406563541664238">Ajude a melhorar o <ph name="PRODUCT_NAME"/> enviando automaticamente estatísticas de utilização e relatórios de falhas para a Bitpop</translation>
 <translation id="7982789257301363584">Rede</translation>
 <translation id="2271281383664374369">Os pedidos de extensões para este URL foram temporariamente suprimidos.</translation>
 <translation id="8528962588711550376">A iniciar sessão.</translation>
@@ -231,8 +231,8 @@ O modo de navegação anónima <ph name="SHORTCUT_KEY"/> pode ser útil da próx
 <translation id="9151034842884433218">Escolha uma fotografia e um nome para o seu novo perfil do Chrome.</translation>
 <translation id="1510030919967934016">Esta página foi bloqueada de monitorizar a sua localização.</translation>
 <translation id="8848519885565996859">Frame de links de URLs definidos pelo utilizador</translation>
-<translation id="4640525840053037973">Iniciar sessão com a Conta Google</translation>
-<translation id="6315526595991863271">Tem sessão iniciada no <ph name="SHORT_PRODUCT_NAME"/>. Os seus marcadores, histórico e outras definições estão a ser sincronizados com a sua Conta Google utilizando as predefinições.</translation>
+<translation id="4640525840053037973">Iniciar sessão com a Conta Bitpop</translation>
+<translation id="6315526595991863271">Tem sessão iniciada no <ph name="SHORT_PRODUCT_NAME"/>. Os seus marcadores, histórico e outras definições estão a ser sincronizados com a sua Conta Bitpop utilizando as predefinições.</translation>
 <translation id="5255315797444241226">A frase de acesso introduzida está incorrecta.</translation>
 <translation id="762917759028004464">Actualmente, o browser predefinido é o <ph name="BROWSER_NAME"/>.</translation>
 <translation id="8289982954746764694">Ativar o elemento de faixa (ainda não totalmente funcional) para legendas, capítulos e descrições de áudio em elementos de vídeo.</translation>
@@ -277,7 +277,7 @@ O modo de navegação anónima <ph name="SHORTCUT_KEY"/> pode ser útil da próx
           e clique em
           <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Adicionar motor de pesquisa</translation>
-<translation id="6868050610674841964">Ao iniciar sessão, irá sincronizar os seus dados com sua Conta Google para que possa aceder aos seus marcadores, histórico e outras definições em qualquer aparelho.</translation>
+<translation id="6868050610674841964">Ao iniciar sessão, irá sincronizar os seus dados com sua Conta Bitpop para que possa aceder aos seus marcadores, histórico e outras definições em qualquer aparelho.</translation>
 <translation id="5498951625591520696">Não é possível aceder ao servidor.</translation>
 <translation id="1621207256975573490">Guardar &amp;moldura como...</translation>
 <translation id="4681260323810445443">Não tem autorização para aceder à página Web em <ph name="URL"/>. Poderá ser necessário iniciar sessão.</translation>
@@ -311,7 +311,7 @@ O modo de navegação anónima <ph name="SHORTCUT_KEY"/> pode ser útil da próx
 <translation id="6845180713465955339">O certificado &quot;<ph name="CERTIFICATE_NAME"/>&quot; foi emitido por:</translation>
 <translation id="5364525511170219879">Ativar UI de atividade da extensão</translation>
 <translation id="3088325635286126843">&amp;Mudar o nome...</translation>
-<translation id="6979158407327259162">Google Drive</translation>
+<translation id="6979158407327259162">Bitpop Drive</translation>
 <translation id="6853700448789925482">Ativar elemento <ph name="TRACK_HTML"/></translation>
 <translation id="3150927491400159470">Atualização Pesada</translation>
 <translation id="7531238562312180404">Dado que o <ph name="PRODUCT_NAME"/> não controla o modo como as extensões processam os seus dados pessoais, todas as extensões foram desativadas nas janelas em modo de navegação anónima. Pode voltar a ativá-las individualmente no <ph name="BEGIN_LINK"/>gestor de extensões<ph name="END_LINK"/>.</translation>
@@ -375,7 +375,7 @@ O modo de navegação anónima <ph name="SHORTCUT_KEY"/> pode ser útil da próx
 <translation id="8194465509832052438">Configurar comandos</translation>
 <translation id="4422347585044846479">Editar marcador para esta página</translation>
 <translation id="2452539774207938933">Mudar para utilizador: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">O Google Chrome pode disponibilizar uma verificação ortográfica mais inteligente, enviando o que escreve no navegador para os servidores da Google, o que lhe permite utilizar a mesma tecnologia de verificação ortográfica da pesquisa do Google.</translation>
+<translation id="4700157086864140907">O Bitpop Chrome pode disponibilizar uma verificação ortográfica mais inteligente, enviando o que escreve no navegador para os servidores da Google, o que lhe permite utilizar a mesma tecnologia de verificação ortográfica da pesquisa do Google.</translation>
 <translation id="7632357940961158759">Algumas definições são geridas por uma extensão.</translation>
 <translation id="1880905663253319515">Eliminar o certificado &quot;<ph name="CERTIFICATE_NAME"/>&quot;?</translation>
 <translation id="8546306075665861288">Cache de imagem</translation>
@@ -429,7 +429,7 @@ O modo de navegação anónima <ph name="SHORTCUT_KEY"/> pode ser útil da próx
 <translation id="1884405719612801980">tipo de algoritmo: <ph name="HEURISTIC_TYPE"/> tipo de servidor: <ph name="SERVER_TYPE"/> assinatura no campo: <ph name="FIELD_SIGNATURE"/> assinatura no formulário: <ph name="FORM_SIGNATURE"/> id da experiência: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8656768832129462377">Não verificar</translation>
 <translation id="715487527529576698">O modo chinês inicial é chinês simplificado</translation>
-<translation id="6896830120821965585">Ativa um serviço em segundo plano que liga o serviço Google Cloud Print a todas as impressoras instaladas neste computador. Assim que este laboratório estiver ativado, pode ativar o Conector do Google Cloud Print iniciando sessão na  sua conta Google na secção Definições Avançadas, em Definições.</translation>
+<translation id="6896830120821965585">Ativa um serviço em segundo plano que liga o serviço Bitpop Cloud Print a todas as impressoras instaladas neste computador. Assim que este laboratório estiver ativado, pode ativar o Conector do Google Cloud Print iniciando sessão na  sua conta Google na secção Definições Avançadas, em Definições.</translation>
 <translation id="3999508690854143454">Perguntar-me quando um Website pretender aceder à minha câmara e microfone (recomendado)</translation>
 <translation id="1674989413181946727">Definições de SSL ao nível do computador:</translation>
 <translation id="1531285811424589182">Erro de eliminação do certificado</translation>
@@ -446,7 +446,7 @@ O modo de navegação anónima <ph name="SHORTCUT_KEY"/> pode ser útil da próx
 <translation id="3874070094967379652">Utilizar uma frase de acesso na sincronização para encriptar os dados</translation>
 <translation id="6500116422101723010">O servidor não consegue processar o pedido neste momento. Este código indica que se trata de uma situação temporária e que o servidor voltará a funcionar dentro de algum tempo.</translation>
 <translation id="1644574205037202324">Histórico</translation>
-<translation id="4206944295053515692">Pedir Sugestões ao Google</translation>
+<translation id="4206944295053515692">Pedir Sugestões ao Bitpop</translation>
 <translation id="1297175357211070620">Destino</translation>
 <translation id="479280082949089240">Cookies definidos por esta página</translation>
 <translation id="4198861010405014042">Acesso partilhado</translation>
@@ -459,8 +459,8 @@ O modo de navegação anónima <ph name="SHORTCUT_KEY"/> pode ser útil da próx
 <translation id="3887847548716051874">Permitir sempre que este Website utilize este microfone e esta câmara</translation>
 <translation id="2886862922374605295">Hardware:</translation>
 <translation id="4497097279402334319">Não foi possível estabelecer ligação à rede.</translation>
-<translation id="7342729285348293164">Inicie sessão no <ph name="PRODUCT_NAME"/> com a sua Conta Google para guardar as funcionalidades personalizadas do seu navegador para a web e aceder-lhes a partir de <ph name="PRODUCT_NAME"/> em qualquer computador. Iniciará também automaticamente sessão nos seus serviços Google favoritos.</translation>
-<translation id="2542049655219295786">Tabela do Google</translation>
+<translation id="7342729285348293164">Inicie sessão no <ph name="PRODUCT_NAME"/> com a sua Conta Bitpop para guardar as funcionalidades personalizadas do seu navegador para a web e aceder-lhes a partir de <ph name="PRODUCT_NAME"/> em qualquer computador. Iniciará também automaticamente sessão nos seus serviços Google favoritos.</translation>
+<translation id="2542049655219295786">Tabela do Bitpop</translation>
 <translation id="3899879303189199559">Offline durante mais de um ano</translation>
 <translation id="5303618139271450299">Não é possível encontrar esta página Web</translation>
 <translation id="4256316378292851214">Guardar &amp;Vídeo Como...</translation>
@@ -469,7 +469,7 @@ O modo de navegação anónima <ph name="SHORTCUT_KEY"/> pode ser útil da próx
 <translation id="6518014396551869914">Cop&amp;iar imagem</translation>
 <translation id="3236997602556743698">3 Set (390)</translation>
 <translation id="542155483965056918"><ph name="NUMBER_ZERO"/> mins ago</translation>
-<translation id="4928351909437667303">Desativar o Google Drive neste dispositivo.</translation>
+<translation id="4928351909437667303">Desativar o Bitpop Drive neste dispositivo.</translation>
 <translation id="6315723398663634808">O certificado do servidor contém uma chave criptográfica fraca!</translation>
 <translation id="2887525882758501333">Documento PDF</translation>
 <translation id="289426338439836048">Outra rede móvel...</translation>
@@ -542,7 +542,7 @@ para proteger a sua privacidade.</translation>
 <translation id="6431347207794742960">O <ph name="PRODUCT_NAME"/> irá configurar actualizações automáticas para todos os utilizadores deste computador.</translation>
 <translation id="4973698491777102067">Limpe os seguintes itens de:</translation>
 <translation id="6074963268421707432">Não permitir que os sites mostrem notificações do ambiente de trabalho</translation>
-<translation id="4944952004685780325">Permite utilizar a API V2 do Google Drive para aceder à pasta do Google Drive.</translation>
+<translation id="4944952004685780325">Permite utilizar a API V2 do Bitpop Drive para aceder à pasta do Google Drive.</translation>
 <translation id="1995173078718234136">A analisar o conteúdo...</translation>
 <translation id="7920521481309889533">Ativar SPDY/3</translation>
 <translation id="5979681173469464041">Foco no painel seguinte</translation>
@@ -551,7 +551,7 @@ para proteger a sua privacidade.</translation>
 <translation id="1491151370853475546">Atualizar esta Página</translation>
 <translation id="5374359983950678924">Alterar imagem</translation>
 <translation id="2859738163554174612">Nunca propor iniciar sessão por mim</translation>
-<translation id="1378727793141957596">Bem-vindo ao Google Drive!</translation>
+<translation id="1378727793141957596">Bem-vindo ao Bitpop Drive!</translation>
 <translation id="5158548125608505876">Não sincronizar as minhas palavras-passe</translation>
 <translation id="3717485073527618485">Perguntar-me quando um site tentar desativar o cursor do rato (recomendado)</translation>
 <translation id="3273410961255278341">Enviar para:</translation>
@@ -584,7 +584,7 @@ para proteger a sua privacidade.</translation>
 <translation id="773426152488311044">É atualmente o único utilizador do <ph name="PRODUCT_NAME"/>.</translation>
 <translation id="2042078858148122628">Não é possível encontrar o servidor em <ph name="HOST_NAME"/>, porque a procura de DNS falhou. DNS é o serviço de rede que converte o nome de um Web site no respetivo endereço Web. Este erro resulta, na maioria das vezes, da inexistência de ligação à internet ou de uma configuração incorreta da rede. Também pode ser provocado por um servidor DNS que não responde ou por uma firewall que impeça o <ph name="PRODUCT_NAME"/> de aceder à rede.</translation>
 <translation id="2159087636560291862">Neste caso, o certificado não foi confirmado por uma entidade independente em que o seu computador possa confiar. Qualquer pessoa pode criar um certificado que afirme ser o Web site que essa pessoa pretende, motivo pelo qual deverá ser confirmado por uma entidade independente fidedigna. Sem essa confirmação, a informação de identidade no certificado não tem significado. Como tal, não é possível confirmar se está a comunicar com <ph name="DOMAIN"/> em vez de um utilizador mal intencionado que gerou o seu próprio certificado afirmando ser <ph name="DOMAIN2"/>. Não deve prosseguir a partir daqui.</translation>
-<translation id="58625595078799656">O <ph name="PRODUCT_NAME"/> requer a encriptação dos dados utilizando a sua palavra-passe Google ou a sua própria frase de acesso.</translation>
+<translation id="58625595078799656">O <ph name="PRODUCT_NAME"/> requer a encriptação dos dados utilizando a sua palavra-passe Bitpop ou a sua própria frase de acesso.</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">Não é uma autoridade de certificação</translation>
 <translation id="6099520380851856040">Ocorreu <ph name="CRASH_TIME"/></translation>
@@ -738,7 +738,7 @@ para proteger a sua privacidade.</translation>
 <translation id="8943805475239098364">Gostaria de pesquisar com o <ph name="NEW_GOOGLE_HOST"/> em vez do <ph name="CURRENT_GOOGLE_HOST"/>?</translation>
 <translation id="3813510441224209252">Formatação pendente</translation>
 <translation id="8912793549644936705">Esticar</translation>
-<translation id="8026684114486203427">Tem de iniciar sessão com uma Conta Google para utilizar a Web Store do Chrome.</translation>
+<translation id="8026684114486203427">Tem de iniciar sessão com uma Conta Bitpop para utilizar a Web Store do Chrome.</translation>
 <translation id="1486096554574027028">Pesquisar palavras-passe</translation>
 <translation id="4631887759990505102">Artista</translation>
 <translation id="1836938920852968258">Desativar o menu &quot;Outros aparelhos&quot; do NTP.</translation>
@@ -754,12 +754,12 @@ para proteger a sua privacidade.</translation>
 <translation id="89217462949994770">Introduziu o código PIN incorreto demasiadas vezes. Contacte <ph name="CARRIER_ID"/> para obter uma chave de desbloqueio que consiste num PIN de 8 dígitos.</translation>
 <translation id="5920618722884262402">Bloquear palavras ofensivas</translation>
 <translation id="242006861730551700">Desativa a prateleira de transferências. Apresentará a nova IU de transferências quando for implementada.</translation>
-<translation id="7782102568078991263">Não há mais sugestões do Google</translation>
+<translation id="7782102568078991263">Não há mais sugestões do Bitpop</translation>
 <translation id="8038111231936746805">(predefinição)</translation>
 <translation id="5120247199412907247">Configuração avançada</translation>
 <translation id="567881659373499783">Versão <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">Políticas de privacidade da Navegação segura</translation>
-<translation id="5105859138906591953">Para importar marcadores da Barra de ferramentas do Google para o Chrome, tem de ter sessão iniciada na sua conta Google. Inicie sessão e tente importar novamente.</translation>
+<translation id="5105859138906591953">Para importar marcadores da Barra de ferramentas do Bitpop para o Chrome, tem de ter sessão iniciada na sua conta Google. Inicie sessão e tente importar novamente.</translation>
 <translation id="8899851313684471736">Abrir link numa nova &amp;janela</translation>
 <translation id="4110342520124362335">Cookies de <ph name="DOMAIN"/> bloqueados.</translation>
 <translation id="3303818374450886607">Cópias</translation>
@@ -808,7 +808,7 @@ para proteger a sua privacidade.</translation>
 <translation id="1871208020102129563">O proxy está definido para utilizar servidores proxy fixos e não um URL de script .pac.</translation>
 <translation id="1634788685286903402">Confiar neste certificado para identificar utilizadores de e-mail.</translation>
 <translation id="3154015489111064513">Utilizar DHCP</translation>
-<translation id="8642489171979176277">Importado da Barra de ferramentas do Google</translation>
+<translation id="8642489171979176277">Importado da Barra de ferramentas do Bitpop</translation>
 <translation id="4142744419835627535">Preenchimento automático e imediato do instantâneo</translation>
 <translation id="4684427112815847243">Sincronizar tudo</translation>
 <translation id="1125520545229165057">Dvorak (Hsu)</translation>
@@ -818,7 +818,7 @@ para proteger a sua privacidade.</translation>
 <translation id="8071086933245711894">Operação de cópia cancelada.</translation>
 <translation id="2441392884867482684">Esta página está agora em ecrã inteiro e pretende desativar o cursor do rato.</translation>
 <translation id="1422780722984745882">Foram recebidos vários cabeçalhos de Localização. Isto não é permitido como proteção contra ataques de divisão de resposta HTTP.</translation>
-<translation id="7787129790495067395">Actualmente, está a utilizar uma frase de acesso. Se se tiver esquecido da sua frase de acesso, pode repor a sincronização para limpar os dados dos servidores da Google utilizando o Painel de controlo do Google.</translation>
+<translation id="7787129790495067395">Actualmente, está a utilizar uma frase de acesso. Se se tiver esquecido da sua frase de acesso, pode repor a sincronização para limpar os dados dos servidores da Bitpop utilizando o Painel de controlo do Google.</translation>
 <translation id="3380365263193509176">Erro desconhecido</translation>
 <translation id="1273135602584709125">Cancelar inscrição empresarial</translation>
 <translation id="2686759344028411998">Não é possível detectar nenhum módulo carregado.</translation>
@@ -886,7 +886,7 @@ para proteger a sua privacidade.</translation>
 <translation id="6204994989617056362">A extensão de renegociação de SSL estava em falta no aperto de mão seguro. Em alguns sites, que se saiba que suportam a extensão de renegociação, o Chrome requer um aperto de mão mais seguro para evitar uma categoria de ataques conhecidos. A não presença desta extensão sugere que a sua ligação foi interceptada e manipulada enquanto estava em trânsito.</translation>
 <translation id="1238150413700645698">Conteúdo Protegido</translation>
 <translation id="6679492495854441399">Ups! Ocorreu um problema de comunicação de rede ao tentar inscrever este dispositivo. Verifique a sua ligação de rede e tente novamente.</translation>
-<translation id="5270547718570958938">Calendário Google</translation>
+<translation id="5270547718570958938">Calendário Bitpop</translation>
 <translation id="5823933238730612365">PPAPI (não isolado)</translation>
 <translation id="2879755071890315043">Aguarde enquanto a rede de telemóvel é configurada.</translation>
 <translation id="5301751748813680278">Entrar como Convidado.</translation>
@@ -941,7 +941,7 @@ para proteger a sua privacidade.</translation>
 <translation id="3909791450649380159">Cor&amp;tar</translation>
 <translation id="2955913368246107853">Fechar barra de localização</translation>
 <translation id="8864170386249720785">Definições de SSL ao nível do dispositivo móvel:</translation>
-<translation id="3914942725612686145">Tem sessão iniciada no Chrome. Os separadores abertos, marcadores e dados da caixa geral estão a ser sincronizados com a sua Conta Google.</translation>
+<translation id="3914942725612686145">Tem sessão iniciada no Chrome. Os separadores abertos, marcadores e dados da caixa geral estão a ser sincronizados com a sua Conta Bitpop.</translation>
 <translation id="5642508497713047">Signatário CRL</translation>
 <translation id="7612302739128412469">Ative esta extensão clicando neste ícone.</translation>
 <translation id="813082847718468539">Ver informações do Web site</translation>
@@ -989,7 +989,7 @@ para proteger a sua privacidade.</translation>
 <translation id="1637259088766071440">O Website em <ph name="HOST_NAME"/> contém elementos de Websites que aparentam alojar software malicioso, ou seja, software que pode danificar o seu dispositivo móvel ou funcionar sem o seu consentimento. O simples facto de visitar um Website que aloja software malicioso pode infetar o seu dispositivo móvel. O Website aloja ainda conteúdos de Websites que foram registados como Websites de “phishing”. Os Websites de &quot;phishing&quot; enganam os utilizadores, levando-os a revelar informações pessoais ou financeiras, fingindo muitas vezes representar instituições fidedignas, como, por exemplo, bancos.</translation>
 <translation id="855081842937141170">Fixar separador</translation>
 <translation id="6263541650532042179">Redefinir sincronização</translation>
-<translation id="6513247462497316522">O Google Chrome irá utilizar dados móveis se não estiver ligado a outra rede.</translation>
+<translation id="6513247462497316522">O Bitpop Chrome irá utilizar dados móveis se não estiver ligado a outra rede.</translation>
 <translation id="6055392876709372977">PKCS #1 SHA-256 Com encriptação RSA</translation>
 <translation id="7903984238293908205">Katakana</translation>
 <translation id="268053382412112343">&amp;Histórico</translation>
@@ -1132,8 +1132,8 @@ para proteger a sua privacidade.</translation>
 <translation id="7632380866023782514">Superior direito</translation>
 <translation id="4693789964669838452">FPS</translation>
 <translation id="4925520021222027859">Introduza a palavra-passe específica da aplicação:</translation>
-<translation id="3494768541638400973">Introdução japonesa do Google (para teclados japoneses)</translation>
-<translation id="4679639996443646335">O Google detetou que pode ser instalado software malicioso no seu dispositivo móvel se continuar. Se visitou este Website anteriormente ou se o considera fidedigno, é possível que tenha ficado recentemente comprometido por um hacker. Não deverá continuar; talvez possa tentar novamente amanhã ou aceder a outra página.</translation>
+<translation id="3494768541638400973">Introdução japonesa do Bitpop (para teclados japoneses)</translation>
+<translation id="4679639996443646335">O Bitpop detetou que pode ser instalado software malicioso no seu dispositivo móvel se continuar. Se visitou este Website anteriormente ou se o considera fidedigno, é possível que tenha ficado recentemente comprometido por um hacker. Não deverá continuar; talvez possa tentar novamente amanhã ou aceder a outra página.</translation>
 <translation id="7223775956298141902">Boo... Não tem extensões :-(</translation>
 <translation id="3118046075435288765">O servidor fechou a ligação inesperadamente.</translation>
 <translation id="1725068750138367834">&amp;Gestor de Ficheiros</translation>
@@ -1159,7 +1159,7 @@ para proteger a sua privacidade.</translation>
 <translation id="3706919628594312718">Definições do rato</translation>
 <translation id="8326478304147373412">PKCS #7, cadeia de certificados</translation>
 <translation id="3242765319725186192">Chave pré-partilhada:</translation>
-<translation id="8089798106823170468">Partilhe e controle o acesso às suas impressoras utilizando qualquer conta Google.</translation>
+<translation id="8089798106823170468">Partilhe e controle o acesso às suas impressoras utilizando qualquer conta Bitpop.</translation>
 <translation id="5426597273899159431">Configuração avançada...</translation>
 <translation id="1105608846356399385">Visitar o Web site</translation>
 <translation id="7218608093942361839"><ph name="PRODUCT_NAME"/> <ph name="PRODUCT_VERSION"/> (Plataforma <ph name="PLATFORM_VERSION"/>)</translation>
@@ -1225,7 +1225,7 @@ para proteger a sua privacidade.</translation>
 <translation id="81686154743329117">ZRM</translation>
 <translation id="2150139952286079145">Pesquisar destinos</translation>
 <translation id="4713309396072794887">Instalar estas extensões?</translation>
-<translation id="5637940320504994319">Já não tem espaço no Google Drive</translation>
+<translation id="5637940320504994319">Já não tem espaço no Bitpop Drive</translation>
 <translation id="6458467102616083041">Ignorado porque a pesquisa predefinida foi desativada pela política.</translation>
 <translation id="2266011376676382776">Página(s) sem resposta</translation>
 <translation id="3100609564180505575">Módulos (<ph name="TOTAL_COUNT"/>) – Conflitos conhecidos: <ph name="BAD_COUNT"/>, suspeitos: <ph name="SUSPICIOUS_COUNT"/></translation>
@@ -1287,7 +1287,7 @@ para proteger a sua privacidade.</translation>
 <translation id="7092106376816104">Exceções de pop-up</translation>
 <translation id="4830475881783902092">ID do Cliente:</translation>
 <translation id="4600958291864306415">a gerar...</translation>
-<translation id="8594787581355215556">Sessão iniciada como <ph name="USER_EMAIL_ADDRESS"/>. Faça a gestão dos seus dados sincronizados no <ph name="BEGIN_LINK"/>Painel de Controlo do Google<ph name="END_LINK"/>.</translation>
+<translation id="8594787581355215556">Sessão iniciada como <ph name="USER_EMAIL_ADDRESS"/>. Faça a gestão dos seus dados sincronizados no <ph name="BEGIN_LINK"/>Painel de Controlo do Bitpop<ph name="END_LINK"/>.</translation>
 <translation id="4338600611020922010">Adicionar ao ecrã principal</translation>
 <translation id="263325223718984101">O <ph name="PRODUCT_NAME"/> não conseguiu terminar a instalação, mas continuará a executar a partir da respectiva imagem de disco.</translation>
 <translation id="6186893483313227582">Ícone <ph name="VALUE"/></translation>
@@ -1298,13 +1298,13 @@ para proteger a sua privacidade.</translation>
 <translation id="8121385576314601440">Definições de introdução Hangul</translation>
 <translation id="2347476388323331511">Não foi possível sincronizar</translation>
 <translation id="4465171033222053147"><ph name="URL"/> pretende armazenar permanentemente dados de grandes dimensões no seu telemóvel.</translation>
-<translation id="6986605181115043220">Ups, o Google Sync deixou de funcionar. <ph name="BEGIN_LINK"/>Saiba Mais<ph name="END_LINK"/></translation>
+<translation id="6986605181115043220">Ups, o Bitpop Sync deixou de funcionar. <ph name="BEGIN_LINK"/>Saiba Mais<ph name="END_LINK"/></translation>
 <translation id="5379268888377976432">Anular Eliminação</translation>
 <translation id="7416362041876611053">Erro de rede desconhecido.</translation>
 <translation id="4250680216510889253">Não</translation>
 <translation id="5109044022078737958">Mia</translation>
 <translation id="6291953229176937411">Mo&amp;strar no Localizador</translation>
-<translation id="8598687241883907630">Desligar a sua Conta Google...</translation>
+<translation id="8598687241883907630">Desligar a sua Conta Bitpop...</translation>
 <translation id="6410894982725961573">Disponibilizar offline</translation>
 <translation id="2556718757702023317">Para guardar <ph name="FILE_NAME"/> offline, tem de libertar mais <ph name="TOTAL_FILE_SIZE"/> de espaço:<ph name="MARKUP_1"/>
         <ph name="MARKUP_2"/>solte os ficheiros aos quais já não precisa de aceder offline<ph name="MARKUP_3"/>
@@ -1392,7 +1392,7 @@ para proteger a sua privacidade.</translation>
 <translation id="2629089419211541119">Há <ph name="NUMBER_ONE"/> hora</translation>
 <translation id="1691063574428301566">O seu computador será reiniciado quando a actualização estiver concluída.</translation>
 <translation id="4697551882387947560">Quando a sessão de navegação termina</translation>
-<translation id="5900302528761731119">Fotografia do Perfil do Google</translation>
+<translation id="5900302528761731119">Fotografia do Perfil do Bitpop</translation>
 <translation id="131364520783682672">Caps Lock</translation>
 <translation id="2066999550761485762"><ph name="BEGIN_BOLD"/>Passou para o modo de navegação anónima.<ph name="END_BOLD"/> <ph name="LINE_BREAK"/> As páginas que visitar neste separador não serão apresentadas no histórico de navegação ou de pesquisa, nem deixarão outros vestígios, como cookies, no seu dispositivo móvel depois de fechar <ph name="BEGIN_BOLD"/>todos<ph name="END_BOLD"/> os separadores de navegação anónima. No entanto, se transferir ficheiros ou criar marcadores, estes serão preservados. <ph name="LINE_BREAK"/> <ph name="BEGIN_BOLD"/>Passar para o modo de navegação anónima não afeta o comportamento de outras pessoas, servidores ou software.<ph name="END_BOLD"/> Tenha muita atenção à vigilância por parte de agentes secretos ou de pessoas que possam estar a observá-lo. <ph name="LINE_BREAK"/> <ph name="BEGIN_LINK"/>Saiba mais<ph name="END_LINK"/> sobre o modo de navegação anónima.</translation>
 <translation id="2335122562899522968">Esta página define os cookies.</translation>
@@ -1409,7 +1409,7 @@ para proteger a sua privacidade.</translation>
 <translation id="1478897831827830200">Rastreio</translation>
 <translation id="5714678912774000384">Activar último separador</translation>
 <translation id="8466234950814670489">Arquivo tar</translation>
-<translation id="5902572236435740554">Introduza em primeiro lugar a palavra-passe da sua Conta Google, <ph name="LINE_BREAK"/> não a palavra-passe específica de uma aplicação.</translation>
+<translation id="5902572236435740554">Introduza em primeiro lugar a palavra-passe da sua Conta Bitpop, <ph name="LINE_BREAK"/> não a palavra-passe específica de uma aplicação.</translation>
 <translation id="8813811964357448561">folha de papel</translation>
 <translation id="2125314715136825419">Continuar sem atualizar o Adobe Reader (não recomendado)</translation>
 <translation id="5034510593013625357">Padrão do nome de anfitrião</translation>
@@ -1430,7 +1430,7 @@ para proteger a sua privacidade.</translation>
 <translation id="8337399713761067085">De momento, está off-line</translation>
 <translation id="5199729219167945352">Experiências</translation>
 <translation id="6499143127267478107">A resolver anfitrião no script de proxy...</translation>
-<translation id="8069615408251337349">Google Cloud Print</translation>
+<translation id="8069615408251337349">Bitpop Cloud Print</translation>
 <translation id="5055518462594137986">Memorizar a minha opção para todos os links deste tipo.</translation>
 <translation id="246059062092993255">Os plug-ins foram bloqueados nesta página.</translation>
 <translation id="2870560284913253234">Site</translation>
@@ -1476,7 +1476,7 @@ para proteger a sua privacidade.</translation>
 <translation id="3273951168350045122">Teclado (<ph name="ADDRESS"/>)</translation>
 <translation id="8221729492052686226">Se não tiver iniciado este pedido, tal poderá representar uma tentativa de ataque ao seu sistema. A menos que tenha efetuado uma acção explícita para iniciar este pedido, deverá premir Não fazer nada.</translation>
 <translation id="894360074127026135">Step-Up Internacional Netscape</translation>
-<translation id="8420060421540670057">Mostrar ficheiros do Google Docs</translation>
+<translation id="8420060421540670057">Mostrar ficheiros do Bitpop Docs</translation>
 <translation id="1201402288615127009">Seguinte</translation>
 <translation id="1335588927966684346">Utilitário:</translation>
 <translation id="2710582058364740604">Substitui a densidade de visualização do dispositivo para forçar a utilização do modo DPI elevado e recursos.</translation>
@@ -1564,7 +1564,7 @@ para proteger a sua privacidade.</translation>
 <translation id="5669267381087807207">A activar</translation>
 <translation id="7434823369735508263">Teclado inglês (Dvorak)</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> dias</translation>
-<translation id="5308845175611284862">A sincronização do <ph name="PRODUCT_NAME"/> facilita a partilha de dados (tais como marcadores e definições) entre os seus computadores. O <ph name="PRODUCT_NAME"/> sincroniza os seus dados, armazenando-os online com o Google quando inicia sessão com a sua Conta Google.</translation>
+<translation id="5308845175611284862">A sincronização do <ph name="PRODUCT_NAME"/> facilita a partilha de dados (tais como marcadores e definições) entre os seus computadores. O <ph name="PRODUCT_NAME"/> sincroniza os seus dados, armazenando-os online com o Bitpop quando inicia sessão com a sua Conta Google.</translation>
 <translation id="1707463636381878959">Partilhar esta rede com outros utilizadores</translation>
 <translation id="2084978867795361905">MS-IME</translation>
 <translation id="7227669995306390694">Sem plano de dados <ph name="NETWORK"/></translation>
@@ -1572,7 +1572,7 @@ para proteger a sua privacidade.</translation>
 <translation id="7163503212501929773"><ph name="NUMBER_MANY"/> horas restantes</translation>
 <translation id="7705276765467986571">Não foi possível carregar o modelo do marcador.</translation>
 <translation id="750413812607578381">Deve reiniciar o <ph name="PRODUCT_NAME"/> agora.</translation>
-<translation id="8034305971714560781">Ao desligar a sua Conta Google do <ph name="PRODUCT_NAME"/>, as alterações aos seus dados efetuadas neste dispositivo móvel deixarão de ser sincronizadas com a sua Conta Google. Os dados já armazenados na sua Conta Google permanecerão lá até que os remova através do <ph name="BEGIN_LINK"/>Painel de Controlo do Google<ph name="END_LINK"/>.</translation>
+<translation id="8034305971714560781">Ao desligar a sua Conta Bitpop do <ph name="PRODUCT_NAME"/>, as alterações aos seus dados efetuadas neste dispositivo móvel deixarão de ser sincronizadas com a sua Conta Google. Os dados já armazenados na sua Conta Google permanecerão lá até que os remova através do <ph name="BEGIN_LINK"/>Painel de Controlo do Google<ph name="END_LINK"/>.</translation>
 <translation id="2638286699381354126">Atualizar...</translation>
 <translation id="1196338895211115272">Falha ao exportar chave privada.</translation>
 <translation id="1459967076783105826">Motores de pesquisa adicionados por extensões</translation>
@@ -1606,10 +1606,10 @@ para proteger a sua privacidade.</translation>
 <translation id="1789424019568293108">Ativar UI experimental que mostra um registo de atividade da extensão.</translation>
 <translation id="2090876986345970080">Definição de segurança do sistema</translation>
 <translation id="3728067901555601989">Palavra-passe de Utilização Única:</translation>
-<translation id="3475447146579922140">Folha de cálculo do Google</translation>
+<translation id="3475447146579922140">Folha de cálculo do Bitpop</translation>
 <translation id="6856526171412069413">Ativar escala da função de juntar os dedos.</translation>
 <translation id="9219103736887031265">Imagens</translation>
-<translation id="7415834062450491574">Enviar comentários à Google.</translation>
+<translation id="7415834062450491574">Enviar comentários à Bitpop.</translation>
 <translation id="4480995875255084924">Ativar o visualizador em árvore Oak para Ash. Permite inspeção da janela, camada e visualização de hierarquias e respetivas propriedades. Prima Ctrl+Shift+F1 para aceder.</translation>
 <translation id="6975147921678461939">A carregar bateria: <ph name="PRECENTAGE"/>%</translation>
 <translation id="5453632173748266363">Cirílico</translation>
@@ -1620,7 +1620,7 @@ para proteger a sua privacidade.</translation>
 <translation id="5329858601952122676">E&amp;liminar</translation>
 <translation id="6100736666660498114">Menu Iniciar</translation>
 <translation id="2706131822305474920">Alternar entre separadores abertos</translation>
-<translation id="4402766404187539019">Google.com Mail</translation>
+<translation id="4402766404187539019">Bitpop.com Mail</translation>
 <translation id="6275297011664564181">Atualmente não existem políticas ativas!</translation>
 <translation id="3994878504415702912">&amp;Zoom</translation>
 <translation id="9009369504041480176">A carregar (<ph name="PROGRESS_PERCENT"/>%)...</translation>
@@ -1658,7 +1658,7 @@ para proteger a sua privacidade.</translation>
 <translation id="6059764114876442286">Reposição da Impressora</translation>
 <translation id="6406506848690869874">Sincronização</translation>
 <translation id="5288678174502918605">Voltar a Abrir o S&amp;eparador Fechado</translation>
-<translation id="7238461040709361198">A palavra-passe da sua Conta Google foi alterada desde a última vez que iniciou sessão neste computador.</translation>
+<translation id="7238461040709361198">A palavra-passe da sua Conta Bitpop foi alterada desde a última vez que iniciou sessão neste computador.</translation>
 <translation id="1956050014111002555">O ficheiro continha vários certificados e nenhum deles foi importado:</translation>
 <translation id="302620147503052030">Mostrar botão</translation>
 <translation id="1895658205118569222">Encerrar</translation>
@@ -1668,7 +1668,7 @@ para proteger a sua privacidade.</translation>
 <translation id="6624687053722465643">Doce</translation>
 <translation id="8420296388012619424">O dispositivo USB não está formatado.</translation>
 <translation id="3021256392995617989">Perguntar-me quando um site tentar monitorizar a minha localização física (recomendado)</translation>
-<translation id="8083739373364455075">Obtenha 100 GB gratuitos com o Google Drive</translation>
+<translation id="8083739373364455075">Obtenha 100 GB gratuitos com o Bitpop Drive</translation>
 <translation id="271083069174183365">Definições de introdução de japonês</translation>
 <translation id="1257595095755619623">Se utilizar um servidor proxy, verifique as definições de proxy ou
         contacte o administrador de rede para assegurar que o servidor proxy
@@ -1811,7 +1811,7 @@ para proteger a sua privacidade.</translation>
 <translation id="7781829728241885113">Ontem</translation>
 <translation id="7786207843293321886">Sair da Sessão de Convidado</translation>
 <translation id="2762402405578816341">Sincronizar os seguintes itens automaticamente:</translation>
-<translation id="1623661092385839831">O seu computador contém um dispositivo de segurança TPM (Trusted Platform Module/Módulo de plataforma fidedigna), que é utilizado para implementar várias funcionalidades de segurança essenciais no Google Chrome OS.</translation>
+<translation id="1623661092385839831">O seu computador contém um dispositivo de segurança TPM (Trusted Platform Module/Módulo de plataforma fidedigna), que é utilizado para implementar várias funcionalidades de segurança essenciais no Bitpop Chrome OS.</translation>
 <translation id="3359256513598016054">Restrições de políticas de certificados</translation>
 <translation id="4433914671537236274">Criar um Suporte de Dados de Recuperação</translation>
 <translation id="4509345063551561634">Localização:</translation>
@@ -1873,7 +1873,7 @@ para proteger a sua privacidade.</translation>
 <translation id="3967885517199024316">Inicie sessão para obter os seus marcadores, histórico e definições em todos os seus aparelhos.</translation>
 <translation id="5463856536939868464">Menu com marcadores ocultos</translation>
 <translation id="8286227656784970313">Utilizar o dicionário do sistema</translation>
-<translation id="5431084084184068621">Optou por encriptar os dados utilizando a sua palavra-passe Google; pode sempre mudar de ideias mais tarde alterando as definições de sincronização.</translation>
+<translation id="5431084084184068621">Optou por encriptar os dados utilizando a sua palavra-passe Bitpop; pode sempre mudar de ideias mais tarde alterando as definições de sincronização.</translation>
 <translation id="1493263392339817010">Personalizar tipos de letra...</translation>
 <translation id="5352033265844765294">Carimbo de data/hora</translation>
 <translation id="1493892686965953381">A aguardar <ph name="LOAD_STATE_PARAMETER"/>...</translation>
@@ -1883,7 +1883,7 @@ para proteger a sua privacidade.</translation>
 <translation id="748138892655239008">Restrições básicas do certificado</translation>
 <translation id="457386861538956877">Mais...</translation>
 <translation id="9210991923655648139">Acessível ao script:</translation>
-<translation id="1950295184970569138">* Fotografia do Perfil do Google (a carregar)</translation>
+<translation id="1950295184970569138">* Fotografia do Perfil do Bitpop (a carregar)</translation>
 <translation id="8063491445163840780">Activar separador 4</translation>
 <translation id="5473544328731861874">Remover intenção</translation>
 <translation id="2322193970951063277">Cabeçalhos e rodapés</translation>
@@ -1933,7 +1933,7 @@ para proteger a sua privacidade.</translation>
 <translation id="5010043101506446253">Autoridade de certificação</translation>
 <translation id="2050524657923939561">Intenções da Web</translation>
 <translation id="8487693399751278191">Importar marcadores agora...</translation>
-<translation id="7615602087246926389">Já tem dados encriptados usando uma versão diferente da palavra-passe da sua Conta Google. Introduza-a abaixo.</translation>
+<translation id="7615602087246926389">Já tem dados encriptados usando uma versão diferente da palavra-passe da sua Conta Bitpop. Introduza-a abaixo.</translation>
 <translation id="7484580869648358686">Aviso: existe algum problema!</translation>
 <translation id="4474155171896946103">Adicionar todos os separadores aos marcadores...</translation>
 <translation id="5895187275912066135">Emitido em</translation>
@@ -2022,14 +2022,14 @@ para proteger a sua privacidade.</translation>
 <translation id="2065985942032347596">Autenticação necessária</translation>
 <translation id="2563185590376525700">Sapo</translation>
 <translation id="2553340429761841190">O <ph name="PRODUCT_NAME"/> não conseguiu estabelecer ligação a <ph name="NETWORK_ID"/>. Seleccione outra rede ou tente novamente.</translation>
-<translation id="2086712242472027775">A sua conta não funciona no <ph name="PRODUCT_NAME"/>. Contacte o administrador do domínio ou utilize uma Conta Google normal para iniciar sessão.</translation>
-<translation id="1373074393717692190">Inicie sessão no <ph name="PRODUCT_NAME"/> com a sua Conta Google para guardar as características personalizadas do navegador na Web e aceda ao <ph name="PRODUCT_NAME"/> em qualquer dispositivo móvel. Terá também sessão iniciada automaticamente nos seus serviços Google favoritos.</translation>
+<translation id="2086712242472027775">A sua conta não funciona no <ph name="PRODUCT_NAME"/>. Contacte o administrador do domínio ou utilize uma Conta Bitpop normal para iniciar sessão.</translation>
+<translation id="1373074393717692190">Inicie sessão no <ph name="PRODUCT_NAME"/> com a sua Conta Bitpop para guardar as características personalizadas do navegador na Web e aceda ao <ph name="PRODUCT_NAME"/> em qualquer dispositivo móvel. Terá também sessão iniciada automaticamente nos seus serviços Google favoritos.</translation>
 <translation id="7222232353993864120">Endereço de e-mail</translation>
 <translation id="2128531968068887769">Native Client</translation>
 <translation id="2749720227918911728">Este ícone estará visível quando a extensão puder agir na página atual. Ative esta extensão clicando no ícone ou premindo <ph name="EXTENSION_SHORTCUT"/>.</translation>
 <translation id="7175353351958621980">Carregado de:</translation>
 <translation id="7186367841673660872">Esta página foi traduzida de<ph name="ORIGINAL_LANGUAGE"/>para<ph name="LANGUAGE_LANGUAGE"/></translation>
-<translation id="8448695406146523553">Só alguém com a sua frase de acesso pode ler os seus dados encriptados. A frase de acesso não é enviada a ninguém nem é guardada pela Google. Se se esquecer da sua frase de acesso, terá de</translation>
+<translation id="8448695406146523553">Só alguém com a sua frase de acesso pode ler os seus dados encriptados. A frase de acesso não é enviada a ninguém nem é guardada pela Bitpop. Se se esquecer da sua frase de acesso, terá de</translation>
 <translation id="8248050856337841185">C&amp;olar</translation>
 <translation id="6052976518993719690">Autoridade de certificação SSL</translation>
 <translation id="2925935892230812200">Utilize o GPU para acelerar a conversão de filtros SVG.</translation>
@@ -2143,7 +2143,7 @@ para proteger a sua privacidade.</translation>
 <translation id="6374830905869502056">Codificado por</translation>
 <translation id="2230062665678605299">Não é possível criar a pasta &quot;<ph name="FOLDER_NAME"/>&quot;. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="2526590354069164005">Ambiente de trabalho</translation>
-<translation id="2059205526855036527">Tem de estar online para aceder ao Google Drive pela primeira vez.</translation>
+<translation id="2059205526855036527">Tem de estar online para aceder ao Bitpop Drive pela primeira vez.</translation>
 <translation id="4165738236481494247">Executar este plug-in</translation>
 <translation id="7983301409776629893">Traduzir sempre do <ph name="ORIGINAL_LANGUAGE"/> para o <ph name="TARGET_LANGUAGE"/></translation>
 <translation id="4890284164788142455">Tailandês</translation>
@@ -2173,7 +2173,7 @@ para proteger a sua privacidade.</translation>
 <translation id="3479552764303398839">Agora não</translation>
 <translation id="3714633008798122362">calendário Web</translation>
 <translation id="6445051938772793705">País</translation>
-<translation id="3430309973417890444">Se não tiver uma Conta Google, pode <ph name="LINK_START"/>Criar uma Conta Google<ph name="LINK_END"/> agora.</translation>
+<translation id="3430309973417890444">Se não tiver uma Conta Bitpop, pode <ph name="LINK_START"/>Criar uma Conta Google<ph name="LINK_END"/> agora.</translation>
 <translation id="3251759466064201842">&lt;Não faz parte do certificado&gt;</translation>
 <translation id="4229495110203539533">Há <ph name="NUMBER_ONE"/> seg.</translation>
 <translation id="3399068503715460757">Utilizar IP estático</translation>
@@ -2199,7 +2199,7 @@ para proteger a sua privacidade.</translation>
 <translation id="1800987794509850828">Mediador de Plug-ins: <ph name="PLUGIN_NAME"/></translation>
 <translation id="8871696467337989339">Está a utilizar um sinalizador de linha de comandos não suportado: <ph name="BAD_FLAG"/>. A estabilidade e a segurança serão afectadas.</translation>
 <translation id="4767443964295394154">Localização da transferência</translation>
-<translation id="5031870354684148875">Acerca do Google Tradutor</translation>
+<translation id="5031870354684148875">Acerca do Bitpop Tradutor</translation>
 <translation id="4266565660628359579">Ativa o modo de PPP elevados para o Visualizador de PDF do Chrome em monitores com PPP elevados.</translation>
 <translation id="5702389759209837579">Aceda aos seus separadores abertos em todos os seus aparelhos.</translation>
 <translation id="3828747136564826513">Acesso a todos os ficheiros de multimédia no dispositivo</translation>
@@ -2255,7 +2255,7 @@ para proteger a sua privacidade.</translation>
 <translation id="1752977958630076881">Manter os dados locais apenas até eu sair do meu navegador</translation>
 <translation id="7853202427316060426">Atividade</translation>
 <translation id="8550022383519221471">O serviço de sincronização não está disponível para o seu domínio.</translation>
-<translation id="1436238710092600782">Criar uma Conta Google</translation>
+<translation id="1436238710092600782">Criar uma Conta Bitpop</translation>
 <translation id="3355823806454867987">Alterar definições de proxy...</translation>
 <translation id="4780374166989101364">Activa as APIs de extensões experimentais. Tenha em atenção que a galeria de extensões não permite carregar extensões que utilizem APIs experimentais.</translation>
 <translation id="7117247127439884114">Iniciar Sessão Novamente...</translation>
@@ -2268,7 +2268,7 @@ para proteger a sua privacidade.</translation>
 <translation id="3007574127824276972">Sessão iniciada em <ph name="PRODUCT_NAME"/> como <ph name="USER_NAME"/></translation>
 <translation id="6840155730904976091">O <ph name="PRODUCT_NAME"/> está a utilizar as definições de proxy do sistema do dispositivo móvel para estabelecer ligação à rede.</translation>
 <translation id="2541913031883863396">continuar</translation>
-<translation id="6884284539803678768">Ative molduras de diálogo do estilo Google.</translation>
+<translation id="6884284539803678768">Ative molduras de diálogo do estilo Bitpop.</translation>
 <translation id="2367499218636570208">Nome próprio</translation>
 <translation id="4436689501885286563">Limpar cookies e outros dados de sites quando terminar sessão</translation>
 <translation id="1520137456044207237">Que serviço deve ser utilizado para visualizar?</translation>
@@ -2335,7 +2335,7 @@ para proteger a sua privacidade.</translation>
 <translation id="8053390638574070785">Recarregar esta página</translation>
 <translation id="5507756662695126555">Não repudiação</translation>
 <translation id="3678156199662914018">Extensão: <ph name="EXTENSION_NAME"/></translation>
-<translation id="2620090360073999360">Não é possível aceder ao Google Drive neste momento.</translation>
+<translation id="2620090360073999360">Não é possível aceder ao Bitpop Drive neste momento.</translation>
 <translation id="3531250013160506608">Caixa de texto da palavra-passe</translation>
 <translation id="506228266759207354">Desativar o menu da página novo separador para aceder a outros aparelhos.</translation>
 <translation id="1781502536226964113">Abrir a página Novo Separador</translation>
@@ -2352,7 +2352,7 @@ para proteger a sua privacidade.</translation>
 <translation id="8401363965527883709">Caixa de verificação desmarcada</translation>
 <translation id="7771452384635174008">Disposição</translation>
 <translation id="6188939051578398125">Introduza nomes ou endereços.</translation>
-<translation id="2851981350712094353">Conector do Google Cloud Print</translation>
+<translation id="2851981350712094353">Conector do Bitpop Cloud Print</translation>
 <translation id="8443621894987748190">Escolha a fotografia da conta</translation>
 <translation id="10122177803156699">Mostrar</translation>
 <translation id="935099558325596666">&quot;https://support.google.com/chrome/?p=win8_directories&quot;</translation>
@@ -2484,7 +2484,7 @@ para proteger a sua privacidade.</translation>
 <translation id="1358735829858566124">O ficheiro ou o diretório não pode ser utilizado.</translation>
 <translation id="3144135466825225871">Falha ao substituir o ficheiro crx. Verifique se o ficheiro está a ser utilizado.</translation>
 <translation id="2744221223678373668">Partilhadas</translation>
-<translation id="9064142312330104323">Fotografia do Perfil do Google (a carregar)</translation>
+<translation id="9064142312330104323">Fotografia do Perfil do Bitpop (a carregar)</translation>
 <translation id="4708849949179781599">Sair do <ph name="PRODUCT_NAME"/></translation>
 <translation id="2505402373176859469"><ph name="RECEIVED_AMOUNT"/> de <ph name="TOTAL_SIZE"/></translation>
 <translation id="6937559152970966646">Fixar ao Ecrã inicial</translation>
@@ -2515,7 +2515,7 @@ para proteger a sua privacidade.</translation>
 <translation id="4610637590575890427">Pretendia aceder a <ph name="SITE"/>?</translation>
 <translation id="7723779034587221017">Perdeu-se a ligação ao serviço da política. Reponha o dispositivo ou contacte o representante do suporte.</translation>
 <translation id="5097002363526479830">Falha ao ligar à rede &quot;<ph name="NAME"/>&quot;: <ph name="DETAILS"/></translation>
-<translation id="6906142274982384363">Com o Google Instantâneo ativado, e caso seja suportado pelo motor de pesquisa predefinido, os resultados de pesquisa são apresentados instantaneamente à medida que escreve consultas na caixa geral e as sugestões in-line ajudam a orientar a sua pesquisa.
+<translation id="6906142274982384363">Com o Bitpop Instantâneo ativado, e caso seja suportado pelo motor de pesquisa predefinido, os resultados de pesquisa são apresentados instantaneamente à medida que escreve consultas na caixa geral e as sugestões in-line ajudam a orientar a sua pesquisa.
 
 Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a consulta, é possível que o motor de pesquisa predefinido os registe como sendo consultas de pesquisa.</translation>
 <translation id="3437994698969764647">Exportar tudo...</translation>
@@ -2582,12 +2582,12 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="305803244554250778">Criar atalhos para aplicações nos seguintes locais:</translation>
 <translation id="574392208103952083">Médio</translation>
 <translation id="3661117620327489194">Alterar para restaurar as páginas abertas</translation>
-<translation id="3937609171782005782">Ajude a melhorar a detecção de programas maliciosos enviando dados adicionais para o Google sobre Web sites nos quais vê este aviso. Estes dados serão processados em conformidade com <ph name="PRIVACY_PAGE_LINK"/>.</translation>
+<translation id="3937609171782005782">Ajude a melhorar a detecção de programas maliciosos enviando dados adicionais para o Bitpop sobre Web sites nos quais vê este aviso. Estes dados serão processados em conformidade com <ph name="PRIVACY_PAGE_LINK"/>.</translation>
 <translation id="8877448029301136595">[directório principal]</translation>
 <translation id="3816844797124379499">Não foi possível adicionar a aplicação, porque entra em conflito com &quot;<ph name="APP_NAME"/>&quot;.</translation>
 <translation id="7301360164412453905">Teclas de selecção do teclado Hsu</translation>
 <translation id="8631271110654520730">A copiar a imagem de recuperação...</translation>
-<translation id="7779140087128114262">Só alguém com a sua frase de acesso pode ler os seus dados encriptados. A frase de acesso não é enviada a ninguém nem é guardada pela Google. Se se esquecer da sua frase de acesso, terá de redefinir a sincronização.</translation>
+<translation id="7779140087128114262">Só alguém com a sua frase de acesso pode ler os seus dados encriptados. A frase de acesso não é enviada a ninguém nem é guardada pela Bitpop. Se se esquecer da sua frase de acesso, terá de redefinir a sincronização.</translation>
 <translation id="13356285923490863">Nome da Política</translation>
 <translation id="8241040075392580210">Sombra</translation>
 <translation id="8690155203172212841">Gerir definições de permissão</translation>
@@ -2609,7 +2609,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
         visite <ph name="URL_FOR_MORE_INFO"/>,
         onde poderá encontrar mais informações, incluindo como desativar a funcionalidade.</translation>
 <translation id="8218008331535230597">Retirar a autorização de licenças de conteúdo</translation>
-<translation id="4744728308552504807">Ativa um serviço em segundo plano que liga o serviço Google Cloud Print a qualquer impressora instalada neste dispositivo móvel. Depois de ativar este laboratório, pode ligar o Conector do Google Cloud Print iniciando sessão na sua conta Google na secção Definições Avançadas em Definições.</translation>
+<translation id="4744728308552504807">Ativa um serviço em segundo plano que liga o serviço Bitpop Cloud Print a qualquer impressora instalada neste dispositivo móvel. Depois de ativar este laboratório, pode ligar o Conector do Google Cloud Print iniciando sessão na sua conta Google na secção Definições Avançadas em Definições.</translation>
 <translation id="6691936601825168937">A&amp;vançar</translation>
 <translation id="6566142449942033617">Não foi possível carregar &quot;<ph name="PLUGIN_PATH"/>&quot;para o plug-in.</translation>
 <translation id="7065534935986314333">Acerca do sistema</translation>
@@ -2620,7 +2620,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="2128691215891724419">Erro de Sincronização: atualizar a frase de acesso de Sincronização...</translation>
 <translation id="2148716181193084225">Hoje</translation>
 <translation id="1002064594444093641">Imp&amp;rimir Moldura...</translation>
-<translation id="7234674978021619913">Já notificámos <ph name="HOST_NAME"/> que detectámos um programa malicioso no Web site. Para obter mais informações sobre os problemas encontrados em <ph name="HOST_NAME2"/>, visite a <ph name="DIAGNOSTIC_PAGE"/> do Google.</translation>
+<translation id="7234674978021619913">Já notificámos <ph name="HOST_NAME"/> que detectámos um programa malicioso no Web site. Para obter mais informações sobre os problemas encontrados em <ph name="HOST_NAME2"/>, visite a <ph name="DIAGNOSTIC_PAGE"/> do Bitpop.</translation>
 <translation id="4608500690299898628">&amp;Localizar...</translation>
 <translation id="7582582252461552277">Preferir esta rede</translation>
 <translation id="3574305903863751447"><ph name="CITY"/>, <ph name="STATE"/> <ph name="COUNTRY"/></translation>
@@ -2722,7 +2722,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="6322726279947003371">Executar conteúdo protegido (poderá ser necessário reiniciar o computador)</translation>
 <translation id="3093473105505681231">Idiomas e definições do verificador ortográfico...</translation>
 <translation id="152482086482215392"><ph name="NUMBER_ONE"/> seg. restante</translation>
-<translation id="4261901459838235729">Apresentação do Google</translation>
+<translation id="4261901459838235729">Apresentação do Bitpop</translation>
 <translation id="8678698760965522072">Estado on-line</translation>
 <translation id="529172024324796256">Nome do utilizador:</translation>
 <translation id="3308116878371095290">Esta página foi impedida de definir cookies.</translation>
@@ -2800,7 +2800,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="2444609190341826949">Sem uma frase de acesso, as suas palavras-passe e outros dados encriptados não serão sincronizados neste computador.</translation>
 <translation id="2984337792991268709">Hoje <ph name="TODAY_DAYTIME"/></translation>
 <translation id="5227808808023563348">Localizar texto anterior</translation>
-<translation id="6650142020817594541">Este Web site recomenda o Google Chrome Frame (já instalado).</translation>
+<translation id="6650142020817594541">Este Web site recomenda o Bitpop Chrome Frame (já instalado).</translation>
 <translation id="3862763658360970896">Ativar o Chrome para Telemóvel.</translation>
 <translation id="902638246363752736">Definições do teclado</translation>
 <translation id="7925686952655276919">Não utilizar dados móveis para sincronização</translation>
@@ -2820,7 +2820,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="6007237601604674381">Falha ao mover. <ph name="ERROR_MESSAGE"/></translation>
 <translation id="907841381057066561">Falha ao criar ficheiro zip temporário durante o empacotamento.</translation>
 <translation id="1881456419707551346">Detalhes da ligação</translation>
-<translation id="1064912851688322329">Desligar a sua Conta Google</translation>
+<translation id="1064912851688322329">Desligar a sua Conta Bitpop</translation>
 <translation id="1294298200424241932">Editar definições fidedignas:</translation>
 <translation id="1407135791313364759">Abrir tudo</translation>
 <translation id="1434928358870966081">Desativar a tela 2D acelerada</translation>
@@ -2843,9 +2843,9 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="267285457822962309">Alterar as definições específicas para o seu aparelho e periféricos.</translation>
 <translation id="1154228249304313899">Abrir esta página:</translation>
 <translation id="6084074203170335305"><ph name="MARKUP_1"/>Aceda a ficheiros a partir de qualquer local, mesmo offline.<ph name="MARKUP_2"/>
-        Os ficheiros no Google Drive estão atualizados e disponíveis a partir de qualquer dispositivo.<ph name="MARKUP_3"/>
+        Os ficheiros no Bitpop Drive estão atualizados e disponíveis a partir de qualquer dispositivo.<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>Mantenha os seus ficheiros seguros.<ph name="MARKUP_5"/>
-        Independentemente do que acontecer ao seu dispositivo, os seus ficheiros estão guardados em segurança no Google Drive.<ph name="MARKUP_6"/>
+        Independentemente do que acontecer ao seu dispositivo, os seus ficheiros estão guardados em segurança no Bitpop Drive.<ph name="MARKUP_6"/>
         <ph name="MARKUP_7"/>Partilhe, crie e colabore<ph name="MARKUP_8"/>
         em ficheiros com outras pessoas, tudo num único local.<ph name="MARKUP_9"/></translation>
 <translation id="9074348188580488499">Tem a certeza de que pretende remover todas as palavras-passe?</translation>
@@ -2980,7 +2980,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="8725066075913043281">Tentar novamente</translation>
 <translation id="387784661603993584">Não é possível importar. Ocorreu um erro.</translation>
 <translation id="4637968436031842307">Ativar Variáveis CSS.</translation>
-<translation id="1887908730460853602">Caixas de diálogo do estilo Google</translation>
+<translation id="1887908730460853602">Caixas de diálogo do estilo Bitpop</translation>
 <translation id="8502249598105294518">Personalizar e controlar o <ph name="PRODUCT_NAME"/></translation>
 <translation id="3797008485206955964">Ver páginas em segundo plano (<ph name="NUM_BACKGROUND_APPS"/>)</translation>
 <translation id="8590375307970699841">Configurar actualizações automáticas</translation>
@@ -3000,8 +3000,8 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="5293659407874396561"><ph name="SUBJECT"/> ( <ph name="ISSUER"/> )</translation>
 <translation id="2115926821277323019">Tem de ser um URL válido</translation>
 <translation id="3464726836683998962">Desativar roaming de dados móveis</translation>
-<translation id="8986494364107987395">Enviar automaticamente estatísticas de utilização e relatórios de falhas para a Google</translation>
-<translation id="7070714457904110559">Permite extensões experimentais na funcionalidade de geolocalização. Inclui a utilização de APIs de localização do sistema operativo (onde for aplicável) e o envio de dados adicionais de configuração da rede local para o serviço de localização do Google para fornecer um posicionamento mais preciso.</translation>
+<translation id="8986494364107987395">Enviar automaticamente estatísticas de utilização e relatórios de falhas para a Bitpop</translation>
+<translation id="7070714457904110559">Permite extensões experimentais na funcionalidade de geolocalização. Inclui a utilização de APIs de localização do sistema operativo (onde for aplicável) e o envio de dados adicionais de configuração da rede local para o serviço de localização do Bitpop para fornecer um posicionamento mais preciso.</translation>
 <translation id="6701535245008341853">Não foi possível obter o perfil.</translation>
 <translation id="8303655282093186569">Definições de introdução Pinyin</translation>
 <translation id="992779717417561630">Imprimir utilizando a caixa de diálogo <ph name="CLOUD_PRINT_NAME"/>... <ph name="SHORTCUT_KEY"/></translation>
@@ -3015,7 +3015,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="580571955903695899">Reordenar por título</translation>
 <translation id="5230516054153933099">Janela</translation>
 <translation id="921740547845455014">Escrita em ficheiros abertos na aplicação</translation>
-<translation id="1799497982892676838">Gerir os seus dados sincronizados no Painel de Controlo do Google</translation>
+<translation id="1799497982892676838">Gerir os seus dados sincronizados no Painel de Controlo do Bitpop</translation>
 <translation id="951981865514037445"><ph name="URL"/> pretende utilizar a localização do seu dispositivo.</translation>
 <translation id="7554791636758816595">Novo separador</translation>
 <translation id="3026557130425686673">O início de sessão foi cancelado porque algumas das definições do dispositivo foram corrompidas.</translation>
@@ -3029,7 +3029,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="1103966635949043187">Aceder à página inicial do site:</translation>
 <translation id="4762295713053835808">Itens pessoais</translation>
 <translation id="6374100501221763867">Desativar a descodificação de vídeo acelerada por hardware.</translation>
-<translation id="7477347901712410606">Se se esqueceu da sua frase de acesso, pare e reinicie a Sincronização através do <ph name="BEGIN_LINK"/>Painel de Controlo do Google<ph name="END_LINK"/>.</translation>
+<translation id="7477347901712410606">Se se esqueceu da sua frase de acesso, pare e reinicie a Sincronização através do <ph name="BEGIN_LINK"/>Painel de Controlo do Bitpop<ph name="END_LINK"/>.</translation>
 <translation id="6139474630617772623">Ativa o ambiente de trabalho alargado, que lhe permite abrir um navegador em visores secundários.</translation>
 <translation id="2645575947416143543">No entanto, se trabalhar numa organização que crie os seus próprios certificados e estiver a tentar estabelecer ligação a um Web site interno dessa organização utilizando um certificado desse tipo, poderá conseguir resolver o problema de forma segura. Pode importar o certificado de raiz da sua organização como &quot;certificado de raiz&quot; e, posteriormente, os certificados emitidos ou verificados pela sua organização serão considerados fidedignos e já não verá este erro da próxima vez que tentar ligar-se a um Web site interno. Contacte o pessoal de apoio da sua organização para obter ajuda na adição de um novo certificado de raiz ao seu computador.</translation>
 <translation id="1056898198331236512">Aviso</translation>
@@ -3059,7 +3059,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="3031557471081358569">Seleccione os itens a importar:</translation>
 <translation id="1368832886055348810">Da esquerda para a direita</translation>
 <translation id="3627320433825461852">Falta menos de 1 minuto</translation>
-<translation id="2246796647895323322">Ativar o Google Instantâneo para pesquisas mais rápidas (a introdução na caixa geral pode ser <ph name="BEGIN_LINK"/>registada<ph name="END_LINK"/>)</translation>
+<translation id="2246796647895323322">Ativar o Bitpop Instantâneo para pesquisas mais rápidas (a introdução na caixa geral pode ser <ph name="BEGIN_LINK"/>registada<ph name="END_LINK"/>)</translation>
 <translation id="3031433885594348982">A sua ligação a <ph name="DOMAIN"/> está encriptada com uma encriptação fraca.</translation>
 <translation id="4047345532928475040">N/D</translation>
 <translation id="5604324414379907186">Mostrar sempre barra de marcadores</translation>
@@ -3309,7 +3309,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="7063412606254013905">Saiba mais sobre logros de phishing.</translation>
 <translation id="7253521419891527137">&amp;Saiba Mais</translation>
 <translation id="3170312251071695679"><ph name="PERMISSION_VALUE"/> por predefinição</translation>
-<translation id="8698464937041809063">Desenho do Google</translation>
+<translation id="8698464937041809063">Desenho do Bitpop</translation>
 <translation id="7053053706723613360">Desativar Melhor restauro da sessão</translation>
 <translation id="5233930340889611108">Webkit</translation>
 <translation id="8260864402787962391">Rato</translation>
@@ -3338,7 +3338,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="6873213799448839504">Atribuir automaticamente uma cadeia</translation>
 <translation id="7238585580608191973">Impressão digital SHA-256</translation>
 <translation id="2501278716633472235">Retroceder</translation>
-<translation id="3588662957555259973">* Fotografia do Perfil do Google</translation>
+<translation id="3588662957555259973">* Fotografia do Perfil do Bitpop</translation>
 <translation id="131461803491198646">Rede doméstica, sem roaming</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/> - <ph name="FULL_DATE"/></translation>
 <translation id="1285320974508926690">Nunca traduzir este site</translation>
@@ -3408,7 +3408,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="461656879692943278"><ph name="HOST_NAME"/> inclui conteúdo de <ph name="ELEMENTS_HOST_NAME"/>, um Web site conhecido por distribuir programas maliciosos. O seu computador poderá apanhar um vírus se visitar este Web site.</translation>
 <translation id="8962198349065195967">Esta rede é configurada pelo administrador.</translation>
 <translation id="2143778271340628265">Configuração manual do proxy</translation>
-<translation id="2441192698565541088">Se desligar a sua Conta Google do <ph name="PRODUCT_NAME"/>, as alterações nos seus dados neste computador deixarão de ser sincronizadas com a sua Conta Google. Os dados já armazenados na sua Conta Google permanecerão ali até que os remova utilizando o <ph name="BEGIN_LINK"/>Painel de Controlo do Google<ph name="END_LINK"/>.</translation>
+<translation id="2441192698565541088">Se desligar a sua Conta Bitpop do <ph name="PRODUCT_NAME"/>, as alterações nos seus dados neste computador deixarão de ser sincronizadas com a sua Conta Google. Os dados já armazenados na sua Conta Google permanecerão ali até que os remova utilizando o <ph name="BEGIN_LINK"/>Painel de Controlo do Google<ph name="END_LINK"/>.</translation>
 <translation id="8888432776533519951">Cor:</translation>
 <translation id="5294529402252479912">Actualizar Adobe Reader agora</translation>
 <translation id="5263972071113911534">Há <ph name="NUMBER_MANY"/> dias</translation>
@@ -3437,7 +3437,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="8885905466771744233">Já existe uma chave privada para a extensão especificada. Volte a utilizar essa chave ou elimine-a primeiro.</translation>
 <translation id="1196944142850240972">Aceder aos seus dados em todos os Websites</translation>
 <translation id="7369056754288047856">Algumas definições não podem ser modificadas pelo utilizador.</translation>
-<translation id="4100843820583867709">Pedido de Partilha de Ecrã do Google Talk</translation>
+<translation id="4100843820583867709">Pedido de Partilha de Ecrã do Bitpop Talk</translation>
 <translation id="8109246889182548008">Armazenamento do certificado</translation>
 <translation id="5030338702439866405">Emitido por</translation>
 <translation id="2728127805433021124">O certificado do servidor foi assinado utilizando um algoritmo de assinatura fraco.</translation>
@@ -3626,7 +3626,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="1049926623896334335">Documento do Word</translation>
 <translation id="8412145213513410671">Falhas (<ph name="CRASH_COUNT"/>)</translation>
 <translation id="7003257528951459794">Frequência:</translation>
-<translation id="3467267818798281173">Pedir sugestões ao Google</translation>
+<translation id="3467267818798281173">Pedir sugestões ao Bitpop</translation>
 <translation id="560602183358579978">A calcular a seleção...</translation>
 <translation id="7649070708921625228">Ajuda</translation>
 <translation id="858637041960032120">Adicionar número de telefone</translation>
@@ -3662,7 +3662,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="8000020256436988724">Barra de ferramentas</translation>
 <translation id="7507930499305566459">Certificado do dispositivo de resposta do estado</translation>
 <translation id="3958088479270651626">Importar marcadores e definições</translation>
-<translation id="2689915906323125315">Utilizar a minha palavra-passe da Conta Google</translation>
+<translation id="2689915906323125315">Utilizar a minha palavra-passe da Conta Bitpop</translation>
 <translation id="8518865679229538285">Método de introdução Tamil (Máquina de escrever)</translation>
 <translation id="5257456363153333584">Libélula</translation>
 <translation id="4557136421275541763">Aviso:</translation>
@@ -3673,7 +3673,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="7681202901521675750">O cartão SIM está bloqueado - introduza o código PIN. Tentativas restantes: <ph name="TRIES_COUNT"/></translation>
 <translation id="2489918096470125693">Adicionar &amp;Pasta...</translation>
 <translation id="7353651168734309780"><ph name="EXTENSION_NAME"/> necessita de novas permissões</translation>
-<translation id="6420812616858267777">A sincronização do <ph name="PRODUCT_NAME"/> facilita a partilha de dados (tais como marcadores e definições) entre computadores e dispositivos móveis. O <ph name="PRODUCT_NAME"/> sincroniza os seus dados, armazenando-os online com o Google quando inicia sessão com a sua Conta Google.</translation>
+<translation id="6420812616858267777">A sincronização do <ph name="PRODUCT_NAME"/> facilita a partilha de dados (tais como marcadores e definições) entre computadores e dispositivos móveis. O <ph name="PRODUCT_NAME"/> sincroniza os seus dados, armazenando-os online com o Bitpop quando inicia sessão com a sua Conta Google.</translation>
 <translation id="7484964289312150019">Abrir todos os marcadores numa &amp;nova janela</translation>
 <translation id="1731346223650886555">Ponto e vírgula</translation>
 <translation id="158849752021629804">Requer rede doméstica</translation>
@@ -3689,7 +3689,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="3021678814754966447">&amp;Ver Origem da Moldura</translation>
 <translation id="8601206103050338563">Autenticação de cliente TLS WWW</translation>
 <translation id="1692799361700686467">Permitidos cookies de vários sites.</translation>
-<translation id="5187295959347858724">Está com sessão iniciada no <ph name="SHORT_PRODUCT_NAME"/>. Os seus marcadores, histórico e outras definições estão a ser sincronizados com a sua Conta Google.</translation>
+<translation id="5187295959347858724">Está com sessão iniciada no <ph name="SHORT_PRODUCT_NAME"/>. Os seus marcadores, histórico e outras definições estão a ser sincronizados com a sua Conta Bitpop.</translation>
 <translation id="3719415759165722358">Ativa a IU de Definições do Website. A IU de Definições do Website substitui o balão de informações da página e oferece uma forma fácil de configurar definições específicas do Website.</translation>
 <translation id="2717190143245689317">Ativa um campo de texto experimental para a IU da aplicação; não afeta o conteúdo Web.</translation>
 <translation id="529232389703829405">Adquiriu <ph name="DATA_AMOUNT"/> de dados em <ph name="DATE"/></translation>
@@ -3732,7 +3732,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="2927657246008729253">Alterar...</translation>
 <translation id="7586781939132793422">Desativar Respostas Faladas</translation>
 <translation id="7978412674231730200">Chave privada</translation>
-<translation id="7056011739864317578">Quando ativado, irá utilizar o ClientOAuth para ligar um perfil a uma conta do Google. Caso contrário, é utilizado o ClientLogin.
+<translation id="7056011739864317578">Quando ativado, irá utilizar o ClientOAuth para ligar um perfil a uma conta do Bitpop. Caso contrário, é utilizado o ClientLogin.
       O ClientOAuth permite a utilização de códigos de confirmação, em vez de ASPs, durante a autenticação.</translation>
 <translation id="5308380583665731573">Ligar</translation>
 <translation id="9111395131601239814"><ph name="NETWORKDEVICE"/>: <ph name="STATUS"/></translation>
@@ -3754,7 +3754,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="6692173217867674490">Frase de acesso incorrecta</translation>
 <translation id="5550431144454300634">Corrigir automaticamente a introdução</translation>
 <translation id="3308006649705061278">Unidade organizacional (OU)</translation>
-<translation id="8912362522468806198">Conta Google</translation>
+<translation id="8912362522468806198">Conta Bitpop</translation>
 <translation id="4443536555189480885">&amp;Ajuda</translation>
 <translation id="340485819826776184">Utilizar um serviço de predição para ajudar a completar pesquisas e URLs escritos na barra de endereço</translation>
 <translation id="4207762215349123040">O plug-in <ph name="PEPPER_PLUGIN_NAME"/> de <ph name="PEPPER_PLUGIN_DOMAIN"/> pretende aceder ao seu dispositivo móvel.&quot;</translation>
@@ -3773,7 +3773,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="4745438305783437565"><ph name="NUMBER_FEW"/> min.</translation>
 <translation id="2649911884196340328">O certificado de segurança do servidor tem erros!</translation>
-<translation id="6666647326143344290">com a sua Conta Google</translation>
+<translation id="6666647326143344290">com a sua Conta Bitpop</translation>
 <translation id="4980112683975062744">Recebidos cabeçalhos duplicados do servidor</translation>
 <translation id="3828029223314399057">Pesquisar marcadores</translation>
 <translation id="4885705234041587624">MSCHAPv2</translation>
@@ -3782,7 +3782,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="3551117997325569860">Para alterar o proxy, ative a definição &quot;<ph name="USE_SHARED_PROXIES"/>&quot;.</translation>
 <translation id="8906421963862390172">Opçõe&amp;s do Verificador Ortográfico</translation>
 <translation id="9046895021617826162">A ligação falhou</translation>
-<translation id="4061733942661196912">Quando está ativado, visitar uma página de início de sessão na Conta Google irá desencadear uma barra de informações que permite um início de sessão fácil com a Conta Google ligada ao perfil. O início de sessão automático está sempre desativado se o perfil não estiver ligado a uma conta, independentemente deste sinalizador.</translation>
+<translation id="4061733942661196912">Quando está ativado, visitar uma página de início de sessão na Conta Bitpop irá desencadear uma barra de informações que permite um início de sessão fácil com a Conta Google ligada ao perfil. O início de sessão automático está sempre desativado se o perfil não estiver ligado a uma conta, independentemente deste sinalizador.</translation>
 <translation id="1492188167929010410">ID de falha <ph name="CRASH_ID"/></translation>
 <translation id="1963692530539281474"><ph name="NUMBER_DEFAULT"/> dias restantes</translation>
 <translation id="4470270245053809099">Emitido por: <ph name="NAME"/></translation>
@@ -3832,7 +3832,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="5869522115854928033">Palavras-passe guardadas</translation>
 <translation id="3436440123324878555">Comprar plano...</translation>
 <translation id="5748266869826978907">Verifique as definições de DNS. Contacte o administrador de rede se não tiver a certeza do que significam.</translation>
-<translation id="4193154014135846272">Documento do Google</translation>
+<translation id="4193154014135846272">Documento do Bitpop</translation>
 <translation id="4771973620359291008">Ocorreu um erro desconhecido.</translation>
 <translation id="5509914365760201064">Emissor: <ph name="CERTIFICATE_AUTHORITY"/></translation>
 <translation id="6446356484127229069">O <ph name="PRODUCT_NAME"/> está com problemas de acesso à rede. <ph name="LINE_BREAK"/> Pode dever-se ao facto de a firewall ou o software antivírus considerarem incorretamente que o <ph name="PRODUCT_NAME"/> é um intruso no seu dispositivo móvel e estarem a impedi-lo de estabelecer liigação à Internet.</translation>
@@ -3930,7 +3930,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="899403249577094719">URL base do certificado Netscape</translation>
 <translation id="2737363922397526254">Reduzir...</translation>
 <translation id="8605428685123651449">Memória SQLite</translation>
-<translation id="5469175127151858022">Além da informação que opte por incluir acima, também será enviada a versão do Chrome e do sistema operativo. Estas informações são utilizados para diagnosticar problemas e ajudar a melhorar o Chrome. Qualquer informação pessoal que enviar, expressa ou inadvertidamente, será protegida em conformidade com as nossas políticas de privacidade. <ph name="BEGIN_BOLD"/> Ao enviar estas informações, concorda que a Google pode utilizar as informações fornecidas para melhorar qualquer produto ou serviço Google. <ph name="END_BOLD"/></translation>
+<translation id="5469175127151858022">Além da informação que opte por incluir acima, também será enviada a versão do Chrome e do sistema operativo. Estas informações são utilizados para diagnosticar problemas e ajudar a melhorar o Chrome. Qualquer informação pessoal que enviar, expressa ou inadvertidamente, será protegida em conformidade com as nossas políticas de privacidade. <ph name="BEGIN_BOLD"/> Ao enviar estas informações, concorda que a Bitpop pode utilizar as informações fornecidas para melhorar qualquer produto ou serviço Google. <ph name="END_BOLD"/></translation>
 <translation id="2841013758207633010">Tempo</translation>
 <translation id="4880827082731008257">Pesquisa do histórico</translation>
 <translation id="8661290697478713397">Abrir Link numa Janela de Nave&amp;gação Anónima</translation>
@@ -3941,7 +3941,7 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="5338503421962489998">Armazenamento local</translation>
 <translation id="1702534956030472451">Ocidental</translation>
 <translation id="794676567536738329">Confirmar Permissões</translation>
-<translation id="4222346714274826242">Ativar a API V2 do Google Drive.</translation>
+<translation id="4222346714274826242">Ativar a API V2 do Bitpop Drive.</translation>
 <translation id="6636709850131805001">Estado não reconhecido</translation>
 <translation id="6095984072944024315">−</translation>
 <translation id="5567989639534621706">Caches de aplicações</translation>
@@ -3962,10 +3962,10 @@ Visto que os resultados de pesquisa são solicitados mesmo enquanto escreve a co
 <translation id="8828933418460119530">Nome de DNS</translation>
 <translation id="988159990683914416">Compilação de programador</translation>
 <translation id="1097658378307015415">Antes de iniciar sessão, entre como Convidado para ativar a rede <ph name="NETWORK_ID"/></translation>
-<translation id="5170477580121653719">Espaço restante no Google Drive: <ph name="SPACE_AVAILABLE"/>.</translation>
+<translation id="5170477580121653719">Espaço restante no Bitpop Drive: <ph name="SPACE_AVAILABLE"/>.</translation>
 <translation id="4114470632216071239">Bloquear cartão SIM (requer PIN para usar dados móveis) </translation>
 <translation id="5184584788669813359">Não foi possível apresentar partes deste documento PDF. Abrir no Adobe Reader?</translation>
-<translation id="6581162200855843583">Link do Google Drive</translation>
+<translation id="6581162200855843583">Link do Bitpop Drive</translation>
 <translation id="340771324714262530">Parar o espelhamento</translation>
 <translation id="3303260552072730022">Uma extensão acionou o ecrã inteiro.</translation>
 <translation id="2183426022964444701">Seleccione o directório de raiz da extensão.</translation>
@@ -4064,7 +4064,7 @@ Prima qualquer tecla para continuar a explorar.</translation>
 <translation id="1177437665183591855">Erro de certificado de servidor desconhecido</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> pretende utilizar a câmara e o microfone.</translation>
 <translation id="8467473010914675605">Método de introdução coreano</translation>
-<translation id="8102535138653976669">O <ph name="PRODUCT_NAME"/> sincroniza os dados com a sua conta Google de forma segura. Mantenha tudo sincronizado ou personalize o tipo de dados que pretende sincronizar e as definições de encriptação.</translation>
+<translation id="8102535138653976669">O <ph name="PRODUCT_NAME"/> sincroniza os dados com a sua conta Bitpop de forma segura. Mantenha tudo sincronizado ou personalize o tipo de dados que pretende sincronizar e as definições de encriptação.</translation>
 <translation id="2639739919103226564">Estado:</translation>
 <translation id="6923900367903210484">Direitos de Autor</translation>
 <translation id="3819800052061700452">&amp;Ecrã inteiro</translation>
@@ -4088,7 +4088,7 @@ Prima qualquer tecla para continuar a explorar.</translation>
 <translation id="614998064310228828">Modelo do dispositivo:</translation>
 <translation id="1581962803218266616">Mostrar no Localizador</translation>
 <translation id="9100765901046053179">Definições avançadas</translation>
-<translation id="203168018648013061">Erro de Sincronização: reinicialize a Sincronização através do Painel de Controlo do Google.</translation>
+<translation id="203168018648013061">Erro de Sincronização: reinicialize a Sincronização através do Painel de Controlo do Bitpop.</translation>
 <translation id="1405126334425076373">Cursor do rato</translation>
 <translation id="6096326118418049043">Nome X.500</translation>
 <translation id="6086259540486894113">Tem de seleccionar, pelo menos, um tipo de dados a sincronizar.</translation>
@@ -4137,14 +4137,14 @@ Prima qualquer tecla para continuar a explorar.</translation>
 <translation id="2960316970329790041">Parar importação</translation>
 <translation id="3835522725882634757">Oh, não! Este servidor está a enviar dados que o <ph name="PRODUCT_NAME"/> não consegue entender. <ph name="BEGIN_LINK"/>Comunique um erro<ph name="END_LINK"/> e inclua a <ph name="BEGIN2_LINK"/>lista não processada<ph name="END2_LINK"/>.</translation>
 <translation id="6586451623538375658">Trocar botão principal do rato</translation>
-<translation id="6937152069980083337">Introdução japonesa do Google (para teclado dos EUA)</translation>
+<translation id="6937152069980083337">Introdução japonesa do Bitpop (para teclado dos EUA)</translation>
 <translation id="475088594373173692">Primeiro utilizador</translation>
 <translation id="1731911755844941020">A enviar pedido...</translation>
 <translation id="8371695176452482769">Falar agora</translation>
 <translation id="7622116780510618781">Separadores Empilhados</translation>
 <translation id="2988488679308982380">Não foi possível instalar o pacote: &quot;<ph name="ERROR_CODE"/>&quot;</translation>
 <translation id="2904079386864173492">Modelo:</translation>
-<translation id="728836202927797241">Oferta de início de sessão automático em Web sites Google com esta conta</translation>
+<translation id="728836202927797241">Oferta de início de sessão automático em Web sites Bitpop com esta conta</translation>
 <translation id="6129953537138746214">Espaço</translation>
 <translation id="5041795084235183432">Rato:</translation>
 <translation id="3704331259350077894">Cessação da operação</translation>
@@ -4218,7 +4218,7 @@ Prima qualquer tecla para continuar a explorar.</translation>
 <translation id="3325146402434751578">Configurar ou gerir impressoras na <ph name="CLOUD_PRINT_NAME"/></translation>
 <translation id="253434972992662860">&amp;Pausa</translation>
 <translation id="335985608243443814">Procurar...</translation>
-<translation id="7802488492289385605">Introdução japonesa do Google (para teclados Dvorak dos EUA)</translation>
+<translation id="7802488492289385605">Introdução japonesa do Bitpop (para teclados Dvorak dos EUA)</translation>
 <translation id="3876481682997626897">Não correspondência de assinatura</translation>
 <translation id="8892992092192084762">Tema instalado &quot;<ph name="THEME_NAME"/>&quot;.</translation>
 <translation id="7427348830195639090">Página de fundo: <ph name="BACKGROUND_PAGE_URL"/></translation>
@@ -4253,7 +4253,7 @@ Prima qualquer tecla para continuar a explorar.</translation>
 <translation id="1131850611586448366">O Web site em <ph name="HOST_NAME"/> foi registado como site de “phishing”. Os sites de phishing enganam os utilizadores, levando-os a revelar informações pessoais ou financeiras, fingindo muitas vezes representar instituições fidedignas, como, por exemplo, bancos.</translation>
 <translation id="2669198762040460457">O nome de utilizador ou a palavra-passe que introduziu estão incorretos.</translation>
 <translation id="1161575384898972166">Inicie sessão no <ph name="TOKEN_NAME"/> para exportar o certificado de cliente.</translation>
-<translation id="1718559768876751602">Criar uma Conta Google agora</translation>
+<translation id="1718559768876751602">Criar uma Conta Bitpop agora</translation>
 <translation id="5503480894407718969">Aceder a todos os dados no seu dispositivo móvel e aos Websites que visitar</translation>
 <translation id="1884319566525838835">Estado do isolamento de processos</translation>
 <translation id="2770465223704140727">Remover da lista</translation>

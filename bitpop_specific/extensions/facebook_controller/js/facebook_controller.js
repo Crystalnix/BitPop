@@ -28,18 +28,19 @@ bitpop.FacebookController = (function() {
   // -------------------------------------------------------------------------------
   // Constants
   var BOSH_SERVER_URL = "http://tools.bitpop.com:5280";
-  var FB_APPLICATION_ID = "190635611002798";
+  var FB_APPLICATION_ID = "234959376616529";
   var SUCCESS_URL = 'https://www.facebook.com/connect/login_success.html';
   var FB_LOGOUT_URL = 'https://www.facebook.com/logout.php';
-  var LOGOUT_NEXT_URL = SUCCESS_URL + '#logout';
+  var LOGOUT_NEXT_URL = 'https://sync.bitpop.com/sidebar/logout';
   var GRAPH_API_URL = 'https://graph.facebook.com';
   var FQL_API_URL = 'https://graph.facebook.com/fql';
   var REST_API_URL = 'https://api.facebook.com/method/';
+  var TOKEN_EXCHANGE_URL = 'https://sync.bitpop.com/fb_exchange_token/';
 
   var FRIEND_LIST_UPDATE_INTERVAL = 1000 * 60; // in milliseconds
   var MACHINE_IDLE_INTERVAL = 60 * 10;  // in seconds
 
-  var FB_PERMISSIONS = ['xmpp_login', 'offline_access',
+  var FB_PERMISSIONS = ['xmpp_login',
           'user_online_presence', 'friends_online_presence',
           'manage_notifications', 'read_mailbox', 'user_status',
           'publish_stream' ];
@@ -60,7 +61,7 @@ bitpop.FacebookController = (function() {
   var public = {
     init: function() {
       chrome.tabs.onUpdated.addListener(onTabUpdated);
-      chrome.extension.onRequestExternal.addListener(onRequest);
+      chrome.extension.onMessageExternal.addListener(onRequest);
 
       setupAjaxErrorHandler();
 
@@ -80,11 +81,11 @@ bitpop.FacebookController = (function() {
   // Private methods
   function notifyObservingExtensions(notificationObject) {
     for (var i = 0; i < observingExtensionIds.length; i++)
-      chrome.extension.sendRequest(observingExtensionIds[i], notificationObject);
+      chrome.extension.sendMessage(observingExtensionIds[i], notificationObject);
   }
 
   function notifyFriendsExtension(notificationObject) {
-    chrome.extension.sendRequest(IDS.friends, notificationObject);
+    chrome.extension.sendMessage(IDS.friends, notificationObject);
   }
 
   function hadAccessTokenCallback() {
@@ -117,23 +118,15 @@ bitpop.FacebookController = (function() {
           var response = JSON.parse(x.responseText);
           if (response.error && response.error.type == 'OAuthException') {
             if (doing_permissions_request) {
-              if (auth_wait_timer === null) {
-                auth_wait_timer = setTimeout(function() {
-                  checkForPermissions();
-                  //auth_wait_timer = null;
-                }, 15000);
-              } else {
-                need_more_permissions = true;
-                login(FB_PERMISSIONS);
-              }
-              doing_permissions_request = false;
+              logout();
             }
             else
               checkForPermissions();
 
             shouldSetDoingPermissionsRequest = false;
-          }
-          errorMsg = 'Not authorized.';
+            errorMsg = response.error.message;
+          } else
+            errorMsg = 'Not authorized.';
         } else if (x.status==404){
           errorMsg = 'Requested URL not found.' ;
         } else if (x.status==500){
@@ -381,21 +374,25 @@ bitpop.FacebookController = (function() {
     return null;
   }
 
+  function onLoggedOut() {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('myUid');
+    notifyObservingExtensions({ type: 'loggedOut' });
+    connection.disconnect();
+    chrome.bitpop.facebookChat.loggedOutFacebookSession();
+  }
+
   function onTabUpdated(tabId, changeInfo, tab) {
-    if (changeInfo.url && changeInfo.url.indexOf(SUCCESS_URL) == 0) {
-      if (changeInfo.url == LOGOUT_NEXT_URL) {
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('myUid');
-        notifyObservingExtensions({ type: 'loggedOut' });
-        connection.disconnect();
-        chrome.bitpop.facebookChat.loggedOutFacebookSession();
-      } else if (!localStorage.accessToken || need_more_permissions) {
+    if (changeInfo.url && (changeInfo.url.indexOf(SUCCESS_URL) == 0)) {
+      if (!localStorage.accessToken || need_more_permissions) {
         var accessToken = accessTokenFromSuccessURL(changeInfo.url);
-        if (!accessToken)
+        if (!accessToken) {
+          localStorage.removeItem('accessToken');
           console.warn('Could not get an access token from url %s',
               changeInfo.url);
-        else {
-          localStorage.accessToken = accessToken;
+        } else {
+          localStorage.setItem('accessToken', accessToken);
+          extendAccessToken();
           checkForPermissions(function() {
               notifyObservingExtensions({ type: 'accessTokenAvailable',
                                         accessToken: accessToken });
@@ -423,6 +420,7 @@ bitpop.FacebookController = (function() {
 
         if (permsToPrompt.length > 0) {
           console.warn('Insufficient permissions. Requesting for more.');
+          console.warn('Need permissions: ' + permsToPrompt.join(','));
           need_more_permissions = true;
           login(permsToPrompt);
         } else if (callbackAfter) {
@@ -504,19 +502,9 @@ bitpop.FacebookController = (function() {
     xhr = $.get(FQL_API_URL,
           {
             q: query,
-            //format: 'json',
             access_token: localStorage.accessToken
           },
           function (pdata) {
-            // var pdata = null;
-            // try {
-            //   pdata = JSON.parse(data);
-            // }
-            // catch (e) {
-            //   pdata = { error_code: '-1', error_msg: 'Unable to ' +
-            //     'parse server response as JSON. response: ' + data };
-            // }
-
             if (pdata.error_code) {
               var errorMsg = 'Unable to fetch data from Facebook FQL API, query:' +
                   query + '\nError: ' + pdata.error_code +
@@ -566,6 +554,32 @@ bitpop.FacebookController = (function() {
       xhr.callOnError = onError;
   }
 
+  function extendAccessToken() {
+    var token = localStorage.accessToken;
+    if (!token)
+      return;
+
+    var xhr = $.get(
+        TOKEN_EXCHANGE_URL + token, {},
+        function(data) {
+          var at_prefix = "access_token=";
+          if (data && data.indexOf(at_prefix) == 0) {
+            var access_token = data.substring(at_prefix.length,
+                                              data.indexOf('&'));
+            if (access_token) {
+              localStorage.setItem('accessToken', access_token);
+              notifyObservingExtensions({ type: 'accessTokenAvailable',
+                                          accessToken: access_token });
+            }
+            console.log('Extend token success.')
+          }
+        },
+      'html');
+    xhr.callOnError = function (error) {
+      console.error(error.error);
+    };
+  }
+
   function login(permissions) {
     var urlStart = "https://www.facebook.com/dialog/oauth?client_id=" +
         FB_APPLICATION_ID;
@@ -600,28 +614,69 @@ bitpop.FacebookController = (function() {
         var left = (screen.width/2)-(w/2);
         var top = (screen.height/2)-(h/2);
 
-        window.open(url, "newwin", "height=" + h + ",width=" + w +
+        var w = window.open(url, "newwin", "height=" + h + ",width=" + w +
             ",left=" + left + ",top=" + top +
             ",toolbar=no,scrollbars=no,menubar=no,location=no,resizable=yes");
       }
     });
-
-    //chrome.windows.create({ url: url, type: "popup", width: 400, height: 580 });
-    // popupWindow = window.open(url, 'Login to Facebook',
-    //     'height=580,width=400,toolbar=no,directories=no,status=no,' +
-    //     'menubar=no,scrollbars=no,resizable=no,modal=yes');
   }
 
   function logout() {
     if (localStorage.accessToken) {
       var url = FB_LOGOUT_URL + '?next=' +
-        escape(LOGOUT_NEXT_URL) +
+        LOGOUT_NEXT_URL +
         '&access_token=' + localStorage.accessToken +
         '&app_id=' + FB_APPLICATION_ID;
+      // Logout by finding the focused window first,
+      // placing the logout window below it
+      // and listening for opened tab url change.
+      // When url is changed, this means we can remove the window, and
+      // regardless of the facebook result, we declare ourselves logged out.
+      // The drawback of this approach is that when access token was already
+      // invalid, we don't get a "login to facebook account" dialog in reaction
+      // to clicking "Login" button in the sidebar.
+      chrome.windows.getLastFocused(function (win) {
+        if (!win || !win.width || !win.height)
+          win = { "top": 0, "left": 0, "width": 50, "height": 50};
 
-      chrome.windows.create({ url: url, type: "popup",
-                              top: 0, left: 0, width: 50, height: 50 });
+        var width = 50;
+        var height = 50;
+        var top = win.top + Math.floor((win.height - height) / 2);
+        var left = win.left + Math.floor((win.width - width) / 2);
+
+        chrome.windows.create(
+          { "url": url, "type": "popup", "focused": false,
+            "top": top, "left": left,
+            "width": width, "height": height },
+          function (wi) {
+            if (win.id)
+              chrome.windows.update(win.id, { "focused": true });
+
+            chrome.windows.get(
+              wi.id,
+              { populate: true },
+              function (w) {
+                if (w.tabs.length !== 1)
+                  return;
+                var logoutTabId = w.tabs[0].id;
+                chrome.tabs.onUpdated.addListener(
+                  function (tabId, changeInfo, tab) {
+                    if (tabId == logoutTabId &&
+                        tab.windowId == wi.id &&
+                        changeInfo.url &&
+                        changeInfo.url.indexOf(FB_LOGOUT_URL) !== 0) {
+                      onLoggedOut();
+                      chrome.windows.remove(wi.id);
+                    }
+                  }
+                );
+              }
+            );
+          }
+        );
+      });
     }
+    return false;
   }
 
   function onRequest(request, sender, sendResponse) {
@@ -629,7 +684,7 @@ bitpop.FacebookController = (function() {
       console.warn('Invalid request received');
       return;
     }
-    handlers[request.type](request, sendResponse);
+    return handlers[request.type](request, sendResponse);
   }
 
   function onFriendListReceived(data) {
@@ -659,21 +714,32 @@ bitpop.FacebookController = (function() {
       login(FB_PERMISSIONS);
       if (callback)
         callback({ canLogin: true });
+      else
+        return false;
+      return true;
     }
-    else if (callback)
+    else if (callback) {
       callback({ canLogin: false });
+      return true;
+    }
   }
 
   function onSendChatMessage(request, sendResponse) {
-    if (!connection.connected)
+    if (!connection.connected) {
       sendResponse({ error: 'You are now in "Offline" mode. To be able to send messages, switch back to "Online" in the facebook sidebar.' });
+      return true;
+    }
 
     if ((request.message || request.state) && request.uidTo) {
       sendMessage(request.message, request.uidTo, request.state);
       sendResponse({});
+      return true;
     }
-    else
+    else {
       sendResponse({ error: 'Invalid request.' });
+      return true;
+    }
+    return false;
   }
 
   function onGotUid() {
@@ -712,9 +778,11 @@ bitpop.FacebookController = (function() {
             "Thank you.";
           sendMessage(msg, request.uidTo, 'active');
           sendResponse({msg: msg});
+          return true;
         }
       }
     }
+    return false;
   }
 
   function onGraphApiCall(request, sendResponse) {
@@ -722,6 +790,7 @@ bitpop.FacebookController = (function() {
       graphApiRequest(request.path, request.params, sendResponse, sendResponse);
     else
       sendNotLoggedInResponse(sendResponse);
+    return true;
   }
 
   function onFqlQuery(request, sendResponse) {
@@ -729,6 +798,8 @@ bitpop.FacebookController = (function() {
       fqlRequest(request.query, sendResponse, sendResponse);
     else
       sendNotLoggedInResponse(sendResponse);
+
+    return true;
   }
 
   function onRestApiCall(request, sendResponse) {
@@ -736,6 +807,7 @@ bitpop.FacebookController = (function() {
       restApiCall(request.method, request.params, sendResponse, sendResponse);
     else
       sendNotLoggedInResponse(sendResponse);
+    return true;
   }
 
   function onGetFBUserNameByUid(request, sendResponse) {
@@ -751,10 +823,11 @@ bitpop.FacebookController = (function() {
       }
     }
     sendResponse({ uname: uname, profile_url: profile_url });
+    return true;
   }
 
   function onGetMyUidForExternal(request, sendResponse) {
-    onGraphApiCall({ path: '/me', params: { fields: 'id' } },
+    return onGraphApiCall({ path: '/me', params: { fields: 'id' } },
                    function (response) {
                      sendResponse({ id: response.id });
                    });
@@ -766,6 +839,7 @@ bitpop.FacebookController = (function() {
     } else if (request.status == 'available') {
       startChatAgain();
     }
+    return false;
   }
 
   function sendNotLoggedInResponse(sendResponse) {
@@ -818,10 +892,13 @@ bitpop.FacebookController = (function() {
     function callOnError() {
       sendResponse({ error: 'yes' });
     }
+
+    return true;
   }
 
   function onRequestFriendList(request) {
     getFriendList();
+    return false;
   }
 
   // -------------------------------------------------------------------------------

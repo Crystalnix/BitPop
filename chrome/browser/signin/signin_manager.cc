@@ -457,9 +457,11 @@ void SigninManager::OnGetUserInfoSuccess(const UserInfoMap& data) {
   password_.clear();  // Don't need it anymore.
 
   TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
+  last_result_.sid = "1";
+  last_result_.lsid = "2";
   token_service->UpdateCredentials(last_result_);
   DCHECK(token_service->AreCredentialsValid());
-  token_service->StartFetchingTokens();
+  //token_service->StartFetchingTokens();
 }
 
 void SigninManager::OnGetUserInfoFailure(const GoogleServiceAuthError& error) {

@@ -11,9 +11,12 @@
 #include "base/compiler_specific.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/rand_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/extensions/event_router.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
@@ -22,33 +25,52 @@
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/signin_result_page_tracker.h"
+#include "chrome/browser/signin/signin_result_page_tracker_factory.h"
+#include "chrome/browser/signin/token_service.h"
+#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/net/gaia/gaia_constants.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
+#include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#include <map>
+
+using content::NavigationController;
 using content::WebContents;
 using l10n_util::GetStringFUTF16;
 using l10n_util::GetStringUTF16;
 
 namespace {
 
+const char kSyncStatusChanged[] = "bitpop.onSyncStatusChanged";
+
 // A structure which contains all the configuration information for sync.
 struct SyncConfigInfo {
   SyncConfigInfo();
   ~SyncConfigInfo();
 
+  bool should_not_encrypt;
   bool encrypt_all;
   bool sync_everything;
   syncer::ModelTypeSet data_types;
@@ -57,7 +79,8 @@ struct SyncConfigInfo {
 };
 
 SyncConfigInfo::SyncConfigInfo()
-    : encrypt_all(false),
+    : should_not_encrypt(true),
+      encrypt_all(false),
       sync_everything(false),
       passphrase_is_gaia(false) {
 }
@@ -96,20 +119,16 @@ static const char kDefaultSigninDomain[] = "gmail.com";
 
 bool GetAuthData(const std::string& json,
                  std::string* username,
-                 std::string* password,
-                 std::string* captcha,
-                 std::string* otp,
-                 std::string* access_code) {
+                 std::string* access_token,
+                 std::string* type) {
   scoped_ptr<Value> parsed_value(base::JSONReader::Read(json));
   if (!parsed_value.get() || !parsed_value->IsType(Value::TYPE_DICTIONARY))
     return false;
 
   DictionaryValue* result = static_cast<DictionaryValue*>(parsed_value.get());
-  if (!result->GetString("user", username) ||
-      !result->GetString("pass", password) ||
-      !result->GetString("captcha", captcha) ||
-      !result->GetString("otp", otp) ||
-      !result->GetString("accessCode", access_code)) {
+  if (!result->GetString("email", username) ||
+      !result->GetString("token", access_token) ||
+      !result->GetString("type", type)) {
       return false;
   }
   return true;
@@ -140,6 +159,11 @@ bool GetConfiguration(const std::string& json, SyncConfigInfo* config) {
   }
 
   // Encryption settings.
+  if (!result->GetBoolean("shouldNotEncrypt", &config->should_not_encrypt)) {
+    DLOG(ERROR) << "GetConfiguration() not passed a value for shouldNotEncrypt";
+    return false;
+  }
+
   if (!result->GetBoolean("encryptAllData", &config->encrypt_all)) {
     DLOG(ERROR) << "GetConfiguration() not passed a value for encryptAllData";
     return false;
@@ -190,6 +214,19 @@ bool IsClientOAuthEnabled() {
       switches::kEnableClientOAuthSignin);
 }
 
+void GenerateState(std::string* state, const std::string& source) {
+  const size_t state_len = 31;
+  const char allowed_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                               "abcdefghijklmnopqrstuvwxyz";
+  const size_t num_chars = sizeof(allowed_chars) / sizeof(char) - 1;
+  *state = "";
+  for (int i = 0; i < (int)state_len; i++) {
+    *state += allowed_chars[base::RandInt(0, num_chars-1)];
+  }
+  if (source == "settingsPage")
+    *state = "1" + *state;
+}
+
 }  // namespace
 
 SyncSetupHandler::SyncSetupHandler(ProfileManager* profile_manager)
@@ -228,6 +265,10 @@ void SyncSetupHandler::GetStaticLocalizedValues(
   localized_strings->SetString(
       "chooseDataTypesInstructions",
       GetStringFUTF16(IDS_SYNC_CHOOSE_DATATYPES_INSTRUCTIONS, product_name));
+  localized_strings->SetString(
+      "encryptionDisabledMessage",
+      GetStringFUTF16(IDS_SYNC_ENCRYPTION_DISABLED_MESSAGE,
+          GetStringUTF16(IDS_SYNC_PROMO_ADVANCED)));
   localized_strings->SetString(
       "encryptionInstructions",
       GetStringFUTF16(IDS_SYNC_ENCRYPTION_INSTRUCTIONS, product_name));
@@ -291,7 +332,7 @@ void SyncSetupHandler::GetStaticLocalizedValues(
     { "emailLabel", IDS_SYNC_LOGIN_EMAIL_NEW_LINE },
     { "passwordLabel", IDS_SYNC_LOGIN_PASSWORD_NEW_LINE },
     { "invalidCredentials", IDS_SYNC_INVALID_USER_CREDENTIALS },
-    { "signin", IDS_SYNC_SIGNIN },
+    { "signin", IDS_CLOSE },
     { "couldNotConnect", IDS_SYNC_LOGIN_COULD_NOT_CONNECT },
     { "unrecoverableError", IDS_SYNC_UNRECOVERABLE_ERROR },
     { "errorLearnMore", IDS_LEARN_MORE },
@@ -358,6 +399,7 @@ void SyncSetupHandler::GetStaticLocalizedValues(
     { "promoAdvanced", IDS_SYNC_PROMO_ADVANCED },
     { "promoLearnMore", IDS_LEARN_MORE },
     { "promoTitleShort", IDS_SYNC_PROMO_MESSAGE_TITLE_SHORT },
+    { "doNotEncryptPasswordsNotSynced", IDS_SYNC_DO_NOT_ENCRYPT },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -416,6 +458,7 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
   args.SetBoolean("passphraseFailed", passphrase_failed);
   args.SetBoolean("showSyncEverythingPage", !show_advanced);
   args.SetBoolean("syncAllDataTypes", sync_prefs.HasKeepEverythingSynced());
+  args.SetBoolean("shouldNotEncrypt", !sync_prefs.ShouldUseEncryption());
   args.SetBoolean("encryptAllData", service->EncryptEverythingEnabled());
   args.SetBoolean("usePassphrase", service->IsUsingSecondaryPassphrase());
   // We call IsPassphraseRequired() here, instead of calling
@@ -446,6 +489,14 @@ void SyncSetupHandler::ConfigureSyncDone() {
     // We're done configuring, so notify ProfileSyncService that it is OK to
     // start syncing.
     service->SetSyncSetupCompleted();
+
+    extensions::EventRouter* router = GetProfile()->GetExtensionEventRouter();
+    router->DispatchEventToExtension(chrome::kFacebookChatExtensionId,
+        kSyncStatusChanged,
+        std::string("[ true ]"),
+        GetProfile()->GetOriginalProfile(),
+        GURL()
+    );
   }
 }
 
@@ -494,6 +545,12 @@ void SyncSetupHandler::RegisterMessages() {
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback("SyncSetupStopSyncing",
       base::Bind(&SyncSetupHandler::HandleStopSyncing,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("SyncSetupError",
+      base::Bind(&SyncSetupHandler::HandleSyncSetupError,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("SyncSetupOpenSigninPage",
+      base::Bind(&SyncSetupHandler::HandleOpenSigninPage,
                  base::Unretained(this)));
 }
 
@@ -651,10 +708,8 @@ void SyncSetupHandler::HandleSubmitAuth(const ListValue* args) {
   if (json.empty())
     return;
 
-  std::string username, password, captcha, otp, access_code;
-  if (!GetAuthData(json, &username, &password, &captcha, &otp, &access_code)) {
-    // The page sent us something that we didn't understand.
-    // This probably indicates a programming error.
+  std::string username, access_token, type;
+  if (!GetAuthData(json, &username, &access_token, &type)) {
     NOTREACHED();
     return;
   }
@@ -665,37 +720,17 @@ void SyncSetupHandler::HandleSubmitAuth(const ListValue* args) {
     return;
   }
 
-  // If one of password, captcha, otp and access_code is non-empty, then the
-  // others must be empty.  At least one should be non-empty.
-  DCHECK(password.empty() ||
-         (captcha.empty() && otp.empty() && access_code.empty()));
-  DCHECK(captcha.empty() ||
-         (password.empty() && otp.empty() && access_code.empty()));
-  DCHECK(otp.empty() ||
-         (captcha.empty() && password.empty() && access_code.empty()));
-  DCHECK(access_code.empty() ||
-         (captcha.empty() && password.empty() && otp.empty()));
-  DCHECK(!otp.empty() || !captcha.empty() || !password.empty() ||
-         !access_code.empty());
-
-  if (IsClientOAuthEnabled()) {
-    // Last error is two-factor implies otp should not be empty.
-    DCHECK((last_signin_error_.state() != GoogleServiceAuthError::TWO_FACTOR) ||
-        !otp.empty());
-    // Last error is captcha-required implies captcha should not be empty.
-    DCHECK((last_signin_error_.state() !=
-        GoogleServiceAuthError::CAPTCHA_REQUIRED) || !captcha.empty());
+  DCHECK(!access_token.empty() && !type.empty());
+  DCHECK(type == "bitpop" || type == "facebook");
+  if (type == "bitpop") {
+    access_token = access_token.insert(0, type + "_");
   }
 
-  const std::string& solution = captcha.empty() ?
-      (otp.empty() ? EmptyString() : otp) : captcha;
-  TryLogin(username, password, solution, access_code);
+  TryLogin(username, access_token);
 }
 
 void SyncSetupHandler::TryLogin(const std::string& username,
-                                const std::string& password,
-                                const std::string& solution,
-                                const std::string& access_code) {
+                                const std::string& access_token) {
   DCHECK(IsActiveLogin());
   // Make sure we are listening for signin traffic.
   if (!signin_tracker_.get())
@@ -708,33 +743,20 @@ void SyncSetupHandler::TryLogin(const std::string& username,
   last_signin_error_ = GoogleServiceAuthError::None();
 
   SigninManager* signin = GetSignin();
-  if (IsClientOAuthEnabled()) {
-    if (!solution.empty()) {
-      signin->ProvideOAuthChallengeResponse(current_error.state(),
-                                            current_error.token(), solution);
-      return;
-    }
-  } else {
-    // If we're just being called to provide an ASP, then pass it to the
-    // SigninManager and wait for the next step.
-    if (!access_code.empty()) {
-      signin->ProvideSecondFactorAccessCode(access_code);
-      return;
-    }
-  }
+  // password should be some non-empty constant (<null>)
+  signin->PrepareForSignin(SigninManager::SIGNIN_TYPE_CLIENT_LOGIN, username, "<null>");
 
-  // The user has submitted credentials, which indicates they don't want to
-  // suppress start up anymore. We do this before starting the signin process,
-  // so the ProfileSyncService knows to listen to the cached password.
   GetSyncService()->UnsuppressAndStart();
 
-  // Kick off a sign-in through the signin manager.
-  if (IsClientOAuthEnabled()) {
-    signin->StartSignInWithOAuth(username, password);
-  } else {
-    signin->StartSignIn(username, password, current_error.captcha().token,
-                        solution);
-  }
+  UserInfoMap info_map;
+  info_map["email"] = username;
+  info_map["allServices"] = "chromiumsync";
+  signin->OnGetUserInfoSuccess(info_map);
+
+  TokenService* token_service = TokenServiceFactory::GetForProfile(GetProfile());
+  token_service->OnIssueAuthTokenSuccess(
+      GaiaConstants::kSyncService,
+      access_token);
 }
 
 void SyncSetupHandler::GaiaCredentialsValid() {
@@ -812,6 +834,11 @@ void SyncSetupHandler::HandleConfigure(const ListValue* args) {
   if (!service->sync_initialized()) {
     CloseOverlay();
     return;
+  }
+
+  {
+    browser_sync::SyncPrefs sync_prefs(GetProfile()->GetPrefs());
+    sync_prefs.SetShouldUseEncryption(!configuration.should_not_encrypt);
   }
 
   // Note: Data encryption will not occur until configuration is complete
@@ -931,11 +958,67 @@ void SyncSetupHandler::HandleStopSyncing(const ListValue* args) {
   if (ProfileSyncService::IsSyncEnabled()) {
     service->DisableForUser();
     ProfileSyncService::SyncEvent(ProfileSyncService::STOP_FROM_OPTIONS);
+
+    extensions::EventRouter* router = GetProfile()->GetExtensionEventRouter();
+    router->DispatchEventToExtension(chrome::kFacebookChatExtensionId,
+        kSyncStatusChanged,
+        "[ false ]",
+        GetProfile()->GetOriginalProfile(),
+        GURL()
+    );
   }
 }
 
 void SyncSetupHandler::HandleCloseTimeout(const ListValue* args) {
   CloseSyncSetup();
+}
+
+void SyncSetupHandler::HandleSyncSetupError(const base::ListValue* args) {
+  std::string json;
+  if (!args->GetString(0, &json)) {
+    NOTREACHED() << "Could not read JSON argument";
+    return;
+  }
+
+  if (json.empty())
+    return;
+
+  scoped_ptr<Value> parsed_value(base::JSONReader::Read(json));
+  if (!parsed_value.get() || !parsed_value->IsType(Value::TYPE_DICTIONARY))
+    return;
+
+  std::string message;
+
+  DictionaryValue* result = static_cast<DictionaryValue*>(parsed_value.get());
+  if (result->GetString("message", &message))
+    DisplayGaiaLoginWithErrorMessage(UTF8ToUTF16(message), true);
+}
+
+void SyncSetupHandler::HandleOpenSigninPage(const base::ListValue* args) {
+  std::string source;
+  if (!args->GetString(0, &source)) {
+    NOTREACHED() << "Could not read source parameter";
+    return;
+  }
+  if (source != "settingsPage")
+    return;
+
+  Browser* browser = browser::FindBrowserWithWebContents(
+        web_ui()->GetWebContents());
+  if (browser) {
+    std::string state;
+    GenerateState(&state, source);
+    chrome::NavigateParams params(browser,
+        GURL("chrome://signin/?state=" + state),
+        content::PAGE_TRANSITION_LINK);
+    params.disposition = NEW_FOREGROUND_TAB;
+    chrome::Navigate(&params);
+
+    if (params.target_contents) {
+      WebContents* contents = params.target_contents->web_contents();
+      GetPageTracker()->Track(contents, state, this);
+    }
+  }
 }
 
 void SyncSetupHandler::CloseSyncSetup() {
@@ -971,6 +1054,12 @@ void SyncSetupHandler::CloseSyncSetup() {
       browser_sync::SyncPrefs sync_prefs(GetProfile()->GetPrefs());
       sync_prefs.SetStartSuppressed(true);
     }
+  }
+
+  SigninResultPageTracker* tracker = GetPageTracker();
+  if (tracker->GetCurrentObserver() == this) {
+    tracker->CloseUI();
+    tracker->UntrackCurrent();
   }
 
   // Reset the attempted email address and error, otherwise the sync setup
@@ -1094,4 +1183,31 @@ bool SyncSetupHandler::IsLoginAuthDataValid(const std::string& username,
   }
 
   return true;
+}
+
+void SyncSetupHandler::OnSigninCredentialsReady(const std::string& username,
+                                                const std::string& token,
+                                                const std::string& type) {
+  OpenSyncSetup(false);
+
+  string16 error_message;
+  if (!IsLoginAuthDataValid(username, &error_message)) {
+    DisplayGaiaLoginWithErrorMessage(error_message, false);
+    return;
+  }
+
+  TryLogin(username,
+           ((type == "bitpop") ? type + "_" : "") + token);
+}
+
+void SyncSetupHandler::OnSigninErrorOccurred(
+    const std::string& error_message) {
+
+    OpenSyncSetup(false);
+
+    DisplayGaiaLoginWithErrorMessage(UTF8ToUTF16(error_message), false);
+}
+
+SigninResultPageTracker* SyncSetupHandler::GetPageTracker() const {
+  return SigninResultPageTrackerFactory::GetForProfile(GetProfile());
 }

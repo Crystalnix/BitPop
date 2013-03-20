@@ -42,6 +42,7 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
+#include "chrome/browser/signin/signin_result_page_tracker_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/speech/chrome_speech_recognition_preferences.h"
@@ -270,6 +271,8 @@ void ProfileDependencyManager::AssertFactoriesBuilt() {
   UserStyleSheetWatcherFactory::GetInstance();
   WebDataServiceFactory::GetInstance();
   WebIntentsRegistryFactory::GetInstance();
+
+  SigninResultPageTrackerFactory::GetInstance();
 
   built_factories_ = true;
 }

@@ -12,16 +12,18 @@ var myUid = null;
 setTimeout(
   function() {
     if (!myUid) {
-      chrome.extension.sendRequest(
+      chrome.extension.sendMessage(
         bitpop.CONTROLLER_EXTENSION_ID,
         { type: 'getMyUid' },
         function(response) {
-          myUid = response.id;
+          if (response && response.id) {
+            myUid = response.id;
 
-          DesktopNotifications.threads_unseen_before = [];
-          DesktopNotifications.just_connected = true;
+            DesktopNotifications.threads_unseen_before = [];
+            DesktopNotifications.just_connected = true;
 
-          DesktopNotifications.start(current.refreshTime);
+            DesktopNotifications.start(current.refreshTime);
+          }
         }
       );
     }
@@ -31,7 +33,7 @@ setTimeout(
 DesktopNotifications.controllerExtensionId = current.controllerExtensionId;
 DesktopNotifications.start(current.refreshTime);
 
-chrome.extension.onRequestExternal.addListener(function (request, sender, sendResponse) {
+chrome.extension.onMessageExternal.addListener(function (request, sender, sendResponse) {
   if (!request.type)
     return;
 

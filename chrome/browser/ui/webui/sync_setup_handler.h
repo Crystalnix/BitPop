@@ -8,18 +8,26 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
+#include "chrome/browser/signin/signin_result_page_tracker.h"
 #include "chrome/browser/signin/signin_tracker.h"
 #include "chrome/browser/ui/webui/options2/options_ui.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
+#include "content/public/browser/notification_observer.h"
 
 class LoginUIService;
 class ProfileManager;
 class ProfileSyncService;
 class SigninManager;
 
+namespace content {
+  class NotificationRegistrar;
+  class WebContents;
+}
+
 class SyncSetupHandler : public options2::OptionsPageUIHandler,
                          public SigninTracker::Observer,
-                         public LoginUIService::LoginUI {
+                         public LoginUIService::LoginUI,
+                         public SigninResultPageTracker::Observer {
  public:
   // Constructs a new SyncSetupHandler. |profile_manager| may be NULL.
   explicit SyncSetupHandler(ProfileManager* profile_manager);
@@ -38,6 +46,12 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
   // LoginUIService::LoginUI implementation.
   virtual void FocusUI() OVERRIDE;
   virtual void CloseUI() OVERRIDE;
+
+  // SigninResultPageTracker::Observer implementation.
+  virtual void OnSigninCredentialsReady(const std::string& username,
+                                      const std::string& token,
+                                      const std::string& type) OVERRIDE;
+  virtual void OnSigninErrorOccurred(const std::string& error_message) OVERRIDE;
 
   static void GetStaticLocalizedValues(
       base::DictionaryValue* localized_strings,
@@ -100,6 +114,8 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
   // Returns the LoginUIService for the parent profile.
   LoginUIService* GetLoginUIService() const;
 
+  SigninResultPageTracker* GetPageTracker() const;
+
  private:
   // Callbacks from the page.
   void OnDidClosePage(const base::ListValue* args);
@@ -114,6 +130,8 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
   void HandleDoSignOutOnAuthError(const base::ListValue* args);
   void HandleStopSyncing(const base::ListValue* args);
   void HandleCloseTimeout(const base::ListValue* args);
+  void HandleSyncSetupError(const base::ListValue* args);
+  void HandleOpenSigninPage(const base::ListValue* args);
 
   // Helper routine that gets the Profile associated with this object (virtual
   // so tests can override).
@@ -154,9 +172,7 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
 
   // Initiates a login via the signin manager.
   void TryLogin(const std::string& username,
-                const std::string& password,
-                const std::string& captcha,
-                const std::string& access_code);
+                const std::string& access_token);
 
   // If a wizard already exists, focus it and return true.
   bool FocusExistingWizardIfPresent();
@@ -172,6 +188,9 @@ class SyncSetupHandler : public options2::OptionsPageUIHandler,
 
   // Returns the SigninManager for the parent profile.
   SigninManager* GetSignin() const;
+
+  void RegisterForTabNotifications(content::WebContents* contents);
+  void UnregisterForTabNotifications(content::WebContents* contents);
 
   // The SigninTracker object used to determine when the user has fully signed
   // in (this requires waiting for various services to initialize and tracking

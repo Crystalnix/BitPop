@@ -28,7 +28,7 @@
 <translation id="3581034179710640788">साइटचे सुरक्षा प्रमाणपत्र कालबाह्य झाले!</translation>
 <translation id="2825758591930162672">विषयाची सार्वजनिक की</translation>
 <translation id="8306243285620593545">स्थिती चिन्हावर लक्ष द्या</translation>
-<translation id="1130622745736410868">आपण Google ला आपला कूपन कोड सत्यापित करण्याची विनंती करून Chrome OS डिव्हाइसवर ब्राउझिंग करीत असल्याची पुष्टी करू इच्छिते.</translation>
+<translation id="1130622745736410868">आपण Bitpop ला आपला कूपन कोड सत्यापित करण्याची विनंती करून Chrome OS डिव्हाइसवर ब्राउझिंग करीत असल्याची पुष्टी करू इच्छिते.</translation>
 <translation id="8176382683266548737">सूचना सक्षम करा</translation>
 <translation id="8275038454117074363">आयात</translation>
 <translation id="8418445294933751433">टॅब म्हणून &amp;दर्शवा</translation>
@@ -50,7 +50,7 @@
 <translation id="4940047036413029306">कोट</translation>
 <translation id="1497897566809397301">स्थानिक डेटा सेट करण्याची परवानगी द्या (शिफारस केलेले)</translation>
 <translation id="3275778913554317645">विंडो म्हणून उघडा</translation>
-<translation id="4553117311324416101">Google ला असे आढळले आहे की आपण पुढे गेल्यास आपल्या संगणकावर दुर्भावनायुक्त सॉफ्टवेअर स्थापित केले जाऊ शकते. आपण यापू्र्वी या साइटला भेट दिली असल्यास किंवा या साइटवर आपला विश्वास असल्यास, तिने आक्रमणकर्त्याशी अगदी अलिकडेच तडजोड केलेली असण्याची शक्यता आहे. आपण पुढे जाऊ नये आणि कदाचित पुन्हा उद्या प्रयत्न करून पहा किंवा दुसरीकडे कुठेतरी जा.</translation>
+<translation id="4553117311324416101">Bitpop ला असे आढळले आहे की आपण पुढे गेल्यास आपल्या संगणकावर दुर्भावनायुक्त सॉफ्टवेअर स्थापित केले जाऊ शकते. आपण यापू्र्वी या साइटला भेट दिली असल्यास किंवा या साइटवर आपला विश्वास असल्यास, तिने आक्रमणकर्त्याशी अगदी अलिकडेच तडजोड केलेली असण्याची शक्यता आहे. आपण पुढे जाऊ नये आणि कदाचित पुन्हा उद्या प्रयत्न करून पहा किंवा दुसरीकडे कुठेतरी जा.</translation>
 <translation id="5085514918439894988">या क्रियेसाठी कोणत्याही सेवा स्थापित केलेल्या नाहीत आणि Chrome वेब स्टोअरमध्ये या क्रियेसाठी कोणत्याही सेवा शिफारसी नाहीत.</translation>
 <translation id="8867568208303837180">पाठवित आहे...</translation>
 <translation id="509988127256758334">काय शोधा&amp;यचे:</translation>
@@ -82,7 +82,7 @@
 <translation id="21426568240411732"><ph name="TITLE"/> आपला कॅमेरा वापरत आहे.</translation>
 <translation id="6156863943908443225">स्क्रिप्ट कॅशे</translation>
 <translation id="4274187853770964845">समक्रमण त्रुटी: कृपया थांबा आणि समक्रमण रीस्टार्ट करा.</translation>
-<translation id="4610656722473172270">Google टूलबार</translation>
+<translation id="4610656722473172270">Bitpop टूलबार</translation>
 <translation id="656293578423618167">फाइल पथ किंवा नाव खूप मोठे आहे. कृपया एका छोट्या नावाने किंवा दुसर्‍या स्‍थानावर जतन करा. </translation>
 <translation id="3484869148456018791">नवीन प्रमाणपत्र मिळवा</translation>
 <translation id="151501797353681931">Safari मधून आयात केलेले</translation>
@@ -129,13 +129,13 @@
 <translation id="7600965453749440009">कधीही <ph name="LANGUAGE"/> चा अनुवाद करु नका</translation>
 <translation id="3208703785962634733">पुष्टी न झालेले</translation>
 <translation id="620329680124578183">लोड करू नका (शिफारस केलेले)</translation>
-<translation id="6300924177400055566">आपल्याकडे &quot;<ph name="FILE_NAME"/>&quot; जतन करण्यासाठी Google ड्राइव्हमध्ये पुरेशी जागा नाही. कृपया फायली काढून टाका किंवा <ph name="BEGIN_LINK"/>अधिक संचयन जागा विकत घ्या<ph name="END_LINK"/>.</translation>
+<translation id="6300924177400055566">आपल्याकडे &quot;<ph name="FILE_NAME"/>&quot; जतन करण्यासाठी Bitpop ड्राइव्हमध्ये पुरेशी जागा नाही. कृपया फायली काढून टाका किंवा <ph name="BEGIN_LINK"/>अधिक संचयन जागा विकत घ्या<ph name="END_LINK"/>.</translation>
 <translation id="9074739597929991885">Bluetooth</translation>
 <translation id="2653266418988778031">आपण एक प्रमाणन अधिकृतता (CA) प्रमाणपत्र हटविल्यास, आपला ब्राउझर त्या CA द्वारे जारी केलेल्या कोणत्याही प्रमाणपत्रावर यापुढे विश्वास ठेवणार नाही.</translation>
 <translation id="5341849548509163798"><ph name="NUMBER_MANY"/> hours ago</translation>
 <translation id="4422428420715047158">डोमेन:</translation>
 <translation id="7788444488075094252">भाषा आणि इनपुट</translation>
-<translation id="6723354935081862304">Print to Google डॉक्स आणि इतर मेघ गंतव्यांचे मुद्रण करा. Google मेघ मुद्रणाचे मुद्रण करण्याकरिता <ph name="BEGIN_LINK"/>साइन इन<ph name="END_LINK"/> करा.</translation>
+<translation id="6723354935081862304">Print to Bitpop डॉक्स आणि इतर मेघ गंतव्यांचे मुद्रण करा. Google मेघ मुद्रणाचे मुद्रण करण्याकरिता <ph name="BEGIN_LINK"/>साइन इन<ph name="END_LINK"/> करा.</translation>
 <translation id="3602290021589620013">पूर्वावलोकन</translation>
 <translation id="800602641363855389"><ph name="TITLE"/> आपला मायक्रोफोन वापरत आहे.</translation>
 <translation id="7082055294850503883">CapsLock स्थित‍ी दुर्लक्षित करा आणि डीफॉल्टनुसार लोअरकेस इनपुट करा</translation>
@@ -201,7 +201,7 @@
 <translation id="1818606096021558659">पृष्ठ</translation>
 <translation id="1549045574060481141">डाउनलोडची पुष्टी करा</translation>
 <translation id="5388588172257446328">वापरकर्तानाव:</translation>
-<translation id="1657406563541664238">वापर आकडेवारी आणि क्रॅश अहवाल स्वयंचलितपणे Google कडे पाठवून <ph name="PRODUCT_NAME"/> ला अधिक चांगले करण्यास मदत करा</translation>
+<translation id="1657406563541664238">वापर आकडेवारी आणि क्रॅश अहवाल स्वयंचलितपणे Bitpop कडे पाठवून <ph name="PRODUCT_NAME"/> ला अधिक चांगले करण्यास मदत करा</translation>
 <translation id="7982789257301363584">नेटवर्क</translation>
 <translation id="2271281383664374369">या URL च्या विस्तार विनंत्या तात्पुरत्या थांबवल्या गेल्या आहेत.</translation>
 <translation id="8528962588711550376">साइन इन करत आहे.</translation>
@@ -216,8 +216,8 @@
 <translation id="1776883657531386793"><ph name="OID"/>: <ph name="INFO"/></translation>
 <translation id="1510030919967934016">आपले स्थान ट्रॅक करण्यापासून या पृष्ठास अवरोधित केले गेले आहे.</translation>
 <translation id="8848519885565996859">वापरकर्ता परिभाषित URL दुवा फ्रेम</translation>
-<translation id="4640525840053037973">आपल्या Google खात्यासह साइन इन करा</translation>
-<translation id="6315526595991863271">आपण आता <ph name="SHORT_PRODUCT_NAME"/> मध्‍ये साइन इन केले आहे. आपले बुकमार्क, इतिहास, आणि इतर सेटिंग्ज डीफॉल्ट सेटिंग्ज वापरुन आपल्या Google खात्यात समक्रमीत करण्‍यात येत आहेत.</translation>
+<translation id="4640525840053037973">आपल्या Bitpop खात्यासह साइन इन करा</translation>
+<translation id="6315526595991863271">आपण आता <ph name="SHORT_PRODUCT_NAME"/> मध्‍ये साइन इन केले आहे. आपले बुकमार्क, इतिहास, आणि इतर सेटिंग्ज डीफॉल्ट सेटिंग्ज वापरुन आपल्या Bitpop खात्यात समक्रमीत करण्‍यात येत आहेत.</translation>
 <translation id="5255315797444241226">आपण प्रविष्ट केलला सांकेतिक वाक्यांश चुकीचा आहे.</translation>
 <translation id="762917759028004464">डीफॉल्ट ब्राउझर सध्या <ph name="BROWSER_NAME"/> आहे.</translation>
 <translation id="8289982954746764694">कॅप्‍शन, मथळे, प्रकरणे आणि व्हिडिओ घटकांवरील ऑडीओ वर्णनांसाठी ट्रॅक घटक सक्षम करा (अद्याप पूर्णत: क्रियाशील नाही).</translation>
@@ -251,7 +251,7 @@
 <translation id="1801827354178857021">अवधी</translation>
 <translation id="4560332071395409256"><ph name="BEGIN_BOLD"/>प्रारंभ करा<ph name="END_BOLD"/> क्लिक करा, <ph name="BEGIN_BOLD"/>चालवा<ph name="END_BOLD"/> क्लिक करा, <ph name="BEGIN_BOLD"/>%windir%\networkdiagnostic\xpnetdiag.exe<ph name="END_BOLD"/> टाइप करा आणि नंतर <ph name="BEGIN_BOLD"/>ओके<ph name="END_BOLD"/> क्लिक करा.</translation>
 <translation id="2179052183774520942">शोध इंजिन जोडा</translation>
-<translation id="6868050610674841964">साइन इन केल्याने आपला डेटा Google खात्यात समक्रमित होईल यामुळे आपण कोणत्याही डिव्हाइसवरून आपले बुकमार्क, इतिहास आणि इतर सेटिंग्जवर प्रवेश करू शकता.</translation>
+<translation id="6868050610674841964">साइन इन केल्याने आपला डेटा Bitpop खात्यात समक्रमित होईल यामुळे आपण कोणत्याही डिव्हाइसवरून आपले बुकमार्क, इतिहास आणि इतर सेटिंग्जवर प्रवेश करू शकता.</translation>
 <translation id="5498951625591520696">सर्व्हरपर्यंत पोहोचण्यास अक्षम.</translation>
 <translation id="1621207256975573490">म्हणून &amp;फ्रेम जतन करा...</translation>
 <translation id="4681260323810445443">आपण <ph name="URL"/> येथील वेबपृष्ठावर प्रवेश करण्यास अधिकृत नाही. आपण साइन इन करणे आवश्यक आहे.</translation>
@@ -285,7 +285,7 @@
 <translation id="6845180713465955339">प्रमाणपत्र &quot;<ph name="CERTIFICATE_NAME"/>&quot; यांचेद्वारे जारी केले:</translation>
 <translation id="5364525511170219879">विस्तार गतिविधी UI सक्षम करा</translation>
 <translation id="3088325635286126843">&amp;पुनर्नामित करा...</translation>
-<translation id="6979158407327259162">Google ड्राइव्ह</translation>
+<translation id="6979158407327259162">Bitpop ड्राइव्ह</translation>
 <translation id="6853700448789925482"><ph name="TRACK_HTML"/> घटक सक्षम करा</translation>
 <translation id="7531238562312180404">विस्तार आपला वैयक्तिक डेटा कसे हाताळतात हे <ph name="PRODUCT_NAME"/> नियंत्रित करत नाही म्हणून गुप्त विंडोसाठी सर्व विस्तार अक्षम केले गेले आहे‍त. आपण त्यांना <ph name="BEGIN_LINK"/>विस्तार व्यवस्थापक<ph name="END_LINK"/> मध्ये वैयक्तिकरित्या पुन्हा सक्षम करू शकता.</translation>
 <translation id="5667293444945855280">मालवेअर</translation>
@@ -347,7 +347,7 @@
 <translation id="8194465509832052438">आज्ञा कॉन्फिगर करा</translation>
 <translation id="4422347585044846479">या पृष्ठासाठी बुकमार्क संपादित करा</translation>
 <translation id="2452539774207938933">वापरकर्त्याकडे स्वीच करा: <ph name="PROFILE_NAME"/></translation>
-<translation id="4700157086864140907">आपण ब्राउझरमध्‍ये जे टाइप करता ते Google सर्व्हरला पाठवून Google Chrome चाणाक्ष शब्दलेखन-तपासणी प्रदान करु शकते, जेणेकरुन आपल्याला Google शोधात जे शब्दलेखन-तपासणी तंत्रज्ञान वापरले जाते तेच आपल्याला वापरण्‍याची अनुमती मिळते.</translation>
+<translation id="4700157086864140907">आपण ब्राउझरमध्‍ये जे टाइप करता ते Bitpop सर्व्हरला पाठवून Google Chrome चाणाक्ष शब्दलेखन-तपासणी प्रदान करु शकते, जेणेकरुन आपल्याला Google शोधात जे शब्दलेखन-तपासणी तंत्रज्ञान वापरले जाते तेच आपल्याला वापरण्‍याची अनुमती मिळते.</translation>
 <translation id="7632357940961158759">एखाद्या विस्ताराद्वारे काही सेटिंग्ज व्यवस्थापित केली आहेत.</translation>
 <translation id="1880905663253319515">प्रमाणपत्र &quot;<ph name="CERTIFICATE_NAME"/>&quot; हटवायचे?</translation>
 <translation id="8546306075665861288">प्रतिमा कॅशे</translation>
@@ -403,7 +403,7 @@
 प्रयोग id: &quot;<ph name="EXPERIMENT_ID"/>&quot;</translation>
 <translation id="8656768832129462377">तपासू नका</translation>
 <translation id="715487527529576698">आरंभिक चीनीमोड सरलीकृत चीनी आहे</translation>
-<translation id="6896830120821965585">पार्श्वभूमी सेवा सक्षम करते जी Google ला या संगणकावर स्थापन केलेल्या कोणत्याही मेघ मुद्रण सेवेशी जोडते. एकदा ही लॅब सक्षम केल्यानंतर, आपण सेटिंग्ज विभागातील प्रगत पर्यायात आपल्या Google खात्याद्वारे लॉग इन करुन Google मेघ मुद्रण सुरु करु शकता.</translation>
+<translation id="6896830120821965585">पार्श्वभूमी सेवा सक्षम करते जी Bitpop ला या संगणकावर स्थापन केलेल्या कोणत्याही मेघ मुद्रण सेवेशी जोडते. एकदा ही लॅब सक्षम केल्यानंतर, आपण सेटिंग्ज विभागातील प्रगत पर्यायात आपल्या Google खात्याद्वारे लॉग इन करुन Google मेघ मुद्रण सुरु करु शकता.</translation>
 <translation id="1674989413181946727">संगणक-व्यापी SSL सेटिंग्ज:</translation>
 <translation id="1531285811424589182">प्रमाणपत्र हटविणे त्रुटी</translation>
 <translation id="54609108002486618">व्यवस्‍थापित</translation>
@@ -420,7 +420,7 @@
 <translation id="3874070094967379652">माझा डेटा कूटबद्ध करण्यासाठी समक्रमण सांकेतिक वाक्यांश वापरा</translation>
 <translation id="6500116422101723010">सर्व्हर सध्या विनंती हाताळण्यात अक्षम आहे. हा कोड ही स्थिती तात्पुरती असल्याचे सूचित करतो आणि सर्व्हर थोड्या विलंबानंतर पुन्हा कार्य करेल.</translation>
 <translation id="1644574205037202324">इतिहास</translation>
-<translation id="4206944295053515692">सूचनांसाठी Google ला विचारा</translation>
+<translation id="4206944295053515692">सूचनांसाठी Bitpop ला विचारा</translation>
 <translation id="1297175357211070620">गंतव्य</translation>
 <translation id="479280082949089240">या पृष्ठाद्वारे सेट केलेल्या कुकीज</translation>
 <translation id="4198861010405014042">सामायिक प्रवेश</translation>
@@ -432,8 +432,8 @@
 <translation id="1046059554679513793">अरेरे, हे नाव आधीच वापरात आहे!</translation>
 <translation id="2886862922374605295">हार्डवेअर:</translation>
 <translation id="4497097279402334319">नेटवर्कशी कनेक्ट करण्यात अयशस्वी.</translation>
-<translation id="7342729285348293164">आपली वैयक्तिकृत ब्राउझर वैशिष्‍ट्ये वेबवर जतन करण्‍यासाठी आणि त्यावर कोणत्याही <ph name="PRODUCT_NAME"/> संगणकावरुन प्रवेश करण्‍यासाठी आपल्या Google खात्यासह <ph name="PRODUCT_NAME"/> यामध्ये साइन इन करा. आपणास स्वयंचलितपणे आपल्या आवडीच्या Google सेवांमध्‍ये साइन इन करण्‍यात येईल.</translation>
-<translation id="2542049655219295786">Google सारणी</translation>
+<translation id="7342729285348293164">आपली वैयक्तिकृत ब्राउझर वैशिष्‍ट्ये वेबवर जतन करण्‍यासाठी आणि त्यावर कोणत्याही <ph name="PRODUCT_NAME"/> संगणकावरुन प्रवेश करण्‍यासाठी आपल्या Bitpop खात्यासह <ph name="PRODUCT_NAME"/> यामध्ये साइन इन करा. आपणास स्वयंचलितपणे आपल्या आवडीच्या Google सेवांमध्‍ये साइन इन करण्‍यात येईल.</translation>
+<translation id="2542049655219295786">Bitpop सारणी</translation>
 <translation id="3899879303189199559">एक वर्षापेक्षा जास्त ऑफलाइन</translation>
 <translation id="5303618139271450299">हे वेबपृष्ठ आढळले नाही</translation>
 <translation id="4256316378292851214">म्हणून व्हिडिओ ज&amp;तन करा...</translation>
@@ -442,7 +442,7 @@
 <translation id="6518014396551869914">प्रतिमा कॉ&amp;पी करा</translation>
 <translation id="3236997602556743698">3 सेट (390)</translation>
 <translation id="542155483965056918"><ph name="NUMBER_ZERO"/> mins ago</translation>
-<translation id="4928351909437667303">या डिव्हाइसवर Google ड्राइव्ह अक्षम करा.</translation>
+<translation id="4928351909437667303">या डिव्हाइसवर Bitpop ड्राइव्ह अक्षम करा.</translation>
 <translation id="6315723398663634808">या सर्व्हर प्रमाणपत्रात कमकुवत क्रिप्टोग्राफिक की आहे!</translation>
 <translation id="2887525882758501333">PDF दस्तऐवज</translation>
 <translation id="289426338439836048">इतर मोबाइल नेटवर्क...</translation>
@@ -515,7 +515,7 @@
 <translation id="6431347207794742960">या संगणकाच्या सर्व वापरकर्त्यांसाठी <ph name="PRODUCT_NAME"/> स्वयंचलित अद्यतने सेट करतील.</translation>
 <translation id="4973698491777102067">येथून निम्नलिखित आयटम पुसून टाका:</translation>
 <translation id="6074963268421707432">कोणत्याही साइटला डेस्कटॉप सूचना दर्शविण्याची परवानगी देऊ नका</translation>
-<translation id="4944952004685780325">Google ड्राइव्ह फोल्डरवर प्रवेश करण्यासाठी ड्राइव्ह V2 API वापरण्यासाठी सक्षम करते.</translation>
+<translation id="4944952004685780325">Bitpop ड्राइव्ह फोल्डरवर प्रवेश करण्यासाठी ड्राइव्ह V2 API वापरण्यासाठी सक्षम करते.</translation>
 <translation id="1995173078718234136">सामग्री स्कॅन करत आहे...</translation>
 <translation id="7920521481309889533">SPDY/3 सक्षम करा</translation>
 <translation id="5979681173469464041">पुढील उपखंडावर लक्ष द्या</translation>
@@ -524,7 +524,7 @@
 <translation id="1491151370853475546">हे पृष्ठ रीलोड करा</translation>
 <translation id="5374359983950678924">चित्र बदला</translation>
 <translation id="2859738163554174612">मला साइन इन करण्याची ऑफर करु नका</translation>
-<translation id="1378727793141957596">Google ड्राइव्ह मध्ये आपले स्वागत आहे!</translation>
+<translation id="1378727793141957596">Bitpop ड्राइव्ह मध्ये आपले स्वागत आहे!</translation>
 <translation id="5158548125608505876">माझे संकेतशब्द समक्रमित करू नका</translation>
 <translation id="3717485073527618485">साइटने माऊस कर्सर अक्षम करण्‍याचा प्रयत्न केल्यास मला सांगा (शिफारस करण्‍यात येते)</translation>
 <translation id="3273410961255278341">यासाठी पाठवा:</translation>
@@ -563,7 +563,7 @@
         <ph name="PRODUCT_NAME"/>
         ला नेटवर्कमध्ये प्रवेश करण्यापासून प्रतिबंधित करणार्‍या फायरवॉलमुळे देखील होऊ शकते.</translation>
 <translation id="2159087636560291862">या प्रकरणी, आपला संगणकाचा विश्वास असणार्‍या तृतीय पक्षाद्वारे प्रमाणपत्र सत्यापित केले जाणार नाही. कोणीही त्यांनी निवडलेल्या कोणत्याही वेबसाइटवर अधिकार सांगून प्रमाणपत्र तयार करू शकतात, म्हणूनच ते विश्वासनीय तृतीय पक्षाद्वारे सत्यापित करणे आवश्यक आहे. त्या सत्यापनाशिवाय, प्रमाणपत्रातील ओळख माहिती निरर्थक आहे. हे या कारणामुळे सत्यापित करणे शक्य नाही की आपण ज्याने त्याच्या स्वतःच्या मालकीच्या प्रमाणपत्राने <ph name="DOMAIN2"/> असल्याचा दावा करणार्‍या अशा आक्रमणकर्त्याऐवजी <ph name="DOMAIN"/> सह संप्रेषण करत आहात. आपण यापुढे जाऊ नये.</translation>
-<translation id="58625595078799656">आपला डेटा कूटबद्ध करण्यासाठी <ph name="PRODUCT_NAME"/> ला आपला Google संकेतशब्द किंवा आपला स्वत:चा सांकेतिक वाक्यांश वापरणे आवश्यक आहे.</translation>
+<translation id="58625595078799656">आपला डेटा कूटबद्ध करण्यासाठी <ph name="PRODUCT_NAME"/> ला आपला Bitpop संकेतशब्द किंवा आपला स्वत:चा सांकेतिक वाक्यांश वापरणे आवश्यक आहे.</translation>
 <translation id="8017335670460187064"><ph name="LABEL"/></translation>
 <translation id="6840184929775541289">प्रमाणन अधिकृतता नाही</translation>
 <translation id="6099520380851856040"><ph name="CRASH_TIME"/> रोजी घडलेले</translation>
@@ -711,7 +711,7 @@
 <translation id="8943805475239098364">आपण <ph name="CURRENT_GOOGLE_HOST"/> ऐवजी <ph name="NEW_GOOGLE_HOST"/> सह शोधू इच्छिता?</translation>
 <translation id="3813510441224209252">स्वरुपन प्रलंबित</translation>
 <translation id="8912793549644936705">पसरवा</translation>
-<translation id="8026684114486203427">Chrome वेब स्टोअर वापरण्यासाठी, आपण Google खात्यासह साइन इन करणे आवश्यक आहे.</translation>
+<translation id="8026684114486203427">Chrome वेब स्टोअर वापरण्यासाठी, आपण Bitpop खात्यासह साइन इन करणे आवश्यक आहे.</translation>
 <translation id="1486096554574027028">संकेतशब्द शोधा</translation>
 <translation id="4631887759990505102">कलाकार</translation>
 <translation id="1836938920852968258">NTP 'इतर डिव्हाइसेस' मेनू अक्षम करा.</translation>
@@ -727,12 +727,12 @@
 <translation id="89217462949994770">आपण बर्‍याच वेळा चुकीचा पिन प्रविष्ट केला आहे. कृपया नवीन 8-अंकी पिन अनलॉकिंग की प्राप्त करण्यासाठी <ph name="CARRIER_ID"/> येथे संपर्क साधा.</translation>
 <translation id="5920618722884262402">आक्षेपार्ह शब्द अवरोधित करा</translation>
 <translation id="242006861730551700">डाऊनलोड शेल्फ अक्षम करते. अमलबजावणी होते त्याप्रमाणे नवीन डाऊनलोड UI दर्शवली जाईल.</translation>
-<translation id="7782102568078991263">Google कडून कोणत्याही आणखी सूचना नाहीत</translation>
+<translation id="7782102568078991263">Bitpop कडून कोणत्याही आणखी सूचना नाहीत</translation>
 <translation id="8038111231936746805">(डीफॉल्ट)</translation>
 <translation id="5120247199412907247">प्रगत कॉन्फिगरेशन</translation>
 <translation id="567881659373499783">आवृत्ती <ph name="PRODUCT_VERSION"/></translation>
 <translation id="1368352873613152012">सुरक्षित ब्राउझिंग गोपनीयता धोरणे</translation>
-<translation id="5105859138906591953">Chrome मध्ये Toolbar बुकमार्क आयात करण्यासाठी आपण आपल्या Google खात्यावर साइन इन करणे आवश्यक आहे. कृपया साइन इन करा आणि आयात करण्याचा पुन्हा प्रयत्न करा.</translation>
+<translation id="5105859138906591953">Chrome मध्ये Toolbar बुकमार्क आयात करण्यासाठी आपण आपल्या Bitpop खात्यावर साइन इन करणे आवश्यक आहे. कृपया साइन इन करा आणि आयात करण्याचा पुन्हा प्रयत्न करा.</translation>
 <translation id="8899851313684471736">दुवा नवीन &amp;विंडोमध्ये उघडा</translation>
 <translation id="4110342520124362335"><ph name="DOMAIN"/> वरील कुकीज अवरोधित.</translation>
 <translation id="3303818374450886607">प्रती</translation>
@@ -779,7 +779,7 @@
 <translation id="1871208020102129563">प्रॉक्सी निश्चित प्रॉक्सी सर्व्हर वापरण्‍यास सेट करण्‍यात आले आहे, .pac स्क्रिप्ट URL नव्हे.</translation>
 <translation id="1634788685286903402">ईमेल वापरकर्त्यांना ओळखण्यासाठी या प्रमाणपत्रावर विश्वास ठेवा.</translation>
 <translation id="3154015489111064513">DHCP वापरा</translation>
-<translation id="8642489171979176277">Google टूलबार वरून आयातित</translation>
+<translation id="8642489171979176277">Bitpop टूलबार वरून आयातित</translation>
 <translation id="4142744419835627535">झटपट स्वयंपूर्णता तत्काळ</translation>
 <translation id="4684427112815847243">सर्वकाही समक्रमित करा</translation>
 <translation id="1125520545229165057">डीवोरॅक (एचएसयू)</translation>
@@ -789,7 +789,7 @@
 <translation id="2441392884867482684">हे पृष्ठ आता संपूर्ण स्क्रीन असून आपला माउस कर्सर अक्षम करू ‍इच्‍छिते.</translation>
 <translation id="1422780722984745882">एकाधिक विभक्त स्थान शीर्षलेख प्राप्त झाले. HTTP प्रतिसाद विभाजन करणार्‍या हल्ल्यांपासून 
         संरक्षण करण्यासाठी याला अनुमती नाही.</translation>
-<translation id="7787129790495067395">आपण सध्या सांकेतिक वाक्यांश वापरत आहात. आपण आपला सांकेतिक वाक्यांश विसरल्यास, आपण Google च्या सर्व्हरवरून आपला डेटा साफ करण्यासाठी Google Dashboard वापरून समक्रमण रीसेट करू शकता.</translation>
+<translation id="7787129790495067395">आपण सध्या सांकेतिक वाक्यांश वापरत आहात. आपण आपला सांकेतिक वाक्यांश विसरल्यास, आपण Bitpop च्या सर्व्हरवरून आपला डेटा साफ करण्यासाठी Google Dashboard वापरून समक्रमण रीसेट करू शकता.</translation>
 <translation id="3380365263193509176">अज्ञात त्रुटी</translation>
 <translation id="1273135602584709125">एंटरप्राइझ नोंदणी रद्द करा</translation>
 <translation id="2686759344028411998">लोड केलेली कोणतीही मॉड्यूल शोधण्यात अक्षम. </translation>
@@ -855,7 +855,7 @@
 <translation id="6204994989617056362">SSL रीनिगोसिएशन विस्तार सुरक्षित हातांमधून गहाळ आहे. काही साइट ज्या रीनिगोशिएशन विस्तारांच्या समर्थनाक म्हणून ओळखल्या जातात, त्यांचे ज्ञात हल्ल्यांपासून संरक्षित करण्यासाठी Chrome ला अधिक सुरक्षित हातांची आवश्यकता आहे. हा विस्तार वगळणे असे सूचित करते की संक्रमणादरम्यान आपल्या कनेक्शनमध्ये व्यत्यय आला आणि फेरफार केली गेली. </translation>
 <translation id="1238150413700645698">संरक्षित सामग्री</translation>
 <translation id="6679492495854441399">अरेरे! या डिव्हाइसची नावनोंदणी करण्याचा प्रयत्न करताना एक नेटवर्क दळणवळण समस्या आली. कृपया आपले नेटवर्क कनेक्शन तपासा आणि पुन्हा प्रयत्न करा.</translation>
-<translation id="5270547718570958938">Google Calendar</translation>
+<translation id="5270547718570958938">Bitpop Calendar</translation>
 <translation id="5823933238730612365">PPAPI (unsandboxed)</translation>
 <translation id="2879755071890315043">आम्ही आपले मोबाइल नेटवर्क सेटअप करेपर्यंत कृपया प्रतीक्षा करा.</translation>
 <translation id="5301751748813680278">अतिथी म्हणून प्रविष्ट होत आहे.</translation>
@@ -954,7 +954,7 @@
 <translation id="1637259088766071440"><ph name="HOST_NAME"/> येथील वेबसाइटमध्‍ये मालवेयर – सॉफ्‍टवेअरला होस्‍ट करताना दिसणारे साइटवरील घटक असतात जे आपल्‍या मोबाइल डिव्‍हाइसला हानी पोहचवू शकतात किंवा अन्‍यथा आपल्‍या संमतीशिवाय ऑपरेट करतात. मालवेयरला होस्‍ट करणार्‍या साइटला केवळ भेट देणे आपल्‍या मोबाइल डिव्‍हाइसला बाधित करू शकते. ज्‍या साइट “फिशिंग” साइट म्‍हणून नोंदविल्‍या आहेत अशा साइटवरील सामग्रींना देखील वेबसाइट होस्‍ट करते. फिशिंग साइट युक्तीने वापरकर्त्यांची वैयक्तिक किंवा आर्थिक माहिती काढून घेण्यासाठी अनेकदा विश्वसनीय संस्था, जसे की बँक इ. चे प्रतिनिधी असल्याची बतावणी करतात.</translation>
 <translation id="855081842937141170">टॅब पिन करा</translation>
 <translation id="6263541650532042179">समक्रमण रीसेट करा</translation>
-<translation id="6513247462497316522">आपण इतर नेटवर्कशी कनेक्टेड नसल्यास Google Chrome मोबाइल डेटाचा वापर करेल.</translation>
+<translation id="6513247462497316522">आपण इतर नेटवर्कशी कनेक्टेड नसल्यास Bitpop Chrome मोबाइल डेटाचा वापर करेल.</translation>
 <translation id="6055392876709372977">PKCS #1 RSA कूटबद्धीकरणासह SHA-256</translation>
 <translation id="7903984238293908205">कॅटाकाना</translation>
 <translation id="268053382412112343">इति&amp;हास</translation>
@@ -1087,8 +1087,8 @@
 <translation id="7632380866023782514">वर उजवीकडे</translation>
 <translation id="4693789964669838452">FPS</translation>
 <translation id="4925520021222027859">आपला अनुप्रयोग-विशिष्ट संकेतशब्द प्रविष्ट करा:</translation>
-<translation id="3494768541638400973">Google जपानी इनपुट (जपानी कीबोर्डसाठी)</translation>
-<translation id="4679639996443646335">Google ला आढळले आहे की आपण पुढे चालू ठेवल्‍यास आपल्‍या मोबाइल डिव्हाइसवर दुर्भावनापूर्ण सॉफ्‍टवेअर स्‍थापित होऊ शकेल. आपण पूर्वी या साइटला भेट दिली असल्यास किंवा या साइटवर आपला विश्वास असल्यास, हे शक्य आहे की एखाद्या हॅकरने या साइटशी अगदी अलीकडेच तडजोड केली असावी. आपण पुढे सुरू ठेवू नये आणि कदाचित उद्या पुन्‍हा प्रयत्‍न करावा किंवा अन्यत्र कुठेतरी जावे.</translation>
+<translation id="3494768541638400973">Bitpop जपानी इनपुट (जपानी कीबोर्डसाठी)</translation>
+<translation id="4679639996443646335">Bitpop ला आढळले आहे की आपण पुढे चालू ठेवल्‍यास आपल्‍या मोबाइल डिव्हाइसवर दुर्भावनापूर्ण सॉफ्‍टवेअर स्‍थापित होऊ शकेल. आपण पूर्वी या साइटला भेट दिली असल्यास किंवा या साइटवर आपला विश्वास असल्यास, हे शक्य आहे की एखाद्या हॅकरने या साइटशी अगदी अलीकडेच तडजोड केली असावी. आपण पुढे सुरू ठेवू नये आणि कदाचित उद्या पुन्‍हा प्रयत्‍न करावा किंवा अन्यत्र कुठेतरी जावे.</translation>
 <translation id="7223775956298141902">अरेरे.. आपल्याकडे कोणतेही विस्तार नाहीत :-(</translation>
 <translation id="3118046075435288765">सर्व्हरने अनपेक्षितरित्या कनेक्शन बंद केले.</translation>
 <translation id="1725068750138367834">&amp;फाइल व्यवस्थापक</translation>
@@ -1113,7 +1113,7 @@
 <translation id="3706919628594312718">माउस सेटिंग्ज</translation>
 <translation id="8326478304147373412">PKCS #7, प्रमाणपत्र श्रृंखला</translation>
 <translation id="3242765319725186192">पूर्व-सामायिक की:</translation>
-<translation id="8089798106823170468">कोणत्याही Google खात्यासह आपल्या प्रिंटरमध्ये प्रवेश सामायिक आणि नियंत्रित करा.</translation>
+<translation id="8089798106823170468">कोणत्याही Bitpop खात्यासह आपल्या प्रिंटरमध्ये प्रवेश सामायिक आणि नियंत्रित करा.</translation>
 <translation id="5426597273899159431">प्रगत सेटअप...</translation>
 <translation id="1105608846356399385">वेबसाइटला भेट द्या</translation>
 <translation id="7218608093942361839"><ph name="PRODUCT_NAME"/> <ph name="PRODUCT_VERSION"/> (प्लॅटफॉर्म <ph name="PLATFORM_VERSION"/>)</translation>
@@ -1177,7 +1177,7 @@
 <translation id="81686154743329117">झेडआरएम</translation>
 <translation id="2150139952286079145">शोध गंतव्ये</translation>
 <translation id="4713309396072794887">हे विस्तार स्थापित करायचे?</translation>
-<translation id="5637940320504994319">Google ड्राइव्ह मधील आपली जागा संपली</translation>
+<translation id="5637940320504994319">Bitpop ड्राइव्ह मधील आपली जागा संपली</translation>
 <translation id="6458467102616083041">धोरणानुसार डीफॉल्ट शोध अक्षम केल्याने दुर्लक्ष करण्‍यात आले.</translation>
 <translation id="2266011376676382776">असंवादी पृष्ठ(ष्ठे)</translation>
 <translation id="3100609564180505575">मॉड्यूल (<ph name="TOTAL_COUNT"/>) - ज्ञात संघर्ष: <ph name="BAD_COUNT"/>, संशयित: <ph name="SUSPICIOUS_COUNT"/></translation>
@@ -1239,7 +1239,7 @@
 <translation id="7092106376816104">पॉप-अप अपवाद</translation>
 <translation id="4830475881783902092">क्लायंट Id:</translation>
 <translation id="4600958291864306415">व्युत्पन्न करीत आहे...</translation>
-<translation id="8594787581355215556"><ph name="USER_EMAIL_ADDRESS"/> म्‍हणून साइन इन करा. <ph name="BEGIN_LINK"/>Google डॅशबोर्ड<ph name="END_LINK"/> वर आपला समक्रमित डेटा व्यवस्‍थापित करा.</translation>
+<translation id="8594787581355215556"><ph name="USER_EMAIL_ADDRESS"/> म्‍हणून साइन इन करा. <ph name="BEGIN_LINK"/>Bitpop डॅशबोर्ड<ph name="END_LINK"/> वर आपला समक्रमित डेटा व्यवस्‍थापित करा.</translation>
 <translation id="263325223718984101"><ph name="PRODUCT_NAME"/> स्थापना पूर्ण करू शकत नाही, परंतु ते त्याच्या डिस्क प्रतिमेवरून चालत राहील.</translation>
 <translation id="6186893483313227582">प्रतीक <ph name="VALUE"/></translation>
 <translation id="4726710629007580002">हा विस्तार स्‍थ‍ापित करण्याचा प्रयत्न करताना चेतावणी देण्यात आली:</translation>
@@ -1255,7 +1255,7 @@
 <translation id="4250680216510889253">नाही</translation>
 <translation id="5109044022078737958">Mia</translation>
 <translation id="6291953229176937411">फाइंडर मध्ये &amp;दर्शवा</translation>
-<translation id="8598687241883907630">आपले Google खाते डिस्कनेक्‍ट करा...</translation>
+<translation id="8598687241883907630">आपले Bitpop खाते डिस्कनेक्‍ट करा...</translation>
 <translation id="6410894982725961573">ऑफलाइन उपलब्ध करा</translation>
 <translation id="2556718757702023317">&quot;<ph name="FILE_NAME"/>&quot; फाइल ऑफलाइन जतन करण्यासाठी आपण अतिरिक्त <ph name="TOTAL_FILE_SIZE"/> जागा मोकळी करणे आवश्‍यक आहे:<ph name="MARKUP_1"/> 
         <ph name="MARKUP_2"/>आपल्याला ऑफलाइन प्रवेश करण्‍याची यापुढे आवश्यकता नसलेल्या फायली अनपिन करा<ph name="MARKUP_3"/>
@@ -1340,7 +1340,7 @@
 <translation id="2629089419211541119"><ph name="NUMBER_ONE"/> hour ago</translation>
 <translation id="1691063574428301566">अद्यतनित करणे पूर्ण झाले की आपले संगणक रीस्टार्ट होईल.</translation>
 <translation id="4697551882387947560">ब्राउझिंग सत्र समाप्त होते तेव्हा</translation>
-<translation id="5900302528761731119">Google प्रोफाइल फोटो</translation>
+<translation id="5900302528761731119">Bitpop प्रोफाइल फोटो</translation>
 <translation id="131364520783682672">Caps Lock</translation>
 <translation id="2066999550761485762"><ph name="BEGIN_BOLD"/>आपण गुप्त झाला आहात.<ph name="END_BOLD"/><ph name="LINE_BREAK"/> आपण <ph name="BEGIN_BOLD"/>सर्व<ph name="END_BOLD"/> गुप्त टॅब बंद केल्‍यानंतर आपण पहात असलेली या टॅबमधील पृष्‍ठे आपल्‍या ब्राउझर इतिहासामध्‍ये किंवा शोध इतिहासामध्‍ये दिसणार नाहीत आणि ते कुकीज सारखी इतर ट्रेस आपल्‍या मोबाइल डिव्‍हाइसवर सोडणार नाहीत. तथापि आपण डाउनलोड करता अशा कोणत्याही फायली किंवा आपण तयार करता ते बुकमार्क संरक्षित केले जातील. <ph name="LINE_BREAK"/><ph name="BEGIN_BOLD"/>गुप्त होणे इतर लोकांच्‍या वर्तनाला, सर्व्‍हरला, किंवा सॉफ्‍टवेअरला प्रभावित करत नाही.<ph name="END_BOLD"/> गुप्‍त एजंटच्‍या किंवा आपल्‍या मागे उभे असलेल्‍या लोकांच्‍या निरीक्षणासून सावध रहा. गुप्त ब्राउझिंगबद्दल <ph name="LINE_BREAK"/><ph name="BEGIN_LINK"/>अधिक जाणून घ्‍या<ph name="END_LINK"/>.</translation>
 <translation id="2335122562899522968">हे पृष्ठ कुकीज सेट करते.</translation>
@@ -1357,7 +1357,7 @@
 <translation id="1478897831827830200">ट्रेसिंग</translation>
 <translation id="5714678912774000384">शेवटचा टॅब सक्रिय करा</translation>
 <translation id="8466234950814670489">Tar संग्रहण</translation>
-<translation id="5902572236435740554">प्रथम आपला Google खाते संकेतशब्द प्रविष्‍ट करा, <ph name="LINE_BREAK"/> अनुप्रयोग विशिष्‍ट संकेतशब्द नको.</translation>
+<translation id="5902572236435740554">प्रथम आपला Bitpop खाते संकेतशब्द प्रविष्‍ट करा, <ph name="LINE_BREAK"/> अनुप्रयोग विशिष्‍ट संकेतशब्द नको.</translation>
 <translation id="8813811964357448561">कागदी पत्रक</translation>
 <translation id="2125314715136825419">Adobe Reader अद्यतनित केल्याशिवाय पुढे जा (शिफारसित नाही)</translation>
 <translation id="5034510593013625357">होस्ट नाव नमुना</translation>
@@ -1378,7 +1378,7 @@
 <translation id="8337399713761067085">आपण सध्या ऑफलाइन आहात</translation>
 <translation id="5199729219167945352">प्रयोग</translation>
 <translation id="6499143127267478107">प्रॉक्सी स्क्रिप्टमध्‍ये होस्ट निराकरण करीत आहे...</translation>
-<translation id="8069615408251337349">Google मेघ मुद्रण</translation>
+<translation id="8069615408251337349">Bitpop मेघ मुद्रण</translation>
 <translation id="5055518462594137986">या प्रकारच्या सर्व दुव्यांसाठी माझी निवड लक्षात ठेवा.</translation>
 <translation id="246059062092993255">या पृष्ठावर प्लग-इन  अवरोधित केलेले होते.</translation>
 <translation id="2870560284913253234">साइट</translation>
@@ -1422,7 +1422,7 @@
 <translation id="3273951168350045122">कीबोर्ड (<ph name="ADDRESS"/>)</translation>
 <translation id="8221729492052686226">आपण या विनंतीचा अंगीकार न केल्यास, ती आपल्या सिस्टमवर आक्रमण करण्याचा प्रयत्न करू शकते. आपण या विनंतीचा आरंभ करण्यासाठी स्पष्टपणे क्रिया करीत नाही तोपर्यंत, आपण काहीही करू नका दाबले पाहिजे.</translation>
 <translation id="894360074127026135">Netscape International Step-Up</translation>
-<translation id="8420060421540670057">Google डॉक्स फायली दर्शवा</translation>
+<translation id="8420060421540670057">Bitpop डॉक्स फायली दर्शवा</translation>
 <translation id="1201402288615127009">पुढील</translation>
 <translation id="1335588927966684346">उपयुक्तता:</translation>
 <translation id="2710582058364740604">उच्च DPI मोड आणि मालमत्ता सक्तीने वापरण्‍यासाठी डिव्हाइस प्रदर्शन अधिलिखित करा</translation>
@@ -1509,7 +1509,7 @@
 <translation id="5669267381087807207">सक्रिय करीत आहे </translation>
 <translation id="7434823369735508263">यूके दवोराक कीबोर्ड</translation>
 <translation id="1572103024875503863"><ph name="NUMBER_MANY"/> दिवस</translation>
-<translation id="5308845175611284862"><ph name="PRODUCT_NAME"/> समक्रमण आपल्‍या संगणकांदरम्यान आपला डेटा (जसे की बुकमार्क आणि सेटिंग्ज) शेअर करणे सोपे बनविते. आपण आपल्या Google खात्यासह साइन इन करता तेव्हा <ph name="PRODUCT_NAME"/> आपला डेटा Google सह ऑनलाइन संचयित करून तो समक्रमित करते.</translation>
+<translation id="5308845175611284862"><ph name="PRODUCT_NAME"/> समक्रमण आपल्‍या संगणकांदरम्यान आपला डेटा (जसे की बुकमार्क आणि सेटिंग्ज) शेअर करणे सोपे बनविते. आपण आपल्या Bitpop खात्यासह साइन इन करता तेव्हा <ph name="PRODUCT_NAME"/> आपला डेटा Google सह ऑनलाइन संचयित करून तो समक्रमित करते.</translation>
 <translation id="1707463636381878959">अन्य वापरकर्त्यांसह हा नेटवर्क सामायिक करा</translation>
 <translation id="2084978867795361905">MS-IME</translation>
 <translation id="7227669995306390694"><ph name="NETWORK"/> डेटा योजना नाही</translation>
@@ -1517,7 +1517,7 @@
 <translation id="7163503212501929773"><ph name="NUMBER_MANY"/> तास बाकी</translation>
 <translation id="7705276765467986571">बुकमार्क मॉडेल लोड करणे शक्य नव्हते. </translation>
 <translation id="750413812607578381">आता आपण <ph name="PRODUCT_NAME"/> पून्हा एकदा सुरु करायला हवे.</translation>
-<translation id="8034305971714560781"><ph name="PRODUCT_NAME"/> वरील आपले Google खाते डिस्कनेक्‍ट केल्‍याने, या मोबाइल डिव्‍हाइसवरील आपल्‍या डेटामधील बदल आपल्‍या Google खात्‍यामध्‍ये यापुढे समक्रमित केले जाणार नाहीत. आपल्‍या Google खात्‍यामध्‍ये आधीपासून संचयित केलेला डेटा आपण <ph name="BEGIN_LINK"/>Google डॅशबोर्ड<ph name="END_LINK"/> वापरून जोपर्यंत काढत नाही तोपर्यंत तो तेथे राहील.</translation>
+<translation id="8034305971714560781"><ph name="PRODUCT_NAME"/> वरील आपले Bitpop खाते डिस्कनेक्‍ट केल्‍याने, या मोबाइल डिव्‍हाइसवरील आपल्‍या डेटामधील बदल आपल्‍या Google खात्‍यामध्‍ये यापुढे समक्रमित केले जाणार नाहीत. आपल्‍या Google खात्‍यामध्‍ये आधीपासून संचयित केलेला डेटा आपण <ph name="BEGIN_LINK"/>Google डॅशबोर्ड<ph name="END_LINK"/> वापरून जोपर्यंत काढत नाही तोपर्यंत तो तेथे राहील.</translation>
 <translation id="2638286699381354126">अद्यतनित करा...</translation>
 <translation id="1196338895211115272">खासगी की निर्यात करण्यात अयशस्वी.</translation>
 <translation id="1459967076783105826">विस्तारांद्वारे जोडलेली शोध इंजिने</translation>
@@ -1553,10 +1553,10 @@
 <translation id="1789424019568293108">प्रायोगिक UI सक्षम करा जो विस्तार गतिविधीचा लॉग दर्शवितो.</translation>
 <translation id="2090876986345970080">सिस्टम सुरक्षा सेटिंग्ज</translation>
 <translation id="3728067901555601989">OTP:</translation>
-<translation id="3475447146579922140">Google स्प्रेडशीट</translation>
+<translation id="3475447146579922140">Bitpop स्प्रेडशीट</translation>
 <translation id="6856526171412069413">पिंच स्केल सक्षम करा.</translation>
 <translation id="9219103736887031265">प्रतिमा</translation>
-<translation id="7415834062450491574">Google ला अभिप्राय पाठवा.</translation>
+<translation id="7415834062450491574">Bitpop ला अभिप्राय पाठवा.</translation>
 <translation id="4480995875255084924">राखेमध्‍ये ओक ट्री व्ह्यूअर सक्षम करते. विंडो, स्तर आणि दृश्य पदानुक्रम आणि त्यांच्या गुणधर्मांच्या परिक्षणास अनुमती देते. प्रवेश करण्यासाठी Ctrl+Shift+F1 दाबा.</translation>
 <translation id="6975147921678461939">बॅटरी चार्ज करीत आहे: <ph name="PRECENTAGE"/>%</translation>
 <translation id="5453632173748266363">सीरिलिक</translation>
@@ -1566,7 +1566,7 @@
 <translation id="5350480486488078311">NaCl सॉकेट API.</translation>
 <translation id="5329858601952122676">&amp;हटवा</translation>
 <translation id="6100736666660498114">प्रारंभ मेनू</translation>
-<translation id="4402766404187539019">Google.com मेल</translation>
+<translation id="4402766404187539019">Bitpop.com मेल</translation>
 <translation id="6275297011664564181">सध्या कोणतीही धोरणे सक्रिय नाहीत!</translation>
 <translation id="3994878504415702912">&amp;झूम करा</translation>
 <translation id="9009369504041480176">अपलोड करीत आहे (<ph name="PROGRESS_PERCENT"/>%)...</translation>
@@ -1601,7 +1601,7 @@
 <translation id="6466988389784393586">सर्व बुकमार्क &amp;उघडा</translation>
 <translation id="6406506848690869874">Sync</translation>
 <translation id="5288678174502918605">बंद केलेले टॅब पु&amp;न्हा उघडा</translation>
-<translation id="7238461040709361198">आपण या संगणकावर अखेरचे साइन इन केल्यापासून आपल्या Google खात्याचा संकेतशब्द बदलला आहे.</translation>
+<translation id="7238461040709361198">आपण या संगणकावर अखेरचे साइन इन केल्यापासून आपल्या Bitpop खात्याचा संकेतशब्द बदलला आहे.</translation>
 <translation id="1956050014111002555">फाइलमध्ये एकाधिक प्रमाणपत्रे आहेत ज्यापैकी एकही आयात झालेले नाही: </translation>
 <translation id="302620147503052030">बटण दर्शवा</translation>
 <translation id="1895658205118569222">बंद करा</translation>
@@ -1811,7 +1811,7 @@
 <translation id="3967885517199024316">आपल्या सर्व डिव्हाइसेसवर आपले बुकमार्क, इतिहास आणि सेटिंग्ज प्राप्त करण्‍यासाठी साइन इन करा.</translation>
 <translation id="5463856536939868464">मेनूमध्ये लपलेले बुकमार्क आहेत</translation>
 <translation id="8286227656784970313">सिस्टम शब्दकोश वापरा</translation>
-<translation id="5431084084184068621">आपण आपला Google संकेतशब्द वापरून डेटा कूटबद्ध करणे निवडले आहे; आपण नंतर कधीही आपली समक्रमण सेटिंग्ज बदलून आपले मत बदलू शकता.</translation>
+<translation id="5431084084184068621">आपण आपला Bitpop संकेतशब्द वापरून डेटा कूटबद्ध करणे निवडले आहे; आपण नंतर कधीही आपली समक्रमण सेटिंग्ज बदलून आपले मत बदलू शकता.</translation>
 <translation id="1493263392339817010">फॉन्ट सानुकूलित करा...</translation>
 <translation id="5352033265844765294">वेळ स्टॅम्पिंग</translation>
 <translation id="1493892686965953381">यासाठी प्रतीक्षा करत आहे <ph name="LOAD_STATE_PARAMETER"/>...</translation>
@@ -1821,7 +1821,7 @@
 <translation id="748138892655239008">प्रमाणपत्र मूळ प्रतिबंध</translation>
 <translation id="457386861538956877">अधिक...</translation>
 <translation id="9210991923655648139">स्क्रिप्‍टसाठी प्रवेशपात्र:</translation>
-<translation id="1950295184970569138">* Google प्रोफाइल फोटो (लोड करत आहे)</translation>
+<translation id="1950295184970569138">* Bitpop प्रोफाइल फोटो (लोड करत आहे)</translation>
 <translation id="8063491445163840780">टॅब 4 सक्रिय करा</translation>
 <translation id="5473544328731861874">हेतू काढा</translation>
 <translation id="2322193970951063277">शीर्षक आणि अधोलेख</translation>
@@ -1867,7 +1867,7 @@
 <translation id="5010043101506446253">प्रमाणपत्र अधिकारी</translation>
 <translation id="2050524657923939561">वेब हेतू</translation>
 <translation id="8487693399751278191">त्वरित बुकमार्क आयात करा...</translation>
-<translation id="7615602087246926389">आपल्याकडे आधीपासूनच डेटा आहे जो आपल्या Google खाते संकेतशब्दाची विभिन्न आवृत्ती वापरुन कूटबद्ध करण्‍यात आला आहे. कृपया तो खाली प्रविष्‍ट करा.</translation>
+<translation id="7615602087246926389">आपल्याकडे आधीपासूनच डेटा आहे जो आपल्या Bitpop खाते संकेतशब्दाची विभिन्न आवृत्ती वापरुन कूटबद्ध करण्‍यात आला आहे. कृपया तो खाली प्रविष्‍ट करा.</translation>
 <translation id="7484580869648358686">चेतावणी: येथे काहीतरी नाही!</translation>
 <translation id="4474155171896946103">सर्व टॅब बुकमार्क करा...</translation>
 <translation id="5895187275912066135">रोजी जारी केले</translation>
@@ -1958,14 +1958,14 @@
           हे आपल्या मोबाइल डिव्हाइसवरील घुसखोर असून इंटरनेटला कनेक्ट करण्यापासून त्याला अवरोधित करीत आहे.</translation>
 <translation id="2065985942032347596">प्रमाणीकरण आवश्यक</translation>
 <translation id="2553340429761841190"><ph name="PRODUCT_NAME"/> <ph name="NETWORK_ID"/> शी कनेक्ट करण्यात अक्षम आहे. कृपया दुसरे नेटवर्क निवडा किंवा पुन्हा प्रयत्न करा. </translation>
-<translation id="2086712242472027775">आपले खाते <ph name="PRODUCT_NAME"/> वर कार्य करत नाही. कृपया आपल्या डोमेन प्रशासकाशी संपर्क साधा किंवा साइन इन करण्यासाठी एक नियमित Google खाते वापरा.</translation>
-<translation id="1373074393717692190">आपल्‍या वैयक्तीकृत केलेल्‍या ब्राउझर वैशिष्‍ट्यांना वेबवर जतन करण्‍यासाठी आणि त्‍यांना <ph name="PRODUCT_NAME"/> वरून कोणत्‍याही मोबाइल डिव्‍हाइसवर प्रवेश देण्‍यासाठी आपल्‍या Google खात्‍यासह <ph name="PRODUCT_NAME"/> मध्‍ये साइन इन करा. आपण आपल्‍या आवडत्या Google सेवांमध्‍ये स्‍वयंचलितपणे देखील साइन इन करत असाल.</translation>
+<translation id="2086712242472027775">आपले खाते <ph name="PRODUCT_NAME"/> वर कार्य करत नाही. कृपया आपल्या डोमेन प्रशासकाशी संपर्क साधा किंवा साइन इन करण्यासाठी एक नियमित Bitpop खाते वापरा.</translation>
+<translation id="1373074393717692190">आपल्‍या वैयक्तीकृत केलेल्‍या ब्राउझर वैशिष्‍ट्यांना वेबवर जतन करण्‍यासाठी आणि त्‍यांना <ph name="PRODUCT_NAME"/> वरून कोणत्‍याही मोबाइल डिव्‍हाइसवर प्रवेश देण्‍यासाठी आपल्‍या Bitpop खात्‍यासह <ph name="PRODUCT_NAME"/> मध्‍ये साइन इन करा. आपण आपल्‍या आवडत्या Google सेवांमध्‍ये स्‍वयंचलितपणे देखील साइन इन करत असाल.</translation>
 <translation id="7222232353993864120">ईमेल पत्ता</translation>
 <translation id="2128531968068887769">मूळ क्लायंट</translation>
 <translation id="2749720227918911728">विस्तार वर्तमान पृष्‍ठावर क्रिया करु शकत असेल तेव्हा हे चिन्ह दृश्यमान होईल. चिन्हावर क्लिक करुन किंवा <ph name="EXTENSION_SHORTCUT"/> दाबून हा विस्तार सक्रिय करा.</translation>
 <translation id="7175353351958621980">येथून लोड केले:</translation>
 <translation id="7186367841673660872">हे पृष्ठ<ph name="ORIGINAL_LANGUAGE"/>मधून<ph name="LANGUAGE_LANGUAGE"/>मध्ये अनुवादित केले गेले आहे</translation>
-<translation id="8448695406146523553">फक्त आपला सांकेतिक वाक्यांश असलेली कोणतीही व्यक्ती आपला कूटबद्ध डेटा वाचू शकते -- सांकेतिक वाक्यांश Google कडे पाठविला किंवा त्याद्वारे संचयित केलेला नाही. आपण आपला सांकेतिक वाक्यांश विसरल्यास, आपल्याला असे करणे आवश्यक असेल</translation>
+<translation id="8448695406146523553">फक्त आपला सांकेतिक वाक्यांश असलेली कोणतीही व्यक्ती आपला कूटबद्ध डेटा वाचू शकते -- सांकेतिक वाक्यांश Bitpop कडे पाठविला किंवा त्याद्वारे संचयित केलेला नाही. आपण आपला सांकेतिक वाक्यांश विसरल्यास, आपल्याला असे करणे आवश्यक असेल</translation>
 <translation id="8248050856337841185">&amp;पेस्ट करा</translation>
 <translation id="6052976518993719690">SSL प्रमाणपत्र अधिकृतता</translation>
 <translation id="2925935892230812200">SVG  फिल्टरला गती देण्यासाठी GPU वापरा.</translation>
@@ -2122,7 +2122,7 @@
 <translation id="3479552764303398839">सध्या नाही</translation>
 <translation id="3714633008798122362">वेब कॅलेंडर</translation>
 <translation id="6445051938772793705">देश</translation>
-<translation id="3430309973417890444">आपल्याकडे Google खाते नसल्यास आपण आता<ph name="LINK_START"/> Google खाते तयार करू शकता<ph name="LINK_END"/>.</translation>
+<translation id="3430309973417890444">आपल्याकडे Bitpop खाते नसल्यास आपण आता<ph name="LINK_START"/> Google खाते तयार करू शकता<ph name="LINK_END"/>.</translation>
 <translation id="3251759466064201842">&lt;प्रमाणपत्राचा भाग नाही&gt;</translation>
 <translation id="4229495110203539533"><ph name="NUMBER_ONE"/> sec ago</translation>
 <translation id="3399068503715460757">स्थिर IP वापरा</translation>
@@ -2148,7 +2148,7 @@
 <translation id="1800987794509850828">प्लग-इन ब्रोकर: <ph name="PLUGIN_NAME"/></translation>
 <translation id="8871696467337989339">आपण एक असमर्थित कमांड-लाइन फ्लॅग वापरत आहात: <ph name="BAD_FLAG"/>. स्थिरता आणि सुरक्षा प्रभावित होईल.</translation>
 <translation id="4767443964295394154">डाउनलोड स्थान</translation>
-<translation id="5031870354684148875">Google अनुवाद बद्दल</translation>
+<translation id="5031870354684148875">Bitpop अनुवाद बद्दल</translation>
 <translation id="5702389759209837579">आपल्या सर्व डिव्हाइसेसवरुन आपल्या सर्व खुल्या टॅबवर प्रवेश करा.</translation>
 <translation id="720658115504386855">अक्षरे केस संवेदी नाहीत</translation>
 <translation id="8263744495942430914"><ph name="FULLSCREEN_ORIGIN"/> नी आपला माउस कर्सर अक्षम केला आहे.</translation>
@@ -2200,7 +2200,7 @@
 <translation id="1752977958630076881">मी माझा ब्राउझर सोडेपर्यंत केवळ माझा स्थानिक डेटा राहू द्या</translation>
 <translation id="7853202427316060426">गतिविधी</translation>
 <translation id="8550022383519221471">समक्रमित सेवा आपल्या डोमेनसाठी उपलब्ध नाही.</translation>
-<translation id="1436238710092600782">एखादे Google खाते तयार करा</translation>
+<translation id="1436238710092600782">एखादे Bitpop खाते तयार करा</translation>
 <translation id="3355823806454867987">प्रॉक्सी सेटिंग्ज बदला...</translation>
 <translation id="4780374166989101364">प्रायोगिक विस्तार API सक्षम करते. विस्तार गॅलरी आपल्याला प्रायोगिक API वापरत असलेले विस्तार अपलोड करण्याची परवानगी देत नाही हे लक्षात ठेवा.</translation>
 <translation id="7117247127439884114">पुन्हा साइन इन करा...</translation>
@@ -2211,7 +2211,7 @@
 <translation id="3007574127824276972"><ph name="PRODUCT_NAME"/> मध्ये <ph name="USER_NAME"/> म्हणून साइन इन केले</translation>
 <translation id="6840155730904976091">नेटवर्कशी कनेक्‍ट करण्‍यासाठी <ph name="PRODUCT_NAME"/> आपल्‍या मोबाइल डिव्‍हाइसची सिस्‍टिम प्रॉक्‍सी सेटिंग्‍ज वापरत आहे.</translation>
 <translation id="2541913031883863396">तरीही पुढे चला</translation>
-<translation id="6884284539803678768">Google-शैलीतील संवाद फ्रेम सक्षम करा.</translation>
+<translation id="6884284539803678768">Bitpop-शैलीतील संवाद फ्रेम सक्षम करा.</translation>
 <translation id="2367499218636570208">नाव</translation>
 <translation id="4436689501885286563">मी लॉग आउट केल्यानंतर कुकीज आणि साइट डेटा साफ करा</translation>
 <translation id="1520137456044207237">पहाण्यासाठी कोणती सेवा वापरली जावी?</translation>
@@ -2278,7 +2278,7 @@
 <translation id="8053390638574070785">हे पृष्ठ रीलोड करा</translation>
 <translation id="5507756662695126555">अस्वीकार नसलेले</translation>
 <translation id="3678156199662914018">विस्तारः <ph name="EXTENSION_NAME"/></translation>
-<translation id="2620090360073999360">Google ड्राइव्ह यावेळी पोहोचू शकत नाही.</translation>
+<translation id="2620090360073999360">Bitpop ड्राइव्ह यावेळी पोहोचू शकत नाही.</translation>
 <translation id="3531250013160506608">संकेतशब्द मजकूर बॉक्स</translation>
 <translation id="506228266759207354">इतर डिव्हाइसेसवरील टॅबवर प्रवेश करण्‍यासाठी नवीन टॅब पृष्‍ठ मेनू अक्षम करा.</translation>
 <translation id="1781502536226964113">नवीन टॅब पृष्‍ठ उघडा</translation>
@@ -2404,7 +2404,7 @@
 <translation id="7861215335140947162">&amp;डाउनलोड</translation>
 <translation id="3144135466825225871">crx फाइल पुनर्स्थित करण्यात अयशस्वी. फाइल वापरात आहे किंवा नाही हे पाहण्यासाठी तपासा.</translation>
 <translation id="2744221223678373668">सामायिक</translation>
-<translation id="9064142312330104323">Google प्रोफाइल फोटो (लोड करत आहे)</translation>
+<translation id="9064142312330104323">Bitpop प्रोफाइल फोटो (लोड करत आहे)</translation>
 <translation id="4708849949179781599"><ph name="PRODUCT_NAME"/> मधून बाहेर या</translation>
 <translation id="2505402373176859469"><ph name="TOTAL_SIZE"/> पैकी <ph name="RECEIVED_AMOUNT"/></translation>
 <translation id="6937559152970966646">स्क्रीन प्रारंभ करण्यासाठी पिन करा</translation>
@@ -2498,12 +2498,12 @@
 <translation id="305803244554250778">निम्नलिखित स्थानांवर अनुप्रयोग शॉर्टकट तयार करा:</translation>
 <translation id="574392208103952083">मध्यम</translation>
 <translation id="3661117620327489194">उघडलेली पृष्‍ठे पुनर्संचयित करण्‍यासाठी बदला</translation>
-<translation id="3937609171782005782">आपल्याला ज्या साइटवर ही चेतावणी दिसली त्याबद्दल Google कडे अतिरिक्त डेटा पाठवून मालवेअर शोधून काढण्यास मदत करा. हा डेटा <ph name="PRIVACY_PAGE_LINK"/> नुसार हाताळला जाईल.</translation>
+<translation id="3937609171782005782">आपल्याला ज्या साइटवर ही चेतावणी दिसली त्याबद्दल Bitpop कडे अतिरिक्त डेटा पाठवून मालवेअर शोधून काढण्यास मदत करा. हा डेटा <ph name="PRIVACY_PAGE_LINK"/> नुसार हाताळला जाईल.</translation>
 <translation id="8877448029301136595">[मूळ निर्देशिका]</translation>
 <translation id="3816844797124379499">अनुप्रयोग जोडू शकले नाही कारण ते &quot;<ph name="APP_NAME"/>&quot; च्या  विरोधी आहे.</translation>
 <translation id="7301360164412453905">एचएसयू कीबोर्ड निवड की</translation>
 <translation id="8631271110654520730">पुनर्प्राप्ती प्रतिमा कॉपी करत आहे...</translation>
-<translation id="7779140087128114262">फक्त आपला सांकेतिक वाक्यांश असलेली कोणतीही व्यक्ती आपला कूटबद्ध डेटा वाचू शकते -- सांकेतिक वाक्यांश Google कडे पाठविला किंवा त्याद्वारे संचयित केलेला नाही. आपण आपला सांकेतिक वाक्यांश विसरल्यास, आपल्याला समक्रमण रीसेट करणे आवश्यक असेल.</translation>
+<translation id="7779140087128114262">फक्त आपला सांकेतिक वाक्यांश असलेली कोणतीही व्यक्ती आपला कूटबद्ध डेटा वाचू शकते -- सांकेतिक वाक्यांश Bitpop कडे पाठविला किंवा त्याद्वारे संचयित केलेला नाही. आपण आपला सांकेतिक वाक्यांश विसरल्यास, आपल्याला समक्रमण रीसेट करणे आवश्यक असेल.</translation>
 <translation id="13356285923490863">धोरणाचे नाव</translation>
 <translation id="8241040075392580210">Shady</translation>
 <translation id="8690155203172212841">परवानगी सेटिंग्ज व्यवस्‍थापित करा</translation>
@@ -2525,7 +2525,7 @@
         येथे भेट द्या <ph name="URL_FOR_MORE_INFO"/>,
         जेथे आपल्याला वैशिष्‍ट्य अक्षम करण्‍यासह अधिक माहिती मिळू शकते.</translation>
 <translation id="8218008331535230597">सामग्री परवाने अनधिकृत करा</translation>
-<translation id="4744728308552504807">या मोबाइल डिव्हाइसवरील स्थापित केलेल्या कोणत्याही मुद्रकांना Google मेघ मुद्रण कनेक्ट करणार्‍या पार्श्वभूमी सेवेस सक्षम करते. एकदा ही लॅब सक्षम झाल्यानंतर, आपण सेटिंग्जच्या प्रगत पर्याय विभागातील आपल्या Google खात्यात लॉग इन करून Google मेघ मुद्रण कनेक्टर चालू करू शकता.</translation>
+<translation id="4744728308552504807">या मोबाइल डिव्हाइसवरील स्थापित केलेल्या कोणत्याही मुद्रकांना Bitpop मेघ मुद्रण कनेक्ट करणार्‍या पार्श्वभूमी सेवेस सक्षम करते. एकदा ही लॅब सक्षम झाल्यानंतर, आपण सेटिंग्जच्या प्रगत पर्याय विभागातील आपल्या Google खात्यात लॉग इन करून Google मेघ मुद्रण कनेक्टर चालू करू शकता.</translation>
 <translation id="6691936601825168937">&amp;पुढील</translation>
 <translation id="6566142449942033617">प्लगइनसाठी '<ph name="PLUGIN_PATH"/>' लोड करणे शक्य नाही.</translation>
 <translation id="7065534935986314333">सिस्टम बद्दल</translation>
@@ -2536,7 +2536,7 @@
 <translation id="2128691215891724419">समक्रमण त्रुटी: समक्रमण वाक्यांश अद्यतनित करा... </translation>
 <translation id="2148716181193084225">आज</translation>
 <translation id="1002064594444093641">फ्रेम मु&amp;द्रित करा...</translation>
-<translation id="7234674978021619913"><ph name="HOST_NAME"/> ना आम्ही यापूर्वीच सूचित केले आहे की आम्हाला साइटवर मालवेयर आढळले आहे. <ph name="HOST_NAME2"/> वर आढळलेल्या समस्यांबद्दल अधिक माहितीसाठी, Google <ph name="DIAGNOSTIC_PAGE"/> वर भेट द्या. </translation>
+<translation id="7234674978021619913"><ph name="HOST_NAME"/> ना आम्ही यापूर्वीच सूचित केले आहे की आम्हाला साइटवर मालवेयर आढळले आहे. <ph name="HOST_NAME2"/> वर आढळलेल्या समस्यांबद्दल अधिक माहितीसाठी, Bitpop <ph name="DIAGNOSTIC_PAGE"/> वर भेट द्या. </translation>
 <translation id="4608500690299898628">&amp;शोधा...</translation>
 <translation id="7582582252461552277">या नेटवर्कला प्राधान्य द्या</translation>
 <translation id="3574305903863751447"><ph name="CITY"/>, <ph name="STATE"/> <ph name="COUNTRY"/></translation>
@@ -2628,7 +2628,7 @@
 <translation id="6322726279947003371">संरक्षित सामग्री चालवा (संगणक पुनरारंभ करणे आवश्यक असू शकतो)</translation>
 <translation id="3093473105505681231">भाषा आणि शब्दलेखन-तपासक सेटिंग्ज...</translation>
 <translation id="152482086482215392"><ph name="NUMBER_ONE"/> से बाकी</translation>
-<translation id="4261901459838235729">Google सादरीकरण</translation>
+<translation id="4261901459838235729">Bitpop सादरीकरण</translation>
 <translation id="8678698760965522072">ऑनलाइन राज्य</translation>
 <translation id="529172024324796256">वापरकर्ता नाव:</translation>
 <translation id="3308116878371095290">हे पृष्ठ कुकीज सेट करण्यापासून प्रतिबंधित केलेले होते.</translation>
@@ -2702,7 +2702,7 @@
 <translation id="2444609190341826949">सांकेतिक वाक्यांशाशिवाय, आपले संकेतशब्द आणि अन्य कूटबद्ध केलेला डेटा या संगणकावर समक्रमित केले जाणार नाहीत.</translation>
 <translation id="2984337792991268709">आज <ph name="TODAY_DAYTIME"/></translation>
 <translation id="5227808808023563348">मागील मजकूर शोधा</translation>
-<translation id="6650142020817594541">ही साइट Google Chrome Frame ची शिफारस करते (आधीपासून स्थापित).</translation>
+<translation id="6650142020817594541">ही साइट Bitpop Chrome Frame ची शिफारस करते (आधीपासून स्थापित).</translation>
 <translation id="3862763658360970896">Chrome To Mobile  सक्षम करा.</translation>
 <translation id="902638246363752736">कीबोर्ड सेटिंग्ज</translation>
 <translation id="7925686952655276919">समक्रमणासाठी मोबाइल डेटा वापरु नका</translation>
@@ -2721,7 +2721,7 @@
 <translation id="2148999191776934271">चार्जिंग <ph name="HOUR"/>:<ph name="MINUTE"/> पर्यंत पूर्ण</translation>
 <translation id="907841381057066561">पॅकेजिंग दरम्यान तात्पुरती zip फाइल तयार करण्यात अयशस्वी.</translation>
 <translation id="1881456419707551346">कनेक्शन तपशील</translation>
-<translation id="1064912851688322329">आपले Google खाते डिसकनेक्‍ट करा</translation>
+<translation id="1064912851688322329">आपले Bitpop खाते डिसकनेक्‍ट करा</translation>
 <translation id="1294298200424241932">विश्वास सेटिंग्ज संपादित करा:</translation>
 <translation id="1407135791313364759">सर्व उघडा</translation>
 <translation id="1434928358870966081">ऍक्सीलरेटेड 2D कॅनव्हास अक्षम करा</translation>
@@ -2744,9 +2744,9 @@
 <translation id="267285457822962309">आपले डिव्हाइस आणि उपकरणे विशिष्‍ट होण्यासाठी सेटिंग्ज बदला.</translation>
 <translation id="1154228249304313899">हे पृष्ठ उघडा:</translation>
 <translation id="6084074203170335305"><ph name="MARKUP_1"/>फायलींमध्ये कुठूनही प्रवेश करा, अगदी ऑफलाइन सुद्धा.<ph name="MARKUP_2"/>
-        Google ड्राइव्ह मधील फायली अद्ययावत आहेत आणि कोणत्याही डिव्हाइसवरून उपलब्ध होतात.<ph name="MARKUP_3"/>
+        Bitpop ड्राइव्ह मधील फायली अद्ययावत आहेत आणि कोणत्याही डिव्हाइसवरून उपलब्ध होतात.<ph name="MARKUP_3"/>
         <ph name="MARKUP_4"/>आपल्या फायली सुरक्षित ठेवा.<ph name="MARKUP_5"/>
-        आपल्या डिव्हाइसला काय झाले ते महत्त्वाचे नाही, आपल्या फायली Google ड्राइव्ह मध्ये सुरक्षित संचयित केल्या आहेत.<ph name="MARKUP_6"/>
+        आपल्या डिव्हाइसला काय झाले ते महत्त्वाचे नाही, आपल्या फायली Bitpop ड्राइव्ह मध्ये सुरक्षित संचयित केल्या आहेत.<ph name="MARKUP_6"/>
         फायलींवर इतरांसह सर्व एकाच ठिकाणी <ph name="MARKUP_7"/>
         सामायिक करा, तयार करा आणि सहयोग करा<ph name="MARKUP_8"/>.<ph name="MARKUP_9"/></translation>
 <translation id="9074348188580488499">आपली खात्री आहे की आपण सर्व संकेतशब्द काढू इच्छिता?</translation>
@@ -2873,7 +2873,7 @@
 <translation id="4523336217659634227">प्लग-इन डाउनलोड करताना एक त्रुटी (<ph name="ERROR"/>) आली.</translation>
 <translation id="4478664379124702289">म्हणून दु&amp;वा जतन करा...</translation>
 <translation id="8725066075913043281">पुन्हा प्रयत्न करा</translation>
-<translation id="1887908730460853602">Google-शैलीतील संवाद</translation>
+<translation id="1887908730460853602">Bitpop-शैलीतील संवाद</translation>
 <translation id="8502249598105294518"><ph name="PRODUCT_NAME"/> सानुकूलित आणि नियंत्रित करा</translation>
 <translation id="3797008485206955964">पार्श्वभूमी पृष्ठे पहा (<ph name="NUM_BACKGROUND_APPS"/>)</translation>
 <translation id="8590375307970699841">स्वयंचलित अद्यतने सेट करा</translation>
@@ -2893,8 +2893,8 @@
 <translation id="5293659407874396561"><ph name="SUBJECT"/> (<ph name="ISSUER"/>)</translation>
 <translation id="2115926821277323019">वैध URL आसणे आवश्यक</translation>
 <translation id="3464726836683998962">मोबाइल डेटा रोमिंग अक्षम करा</translation>
-<translation id="8986494364107987395">Google ला वापर आकडेवारी आणि क्रॅश अहवाल स्वयंचलितपणे पाठवा</translation>
-<translation id="7070714457904110559">भौगोलिक स्थान वैशिष्‍ट्याचे प्रायोगिक विस्तार सक्षम करते. ऑपरेटिंग प्रणाली स्थान API (उपलब्ध असतील तेथे) वापरणे आणि उच्च अचूकता स्थाननिश्चिती प्रदान करण्‍यासाठी Google स्‍थान सेवेला अतिरिक्त स्थानिक नेटवर्क कॉन्‍फिगरेशन डेटा पाठविणे समाविष्‍ट करते.</translation>
+<translation id="8986494364107987395">Bitpop ला वापर आकडेवारी आणि क्रॅश अहवाल स्वयंचलितपणे पाठवा</translation>
+<translation id="7070714457904110559">भौगोलिक स्थान वैशिष्‍ट्याचे प्रायोगिक विस्तार सक्षम करते. ऑपरेटिंग प्रणाली स्थान API (उपलब्ध असतील तेथे) वापरणे आणि उच्च अचूकता स्थाननिश्चिती प्रदान करण्‍यासाठी Bitpop स्‍थान सेवेला अतिरिक्त स्थानिक नेटवर्क कॉन्‍फिगरेशन डेटा पाठविणे समाविष्‍ट करते.</translation>
 <translation id="6701535245008341853">प्रोफाइल मिळविणे शक्य नाही.</translation>
 <translation id="8303655282093186569">पिनयिन इनपुट सेटिंग्ज</translation>
 <translation id="992779717417561630"><ph name="CLOUD_PRINT_NAME"/> संवाद...<ph name="SHORTCUT_KEY"/> वापरून मुद्रित करा</translation>
@@ -2907,7 +2907,7 @@
 <translation id="3323447499041942178">मजकूर बॉक्स</translation>
 <translation id="580571955903695899">शीर्षकानुसार पुन्हा क्रमवारी लावा</translation>
 <translation id="5230516054153933099">विंडो</translation>
-<translation id="1799497982892676838">आपला समक्रमीत डेटा Google डॅशबोर्डवर व्यवस्थापित करा</translation>
+<translation id="1799497982892676838">आपला समक्रमीत डेटा Bitpop डॅशबोर्डवर व्यवस्थापित करा</translation>
 <translation id="7554791636758816595">नवीन टॅब</translation>
 <translation id="3026557130425686673">लॉगिन रद्द केले गेले कारण काही डिव्हाइस सेटिग्ज दूषित झाल्या आहेत.</translation>
 <translation id="6928853950228839340">बनावटीसाठी संमिश्र</translation>
@@ -2919,7 +2919,7 @@
 <translation id="7671576867600624">तंत्रज्ञान:</translation>
 <translation id="1103966635949043187">साइटच्या मुख्यपृष्ठावर जा:</translation>
 <translation id="4762295713053835808">वैयक्तिक सामग्री</translation>
-<translation id="7477347901712410606">आपण आपला सांकेतिक वाक्यांश विसरला असल्यास, थांबा आणि <ph name="BEGIN_LINK"/>Google डॅशबोर्ड<ph name="END_LINK"/> द्वारे समक्रमण रीसेट करा.</translation>
+<translation id="7477347901712410606">आपण आपला सांकेतिक वाक्यांश विसरला असल्यास, थांबा आणि <ph name="BEGIN_LINK"/>Bitpop डॅशबोर्ड<ph name="END_LINK"/> द्वारे समक्रमण रीसेट करा.</translation>
 <translation id="6139474630617772623">विस्तारीत डेस्कटॉप सक्षम करते, जे आपणास ब्राउझर दुय्यम  प्रदर्शनात उघडण्यास अनुमती देते.</translation>
 <translation id="2645575947416143543">तथापि जर आपण अशा संस्थेत कार्य करीत आहात जी तिचे स्वतःचे प्रमाणपत्र जनरेट करते आणि असे प्रमाणपत्र वापरुन आपण अशा संस्थेच्या अंतर्गत वेबसाइटशी कनेक्ट करण्याचा प्रयत्न करीत असाल तर आपण ही समस्या सुरक्षितपणे सोडविण्यास सक्षम असू शकाल. आपण आपल्या संस्थेचे मूळ प्रमाणपत्र &quot; मूळ प्रमाणपत्र&quot; म्हणून आयात करू शकता आणि नंतर आपल्या संस्थेद्वारा दिलेले किंवा सत्यापित केलेली प्रमाणपत्रे विश्वासार्ह होतील आणि पुढच्या वेळी आपण अंतर्गत वेबसाइटशी कनेक्ट करण्याचा प्रयत्न करताना आपणास ही त्रुटी दिसणार नाही. आपल्या संगणकात एक नवीन मूळ प्रमाणपत्र जोडण्यास साहाय्यासाठी आपल्या संस्थेच्या मदत कर्मचार्‍यांशी संपर्क साधा.</translation>
 <translation id="1056898198331236512">चेतावणी</translation>
@@ -3191,7 +3191,7 @@
 <translation id="560108005804229228">समक्रमण त्रुटी: साइन आऊट करा नंतर पुन्हा साइन इन करा...</translation>
 <translation id="7063412606254013905">फिशिंग स्कॅमबद्दल अधिक जाणून घ्या.</translation>
 <translation id="7253521419891527137">&amp;अधिक जाणून घ्या</translation>
-<translation id="8698464937041809063">Google रेखांकन</translation>
+<translation id="8698464937041809063">Bitpop रेखांकन</translation>
 <translation id="7053053706723613360">सर्वोत्तम सत्र पुनर्संचयित करणे अक्षम करा</translation>
 <translation id="5233930340889611108">WebKit</translation>
 <translation id="8260864402787962391">माउस</translation>
@@ -3219,7 +3219,7 @@
 <translation id="6873213799448839504">एखाद‍ी स्ट्रिंग ऑटो कमिट करा</translation>
 <translation id="7238585580608191973">SHA-256 बोटाचा ठसा</translation>
 <translation id="2501278716633472235">परत जा</translation>
-<translation id="3588662957555259973">* Google प्रोफाइल फोटो</translation>
+<translation id="3588662957555259973">* Bitpop प्रोफाइल फोटो</translation>
 <translation id="131461803491198646">घरगुती नेटवर्क, रोमिंग नाही</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/> - <ph name="FULL_DATE"/></translation>
 <translation id="1285320974508926690">या साइटचा कधीही अनुवाद करु नका</translation>
@@ -3286,7 +3286,7 @@
 <translation id="461656879692943278"><ph name="ELEMENTS_HOST_NAME"/> वरील सामग्रीत <ph name="HOST_NAME"/>, मालवेयर वितरीत करण्यात माहिती असलेली एक साइट. आपण या साइटला भेट दिल्यास आपल्या संगणकात व्हायरस जाऊ शकतो.</translation>
 <translation id="8962198349065195967">हे नेटवर्क आपल्या प्रशासकाकडून कॉन्फिगर करण्‍यात आले आहे.</translation>
 <translation id="2143778271340628265">व्यक्तिचलित प्रॉक्झी कॉन्फिगरेशन</translation>
-<translation id="2441192698565541088"><ph name="PRODUCT_NAME"/> वरुन आपले  Google खाते डिसकनेक्‍ट केल्याने, या संगणकावरील डेटावरील आपले बदल आपल्या Google खात्यात समक्रमीत केले जाणार नाहीत. आपल्या Google खात्यात आधीपासून स्‍टोअर केलेला डेटा आपण <ph name="BEGIN_LINK"/>Google डॅशबोर्ड<ph name="END_LINK"/> वापरून काढून टाकेपर्यंत तिथेच राहिल.</translation>
+<translation id="2441192698565541088"><ph name="PRODUCT_NAME"/> वरुन आपले  Bitpop खाते डिसकनेक्‍ट केल्याने, या संगणकावरील डेटावरील आपले बदल आपल्या Google खात्यात समक्रमीत केले जाणार नाहीत. आपल्या Google खात्यात आधीपासून स्‍टोअर केलेला डेटा आपण <ph name="BEGIN_LINK"/>Google डॅशबोर्ड<ph name="END_LINK"/> वापरून काढून टाकेपर्यंत तिथेच राहिल.</translation>
 <translation id="5294529402252479912">Adobe Reader त्वरित अद्यतनित करा</translation>
 <translation id="5263972071113911534"><ph name="NUMBER_MANY"/> days ago</translation>
 <translation id="7461850476009326849">वैयक्तिक प्लग-इन अक्षम करा...</translation>
@@ -3313,7 +3313,7 @@
 <translation id="8885905466771744233">निर्दिष्ट विस्तारासाठी खासगी की यापूर्वीच विद्यमान आहे. ती की पुन्हा वापरा किंवा प्रथम ती हटवा.</translation>
 <translation id="1196944142850240972">सर्व वेबसाइटवरील आपल्या डेटावर प्रवेश करा</translation>
 <translation id="7369056754288047856">काही सेटिंग्ज वापरकर्त्याद्वारे सुधारल्या जाऊ शकत नाहीत.</translation>
-<translation id="4100843820583867709">Google Talk स्क्रीन सामायिकरण विनंती</translation>
+<translation id="4100843820583867709">Bitpop Talk स्क्रीन सामायिकरण विनंती</translation>
 <translation id="8109246889182548008">प्रमाणपत्र संचय</translation>
 <translation id="5030338702439866405">द्वारा जारी</translation>
 <translation id="2728127805433021124">सर्व्हरचे प्रमाणपत्र कमकुवत स्वाक्षरी अल्गोरिदम वापरून स्वाक्षरित केले आहे.</translation>
@@ -3505,7 +3505,7 @@
 <translation id="1049926623896334335">Word दस्तऐवज</translation>
 <translation id="8412145213513410671">क्रॅश (<ph name="CRASH_COUNT"/>)</translation>
 <translation id="7003257528951459794">वारंवारिता:</translation>
-<translation id="3467267818798281173">Google ला सूचनांसाठी विचारा</translation>
+<translation id="3467267818798281173">Bitpop ला सूचनांसाठी विचारा</translation>
 <translation id="560602183358579978">निवडीची संगणना करत आहे...</translation>
 <translation id="7649070708921625228">मदत</translation>
 <translation id="858637041960032120">फोन नंबर जोडा</translation>
@@ -3539,7 +3539,7 @@
 <translation id="8000020256436988724">टूलबार</translation>
 <translation id="7507930499305566459">स्थिती प्रतिसादकर्ता प्रमाणपत्र</translation>
 <translation id="3958088479270651626">बुकमार्क आणि सेटिंग्ज आयात करा</translation>
-<translation id="2689915906323125315">माझा Google खाते संकेतशब्द वापरा</translation>
+<translation id="2689915906323125315">माझा Bitpop खाते संकेतशब्द वापरा</translation>
 <translation id="8518865679229538285">तमिळ इनपुट पद्धत (Typewriter) </translation>
 <translation id="4557136421275541763">चेतावणी:</translation>
 <translation id="2604243255129603442"><ph name="NAME_OF_EXTENSION"/> अक्षम केले गेले. आपण आपले बुकमार्क समक्रमित करणे थांबवित असल्यास, आपण साधने मेनूद्वारे प्रवेश करण्यायोग्य विस्तार पृष्ठावर, हा ते पुन्हा-सक्षम करू शकता.</translation>
@@ -3549,7 +3549,7 @@
 <translation id="7681202901521675750">सिम कार्ड लॉक केलेले आहे, कृपया पिन प्रविष्ट करा. शिल्लक प्रयत्न: <ph name="TRIES_COUNT"/></translation>
 <translation id="2489918096470125693">&amp;फोल्डर जोडा...</translation>
 <translation id="7353651168734309780"><ph name="EXTENSION_NAME"/> ला नवीन परवानग्या आवश्‍यक आहेत</translation>
-<translation id="6420812616858267777"><ph name="PRODUCT_NAME"/> समक्रमण आपला डेटा (जसे की बुकमार्क आणि सेटिंग्‍ज) आपले संगणक आणि मोबाइल डिव्‍हाइस दरम्‍यान सामायिक करणे सोपे करते. आपण आपल्या Google खात्यासह साइन इन करता तेव्हा आपला डेटा <ph name="PRODUCT_NAME"/> तो Google सह ऑनलाइन संचयित करून समक्रमित करते.</translation>
+<translation id="6420812616858267777"><ph name="PRODUCT_NAME"/> समक्रमण आपला डेटा (जसे की बुकमार्क आणि सेटिंग्‍ज) आपले संगणक आणि मोबाइल डिव्‍हाइस दरम्‍यान सामायिक करणे सोपे करते. आपण आपल्या Bitpop खात्यासह साइन इन करता तेव्हा आपला डेटा <ph name="PRODUCT_NAME"/> तो Google सह ऑनलाइन संचयित करून समक्रमित करते.</translation>
 <translation id="7484964289312150019">सर्व बुकमार्क &amp;नवीन विंडोमध्ये उघडा</translation>
 <translation id="1731346223650886555">अर्धविराम</translation>
 <translation id="158849752021629804">मुख्यपृष्ठ नेटवर्क आवश्यक</translation>
@@ -3563,7 +3563,7 @@
 <translation id="3021678814754966447">फ्रेम स्त्रोत &amp;पहा</translation>
 <translation id="8601206103050338563">TLS WWW Client Authentication</translation>
 <translation id="1692799361700686467">एकाधिक साइटवरील कुकीजला परवानगी मिळाली. </translation>
-<translation id="5187295959347858724">आपण आता <ph name="SHORT_PRODUCT_NAME"/>मध्‍ये साइन इन केले आहे. आपले बुकमार्क, इतिहास, आणि इतर सेटिंग्ज आपल्या Google खात्यात समक्रमीत केल्या जात आहेत.</translation>
+<translation id="5187295959347858724">आपण आता <ph name="SHORT_PRODUCT_NAME"/>मध्‍ये साइन इन केले आहे. आपले बुकमार्क, इतिहास, आणि इतर सेटिंग्ज आपल्या Bitpop खात्यात समक्रमीत केल्या जात आहेत.</translation>
 <translation id="2717190143245689317">अनुप्रयोग UI साठी प्रायोगिक मजकूरफिल्ड सक्षम करते; वेब सामग्रीवर परीणाम करत नाही.</translation>
 <translation id="529232389703829405">आपण <ph name="DATE"/> रोजी <ph name="DATA_AMOUNT"/> डेटा खरेदी केला</translation>
 <translation id="7419106976560586862">प्रोफाइल पथ</translation>
@@ -3623,7 +3623,7 @@
 <translation id="6692173217867674490">चुकीचा सांकेतिक वाक्यांश</translation>
 <translation id="5550431144454300634">स्वयंचलितपणे इनपुट योग्य करा</translation>
 <translation id="3308006649705061278">संस्थात्मक एकक (OU)</translation>
-<translation id="8912362522468806198">Google खाते</translation>
+<translation id="8912362522468806198">Bitpop खाते</translation>
 <translation id="4443536555189480885">&amp;मदत</translation>
 <translation id="340485819826776184">अ‍ॅड्रेस बारमध्ये टाइप केलेले शोध आणि URL पूर्ण करण्याकरिता मदतीसाठी पूर्वानुमान सेवा वापरा</translation>
 <translation id="4207762215349123040"><ph name="PEPPER_PLUGIN_DOMAIN"/> वरील <ph name="PEPPER_PLUGIN_NAME"/> प्लगइन आपल्या मोबाइल डिव्हाइसमध्ये प्रवेश करू इच्छिते.&quot;</translation>
@@ -3642,7 +3642,7 @@
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="4745438305783437565"><ph name="NUMBER_FEW"/> मि</translation>
 <translation id="2649911884196340328">सर्व्हरच्या सुरक्षा प्रमाणपत्रात त्रुटी आहेत!</translation>
-<translation id="6666647326143344290">आपल्या Google खात्यासह</translation>
+<translation id="6666647326143344290">आपल्या Bitpop खात्यासह</translation>
 <translation id="4980112683975062744">सर्व्हरकडून ड्युप्लिकेट शीर्षलेख प्राप्त झाले</translation>
 <translation id="3828029223314399057">बुकमार्क शोधणे</translation>
 <translation id="4885705234041587624">MSCHAPv2</translation>
@@ -3651,7 +3651,7 @@
 <translation id="3551117997325569860">प्रॉक्सी सेटिंग्ज बदलण्यासाठी, &quot;<ph name="USE_SHARED_PROXIES"/>&quot; सेटिंग सक्षम करा.</translation>
 <translation id="8906421963862390172">&amp;शब्दलेखन-तपासक पर्याय</translation>
 <translation id="9046895021617826162">कनेक्ट करण्यात अयशस्वी</translation>
-<translation id="4061733942661196912">सक्षम केलेले असताना, Google खाते लॉग इन पृष्‍ठ प्रोफाइलला जोडलेल्या Google खात्यासह एक  इन्फोबार एक सोपे साइन इन सक्रीय करील. प्रोफाइल कनेक्‍ट केलेले नसेल तेव्हा ध्‍वजांकित करण्‍याशी संबंध न राखता स्वयंचलित लॉग इन नेहमीच अक्षम केलेले असते.</translation>
+<translation id="4061733942661196912">सक्षम केलेले असताना, Bitpop खाते लॉग इन पृष्‍ठ प्रोफाइलला जोडलेल्या Google खात्यासह एक  इन्फोबार एक सोपे साइन इन सक्रीय करील. प्रोफाइल कनेक्‍ट केलेले नसेल तेव्हा ध्‍वजांकित करण्‍याशी संबंध न राखता स्वयंचलित लॉग इन नेहमीच अक्षम केलेले असते.</translation>
 <translation id="1492188167929010410">क्रॅश ID <ph name="CRASH_ID"/></translation>
 <translation id="1963692530539281474"><ph name="NUMBER_DEFAULT"/> दिवस बाकी</translation>
 <translation id="4470270245053809099">द्वारा जारी केलेले: <ph name="NAME"/></translation>
@@ -3698,7 +3698,7 @@
 <translation id="5869522115854928033">जतन केलेले संकेतशब्द</translation>
 <translation id="3436440123324878555">योजना विकत घ्या...</translation>
 <translation id="5748266869826978907">आपली DNS सेटिंग्ज तपासा. याचा निश्चित अर्थ आपल्याला माहिती नसल्यास आपल्या नेटवर्क प्रशासकाशी संपर्क साधा.</translation>
-<translation id="4193154014135846272">Google दस्तऐवज</translation>
+<translation id="4193154014135846272">Bitpop दस्तऐवज</translation>
 <translation id="4771973620359291008">एक अज्ञात त्रुटी आली आहे.</translation>
 <translation id="5509914365760201064">जारी केले: <ph name="CERTIFICATE_AUTHORITY"/></translation>
 <translation id="6446356484127229069"><ph name="PRODUCT_NAME"/>
@@ -3800,7 +3800,7 @@
 <translation id="8605428685123651449">SQLite मेमरी</translation>
 <translation id="5469175127151858022">वर समाविष्ट करण्यासाठी आपण निवडलेल्या कोणत्याही माहितीव्यतिरिक्त
         आपले Chrome आणि ऑपरेटिंग सिस्टम आवृत्ती सबमिट केले जाईल. हा अभिप्राय
-        समस्यांचे निदान करणे आणि Chrome मध्‍ये सुधारण्यात मदतीसाठी वापरला जातो. आपण सबमिट केलेली कोणतीही वैयक्तिक माहिती, जरी ती सुस्पष्टपणे किंवा अनुषंगिक रुपात असली तरीही ती आमच्या गोपनीयता धोरणांनुसार संरक्षित केली जाईल.<ph name="BEGIN_BOLD"/> हा अभिप्राय सबमिट करुन, आपण सहमती देता की कोणतेही Google उत्पादन आणि सेवा सुधारण्‍यासाठी Google आपण दिलेला अभिप्राय वापरु शकते.
+        समस्यांचे निदान करणे आणि Chrome मध्‍ये सुधारण्यात मदतीसाठी वापरला जातो. आपण सबमिट केलेली कोणतीही वैयक्तिक माहिती, जरी ती सुस्पष्टपणे किंवा अनुषंगिक रुपात असली तरीही ती आमच्या गोपनीयता धोरणांनुसार संरक्षित केली जाईल.<ph name="BEGIN_BOLD"/> हा अभिप्राय सबमिट करुन, आपण सहमती देता की कोणतेही Bitpop उत्पादन आणि सेवा सुधारण्‍यासाठी Google आपण दिलेला अभिप्राय वापरु शकते.
         <ph name="END_BOLD"/></translation>
 <translation id="2841013758207633010">वेळ</translation>
 <translation id="4880827082731008257">इतिहास शोध</translation>
@@ -3836,7 +3836,7 @@
 <translation id="1097658378307015415">साइन इन करण्‍यापूर्वी, <ph name="NETWORK_ID"/> नेटवर्क सक्रिय करण्‍यासाठी कृपया अतिथी म्हणून प्रवेश करा.</translation>
 <translation id="4114470632216071239">सिम कार्ड लॉक करा (मोबाइल डेटा वापरण्यासाठी पिन आवश्यक आहे)</translation>
 <translation id="5184584788669813359">या PDF दस्तऐवजाचे भाग प्रदर्शित केले गेले जाऊ शकत नाहीत. Adobe Reader मध्ये उघडायचे?</translation>
-<translation id="6581162200855843583">Google ड्राइव्ह दुवा</translation>
+<translation id="6581162200855843583">Bitpop ड्राइव्ह दुवा</translation>
 <translation id="340771324714262530">मिररिंग थांबवा</translation>
 <translation id="3303260552072730022">एका विस्ताराने पूर्णस्क्रीनला वेग दिला.</translation>
 <translation id="2183426022964444701">विस्तार मूळ निर्देशिका निवडा.</translation>
@@ -3933,7 +3933,7 @@
 <translation id="1177437665183591855">अज्ञात सर्व्हर प्रमाणपत्र त्रुटी</translation>
 <translation id="3394150261239285340"><ph name="HOST"/> आपला कॅमेरा आणि मायक्रोफोन वापरु इच्छिते.</translation>
 <translation id="8467473010914675605">कोरियन इनपुट पद्धत</translation>
-<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> आपल्या Google खात्यासह आपला डेटा सुरक्षितपणे समक्रमित करते. सर्वकाही समक्रमित केलेले ठेवा किंवा समक्रमित डेटा प्रकार आणि कूटबद्धीकरण सेटिंग्ज सानुकूल करा.</translation>
+<translation id="8102535138653976669"><ph name="PRODUCT_NAME"/> आपल्या Bitpop खात्यासह आपला डेटा सुरक्षितपणे समक्रमित करते. सर्वकाही समक्रमित केलेले ठेवा किंवा समक्रमित डेटा प्रकार आणि कूटबद्धीकरण सेटिंग्ज सानुकूल करा.</translation>
 <translation id="2639739919103226564">स्थिती:</translation>
 <translation id="6923900367903210484">कॉपीराइट</translation>
 <translation id="3819800052061700452">&amp;पूर्ण स्क्रीन</translation>
@@ -3956,7 +3956,7 @@
 <translation id="614998064310228828">डिव्हाइस मॉडेल:</translation>
 <translation id="1581962803218266616">फाइंडर मध्ये दर्शवा</translation>
 <translation id="9100765901046053179">प्रगत सेटिंग्ज</translation>
-<translation id="203168018648013061">समक्रमण त्रुटी: कृपया Google डॅशबोर्ड मार्गे समक्रमण रीसेट करा.</translation>
+<translation id="203168018648013061">समक्रमण त्रुटी: कृपया Bitpop डॅशबोर्ड मार्गे समक्रमण रीसेट करा.</translation>
 <translation id="1405126334425076373">माउस कर्सर</translation>
 <translation id="6096326118418049043">X.500 नाव</translation>
 <translation id="6086259540486894113">आपण समक्रमित करण्यासाठी किमान एक डेटा प्रकार निवडणे आवश्यक आहे.</translation>
@@ -4002,14 +4002,14 @@
 <translation id="2960316970329790041">आया‍त थांबवा</translation>
 <translation id="3835522725882634757">ओहो! हा सर्व्हर <ph name="PRODUCT_NAME"/> समजू शकत नाही असा डेटा पाठवित आहे. कृपया <ph name="BEGIN_LINK"/>एक दोष नोंदवा<ph name="END_LINK"/> आणि <ph name="BEGIN2_LINK"/>मूळ सूची<ph name="END2_LINK"/> समाविष्ट करा.</translation>
 <translation id="6586451623538375658">प्राथमिक माउस बटण स्वॅप करा</translation>
-<translation id="6937152069980083337">Google जपानी इनपुट (यूएस कीबोर्डसाठी)</translation>
+<translation id="6937152069980083337">Bitpop जपानी इनपुट (यूएस कीबोर्डसाठी)</translation>
 <translation id="475088594373173692">प्रथम वापरकर्ता</translation>
 <translation id="1731911755844941020">विनंती पाठवित आहे...</translation>
 <translation id="8371695176452482769">आता बोला</translation>
 <translation id="7622116780510618781">स्टॅक केलेले टॅब</translation>
 <translation id="2988488679308982380">हे पॅकेज स्थापित करणे शक्य नाही: '<ph name="ERROR_CODE"/>'</translation>
 <translation id="2904079386864173492">मॉडेल:</translation>
-<translation id="728836202927797241">या खात्यासह स्वयंचलितपणे Google Sites मध्‍ये साइन करु देते</translation>
+<translation id="728836202927797241">या खात्यासह स्वयंचलितपणे Bitpop Sites मध्‍ये साइन करु देते</translation>
 <translation id="6129953537138746214">जागा</translation>
 <translation id="5041795084235183432">माउस:</translation>
 <translation id="3704331259350077894">ऑपरेशनची समाप्ती</translation>
@@ -4083,7 +4083,7 @@
 <translation id="3325146402434751578"><ph name="CLOUD_PRINT_NAME"/> मधील प्रिंटर सेट अप करा किंवा व्यवस्थापित करा</translation>
 <translation id="253434972992662860">&amp;विराम द्या</translation>
 <translation id="335985608243443814">ब्राउझ करा...</translation>
-<translation id="7802488492289385605">Google जपानी इनपुट (यूएस डीवोरॅक कीबोर्डसाठी)</translation>
+<translation id="7802488492289385605">Bitpop जपानी इनपुट (यूएस डीवोरॅक कीबोर्डसाठी)</translation>
 <translation id="3876481682997626897">स्वाक्षरी जुळत नाही</translation>
 <translation id="8892992092192084762">स्थापित केलेली थीम &quot;<ph name="THEME_NAME"/>&quot;.</translation>
 <translation id="7427348830195639090">पार्श्वभूमी पृष्ठ: <ph name="BACKGROUND_PAGE_URL"/></translation>
@@ -4117,7 +4117,7 @@
 <translation id="1131850611586448366"><ph name="HOST_NAME"/> येथील वेबसाइट “फिशिंग” साइट म्हणून नोंदवली गेली आहे. फिशिंग साइट युक्तीने वापरकर्त्यांची वैयक्तिक किंवा आर्थिक माहिती काढून घेण्यासाठी अनेकदा विश्वसनीय संस्था, जसे की बँक इ. चे प्रतिनिधी असल्याची बतावणी करतात.</translation>
 <translation id="2669198762040460457">आपण प्रविष्ट केलेले वापरकर्तानाव किंवा संकेतशब्द चुकीचा आहे.</translation>
 <translation id="1161575384898972166">कृपया क्लायंट प्रमाणपत्र निर्यात करण्यासाठी <ph name="TOKEN_NAME"/> मध्ये साइन इन करा.</translation>
-<translation id="1718559768876751602">त्वरित एक Google खाते तयार करा</translation>
+<translation id="1718559768876751602">त्वरित एक Bitpop खाते तयार करा</translation>
 <translation id="5503480894407718969">आपल्या मोबाईल डिव्हाइसवरील आणि आपण भेट दिलेल्या वेबसाइटवरील सर्व डेटावर प्रवेश करा</translation>
 <translation id="1884319566525838835">Sandbox स्थिती</translation>
 <translation id="2770465223704140727">सूचीमधून काढा</translation>

@@ -11,6 +11,24 @@ var loggedIn = false;
 //    extensionId: chrome.i18n.getMessage('@@extension_id')
 //  });
 
+// Close Google Docs extension options window, appearing on first run
+// and focus the Sign In page.
+if (!localStorage.firstRunCompleted) {
+  chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
+    if (changeInfo && changeInfo.url &&
+        changeInfo.url.indexOf('chrome-extension://nnbmlagghjjcbdhgmkedmbmedengocbn/options.html') == 0) {
+      chrome.tabs.remove(tabId);
+      chrome.tabs.query({ url: "chrome://signin/*" }, function (tabList) {
+        if (tabList.length !== 1)
+          return;
+        chrome.tabs.update(tabList[0].id, { active: true });
+      });
+      localStorage.setItem("firstRunCompleted", true);
+      chrome.tabs.onUpdated.removeListener(arguments.callee);
+    }
+  });
+}
+
 (function () {
   if (chrome.browserAction)
     chrome.browserAction.onClicked.addListener(function (tab) {
@@ -28,27 +46,29 @@ var loggedIn = false;
 setTimeout(
   function() {
     if (!myUid) {
-      chrome.extension.sendRequest(
+      chrome.extension.sendMessage(
         bitpop.CONTROLLER_EXTENSION_ID,
         { type: 'getMyUid' },
         function(response) {
-          myUid = response.id;
-          chrome.extension.sendRequest(
-            bitpop.CONTROLLER_EXTENSION_ID,
-            { type: 'forceFriendListSend' }
-          );
+          if (response && response.id) {
+            myUid = response.id;
+            chrome.extension.sendMessage(
+              bitpop.CONTROLLER_EXTENSION_ID,
+              { type: 'forceFriendListSend' }
+            );
+          }
         }
       );
     }
   },
   5000);
 
-chrome.extension.onRequest.addListener(function (request, sender, sendResponse) {
+chrome.extension.onMessage.addListener(function (request, sender, sendResponse) {
   if (!request.type)
-    return;
+    return false;
 
   if (request.type == 'setStatusMessage') {
-    chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+    chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
       { type: 'setFacebookStatusMessage',
         msg: request.msg
       },
@@ -56,10 +76,11 @@ chrome.extension.onRequest.addListener(function (request, sender, sendResponse) 
         sendResponse(response);
       }
     );
+    return true;
   }
 });
 
-chrome.extension.onRequestExternal.addListener(function (request, sender, sendResponse) {
+chrome.extension.onMessageExternal.addListener(function (request, sender, sendResponse) {
   if (!request.type)
     return;
 
@@ -173,7 +194,7 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
 });
 
 function sendInboxRequest() {
-  chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+  chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
     { type: 'graphApiCall',
       path: '/me/inbox',
       params: {}
@@ -181,13 +202,13 @@ function sendInboxRequest() {
     function (response) {
       inboxData = response.data;
       replaceLocalHistory(inboxData);
-      chrome.extension.sendRequest({ type: 'inboxDataAvailable' });
+      chrome.extension.sendMessage({ type: 'inboxDataAvailable' });
     }
   );
 }
 
 function sendStatusesRequest() {
-  chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+  chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
     { type: 'graphApiCall',
       path: '/me/statuses',
       params: { 'limit': '1' }
@@ -195,7 +216,7 @@ function sendStatusesRequest() {
     function (response) {
       if (!response.data || !response.data.length || !response.data[0].message)
         return;
-      chrome.extension.sendRequest({ type: 'statusMessageUpdate',
+      chrome.extension.sendMessage({ type: 'statusMessageUpdate',
                                      msg: response.data[0].message });
     }
   );
@@ -287,7 +308,7 @@ function getDomain(url) {
 function addFbFunctionality( )
 {
     // add a listener to events coming from contentscript
-    chrome.extension.onRequest.addListener(
+    chrome.extension.onMessage.addListener(
         function(request, sender, sendResponse) {
             if (typeof request != 'string')
               return;
@@ -315,25 +336,25 @@ function addFbFunctionality( )
                             sendResponseToContentScript(sendResponse, data, "ok", response);
                         } else {
                             //chrome.bitpop.facebookChat.getFriendsSidebarVisible(function(is_visible) {
-                              chrome.bitpop.prefs.facebookShowChat.get({}, function(details) {
-                                var facebookShowChat = details.value;
-                                chrome.bitpop.prefs.facebookShowJewels.get({}, function(details2) {
-                                  var facebookShowJewels = details2.value;
-                                  var response = null;
-                                  if (loggedIn) {
-                                    response = {
-                                      enableChat:   facebookShowChat,
-                                      enableJewels: facebookShowJewels
-                                    };
-                                  }
-                                  else {
-                                    response = { enableChat:true, enableJewels:true };
-                                  }
+                            chrome.bitpop.prefs.facebookShowChat.get({}, function(details) {
+                              var facebookShowChat = details.value;
+                              //chrome.bitpop.prefs.facebookShowJewels.get({}, function(details2) {
+                              //  var facebookShowJewels = details2.value;
+                              var response = null;
+                              if (loggedIn) {
+                                response = {
+                                  enableChat:   facebookShowChat,
+                                  enableJewels: true
+                                };
+                              }
+                              else {
+                                response = { enableChat:true, enableJewels:true };
+                              }
 
-                                  sendResponseToContentScript(sendResponse, data,
-                                                              "ok", response);
-                                });
-                              });
+                              sendResponseToContentScript(sendResponse, data,
+                                                          "ok", response);
+                              //});
+                            });
                             //});
                         }
                     }
@@ -348,7 +369,7 @@ function onSuppressChatChanged(details) {
   for(var i in fbTabs) {
     if(fbTabs[i].injected) {
         var id = parseInt(i);
-        chrome.tabs.sendRequest(
+        chrome.tabs.sendMessage(
             id,
             {},
             function(responseData) {

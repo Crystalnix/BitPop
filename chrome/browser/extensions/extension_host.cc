@@ -242,7 +242,7 @@ const GURL& ExtensionHost::GetURL() const {
 }
 
 void ExtensionHost::LoadInitialURL() {
-  if (!is_background_page() &&
+  if (!is_background_page() && extension_ &&
       !profile_->GetExtensionService()->IsBackgroundPageReady(extension_)) {
     // Make sure the background page loads before any others.
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY,

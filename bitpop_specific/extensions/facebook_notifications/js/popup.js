@@ -79,7 +79,7 @@ function showNotifications(data) {
 
   if (notificationIds != '') {
     notificationIds = notificationIds.substring(0, notificationIds.length - 1);
-    chrome.extension.sendRequest(current.controllerExtensionId,
+    chrome.extension.sendMessage(current.controllerExtensionId,
         { type: 'restApiCall',
           method: 'notifications.markRead',
           params: { notification_ids: notificationIds }
@@ -175,16 +175,18 @@ window.addEventListener('load', function (e) {
                '(SELECT sender_id FROM #query1)';
   var query = JSON.stringify({ query1: query1, query2: query2, query3: query3 });
 
-  chrome.extension.sendRequest(current.controllerExtensionId,
+  chrome.extension.sendMessage(current.controllerExtensionId,
       {
         type: 'fqlQuery',
         query: query
       },
       function (response) {
-        if (response.error)
-          showError(response.error);
-        else
-          showNotifications(response);
+        if (response) {
+          if (response.error)
+            showError(response.error);
+          else
+            showNotifications(response);
+        }
       }
   );
 }, false);

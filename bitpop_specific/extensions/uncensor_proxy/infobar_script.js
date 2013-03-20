@@ -81,7 +81,7 @@
 
     initCommon();
 
-    setTimeout(hideBar, 5000);
+    setTimeout(hideBar, 10000);
   }
 
   var options = bitpop_uncensor_proxy_options;
@@ -94,6 +94,16 @@
     document.getElementById('bitpop-infobar-but-yes').href = options.url;
     document.getElementById('bitpop-infobar-country-name').innerText =
         options.country_name;
+
+    document.getElementById('bitpop-infobar-but-yes').addEventListener('click',
+        function (ev) {
+          chrome.extension.sendMessage({ 'type': 'enableProxyForDomain',
+                                         'domain': options.domain },
+                                       function(response) {
+                                         document.location.href = options.url;
+                                       });
+          return false;
+        }, false);
   }
   else if (options.reason == 'setJippi' && options.url) {
     initJippi();

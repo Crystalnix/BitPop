@@ -479,13 +479,13 @@ willPositionSheet:(NSWindow*)sheet
   if (facebookSidebarController_.get()) {
     NSView *sidebarView = [facebookSidebarController_ view];
     NSRect sidebarFrame = [sidebarView frame];
-    sidebarFrame.origin.x = maxX - sidebarFrame.size.width;
+    sidebarFrame.origin.x = maxX -
+        ([facebookSidebarController_ visible] ? sidebarFrame.size.width : 0);
     sidebarFrame.origin.y = minY;
     sidebarFrame.size.height = maxY - minY;
     [sidebarView setFrame:sidebarFrame];
 
-    //[facebookSidebarController_ sizeUpdated];
-    maxX -= sidebarFrame.size.width;
+    maxX -= ([facebookSidebarController_ visible] ? sidebarFrame.size.width : 0);
   }
   return maxX;
 }
