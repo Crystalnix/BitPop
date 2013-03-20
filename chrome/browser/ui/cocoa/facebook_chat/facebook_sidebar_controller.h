@@ -39,11 +39,10 @@ class SidebarExtensionNotificationBridge;
 
 - (CGFloat)maxWidth;
 
-- (void)initializeExtensionHost;
-
 - (void)removeAllChildViews;
 
 - (extensions::ExtensionHost*)extension_host;
+
 @end
 
 #endif  // CHROME_BROWSER_UI_COCOA_FACEBOOK_SIDEBAR_CONTROLLER_H_

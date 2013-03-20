@@ -243,7 +243,7 @@ SessionStartupPref StartupBrowserCreator::GetSessionStartupPref(
   // behavior (sync promo, welcome page) is consistently invoked.
   // This applies only if the pref is still at its default and has not been
   // set by the user, managed prefs or policy.
-  if (first_run::IsChromeFirstRun() && SessionStartupPref::TypeIsDefault(prefs))
+  if (first_run::IsChromeFirstRun())
     pref.type = SessionStartupPref::DEFAULT;
 
   if (command_line.HasSwitch(switches::kRestoreLastSession) ||

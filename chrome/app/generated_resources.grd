@@ -12189,7 +12189,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Learn more
       </message>
       <message name="IDS_SYNC_PROMO_NTP_BUBBLE_ENCRYPTION_DISABLED_BEFORE_LINK" desc="">
-        &lt;em&gt;Encryption and passwords sync:&lt;/em&gt; &lt;strong&gt;disabled.&lt;/strong&gt; Go to
+        &lt;strong&gt;Encryption and passwords sync may be disabled, if you have not enabled it intentionally.&lt;/strong&gt; Go to
       </message>
       <message name="IDS_SYNC_PROMO_NTP_BUBBLE_ENCRYPTION_DISABLED_AFTER_LINK" desc="">
         to enable encryption and configure synced data.

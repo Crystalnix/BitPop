@@ -71,8 +71,7 @@ for EXT in $EXT_NAMES; do
 done
 
 echo "  \"nnbmlagghjjcbdhgmkedmbmedengocbn\": {" >> "$EXT_DEFS"
-echo "    \"external_crx\": \"docsviewer-extension.crx\"," >> "$EXT_DEFS"
-echo "    \"external_version\": \"3.5\"" >> "$EXT_DEFS"
+echo "    \"external_update_url\": \"http://clients2.google.com/service/update2/crx\"" >> "$EXT_DEFS"
 echo "  }," >> "$EXT_DEFS"
 echo "  \"geoplninmkljnhklaihoejihlogghapi\": {" >> "$EXT_DEFS"
 echo "    \"external_crx\": \"share_button.crx\"," >> "$EXT_DEFS"

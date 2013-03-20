@@ -118,23 +118,15 @@ bitpop.FacebookController = (function() {
           var response = JSON.parse(x.responseText);
           if (response.error && response.error.type == 'OAuthException') {
             if (doing_permissions_request) {
-              if (auth_wait_timer === null) {
-                auth_wait_timer = setTimeout(function() {
-                  checkForPermissions();
-                  //auth_wait_timer = null;
-                }, 15000);
-              } else {
-                need_more_permissions = true;
-                login(FB_PERMISSIONS);
-              }
-              doing_permissions_request = false;
+              logout();
             }
             else
               checkForPermissions();
 
             shouldSetDoingPermissionsRequest = false;
-          }
-          errorMsg = 'Not authorized.';
+            errorMsg = response.error.message;
+          } else
+            errorMsg = 'Not authorized.';
         } else if (x.status==404){
           errorMsg = 'Requested URL not found.' ;
         } else if (x.status==500){
@@ -382,15 +374,17 @@ bitpop.FacebookController = (function() {
     return null;
   }
 
+  function onLoggedOut() {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('myUid');
+    notifyObservingExtensions({ type: 'loggedOut' });
+    connection.disconnect();
+    chrome.bitpop.facebookChat.loggedOutFacebookSession();
+  }
+
   function onTabUpdated(tabId, changeInfo, tab) {
     if (changeInfo.url && (changeInfo.url.indexOf(SUCCESS_URL) == 0)) {
-      if (changeInfo.url == LOGOUT_NEXT_URL) {
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('myUid');
-        notifyObservingExtensions({ type: 'loggedOut' });
-        connection.disconnect();
-        chrome.bitpop.facebookChat.loggedOutFacebookSession();
-      } else if (!localStorage.accessToken || need_more_permissions) {
+      if (!localStorage.accessToken || need_more_permissions) {
         var accessToken = accessTokenFromSuccessURL(changeInfo.url);
         if (!accessToken) {
           localStorage.removeItem('accessToken');
@@ -508,19 +502,9 @@ bitpop.FacebookController = (function() {
     xhr = $.get(FQL_API_URL,
           {
             q: query,
-            //format: 'json',
             access_token: localStorage.accessToken
           },
           function (pdata) {
-            // var pdata = null;
-            // try {
-            //   pdata = JSON.parse(data);
-            // }
-            // catch (e) {
-            //   pdata = { error_code: '-1', error_msg: 'Unable to ' +
-            //     'parse server response as JSON. response: ' + data };
-            // }
-
             if (pdata.error_code) {
               var errorMsg = 'Unable to fetch data from Facebook FQL API, query:' +
                   query + '\nError: ' + pdata.error_code +
@@ -639,11 +623,56 @@ bitpop.FacebookController = (function() {
   function logout() {
     if (localStorage.accessToken) {
       var url = FB_LOGOUT_URL + '?next=' +
-        escape(LOGOUT_NEXT_URL) +
+        LOGOUT_NEXT_URL +
         '&access_token=' + localStorage.accessToken;
+      // Logout by finding the focused window first,
+      // placing the logout window below it
+      // and listening for opened tab url change.
+      // When url is changed, this means we can remove the window, and
+      // regardless of the facebook result, we declare ourselves logged out.
+      // The drawback of this approach is that when access token was already
+      // invalid, we don't get a "login to facebook account" dialog in reaction
+      // to clicking "Login" button in the sidebar.
+      chrome.windows.getLastFocused(function (win) {
+        if (!win || !win.width || !win.height)
+          win = { "top": 0, "left": 0, "width": 50, "height": 50};
 
-      chrome.windows.create({ url: url, type: "popup",
-                              top: 0, left: 0, width: 50, height: 50 });
+        var width = 50;
+        var height = 50;
+        var top = win.top + Math.floor((win.height - height) / 2);
+        var left = win.left + Math.floor((win.width - width) / 2);
+
+        chrome.windows.create(
+          { "url": url, "type": "popup", "focused": false,
+            "top": top, "left": left,
+            "width": width, "height": height },
+          function (wi) {
+            if (win.id)
+              chrome.windows.update(win.id, { "focused": true });
+
+            chrome.windows.get(
+              wi.id,
+              { populate: true },
+              function (w) {
+                if (w.tabs.length !== 1)
+                  return;
+                var logoutTabId = w.tabs[0].id;
+                chrome.tabs.onUpdated.addListener(
+                  function (tabId, changeInfo, tab) {
+                    if (tabId == logoutTabId &&
+                        tab.windowId == wi.id &&
+                        changeInfo.url &&
+                        changeInfo.url.indexOf(FB_LOGOUT_URL) !== 0) {
+                      onLoggedOut();
+                      chrome.windows.remove(wi.id);
+                    }
+                  }
+                );
+              }
+            );
+          }
+        );
+      });
     }
     return false;
   }

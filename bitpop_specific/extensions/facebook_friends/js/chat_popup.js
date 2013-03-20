@@ -214,9 +214,9 @@ bitpop.chat = (function() {
       function onThreadInfoReceived(data) {
         for (var i = 0; i < data.length; i++) {
           var thread = data[i];
-          if (thread.participants.indexOf(myUid) !== -1 &&
-              thread.participants.indexOf(friendUid) !== -1 &&
-              thread.participants.length == 2) {
+          if (thread.recipients.indexOf(+myUid) !== -1 &&
+              thread.recipients.indexOf(+friendUid) !== -1 &&
+              thread.recipients.length == 2) {
             chrome.extension.sendMessage(bitpop.CONTROLLER_EXTENSION_ID,
               {
                 "type": "fqlQuery",
@@ -236,11 +236,11 @@ bitpop.chat = (function() {
       function saveToLocalStorage(data) {
         var lsKey = myUid + ':' + friendUid;
         var out = [];
-        for (var i = 0; i < data.length; i++) {
+        for (var i = data.length-1; i >= 0; --i) {
           var msg = data[i];
           out.push({ "msg": bitpop.preprocessMessageText(msg.body),
-                     "time": new Date(msg.created_time).getTime(),
-                     "me": (msg.author_id == myUid) });
+                     "time": new Date(msg.created_time * 1000).getTime(),
+                     "me": (msg.author_id == +myUid) });
         }
         localStorage.setItem(lsKey, JSON.stringify(out));
       }

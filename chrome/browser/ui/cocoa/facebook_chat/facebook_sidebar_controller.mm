@@ -12,12 +12,16 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
@@ -25,6 +29,10 @@
 #include "content/public/browser/web_contents.h"
 
 using content::WebContents;
+using extensions::Extension;
+using extensions::ExtensionSystem;
+using extensions::ExtensionSystemFactory;
+using extensions::UnloadedExtensionInfo;
 
 namespace {
 
@@ -36,9 +44,10 @@ const int kFriendsSidebarWidth = 186;
 
 @interface FacebookSidebarController (Private)
 - (void)showSidebarContents:(WebContents*)sidebarContents;
-- (void)initializeExtensionHost;
+- (void)initializeExtensionHostWithExtensionLoaded:(BOOL)loaded;
 - (void)sizeChanged;
 - (void)onViewDidShow;
+- (void)invalidateExtensionHost;
 @end
 
 @interface BackgroundSidebarView : NSView {}
@@ -88,9 +97,27 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
         }
         break;
       }
-      case chrome::NOTIFICATION_EXTENSIONS_READY: {
-        [controller_ removeAllChildViews];
-        [controller_ initializeExtensionHost];
+
+      case chrome::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY: {
+        [controller_ initializeExtensionHostWithExtensionLoaded:NO];
+        break;
+      }
+
+      case chrome::NOTIFICATION_EXTENSION_LOADED: {
+        Extension* extension = content::Details<Extension>(details).ptr();
+        if (extension->id() == chrome::kFacebookChatExtensionId) {
+          [controller_ initializeExtensionHostWithExtensionLoaded:YES];
+        }
+        break;
+      }
+
+      case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+        UnloadedExtensionInfo* info =
+            content::Details<UnloadedExtensionInfo>(details).ptr();
+        if (info->extension->id() == chrome::kFacebookChatExtensionId) {
+          [controller_ removeAllChildViews];
+          [controller_ invalidateExtensionHost];
+        }
         break;
       }
 
@@ -111,6 +138,7 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
 
  private:
   FacebookSidebarController* controller_;
+
 };
 
 @implementation FacebookSidebarController
@@ -139,7 +167,7 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
         object:[self view]
     ];
 
-    [self initializeExtensionHost];
+    [self initializeExtensionHostWithExtensionLoaded:NO];
   }
   return self;
 }
@@ -166,21 +194,39 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
   return kFriendsSidebarWidth;
 }
 
-- (void)initializeExtensionHost {
+- (void)initializeExtensionHostWithExtensionLoaded:(BOOL)loaded {
+  Profile *profile = browser_->profile()->GetOriginalProfile();
+  ExtensionService* service = profile->GetExtensionService();
+  const Extension* sidebar_extension =
+      service->extensions()->GetByID(chrome::kFacebookChatExtensionId);
+
+  if (!sidebar_extension) {
+    NOTREACHED() << "Empty extension.";
+    return;
+  }
+
+  if (!service->IsBackgroundPageReady(sidebar_extension)) {
+    registrar_.RemoveAll();
+    registrar_.Add(notification_bridge_.get(),
+                   chrome::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY,
+                   content::Source<Extension>(sidebar_extension));
+    if (!loaded)
+      registrar_.Add(notification_bridge_.get(),
+                     chrome::NOTIFICATION_EXTENSION_LOADED,
+                     content::Source<Profile>(profile));
+    registrar_.Add(notification_bridge_.get(),
+                   chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                   content::Source<Profile>(profile));
+    return;
+  }
+
   std::string url = std::string("chrome-extension://") +
       std::string(chrome::kFacebookChatExtensionId) +
       std::string("/friends_sidebar.html");
   ExtensionProcessManager* manager =
-      browser_->profile()->GetExtensionProcessManager();
+      profile->GetExtensionProcessManager();
   extension_host_.reset(manager->CreateViewHost(GURL(url), browser_,
                                                 chrome::VIEW_TYPE_PANEL));
-
-  registrar_.RemoveAll();
-  registrar_.Add(notification_bridge_.get(),
-                  chrome::NOTIFICATION_EXTENSIONS_READY,
-                  content::Source<Profile>(
-                      browser_->profile()->GetOriginalProfile()));
-
   if (extension_host_.get()) {
     gfx::NativeView native_view = extension_host_->view()->native_view();
     NSRect container_bounds = [[self view] bounds];
@@ -204,13 +250,19 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
 }
 
 - (void)removeAllChildViews {
+  NSMutableArray *viewsToRemove = [[NSMutableArray alloc] init];
   for (NSView* childView in [[self view] subviews])
-    [childView removeFromSuperview];
+    [viewsToRemove addObject:childView];
+  [viewsToRemove makeObjectsPerformSelector:@selector(removeFromSuperview)];
+  [viewsToRemove release];
 }
 
 - (void)setVisible:(BOOL)visible {
   sidebarVisible_ = visible;
   [[self view] setHidden:!visible];
+
+  if (!extension_host_.get())
+    return;
 
   gfx::NativeView native_view = extension_host_->view()->native_view();
   [native_view setNeedsDisplay:YES];
@@ -218,6 +270,9 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
 }
 
 - (void)sizeChanged {
+  if (!extension_host_.get())
+    return;
+
   gfx::NativeView native_view = extension_host_->view()->native_view();
   NSRect container_bounds = [[self view] bounds];
   [native_view setFrame:container_bounds];
@@ -228,6 +283,10 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
 
 - (void)onViewDidShow {
   [self sizeChanged];
+}
+
+- (void)invalidateExtensionHost {
+  extension_host_.reset();
 }
 
 @end

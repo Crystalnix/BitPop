@@ -161,12 +161,11 @@
               'files': [
                 'browser/extensions/default_extensions/external_extensions.json',
                 'browser/extensions/default_extensions/dropdown_most_visited.crx',
-                'browser/extensions/default_extensions/docsviewer-extension.crx',
+                'browser/extensions/default_extensions/share_button.crx',
                 'browser/extensions/default_extensions/facebook_controller.crx',
                 'browser/extensions/default_extensions/facebook_friends.crx',
                 'browser/extensions/default_extensions/facebook_messages.crx',
                 'browser/extensions/default_extensions/facebook_notifications.crx',
-                'browser/extensions/default_extensions/share_button.crx',
                 'browser/extensions/default_extensions/uncensor_domains.crx',
                 'browser/extensions/default_extensions/uncensor_proxy.crx',
               ]

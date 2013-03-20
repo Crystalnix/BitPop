@@ -8,19 +8,19 @@
   },
   "igddmhdmkpkonlbfabbkkdoploafopcn": {
     "external_crx": "facebook_controller.crx",
-    "external_version": "1.5.7"
+    "external_version": "1.5.13"
   },
   "engefnlnhcgeegefndkhijjfdfbpbeah": {
     "external_crx": "facebook_friends.crx",
-    "external_version": "1.10.7"
+    "external_version": "1.10.9"
   },
   "dhcejgafhmkdfanoalflifpjimaaijda": {
     "external_crx": "facebook_messages.crx",
-    "external_version": "1.18"
+    "external_version": "1.19"
   },
   "omkphklbdjafhafacohmepaahbofnkcp": {
     "external_crx": "facebook_notifications.crx",
-    "external_version": "2.7"
+    "external_version": "2.8"
   },
   "oadgfoondcimpmclpkphkdnjhaddaehg": {
     "external_crx": "uncensor_domains.crx",
@@ -31,8 +31,7 @@
     "external_version": "1.8"
   },
   "nnbmlagghjjcbdhgmkedmbmedengocbn": {
-    "external_crx": "docsviewer-extension.crx",
-    "external_version": "3.5"
+    "external_update_url": "http://clients2.google.com/service/update2/crx"
   },
   "geoplninmkljnhklaihoejihlogghapi": {
     "external_crx": "share_button.crx",

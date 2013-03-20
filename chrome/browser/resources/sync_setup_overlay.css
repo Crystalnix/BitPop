@@ -299,11 +299,11 @@ html[dir='rtl'] #learn-more-link {
       url('chrome://resources/images/logo.png') no-repeat;
   background-size: cover;
   display: inline-block;
-  height: 19px;
+  height: 32px;
   position: absolute;
   right: 0;
   top: 1px;
-  width: 52px;
+  width: 32px;
 }
 
 html[dir='rtl'] #signin-header-logo {
