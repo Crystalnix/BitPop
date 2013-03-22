@@ -72,6 +72,8 @@ public:
 
   SkBitmap* notification_icon() const { return notification_icon_; }
 
+  int GetRightOffsetForText() const;
+
 protected:
   // Overridden from views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;

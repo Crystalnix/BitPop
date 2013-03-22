@@ -23,7 +23,7 @@ function init( )
         injected = document.createElement(tagName);
         injected.id = tagName;
         document.body.appendChild(injected);
-        chrome.extension.onRequest.addListener(
+        chrome.extension.onMessage.addListener(
             function(request, sender, sendResponse) {
                 console.log("Prefs changed");
                 shouldEnableFbJewelsAndChat_();

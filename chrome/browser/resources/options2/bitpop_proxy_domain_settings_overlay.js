@@ -39,6 +39,10 @@ cr.define('options', function() {
 
       cr.doc.addEventListener("updateProxySetting",
         this.onUpdateProxySetting_.bind(this), false);
+
+      $('update-domains').onclick = function (e) {
+        chrome.send('updateDomains');
+      };
     },
 
     updateListFromPrefValue_: function(listPrefValue) {

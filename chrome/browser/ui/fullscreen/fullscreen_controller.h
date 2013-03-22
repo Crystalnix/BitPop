@@ -182,6 +182,9 @@ class FullscreenController : public content::NotificationObserver {
 
   content::NotificationRegistrar registrar_;
 
+  bool chatbar_temporarily_hidden_;
+  bool friends_sidebar_temporarily_hidden_;
+
   DISALLOW_COPY_AND_ASSIGN(FullscreenController);
 };
 

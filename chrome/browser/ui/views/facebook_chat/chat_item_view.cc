@@ -46,7 +46,7 @@ namespace {
 
 const gfx::Size kChatButtonSize = gfx::Size(158, 25);
 
-const int kCloseButtonRightPadding = 3;
+const int kCloseButtonPadding = 3;
 
 const int kNotificationMessageDelaySec = 10;
 
@@ -62,6 +62,7 @@ const int kBadgeHeight = 11;
 const int kMaxTextWidth = 23;
 // The minimum width for center-aligning the badge.
 const int kCenterAlignThreshold = 20;
+const int kTextRightPadding = 10;
 
 // duplicate methods (ui/gfx/canvas_skia.cc)
 bool IntersectsClipRectInt(const SkCanvas& canvas, int x, int y, int w, int h) {
@@ -123,6 +124,13 @@ public:
   virtual void OnMouseExited(const views::MouseEvent& event) OVERRIDE {
     owner_->OnMouseExited(event);
   }
+protected:
+  virtual gfx::Rect GetTextBounds() const OVERRIDE {
+    gfx::Rect bounds = TextButton::GetTextBounds();
+    bounds.set_width(bounds.width() - kTextRightPadding);
+    return bounds;
+  }
+
 private:
   ChatItemView *owner_;
 };
@@ -221,7 +229,7 @@ void ChatItemView::Layout() {
   openChatButton_->SetBoundsRect(bounds);
 
   gfx::Size closeButtonSize = close_button_->GetPreferredSize();
-  close_button_->SetBounds(bounds.width() - closeButtonSize.width() - kCloseButtonRightPadding,
+  close_button_->SetBounds(bounds.width() - closeButtonSize.width() - kCloseButtonPadding,
                             bounds.height() / 2 - closeButtonSize.height() / 2,
                             closeButtonSize.width(),
                             closeButtonSize.height());
@@ -410,6 +418,10 @@ void ChatItemView::OnMouseExited(const views::MouseEvent& event) {
     //notification_popup_->set_fade_away_on_close(false);
     notification_popup_->GetWidget()->Close();
   }
+}
+
+int ChatItemView::GetRightOffsetForText() const {
+  return close_button_->width() + 2 * kCloseButtonPadding;
 }
 
 void ChatItemView::UpdateNotificationIcon() {

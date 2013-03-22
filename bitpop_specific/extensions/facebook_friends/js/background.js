@@ -311,7 +311,7 @@ function addFbFunctionality( )
     chrome.extension.onMessage.addListener(
         function(request, sender, sendResponse) {
             if (typeof request != 'string')
-              return;
+              return false;
             myLog("Received request ", request);
             if(request) {
                 var data = JSON.parse(request);
@@ -362,6 +362,7 @@ function addFbFunctionality( )
                     sendResponseToContentScript(sendResponse, data, "error", e);
                 }
             }
+            return true;
         });
 }
 
